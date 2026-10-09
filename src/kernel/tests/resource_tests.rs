@@ -2611,7 +2611,7 @@ fn symbolic_resource_indices_preserve_types_equality_and_linear_transfer() {
 }
 
 #[test]
-fn symbolic_resource_indices_distinguish_constructors_and_population_counts() {
+fn symbolic_resource_indices_distinguish_constructors() {
     let ty = resource_index_type("Mark", vec![]);
     let constructor = |variant: &str| AlgebraicTerm {
         algebraic_type: ty.clone(),
@@ -2627,36 +2627,6 @@ fn symbolic_resource_indices_distinguish_constructors_and_population_counts() {
         &set,
         &PureFactContext::new()
     ));
-
-    let m = resource_index_variable(&ty, 990_010);
-    let n = resource_index_variable(&ty, 990_011);
-    let arguments: ResourceArguments = vec![AlgebraicValue::Algebraic(m.clone())].into();
-    let n_arguments = vec![AlgebraicValue::Algebraic(n.clone())];
-    let state = CState::new().with_counted_population(
-        "indexed",
-        arguments.clone(),
-        Bitvector32Term::Constant(3),
-    );
-    assert_eq!(
-        state.counted_population("indexed", &arguments),
-        Some(&Bitvector32Term::Constant(3))
-    );
-    assert!(state.counted_population("indexed", &n_arguments).is_none());
-    let assumptions = PureFactContext::new()
-        .assume_proposition(Proposition::Equal(Term::Algebraic(m), Term::Algebraic(n)));
-    let (_, recovered, count) = state
-        .counted_population_proven_equal("indexed", &n_arguments, &assumptions)
-        .unwrap();
-    assert!(std::sync::Arc::ptr_eq(&arguments, &recovered));
-    assert_eq!(count, Bitvector32Term::Constant(3));
-    assert_eq!(
-        state.counted_population_sum("indexed", &[None], &assumptions),
-        Some(count.clone())
-    );
-    assert_eq!(
-        state.counted_population_sum("indexed", &[Some(n_arguments[0].clone())], &assumptions),
-        Some(count)
-    );
 }
 
 #[test]
@@ -2920,46 +2890,6 @@ fn zero_resource_identity_ignores_unrelated_resources() {
             .iter()
             .all(|(_, work)| *work <= base_work.saturating_add(2)),
         "zero-resource identity work changed with unrelated resources: {samples:?}"
-    );
-}
-
-#[test]
-fn owned_resource_invariant_theorems_do_not_search_the_context() {
-    let quantity = Bitvector32Term::Variable(Variable(912_010));
-    let middle = Bitvector32Term::Variable(Variable(912_011));
-    let count = Bitvector32Term::Variable(Variable(912_012));
-    let resource = CResourceFact::own_quantity(
-        CResource::Token {
-            name: "symbolic_no_search".to_string(),
-            arguments: vec![int32(7).into()].into(),
-        },
-        quantity.clone(),
-    );
-    let state = CState::new()
-        .with_resource_context(ResourceContext::new().unchecked_with_fact(resource.clone()))
-        .with_counted_population(
-            "symbolic_no_search",
-            vec![int32(7).into()].into(),
-            count.clone(),
-        );
-    let claim = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(quantity.clone(), count.clone()),
-        true,
-    );
-    let assumptions = PureFactContext::new()
-        .assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::signed_less_equal(quantity, middle.clone()),
-            true,
-        ))
-        .assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::signed_less_equal(middle, count),
-            true,
-        ));
-
-    assert!(assumptions.proves(&claim));
-    assert!(
-        prove_owned_resource_count_lower_bound(&state, &resource, &claim, &assumptions).is_none(),
-        "a resource theorem constructor must not turn an unrecorded contextual search into authority"
     );
 }
 

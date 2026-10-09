@@ -1,5 +1,55 @@
 use super::*;
 
+/// The uint64 bridge creates nested `have` proofs. A missing listed premise
+/// must return the arithmetic goal's diagnostic, not panic while wrapping
+/// the nested bridge's already-rendered diagnostic inside a new summary.
+#[test]
+fn wide_arithmetic_unavailable_premise_returns_one_diagnostic() {
+    let source = "theorem bound(x: uint64) { requires x <= 100u64; ensures x <= 1000u64 by { arithmetic() using { x <= 50u64; } } }";
+    let error = verify_click_theorems(source).expect_err("an unavailable premise must be refused");
+    assert!(
+        error.raw_summary().contains("unavailable exact premise"),
+        "{error:?}"
+    );
+    assert!(!error.raw_summary().contains("\n  stage:"));
+    assert!(!error.raw_summary().contains("\n  goal:"));
+    assert_eq!(
+        error.message().matches("\n  stage:").count(),
+        1,
+        "{error:?}"
+    );
+    assert!(error.message().contains("goal: x <= 1000u64"), "{error:?}");
+}
+
+/// A bridge can also fail while lowering its synthesized Integer `have`,
+/// before it checks the explicit premise. That failure uses the same bounded
+/// diagnostic wrapping under an intentionally tiny numeric work allowance.
+#[test]
+fn wide_arithmetic_bridge_lowering_refusal_does_not_panic() {
+    let source = "theorem bound(x: uint64) { requires x <= 100u64; ensures x + 1u64 + 1u64 <= 1000u64 by { arithmetic() using { x <= 100u64; } } }";
+    let error = crate::instrumentation::with_tactic_work_limits(
+        crate::instrumentation::TacticWorkLimits {
+            simple: 1,
+            smart: 1,
+            control: 1,
+        },
+        || verify_click_theorems(source),
+    )
+    .expect_err("the constrained bridge must refuse locally");
+    assert!(
+        error
+            .raw_summary()
+            .contains("could not lower `have` proposition"),
+        "{error:?}"
+    );
+    assert!(!error.raw_summary().contains("\n  stage:"));
+    assert_eq!(
+        error.message().matches("\n  stage:").count(),
+        1,
+        "{error:?}"
+    );
+}
+
 #[test]
 fn uninitialized_mutex_is_a_named_proof_prerequisite() {
     let c_source = r#"

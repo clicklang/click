@@ -171,6 +171,7 @@ pub(in crate::kernel) fn conditions_equal_with_load_atoms(
             ConditionTerm::Bitvector32SignedGreaterEqual(rl, rr),
         )
         | (ConditionTerm::Bitvector32Equal(ll, lr), ConditionTerm::Bitvector32Equal(rl, rr))
+        | (ConditionTerm::Bitvector64Equal(ll, lr), ConditionTerm::Bitvector64Equal(rl, rr))
         | (
             ConditionTerm::Bitvector32SignedAddOverflows(ll, lr),
             ConditionTerm::Bitvector32SignedAddOverflows(rl, rr),

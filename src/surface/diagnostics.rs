@@ -2486,37 +2486,6 @@ pub(super) fn describe_model_field_mismatch(
     describe_resource_version_mismatch(&explanation, since, parameters, arguments)
 }
 
-/// The explanation for a comparison side that is a `count(..)`: its version is
-/// the count the state holds, and the question is whether that is still the
-/// count the earlier state held.
-///
-/// The transition that moved it already relates the two counts in the term — the
-/// goal evaluated to `old + 1` — so the text states that relation rather than
-/// computing a new fact.
-pub(super) fn describe_population_mismatch(
-    expression: &ContractExpression,
-    here: &CState,
-    there: &CState,
-    since: &str,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
-) -> Option<String> {
-    let ContractExpression::ResourceCount(clause) = expression else {
-        return None;
-    };
-    let ResourceClause::Declared { name, .. } = clause.as_ref() else {
-        return None;
-    };
-    let population = resource_tracker::sole_population_of_family(here, name)
-        .or_else(|| resource_tracker::sole_population_of_family(there, name))?;
-    let explanation = resource_tracker::explain_at_states(
-        population.as_resource(),
-        resource_tracker::StatePoint::at(here),
-        resource_tracker::StatePoint::at(there),
-    );
-    describe_resource_version_mismatch(&explanation, since, parameters, arguments)
-}
-
 /// Names the write that stopped a comparison side from being carried across
 /// the body: the step the resource tracker's walk stopped at, in the source
 /// spelling, with what would settle it.
@@ -2876,17 +2845,6 @@ pub(super) fn describe_resource_version_mismatch(
             children,
             field_index,
         } => describe_model_field_version_stop(*identity, children, *field_index, stop, since)?,
-        resource_tracker::OwnedResource::Population {
-            name,
-            arguments: population_arguments,
-        } => describe_population_version_stop(
-            name,
-            population_arguments,
-            stop,
-            since,
-            parameters,
-            arguments,
-        ),
     };
     if explanation.crossed_after > 0 {
         let steps = explanation.crossed_after;
@@ -2973,36 +2931,6 @@ fn describe_model_field_version_stop(
         // the only route to one, and it produces the two arms above.
         _ => return None,
     })
-}
-
-/// One counted population, and the transition that moved it.
-///
-/// The transition relates the two counts arithmetically in the term itself —
-/// `old + 1` is what the goal already evaluated to — so the repair is to state
-/// that relation. Nothing new is computed here.
-fn describe_population_version_stop(
-    name: &str,
-    resource_arguments: &[AlgebraicValue],
-    stop: &resource_tracker::Stop,
-    since: &str,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
-) -> String {
-    let population = format!(
-        "count({})",
-        format_declared_resource(name, resource_arguments, parameters, arguments)
-    );
-    match &stop.change {
-        resource_tracker::Change::NotHeld { .. } => format!(
-            "`{population}` names no population here: the family is not in scope at both points, \
-             so there is no count to compare."
-        ),
-        _ => format!(
-            "`{population}` changed since {since}: a `produces` or `consumes` transition in \
-             between moved it. The transition relates the two counts, so state that relation, as \
-             `ensures {population} == old({population}) + 1`."
-        ),
-    }
 }
 
 /// A fact about a whole array. The block walk crosses only a step the kernel
@@ -3167,12 +3095,10 @@ fn describe_cell_cause(
         resource_tracker::Change::BeginningOfHistory => {
             "the recorded execution reaches no further back.".to_string()
         }
-        // A cell's change is always a recorded memory step, so the three
+        // A cell's change is always a recorded memory step, so the two
         // saved-state changes are unreachable for this resource; saying that
         // plainly beats inventing a cause.
-        resource_tracker::Change::ModelReplaced { .. }
-        | resource_tracker::Change::PopulationMoved
-        | resource_tracker::Change::NotHeld { .. } => {
+        resource_tracker::Change::ModelReplaced { .. } | resource_tracker::Change::NotHeld { .. } => {
             "no recorded step in between names this cell.".to_string()
         }
     }
@@ -3522,7 +3448,6 @@ fn describe_step(
             "the start of the recorded execution".to_string()
         }
         resource_tracker::Change::ModelReplaced { .. } => "a replaced model".to_string(),
-        resource_tracker::Change::PopulationMoved => "a population transition".to_string(),
         resource_tracker::Change::NotHeld { .. } => {
             "a resource this state does not hold".to_string()
         }

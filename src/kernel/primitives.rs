@@ -50,12 +50,12 @@ pub(crate) use cell_store::{
     CellStore, DroppedRunSlots, IndexIntervals, RuleAnswer, RunValueMode, SlotSet, cell_run_value,
     offset_stem_and_constant,
 };
-mod counted_populations;
 mod derivations;
 mod initialized_bytes;
+mod observed_population_families;
 pub(crate) use initialized_bytes::InitializedBytes;
 mod memory_state;
-pub(crate) use counted_populations::CountedPopulations;
+pub(crate) use observed_population_families::ObservedPopulationFamilies;
 mod persistent_map;
 pub(in crate::kernel) use memory_state::CallKeptOwnership;
 pub use memory_state::CallKeptRanges;
@@ -5924,11 +5924,6 @@ pub(super) struct PopulationEffects {
     /// cannot supply resources to an execution or resource rewrite.
     pub(super) predicate_count_permissions: Option<PredicateCountPermissions>,
 
-    /// Function-local consumption committed at closure; callee binding resets it.
-    pub(super) committed_consumptions: CountedPopulations,
-    /// Reserved final totals; current Count is unavailable until every worker
-    /// for the population joins. Calls inherit restrictions, not join rights.
-    pub(super) pending_counts: CountedPopulations,
     /// Creation provenance is shared out-of-line to keep CState's recursive
     /// checker stack footprint unchanged. Legacy states use None.
     pub(super) creation: Option<super::population_authority::c_creation::CreationEvents>,
@@ -5992,7 +5987,9 @@ pub struct CState {
     /// checked delta when a C condition establishes the returned status.
     pub(super) pending_thread_create: Option<super::threads::PendingThreadCreate>,
     pub(super) population_access: super::population_access::PopulationAccess,
-    pub(super) counted_populations: CountedPopulations,
+    /// Resource families the proof has observed, for authority loan
+    /// classification (`functions::observes_population_family`).
+    pub(super) observed_population_families: ObservedPopulationFamilies,
     /// Shared persistent roots keep population effect accounting to one word
     /// in each execution state, including recursive specification evaluation.
     pub(super) population_effects: Arc<PopulationEffects>,
@@ -6045,16 +6042,6 @@ impl std::fmt::Debug for PredicateCountPermissions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("<captured count read permissions>")
     }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct CCountedPopulation {
-    pub(super) name: String,
-    pub(super) arguments: ResourceArguments,
-    pub(super) count: Bitvector32Term,
-    /// Marks observation of a resource family even while its exact population
-    /// is zero. Marker entries are not themselves resource populations.
-    pub(super) family_observation_marker: bool,
 }
 
 type ResourceEntryId = u64;
@@ -6374,9 +6361,6 @@ pub(super) struct ResourceContextIndex {
     /// reads one exact key rather than enumerating separately retained units.
     /// u128 covers every u64 entry ID times a positive signed-32 quantity.
     pub(super) numeric_owned_units: PersistentMap<CResource, (u128, usize)>,
-    /// Presence of composite heads, independent of ownership mode/quantity.
-    /// Reuses the population alias index without granting count authority.
-    pub(super) population_heads: CountedPopulations,
     pub(super) mutex_authorities: PersistentMap<(ResourceFamily, Pointer), ResourceEntryIds>,
     pub(super) exact_shapes: PersistentMap<(ResourceFamily, String, usize), ResourceEntryIds>,
     pub(super) memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,

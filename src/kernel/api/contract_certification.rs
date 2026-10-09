@@ -1355,23 +1355,6 @@ fn c_function_contract_entry_facts(
             path.proposition.clone(),
         );
     }
-    // Counted populations are nonnegative by construction. Quantified entry
-    // resource clauses may use a count-related C expression before the
-    // required resource context itself has been evaluated, so make this
-    // representation invariant explicit first.
-    for population in entry_state.counted_populations.iter() {
-        assumptions = entry_facts.assume(
-            assumptions,
-            CContractEntryFactOrigin::PopulationCount,
-            Proposition::ConditionIs(
-                ConditionTerm::signed_less_equal(
-                    Bitvector32Term::Constant(0),
-                    population.count.clone(),
-                ),
-                true,
-            ),
-        );
-    }
     let quantity_assumptions = match quantified_resource_requirement_assumptions(
         &entry_state,
         function.resource_requires(),

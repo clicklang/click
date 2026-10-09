@@ -13444,3 +13444,96 @@ fn c0_gnu_word_mode_rejects_other_modes_and_noninteger_objects() {
         assert!(syntax::parse_functions(source).is_err(), "{source}");
     }
 }
+
+// System headers may declare va_list APIs unrelated to the selected body. The
+// declaration-only type must survive aliases without granting a usable ABI.
+#[test]
+fn c0_unused_builtin_va_list_prototypes_do_not_block_ordinary_bodies() {
+    let source = "typedef __builtin_va_list A; typedef A B; \
+                  int unrelated(B args); int identity(int x) { return x; }";
+    let unit = syntax::parse_translation_unit_for_source(
+        source,
+        "opaque-header.c",
+        &source::ExpandedLineMap::empty(),
+    )
+    .unwrap();
+    assert_eq!(unit.functions.len(), 1);
+    assert_eq!(unit.functions[0].name(), "identity");
+    crate::surface::verify_c0_sources(
+        "verifying \"opaque-header.c\"; int identity(int x) { ensures result == x; } by { execute(); simp(); }",
+        &[("opaque-header.c", source)],
+    )
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: declaration-only compiler type rejection cases"]
+fn c0_builtin_va_list_cannot_supply_layout_values_or_call_authority() {
+    let aliases = "typedef __builtin_va_list A; typedef A B;";
+    for body in [
+        "B object;",
+        "struct S { B value; };",
+        "int size(void) { return sizeof(B); }",
+        "int f(void) { B value; return 0; }",
+        "void f(B value) {}",
+        "B f(void) { return 0; }",
+        "int unrelated(B args); int f(void) { return unrelated(0); }",
+        "void unrelated(B args); void f(void) { unrelated(0); }",
+        "int unrelated(B args); void *f(void) { return unrelated; }",
+        "int unrelated(B args); void *f(void) { return &unrelated; }",
+        "int unrelated(B args); int unrelated(void *args);",
+        "int f(void) { return sizeof((B)0); }",
+        "int f(void) { return sizeof(B*); }",
+    ] {
+        let source = format!("{aliases} {body}");
+        assert!(
+            syntax::parse_translation_unit_for_source(
+                &source,
+                "opaque-header.c",
+                &source::ExpandedLineMap::empty(),
+            )
+            .is_err(),
+            "accepted unsupported compiler type use: {body}"
+        );
+    }
+}
+
+// Explicit &function must enforce the same declaration rules as C's implicit
+// function decay, before unrelated undefined-body diagnostics can obscure them.
+#[test]
+fn c0_explicit_and_implicit_function_addresses_share_declaration_checks() {
+    for (declaration, expected) in [
+        ("int restricted(int value, ...);", "variadic function"),
+        (
+            "int restricted(int value) __attribute__((weak));",
+            "weak function",
+        ),
+        (
+            "int restricted(int value) __attribute__((returns_twice));",
+            "returns-twice function",
+        ),
+    ] {
+        for address in ["restricted", "&restricted"] {
+            let source = format!("{declaration} void *address(void) {{ return {address}; }}");
+            let error = syntax::parse_translation_unit_for_source(
+                &source,
+                "address.c",
+                &source::ExpandedLineMap::empty(),
+            )
+            .err()
+            .unwrap();
+            assert!(error.message().contains(expected), "{source}: {error}");
+        }
+    }
+    for address in ["supported", "&supported"] {
+        let source = format!(
+            "int supported(int x) {{ return x; }} void *address(void) {{ return {address}; }}"
+        );
+        syntax::parse_translation_unit_for_source(
+            &source,
+            "address.c",
+            &source::ExpandedLineMap::empty(),
+        )
+        .unwrap();
+    }
+}

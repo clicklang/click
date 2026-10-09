@@ -48,7 +48,6 @@ pub(super) struct WorkerCompletion {
     effects: Vec<CMemoryRange>,
     facts: crate::kernel::ExecutionFacts,
     mutex_ledger: Option<super::mutexes::MutexLedger>,
-    population_counts: Vec<WorkerPopulationCount>,
     creation: Option<WorkerCreation>,
 }
 
@@ -82,93 +81,6 @@ pub(super) struct DeferredMemberExchange {
     pub(super) exclusive: bool,
 }
 
-/// A checked contract effect accumulated into a reserved final total. That
-/// total becomes observable only after every outstanding worker has joined.
-/// Fixed non-increasing abstract effects can overlap; stateful populations
-/// remain thread confined until shared-body custody is supported.
-#[derive(Clone, Debug)]
-pub(super) struct WorkerPopulationCount {
-    pub(super) name: String,
-    pub(super) arguments: super::ResourceArguments,
-    pub(super) before: Bitvector32Term,
-    pub(super) after: Bitvector32Term,
-    pub(super) overlap_safe: bool,
-}
-
-/// Keep a fixed-effect worker cohort's symbolic total bounded in size.
-/// Repeated subtraction must not build a path-length expression that every
-/// later create/join clones. Count effects are nonnegative fixed quantities.
-pub(super) fn consume_reserved_population(
-    prior: Bitvector32Term,
-    quantity: u32,
-) -> Option<Bitvector32Term> {
-    crate::instrumentation::record_deterministic_work(1);
-    match prior {
-        Bitvector32Term::Subtract(base, previous) if previous.as_const().is_some() => {
-            let total = previous.as_const()?.checked_add(quantity)?;
-            Some(Bitvector32Term::subtract(*base, total.into()))
-        }
-        prior => Some(Bitvector32Term::subtract(prior, quantity.into())),
-    }
-}
-
-impl WorkerPopulationCount {
-    fn reserve(&self, state: &mut CState) {
-        Arc::make_mut(&mut state.population_effects)
-            .pending_counts
-            .insert(super::CCountedPopulation {
-                name: self.name.clone(),
-                arguments: self.arguments.clone(),
-                count: self.after.clone(),
-                family_observation_marker: false,
-            });
-        self.ensure_count_entry(state);
-    }
-
-    fn ensure_count_entry(&self, state: &mut CState) {
-        // Absence already denotes zero for an observed family. Record the
-        // key in both create outcomes so pending wildcard observations can
-        // find it, without changing the total or creating any resource unit.
-        if state
-            .counted_population(&self.name, &self.arguments)
-            .is_none()
-        {
-            *state = state.clone().with_counted_population(
-                self.name.clone(),
-                self.arguments.clone(),
-                self.before.clone(),
-            );
-        }
-    }
-
-    fn can_complete(&self, state: &CState) -> bool {
-        state
-            .population_effects
-            .pending_counts
-            .get(&self.name, &self.arguments, false)
-            .is_some()
-            && state.counted_population(&self.name, &self.arguments) == Some(&self.before)
-    }
-
-    fn complete(&self, state: &mut CState) {
-        let final_count = state
-            .population_effects
-            .pending_counts
-            .get(&self.name, &self.arguments, false)
-            .expect("registered population completion")
-            .count
-            .clone();
-        Arc::make_mut(&mut state.population_effects)
-            .pending_counts
-            .remove(&self.name, &self.arguments);
-        *state = state.clone().with_counted_population(
-            self.name.clone(),
-            self.arguments.clone(),
-            final_count,
-        );
-    }
-}
-
 impl WorkerCompletion {
     pub(super) fn checked(
         plan: StableViewTransferPlan,
@@ -177,7 +89,6 @@ impl WorkerCompletion {
         effects: Vec<CMemoryRange>,
         facts: crate::kernel::ExecutionFacts,
         mutex_ledger: Option<super::mutexes::MutexLedger>,
-        population_counts: Vec<WorkerPopulationCount>,
         creation: Option<WorkerCreation>,
     ) -> Self {
         Self {
@@ -187,7 +98,6 @@ impl WorkerCompletion {
             effects,
             facts,
             mutex_ledger,
-            population_counts,
             creation,
         }
     }
@@ -220,7 +130,6 @@ pub(super) enum PendingThreadMemoryDelta {
 /// stores; selecting an outcome never restores a captured parent state.
 struct PendingCreateAuthority {
     resources: ResourceContext,
-    pending_population_counts: super::primitives::CountedPopulations,
     loan_ledger: Option<LoanLedger>,
     loan_view_bindings: LoanViewBindings,
     thread_ledger: Option<ThreadLedger>,
@@ -235,7 +144,6 @@ impl PendingCreateAuthority {
     fn from_state(state: &CState) -> Self {
         Self {
             resources: state.resources.clone(),
-            pending_population_counts: state.population_effects.pending_counts.clone(),
             loan_ledger: state.loan_ledger.clone(),
             loan_view_bindings: state.loan_view_bindings.clone(),
             thread_ledger: state.thread_ledger.clone(),
@@ -249,8 +157,6 @@ impl PendingCreateAuthority {
 
     fn install(&self, state: &mut CState) {
         state.resources = self.resources.clone();
-        Arc::make_mut(&mut state.population_effects).pending_counts =
-            self.pending_population_counts.clone();
         state.loan_ledger = self.loan_ledger.clone();
         state.loan_view_bindings = self.loan_view_bindings.clone();
         state.thread_ledger = self.thread_ledger.clone();
@@ -327,7 +233,6 @@ impl PendingThreadCreate {
                 success_memory: storage.success_memory.clone(),
                 success: PendingCreateAuthority {
                     resources: storage.success.resources.clone(),
-                    pending_population_counts: storage.success.pending_population_counts.clone(),
                     loan_ledger: storage.success.loan_ledger.clone(),
                     loan_view_bindings: storage.success.loan_view_bindings.clone(),
                     thread_ledger: storage.success.thread_ledger.clone(),
@@ -339,7 +244,6 @@ impl PendingThreadCreate {
                 },
                 failure: PendingCreateAuthority {
                     resources: storage.failure.resources.clone(),
-                    pending_population_counts: storage.failure.pending_population_counts.clone(),
                     loan_ledger: storage.failure.loan_ledger.clone(),
                     loan_view_bindings: storage.failure.loan_view_bindings.clone(),
                     thread_ledger: storage.failure.thread_ledger.clone(),
@@ -362,12 +266,10 @@ impl PendingThreadCreate {
         pointer: impl Fn(&Pointer) -> Pointer,
         value: impl Fn(&CValue) -> CValue,
         memory: impl Fn(&CMemory) -> CMemory,
-        counts: impl Fn(&super::primitives::CountedPopulations) -> super::primitives::CountedPopulations,
     ) -> Self {
         let storage = &self.storage;
         let map_authority = |authority: &PendingCreateAuthority| PendingCreateAuthority {
             resources: resources(&authority.resources),
-            pending_population_counts: counts(&authority.pending_population_counts),
             loan_ledger: authority.loan_ledger.clone(),
             loan_view_bindings: authority.loan_view_bindings.clone(),
             thread_ledger: authority.thread_ledger.clone(),
@@ -409,24 +311,6 @@ impl PendingThreadCreate {
                 next_delta: storage.next_delta,
             }),
         }
-    }
-
-    /// Select Count authority without applying memory deltas or acquiring
-    /// join rights. Before status is known, reserve anything success reserves.
-    pub(super) fn count_authority(
-        &self,
-        assumptions: &PureFactContext,
-    ) -> &super::primitives::CountedPopulations {
-        let zero = ConditionTerm::Bitvector32Equal(
-            Box::new(self.storage.status.clone()),
-            Box::new(Bitvector32Term::Constant(0)),
-        );
-        let selected = if assumptions.decide(&zero) == Some(false) {
-            &self.storage.failure
-        } else {
-            &self.storage.success
-        };
-        &selected.pending_population_counts
     }
 
     pub(super) fn resolve(
@@ -548,7 +432,6 @@ struct ThreadLedgerStorage {
     loan_trace: Option<ThreadLoanTrace>,
     local_views: PersistentMap<CResourceFact, LoanViewBinding>,
     mutex_workers: PersistentMap<Pointer, usize>,
-    population_workers: PersistentMap<(String, super::ResourceArguments), (usize, bool)>,
 }
 
 /// The checked loan root before the first outstanding create and the root
@@ -577,7 +460,6 @@ impl ThreadLedger {
                 loan_trace: None,
                 local_views: PersistentMap::default(),
                 mutex_workers: PersistentMap::default(),
-                population_workers: PersistentMap::default(),
             }),
         }
     }
@@ -627,24 +509,6 @@ impl ThreadLedger {
         self.storage.mutex_workers.contains_key(mutex)
     }
 
-    pub(super) fn population_allows_overlap(
-        &self,
-        name: &str,
-        arguments: &super::ResourceArguments,
-    ) -> bool {
-        self.storage
-            .population_workers
-            .get(&(name.into(), arguments.clone()))
-            .is_some_and(|(_, safe)| *safe)
-    }
-
-    fn population_workers(&self, effect: &WorkerPopulationCount) -> usize {
-        self.storage
-            .population_workers
-            .get(&(effect.name.clone(), effect.arguments.clone()))
-            .map_or(0, |(count, _)| *count)
-    }
-
     pub(super) fn has_live_rights(&self) -> bool {
         !self.storage.rights.is_empty()
     }
@@ -662,7 +526,6 @@ impl ThreadLedger {
         self.storage.rights.is_empty()
             && self.storage.local_views.is_empty()
             && self.storage.mutex_workers.is_empty()
-            && self.storage.population_workers.is_empty()
             && self.storage.loan_trace.as_ref().is_some_and(|trace| {
                 trace.origin == *origin
                     && trace.current == *current
@@ -711,13 +574,6 @@ impl ThreadLedger {
             let count = mutex_workers.get(&identity.mutex).copied().unwrap_or(0);
             mutex_workers = mutex_workers.with_inserted(identity.mutex.clone(), count + 1);
         }
-        let mut population_workers = self.storage.population_workers.clone();
-        for effect in &right.completion.population_counts {
-            let key = (effect.name.clone(), effect.arguments.clone());
-            let (count, safe) = population_workers.get(&key).copied().unwrap_or((0, true));
-            population_workers =
-                population_workers.with_inserted(key, (count + 1, safe && effect.overlap_safe));
-        }
         for (fact, binding) in right.completion.plan.suspended_local_parents() {
             local_views = local_views.with_inserted(fact.clone(), binding.clone());
         }
@@ -728,7 +584,6 @@ impl ThreadLedger {
                 loan_trace: self.advanced_loan_trace(before, after, participant),
                 local_views,
                 mutex_workers,
-                population_workers,
             }),
         }
     }
@@ -743,19 +598,7 @@ impl ThreadLedger {
     ) -> Self {
         let mut local_views = self.storage.local_views.clone();
         let mut mutex_workers = self.storage.mutex_workers.clone();
-        let mut population_workers = self.storage.population_workers.clone();
         if let Some(right) = self.right(handle) {
-            for effect in &right.completion.population_counts {
-                let key = (effect.name.clone(), effect.arguments.clone());
-                let (count, safe) = *population_workers
-                    .get(&key)
-                    .expect("registered population worker");
-                population_workers = if count == 1 {
-                    population_workers.without_key(&key)
-                } else {
-                    population_workers.with_inserted(key, (count - 1, safe))
-                };
-            }
             for usage in &right.completion.plan.mutex_uses {
                 let fact = usage.required_resource();
                 let super::CResource::MutexUse(identity) = fact.resource() else {
@@ -784,7 +627,6 @@ impl ThreadLedger {
                 loan_trace: self.advanced_loan_trace(before, after, participant),
                 local_views,
                 mutex_workers,
-                population_workers,
             }),
         }
     }
@@ -884,11 +726,7 @@ pub(super) struct PreparedThreadCreate<'a> {
 
 impl PreparedThreadCreate<'_> {
     pub(super) fn failure(&self) -> ThreadContext {
-        let mut next = self.parent.clone();
-        for count in &self.completion.population_counts {
-            count.ensure_count_entry(&mut next.parent);
-        }
-        next
+        self.parent.clone()
     }
 
     pub(super) fn success(self) -> (ThreadContext, ThreadHandle, ExecutionPureFact) {
@@ -917,9 +755,6 @@ impl PreparedThreadCreate<'_> {
                     .clone(),
             )
             .with_memory(self.completion.memory.clone());
-        for count in &self.completion.population_counts {
-            count.reserve(&mut next.parent);
-        }
         if let Some(creation) = &self.completion.creation {
             Arc::make_mut(&mut next.parent.population_effects).creation =
                 Some(creation.parent_after_create.clone());
@@ -1092,13 +927,6 @@ impl ThreadContext {
             .and_then(|ledger| ledger.right(handle))
             .ok_or("no live completion right for this handle")?;
         let completion = &right.completion;
-        if completion
-            .population_counts
-            .iter()
-            .any(|count| !count.can_complete(&self.parent))
-        {
-            return Err("worker population identity or count changed before join");
-        }
         let ledger = self.parent.loan_ledger().expect("parent ledger");
         if self.parent.loan_participant() != Some(completion.plan.caller_participant()) {
             return Err("completion right belongs to a different parent");
@@ -1242,192 +1070,6 @@ impl ThreadContext {
                     &recovery.local_view_updates,
                 ),
         );
-        // Publish the accumulated total only when this population is quiescent.
-        // A partial join returns resources, but no current Count observation.
-        // Unrelated populations remain untouched.
-        for count in &completion.population_counts {
-            if next
-                .parent
-                .thread_ledger
-                .as_ref()
-                .expect("thread ledger")
-                .population_workers(count)
-                == 0
-            {
-                count.complete(&mut next.parent);
-            }
-        }
         Ok((next, completion.facts.clone()))
-    }
-}
-
-#[cfg(test)]
-mod population_count_tests {
-    use super::*;
-
-    fn effect(index: u32) -> WorkerPopulationCount {
-        WorkerPopulationCount {
-            name: "ticket".into(),
-            arguments: vec![super::super::AlgebraicValue::C(CValue::Int32(index.into()))].into(),
-            before: 3.into(),
-            after: 2.into(),
-            overlap_safe: true,
-        }
-    }
-
-    #[test]
-    fn joined_count_is_once_only_and_preserves_intervening_unrelated_counts() {
-        let effect = effect(0);
-        let mut state = CState::new().with_counted_population(
-            effect.name.clone(),
-            effect.arguments.clone(),
-            effect.before.clone(),
-        );
-        effect.reserve(&mut state);
-        let mut changed = state.clone().with_counted_population(
-            effect.name.clone(),
-            effect.arguments.clone(),
-            1.into(),
-        );
-        assert!(
-            !effect.can_complete(&changed),
-            "never overwrite a changed total"
-        );
-        changed = state.with_counted_population("other", vec![].into(), 17.into());
-        assert!(effect.can_complete(&changed));
-        effect.complete(&mut changed);
-        assert_eq!(
-            changed.counted_population("ticket", &effect.arguments),
-            Some(&2.into())
-        );
-        assert_eq!(changed.counted_population("other", &[]), Some(&17.into()));
-        assert!(
-            !effect.can_complete(&changed),
-            "completion cannot be spent twice"
-        );
-    }
-
-    #[test]
-    fn reserved_symbolic_total_stays_bounded_as_workers_accumulate() {
-        let base = Bitvector32Term::Variable(super::super::Variable(900_008));
-        for size in [8, 64, 512] {
-            let (total, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let mut total = base.clone();
-                for _ in 0..size {
-                    total = consume_reserved_population(total.clone(), 1).unwrap();
-                }
-                total
-            });
-            assert_eq!(total, Bitvector32Term::subtract(base.clone(), size.into()));
-            assert_eq!(work, size as usize);
-        }
-        assert!(
-            consume_reserved_population(Bitvector32Term::subtract(base, u32::MAX.into()), 1)
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn last_join_uses_accumulated_total_not_its_own_saved_total() {
-        let first = effect(0);
-        let mut second = first.clone();
-        second.after = 1.into();
-        for last in [&first, &second] {
-            let mut state = CState::new();
-            first.reserve(&mut state);
-            second.reserve(&mut state);
-            assert!(first.can_complete(&state));
-            assert!(second.can_complete(&state));
-            assert_eq!(
-                state.counted_population("ticket", &first.arguments),
-                Some(&3.into())
-            );
-            last.complete(&mut state);
-            assert_eq!(
-                state.counted_population("ticket", &first.arguments),
-                Some(&1.into())
-            );
-            assert!(!first.can_complete(&state));
-            assert!(!second.can_complete(&state));
-        }
-    }
-
-    #[test]
-    fn population_worker_index_queries_ignore_unrelated_workers() {
-        let mut samples = Vec::new();
-        for size in [8, 64, 512] {
-            let mut ledger = ThreadLedger::new();
-            let storage = Arc::get_mut(&mut ledger.storage).unwrap();
-            for index in 0..size {
-                let effect = effect(index);
-                storage.population_workers = storage
-                    .population_workers
-                    .with_inserted((effect.name, effect.arguments), (2, true));
-            }
-            let selected = effect(0);
-            let (_, work) = crate::persistent::measure_persistent_work(|| {
-                assert_eq!(ledger.population_workers(&selected), 2);
-                assert!(ledger.population_allows_overlap(&selected.name, &selected.arguments));
-                assert!(!ledger.population_allows_overlap("absent", &selected.arguments));
-            });
-            samples.push(work);
-        }
-        assert!(
-            samples[2] <= samples[0] * 4 + 8,
-            "worker index scans unrelated populations: {samples:?}"
-        );
-    }
-
-    #[test]
-    fn pending_create_selects_population_authority_with_its_outcome() {
-        let effect = effect(0);
-        let failure = CState::new().with_counted_population(
-            effect.name.clone(),
-            effect.arguments.clone(),
-            effect.before.clone(),
-        );
-        let mut success = failure.clone();
-        effect.reserve(&mut success);
-        for (selected, expected_pending) in [(&success, true), (&failure, false)] {
-            let authority = PendingCreateAuthority::from_state(selected);
-            let mut restored =
-                failure
-                    .clone()
-                    .with_counted_population("unrelated", vec![].into(), 17.into());
-            authority.install(&mut restored);
-            assert_eq!(
-                restored.counted_population("unrelated", &[]),
-                Some(&17.into()),
-                "selecting a create result must preserve intervening unrelated counts"
-            );
-            assert_eq!(effect.can_complete(&restored), expected_pending);
-            assert_eq!(
-                restored.counted_population("ticket", &effect.arguments),
-                Some(&3.into())
-            );
-        }
-    }
-
-    #[test]
-    fn completing_one_population_does_not_scan_other_reservations() {
-        let mut samples = Vec::new();
-        for size in [8, 64, 512] {
-            let mut state = CState::new();
-            for index in 0..size {
-                effect(index).reserve(&mut state);
-            }
-            let selected = effect(0);
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                assert!(selected.can_complete(&state));
-                selected.complete(&mut state);
-            });
-            assert!(effect(size - 1).can_complete(&state));
-            samples.push(work);
-        }
-        assert!(samples[0] > 0);
-        assert!(
-            samples[2] <= samples[0] * 2,
-            "population completion must stay local: {samples:?}"
-        );
     }
 }

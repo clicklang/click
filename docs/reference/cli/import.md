@@ -1001,6 +1001,8 @@ and nontrivial embedded destruction remain refused. Constructor proof entries
 describe unwritten object footprints without fixing their containing allocation's
 extent. Ordinary, expanded and retained checks cover an automatic descriptor
 with a pointer field and a nested uint64 extent while preserving backing memory.
+A nested self-pointer regression also constructs a child at a nonzero parent
+offset and reads through the pointer to that child's own field.
 
 The `terminal-destructor` fixture adds one public, non-virtual, non-deleted,
 explicitly `noexcept` destructor with a nonempty supported body. The artifact

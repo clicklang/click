@@ -2,13 +2,11 @@
 
 use super::*;
 
-fn consuming_close_message(resource: &ResourceClause, message: &str) -> String {
+fn spell_resource_clause(resource: &ResourceClause, message: &str) -> String {
     match resource {
         ResourceClause::Named { resource, .. }
         | ResourceClause::Quantified { resource, .. }
-        | ResourceClause::Conditional { resource, .. } => {
-            consuming_close_message(resource, message)
-        }
+        | ResourceClause::Conditional { resource, .. } => spell_resource_clause(resource, message),
         ResourceClause::Declared { name, .. } => {
             let spelling = crate::surface::describe_resource_clause(resource);
             message.replace(
@@ -924,7 +922,6 @@ impl<'a> ProofScope<'a> {
                     let pre_state = context
                         .old_reference_state(&execution.core.frontier, &execution.core.state)
                         .clone();
-                    let mut consumed = false;
                     let checked = close_open_resource_for_proof(
                         context.resource_environment,
                         &resource,
@@ -939,54 +936,7 @@ impl<'a> ProofScope<'a> {
                         context.click_function_environment,
                         &execution.core.unfolded_predicates,
                         preserve_exposed_body,
-                    )
-                    .or_else(|error| {
-                        if error.kind != ClickErrorKind::Proof
-                            || crate::instrumentation::exceeded_verification_limit_context()
-                                .is_some()
-                        {
-                            return Err(error);
-                        }
-                        let selected = lower_resource_clause_at_state(
-                            &resource,
-                            context.parsed_function.parameters(),
-                            context.arguments,
-                            &execution.core.state,
-                        )?;
-                        if !matches!(selected.resource(), CResource::Composite { name, .. }
-                            if context.function.composite_resource_definition(name)
-                                .is_some_and(|definition| definition.is_counted_population()))
-                        {
-                            return Err(error);
-                        }
-                        let candidate = execution
-                            .core
-                            .prepare_consuming_resource_close(&selected, &before_facts)
-                            .map_err(|message| {
-                                self.root.step_error(format!(
-                                    "{}\nConsuming close: {}",
-                                    error.message,
-                                    consuming_close_message(&resource, &message)
-                                ))
-                            })?;
-                        let checked = close_open_resource_for_proof(
-                            context.resource_environment,
-                            &resource,
-                            context.claim_label,
-                            context.tactic_index,
-                            facts,
-                            context.parsed_function.parameters(),
-                            context.arguments,
-                            &pre_state,
-                            candidate,
-                            context.predicate_environment,
-                            context.click_function_environment,
-                            &execution.core.unfolded_predicates,
-                            preserve_exposed_body,
-                        )?;
-                        consumed = true;
-                        Ok(checked)
-                    })?;
+                    )?;
                     let lowered = lower_resource_clause_at_state(
                         &resource,
                         context.parsed_function.parameters(),
@@ -1007,28 +957,18 @@ impl<'a> ProofScope<'a> {
                         .find(|fact| fact.resource() == lowered.resource())
                         .cloned()
                         .unwrap_or(lowered);
-                    let recorded = if consumed {
-                        execution.core.record_consuming_resource_close(
-                            context.function,
-                            &before_facts,
-                            &selected,
-                            &checked.state,
-                            &checked.facts,
-                        )
-                    } else {
-                        execution.core.record_resource_rewrite(
-                            context.function,
-                            context.arguments,
-                            &before_facts,
-                            &selected,
-                            &checked.state,
-                            &checked.facts,
-                        )
-                    };
+                    let recorded = execution.core.record_resource_rewrite(
+                        context.function,
+                        context.arguments,
+                        &before_facts,
+                        &selected,
+                        &checked.state,
+                        &checked.facts,
+                    );
                     recorded.map_err(|message| {
                         self.root.step_error(format!(
                             "kernel rejected checked resource close: {}",
-                            consuming_close_message(&resource, &message)
+                            spell_resource_clause(&resource, &message)
                         ))
                     })?;
                     facts = checked.facts;

@@ -1249,10 +1249,10 @@ fn prepare_function_claim_path(
     let mut assumptions = assumptions_with_propositions(&assumptions, &post_resource_facts);
     let mut post_state = entry_state.clone().with_memory(exit_memory);
     post_state = post_state.with_resource_context(post_resources.clone());
-    post_state.counted_populations = raw_exit_state.counted_populations.clone();
-    // Authority counts live in the creation ledger, while legacy counted
-    // resources use counted_populations. Both observations must describe
-    // the checked exit, not the reconstructed entry used to bind locals.
+    post_state.observed_population_families = raw_exit_state.observed_population_families.clone();
+    // Population counts live in the creation ledger, and observed families
+    // beside it. Both must describe the checked exit, not the reconstructed
+    // entry used to bind locals.
     post_state.population_effects = raw_exit_state.population_effects.clone();
     if exceptional {
         post_state.locals.set_typed(
@@ -2132,7 +2132,7 @@ pub fn c_function_ensure_goals(
     )?;
     let mut post_state = entry_state.clone().with_memory(exit_memory);
     post_state = post_state.with_resource_context(post_resources);
-    post_state.counted_populations = return_state.counted_populations.clone();
+    post_state.observed_population_families = return_state.observed_population_families.clone();
     // Preserve checked body consumption evidence when reconstructing the exit.
     post_state.population_effects = return_state.population_effects.clone();
     if function.return_type() != CType::Void {
@@ -2223,7 +2223,7 @@ pub(crate) fn c_function_exceptional_ensure_goals(
     let mut post_state = entry_state
         .clone()
         .with_memory(throw_state.memory().clone());
-    post_state.counted_populations = throw_state.counted_populations.clone();
+    post_state.observed_population_families = throw_state.observed_population_families.clone();
     post_state.locals.set_typed(
         C_EXCEPTIONAL_RESULT_NAME.to_string(),
         value.clone(),

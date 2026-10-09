@@ -6217,13 +6217,10 @@ impl CState {
             && self.population_effects.creation == other.population_effects.creation
             && self.pending_thread_create == other.pending_thread_create
             && (self
-                .counted_populations
-                .shares_storage_with(&other.counted_populations)
-                || (self.counted_populations.is_empty() && other.counted_populations.is_empty()))
-            && self
-                .population_effects
-                .pending_counts
-                .shares_storage_with(&other.population_effects.pending_counts)
+                .observed_population_families
+                .shares_storage_with(&other.observed_population_families)
+                || (self.observed_population_families.is_empty()
+                    && other.observed_population_families.is_empty()))
             && self.next_local_frame == other.next_local_frame
             && match (&self.aggregate_destination, &other.aggregate_destination) {
                 (None, None) => true,
@@ -7365,7 +7362,7 @@ impl CState {
         if !self.resources.satisfies_fact(&authority, assumptions) {
             return Err(format!("Requires owns authority({name}(p))"));
         }
-        if self.population_body_is_open(name, arguments, assumptions) {
+        if self.population_body_is_open(name, arguments) {
             return Err("close the member's private body before changing its population".into());
         }
         let events = self
@@ -7695,8 +7692,8 @@ impl CState {
             && self.loan_participant == other.loan_participant
             && self.loan_view_bindings == other.loan_view_bindings
             && self
-                .counted_populations
-                .shares_storage_with(&other.counted_populations)
+                .observed_population_families
+                .shares_storage_with(&other.observed_population_families)
     }
 
     pub fn with_local(mut self, name: impl Into<String>, value: CValue) -> Self {
@@ -8031,169 +8028,13 @@ impl CState {
         &self.resources
     }
 
-    pub fn with_counted_population(
-        mut self,
-        name: impl Into<String>,
-        arguments: ResourceArguments,
-        count: Bitvector32Term,
-    ) -> Self {
-        self.counted_populations.insert(CCountedPopulation {
-            name: name.into(),
-            arguments,
-            count,
-            family_observation_marker: false,
-        });
-        self
-    }
-
-    pub fn counted_population(
-        &self,
-        name: &str,
-        arguments: &[AlgebraicValue],
-    ) -> Option<&Bitvector32Term> {
-        self.counted_populations
-            .get(name, arguments, false)
-            .map(|population| &population.count)
-    }
-
-    pub fn counted_population_proven_equal(
-        &self,
-        name: &str,
-        arguments: &[AlgebraicValue],
-        assumptions: &PureFactContext,
-    ) -> Option<(String, ResourceArguments, Bitvector32Term)> {
-        let indexed = self
-            .counted_populations
-            .indexed_unary_matches(name, arguments, assumptions);
-        let selected = match indexed {
-            Some(matches) => matches.into_iter().next(),
-            None => self.counted_populations.family(name).find(|population| {
-                !population.family_observation_marker
-                    && population.arguments.len() == arguments.len()
-                    && population
-                        .arguments
-                        .iter()
-                        .zip(arguments)
-                        .all(|(left, right)| {
-                            crate::kernel::resource_arguments_proven_equal(left, right, assumptions)
-                        })
-            }),
-        };
-        selected.map(|population| {
-            (
-                population.name.clone(),
-                population.arguments.clone(),
-                population.count.clone(),
-            )
-        })
-    }
-
-    pub(crate) fn has_counted_population_unary_pointer_alias(
-        &self,
-        name: &str,
-        arguments: &[AlgebraicValue],
-        assumptions: &PureFactContext,
-    ) -> Result<bool, &'static str> {
-        self.counted_populations
-            .has_unary_pointer_alias(name, arguments, assumptions)
-    }
-
-    /// The populations of `name`'s family that a count pattern names, or the
-    /// first one it may or may not name; see
-    /// [`CountedPopulations::pattern_matches`].
-    pub(crate) fn counted_population_pattern_matches(
-        &self,
-        name: &str,
-        arguments: &[Option<AlgebraicValue>],
-        assumptions: &PureFactContext,
-    ) -> Result<Vec<&CCountedPopulation>, &CCountedPopulation> {
-        self.counted_populations
-            .pattern_matches(name, arguments, assumptions)
-    }
-
-    /// Count sees the selected create outcome even before the next C step.
-    /// This changes only observation restrictions, never memory or join rights.
-    pub(in crate::kernel) fn count_observation_state(
-        &self,
-        assumptions: &PureFactContext,
-    ) -> std::borrow::Cow<'_, Self> {
-        let Some(pending) = &self.pending_thread_create else {
-            return std::borrow::Cow::Borrowed(self);
-        };
-        let reservations = pending.count_authority(assumptions);
-        let mut state = self.clone();
-        Arc::make_mut(&mut state.population_effects).pending_counts = reservations.clone();
-        state.pending_thread_create = None;
-        std::borrow::Cow::Owned(state)
-    }
-
-    /// The total of every ledger entry this pattern names, or `None` where
-    /// that total is not a count.
-    ///
-    /// The entries are populations and their counts are natural numbers, so
-    /// the fold goes through `population_quantity_sum` rather than the
-    /// modular add: two entries of `2000000000` are four billion units, and
-    /// the wrapped `-294967296` would be a smaller number than either of
-    /// them. `crate::kernel::spec`'s own pattern sum asks the same question
-    /// with an obligation list to put the no-overflow condition on; this one
-    /// has none, so it answers that the sum is not established.
-    pub fn counted_population_sum(
-        &self,
-        name: &str,
-        arguments: &[Option<AlgebraicValue>],
-        assumptions: &PureFactContext,
-    ) -> Option<Bitvector32Term> {
-        let state = self.count_observation_state(assumptions);
-        // An entry the pattern may or may not name leaves the total
-        // undetermined, exactly as a pending worker does.
-        let matching = state
-            .counted_population_pattern_matches(name, arguments, assumptions)
-            .ok()?;
-        matching
-            .into_iter()
-            .try_fold(Bitvector32Term::Constant(0), |total, population| {
-                if state
-                    .population_effects
-                    .pending_counts
-                    .get(&population.name, &population.arguments, false)
-                    .is_some()
-                {
-                    return None;
-                }
-                crate::kernel::primitives::resource_algebra::population_quantity_sum(
-                    &total,
-                    &population.count,
-                    assumptions,
-                )
-            })
-    }
-
-    pub fn without_counted_population(mut self, name: &str, arguments: &[AlgebraicValue]) -> Self {
-        self.counted_populations.remove(name, arguments);
-        self
-    }
-
-    pub fn counted_populations(&self) -> impl Iterator<Item = &CCountedPopulation> {
-        self.counted_populations
-            .iter()
-            .filter(|population| !population.family_observation_marker)
-    }
-
     pub fn with_observed_population_family(mut self, name: impl Into<String>) -> Self {
-        let name = name.into();
-        if !self.observes_population_family(&name) {
-            self.counted_populations.insert(CCountedPopulation {
-                name,
-                arguments: std::sync::Arc::from([]),
-                count: Bitvector32Term::Constant(0),
-                family_observation_marker: true,
-            });
-        }
+        self.observed_population_families.insert(name.into());
         self
     }
 
     pub fn observes_population_family(&self, name: &str) -> bool {
-        self.counted_populations.get(name, &[], true).is_some()
+        self.observed_population_families.contains(name)
     }
 
     /// The logical resource-state component used to index predicate facts.
@@ -8217,7 +8058,6 @@ impl CState {
                         }),
                 ),
                 creation: self.population_effects.creation.clone(),
-                ..PopulationEffects::default()
             }),
             ..Self::new()
         }

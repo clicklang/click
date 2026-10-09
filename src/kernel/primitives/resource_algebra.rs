@@ -494,16 +494,6 @@ impl ResourceContextIndex {
                 (fact.family(), name.clone(), arguments.len()),
                 entry,
             );
-            if matches!(fact.resource(), CResource::Composite { .. })
-                && !self.by_resource.contains_key(fact.resource())
-            {
-                result.population_heads.insert(CCountedPopulation {
-                    name: name.clone(),
-                    arguments: arguments.clone(),
-                    count: Bitvector32Term::Constant(1),
-                    family_observation_marker: false,
-                });
-            }
         }
         result
     }
@@ -684,11 +674,6 @@ impl ResourceContextIndex {
                 &(fact.family(), name.clone(), arguments.len()),
                 entry,
             );
-            if matches!(fact.resource(), CResource::Composite { .. })
-                && !result.by_resource.contains_key(fact.resource())
-            {
-                result.population_heads.remove(name, arguments);
-            }
         }
         result
     }
@@ -2540,18 +2525,6 @@ impl ResourceContext {
             .find(|available| resource_fact_entails(available, required, assumptions))
     }
 
-    pub(crate) fn has_population_head_alias(
-        &self,
-        name: &str,
-        arguments: &[AlgebraicValue],
-        assumptions: &PureFactContext,
-    ) -> Result<bool, &'static str> {
-        self.storage
-            .index
-            .population_heads
-            .has_unary_pointer_alias(name, arguments, assumptions)
-    }
-
     /// Select a deterministic owned candidate from the pointer index. Multiple
     /// returned sibling shares are legitimate. This lookup grants no authority:
     /// callers must still check the selected loan, initialization, and type.
@@ -3081,53 +3054,6 @@ impl ResourceContext {
                     && self.storage.support_occurrence_by_projection.get(entry)
                         == Some(&support_occurrence)
             })
-    }
-
-    /// Remove only freshly derived observations of a checked folded body.
-    /// The reverse support index bounds validation by this fold's projections.
-    pub(crate) fn without_checked_fold_projections(
-        mut self,
-        support_occurrence: ResourceOccurrenceId,
-        support: &CResourceFact,
-        body: &ResourceContext,
-        memory: &CMemory,
-        assumptions: &PureFactContext,
-    ) -> Option<Self> {
-        if !self.owned_occurrence_matches(support_occurrence, support)
-            || self
-                .storage
-                .expansions_by_support_occurrence
-                .contains_key(&support_occurrence)
-        {
-            return None;
-        }
-        let projections = self
-            .storage
-            .projections_by_support_occurrence
-            .get(&support_occurrence)
-            .cloned()
-            .unwrap_or_default();
-        for entry in projections.iter() {
-            let fact = self.storage.facts.get(entry)?;
-            let occurrence = self.occurrence(*entry);
-            let metadata = self
-                .storage
-                .support_metadata_by_projection
-                .get(&occurrence)?;
-            if !fact.is_view()
-                || self.storage.supported_by.get(entry) != Some(support)
-                || self.storage.support_occurrence_by_projection.get(entry)
-                    != Some(&support_occurrence)
-                || self.loan_dependency(occurrence).is_some()
-                || metadata.memory_snapshot != CMemorySnapshotIdentity::of(memory)
-                || metadata.footprint != memory_footprint_for_fact(fact)
-                || !body.satisfies_fact(fact, assumptions)
-            {
-                return None;
-            }
-            self.remove_entry(*entry);
-        }
-        Some(self)
     }
 
     /// Drop memory-dependent projections whose exact support footprint is

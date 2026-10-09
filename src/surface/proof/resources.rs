@@ -3165,35 +3165,18 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     } else {
         None
     };
-    let (population_name, population_arguments, population_count) = if authority_projection
-        .is_some()
-    {
-        (
-            requested_population_name,
-            requested_population_arguments,
-            Bitvector32Term::Constant(1),
-        )
-    } else {
-        match state.counted_population_proven_equal(
-            &requested_population_name,
-            &requested_population_arguments,
-            &assumptions,
-        ) {
-            Some(population) => population,
-            None if tracks_population_in_body => {
-                return Err(ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: `unfold({})` requires an active resource population",
-                    describe_resource_clause(resource)
-                )));
-            }
-            None => (
-                requested_population_name,
-                requested_population_arguments,
-                Bitvector32Term::Constant(1),
-            ),
-        }
-    };
-    if state.population_body_is_open(&population_name, &population_arguments, &assumptions) {
+    if authority_projection.is_none() && tracks_population_in_body {
+        return Err(ClickError::new(format!(
+            "`{claim_label}` tactic {tactic_index}: `unfold({})` requires an active resource population",
+            describe_resource_clause(resource)
+        )));
+    }
+    let (population_name, population_arguments, population_count) = (
+        requested_population_name,
+        requested_population_arguments,
+        Bitvector32Term::Constant(1),
+    );
+    if state.population_body_is_open(&population_name, &population_arguments) {
         return Err(ClickError::new("population body is already open"));
     }
     if access == ResourceBodyAccess::Finalize {
@@ -3879,7 +3862,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                     .resources()
                     .satisfies_fact(&viewed_population, assumptions);
             }
-            let (name, population_arguments) = match population.resource() {
+            let (name, _) = match population.resource() {
                 CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
                     (name, arguments)
                 }
@@ -3920,13 +3903,10 @@ fn fold_composite_resources_on_outcome_with_facts(
                         ))
                     })?;
                 authority_closing_fact_state = Some(state.clone().with_resource_context(projected));
-            } else if state
-                .counted_population(name, population_arguments)
-                .is_none()
-                && composite_body
-                    .facts()
-                    .iter()
-                    .any(proposition_contains_resource_count)
+            } else if composite_body
+                .facts()
+                .iter()
+                .any(proposition_contains_resource_count)
             {
                 return Err(ClickError::new(format!(
                     "`{claim_label}` path {path_index}: closing `open({})` requires its resource population to remain active",
@@ -4431,13 +4411,9 @@ fn fold_composite_resources_on_outcome_with_facts(
             if let CResource::Composite { name, arguments } | CResource::Token { name, arguments } =
                 selected.resource()
             {
-                let (name, arguments) = post_state
-                    .counted_population_proven_equal(name, arguments, pure_facts.assumptions())
-                    .map(|(name, arguments, _)| (name, arguments))
-                    .unwrap_or_else(|| (name.clone(), arguments.clone()));
                 post_state = Box::new(
                     post_state
-                        .close_population_body(name, arguments)
+                        .close_population_body(name.clone(), arguments.clone())
                         .map_err(ClickError::new)?,
                 );
             }
