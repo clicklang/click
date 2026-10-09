@@ -384,10 +384,21 @@ returned native reference before using it.
 
 No endian or typed-from-bytes rule is needed here. `ser_readdata32` is a later
 candidate: it reads into a local integer through `std::as_writable_bytes` and
-needs a concrete stream plus a precise raw-byte-to-typed-value rule. The current
-[byte design](../docs/internals/byte-representation.md) explicitly refuses
-assembling separate byte cells into wider typed loads and has no specification
-byte view. `ReadCompactSize` additionally brings stream failure and canonical
+needs a concrete stream plus byte-type and pointer-reinterpretation admission.
+The shared [byte design](../docs/internals/byte-representation.md) now retains
+declared automatic scalar types and completes a uint32 representation when
+four checked character writes initialize its bytes on the selected little-endian
+target. Partial local and helper writes remain uninitialized, and helper byte
+writes refresh the caller's scalar binding rather than retaining its old value.
+The rule is shared execution semantics, not a trusted decoder intrinsic; untyped
+storage, other scalar kinds and specification byte views remain outside the
+profile. The C++ importer still needs uninitialized scalar declarations, native
+byte/`std::byte` types and checked writable byte-span construction before the
+unchanged decoder can use it. The agreed enum boundary uses native integer
+contracts while checking nominal enum identities in the C++ importer. Byte
+alias access must be restricted to the actual pinned `std::byte` declaration;
+an arbitrary enum with the same underlying type does not gain that privilege.
+`ReadCompactSize` additionally brings stream failure and canonical
 encoding rules; do not bundle those decisions into this span slice.
 
 ## Delivery history

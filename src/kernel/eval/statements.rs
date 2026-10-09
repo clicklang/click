@@ -691,6 +691,13 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
                 && let Some(updated) = integer_cell_with_byte(&cell, &value)
             {
                 (cell.pointer, updated)
+            } else if let Some(assembled) = assemble_declared_uint32_after_byte_store(
+                &state.memory,
+                &pointer,
+                &value,
+                budget.c_byte_order(),
+            ) {
+                assembled
             } else {
                 (pointer.clone(), value.clone())
             };
@@ -4483,12 +4490,11 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
     };
-    state.set_memory(
-        state
-            .memory
-            .clone()
-            .with_block(pointer.block.clone(), byte_width),
-    );
+    state.set_memory(state.memory.clone().with_declared_scalar_block(
+        pointer.block.clone(),
+        byte_width,
+        c_type,
+    ));
     if volatile {
         state.locals.set_uninitialized_with_all_qualifiers(
             name.to_string(),
@@ -4607,16 +4613,15 @@ fn begin_aggregate_construction(
 /// value, and the next read of the name returned it as if the store had not
 /// happened.
 ///
-/// So the store's byte interval is compared against the object's, and only a
-/// store that covers the object completely, at its own address and in its own
-/// type, may install its value. Any other store that reaches those bytes —
-/// including one whose overlap is undecided — replaces the binding with the
-/// read of the slot in the memory this store produced, which is what reading
-/// the name now means. A store the bytes separate leaves the binding alone.
+/// The store's byte interval is compared against the object's. A compatible
+/// current cell at the slot supplies the refreshed value, including a scalar
+/// reconstructed from complete byte writes. Otherwise an incompletely written
+/// uninitialized object stays uninitialized; other overlaps use a symbolic
+/// read of the current slot. Separate bytes leave the binding alone.
 ///
 /// Bounded: one slot lookup keyed by the written block, then the shared byte
 /// comparison against that one object. No scan of the frame.
-fn refresh_scalar_local_after_memory_store(
+pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
     state: &mut CState,
     pointer: &Pointer,
     value: &CValue,
@@ -4642,15 +4647,20 @@ fn refresh_scalar_local_after_memory_store(
     if overlap == crate::kernel::reasoning::memory_resolution::AccessByteOverlap::Separate {
         return;
     }
-    let covers_whole_object = pointer == &slot
-        && crate::kernel::reasoning::memory_resolution::StoreByteInterval::of(
-            pointer,
-            value.byte_width(),
-        )
-        .is_some_and(|written| written.overwrites_typed_completely(&slot, c_type))
-        && c_type.accepts(value);
-    let refreshed = if covers_whole_object {
-        Some(value.clone())
+    let current = state
+        .memory
+        .known_value(&slot)
+        .filter(|value| c_type.accepts(value));
+    let refreshed = if current.is_some() {
+        current
+    } else if state.locals.is_uninitialized_object(&name)
+        && !state
+            .memory
+            .has_initialized_bytes_under(&slot, c_type.byte_width(), assumptions)
+    {
+        // A byte write cannot turn a partially initialized scalar binding
+        // into an unconstrained typed value. Allocation is not initialization.
+        None
     } else {
         crate::kernel::eval::symbolic_load_value(&state.memory, &slot, c_type)
     };

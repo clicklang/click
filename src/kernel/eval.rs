@@ -6,7 +6,10 @@ mod memory_loads;
 mod operators;
 pub(in crate::kernel) mod pointer_tags;
 mod statements;
-pub(in crate::kernel) use statements::{end_scope_automatic_lifetimes, return_authority_refusal};
+pub(in crate::kernel) use statements::{
+    end_scope_automatic_lifetimes, refresh_scalar_local_after_memory_store,
+    return_authority_refusal,
+};
 
 /// Retain each sequential volatile access as a unique, kernel-certified fact.
 /// The event id is allocated from the execution's existing fresh-variable
@@ -42,7 +45,8 @@ fn volatile_access_fact(
 #[cfg(test)]
 pub(in crate::kernel) use byte_view::{ContainingIntegerCell, integer_cell_byte};
 pub(in crate::kernel) use byte_view::{
-    byte_view_load_value, containing_integer_cell, integer_cell_with_byte,
+    assemble_declared_uint32_after_byte_store, byte_view_load_value, containing_integer_cell,
+    integer_cell_with_byte,
 };
 pub(super) use expression::*;
 pub(crate) use memory_loads::canonical_condition_fact;

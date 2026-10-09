@@ -1904,6 +1904,7 @@ impl CBlock {
         Self {
             size: Bitvector32Term::Constant(size),
             read_only: false,
+            declared_scalar_type: None,
         }
     }
 
@@ -1911,6 +1912,7 @@ impl CBlock {
         Self {
             size: Bitvector32Term::Constant(size),
             read_only: true,
+            declared_scalar_type: None,
         }
     }
 
@@ -1918,6 +1920,7 @@ impl CBlock {
         Self {
             size,
             read_only: false,
+            declared_scalar_type: None,
         }
     }
 
@@ -2483,6 +2486,22 @@ impl CMemory {
         }
         let base = intern_derivation_base(&mut self);
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::new(size));
+        record_c_memory_derivation(&mut self, CMemoryDerivation::BlockDeclared { base, block });
+        self
+    }
+
+    /// Declares one complete automatic scalar, retaining its type while its
+    /// cells are unwritten, forgotten, or accessed through character pointers.
+    pub(in crate::kernel) fn with_declared_scalar_block(
+        mut self,
+        block: PointerBlock,
+        size: u32,
+        c_type: CType,
+    ) -> Self {
+        let base = intern_derivation_base(&mut self);
+        let mut declaration = CBlock::new(size);
+        declaration.declared_scalar_type = Some(c_type);
+        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
         record_c_memory_derivation(&mut self, CMemoryDerivation::BlockDeclared { base, block });
         self
     }
@@ -7997,18 +8016,24 @@ impl CState {
                         | CLocalBinding::ArrayObject { .. }
                         | CLocalBinding::AggregateObject { .. } => return None,
                     };
-                memory.known_value(&slot).map(|value| {
-                    (
-                        name.clone(),
-                        value,
-                        c_type,
-                        slot,
-                        volatile,
-                        pointee_volatile,
-                        constant,
-                        pointee_constant,
-                    )
-                })
+                memory
+                    .known_value(&slot)
+                    .filter(|value| {
+                        c_type.accepts(value)
+                            || !matches!(binding, CLocalBinding::UninitializedObject { .. })
+                    })
+                    .map(|value| {
+                        (
+                            name.clone(),
+                            value,
+                            c_type,
+                            slot,
+                            volatile,
+                            pointee_volatile,
+                            constant,
+                            pointee_constant,
+                        )
+                    })
             })
             .collect::<Vec<_>>();
         for (name, value, c_type, slot, volatile, pointee_volatile, constant, pointee_constant) in

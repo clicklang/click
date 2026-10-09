@@ -5446,6 +5446,32 @@ fn record_memory_lacks_variable(identity: (u32, u32), from: Variable) {
     });
 }
 
+#[cfg(test)]
+#[test]
+fn snapshot_size_substitution_preserves_declared_types_and_write_protection() {
+    let from = Variable(84001);
+    let mut memory =
+        CMemory::new().with_declared_scalar_block("local:word".into(), 4, CType::UInt32);
+    let mut read_only = CBlock::read_only(4);
+    read_only.size = Bitvector32Term::Variable(from);
+    std::sync::Arc::make_mut(&mut memory.blocks).insert("global:protected".into(), read_only);
+    let rewritten = substitute_bitvector_variable_in_memory_contents(
+        &memory,
+        from,
+        &Bitvector32Term::Constant(16),
+    );
+    assert_eq!(
+        rewritten.blocks.get(&PointerBlock::from("local:word")),
+        memory.blocks.get(&PointerBlock::from("local:word"))
+    );
+    let protected = rewritten
+        .blocks
+        .get(&PointerBlock::from("global:protected"))
+        .unwrap();
+    assert!(protected.read_only);
+    assert_eq!(protected.size, Bitvector32Term::Constant(16));
+}
+
 fn substitute_bitvector_variable_in_memory_contents(
     memory: &CMemory,
     from: Variable,
@@ -5469,14 +5495,12 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .blocks
                 .iter()
                 .map(|(block, contents)| {
-                    (
-                        block.clone(),
-                        CBlock::with_symbolic_size(substitute_bitvector_variable(
-                            contents.size(),
-                            from,
-                            to,
-                        )),
-                    )
+                    // Substitution changes the extent term, not the storage
+                    // declaration or its write protection. Rebuilding a bare
+                    // block erased these properties, even for a constant size.
+                    let mut rewritten = contents.clone();
+                    rewritten.size = substitute_bitvector_variable(contents.size(), from, to);
+                    (block.clone(), rewritten)
                 })
                 .collect(),
         ),

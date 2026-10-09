@@ -1,5 +1,33 @@
 use super::*;
 
+// The reconstruction rule must survive checked tactic expansion and retained
+// verification, rather than working only during ordinary execution search.
+#[test]
+fn byte_initialized_uint32_expands_and_retains() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/byte_representation_initializes_declared_uint32.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(source, &sources).unwrap();
+    let position = expansion::position_at_offset(source, source.find("execute();").unwrap());
+    let expanded =
+        expand_c0_tactic_source_at(source, &sources, position.line, position.column).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let claim = expansion::position_at_offset(&expanded, expanded.find("ensures result").unwrap());
+    let (session, _) = C0VerificationSession::new(source, &sources).unwrap();
+    session
+        .verify_at(&expanded, claim.line, claim.column)
+        .unwrap();
+    verify_c0_sources(&expanded.replace("4293820433u32", "17u32"), &sources)
+        .expect_err("a single stored byte is not the reconstructed word");
+}
+
 #[test]
 fn selected_tactic_batch_uses_the_project_entry_scope() {
     let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
