@@ -135,14 +135,11 @@ impl<'a> Proof<'a> {
             ResourceClause::Quantified { resource, .. } => match resource.as_ref() {
                 ResourceClause::Declared { name, .. } => name,
                 _ => {
-                    return Err(self
-                        .step_error("authority-mode member changes require a declared resource"));
+                    return Err(self.step_error("member changes require a declared resource"));
                 }
             },
             _ => {
-                return Err(
-                    self.step_error("authority-mode member changes require a declared resource")
-                );
+                return Err(self.step_error("member changes require a declared resource"));
             }
         };
         let name = declared;
@@ -171,7 +168,7 @@ impl<'a> Proof<'a> {
             || !body.witnesses.is_empty()
         {
             return Err(self.step_error(format!(
-                "authority-mode fold/unfold of `{name}` requires a private body of owned memory or declared resources"
+                "member fold/unfold of `{name}` requires a private body of owned memory or declared resources"
             )));
         }
         self.require_execution_frontier("population member change")?;
@@ -2210,9 +2207,7 @@ impl<'a> Proof<'a> {
             && !matches!(resource, ResourceClause::Named { .. })
             && !self.names_unauthorized_family(resource)
         {
-            return Err(self.step_error(
-                "resource unfold after function outcome is unavailable in authority mode",
-            ));
+            return Err(self.step_error("resource unfold after function outcome is unavailable"));
         }
         if matches!(resource, ResourceClause::Declared { name, .. } if name == "authority") {
             return Err(self.step_error(
@@ -2301,9 +2296,7 @@ impl<'a> Proof<'a> {
             && !matches!(resource, ResourceClause::Named { .. })
             && !self.names_unauthorized_family(resource)
         {
-            return Err(self.step_error(
-                "resource fold after function outcome is unavailable in authority mode",
-            ));
+            return Err(self.step_error("resource fold after function outcome is unavailable"));
         }
         if let ResourceClause::Named { binding, .. } = resource {
             return self.apply_instance_rewrite(binding, resource, false);
@@ -2432,9 +2425,7 @@ impl<'a> Proof<'a> {
         // Constructing an ordinary family's token creates no population
         // member; an authorized family's member needs its authority.
         if self.execution().is_some() && !self.names_unauthorized_family(resource) {
-            return Err(self.step_error(
-                "resource construction may create untracked members in authority mode",
-            ));
+            return Err(self.step_error("resource construction may create untracked members"));
         }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("outcome resource `construct` requires an execution proof"));

@@ -1,4 +1,4 @@
-# Counted population units expose their body only during acquisition
+# A population's control is reachable only during acquisition
 
 The wrapper owns one unit; two remain with the caller. The same ordinary
 unit-taking helper is rejected outside the lock in the companion fixture.

@@ -6,7 +6,7 @@ inventory separately checks that the source registry and library reference
 remain complete.
 
 The `authority` resource's restricted empty-population source use is verified
-by `authority_mode_establishes_and_retires_empty_stack_population` in
+by `authority_establishes_and_retires_empty_stack_population` in
 `src/surface/tests/execution_tests.rs`.
 
 The external catalog symbols `memcpy`, `memcmp`, `memset`, and `strlen` are

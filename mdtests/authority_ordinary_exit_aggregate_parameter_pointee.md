@@ -1,7 +1,7 @@
-# An ordinary contract over an aggregate parameter exits ordinarily in authority mode
+# An ordinary contract over an aggregate parameter exits ordinarily
 
 The contract's resources reach no population, so its exit returns the
-body's resources as without authority semantics.
+body's resources by the ordinary rule.
 
 ```c filename=aggregate_parameter_pointee_resource.c
 struct inner { int32 value; };

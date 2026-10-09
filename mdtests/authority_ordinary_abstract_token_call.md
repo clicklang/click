@@ -1,9 +1,8 @@
-# An ordinary abstract token moves through calls in authority mode
+# An ordinary abstract token moves through calls
 
 `permit` is an abstract resource declared without `authorized`, so it takes
 no part in population accounting. The callback contract that preserves
-permits applies in an authority-mode project as it does without authority
-semantics.
+permits applies by the ordinary call rule.
 
 ```c filename=framed_callback_token.c
 int32 keep_first(int32 key, int32 spare) {

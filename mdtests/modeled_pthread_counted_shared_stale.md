@@ -1,4 +1,4 @@
-# Workers consume one shared abstract population in either join order
+# A stale count is false after both members are spent
 
 ```c filename=modeled_pthread_counted_shared_stale.c
 #include <pthread.h>

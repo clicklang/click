@@ -1,4 +1,4 @@
-# Overlapping transfers of one counted population require synchronization support
+# Overlapping workers of one population cannot both hold its authority
 
 ```c filename=modeled_pthread_counted_overlap_rejected.c
 #include <pthread.h>

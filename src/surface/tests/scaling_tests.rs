@@ -2377,7 +2377,7 @@ fn outcome_haves_and_resource_folds_do_not_reimport_ambient_facts() {
     });
 }
 
-/// Under authority semantics an outcome unfold is retained on the completed
+/// An outcome unfold is retained on the completed
 /// path, so the path's completion checks the retained `have` proofs. Facts
 /// the proof held at its checked entry are not checked again.
 #[test]

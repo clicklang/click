@@ -1,8 +1,8 @@
-# An ordinary token is constructed in authority mode
+# An ordinary token is constructed
 
 `pair` is an abstract resource declared without `authorized`, so its tokens
 are not population members. A function that `constructs` one may build it
-from nothing in an authority-mode project, as without authority semantics.
+from nothing.
 
 ```c filename=bump.c
 int32 bump(int32 result) {

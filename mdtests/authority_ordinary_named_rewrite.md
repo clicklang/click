@@ -1,8 +1,8 @@
-# An ordinary named resource folds and unfolds in authority mode
+# An ordinary named resource folds and unfolds
 
 Neither `cell` nor `revision_record` is an `authorized resource`, and neither
 reaches one, so the named instance of `revision_record` folds and unfolds by
-its definition in an authority-mode project.
+its definition.
 
 ```c filename=resource_reference_argument_owns.c
 void remember(int32* p) { }

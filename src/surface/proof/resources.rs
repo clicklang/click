@@ -1531,7 +1531,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             )));
         }
     };
-    // Under authority semantics only an authorized family has a
+    // Only an authorized family has a
     // population count; any other observation records no count witness.
     let counts_population = matches!(
         &counted_resource,
@@ -1646,7 +1646,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         }
     }
     if counts_population {
-        // Authority-mode observation names checked count/quantity facts only.
+        // A population observation names checked count/quantity facts only.
         // Member bodies remain folded, with their custody and memory unchanged.
         return Ok((state, abstract_resource));
     }
@@ -3527,7 +3527,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 .collect::<Vec<_>>();
             state = state.with_resource_context_and_loan_dependencies(resources, dependencies);
         } else {
-            // Population cleanup and authority-mode private body opening
+            // Population cleanup and member private body opening
             // are certified as exact exchanges. Preserve adjacent framed
             // ranges so nested opens have the same delta as the kernel law.
             let resources = if body_reads_counts || (access == ResourceBodyAccess::Open) {
@@ -3842,8 +3842,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                     })?;
                 authority_control_definition = Some(definition.clone());
             } else {
-                // An ordinary wrapper transfers its existing children without
-                // installing a legacy population ledger.
+                // An ordinary wrapper transfers its existing children.
             }
         } else {
             let CFunctionOutcome::Return { value, state } = &outcome else {
@@ -4342,8 +4341,8 @@ fn fold_composite_resources_on_outcome_with_facts(
                 ));
             }
         }
-        // A folded head supports views of its contained children. Under
-        // authority semantics a family that reaches a population keeps only
+        // A folded head supports views of its contained children. A
+        // family that reaches a population keeps only
         // the checked exchange. Any other family keeps exactly the child
         // views the context already held, now supported by the head: the
         // fold consumed their owners and invents no new view.

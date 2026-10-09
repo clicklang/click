@@ -1,4 +1,4 @@
-# Workers consume one shared abstract population in either join order
+# A returned member is spent before the handle starts a third worker
 
 ```c filename=modeled_pthread_counted_shared_partial_then_create.c
 #include <pthread.h>

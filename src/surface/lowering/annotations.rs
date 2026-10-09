@@ -4891,10 +4891,7 @@ impl AnnotationLowerer<'_> {
                     return Err("`count(...)` expects a declared resource".to_string());
                 };
                 if environment.snapshot_state.is_some() {
-                    return Err(
-                        "`count(R(p))` at a recorded state is unavailable in authority mode"
-                            .to_string(),
-                    );
+                    return Err("`count(R(p))` at a recorded state is unavailable".to_string());
                 }
                 if arguments.is_empty()
                     || matches!(arguments[0], ContractExpression::ResourceWildcard)
@@ -4907,7 +4904,7 @@ impl AnnotationLowerer<'_> {
                         }))
                 {
                     return Err(
-                        "authority-mode count requires R(anchor), R(anchor, _, ...), or an exact member"
+                        "count requires R(anchor), R(anchor, _, ...), or an exact member"
                             .to_string(),
                     );
                 }

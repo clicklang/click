@@ -233,8 +233,8 @@ fn expand_declared_resource_clauses_with_rules(
 ) -> Result<ClickFile, ClickError> {
     // A failure before the first declaration belongs to none of them.
     crate::surface::clear_ambient_proof_source();
-    // Legacy standard-library expansion must not re-enter its OnceLock.
-    // Authority schemas use the same checked algebraic definitions as lowering.
+    // The standard library's expansion must not re-enter its OnceLock.
+    // Field schemas use the same checked algebraic definitions as lowering.
     if family_rules {
         super::validate_resource_fields(&file)?;
     }

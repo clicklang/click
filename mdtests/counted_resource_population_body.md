@@ -1,4 +1,4 @@
-# resource bodies describe the whole population
+# A control relates the stored count to the population
 
 The control resource owns the shared reference-count field and authority for
 the population. `count(...)` names the population size, so a function holding

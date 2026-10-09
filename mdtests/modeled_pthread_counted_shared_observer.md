@@ -1,4 +1,4 @@
-# Workers consume one shared abstract population in either join order
+# A borrowing worker cannot observe the population's count
 
 ```c filename=modeled_pthread_counted_shared_observer.c
 #include <pthread.h>

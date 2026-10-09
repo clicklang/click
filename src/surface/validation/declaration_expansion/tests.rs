@@ -301,7 +301,7 @@ fn authority_field_schema_and_count_admission_are_independent_of_instance_fields
     let count = ContractExpression::ResourceCount(Box::new(authority_test_protected(pointer)));
     assert!(
         expand_declared_resource_expression(count.clone(), &scope).is_err(),
-        "legacy mode keeps its migration boundary"
+        "the standard library's expansion applies no family rules"
     );
     scope.family_rules = true;
     assert!(

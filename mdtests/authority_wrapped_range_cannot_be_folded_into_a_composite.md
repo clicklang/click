@@ -1,4 +1,4 @@
-# A range whose extent wraps cannot be folded into a composite in authority mode
+# A range whose extent wraps cannot be folded into a composite
 
 A composite's contained ranges are stated ranges, so their byte-count guards
 are available while the body's own `fact` clauses are evaluated. That is sound
@@ -6,9 +6,8 @@ only because no composite can be held at a range whose extent wraps. A fold
 must lower the body's facts against the instantiated arguments, and a
 decidably invalid extent leaves no lowering path.
 
-This is the authority form of `wrapped_range_cannot_reach_a_composite.md`.
-That fixture observes such a composite at a contract entry, and the legacy
-count witness refused the observation. An ordinary family has no count
+This is a companion of `wrapped_range_cannot_reach_a_composite.md`, which
+observes such a composite at a contract entry. An ordinary family has no count
 witness. Its entry stays vacuous, because no caller can hold the composite:
 the fold that would create one is refused here.
 

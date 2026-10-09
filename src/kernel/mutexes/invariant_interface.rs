@@ -86,7 +86,7 @@ mod tests {
     }
 
     #[test]
-    fn unannotated_publication_requires_owned_state_and_preserves_its_type() {
+    fn publication_requires_owned_state_and_preserves_its_type() {
         let assumptions = PureFactContext::new();
         let resource = instance(1, 7);
         let definitions = definitions();
@@ -139,7 +139,7 @@ mod tests {
     }
 
     #[test]
-    fn publication_rejects_unchecked_or_mismatched_schemas_without_annotations() {
+    fn publication_rejects_unchecked_or_mismatched_schemas() {
         let assumptions = PureFactContext::new();
         let resource = instance(1, 7);
         let context = MutexContext::new(

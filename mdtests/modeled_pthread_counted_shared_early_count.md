@@ -1,4 +1,4 @@
-# Workers consume one shared abstract population in either join order
+# The total cannot reach zero before the first worker joins
 
 ```c filename=modeled_pthread_counted_shared_early_count.c
 #include <pthread.h>

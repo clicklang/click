@@ -1,5 +1,5 @@
-//! Additive authority-migration spine. This models owned anchor lifetimes,
-//! not C pointers or memory permissions. No legacy C proof can invoke it.
+//! The abstract population authority model. This models owned anchor
+//! lifetimes, not C pointers or memory permissions.
 //!
 //! Each immutable state is one proof alternative. Holders represent separate
 //! owners within that alternative, so passing an anchor cannot erase an
@@ -83,14 +83,6 @@ impl AuthorityState {
             && self.obligations.is_empty()
     }
 
-    fn shares_roots_with(&self, other: &Self) -> bool {
-        self.anchors.shares_root_with(&other.anchors)
-            && self.registrations.shares_root_with(&other.registrations)
-            && self.populations.shares_root_with(&other.populations)
-            && self.members.shares_root_with(&other.members)
-            && self.obligations.shares_root_with(&other.obligations)
-    }
-
     /// Whether the two states differ only in the paired anchors, each pair
     /// holding equal records on which no population is established. Such an
     /// anchor is named only by its own record, so renaming it changes no
@@ -163,6 +155,7 @@ impl AuthorityState {
         self.authority_owned(holder, population).is_ok()
     }
 
+    #[cfg(test)]
     pub(super) fn holder_owns_member(&self, holder: Holder, population: Population) -> bool {
         self.members
             .get(&(holder, population))

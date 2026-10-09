@@ -1,8 +1,7 @@
-# An ordinary family folds by its definition in authority mode
+# An ordinary family folds by its definition
 
 Population accounting covers only families declared `authorized resource`.
-`cell` is an ordinary resource, so in an authority-mode project it unfolds
-and folds by its definition, as it does without authority semantics; no
+`cell` is an ordinary resource, so it unfolds and folds by its definition; no
 member is created or destroyed.
 
 ```c filename=ordinary_family_fold.c

@@ -51,7 +51,7 @@ pub(super) struct WorkerCompletion {
     creation: Option<WorkerCreation>,
 }
 
-/// Authority-mode creation ledger transport. Create applies the worker's
+/// Creation ledger transport. Create applies the worker's
 /// checked contract under its call identity, exactly as a sequential call
 /// does before it returns, and gives the parent that ledger back without
 /// returning the worker's resources. Join performs the sequential return:

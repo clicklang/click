@@ -1,12 +1,12 @@
-# A loop exit disjunction ignores a closed true conjunct in authority mode
+# A loop exit disjunction ignores a closed true conjunct
 
 `paint` leaves its `while (true)` by a `break` on both paths, and the proof
 after the loop reasons by cases on the exported disjunction
 `(flag == 0 and c.color == Red and p->shade == 0) or (p->shade == 1 and
 c.color == Black)`, as `loop_break_exit_join_compares_cells_not_their_cache.md`
-does under legacy semantics.
+does.
 
-Under authority semantics one exit also stated the closed fact `true == true`.
+One exit also stated the closed fact `true == true`.
 The join orders the disjuncts by how many facts each path states and then
 drops a conjunct an earlier disjunct contradicts. The extra fact reordered
 the exits, so the exported disjunction was not the one the proof names. A

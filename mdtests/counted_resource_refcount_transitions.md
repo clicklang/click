@@ -1,4 +1,4 @@
-# resource-population retain and nonfinal release
+# Population retain and nonfinal release
 
 Producing or consuming one resource unit changes the population count. The
 stored count must be updated by the same amount before Click will return the

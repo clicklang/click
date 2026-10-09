@@ -2,9 +2,8 @@
 
 `run` holds the authority for `ticket(p)` only, plus one member of
 `ticket(p)` and one of `ticket(q)`, with nothing known about `p` and `q`.
-Under authority semantics a count comes from the authority's ledger, not from
-the owned entries a key happens to spell, so the legacy ambiguity of an
-aliased total cannot arise. Spending the `ticket(q)` member needs
+A count comes from the authority's ledger, not from the owned entries a key
+happens to spell, so an aliased total is never ambiguous. Spending the `ticket(q)` member needs
 `authority(ticket(q))`, which `run` does not hold, so the second call is
 refused.
 

@@ -988,7 +988,7 @@ Negative: `authority_mutex_control_unlock_open_rejected.md`,
 `authority_mutex_control_wrong_mutex_rejected.md`,
 `authority_mutex_control_stale_initialization_rejected.md`, and
 `authority_control_instance_duplicate_authority_rejected.md`. The kernel test
-`authority_mode_publication_takes_no_population_custody` checks publication,
+`authority_publication_takes_no_population_custody` checks publication,
 acquisition, release, and destruction. `click verify` and `click audit` pass
 on the deposit fixture, and the audit expands and reverifies its three smart
 sites.
@@ -1309,7 +1309,7 @@ part of the declaration.
   `authority_count_requires_authorized_family.md`.
 - Fold and unfold exchange a population member only for an authorized
   family; the outcome fold and unfold refusals apply only to authorized
-  families. Regression: `authority_mode_ordinary_family_folds_by_definition.md`.
+  families. Regression: `authority_ordinary_family_folds_by_definition.md`.
 - Every family named by `authority(...)`, and by `count(...)` in an
   authority-mode fixture, is now declared `authorized` across the mdtests,
   examples, unit-test sources and documentation; no claim, proof step or C
@@ -1327,20 +1327,20 @@ without switching the default.
   same linear pass as thread confinement.
 - A named instance rewrite keeps the ordinary-memory-body restriction only
   for a family that reaches a population. Regressions:
-  `authority_mode_ordinary_named_rewrite.md` and
-  `authority_mode_named_rewrite_reaching_member_refused.md`.
+  `authority_ordinary_named_rewrite.md` and
+  `authority_named_rewrite_reaching_member_refused.md`.
 - An unadmitted C call is refused only when its contract moves a resource
   that reaches a population: a population authority, a mutex protocol
   resource, an abstract token, or a family that reaches an authorized family.
   A call with no assumed rule executes its checked body. The same reach test
   gates the helper-contract shape check. Regressions:
-  `authority_mode_ordinary_external_call.md` and
-  `authority_mode_external_member_birth_refused.md`.
+  `authority_ordinary_external_call.md` and
+  `authority_external_member_birth_refused.md`.
 - Contract certification used the boundary transfer's function, captured
   before loop annotations, as the function the path belongs to, so every
   loop proof failed to certify. It now keeps the annotated function and
   requires the transfer's name, parameters and contract to agree with it.
-  Regression: `authority_mode_loop_contract_certifies.md`.
+  Regression: `authority_loop_contract_certifies.md`.
 
 With these, the trial switch changes 253 outcomes.
 
@@ -1352,18 +1352,18 @@ function now carries the sorted names of the project's abstract families
 declared without `authorized`, set beside its definitions. A token on that
 list, or the built-in allocation token, reaches no population; any other
 abstract token, including one from an interface built without the list, is
-still refused. Regressions: `authority_mode_ordinary_abstract_token_call.md`
-and `authority_mode_external_abstract_member_birth_refused.md`.
+still refused. Regressions: `authority_ordinary_abstract_token_call.md`
+and `authority_external_abstract_member_birth_refused.md`.
 
 The kernel's authority-mode body checks (population authority wrappers,
 transfer wrappers and member body access) now apply only to a composite that
 reaches a population; any other composite folds and unfolds by its
-definition. Regression: `authority_mode_ordinary_composite_of_tokens_folds.md`.
+definition. Regression: `authority_ordinary_composite_of_tokens_folds.md`.
 
 `observe` records a count witness, and keeps member bodies folded, only for
 an authorized family; observing any other resource under authority semantics
 exposes its body views as it does without them. Regression:
-`authority_mode_ordinary_observe.md`.
+`authority_ordinary_observe.md`.
 
 #### Chunk 1c: certification across separately built entries
 
@@ -1373,8 +1373,8 @@ its own proof, and a checked execution from a separately built entry, even
 when the two entry states differed only in that empty ledger. States now
 compare equal when they differ only in creation ledgers that record nothing:
 no storage, member, authority, import, scope or batch. Regressions:
-`authority_mode_separate_claim_proofs_certify.md`,
-`authority_mode_rebased_execution_certifies.md` and a kernel unit test.
+`authority_separate_claim_proofs_certify.md`,
+`authority_rebased_execution_certifies.md` and a kernel unit test.
 
 #### Chunk 1d: iterated ownership
 
@@ -1382,13 +1382,13 @@ no storage, member, authority, import, scope or batch. Regressions:
 step replaces memory facts in the resource context and records no storage,
 member or authority event. Authority semantics no longer refuse them; the
 same guard and coverage checks apply. Regressions:
-`authority_mode_iterated_gather_scatter.md` and
-`authority_mode_iterated_take_false_guard_rejected.md`.
+`authority_iterated_gather_scatter.md` and
+`authority_iterated_take_false_guard_rejected.md`.
 
 Loop exits that reach the join through different calls carry different
 creation-ledger successors. When neither ledger records anything, the exits
 now join as the certification checks of chunk 1c compare them. Regression:
-`authority_mode_loop_exits_after_calls_join.md`.
+`authority_loop_exits_after_calls_join.md`.
 
 #### Chunk 1e: verified helpers that borrow a guard or lifetime
 
@@ -1398,13 +1398,13 @@ resource is a typed `mutex_use` share, a guard or a lifetime. Its body is
 checked under the same rules; without a share it cannot reacquire a deposited
 control, and returning the same mutex resources leaves the mutex state as it
 was. Assumed external contracts over mutex resources are still refused.
-Regressions: `authority_mode_verified_helper_borrows_guard.md` and
-`authority_mode_verified_helper_guard_requires_held_mutex.md`.
+Regressions: `authority_verified_helper_borrows_guard.md` and
+`authority_verified_helper_guard_requires_held_mutex.md`.
 
 The kernel's member body-access check applies only to a family that reaches
 a population; an ordinary composite that is not a supported transfer wrapper,
 including a recursive one or a viewed one, opens and unfolds by its
-definition. Regression: `authority_mode_ordinary_recursive_resource_unfolds.md`.
+definition. Regression: `authority_ordinary_recursive_resource_unfolds.md`.
 
 #### Chunk 1f: published outcomes and unused ledgers
 
@@ -1412,13 +1412,13 @@ Rechecking a proof's trace up to its publication point rebuilds an outcome whose
 creation ledger is a different successor than the published one, even when
 neither records anything, so user tactics such as `convert` failed to
 publish. Published outcomes are now compared up to unused creation ledgers.
-Regression: `authority_mode_user_tactic_publishes_its_outcome.md`.
+Regression: `authority_user_tactic_publishes_its_outcome.md`.
 
 `construct` of a token of an abstract family declared without `authorized`
 creates no population member and now runs under authority semantics; a
 token of an authorized family is still refused. Regressions:
-`authority_mode_ordinary_token_construction.md` and
-`authority_mode_authorized_token_construction_rejected.md`.
+`authority_ordinary_token_construction.md` and
+`authority_authorized_token_construction_rejected.md`.
 
 #### Chunk 1g: ordinary contract exits
 
@@ -1430,8 +1430,8 @@ mention, so a produced literal gained a second owner and borrowing outputs
 were refused. That exit is now forced only for a contract that reaches a
 population; any other contract takes the ordinary exit, which returns the
 body's own resources, as without authority semantics. Regressions:
-`authority_mode_ordinary_exit_returns_a_string_literal.md` and
-`authority_mode_ordinary_exit_aggregate_parameter_pointee.md`.
+`authority_ordinary_exit_returns_a_string_literal.md` and
+`authority_ordinary_exit_aggregate_parameter_pointee.md`.
 
 #### Chunk 1h: one entry context per function
 
@@ -1441,7 +1441,7 @@ match a claim's completion to the certified entry state when loans were
 involved. The verification run now builds each function's entry context once
 and shares it across the function's claim proofs (a block that differs from
 the cached one under the same name builds its own). Regression:
-`authority_mode_separate_claim_proofs_share_one_entry.md`.
+`authority_separate_claim_proofs_share_one_entry.md`.
 
 #### Chunk 1i: legacy population-count fixtures
 
@@ -1489,7 +1489,7 @@ that are not `authorized`. A `consumes boxed(box); produces boxed(box);`
 contract whose body unfolds `boxed(box)` therefore closed with the produced
 resource missing. The refusal now applies only to a contract that reaches a
 population, matching the call-site rule from chunk 1a. Regression:
-`authority_mode_ordinary_exit_refolds_a_consumed_family.md`. This clears the
+`authority_ordinary_exit_refolds_a_consumed_family.md`. This clears the
 four reallocating-box fixtures and
 `grouped_fold_after_simp_closes_definitionally.md` in the trial switch.
 
@@ -1501,7 +1501,7 @@ premise that lowering had already decided, such as `1 == 0` from a constant
 selector argument, kept the ensure as an implication. Authority mode now also
 accepts a closed premise that the builtin solver settles, as legacy does.
 This needs no context search. Regression:
-`authority_mode_call_discharges_a_constant_ensure_premise.md`. It clears
+`authority_call_discharges_a_constant_ensure_premise.md`. It clears
 `struct_conditional_value.md` in the trial switch.
 
 #### Chunk 1m: views of an ordinary fold's children
@@ -1514,7 +1514,7 @@ definition reaches no population, the fold now keeps exactly the child views
 the context already held, supported by the new head. It invents no view, so
 a fold that leaves another unit of the same child beside the head
 (`counted_resource_transfer.md`) is unchanged. Regression:
-`authority_mode_folded_ordinary_composite_supports_child_views.md`. This
+`authority_folded_ordinary_composite_supports_child_views.md`. This
 clears `proof_branch_guarded_composite_child.md` in the trial switch.
 
 #### Chunk 1n: legacy exposed population bodies
@@ -1552,14 +1552,14 @@ Two changes clear both loop-break fixtures in the trial switch.
   identity and refused the pair as differing in "the symbolic state". It now
   compares recorded ledger state. Records that carry identities of their own,
   opaque imports and symbolic batches, must still be the same records.
-  Regression: `authority_mode_loop_exit_join_after_an_ended_local.md`.
+  Regression: `authority_loop_exit_join_after_an_ended_local.md`.
   `loop_break_exit_stale_alias_after_join_is_not_read.md` now reaches its
   intended refusal of the read through the ended local.
 - **Closed true conjuncts.** The join orders an exit disjunction by how many
   facts each path states. Under authority semantics one exit stated the
   closed fact `true == true`, which reordered the disjuncts and changed which
   conjunct narrowing dropped. A closed true conjunct is no longer counted.
-  Regression: `authority_mode_loop_exit_disjunction_ignores_a_closed_guard.md`.
+  Regression: `authority_loop_exit_disjunction_ignores_a_closed_guard.md`.
 
 #### Chunk 1p: outcome folds of ordinary wrappers
 
@@ -1571,7 +1571,7 @@ completed execution". The fold's exchange is now recorded only for a family
 that reaches a population. Any other family keeps its ordinary law. An
 outcome unfold is still recorded for every family: the certificate of
 `c_contract_executes_acquire_nonnull.md` relies on it. Regression:
-`authority_mode_executes_theorem_folds_an_ordinary_wrapper.md`. With the
+`authority_executes_theorem_folds_an_ordinary_wrapper.md`. With the
 earlier chunks of this step, this clears `c_contract_executes_composition.md`,
 `c_named_function_contract_refinement_theorem.md` and
 `c_step_contract_frontier_branch.md` in the trial switch.
@@ -1591,14 +1591,14 @@ the failures it found beyond the planned switch-time fixtures.
   premises that the entry holds only through the folded child. Such a
   premise is retried against the entry's composites opened level by level,
   as deep as the entry facts decide. Regression:
-  `authority_mode_certifies_observed_child_views.md`, reduced from
+  `authority_certifies_observed_child_views.md`, reduced from
   `examples/binary-tree`.
 - **Outcome refolds.** An outcome unfold under authority semantics is
   retained on the completed path, and a refold of an ordinary family is not.
   A second unfold then started from a path that never held the folded head.
   It now leaves the retained path as it is, after checking the presented
   exchange. Regression:
-  `authority_mode_outcome_refold_stays_on_the_completed_path.md`.
+  `authority_outcome_refold_stays_on_the_completed_path.md`.
 - **Arena proof budget.** In `examples/arena`, one `have` in
   `arena_pipeline` already used 2.24M of its 2.5M control budget under
   legacy semantics. It exceeded the budget under authority semantics, whose

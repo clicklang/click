@@ -1,8 +1,8 @@
-# A nonfinal counted release preserves the underlying allocation
+# A nonfinal release preserves the underlying allocation
 
-A caller may consume its last owned unit while other counted units remain.
-The callee's post-count keeps the population body allocation live, so the
-caller's guarded payload guarantee remains readable.
+A caller may consume its last owned member while other members remain. The
+callee's post-count keeps the control's allocation live, so the caller's
+payload guarantee remains readable.
 
 ```c filename=counted_release_preserves_nonfinal_allocation.c
 struct child { int32 refs; int32 payload; };

@@ -34,17 +34,6 @@ pub(in crate::surface) struct ClaimProofResult {
     pub(in crate::surface) theorems: Vec<VerifiedCTheorem>,
 }
 
-/// Counted-population nonemptiness is a post-transition fact.  Keep its
-/// obligation alive until result-aware post-execution tactics have had a
-/// chance to prove it; all other path obligations still use the earlier
-/// boundary check.
-fn post_execution_population_obligation(obligation: &ProofObligation) -> bool {
-    matches!(
-        obligation.context(),
-        Some("resource population remains nonempty" | "resource population body is active")
-    )
-}
-
 /// `call_depth` counts the `outcomes` arms already entered on this route; a
 /// nested `outcomes` reads the call edge at that depth.
 fn select_checked_post_execution_tactics<'a>(
@@ -2104,9 +2093,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                 let mut missing = Vec::new();
                                 let mut refuted = Vec::new();
                                 for obligation in path.obligations() {
-                                    if post_execution_population_obligation(obligation) {
-                                        continue;
-                                    }
                                     let proposition = obligation.proposition();
                                     if exact_fact_is_available(proposition, &path_base_facts) {
                                         continue;
@@ -4619,29 +4605,6 @@ pub(super) fn finish_ordered_proof<'a>(
                         &proof_label,
                         "path closure and theorem assembly",
                     );
-
-                    let deferred_population_obligations = path
-                        .obligations()
-                        .iter()
-                        .filter(|obligation| post_execution_population_obligation(obligation))
-                        .filter(|obligation| {
-                            !exact_fact_is_available(obligation.proposition(), &path_requirements)
-                        })
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    if !deferred_population_obligations.is_empty() {
-                        return Err(ClickError::new(format!(
-                            "execution proof failed for `{proof_label}` path {path_index}: {}",
-                            describe_missing_proof_obligations(
-                                &deferred_population_obligations,
-                                &path_requirements.to_vec(),
-                                pre_state.resources().facts(),
-                                parsed_function.parameters(),
-                                arguments,
-                                path.facts(),
-                            )
-                        )));
-                    }
 
                     // Closing pure claims with simple tactics does not itself
                     // perform the return-resource exchange. In particular a

@@ -1,4 +1,4 @@
-# Workers consume one shared abstract population in either join order
+# A second worker needs a member the parent does not own
 
 ```c filename=modeled_pthread_counted_shared_missing_unit.c
 #include <pthread.h>

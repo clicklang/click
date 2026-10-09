@@ -1,8 +1,8 @@
-# Observing an ordinary resource in authority mode records no count
+# Observing an ordinary resource records no count
 
 The observed resource is declared without `authorized`, so it has no
-population count. In an authority-mode project `observe` exposes its body
-facts as it does without authority semantics and records no count witness.
+population count. `observe` exposes its body facts and records no count
+witness.
 
 ```c filename=write_flag_observed.c
 int32 write_flag_observed(int32* flag) {

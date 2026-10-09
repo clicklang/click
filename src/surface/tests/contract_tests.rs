@@ -898,7 +898,7 @@ fn post_execution_resource_fold_completes_without_a_body_rerun() {
 }
 
 #[test]
-fn implicitly_closed_counted_entry_completes_without_a_body_rerun() {
+fn implicitly_closed_population_entry_completes_without_a_body_rerun() {
     let c_source = r#"
         int32 inspect_counts(void* p, void* q) {
             return 0;
@@ -930,7 +930,7 @@ fn implicitly_closed_counted_entry_completes_without_a_body_rerun() {
 
     let _ = crate::kernel::take_checked_function_body_execution_count();
     verify_c0_sources(click_source, &[("inspect_counts.c", c_source)])
-        .expect("counted resources closed by the outcome simp should verify");
+        .expect("populations closed by the outcome simp should verify");
     assert_eq!(
         crate::kernel::take_checked_function_body_execution_count(),
         0,
@@ -989,7 +989,7 @@ fn callee_subrange_requirement_completes_without_a_body_rerun() {
 }
 
 #[test]
-fn counted_resource_entry_completes_without_a_body_rerun() {
+fn token_quantity_entry_completes_without_a_body_rerun() {
     let c_source = "int32 preserve(int32 x) { return x; }";
     let click_source = r#"
         abstract resource marker(x: int32);
@@ -1007,11 +1007,11 @@ fn counted_resource_entry_completes_without_a_body_rerun() {
 
     let _ = crate::kernel::take_checked_function_body_execution_count();
     verify_c0_sources(click_source, &[("preserve.c", c_source)])
-        .expect("the counted resource entry should verify");
+        .expect("the token quantity entry should verify");
     assert_eq!(
         crate::kernel::take_checked_function_body_execution_count(),
         0,
-        "counted resource entry normalization should not rerun the C body"
+        "token quantity entry normalization should not rerun the C body"
     );
 }
 

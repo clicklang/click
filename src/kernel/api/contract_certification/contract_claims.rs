@@ -897,12 +897,7 @@ fn unproved_contract_path_condition(
     ContractPathPreparationFailure {
         reason,
         obligation: Some(obligation.proposition().clone()),
-        source_goal: obligation
-            .context()
-            .and_then(|context| context.strip_prefix("resource population invariant "))
-            .and_then(|context| context.split_once(": "))
-            .and_then(|(_, fact)| fact.split_once(": fact "))
-            .map(|(_, body)| format!("fact {body}")),
+        source_goal: None,
         available: first,
         available_count: count,
     }
@@ -1139,9 +1134,6 @@ fn prepare_function_claim_path(
     let effect_facts = path.effect_facts.clone();
     if matches!(outcome, CFunctionOutcome::VerificationDiverges) {
         if let Some(obligation) = path.obligations().iter().find(|obligation| {
-            if post_execution_population_obligation(obligation) {
-                return false;
-            }
             !assumptions.proves_exact(obligation.proposition())
                 && !loadable_covered_by_fact(&assumptions, obligation.proposition())
                 && !forall_loadable_covered_by_fact(&assumptions, obligation.proposition())
@@ -1304,9 +1296,6 @@ fn prepare_function_claim_path(
         }
     }
     if let Some(obligation) = path.obligations().iter().find(|obligation| {
-        if post_execution_population_obligation(obligation) {
-            return false;
-        }
         let proved = assumptions.proves_exact(obligation.proposition())
             || loadable_covered_by_fact(&assumptions, obligation.proposition())
             || forall_loadable_covered_by_fact(&assumptions, obligation.proposition())
@@ -1387,24 +1376,7 @@ fn with_unmatched_instance_body_views(
     }
 }
 
-fn post_execution_population_obligation(obligation: &ProofObligation) -> bool {
-    matches!(
-        obligation.context(),
-        Some("resource population remains nonempty" | "resource population body is active")
-    )
-}
-
 fn unproved_path_obligation_message(obligation: &ProofObligation) -> String {
-    if let Some((site, fact)) = obligation
-        .context()
-        .and_then(|context| context.strip_prefix("resource population invariant "))
-        .and_then(|context| context.split_once(": "))
-    {
-        if let Some((resource, body)) = fact.split_once(": fact ") {
-            return format!("could not prove `fact {body}` of resource `{resource}` {site}");
-        }
-        return format!("could not prove the declared resource fact {site}: `{fact}`");
-    }
     // The kernel has no source spelling of the condition itself; its context
     // is the sentence the lowering wrote for it. A captured failure carries
     // the proposition to the surface, which renders it in the certification

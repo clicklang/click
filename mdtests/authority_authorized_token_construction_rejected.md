@@ -26,5 +26,5 @@ int32 bump(int32 result) {
 ```
 
 ```expect
-fail: resource construction may create untracked members in authority mode
+fail: resource construction may create untracked members
 ```

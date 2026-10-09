@@ -1,4 +1,4 @@
-# A user tactic's published outcome matches its trace in authority mode
+# A user tactic's published outcome matches its trace
 
 Rechecking the trace up to publication rebuilds an outcome whose creation
 ledger is a different, empty successor. Ledgers that record nothing are

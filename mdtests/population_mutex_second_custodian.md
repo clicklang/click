@@ -1,4 +1,4 @@
-A second mutex cannot protect the same population
+# A second mutex cannot protect the same population
 
 The population's control is exclusive. Depositing it in a second mutex while
 the first is held moves its authority out of the first critical section, so

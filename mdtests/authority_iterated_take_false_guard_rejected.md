@@ -1,6 +1,6 @@
-# Iterated ownership still checks its guards in authority mode
+# Iterated ownership still checks its guards
 
-Under authority semantics `take` is the same checked memory step: taking an
+`take` is a checked memory step: taking an
 element whose guard is false is still refused.
 
 ```c filename=iterated_ownership_rejects_take_false_guard.c

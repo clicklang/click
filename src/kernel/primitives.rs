@@ -3297,7 +3297,7 @@ pub struct CCompositeResourceDefinition {
     /// Transitive mutex-authority ingredient marker; contract protocol effects are not modeled yet.
     pub(super) contains_mutex_authority: bool,
     /// Declared `authorized resource`: only these families take part in
-    /// population accounting under authority semantics.
+    /// population accounting.
     pub(super) authorized: bool,
     /// Whether the family is authorized, holds a population authority, or
     /// contains or names such a family. Computed when definitions are
@@ -4256,7 +4256,7 @@ pub enum ExecutionLimit {
     /// Another tracked population of the family is neither proven equal to
     /// nor proven different from the counted one, so no total is a count.
     ResourceCountPossiblyAliased,
-    /// Authority-mode count names one concrete population anchor.
+    /// A count names one concrete population anchor.
     AuthorityCountNeedsExactPointer,
     AuthorityCountNeedsResolvedMember,
     /// Both the visible authority fact and checked ledger custody are needed.
@@ -4309,7 +4309,7 @@ impl ExecutionLimit {
                 "count(...) of a population that may alias another tracked population of its family; state whether their arguments are equal or different".to_string()
             }
             Self::AuthorityCountNeedsExactPointer => {
-                "authority-mode count(...) needs one exact base pointer".to_string()
+                "count(...) needs one exact base pointer".to_string()
             }
             Self::AuthorityCountNeedsResolvedMember => {
                 "count(...) requires resolved member indices or the helper's selected member"

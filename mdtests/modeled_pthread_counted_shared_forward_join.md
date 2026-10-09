@@ -1,4 +1,4 @@
-# Workers consume one shared abstract population in either join order
+# Borrowing workers return members the parent spends in forward join order
 
 ```c filename=modeled_pthread_counted_shared_forward_join.c
 #include <pthread.h>

@@ -1542,7 +1542,7 @@ pub(super) fn construct_c_function_resource(
     );
     if !ordinary_token {
         return Ok(Err(CRuntimeError::FunctionContract(
-            "generic resource construction cannot create members in authority mode".to_string(),
+            "generic resource construction cannot create members".to_string(),
         )));
     }
     let Some(mut evaluation_state) = c_function_entry_state(state, function, arguments) else {
@@ -2280,15 +2280,15 @@ fn spec_reaches_population(interface: &CFunctionContractInterface, spec: &CResou
 /// Unadmitted calls cannot update an authority population. Verified effects
 /// and explicitly preserving assumed interfaces are checked at their own call
 /// boundaries; allocation/free use separate statement forms.
-fn authority_mode_call_refusal() -> CRuntimeError {
-    CRuntimeError::FunctionContract(AUTHORITY_MODE_ASSUMED_CALL_REFUSAL.to_string())
+fn authority_call_refusal() -> CRuntimeError {
+    CRuntimeError::FunctionContract(AUTHORITY_ASSUMED_CALL_REFUSAL.to_string())
 }
 
 /// Why an unverified call whose contract changes a population or mutex
 /// resource is refused, and the two ways to admit it.
-pub(super) const AUTHORITY_MODE_ASSUMED_CALL_REFUSAL: &str = "the called function is not verified and its assumed contract changes a population or mutex resource; verify the function, or give it a contract that returns those resources unchanged";
+pub(super) const AUTHORITY_ASSUMED_CALL_REFUSAL: &str = "the called function is not verified and its assumed contract changes a population or mutex resource; verify the function, or give it a contract that returns those resources unchanged";
 
-fn authority_mode_protected_families(interface: &CFunctionContractInterface) -> BTreeSet<&str> {
+fn authority_protected_families(interface: &CFunctionContractInterface) -> BTreeSet<&str> {
     let mut protected_families = BTreeSet::new();
     for input in interface.resource_requires() {
         match input.term() {
@@ -2343,7 +2343,7 @@ fn locked_helper_member_effects(
     if !interface.resource_constructors().is_empty() {
         return None;
     }
-    let protected_families = authority_mode_protected_families(interface);
+    let protected_families = authority_protected_families(interface);
     let mut effects = Vec::new();
     for (produce, clauses, role) in [
         (
@@ -2365,7 +2365,7 @@ fn locked_helper_member_effects(
                 CResourceTerm::Composite { name, .. }
                     if protected_families.contains(name.as_str())
                         && clause.quantity() == &CResourceQuantity::One
-                        && authority_mode_member_quantity_admitted(interface, clause) =>
+                        && authority_member_quantity_admitted(interface, clause) =>
                 {
                     effects.push((produce, clause));
                 }
@@ -2389,7 +2389,7 @@ fn locked_helper_member_effects(
 /// admitted. Its body is checked to make exactly those births and deaths
 /// under the acquired authorities, and the caller applies them to the
 /// populations whose control the mutex holds.
-fn authority_mode_mutex_member_helper_contract(interface: &CFunctionContractInterface) -> bool {
+fn authority_mutex_member_helper_contract(interface: &CFunctionContractInterface) -> bool {
     if !interface.resource_constructors().is_empty()
         || !matches!(
             super::mutexes::helper_contracts::classify(interface),
@@ -2462,7 +2462,7 @@ fn checked_consumed_population_member<'a>(
     interface: &CFunctionContractInterface,
     transfer: &'a CFunctionResourceTransfer,
 ) -> Option<&'a CResourceFact> {
-    let (produce, member) = authority_mode_member_effect(interface)?;
+    let (produce, member) = authority_member_effect(interface)?;
     if produce {
         return None;
     }
@@ -2489,7 +2489,7 @@ fn locked_helper_population(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<Vec<ResourceDescription>, CRuntimeError>> {
-    if !authority_mode_mutex_member_helper_contract(interface) {
+    if !authority_mutex_member_helper_contract(interface) {
         return Ok(Ok(Vec::new()));
     }
     let Some(effects) = locked_helper_member_effects(interface) else {
@@ -2540,7 +2540,7 @@ fn checked_consumed_population_control<'a>(
     interface: &CFunctionContractInterface,
     transfer: &'a CFunctionResourceTransfer,
 ) -> Option<&'a CResourceFact> {
-    let control = authority_mode_consumed_control(interface)?;
+    let control = authority_consumed_control(interface)?;
     let index = interface
         .resource_requires()
         .iter()
@@ -2555,13 +2555,13 @@ fn checked_consumed_population_control<'a>(
 /// Select one explicit population member effect independently of ordinary
 /// companion clauses. The resource planner still checks every companion;
 /// the checked population exchange independently validates exact custody.
-fn authority_mode_member_effect(
+fn authority_member_effect(
     interface: &CFunctionContractInterface,
 ) -> Option<(bool, &CResourceSpec)> {
     if !interface.resource_constructors().is_empty() {
         return None;
     }
-    let protected_families = authority_mode_protected_families(interface);
+    let protected_families = authority_protected_families(interface);
     let mut effect = None;
     for (produce, clauses) in [
         (false, interface.resource_requires()),
@@ -2581,7 +2581,7 @@ fn authority_mode_member_effect(
             {
                 continue;
             }
-            if effect.is_some() || !authority_mode_member_quantity_admitted(interface, clause) {
+            if effect.is_some() || !authority_member_quantity_admitted(interface, clause) {
                 return None;
             }
             effect = Some((produce, clause));
@@ -2593,13 +2593,13 @@ fn authority_mode_member_effect(
 /// Admit one unit exchange, or its two-anchor counterpart: two families
 /// exchange one unit each at distinct anchors. Each explicit effect keeps its
 /// own authority and custody check; no global count is used as ownership.
-fn authority_mode_exchange_effects(
+fn authority_exchange_effects(
     interface: &CFunctionContractInterface,
 ) -> Option<Vec<(bool, &CResourceSpec)>> {
     if !interface.resource_constructors().is_empty() {
         return None;
     }
-    let families = authority_mode_protected_families(interface);
+    let families = authority_protected_families(interface);
     let select = |spec: &&CResourceSpec, role| {
         spec.role() == role
             && matches!(spec.term(), CResourceTerm::Composite { name, .. } if families.contains(name.as_str()))
@@ -2660,8 +2660,8 @@ fn authority_mode_exchange_effects(
         if !(same_family_move || family_exchange)
             || input.quantity() != &CResourceQuantity::One
             || output.quantity() != &CResourceQuantity::One
-            || !authority_mode_member_quantity_admitted(interface, input)
-            || !authority_mode_member_quantity_admitted(interface, output)
+            || !authority_member_quantity_admitted(interface, input)
+            || !authority_member_quantity_admitted(interface, output)
         {
             return None;
         }
@@ -2707,13 +2707,13 @@ fn authority_mode_exchange_effects(
 /// Two independent unit births can return their two authority controls.
 /// This is a bounded composition of existing initialization contracts, not a
 /// rule for arbitrary population deltas or implicit authority creation.
-fn authority_mode_two_control_births(
+fn authority_two_control_births(
     interface: &CFunctionContractInterface,
 ) -> Option<Vec<(bool, &CResourceSpec)>> {
     if !interface.resource_constructors().is_empty() {
         return None;
     }
-    let families = authority_mode_protected_families(interface);
+    let families = authority_protected_families(interface);
     let is_member = |spec: &CResourceSpec| {
         matches!(spec.term(), CResourceTerm::Composite { name, .. }
             if families.contains(name.as_str()))
@@ -2734,7 +2734,7 @@ fn authority_mode_two_control_births(
         || members.iter().any(|member| {
             member.quantity() != &CResourceQuantity::One
                 || member.instance_identity().is_some()
-                || !authority_mode_member_quantity_admitted(interface, member)
+                || !authority_member_quantity_admitted(interface, member)
         })
     {
         return None;
@@ -2897,13 +2897,13 @@ fn authority_mode_two_control_births(
 /// authenticates the whole consumed quantity, the return partition checks the
 /// produced custody, and certification checks their net ledger change. This
 /// is distinct from a unit move between populations.
-fn authority_mode_quantity_exchange_effects(
+fn authority_quantity_exchange_effects(
     interface: &CFunctionContractInterface,
 ) -> Option<Vec<(bool, &CResourceSpec)>> {
     if !interface.resource_constructors().is_empty() {
         return None;
     }
-    let families = authority_mode_protected_families(interface);
+    let families = authority_protected_families(interface);
     let select = |spec: &&CResourceSpec, role| {
         spec.role() == role
             && matches!(spec.term(), CResourceTerm::Composite { name, .. } if families.contains(name.as_str()))
@@ -2939,8 +2939,8 @@ fn authority_mode_quantity_exchange_effects(
     if input_name != output_name
         || (!matches!(input.quantity(), CResourceQuantity::Count(_))
             && !matches!(output.quantity(), CResourceQuantity::Count(_)))
-        || !authority_mode_member_quantity_admitted(interface, input)
-        || !authority_mode_member_quantity_admitted(interface, output)
+        || !authority_member_quantity_admitted(interface, input)
+        || !authority_member_quantity_admitted(interface, output)
         || !interface
             .composite_resource_definition(input_name)?
             .contains()
@@ -2951,36 +2951,32 @@ fn authority_mode_quantity_exchange_effects(
     Some(vec![(false, input), (true, output)])
 }
 
-fn authority_mode_checked_member_effects(
+fn authority_checked_member_effects(
     interface: &CFunctionContractInterface,
 ) -> Vec<(bool, &CResourceSpec)> {
-    if let Some(effects) = authority_mode_quantity_exchange_effects(interface)
-        .or_else(|| authority_mode_exchange_effects(interface))
-        .or_else(|| authority_mode_two_control_births(interface))
+    if let Some(effects) = authority_quantity_exchange_effects(interface)
+        .or_else(|| authority_exchange_effects(interface))
+        .or_else(|| authority_two_control_births(interface))
     {
         effects
     } else {
-        authority_mode_member_effect(interface)
-            .into_iter()
-            .collect()
+        authority_member_effect(interface).into_iter().collect()
     }
 }
 
-fn authority_mode_exchanges_member_contract(interface: &CFunctionContractInterface) -> bool {
-    (authority_mode_quantity_exchange_effects(interface).is_some()
-        || authority_mode_exchange_effects(interface).is_some())
-        && authority_mode_member_companions_admitted(interface)
+fn authority_exchanges_member_contract(interface: &CFunctionContractInterface) -> bool {
+    (authority_quantity_exchange_effects(interface).is_some()
+        || authority_exchange_effects(interface).is_some())
+        && authority_member_companions_admitted(interface)
 }
 
 /// Identify consumed control custody separately from the one member effect.
 /// Its returned clause may use an entry spelling such as `old(p->kid)`; exact
 /// evaluated population identity is checked at the resource transfer boundary.
-fn authority_mode_consumed_control(
-    interface: &CFunctionContractInterface,
-) -> Option<&CResourceSpec> {
-    let (produce, member) = authority_mode_quantity_exchange_effects(interface)
+fn authority_consumed_control(interface: &CFunctionContractInterface) -> Option<&CResourceSpec> {
+    let (produce, member) = authority_quantity_exchange_effects(interface)
         .and_then(|effects| effects.into_iter().find(|(produce, _)| !produce))
-        .or_else(|| authority_mode_member_effect(interface))?;
+        .or_else(|| authority_member_effect(interface))?;
     if produce {
         return None;
     }
@@ -3013,10 +3009,8 @@ fn authority_mode_consumed_control(
     selected
 }
 
-fn authority_mode_returned_control(
-    interface: &CFunctionContractInterface,
-) -> Option<&CResourceSpec> {
-    let consumed = authority_mode_consumed_control(interface)?;
+fn authority_returned_control(interface: &CFunctionContractInterface) -> Option<&CResourceSpec> {
+    let consumed = authority_consumed_control(interface)?;
     let CResourceTerm::Composite {
         name: control_name, ..
     } = consumed.term()
@@ -3044,7 +3038,7 @@ fn authority_mode_returned_control(
 /// control, and returning the same mutex resources leaves the mutex state as it
 /// was. Preserving its other resources therefore changes no population the
 /// caller holds.
-fn authority_mode_borrows_only_mutex_resources(interface: &CFunctionContractInterface) -> bool {
+fn authority_borrows_only_mutex_resources(interface: &CFunctionContractInterface) -> bool {
     matches!(
         super::mutexes::helper_contracts::classify(interface),
         Ok(None)
@@ -3065,14 +3059,14 @@ fn authority_mode_borrows_only_mutex_resources(interface: &CFunctionContractInte
         })
 }
 
-fn authority_mode_preserves_resource_contract(interface: &CFunctionContractInterface) -> bool {
+fn authority_preserves_resource_contract(interface: &CFunctionContractInterface) -> bool {
     if !interface.resource_constructors().is_empty()
         || (interface
             .resource_requires()
             .iter()
             .chain(interface.resource_ensures())
             .any(|spec| spec_contains_mutex_authority(interface, spec))
-            && !authority_mode_borrows_only_mutex_resources(interface))
+            && !authority_borrows_only_mutex_resources(interface))
     {
         return false;
     }
@@ -3082,14 +3076,14 @@ fn authority_mode_preserves_resource_contract(interface: &CFunctionContractInter
             ResourceFamily::Composite | ResourceFamily::PopulationAuthority
         )
     };
-    let protected = authority_mode_protected_families(interface);
+    let protected = authority_protected_families(interface);
     let admitted = |spec: &&CResourceSpec| {
         spec.role() == CResourceTransferRole::Borrow
             && spec.access() == CResourceAccessMode::Own
             && (spec.quantity() == &CResourceQuantity::One
                 || matches!(spec.term(), CResourceTerm::Composite { name, .. }
                     if protected.contains(name.as_str())
-                        && authority_mode_member_quantity_admitted(interface, spec)))
+                        && authority_member_quantity_admitted(interface, spec)))
             && spec.guard().is_none()
             && spec.resource_arguments().is_empty()
     };
@@ -3118,11 +3112,11 @@ fn authority_mode_preserves_resource_contract(interface: &CFunctionContractInter
 /// An assumed contract may preserve a ledger, but it has no body certificate
 /// justifying population births or spends. Named occurrences must be borrowed
 /// and returned with exactly the same identity and description as well.
-pub(super) fn authority_mode_preserves_assumed_resource_contract(
+pub(super) fn authority_preserves_assumed_resource_contract(
     interface: &CFunctionContractInterface,
 ) -> bool {
-    if !authority_mode_preserves_resource_contract(interface)
-        || authority_mode_protected_families(interface).is_empty()
+    if !authority_preserves_resource_contract(interface)
+        || authority_protected_families(interface).is_empty()
             && !interface
                 .resource_requires()
                 .iter()
@@ -3162,8 +3156,8 @@ pub(super) fn authority_mode_preserves_assumed_resource_contract(
 /// Direct population-like companions remain conserved. A control wrapper's
 /// own authority is moved by the checked call boundary; named instances and
 /// memory clauses retain their ordinary resource validation.
-fn authority_mode_member_companions_admitted(interface: &CFunctionContractInterface) -> bool {
-    let effects = authority_mode_checked_member_effects(interface);
+fn authority_member_companions_admitted(interface: &CFunctionContractInterface) -> bool {
+    let effects = authority_checked_member_effects(interface);
     let Some((_, member)) = effects.first() else {
         return false;
     };
@@ -3231,8 +3225,7 @@ fn authority_mode_member_companions_admitted(interface: &CFunctionContractInterf
             if is_control(spec) && spec.role() != CResourceTransferRole::Borrow {
                 // A single-member effect or same-population quantity exchange
                 // can replace control. A unit move borrows its authorities.
-                if (effects.len() != 1
-                    && authority_mode_quantity_exchange_effects(interface).is_none())
+                if (effects.len() != 1 && authority_quantity_exchange_effects(interface).is_none())
                     || (input && spec.guard().is_some())
                 {
                     return false;
@@ -3263,7 +3256,7 @@ fn authority_mode_member_companions_admitted(interface: &CFunctionContractInterf
             .all(|(left, right)| left.term() == right.term())
 }
 
-fn authority_mode_member_quantity_admitted(
+fn authority_member_quantity_admitted(
     interface: &CFunctionContractInterface,
     member: &CResourceSpec,
 ) -> bool {
@@ -3286,9 +3279,9 @@ fn authority_mode_member_quantity_admitted(
             .is_some_and(|definition| definition.contains().is_empty())
 }
 
-fn authority_mode_consumes_member_contract(interface: &CFunctionContractInterface) -> bool {
-    authority_mode_member_effect(interface).is_some_and(|(produce, _)| !produce)
-        && authority_mode_member_companions_admitted(interface)
+fn authority_consumes_member_contract(interface: &CFunctionContractInterface) -> bool {
+    authority_member_effect(interface).is_some_and(|(produce, _)| !produce)
+        && authority_member_companions_admitted(interface)
 }
 
 /// Standalone claim certification must check wildcard and paired consumptions even
@@ -3301,21 +3294,21 @@ pub(super) fn check_wildcard_consumption_at_return(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<(), CRuntimeError>> {
-    if authority_mode_quantity_exchange_effects(interface).is_some()
-        && authority_mode_member_companions_admitted(interface)
+    if authority_quantity_exchange_effects(interface).is_some()
+        && authority_member_companions_admitted(interface)
     {
         return check_quantity_exchange_at_return(entry, exit, interface, assumptions, budget);
     }
-    if !(authority_mode_consumes_member_contract(interface)
-        || authority_mode_exchanges_member_contract(interface))
+    if !(authority_consumes_member_contract(interface)
+        || authority_exchanges_member_contract(interface))
     {
         return Ok(Ok(()));
     }
-    for (_, member) in authority_mode_checked_member_effects(interface)
+    for (_, member) in authority_checked_member_effects(interface)
         .into_iter()
         .filter(|(produce, _)| !produce)
     {
-        let paired = authority_mode_exchange_effects(interface).is_some();
+        let paired = authority_exchange_effects(interface).is_some();
         let CResourceTerm::Composite {
             name: member_name, ..
         } = member.term()
@@ -3426,7 +3419,7 @@ fn check_quantity_exchange_at_return(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<(), CRuntimeError>> {
-    let effects = authority_mode_quantity_exchange_effects(interface).expect("quantity exchange");
+    let effects = authority_quantity_exchange_effects(interface).expect("quantity exchange");
     let Some(values) = interface
         .parameters()
         .iter()
@@ -3531,23 +3524,23 @@ fn check_quantity_exchange_at_return(
     }
 }
 
-fn authority_mode_produces_member_contract(interface: &CFunctionContractInterface) -> bool {
-    (authority_mode_member_effect(interface).is_some_and(|(produce, _)| produce)
-        && authority_mode_member_companions_admitted(interface))
-        || authority_mode_two_control_births(interface).is_some()
+fn authority_produces_member_contract(interface: &CFunctionContractInterface) -> bool {
+    (authority_member_effect(interface).is_some_and(|(produce, _)| produce)
+        && authority_member_companions_admitted(interface))
+        || authority_two_control_births(interface).is_some()
 }
 
-fn authority_mode_final_release_contract(interface: &CFunctionContractInterface) -> bool {
-    authority_mode_consumes_member_contract(interface)
-        && authority_mode_consumed_control(interface).is_some()
-        && authority_mode_returned_control(interface).is_none()
+fn authority_final_release_contract(interface: &CFunctionContractInterface) -> bool {
+    authority_consumes_member_contract(interface)
+        && authority_consumed_control(interface).is_some()
+        && authority_returned_control(interface).is_none()
 }
 
-fn authority_mode_conditional_release_contract(interface: &CFunctionContractInterface) -> bool {
-    authority_mode_returned_control(interface).is_some_and(|returned| returned.guard().is_some())
+fn authority_conditional_release_contract(interface: &CFunctionContractInterface) -> bool {
+    authority_returned_control(interface).is_some_and(|returned| returned.guard().is_some())
 }
 
-fn authority_mode_release_retires_control(
+fn authority_release_retires_control(
     entry: &CState,
     post: &CState,
     interface: &CFunctionContractInterface,
@@ -3555,10 +3548,10 @@ fn authority_mode_release_retires_control(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<bool, CRuntimeError>> {
-    if authority_mode_final_release_contract(interface) {
+    if authority_final_release_contract(interface) {
         return Ok(Ok(true));
     }
-    if !authority_mode_conditional_release_contract(interface) {
+    if !authority_conditional_release_contract(interface) {
         return Ok(Ok(false));
     }
     let mut named_views = Vec::new();
@@ -3600,8 +3593,7 @@ fn authority_mode_release_retires_control(
     let argument_entry = entry
         .clone()
         .with_resource_context(entry.resources().clone().unchecked_with_facts(named_views));
-    let control =
-        authority_mode_consumed_control(interface).expect("checked conditional input control");
+    let control = authority_consumed_control(interface).expect("checked conditional input control");
     let selected = if let Some(checked) = checked_control {
         checked.clone()
     } else {
@@ -3629,7 +3621,7 @@ fn authority_mode_release_retires_control(
     resource_spec_guard_is_active(
         &read_entry,
         post,
-        authority_mode_returned_control(interface).expect("checked conditional control"),
+        authority_returned_control(interface).expect("checked conditional control"),
         assumptions,
         budget,
     )
@@ -3640,7 +3632,7 @@ fn authority_mode_release_retires_control(
 /// between its caller and the mutex. Its standalone body cannot open an
 /// acquired authority-bearing state, so it changes no population; the caller
 /// applies the checked runtime exchange. Any other clause leaves this subset.
-fn authority_mode_mutex_helper_contract(interface: &CFunctionContractInterface) -> bool {
+fn authority_mutex_helper_contract(interface: &CFunctionContractInterface) -> bool {
     let Ok(Some(helper)) = super::mutexes::helper_contracts::classify(interface) else {
         return false;
     };
@@ -3668,10 +3660,10 @@ fn authority_mode_mutex_helper_contract(interface: &CFunctionContractInterface) 
     accesses == 2 && guards == 1 && payloads == usize::from(helper.payload.is_some())
 }
 
-fn authority_mode_supports_resource_contract(interface: &CFunctionContractInterface) -> bool {
+fn authority_supports_resource_contract(interface: &CFunctionContractInterface) -> bool {
     if interface.resource_constructors().is_empty()
-        && (authority_mode_mutex_helper_contract(interface)
-            || authority_mode_mutex_member_helper_contract(interface))
+        && (authority_mutex_helper_contract(interface)
+            || authority_mutex_member_helper_contract(interface))
     {
         return true;
     }
@@ -3684,13 +3676,13 @@ fn authority_mode_supports_resource_contract(interface: &CFunctionContractInterf
         .chain(interface.resource_ensures())
         .any(|spec| spec_contains_mutex_authority(interface, spec))
     {
-        return authority_mode_preserves_resource_contract(interface);
+        return authority_preserves_resource_contract(interface);
     }
-    authority_mode_preserves_resource_contract(interface)
-        || authority_mode_consumes_member_contract(interface)
-        || authority_mode_produces_member_contract(interface)
-        || authority_mode_final_release_contract(interface)
-        || authority_mode_exchanges_member_contract(interface)
+    authority_preserves_resource_contract(interface)
+        || authority_consumes_member_contract(interface)
+        || authority_produces_member_contract(interface)
+        || authority_final_release_contract(interface)
+        || authority_exchanges_member_contract(interface)
 }
 
 #[cfg(test)]
@@ -3809,10 +3801,10 @@ mod authority_helper_admission_tests {
                     vec![],
                 ),
             ]);
-            assert!(authority_mode_supports_resource_contract(
+            assert!(authority_supports_resource_contract(
                 function.contract_interface()
             ));
-            assert!(!authority_mode_preserves_assumed_resource_contract(
+            assert!(!authority_preserves_assumed_resource_contract(
                 function.contract_interface()
             ));
             let events = entry.population_effects.creation.as_ref().unwrap();
@@ -4064,11 +4056,11 @@ mod authority_helper_admission_tests {
             c_int32_literal(0),
             c_int32_literal(1),
         ))];
-        assert!(!authority_mode_preserves_resource_contract(&interface));
+        assert!(!authority_preserves_resource_contract(&interface));
     }
     #[test]
     fn assumed_authority_contracts_preserve_named_identity_without_lifecycle_rights() {
-        assert!(!authority_mode_preserves_assumed_resource_contract(
+        assert!(!authority_preserves_assumed_resource_contract(
             &CFunctionContractInterface::new(CType::Void, Vec::new())
         ));
         let mut interface = companion_interface("reference");
@@ -4099,9 +4091,7 @@ mod authority_helper_admission_tests {
         .unwrap();
         interface.resource_requires.push(named.clone());
         interface.resource_ensures.push(named);
-        assert!(authority_mode_preserves_assumed_resource_contract(
-            &interface
-        ));
+        assert!(authority_preserves_assumed_resource_contract(&interface));
         let mut logical = interface.clone();
         logical
             .resource_requires
@@ -4110,7 +4100,7 @@ mod authority_helper_admission_tests {
             .resource_ensures
             .retain(|spec| spec.family() == ResourceFamily::Instance);
         assert!(
-            authority_mode_preserves_assumed_resource_contract(&logical),
+            authority_preserves_assumed_resource_contract(&logical),
             "ordinary named models do not need artificial population authority"
         );
         for role in [
@@ -4127,9 +4117,7 @@ mod authority_helper_admission_tests {
                 let last = changed.resource_ensures.last_mut().unwrap();
                 *last = last.clone().with_role(role);
             }
-            assert!(!authority_mode_preserves_assumed_resource_contract(
-                &changed
-            ));
+            assert!(!authority_preserves_assumed_resource_contract(&changed));
         }
         let mut changed = interface.clone();
         changed.resource_ensures.pop();
@@ -4144,13 +4132,9 @@ mod authority_helper_admission_tests {
             )
             .unwrap(),
         );
-        assert!(!authority_mode_preserves_assumed_resource_contract(
-            &changed
-        ));
+        assert!(!authority_preserves_assumed_resource_contract(&changed));
         interface.resource_ensures.pop();
-        assert!(!authority_mode_preserves_assumed_resource_contract(
-            &interface
-        ));
+        assert!(!authority_preserves_assumed_resource_contract(&interface));
     }
 
     fn companion_interface(member_family: &str) -> CFunctionContractInterface {
@@ -4220,12 +4204,12 @@ mod authority_helper_admission_tests {
     #[test]
     fn member_effect_is_independent_of_companion_positions_and_borrowed_survivor() {
         let interface = companion_interface("reference");
-        let (produce, selected) = authority_mode_member_effect(&interface).unwrap();
+        let (produce, selected) = authority_member_effect(&interface).unwrap();
         assert!(produce);
         assert!(
             matches!(selected.term(), CResourceTerm::Composite { name, .. } if name == "reference")
         );
-        assert!(authority_mode_supports_resource_contract(&interface));
+        assert!(authority_supports_resource_contract(&interface));
     }
 
     #[test]
@@ -4277,28 +4261,28 @@ mod authority_helper_admission_tests {
             )
             .contract_interface()
             .clone();
-        assert!(authority_mode_exchanges_member_contract(&interface));
-        assert!(authority_mode_supports_resource_contract(&interface));
-        assert!(authority_mode_member_effect(&interface).is_none());
+        assert!(authority_exchanges_member_contract(&interface));
+        assert!(authority_supports_resource_contract(&interface));
+        assert!(authority_member_effect(&interface).is_none());
         let mut missing = interface.clone();
         missing.resource_requires.remove(1);
-        assert!(!authority_mode_supports_resource_contract(&missing));
+        assert!(!authority_supports_resource_contract(&missing));
         let mut changed_member = interface.clone();
         changed_member.resource_ensures[2] =
             member("destination", "q").with_role(CResourceTransferRole::Produce);
-        assert!(!authority_mode_supports_resource_contract(&changed_member));
+        assert!(!authority_supports_resource_contract(&changed_member));
         let mut duplicate = interface.clone();
         duplicate
             .resource_ensures
             .push(duplicate.resource_ensures[2].clone());
-        assert!(!authority_mode_supports_resource_contract(&duplicate));
+        assert!(!authority_supports_resource_contract(&duplicate));
         let mut same_pool = interface.clone();
         same_pool.resource_ensures[2] =
             member("source", "p").with_role(CResourceTransferRole::Produce);
-        assert!(!authority_mode_supports_resource_contract(&same_pool));
+        assert!(!authority_supports_resource_contract(&same_pool));
         let mut lost_authority = interface;
         lost_authority.resource_ensures.remove(1);
-        assert!(!authority_mode_supports_resource_contract(&lost_authority));
+        assert!(!authority_supports_resource_contract(&lost_authority));
     }
 
     #[test]
@@ -4343,30 +4327,30 @@ mod authority_helper_admission_tests {
             )
             .contract_interface()
             .clone();
-        assert!(authority_mode_exchanges_member_contract(&interface));
+        assert!(authority_exchanges_member_contract(&interface));
         for index in [0, 1] {
             let mut missing = interface.clone();
             missing.resource_requires.remove(index);
-            assert!(!authority_mode_supports_resource_contract(&missing));
+            assert!(!authority_supports_resource_contract(&missing));
             let mut lost = interface.clone();
             lost.resource_ensures.remove(index);
-            assert!(!authority_mode_supports_resource_contract(&lost));
+            assert!(!authority_supports_resource_contract(&lost));
         }
         let mut duplicate = interface.clone();
         duplicate
             .resource_requires
             .push(duplicate.resource_requires[2].clone());
-        assert!(!authority_mode_supports_resource_contract(&duplicate));
+        assert!(!authority_supports_resource_contract(&duplicate));
         let mut duplicate = interface.clone();
         duplicate
             .resource_ensures
             .push(duplicate.resource_ensures[2].clone());
-        assert!(!authority_mode_supports_resource_contract(&duplicate));
+        assert!(!authority_supports_resource_contract(&duplicate));
         let mut wrong_anchor = interface;
         wrong_anchor.resource_ensures[2] =
             member("item", vec![c_variable("other"), c_variable("p")])
                 .with_role(CResourceTransferRole::Produce);
-        assert!(!authority_mode_supports_resource_contract(&wrong_anchor));
+        assert!(!authority_supports_resource_contract(&wrong_anchor));
     }
 
     #[test]
@@ -4416,25 +4400,25 @@ mod authority_helper_admission_tests {
             .with_resource_summary(inputs, outputs)
             .contract_interface()
             .clone();
-        assert!(authority_mode_supports_resource_contract(&interface));
-        let effects = authority_mode_checked_member_effects(&interface);
+        assert!(authority_supports_resource_contract(&interface));
+        let effects = authority_checked_member_effects(&interface);
         assert_eq!(effects.iter().filter(|(produce, _)| !produce).count(), 2);
         assert_eq!(effects.iter().filter(|(produce, _)| *produce).count(), 2);
         for index in 0..4 {
             let mut missing = interface.clone();
             missing.resource_requires.remove(index);
-            assert!(!authority_mode_supports_resource_contract(&missing));
+            assert!(!authority_supports_resource_contract(&missing));
             let mut lost = interface.clone();
             lost.resource_ensures.remove(index);
-            assert!(!authority_mode_supports_resource_contract(&lost));
+            assert!(!authority_supports_resource_contract(&lost));
         }
         for index in [4, 5] {
             let mut missing = interface.clone();
             missing.resource_requires.remove(index);
-            assert!(!authority_mode_supports_resource_contract(&missing));
+            assert!(!authority_supports_resource_contract(&missing));
             let mut missing = interface.clone();
             missing.resource_ensures.remove(index);
-            assert!(!authority_mode_supports_resource_contract(&missing));
+            assert!(!authority_supports_resource_contract(&missing));
         }
         for index in [4, 5] {
             let mut nonunit = interface.clone();
@@ -4447,7 +4431,7 @@ mod authority_helper_admission_tests {
                 original.snapshot(),
             )
             .unwrap();
-            assert!(!authority_mode_supports_resource_contract(&nonunit));
+            assert!(!authority_supports_resource_contract(&nonunit));
         }
         let mut changed_item = interface.clone();
         changed_item.resource_ensures[4] = CResourceSpec::composite(
@@ -4457,16 +4441,16 @@ mod authority_helper_admission_tests {
             vec![CType::Int32Pointer; 2],
         )
         .with_role(CResourceTransferRole::Produce);
-        assert!(!authority_mode_supports_resource_contract(&changed_item));
+        assert!(!authority_supports_resource_contract(&changed_item));
         let mut extra = interface.clone();
         extra
             .resource_ensures
             .push(extra.resource_ensures[5].clone());
-        assert!(!authority_mode_supports_resource_contract(&extra));
+        assert!(!authority_supports_resource_contract(&extra));
         let mut wrong_anchor = interface;
         wrong_anchor.resource_ensures[5] =
             member("slot", "other", false).with_role(CResourceTransferRole::Produce);
-        assert!(!authority_mode_supports_resource_contract(&wrong_anchor));
+        assert!(!authority_supports_resource_contract(&wrong_anchor));
     }
 
     #[test]
@@ -4521,23 +4505,23 @@ mod authority_helper_admission_tests {
             .with_composite_resource_definitions(vec![definition("storage"), definition("control")])
             .contract_interface()
             .clone();
-        assert!(authority_mode_supports_resource_contract(&interface));
-        assert_eq!(authority_mode_checked_member_effects(&interface).len(), 2);
+        assert!(authority_supports_resource_contract(&interface));
+        assert_eq!(authority_checked_member_effects(&interface).len(), 2);
         for index in 0..2 {
             let mut missing = interface.clone();
             missing.resource_requires.remove(index);
-            assert!(authority_mode_two_control_births(&missing).is_none());
+            assert!(authority_two_control_births(&missing).is_none());
             let mut lost = interface.clone();
             lost.resource_ensures.remove(index);
-            assert!(authority_mode_two_control_births(&lost).is_none());
+            assert!(authority_two_control_births(&lost).is_none());
         }
         for index in 2..4 {
             let mut missing = interface.clone();
             missing.resource_ensures.remove(index);
-            assert!(authority_mode_two_control_births(&missing).is_none());
+            assert!(authority_two_control_births(&missing).is_none());
             let mut wrong = interface.clone();
             wrong.resource_ensures[index] = birth("other");
-            assert!(authority_mode_two_control_births(&wrong).is_none());
+            assert!(authority_two_control_births(&wrong).is_none());
             let mut nonunit = interface.clone();
             let old = &nonunit.resource_ensures[index];
             nonunit.resource_ensures[index] = CResourceSpec::new(
@@ -4548,17 +4532,17 @@ mod authority_helper_admission_tests {
                 old.snapshot(),
             )
             .unwrap();
-            assert!(authority_mode_two_control_births(&nonunit).is_none());
+            assert!(authority_two_control_births(&nonunit).is_none());
         }
         let mut duplicate = interface.clone();
         duplicate.resource_ensures[3] = birth("first");
-        assert!(authority_mode_two_control_births(&duplicate).is_none());
+        assert!(authority_two_control_births(&duplicate).is_none());
         let mut changed_control = interface.clone();
         changed_control.resource_ensures[1] = output("other");
-        assert!(authority_mode_two_control_births(&changed_control).is_none());
+        assert!(authority_two_control_births(&changed_control).is_none());
         let mut extra = interface;
         extra.resource_ensures.push(birth("third"));
-        assert!(authority_mode_two_control_births(&extra).is_none());
+        assert!(authority_two_control_births(&extra).is_none());
     }
 
     #[test]
@@ -4566,8 +4550,8 @@ mod authority_helper_admission_tests {
         let mut interface = companion_interface("reference");
         let member = interface.resource_ensures[1].clone();
         interface.resource_ensures.push(member);
-        assert!(authority_mode_member_effect(&interface).is_none());
-        assert!(!authority_mode_supports_resource_contract(&interface));
+        assert!(authority_member_effect(&interface).is_none());
+        assert!(!authority_supports_resource_contract(&interface));
     }
 
     #[test]
@@ -4580,9 +4564,9 @@ mod authority_helper_admission_tests {
             vec![CType::Int32Pointer],
         )
         .with_role(CResourceTransferRole::Produce);
-        assert!(authority_mode_member_effect(&interface).is_none());
-        assert!(!authority_mode_produces_member_contract(&interface));
-        assert!(!authority_mode_supports_resource_contract(&interface));
+        assert!(authority_member_effect(&interface).is_none());
+        assert!(!authority_produces_member_contract(&interface));
+        assert!(!authority_supports_resource_contract(&interface));
     }
     #[test]
     fn effect_cannot_hide_an_unprotected_composite_birth() {
@@ -4596,7 +4580,7 @@ mod authority_helper_admission_tests {
             )
             .with_role(CResourceTransferRole::Produce),
         );
-        assert!(!authority_mode_supports_resource_contract(&interface));
+        assert!(!authority_supports_resource_contract(&interface));
     }
 
     #[test]
@@ -4606,7 +4590,7 @@ mod authority_helper_admission_tests {
             .resource_requires
             .retain(|spec| spec.family() == ResourceFamily::PopulationAuthority);
         interface.resource_ensures.clear();
-        assert!(!authority_mode_supports_resource_contract(&interface));
+        assert!(!authority_supports_resource_contract(&interface));
     }
     #[test]
     fn resource_expansion_diagnostics_bound_the_named_frontier() {
@@ -4641,12 +4625,12 @@ pub(super) fn execute_c_function_call_paths(
             .get_external_function_rule(function.name())
             .is_some_and(|rule| {
                 rule.is_scoped_unselected()
-                    || authority_mode_preserves_assumed_resource_contract(
+                    || authority_preserves_assumed_resource_contract(
                         rule.function.contract_interface(),
                     )
             })
     {
-        let error = authority_mode_call_refusal();
+        let error = authority_call_refusal();
         return Ok(vec![CFunctionPath {
             outcome: CFunctionOutcome::RuntimeError(error),
             facts: Vec::new().into(),
@@ -6365,7 +6349,7 @@ fn execute_verified_function_applications_with_suspension(
         // successor; it is not an execution-path split.
         post_state.resources = return_resources.clone();
         let authority_release_retires = {
-            match authority_mode_release_retires_control(
+            match authority_release_retires_control(
                 &entry_contract_state,
                 &post_state,
                 interface,
@@ -6564,18 +6548,18 @@ fn execute_verified_function_applications_with_suspension(
         }
         // A suspended locked worker's change is applied at its join instead.
         let defer_locked_exchange =
-            suspended.is_some() && authority_mode_mutex_member_helper_contract(interface);
+            suspended.is_some() && authority_mutex_member_helper_contract(interface);
         let mut deferred_exchange = Vec::new();
         // Publish the checked population delta before lowering postcondition counts.
         let member_effects = if authority_release_retires {
             Vec::new()
-        } else if authority_mode_mutex_member_helper_contract(interface) {
+        } else if authority_mutex_member_helper_contract(interface) {
             locked_helper_member_effects(interface).unwrap_or_default()
-        } else if authority_mode_consumes_member_contract(interface)
-            || authority_mode_produces_member_contract(interface)
-            || authority_mode_exchanges_member_contract(interface)
+        } else if authority_consumes_member_contract(interface)
+            || authority_produces_member_contract(interface)
+            || authority_exchanges_member_contract(interface)
         {
-            authority_mode_checked_member_effects(interface)
+            authority_checked_member_effects(interface)
         } else {
             Vec::new()
         };
@@ -6604,7 +6588,7 @@ fn execute_verified_function_applications_with_suspension(
                     None
                 };
                 if let Some(output) = &mut produced_member
-                    && let Some(effects) = authority_mode_quantity_exchange_effects(interface)
+                    && let Some(effects) = authority_quantity_exchange_effects(interface)
                 {
                     let input_spec = effects[0].1;
                     let input = interface
@@ -6957,7 +6941,7 @@ fn execute_verified_function_applications_with_suspension(
                 .iter()
                 .chain(output_resources.facts())
                 .find_map(|fact| {
-                    // Authority mode transfers an exact authority through the
+                    // A worker receives an exact authority through the
                     // creation ledger below, as at a sequential call boundary.
                     if worker_mutex_uses.contains(fact)
                         || (matches!(
@@ -7661,9 +7645,9 @@ fn prepare_verified_function_call<'a>(
                 && !environment
                     .get_external_function_rule(application.name)
                     .is_some_and(CExternalFunctionRule::is_scoped_unselected)
-                && !authority_mode_preserves_assumed_resource_contract(contract_interface)))
+                && !authority_preserves_assumed_resource_contract(contract_interface)))
     {
-        let error = authority_mode_call_refusal();
+        let error = authority_call_refusal();
         return Ok(Err(CFunctionPath {
             outcome: CFunctionOutcome::RuntimeError(error),
             facts: arguments_path.facts,
@@ -7672,7 +7656,7 @@ fn prepare_verified_function_call<'a>(
         }));
     }
     if contract_reaches_population(contract_interface)
-        && !authority_mode_supports_resource_contract(contract_interface)
+        && !authority_supports_resource_contract(contract_interface)
     {
         return Ok(Err(resource_call_failure(
             "helper contract needs conserved owns resources, a checked consumes/produces effect, or a supported unit exchange",
@@ -19962,13 +19946,12 @@ fn prepare_contract_resource_transfer(
     }
     let mut canonical_population_owners = Vec::new();
     {
-        let quantity_input =
-            authority_mode_quantity_exchange_effects(interface).and_then(|effects| {
-                interface
-                    .resource_requires()
-                    .iter()
-                    .position(|spec| std::ptr::eq(spec, effects[0].1))
-            });
+        let quantity_input = authority_quantity_exchange_effects(interface).and_then(|effects| {
+            interface
+                .resource_requires()
+                .iter()
+                .position(|spec| std::ptr::eq(spec, effects[0].1))
+        });
         for checked in &mut checked_required_resources {
             let CResource::Composite { name, .. } = checked.fact.resource() else {
                 continue;
@@ -21311,7 +21294,7 @@ fn evaluate_contract_return_resource_context(
     // ledger return, so a historical field spelling cannot strand the new
     // member under an alias. Only identity is reused; the output quantity is
     // still evaluated and its net effect independently certified.
-    let quantity_output = authority_mode_quantity_exchange_effects(interface).and_then(|effects| {
+    let quantity_output = authority_quantity_exchange_effects(interface).and_then(|effects| {
         let input_index = interface
             .resource_requires()
             .iter()
@@ -23065,7 +23048,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
             || spec.quantity() != &CResourceQuantity::One
             || spec.guard().is_some()
         {
-            return Err("an instance body authority requires authority mode".into());
+            return Err("an instance body authority requires the creation ledger".into());
         }
         let authority = evaluate_population_authority_candidate(
             &evaluation,
@@ -26235,12 +26218,11 @@ pub(super) fn jointly_consume_returned_resource_units(
             if !unit && expanded.facts().iter().any(CResourceFact::is_own) {
                 return None;
             }
-            // An empty expansion cannot manufacture a missing unit. Under
-            // authority semantics a protected empty member needs an actually
-            // held ledger fragment. Under both semantics a declaration with
-            // no body at all is a token that only a held copy supplies: two
-            // `Permit(x)` cannot come from one. A conditional body whose
-            // guard is false keeps the legacy rule.
+            // An empty expansion cannot manufacture a missing unit. A
+            // protected empty member needs an actually held ledger fragment,
+            // and a declaration with no body at all is a token that only a
+            // held copy supplies: two `Permit(x)` cannot come from one. A
+            // conditional body whose guard is false is refused the same way.
             if expanded.facts().is_empty() {
                 return None;
             }
@@ -30822,7 +30804,6 @@ fn function_outcome_from_body_with_resource_transfer(
         Err(error) => return Ok((CFunctionOutcome::RuntimeError(error), obligations, None)),
     };
     // Authority members require actual joint custody before output projection.
-    // Legacy counted resources retain their checked shared-body transition.
     if !jointly_consume_returned_resource_units(
         state.resources(),
         &output_resources,
@@ -30989,7 +30970,7 @@ pub(crate) fn check_acquired_control_member_effects(
     let acquired = after.opaque_imports_since(before);
     // The caller lends exactly the declared members' populations. Each must be
     // one whose control this body acquired, never an unrelated anchor.
-    let declared_members = if authority_mode_mutex_member_helper_contract(interface) {
+    let declared_members = if authority_mutex_member_helper_contract(interface) {
         locked_helper_member_effects(interface).unwrap_or_default()
     } else {
         Vec::new()
@@ -31181,10 +31162,10 @@ fn contract_exit_outcome_with_boundary_transfer(
         };
         callee
     };
-    if authority_mode_consumes_member_contract(function.contract_interface())
-        || authority_mode_produces_member_contract(function.contract_interface())
-        || authority_mode_final_release_contract(function.contract_interface())
-        || authority_mode_exchanges_member_contract(function.contract_interface())
+    if authority_consumes_member_contract(function.contract_interface())
+        || authority_produces_member_contract(function.contract_interface())
+        || authority_final_release_contract(function.contract_interface())
+        || authority_exchanges_member_contract(function.contract_interface())
     {
         let CStatementOutcome::Return { state, .. } = &outcome else {
             return Ok(Err(CRuntimeError::FunctionContract(
@@ -31192,7 +31173,7 @@ fn contract_exit_outcome_with_boundary_transfer(
             )));
         };
 
-        let final_release = match authority_mode_release_retires_control(
+        let final_release = match authority_release_retires_control(
             &callee_state,
             state,
             function.contract_interface(),
@@ -31216,8 +31197,8 @@ fn contract_exit_outcome_with_boundary_transfer(
             let selected = if let Some(control) = checked_control {
                 control.clone()
             } else {
-                let control = authority_mode_consumed_control(interface)
-                    .expect("checked final-release control");
+                let control =
+                    authority_consumed_control(interface).expect("checked final-release control");
                 match evaluate_function_resource_spec_with_entry(
                     &callee_state,
                     &callee_state,
@@ -31260,7 +31241,7 @@ fn contract_exit_outcome_with_boundary_transfer(
             }
         }
         let quantity_exchange =
-            authority_mode_quantity_exchange_effects(function.contract_interface()).is_some();
+            authority_quantity_exchange_effects(function.contract_interface()).is_some();
         if quantity_exchange
             && let Err(error) = check_quantity_exchange_at_return(
                 &callee_state,
@@ -31273,7 +31254,7 @@ fn contract_exit_outcome_with_boundary_transfer(
             return Ok(Err(error));
         }
         for (produce, member_spec) in
-            authority_mode_checked_member_effects(function.contract_interface())
+            authority_checked_member_effects(function.contract_interface())
                 .into_iter()
                 .filter(|_| !quantity_exchange)
         {
@@ -31417,7 +31398,7 @@ fn contract_exit_outcome_with_boundary_transfer(
         };
         &fallback_transfer
     };
-    // Under authority semantics a quantity change that reaches a population
+    // A quantity change that reaches a population
     // crosses the checked resource transfer; any other contract keeps the
     // ordinary exit, which returns the body's own resources.
     if function_needs_outcome_resource_transfer(function)
@@ -31586,9 +31567,9 @@ pub(super) fn apply_verified_contract_resource_transition(
 ) -> ExecutionResult<Result<(CFunctionOutcome, Vec<ProofObligation>), CRuntimeError>> {
     // As at call sites, the authority helper rules govern only contracts
     // that reach a population; an ordinary contract's exit transition folds
-    // its produced composites as it does under legacy semantics.
+    // its produced composites by their definitions.
     if contract_reaches_population(function.contract_interface())
-        && !authority_mode_supports_resource_contract(function.contract_interface())
+        && !authority_supports_resource_contract(function.contract_interface())
     {
         return Ok(Err(CRuntimeError::FunctionContract(
             "helper contract needs conserved owns resources, a checked consumes/produces effect, or a supported unit exchange".into(),
@@ -31966,7 +31947,7 @@ mod population_creation_frame_tests {
     use super::*;
 
     #[test]
-    fn authority_mode_refuses_calls_that_reach_a_population() {
+    fn authority_refuses_calls_that_reach_a_population() {
         let authority = CState::new().with_population_creation_tracking();
         let call = |helper: &CFunction| {
             execute_c_function_call_paths(
@@ -34881,8 +34862,7 @@ mod stable_view_call_tests {
     /// The planner's exclusive reservation has no "N units out of a
     /// population whose count is at least N" step, and a token population
     /// protects no memory, so nothing about the loan ledger could supply one.
-    /// Such a requirement is planned the way legacy plans it, beside a view
-    /// the same call lends.
+    /// Such a requirement is planned beside a view the same call lends.
     #[test]
     fn candidate_symbolic_token_population_consume_plans_beside_a_lent_view() {
         let pointer = pointer();

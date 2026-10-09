@@ -1,4 +1,4 @@
-# Separately proved claims share one entry state in authority mode
+# Separately proved claims share one entry state
 
 Each claim here has its own proof. Every proof of a function starts from the
 same entry context, built once, so the claims' completions carry the same
