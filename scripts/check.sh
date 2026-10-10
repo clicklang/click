@@ -10,15 +10,6 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-# Repeated full-suite runs can trade a longer first build for faster tests.
-# Keep this opt-in: compiling optimized verifier code slows small edit cycles.
-# Cargo's test profile still enables debug assertions and overflow checks.
-# Put --optimized first; remaining flags select the usual gate or nextest tests.
-if [[ "${1:-}" == "--optimized" ]]; then
-    shift
-    export CARGO_PROFILE_TEST_OPT_LEVEL=1
-fi
-
 # Documentation-only changes have a focused gate. Keep this opt-in so the
 # ordinary invocation remains the complete green-tree verdict.
 if [[ "${1:-}" == "--docs-only" ]]; then
