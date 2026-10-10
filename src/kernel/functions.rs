@@ -5327,17 +5327,22 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
     let (CValue::Pointer(destination), CValue::Pointer(source)) = (destination, source) else {
         return Vec::new();
     };
-    let CValue::Int32(bytes) = bytes else {
-        return Vec::new();
+    // The count is C's `size_t`; a 32-bit count is accepted as the same
+    // number when nonnegative.
+    let bytes = match bytes {
+        CValue::UInt64(bytes) => bytes
+            .uint64_as_const()
+            .and_then(|bytes| i64::try_from(bytes).ok()),
+        CValue::Int32(bytes) => bytes.as_const().map(|bytes| i64::from(bytes as i32)),
+        _ => None,
     };
     let (Some(source_offset), Some(destination_offset), Some(bytes)) = (
         source.pointer().offset.as_const(),
         destination.pointer().offset.as_const(),
-        bytes.as_const(),
+        bytes,
     ) else {
         return Vec::new();
     };
-    let bytes = i64::from(bytes);
     if bytes <= 0 {
         return Vec::new();
     }

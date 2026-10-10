@@ -201,10 +201,12 @@ fn validate_proposition_expression_types_one(
             body,
             ..
         } => {
-            let _ = infer_contract_expression_type(start, variables, click_functions, context)?;
-            let _ = infer_contract_expression_type(end, variables, click_functions, context)?;
+            let start_type =
+                infer_contract_expression_type(start, variables, click_functions, context)?;
+            let end_type =
+                infer_contract_expression_type(end, variables, click_functions, context)?;
             let mut body_variables = variables.clone();
-            body_variables.insert(item.clone(), C0Type::Int32);
+            body_variables.insert(item.clone(), range_item_type(start_type, end_type));
             validate_proposition_expression_types(body, &body_variables, click_functions, context)
         }
         ClickProposition::PredicateCall { name, arguments } => {
@@ -499,9 +501,11 @@ fn validate_scoped_integer_proposition_one(
             body,
             ..
         } => {
-            let _ = infer_contract_expression_type(start, variables, click_functions, context)?;
-            let _ = infer_contract_expression_type(end, variables, click_functions, context)?;
-            let previous_c = variables.insert(item.clone(), C0Type::Int32);
+            let start_type =
+                infer_contract_expression_type(start, variables, click_functions, context)?;
+            let end_type =
+                infer_contract_expression_type(end, variables, click_functions, context)?;
+            let previous_c = variables.insert(item.clone(), range_item_type(start_type, end_type));
             let previous_integer = integer_bindings.remove(item);
             let result = validate_scoped_integer_proposition(
                 body,
@@ -1372,6 +1376,16 @@ fn scoped_scalar_type(value_type: &SpecValueType) -> Option<C0Type> {
     match value_type {
         SpecValueType::Scalar(c_type) => *c_type,
         _ => None,
+    }
+}
+
+/// The item type of a `.all`/`.any` range: a `uint64` when either endpoint
+/// is one, as for a range fold, and otherwise an `int32`.
+fn range_item_type(start: Option<C0Type>, end: Option<C0Type>) -> C0Type {
+    if start == Some(C0Type::UInt64) || end == Some(C0Type::UInt64) {
+        C0Type::UInt64
+    } else {
+        C0Type::Int32
     }
 }
 

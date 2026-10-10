@@ -364,6 +364,15 @@ impl PureFactContext {
         if bytes.uint64_as_const() == Some(0) {
             return true;
         }
+        // A constant count inside the base's own allocation is live by the
+        // block rules the 32-bit prover uses; both read only that block.
+        if let Some(count) = bytes.uint64_as_const()
+            && let Ok(count) = u32::try_from(count)
+            && (memory.access_in_bounds(base, count)
+                || self.proves_access_from_memory_block(memory, base, count))
+        {
+            return true;
+        }
         // A count no larger than a 32-bit constant range at this base names
         // bytes inside that range, which the narrow prover carries through
         // snapshots. It is consulted only when this base indexes such a

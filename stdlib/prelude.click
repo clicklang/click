@@ -789,37 +789,40 @@ predicate permutation(a: int32[], b: int32[], lo: int32, hi: int32) {
     }
 }
 
+// Byte ranges are measured as C measures them: an index or count is a
+// `size_t`. `byte_count` keeps 32-bit bounds: a C-valued fold over `size_t`
+// indices is not yet evaluated (bugs/uint64-c-valued-range-fold-drops-every-path.md).
 function byte_count(bytes: uint8[], lo: int32, hi: int32, value: uint8) -> int32 {
     (lo..hi).fold(0, |acc, k| {
         acc + if bytes[k] == value { 1 } else { 0 }
     })
 }
 
-predicate bytes_equal(left: uint8[], left_lo: int32, right: uint8[], right_lo: int32, len: int32) {
-    (0..len).all(|k| {
+predicate bytes_equal(left: uint8[], left_lo: uint64, right: uint8[], right_lo: uint64, len: uint64) {
+    (0u64..len).all(|k| {
         left[left_lo + k] == right[right_lo + k]
     })
 }
 
-predicate bytes_equal_range(left: uint8[], right: uint8[], lo: int32, hi: int32) {
+predicate bytes_equal_range(left: uint8[], right: uint8[], lo: uint64, hi: uint64) {
     (lo..hi).all(|k| {
         left[k] == right[k]
     })
 }
 
-predicate bytes_all_eq(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
+predicate bytes_all_eq(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     (lo..hi).all(|k| {
         bytes[k] == value
     })
 }
 
-predicate bytes_contains(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
+predicate bytes_contains(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     (lo..hi).any(|k| {
         bytes[k] == value
     })
 }
 
-predicate bytes_all_not_eq(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
+predicate bytes_all_not_eq(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     (lo..hi).all(|k| {
         bytes[k] != value
     })
@@ -947,31 +950,31 @@ extern int32 __click_constant_p_unknown() {
     ensures result == 0 or result == 1;
 }
 
-extern uint8* memcpy(uint8 destination[], uint8 source[], int32 bytes) {
-    requires 0 <= bytes;
+// The C library's byte functions, with C's `size_t` counts. C converts
+// `memset`'s `int` fill value to `unsigned char`; C0 models that narrowing
+// only for a representable value, so the value is required to be one.
+extern uint8* memcpy(uint8 destination[], uint8 source[], uint64 bytes) {
     requires viewable(source[0..bytes]);
     owns destination[0..bytes];
     requires separate(memory(destination[0..bytes]), memory(source[0..bytes]));
     ensures result == destination;
-    ensures bytes_equal(destination, 0, old(source), 0, bytes);
+    ensures bytes_equal(destination, 0u64, old(source), 0u64, bytes);
 }
 
-extern int32 memcmp(uint8 left[], uint8 right[], int32 bytes) {
-    requires 0 <= bytes;
+extern int32 memcmp(uint8 left[], uint8 right[], uint64 bytes) {
     requires viewable(left[0..bytes]);
     requires viewable(right[0..bytes]);
-    requires forall (k: int32) { 0 <= k and k < bytes implies defined(left[k]) and defined(right[k]) };
-    ensures result == 0 implies bytes_equal(left, 0, right, 0, bytes);
-    ensures result != 0 implies not bytes_equal(left, 0, right, 0, bytes);
+    requires forall (k: uint64) { k < bytes implies defined(left[k]) and defined(right[k]) };
+    ensures result == 0 implies bytes_equal(left, 0u64, right, 0u64, bytes);
+    ensures result != 0 implies not bytes_equal(left, 0u64, right, 0u64, bytes);
 }
 
-extern uint8* memset(uint8 destination[], int32 value, int32 bytes) {
+extern uint8* memset(uint8 destination[], int32 value, uint64 bytes) {
     requires 0 <= value;
     requires value <= 255;
-    requires 0 <= bytes;
     owns destination[0..bytes];
     ensures result == destination;
-    ensures (0..bytes).all(|k| {
+    ensures (0u64..bytes).all(|k| {
         defined(destination[k]) and destination[k] == value
     });
 }

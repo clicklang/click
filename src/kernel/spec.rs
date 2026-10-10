@@ -5167,6 +5167,22 @@ fn evaluate_spec_resource_at_state_in(
                         end.clone(),
                         element_width,
                     ))),
+                    // A constant unsigned 64-bit end over a 32-bit start is the
+                    // same number as a 32-bit bound, as a clause's segment
+                    // reads it.
+                    [
+                        CValue::Pointer(base),
+                        CValue::Int32(start),
+                        CValue::UInt64(end),
+                    ] => {
+                        let end = i32::try_from(end.uint64_as_const()?).ok()?;
+                        Some(CResource::Memory(CMemoryRange::new_with_element_width(
+                            base.pointer().clone(),
+                            start.clone(),
+                            Bitvector32Term::Constant(end as u32),
+                            element_width,
+                        )))
+                    }
                     _ => None,
                 }),
             )
