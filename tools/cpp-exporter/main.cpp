@@ -273,7 +273,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 57;
+    artifact["schema"] = 58;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -1718,9 +1718,9 @@ private:
             return direct_source_alias(call->getDirectCallee()->getTypeSourceInfo());
           return static_cast<const clang::TypedefNameDecl *>(nullptr);
         };
-        auto source_type = lower_type(cast->getSubExpr()->getType(), cast->getExprLoc(),
+        auto source_type = lower_type(cast->getSubExpr()->getType().getUnqualifiedType(), cast->getExprLoc(),
                                       source_alias(cast->getSubExpr()));
-        auto value_type = lower_type(cast->getType(), cast->getExprLoc(), source_alias(cast));
+        auto value_type = lower_type(cast->getType().getUnqualifiedType(), cast->getExprLoc(), source_alias(cast));
         if (!source_type || !value_type) return std::nullopt;
         llvm::json::Object conversion;
         conversion["cast_kind"] = kind;
@@ -1755,8 +1755,9 @@ private:
     if (!remember_local_declaration(function, local)) {
       return std::nullopt;
     }
-    const bool mutable_int = supported_scalar_value_type(local->getType()) &&
-                             !local->getType().hasQualifiers();
+    const bool scalar_int = supported_scalar_value_type(local->getType().getUnqualifiedType()) &&
+        !local->getType().isVolatileQualified() && !local->getType().isRestrictQualified();
+    const bool mutable_int = scalar_int && !local->getType().isConstQualified();
     const auto *local_pointer = local->getType()->getAs<clang::PointerType>();
     const bool mutable_pointer = local_pointer && !local->getType().hasQualifiers() &&
         !local_pointer->getPointeeType().hasQualifiers() && supported_pointer_element(local_pointer->getPointeeType());
@@ -1777,9 +1778,9 @@ private:
            "exception-enabled normal-only C++ local objects require trivial destruction");
       return std::nullopt;
     }
-    if (!mutable_int && !mutable_pointer && !record_object && !int_reference) {
+    if (!scalar_int && !mutable_pointer && !record_object && !int_reference) {
       fail(local->getLocation(),
-           "the supported automatic C++ local must resolve to mutable "
+           "the supported automatic C++ local must resolve to "
            "signed/unsigned "
            "32/64/128-bit integer or unsigned char, an initialized native object pointer, an int lvalue reference, or one simple record object");
       return std::nullopt;
@@ -1959,7 +1960,7 @@ private:
           !(int_reference
               ? source_initializer->isLValue() && scalar_call->conversions.empty() &&
                 context_.hasSameType(call->getDirectCallee()->getReturnType(), local->getType())
-              : context_.hasSameType(source_initializer->getType(), local->getType()))) {
+              : context_.hasSameType(source_initializer->getType().getUnqualifiedType(), local->getType().getUnqualifiedType()))) {
         fail(call->getExprLoc(),
              "C++ call capture requires matching final initializer and local types");
         return std::nullopt;
@@ -2480,12 +2481,15 @@ private:
       const auto *parameter_reference = parameter == nullptr ? nullptr :
           parameter->getType()->getAs<clang::LValueReferenceType>();
       const bool member = llvm::isa<clang::MemberExpr>(source);
-      if (!member && (parameter_reference == nullptr || parameter->getDeclContext() != function)) {
-        fail(expression->getExprLoc(), "C++ references currently bind existing references, int32 fields, or pointer dereferences");
+      const bool scalar_object = parameter != nullptr && parameter->hasLocalStorage() &&
+          context_.hasSameType(parameter->getType().getUnqualifiedType(), context_.IntTy);
+      if (!member && (parameter == nullptr || parameter->getDeclContext() != function ||
+          (parameter_reference == nullptr && !scalar_object))) {
+        fail(expression->getExprLoc(), "C++ references currently bind existing references, automatic int32 objects, int32 fields, or pointer dereferences");
         return std::nullopt;
       }
       auto place = lower_place_reference(source, function);
-      const auto pointee = member ? source->getType() : parameter_reference->getPointeeType();
+      const auto pointee = member || scalar_object ? source->getType() : parameter_reference->getPointeeType();
       auto pointer_type = lower_type(context_.getPointerType(pointee), source->getExprLoc());
       if (!place || !pointer_type) return std::nullopt;
       llvm::json::Object value;
@@ -2766,7 +2770,7 @@ private:
     if (!remember_constant(constant)) {
       return std::nullopt;
     }
-    auto value_type = lower_type(cast->getType(), cast->getExprLoc());
+    auto value_type = lower_type(cast->getType().getUnqualifiedType(), cast->getExprLoc());
     if (!value_type) {
       return std::nullopt;
     }
@@ -2836,7 +2840,7 @@ private:
         fail(cast->getExprLoc(), "C++ null pointer literal requires a mutable int32 pointer, uint32 pointer or unsigned-byte pointer");
         return std::nullopt;
       }
-      auto value_type = lower_type(cast->getType(), cast->getExprLoc());
+      auto value_type = lower_type(cast->getType().getUnqualifiedType(), cast->getExprLoc());
       if (!value_type)
         return std::nullopt;
       llvm::json::Object result;
@@ -2931,7 +2935,7 @@ private:
             llvm::dyn_cast<clang::ExplicitCastExpr>(expression)) {
       if (supported_byte_pointer_cast(cast)) {
         auto value = lower_expression(cast->getSubExpr(), function);
-        auto value_type = lower_type(cast->getType(), cast->getExprLoc());
+        auto value_type = lower_type(cast->getType().getUnqualifiedType(), cast->getExprLoc());
         if (!value || !value_type) return std::nullopt;
         llvm::json::Object result;
         result["kind"] = "byte_pointer_cast";
@@ -2948,7 +2952,7 @@ private:
           return std::nullopt;
         }
         auto value = lower_expression(cast->getSubExpr(), function);
-        auto value_type = lower_type(cast->getType(), cast->getExprLoc());
+        auto value_type = lower_type(cast->getType().getUnqualifiedType(), cast->getExprLoc());
         if (!value || !value_type) return std::nullopt;
         llvm::json::Object result;
         result["kind"] = "enum_cast";
@@ -2972,7 +2976,7 @@ private:
         return std::nullopt;
       }
       auto value = lower_expression(cast->getSubExpr(), function);
-      auto value_type = lower_type(cast->getType(), cast->getExprLoc());
+      auto value_type = lower_type(cast->getType().getUnqualifiedType(), cast->getExprLoc());
       if (!value || !value_type)
         return std::nullopt;
       llvm::json::Object result;
@@ -3029,7 +3033,7 @@ private:
           cast->getCastKind() == clang::CK_IntegralToBoolean ||
           cast->getCastKind() == clang::CK_BooleanToSignedIntegral) {
         auto value = lower_expression(cast->getSubExpr(), function);
-        auto value_type = lower_type(cast->getType(), cast->getExprLoc());
+        auto value_type = lower_type(cast->getType().getUnqualifiedType(), cast->getExprLoc());
         if (!value || !value_type) {
           return std::nullopt;
         }
@@ -3045,7 +3049,7 @@ private:
              "unsupported implicit conversion in the first C++ slice");
         return std::nullopt;
       }
-      auto value_type = lower_type(cast->getType(), cast->getExprLoc());
+      auto value_type = lower_type(cast->getType().getUnqualifiedType(), cast->getExprLoc());
       if (!value_type) {
         return std::nullopt;
       }

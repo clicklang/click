@@ -2446,6 +2446,9 @@ pub enum CStatement {
         continue_after: bool,
     },
     Declare {
+        /// A scalar construction initializer, evaluated after fresh allocation.
+        /// This is the only declaration transition permitted to initialize const storage.
+        initializer: Option<CExpression>,
         name: String,
         c_type: CType,
         volatile: bool,

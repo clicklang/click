@@ -42,7 +42,15 @@ pub(super) fn summarize(function: &CFunction, summary: &mut AddressTakenSummary)
     while let Some(statement) = statements.pop() {
         crate::instrumentation::record_deterministic_work(1);
         match statement {
-            CStatement::Declare { name, c_type, .. } => declare(summary, name, *c_type),
+            CStatement::Declare {
+                name,
+                c_type,
+                initializer,
+                ..
+            } => {
+                declare(summary, name, *c_type);
+                expressions.extend(initializer.iter().map(|expression| (expression, false)));
+            }
             CStatement::DeclareAggregate { name, .. } => {
                 summary.taken.insert(name.clone());
             }

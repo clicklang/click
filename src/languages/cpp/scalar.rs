@@ -214,6 +214,19 @@ pub(super) fn same_unqualified_integer_type(left: &CppType, right: &CppType) -> 
     )
 }
 
+/// Lvalue-to-rvalue conversion removes the object's top-level const only.
+/// Pointer pointee qualification and nominal enum identity remain intact.
+pub(super) fn scalar_value_type(value: &CppType) -> CppType {
+    let mut value = value.clone();
+    if let CppType::Integer { is_const, .. }
+    | CppType::Enumeration { is_const, .. }
+    | CppType::Boolean { is_const, .. } = &mut value
+    {
+        *is_const = false;
+    }
+    value
+}
+
 pub(super) fn same_scalar_type(left: &CppType, right: &CppType) -> bool {
     match (left, right) {
         (CppType::Pointer { pointee: left }, CppType::Pointer { pointee: right })

@@ -3,6 +3,83 @@ use crate::kernel::loans::LoanLedger;
 use std::sync::Arc;
 
 #[test]
+// Const construction must initialize once, freeze aliases, and retain declared storage identity.
+fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
+    let execute = |state: &CState, statement: &CStatement| {
+        execute_c_statement_paths(
+            state,
+            statement,
+            &PureFactContext::new(),
+            &CExecutionEnvironment::new(),
+            CExecutionSemantics::EXECUTE_BODIES,
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap()
+    };
+    let declaration = c_declare_initialized(
+        "x",
+        CType::Int32,
+        c_int32_literal(7),
+        false,
+        false,
+        true,
+        false,
+    );
+    let state = normal_state(&execute(&CState::new(), &declaration));
+    let pointer = state.locals.slot("x").unwrap().clone();
+    assert!(state.memory.is_read_only_block(&pointer.block));
+    assert!(state.memory.requires_explicit_scalar_ownership(&pointer));
+    assert_eq!(state.locals.get("x"), Some(&int32(7)));
+    assert!(matches!(
+        execute(&state, &c_assign("x", c_int32_literal(9)))[0].outcome,
+        CStatementOutcome::UndefinedBehavior(_)
+    ));
+    // Even an unqualified forged pointer cannot write the read-only allocation.
+    assert!(matches!(
+        execute(
+            &state,
+            &c_typed_store(
+                c_typed_pointer_value(pointer.clone(), CType::Int32Pointer),
+                c_int32_literal(9),
+                CType::Int32
+            )
+        )[0]
+        .outcome,
+        CStatementOutcome::UndefinedBehavior(_)
+    ));
+    let replaced = normal_state(&execute(&state, &declaration));
+    assert_ne!(pointer, *replaced.locals.slot("x").unwrap());
+    assert!(matches!(
+        execute(
+            &replaced,
+            &c_return(c_typed_load(
+                c_typed_pointer_value(pointer, CType::Int32Pointer),
+                CType::Int32
+            ))
+        )[0]
+        .outcome,
+        CStatementOutcome::UndefinedBehavior(_)
+    ));
+    let unwritten = normal_state(&execute(&CState::new(), &c_declare("u", CType::Int32)));
+    assert!(!matches!(
+        execute(
+            &unwritten,
+            &c_declare_initialized(
+                "x",
+                CType::Int32,
+                c_variable("u"),
+                false,
+                false,
+                true,
+                false
+            )
+        )[0]
+        .outcome,
+        CStatementOutcome::Normal(_)
+    ));
+}
+
+#[test]
 fn whole_function_execution_resumes_a_direct_forward_goto_target() {
     let target = CControlTargetId(0);
     let target_statement = c_return(c_variable("x"));
@@ -102,6 +179,7 @@ fn active_stable_loan_rejects_direct_local_assignment_and_alias_store() {
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
+            initializer: None,
             zero_fill: None,
         },
         &PureFactContext::new(),
@@ -142,6 +220,7 @@ fn active_stable_loan_rejects_direct_local_assignment_and_alias_store() {
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
+            initializer: None,
             zero_fill: None,
         },
         &PureFactContext::new(),
@@ -176,6 +255,7 @@ fn active_stable_loan_allows_a_disjoint_local_store() {
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
+            initializer: None,
             zero_fill: None,
         },
         &PureFactContext::new(),

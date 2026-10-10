@@ -439,13 +439,20 @@ copying or destruction remain outside this bounded slice. Artifact schema 57
 requires refreshing older locks. Current-memory typed loads through an entry
 pointer can state backing effects independently of the callee's private copy.
 
+Shared scalar initialization now allocates the object, checks its initial
+value, and freezes read-only storage while preserving address and lifetime.
+C read-only automatic scalars and C++ `const`/`constexpr` native integer locals
+use that transition. Helper results initialize a distinct read-only source
+object after the checked call; ordinary assignment cannot repeat initialization.
+Artifact schema 58 requires refreshing older locks. Native qualification,
+address observations, stale-address rejection, and expanded/retained proof
+checks remain explicit. Const aggregate/array locals and general constant
+evaluation remain outside this bounded slice.
+
 Writable byte-span construction remains next. Its unchanged `constexpr auto
-extent` local exposes the next shared choice: model read-only automatic scalar
-initialization and object lifetime, or adopt a narrower compile-time value
-boundary that refuses address/identity observations. C and C++ currently lack
-checked read-only automatic scalar initialization. Preserve const
-qualification and initialization as distinct from ordinary assignment; do not
-erase the source declaration or lower it as mutable merely to admit this helper.
+extent` local can now use shared scalar construction instead of being erased or
+lowered as mutable. Continue with authenticated standard-byte template arguments
+and the unchanged pinned helper, preserving the same construction rules.
 Byte alias access must be restricted to the actual pinned `std::byte` declaration;
 an arbitrary enum with the same underlying type does not gain that privilege.
 Automatic scalar declarations now create explicit ownership of their exact

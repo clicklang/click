@@ -1124,12 +1124,18 @@ pub(in crate::kernel) fn collect_c_statement_bound_variables(
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
+        | CStatement::Declare {
+            initializer: None, ..
+        }
         | CStatement::DeclareAggregate { .. } => {}
         CStatement::ForStep { step, .. } => {
             collect_c_statement_bound_variables(step, variables);
         }
-        CStatement::Assign { expression, .. }
+        CStatement::Declare {
+            initializer: Some(expression),
+            ..
+        }
+        | CStatement::Assign { expression, .. }
         | CStatement::Return(expression)
         | CStatement::Throw(expression)
         | CStatement::Assert {
@@ -3214,6 +3220,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
             pointee_volatile,
             constant,
             pointee_constant,
+            initializer,
             zero_fill,
         } => CStatement::Declare {
             name: name.clone(),
@@ -3222,6 +3229,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
             pointee_volatile: *pointee_volatile,
             constant: *constant,
             pointee_constant: *pointee_constant,
+            initializer: initializer.as_ref().map(|expression| {
+                substitute_bitvector_variable_in_c_expression(expression, from, to)
+            }),
             zero_fill: zero_fill.clone(),
         },
         CStatement::DeclareAggregate { name, layout, kind } => CStatement::DeclareAggregate {
@@ -6359,7 +6369,9 @@ fn substitute_pointer_variable_in_c_statement(
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
+        | CStatement::Declare {
+            initializer: None, ..
+        }
         | CStatement::DeclareAggregate { .. } => statement.clone(),
         CStatement::ForStep {
             step,
@@ -6370,6 +6382,18 @@ fn substitute_pointer_variable_in_c_statement(
             continue_after: *continue_after,
             step: Box::new(substitute_pointer_variable_in_c_statement(step, from, to)),
         },
+        CStatement::Declare {
+            initializer: Some(expression),
+            ..
+        } => {
+            let mut statement = statement.clone();
+            if let CStatement::Declare { initializer, .. } = &mut statement {
+                *initializer = Some(substitute_pointer_variable_in_c_expression(
+                    expression, from, to,
+                ));
+            }
+            statement
+        }
         CStatement::Assign { name, expression } => CStatement::Assign {
             name: name.clone(),
             expression: substitute_pointer_variable_in_c_expression(expression, from, to),

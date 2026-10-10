@@ -4715,9 +4715,15 @@ pub(in crate::surface) fn c0_statement_calls(
                 }
                 calls.push(dependencies);
             }
-            syntax::C0Statement::Declare { .. }
+            syntax::C0Statement::Declare {
+                initializer: None, ..
+            }
             | syntax::C0Statement::DeclareStructValue { .. } => calls.push(BTreeSet::new()),
-            syntax::C0Statement::Assign { expression, .. }
+            syntax::C0Statement::Declare {
+                initializer: Some(expression),
+                ..
+            }
+            | syntax::C0Statement::Assign { expression, .. }
             | syntax::C0Statement::HeapAllocate {
                 bytes: expression, ..
             }

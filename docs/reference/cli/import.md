@@ -620,8 +620,13 @@ representation rules; on the selected target, four checked stores can initialize
 an unwritten declared uint32, while partial stores cannot. Native contract
 casts such as `result == (uint8*)p` express pointer identity across access
 types without granting authority. Writable-span construction remains next;
-the unchanged helper's `constexpr` scalar local requires a separate checked
-initialization policy for read-only automatic objects.
+supported `const` and `constexpr` native integer locals now use shared scalar
+construction: allocate, initialize once, and freeze the object while retaining
+its address and lifetime. Ordinary assignment and alias writes cannot mutate
+read-only storage. Helper-result initializers use checked mutable captures and
+then initialize the distinct source object. Schema 58 requires refreshing older
+locks. Const aggregate/array locals and general constant evaluation remain
+outside this bounded slice.
 
 
 Static scalar methods use a distinct `static_method` artifact kind with their
@@ -1015,8 +1020,11 @@ Integral logical negation also uses shared C truth conversion and returns a
 native Boolean, including full-width unsigned values and observer results.
 In selected runtime function bodies, `__builtin_is_constant_evaluated()`
 returns false. Clang still selects manifestly constant `if constexpr` branches;
-this operation does not replace compile-time evaluation. Automatic const and
-constexpr initializers remain outside the admitted local profile.
+this operation does not replace compile-time evaluation. Supported read-only
+scalar locals retain initialized storage, but their initializers cannot observe
+constant-evaluation context directly or through reachable callees. This checked
+boundary prevents a runtime `false` from standing in for a constant evaluation;
+unrelated runtime observers remain supported.
 `__builtin_unreachable()` becomes a checked false assertion: its execution
 path must be proved unreachable.
 

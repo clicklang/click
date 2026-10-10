@@ -457,11 +457,19 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
             | CStatement::CopyAggregate { .. }
             | CStatement::InitializeScalarArray { .. }
             | CStatement::Update { .. } => Ok(paths),
-            CStatement::Declare { name, .. } | CStatement::DeclareAggregate { name, .. } => {
-                Ok(forget(name, paths))
+            CStatement::Declare {
+                name,
+                initializer: None,
+                ..
             }
+            | CStatement::DeclareAggregate { name, .. } => Ok(forget(name, paths)),
             CStatement::HeapAllocate { target, .. } => Ok(forget(target, paths)),
-            CStatement::Assign { name, expression } => Ok(paths
+            CStatement::Declare {
+                name,
+                initializer: Some(expression),
+                ..
+            }
+            | CStatement::Assign { name, expression } => Ok(paths
                 .into_iter()
                 .map(|mut path| {
                     let expression = resolve_c_expression_aliases(expression, &path.aliases);
@@ -1100,10 +1108,16 @@ fn statement_takes_address_of(statement: &CStatement, name: &str) -> bool {
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
+        | CStatement::Declare {
+            initializer: None, ..
+        }
         | CStatement::DeclareAggregate { .. } => false,
         CStatement::ForStep { step, .. } => statement_takes_address_of(step, name),
-        CStatement::Assign { expression, .. }
+        CStatement::Declare {
+            initializer: Some(expression),
+            ..
+        }
+        | CStatement::Assign { expression, .. }
         | CStatement::Return(expression)
         | CStatement::Throw(expression) => escapes(expression),
         CStatement::CallAssign { arguments, .. } | CStatement::Call { arguments, .. } => {
@@ -3793,9 +3807,15 @@ fn statement_function_addresses(statement: &CStatement, taken: &mut BTreeSet<Str
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
+        | CStatement::Declare {
+            initializer: None, ..
+        }
         | CStatement::DeclareAggregate { .. } => {}
-        CStatement::Assign { expression, .. }
+        CStatement::Declare {
+            initializer: Some(expression),
+            ..
+        }
+        | CStatement::Assign { expression, .. }
         | CStatement::Return(expression)
         | CStatement::Throw(expression) => visit(expression),
         CStatement::CallAssign { arguments, .. } | CStatement::Call { arguments, .. } => {
