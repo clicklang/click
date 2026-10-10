@@ -77,23 +77,9 @@ struct Config {
     function: String,
     #[serde(default)]
     library_assertions: Vec<CppLibraryAssertion>,
-    #[serde(default)]
-    standard_library: CppStandardLibrary,
     artifact: String,
     #[serde(skip)]
     directory: PathBuf,
-}
-
-/// How calls into system headers are treated. `axiomatic` exports a
-/// system-header function's interface only and checks calls against Click's
-/// contract for it; `verified` exports and verifies its body like any
-/// dependency. `verified` is the transitional default.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-enum CppStandardLibrary {
-    #[default]
-    Verified,
-    Axiomatic,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -185,8 +171,6 @@ fn refresh_import_inner(config_path: &Path) -> Result<(), String> {
         "--library-assertions".into(),
         serde_json::to_string(&config.library_assertions)
             .map_err(|error| format!("encode C++ library contracts: {error}"))?,
-        "--axiomatic-system-headers".into(),
-        (config.standard_library == CppStandardLibrary::Axiomatic).to_string(),
     ];
     let check_inputs = || -> Result<(), String> {
         if read_stable(&source, MAX_SOURCE_BYTES, "C++ source")? != source_before {

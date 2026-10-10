@@ -31,6 +31,11 @@ system headers, or frontend toolchain.
   checker of its own, so the pinned Clang 19 exporter and Charon are accepted
   frontends. Each runs once at `click import lock`; verification loads the
   artifact offline.
+- **The C++ standard library is axiomatic.** It is mostly header code that
+  Clang must parse to type-check a program, so the real headers are parsed,
+  but none of their code is trusted or verified: a call into a system header
+  is checked against Click's contract for it. See
+  [the C++ standard library](#c-standard-library).
 - **The default workflow needs none of it.** `click verify` on plain C needs
   no compiler or system headers.
 
@@ -569,9 +574,6 @@ a returned alias grants no backing authority. An external backing reference
 can remain readable and writable after a descriptor's destructor clears its
 pointer field, when the caller retains the corresponding backing authority.
 A reference into a destroyed automatic object's own field cannot be read.
-The pinned `std::span<int>` pointer/count constructor also has ordinary,
-expanded and retained coverage through native contracts; the returned `first`
-and `SpanPopBack` path remains pending.
 
 Literal `nullptr` and integer zero converted to mutable native `int*`,
 `unsigned int*` or `unsigned char*`, implicitly or
@@ -985,20 +987,6 @@ artifact. Reference typedefs compare their resolved pointee types, retaining
 width and const qualification. Function-directed proof expansion prints a
 reference result's address as `&result` and its referent as `result`.
 
-The unchanged pinned libstdc++ `std::span<int>::back()` now verifies for both a
-one-element range and a symbolic range with `1 <= N <= 1,073,741,823`. Its
-contracts preserve native uint64 size arithmetic and prove the returned address
-and old last-cell value. Explicit checked Integer bridges establish nonempty
-subtraction and the range of the narrowed backing count. The shared kernel
-projects native indices only with full-width bounds or exact constants;
-low-word bounds alone cannot justify a wide displacement. Checked full-width
-result equalities transport an explicitly proved index bound across observer
-calls, without transferring backing ownership. Ordinary, expanded and retained
-proofs agree offline, and missing bounds/views, empty spans, false aliases and
-values, and invalid byte extents are refused. Descriptor aggregate results,
-construction and copy initialization needed by Bitcoin's complete `SpanPopBack`
-remain roadmap work.
-
 An ordinary `if` can use a direct Boolean free-function or method call as its
 whole condition. The artifact keeps this effectful call separate from pure
 expressions. The shared scalar-call normalizer evaluates its bounded arguments
@@ -1015,8 +1003,8 @@ locked dependencies as well as the selected file. The selected function stays
 in its configured logical source. Each reachable function owns one source:
 parameters, statements, expressions, call sites and projected uses must stay
 within it, while type-alias declarations may come from any locked declaration
-source. Every reachable body is exported, validated and verified through its
-ordinary sidecar contract. The bounded nonthrowing constructor profile also
+source. Every reachable body outside a system header is exported, validated
+and verified through its ordinary sidecar contract. The bounded nonthrowing constructor profile also
 admits locked headers. Dependency-header destructors, constant definitions and
 executable spans crossing source files remain unsupported.
 
@@ -1113,13 +1101,6 @@ read-only contracts; lowering captures the call result before storing the
 field. Exception-enabled normal-only imports permit these local objects when
 destruction is trivial. Throwing construction, header destructor bodies, and
 nested calls in constructor arguments remain outside this slice.
-
-The unchanged pinned libstdc++ `std::span<int>` pointer/count constructor now
-verifies through these ordinary contracts, including `std::to_address`, its
-compile-time assertion, and the embedded dynamic extent constructor. Offline
-ordinary, expanded and retained checks keep the native uint64 count and the
-accepted `1 <= count <= 1,073,741,823` backing-range profile. Returned
-construction and full-expression temporary lowering remain separate work.
 
 The `terminal-destructor` fixture adds one public, non-virtual, non-deleted,
 explicitly `noexcept` destructor with a nonempty supported body. The artifact
@@ -1483,6 +1464,41 @@ signed overflow, null or out-of-bounds access, and reads of uninitialized
 storage, which Click refuses to prove. The three safety options turn off the
 remaining assumptions Click does not make: type-based aliasing, overflow, and
 null-check deletion.
+
+## C++ standard library
+
+A function declared in a system header (one reached through `-isystem`, a
+system include path, or `#pragma clang system_header`) is an axiom. The
+exporter records its kind, receiver, parameters and return type, keyed by its
+qualified name and canonical signature, and never exports its body. Click
+prepares it as an opaque function, and each call is checked against a
+contract:
+
+- Click supplies contracts for the standard functions in its catalog, keyed on
+  the standard name and signature, so a proof does not depend on whether
+  libstdc++ or libc++ was parsed. The sidecar is parsed with them appended; the
+  catalog itself is never written into a sidecar by expansion.
+- A call to a standard function with no catalog contract is refused, naming
+  the function. A sidecar may state its own `extern` contract instead, which is
+  an assumption like any other external contract.
+- A standard function must be `noexcept`; throwing contracts are not modeled.
+  One returning a record by value constructs it in the caller's destination.
+
+Contracts state a standard type's state through model accessors, never
+through a library's private fields. `std_span_data(s)` and `std_span_size(s)`
+name the data pointer and size of a `std::span`, the view of
+`[data, data + size)`. The parser rewrites an accessor into the one field path
+of the library that was parsed (libstdc++'s `_M_ptr` and
+`_M_extent._M_extent_value`), and checks it like a written field access; an
+argument of another type is refused there. An accessor works wherever a field
+does, as in `owns std_span_data(s);`.
+
+The catalog covers `std::span<int>`'s `size`, `data`, `front`, `back`,
+`operator[]` and `first`. Element accessors require an index inside the view,
+as the standard does, and form an address without reading it. Bitcoin Core's
+unchanged `SpanPopBack` verifies against these contracts
+(`tests/bitcoin_core_money_range.rs`). Proofs assume a C++ standard library
+that implements Click's contracts.
 
 ## Dependency-closure projection
 

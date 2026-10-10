@@ -67,7 +67,6 @@ Soundness and kernel shape:
 
 Program import and execution:
 
-- [Clean up library imports and frontend dependencies](import-cleanup.md)
 - [Support safe Rust and verify a shared C/Rust checksum specification](rust-support.md)
 
 The completed [basic C++ example](../examples/basic-cpp/README.md) verifies

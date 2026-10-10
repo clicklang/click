@@ -68,7 +68,6 @@ struct Options {
   std::string compilation_database;
   std::string exception_behavior = "normal_only";
   std::map<std::string, llvm::json::Value> library_assertions;
-  bool axiomatic_system_headers = false;
   std::string compilation_directory;
   std::string compilation_file;
   std::vector<std::string> compilation_command;
@@ -120,12 +119,6 @@ std::optional<Options> parse_options(int argc, const char **argv) {
           return std::nullopt;
         }
       }
-    } else if (option == "--axiomatic-system-headers") {
-      if (value != "true" && value != "false") {
-        llvm::errs() << "error: --axiomatic-system-headers takes true or false\n";
-        return std::nullopt;
-      }
-      result.axiomatic_system_headers = value == "true";
     } else if (option == "--exception-behavior") {
       if (value != "normal_only" && value != "scalar_int32") {
         llvm::errs() << "error: unsupported exception behavior `" << value << "`\n";
@@ -175,7 +168,6 @@ public:
                    std::vector<std::string> compilation_command,
                    std::string exception_behavior,
                    const std::map<std::string, llvm::json::Value> &library_assertions,
-                   bool axiomatic_system_headers,
                    ExportState &state)
       : compiler_(compiler), context_(compiler.getASTContext()),
         source_manager_(context_.getSourceManager()),
@@ -187,8 +179,7 @@ public:
         compilation_file_(std::move(compilation_file)),
         compilation_command_(std::move(compilation_command)),
         exception_behavior_(std::move(exception_behavior)),
-        library_assertions_(library_assertions),
-        axiomatic_system_headers_(axiomatic_system_headers), state_(state) {}
+        library_assertions_(library_assertions), state_(state) {}
 
   bool VisitFunctionDecl(clang::FunctionDecl *declaration) {
     if (declaration->isThisDeclarationADefinition() &&
@@ -3913,9 +3904,11 @@ private:
     return source_span(range, function_source_.empty() ? logical_source_ : function_source_);
   }
 
+  // A function declared in a system header is an axiom: its interface is
+  // exported, its body never is, and Click supplies its contract. The C++
+  // standard library is an axiomatic boundary.
   bool is_axiom(const clang::FunctionDecl *function) const {
-    return axiomatic_system_headers_ &&
-           source_manager_.isInSystemHeader(
+    return source_manager_.isInSystemHeader(
                source_manager_.getExpansionLoc(function->getLocation()));
   }
 
@@ -4180,9 +4173,6 @@ private:
   std::vector<std::string> compilation_command_;
   std::string exception_behavior_;
   const std::map<std::string, llvm::json::Value> &library_assertions_;
-  // A function declared in a system header is an axiom: its signature is
-  // exported, its body never is, and Click supplies its contract.
-  const bool axiomatic_system_headers_;
   bool system_spans_ = false;
   std::unordered_map<const clang::FunctionDecl *, unsigned> local_declaration_counts_;
   const clang::VarDecl *active_catch_binding_ = nullptr;
@@ -4215,8 +4205,7 @@ public:
                   options.function, options.dependency_root,
                   options.compilation_directory, options.compilation_file,
                   options.compilation_command, options.exception_behavior,
-                  options.library_assertions,
-                  options.axiomatic_system_headers, state) {}
+                  options.library_assertions, state) {}
 
   void HandleTranslationUnit(clang::ASTContext &context) override {
     exporter_.TraverseDecl(context.getTranslationUnitDecl());
