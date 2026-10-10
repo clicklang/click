@@ -40,6 +40,45 @@ the written source and target and name stores that may have changed the cell.
 An explicitly requested `--trace-proof` can additionally show bounded internal
 facts and snapshot identities for debugging.
 
+## Three strikes during example development
+
+When developing an example and Click together, repeated difficulty writing a
+proof is feedback about the tool, even if every rejection is sound. Use three
+substantive failed attempts at the same proof obligation as a trigger to stop
+local proof tweaking and investigate the verifier or proof interface.
+
+1. On the first failure, check the claim, assumptions, and attempted step.
+2. On the second, state what the new attempt was expected to establish and
+   inspect why it did not. Prefer a focused diagnostic or explicit step to
+   another broad search.
+3. On the third, pause the example at that obligation. Reduce the failure and
+   ask what would make the intended reasoning straightforward to express and
+   check. Do not proceed directly to a fourth spelling or tactic variation.
+
+Count attempts to solve the same underlying obligation, not identical command
+reruns or unrelated errors elsewhere in the proof. Moving the step, renaming
+values, or changing tactics does not reset the count. This is a working
+heuristic, not a quota: investigate sooner when the failure already exposes a
+clear defect.
+
+The pause is mandatory; changing the verifier is not. Use the triage order
+below to distinguish a mistaken claim or missing premise from poor diagnostics,
+an awkward proof interface, missing functionality, or an integration bug. An
+explicit proof that eventually works can still expose avoidable usability
+costs. Look for a general pattern, rather than a special case for the example.
+
+Before resuming, record the obligation, attempted approaches, what the reduced
+case shows, and the chosen response. That response may be a justified proof
+correction, clearer diagnostics or documentation, a reusable lemma or tactic,
+or a verifier fix with regression coverage. If the tooling problem remains
+unresolved, preserve the reproduction and report the blocker under the existing
+bug and issue policy. Do not weaken the claim, change otherwise-correct C,
+raise budgets, or add consumer-specific recovery rules merely to get past it.
+
+This rule applies to joint example and verifier development. It does not promise
+complete automation or require ordinary users to debug the verifier. Its purpose
+is to turn repeated proof-writing friction into deliberate tool improvement.
+
 ## Explain the program requirement first
 
 Tactic source excerpts retain their location and show at most ten source lines,

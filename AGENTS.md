@@ -229,6 +229,15 @@ that Click handles an awkward source pattern that the example has edited away.
 
 ## Tooling stability comes first
 
+When developing an example and the verifier together, use the
+[three-strikes rule](docs/concepts/proof-failure-triage.md#three-strikes-during-example-development):
+after three substantive failed attempts at the same proof obligation, stop
+trying local proof variations and investigate the tool boundary. Repeated
+friction is a usability signal, even when the checker is correct. Reduce the
+failure, classify it, and identify a general improvement or an explained proof
+correction before resuming. This requires investigation, not an automatic
+verifier change; do not wait for three attempts when a defect is already clear.
+
 Verifier and proof-tooling problems block feature and example work. Stop the
 current feature when any of these occurs:
 
@@ -244,8 +253,9 @@ current feature when any of these occurs:
   verifier behavior.
 
 Smart-search failure is expected when it is prompt, bounded, and actionable.
-It is not a reason to stop feature work or modify shared heuristics. Prefer a
-smaller smart tactic or an explicit sequence of relevant simple steps. Search
+One such failure is not a reason to stop feature work or modify shared
+heuristics. Prefer a smaller smart tactic or an explicit sequence of relevant
+simple steps. Search
 completeness is a non-goal; sound certificate validation, enforced bounds, useful diagnostics,
 and sufficient simple tactics are requirements.
 
