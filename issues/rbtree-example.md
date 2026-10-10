@@ -1269,8 +1269,9 @@ propagation in both directions. It allows a nonempty focus, retains the old
 sibling's opaque far subtree, and reparents its near node with arbitrary black
 children. The rotation and color flip return the exact balanced,
 parent-consistent root and unchanged in-order contents; every continuing edge
-still decreases the context. All 33 proofs and eight rotation-link,
-parent/color, and cursor mutation checks pass. Red-sibling cases 1/4 and 1/3/4
+still decreases the context. All 33 proofs, 362 expansion-audit sites, and eight
+rotation-link, parent/color, and cursor mutation checks pass. Red-sibling cases
+1/4 and 1/3/4
 after propagation remain. Depends on 11.
 
 **Chunk 13. `____rb_erase_color`, right-sibling cases, and `rb_erase`.** The

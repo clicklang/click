@@ -3966,10 +3966,11 @@ fn installing_a_certified_resource_group_does_not_recheck_internal_pairs() {
         });
         assert!(installed.is_ok());
         // Installation now also closes each explicit span into the address
-        // graph. Bound that per-input work and its growth; internal pair
+        // graph, including the complete-address shift for displaced starts.
+        // Bound that fixed per-input work and its growth; internal pair
         // comparisons would grow quadratically across these sizes.
         assert!(
-            work <= 64 * size,
+            work <= 96 * size,
             "installing a certified size-{size} group rechecked its internal pairs: {work}"
         );
         samples.push(work);
