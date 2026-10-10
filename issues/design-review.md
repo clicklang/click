@@ -142,16 +142,11 @@ rulings are under "Decided and closed".
 
 ### C1. Short proof forms where they are not yet used
 
-Proofs that pass were rewritten on 2026-10-08: a `have` or `ensures` proved
-by a one-step block uses the brace-less form (`by T(args);`, `by simp;`), and
-`have P by simp;` is `have P;`. No `by { simp(); }` remains in examples or
-the standard library. Left in the long spelling:
-
-- The Rust examples and the sidecars under `design/charon-trial`, which are
-  hash-pinned in `design/charon-trial/parity.json`.
-- A few mdtests a Rust test searches by text (`bubble_sort3_loop_sorted.md`,
-  `cpp_guard_unwind_before_second.md`,
-  `post_execution_have_checks_each_path.md`).
+A `have` or `ensures` proved by a one-step block uses the brace-less form
+(`by T(args);`, `by simp;`), and `have P by simp;` is `have P;`. The
+examples, the standard library and the mdtests use it. Left in the long
+spelling are the Rust examples and the sidecars under `design/charon-trial`,
+which are hash-pinned in `design/charon-trial/parity.json`.
 
 ## Decided and closed, for the record
 

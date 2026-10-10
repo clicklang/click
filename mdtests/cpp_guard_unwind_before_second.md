@@ -87,13 +87,13 @@ int32 guarded_before_second(
             step();
             step();
             step();
-            have second_cell == old(second_cell) by { simp(); }
+            have second_cell == old(second_cell);
             execute();
             simp();
         }
         threw => {
             step();
-            have second_cell == old(second_cell) by { simp(); }
+            have second_cell == old(second_cell);
             execute();
             simp();
         }

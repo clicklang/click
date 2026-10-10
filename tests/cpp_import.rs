@@ -2566,8 +2566,8 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
         (
             "wrong_cleanup_order",
             sidecar_source.replacen(
-                "            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell) by { simp(); }",
-                "            step();\n            step();\n            have first_cell == old(first_cell) by { simp(); }\n            step();\n            step();\n            have second_cell == old(second_cell) by { simp(); }",
+                "            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell);",
+                "            step();\n            step();\n            have first_cell == old(first_cell);\n            step();\n            step();\n            have second_cell == old(second_cell);",
                 1,
             ),
             "the first guard cannot be restored before the second cleanup",
@@ -2575,8 +2575,8 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
         (
             "omitted_cleanup",
             sidecar_source.replacen(
-                "            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell) by { simp(); }",
-                "            step();\n            step();\n            step();\n            have second_cell == old(second_cell) by { simp(); }",
+                "            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell);",
+                "            step();\n            step();\n            step();\n            have second_cell == old(second_cell);",
                 1,
             ),
             "a proof cannot omit a required destructor",
@@ -2591,8 +2591,8 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
         (
             "duplicated_cleanup",
             sidecar_source.replacen(
-                "            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell) by { simp(); }",
-                "            step();\n            step();\n            step();\n            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell) by { simp(); }",
+                "            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell);",
+                "            step();\n            step();\n            step();\n            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell);",
                 1,
             ),
             "a proof cannot execute a destructor twice",
@@ -2600,8 +2600,8 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
         (
             "unconstructed_second_guard",
             sidecar_source.replacen(
-                "        threw => {\n            step();\n            have second_cell == old(second_cell) by { simp(); }",
-                "        threw => {\n            step();\n            step();\n            have second_cell == 9 by { simp(); }",
+                "        threw => {\n            step();\n            have second_cell == old(second_cell);",
+                "        threw => {\n            step();\n            step();\n            have second_cell == 9;",
                 1,
             ),
             "the exceptional path cannot destroy the skipped second guard",

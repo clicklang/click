@@ -71,7 +71,7 @@ theorem erase_spine_minimum(spine: EraseSpine, tree: RbTree) {
                 unfold(plug(Context::Top, tree)); normalize();
             }
             EraseSpine::Left(identity, parent, color, sibling, up) => {
-                have RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty by { normalize(); }
+                have RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty by normalize();
                 apply(ih(up, RbTree::Node(identity, parent, color, tree, sibling)));
                 apply(rb_minimum_nonempty_left(identity, parent, color, tree, sibling));
                 unfold(erase_context(EraseSpine::Left(identity, parent, color, sibling, up)));
@@ -97,7 +97,7 @@ theorem erase_spine_remove_min_blackened(spine: EraseSpine, tree: RbTree) {
                 unfold(plug(Context::Top, rb_remove_min_blackened(tree))); normalize();
             }
             EraseSpine::Left(identity, parent, color, sibling, up) => {
-                have RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty by { normalize(); }
+                have RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty by normalize();
                 apply(ih(up, RbTree::Node(identity, parent, color, tree, sibling)));
                 apply(rb_remove_min_blackened_nonempty_left(identity, parent, color, tree, sibling));
                 unfold(erase_context(EraseSpine::Left(identity, parent, color, sibling, up)));
@@ -178,7 +178,7 @@ theorem erase_spine_min_parent(spine: EraseSpine, tree: RbTree) {
                 unfold(plug(Context::Top, tree)); normalize();
             }
             EraseSpine::Left(identity, parent, color, sibling, up) => {
-                have RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty by { normalize(); }
+                have RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty by normalize();
                 apply(ih(up, RbTree::Node(identity, parent, color, tree, sibling)));
                 apply(rb_min_parent_nonempty_left(identity, parent, color, tree, sibling));
                 unfold(erase_context(EraseSpine::Left(identity, parent, color, sibling, up)));
@@ -202,7 +202,7 @@ theorem erase_spine_min_context(spine: EraseSpine, tree: RbTree, outer: Context)
                 unfold(ctx_concat(Context::Top, outer)); normalize();
             }
             EraseSpine::Left(identity, parent, color, sibling, up) => {
-                have RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty by { normalize(); }
+                have RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty by normalize();
                 apply(ih(up, RbTree::Node(identity, parent, color, tree, sibling), outer));
                 apply(rb_min_context_nonempty_left(identity, parent, color, tree, sibling,
                     ctx_concat(erase_context(up), outer)));
@@ -369,7 +369,7 @@ theorem erase_context_parent(ctx: Context, node: struct rb_node*, parent: struct
     }
     ensures rb_parent_consistent(RbTree::Node(node, parent, color, left, right), parent) == 1 by {
         apply(ctx_consistent_node_children(ctx, node, parent, color, left, right, 0));
-        have parent == parent by { normalize(); }
+        have parent == parent by normalize();
         apply(rb_node_is_equal(parent, parent));
         apply(rb_parent_consistent_node(node, parent, color, left, right, parent));
         assumption();

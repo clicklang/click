@@ -22,7 +22,7 @@ void rb_set_parent(struct rb_node* rb, struct rb_node* p) {
                         rewrite(color == Color::Red); unfold(color_bit(Color::Red)); normalize();
                     }
                     execute();
-                    have rb->__rb_parent_color == (address(p) | 0) by { simp(); }
+                    have rb->__rb_parent_color == (address(p) | 0);
                     have rb->__rb_parent_color == address(p) + 0 by {
                         rewrite(rb->__rb_parent_color == (address(p) | 0)); normalize();
                     }
@@ -43,7 +43,7 @@ void rb_set_parent(struct rb_node* rb, struct rb_node* p) {
                         rewrite(color == Color::Black); unfold(color_bit(Color::Black)); normalize();
                     }
                     execute();
-                    have rb->__rb_parent_color == (1 | address(p)) by { simp(); }
+                    have rb->__rb_parent_color == (1 | address(p));
                     have rb->__rb_parent_color == address(p) + 1 by {
                         rewrite(rb->__rb_parent_color == (1 | address(p))); arithmetic() using { aligned(p, 8); }
                     }
