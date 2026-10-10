@@ -5,14 +5,14 @@ A cast that leaves the pointer unchanged, to `const char *` or to
 `cstr_readable(bytes)` still discharges `strlen`'s precondition.
 
 ```c filename=strlen_casts.c
-int32 through_const_char(uint8 bytes[]) {
-    int32 n;
+uint64 through_const_char(uint8 bytes[]) {
+    uint64 n;
     n = strlen((const char *)bytes);
     return n;
 }
 
-int32 through_unsigned_char(uint8 bytes[]) {
-    int32 n;
+uint64 through_unsigned_char(uint8 bytes[]) {
+    uint64 n;
     n = strlen((unsigned char *)bytes);
     return n;
 }
@@ -21,7 +21,7 @@ int32 through_unsigned_char(uint8 bytes[]) {
 ```click
 verifying "strlen_casts.c";
 
-int32 through_const_char(uint8 bytes[]) {
+uint64 through_const_char(uint8 bytes[]) {
     requires cstr_readable(bytes);
     ensures bytes[result] == '\0';
 } by {
@@ -29,7 +29,7 @@ int32 through_const_char(uint8 bytes[]) {
     simp();
 }
 
-int32 through_unsigned_char(uint8 bytes[]) {
+uint64 through_unsigned_char(uint8 bytes[]) {
     requires cstr_readable(bytes);
     ensures bytes[result] == '\0';
 } by {

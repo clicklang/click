@@ -1,8 +1,8 @@
 # Chosen C-string witness preserves an entry viewability citation
 
 ```c filename=cstr_dynamic_choose_extract.c
-int32 read_terminator(uint8 bytes[]) {
-    int32 length;
+uint64 read_terminator(uint8 bytes[]) {
+    uint64 length;
     length = strlen(bytes);
     return length;
 }
@@ -11,67 +11,63 @@ int32 read_terminator(uint8 bytes[]) {
 ```click
 verifying "cstr_dynamic_choose_extract.c";
 
-int32 read_terminator(uint8 bytes[]) {
+uint64 read_terminator(uint8 bytes[]) {
     requires cstr_readable(bytes);
-    ensures result >= 0 by {
+    ensures result < 18446744073709551615u64 by {
         unfold(cstr_readable);
         execute_until(statement(1));
-        have exists (len: int32) {
-            0 <= len and
-                viewable(bytes[0..len + 1]) and
-                forall (k: int32) {
-                    0 <= k and k < len implies bytes[k] != '\0'
-                } and
+        have exists (len: uint64) {
+            len < 18446744073709551615u64 and
+                viewable(bytes[0..len + 1u64]) and
+                forall (k: uint64) { k < len implies bytes[k] != '\0' } and
                 bytes[len] == '\0' and
-                forall (k: int32) { 0 <= k and k < len + 1 implies defined(bytes[k]) }
+                forall (k: uint64) { k < len + 1u64 implies defined(bytes[k]) }
         } by {
-            obtain (found_len: int32) {
+            obtain (found_len: uint64) {
                 at(function.entry,
-                    0 <= found_len and
-                    viewable(bytes[0..found_len + 1]) and
-                    forall (k: int32) {
-                        0 <= k and k < found_len implies bytes[k] != '\0'
-                    } and
+                    found_len < 18446744073709551615u64 and
+                    viewable(bytes[0..found_len + 1u64]) and
+                    forall (k: uint64) { k < found_len implies bytes[k] != '\0' } and
                     bytes[found_len] == '\0' and
-                    forall (k: int32) { 0 <= k and k < found_len + 1 implies defined(bytes[k]) })
+                    forall (k: uint64) { k < found_len + 1u64 implies defined(bytes[k]) })
             }
             witness { len: found_len }
             both {
-                simp();
-            } and {
                 both {
                     both {
                         both {
-                            both {
-                                simp();
-                            } and {
-                                extract(at(function.entry, viewable(bytes[0..found_len + 1])));
-                                transport(
-                                    at(function.entry, viewable(bytes[0..found_len + 1])),
-                                    viewable(bytes[0..found_len + 1])
-                                ) using {
-                                    at(function.entry, viewable(bytes[0..found_len + 1]));
-                                }
-                            }
-                        } and {
                             simp();
+                        } and {
+                            extract(at(function.entry, viewable(bytes[0..found_len + 1u64])));
+                            transport(
+                                at(function.entry, viewable(bytes[0..found_len + 1u64])),
+                                viewable(bytes[0..found_len + 1u64])
+                            ) using {
+                                at(function.entry, viewable(bytes[0..found_len + 1u64]));
+                            }
                         }
                     } and {
                         simp();
                     }
                 } and {
-                    intro();
-                    intro();
-                    extract(0 <= k);
-                    extract(k < found_len + 1);
-                    transport(
-                        at(function.entry, viewable(bytes[0..found_len + 1])),
-                        defined(bytes[k])
-                    ) using {
-                        at(function.entry, viewable(bytes[0..found_len + 1]));
-                        0 <= k;
-                        k < found_len + 1;
-                    }
+                    simp();
+                }
+            } and {
+                extract(at(function.entry, forall (k: uint64) {
+                    k < found_len + 1u64 implies defined(bytes[k])
+                }));
+                intro();
+                intro();
+                instantiate(at(function.entry, forall (k: uint64) {
+                    k < found_len + 1u64 implies defined(bytes[k])
+                }), k) using {
+                    k < found_len + 1u64;
+                }
+                transport(
+                    at(function.entry, defined(bytes[k])),
+                    defined(bytes[k])
+                ) using {
+                    at(function.entry, defined(bytes[k]));
                 }
             }
         }

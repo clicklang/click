@@ -1,8 +1,8 @@
 # Dynamically viewable C-string witness for `strlen`
 
 ```c filename=cstr_dynamic_loadability.c
-int32 read_terminator(uint8 bytes[]) {
-    int32 length;
+uint64 read_terminator(uint8 bytes[]) {
+    uint64 length;
     length = strlen(bytes);
     return length;
 }
@@ -11,9 +11,9 @@ int32 read_terminator(uint8 bytes[]) {
 ```click
 verifying "cstr_dynamic_loadability.c";
 
-int32 read_terminator(uint8 bytes[]) {
+uint64 read_terminator(uint8 bytes[]) {
     requires cstr_readable(bytes);
-    ensures result >= 0;
+    ensures result < 18446744073709551615u64;
 } by {
     unfold(cstr_readable);
     execute();

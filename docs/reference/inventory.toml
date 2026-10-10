@@ -2422,10 +2422,6 @@ id = "stdlib.theorem.cstr_len_is_viewable"
 path = "reference/library/index.md#cstr_len_is_viewable"
 
 [[item]]
-id = "stdlib.theorem.cstr_len_nonnegative"
-path = "reference/library/index.md#cstr_len_nonnegative"
-
-[[item]]
 id = "stdlib.theorem.cstr_len_has_prefix"
 path = "reference/library/index.md#cstr_len_has_prefix"
 

@@ -7852,7 +7852,99 @@ impl<'a> Proof<'a> {
             };
             proof = extracted;
         }
+        if let Some(closed) = proof.try_simp_closure_with_surfaces(&source_leaves)? {
+            return Ok(Some(closed));
+        }
+        // The leaves hold at function entry. A conjunct this frontier does
+        // not state exactly, such as a wide range or a universal over reads,
+        // is carried here by one explicit transport of its entry form.
+        let Some(goal) = proof.surface_goal().cloned() else {
+            return Ok(None);
+        };
+        let mut conjuncts = Vec::new();
+        let mut pending = vec![goal];
+        while let Some(proposition) = pending.pop() {
+            match proposition {
+                ClickProposition::And(left, right) => {
+                    pending.push(*right);
+                    pending.push(*left);
+                }
+                conjunct => conjuncts.push(conjunct),
+            }
+        }
+        let mut carried_any = false;
+        for conjunct in conjuncts {
+            check_verification_deadline()?;
+            let Ok(lowered) =
+                proof.lower_surface_proposition(&conjunct, "caller requirement conjunct")
+            else {
+                return Ok(None);
+            };
+            if proof.facts().pure_assumption_available(&lowered) {
+                continue;
+            }
+            let Some(carried) = proof.try_carry_entry_conjunct(&conjunct)? else {
+                return Ok(None);
+            };
+            proof = carried;
+            carried_any = true;
+        }
+        if !carried_any {
+            return Ok(None);
+        }
         proof.try_simp_closure_with_surfaces(&source_leaves)
+    }
+
+    /// Proves `conjunct` at this frontier from its function-entry form: a
+    /// plain fact by one `transport`, and a guarded universal by introducing
+    /// its binder and guard, instantiating the entry universal there, and
+    /// transporting that one conclusion. Every step is the checked operation.
+    fn try_carry_entry_conjunct(
+        &self,
+        conjunct: &ClickProposition,
+    ) -> Result<Option<Self>, ClickError> {
+        let entry = |proposition: &ClickProposition| ClickProposition::At {
+            selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Function,
+                kind: ProgramPointKind::Entry,
+            }),
+            proposition: Box::new(proposition.clone()),
+        };
+        let transport = |proposition: &ClickProposition| ProofStep::TransportUsing {
+            source: entry(proposition),
+            target: proposition.clone(),
+            premises: vec![entry(proposition)],
+        };
+        let steps = match conjunct {
+            ClickProposition::ForAll { name, body, .. } => {
+                let ClickProposition::Implies(guard, consequent) = body.as_ref() else {
+                    return Ok(None);
+                };
+                vec![
+                    ProofStep::IntroAs(name.clone()),
+                    ProofStep::Intro,
+                    ProofStep::InstantiateUsing {
+                        quantified: entry(conjunct),
+                        argument: ContractExpression::CFragment(CExpression::Variable(
+                            name.clone(),
+                        )),
+                        premises: Some(vec![guard.as_ref().clone()]),
+                    },
+                    transport(consequent),
+                ]
+            }
+            _ => vec![transport(conjunct)],
+        };
+        let Some(mut scope) = attempt::candidate_outcome(self.begin_have(conjunct.clone()))? else {
+            return Ok(None);
+        };
+        for step in steps {
+            let Some(next) = attempt::candidate_outcome(scope.apply_step(step))? else {
+                return Ok(None);
+            };
+            scope = next;
+        }
+        attempt::candidate_outcome(scope.join())
     }
 
     pub(in crate::surface::proof) fn try_statement_step_with_apply(

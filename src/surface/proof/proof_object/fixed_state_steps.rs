@@ -946,8 +946,10 @@ impl<'a> Proof<'a> {
             checked.push(fact);
         }
         let mut transition = self.checked_fact_transition(locals, facts, false, added, checked);
-        if let Some((chosen_body, variable, sort @ (Sort::CInt32 | Sort::CPointer(_)))) =
-            first_opened
+        // Every machine-integer witness projects as `int32` does: a C string's
+        // `size_t` length is chosen the same way as an `int32` index.
+        if let Some((chosen_body, variable, sort)) = first_opened
+            && (sort.machine_integer_type().is_some() || matches!(sort, Sort::CPointer(_)))
             && let Some(projection) =
                 self.build_existential_projection(binding, &chosen_body, variable, &sort)?
             && let Some(branch) = transition.branch.as_mut()
@@ -1056,7 +1058,11 @@ impl<'a> Proof<'a> {
                         view.click_function_environment,
                     )
                     .map_err(|message| self.step_error(message))?;
-                    if lowered == leaf {
+                    // A quantified leaf re-lowers with fresh binders, so it
+                    // is the same proposition up to alpha-renaming.
+                    if lowered == leaf
+                        || crate::kernel::proof::propositions_are_alpha_equal(&lowered, &leaf)
+                    {
                         leaves.push(ExistentialProjectionLeaf {
                             connective_path: path,
                             surface,
@@ -2686,16 +2692,7 @@ impl<'a> Proof<'a> {
         let Some(binding) = self.local_binding(&projection.chosen_name) else {
             return Ok(None);
         };
-        let binding_is_chosen = match binding {
-            ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::Variable(variable),
-            ))) => *variable == projection.chosen_variable,
-            ContractExpression::CFragment(CExpression::Value(CValue::Pointer(pointer))) => {
-                pointer.pointer().offset == PointerOffsetTerm::Variable(projection.chosen_variable)
-            }
-            _ => false,
-        };
-        if !binding_is_chosen {
+        if !binding_names_chosen_variable(binding, projection.chosen_variable) {
             return Ok(None);
         }
         let surface = self.substitute_fixed_state_locals_in_proposition(surface)?;
@@ -2758,29 +2755,28 @@ impl<'a> Proof<'a> {
         let Some(binding) = self.local_binding(&projection.chosen_name) else {
             return Ok(None);
         };
-        let binding_is_chosen = match binding {
-            ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::Variable(variable),
-            ))) => *variable == projection.chosen_variable,
-            ContractExpression::CFragment(CExpression::Value(CValue::Pointer(pointer))) => {
-                pointer.pointer().offset == PointerOffsetTerm::Variable(projection.chosen_variable)
-            }
-            _ => false,
-        };
-        if !binding_is_chosen {
+        if !binding_names_chosen_variable(binding, projection.chosen_variable) {
             return Ok(None);
         }
-        let surface = self.substitute_fixed_state_locals_in_proposition(surface)?;
+        // A leaf names the chosen binder, which the citation may already
+        // spell as its bound value; compare both after the same substitution.
+        let cited = self.substitute_fixed_state_locals_in_proposition(surface)?;
+        let mut leaf_surfaces = Vec::with_capacity(projection.leaves.len());
+        for leaf in &projection.leaves {
+            leaf_surfaces.push(self.substitute_fixed_state_locals_in_proposition(&leaf.surface)?);
+        }
         let mut matches = projection
             .leaves
             .iter()
-            .filter(|leaf| leaf.surface == surface);
-        let Some(leaf) = matches.next() else {
-            return Ok(None);
+            .zip(&leaf_surfaces)
+            .filter(|(leaf, leaf_surface)| leaf.surface == cited || **leaf_surface == cited)
+            .map(|(leaf, _)| leaf);
+        let leaf = match (matches.next(), matches.next()) {
+            (Some(leaf), None) => leaf,
+            _ => return Ok(None),
         };
-        if matches.next().is_some()
-            || proposition_at_connective_path(&projection.chosen_body, &leaf.connective_path)
-                != Some(&leaf.kernel)
+        if proposition_at_connective_path(&projection.chosen_body, &leaf.connective_path)
+            != Some(&leaf.kernel)
         {
             return Ok(None);
         }
@@ -4130,4 +4126,19 @@ fn loadable_surface_range_endpoints(
     segment
         .surface_range()
         .map(|(_, start, end)| (start.clone(), end.clone()))
+}
+
+/// Whether a proof-local binding is the symbolic value `choose` introduced
+/// for `variable`: a machine integer of any width, or a pointer offset.
+fn binding_names_chosen_variable(binding: &ContractExpression, variable: Variable) -> bool {
+    match binding {
+        ContractExpression::CFragment(CExpression::Value(CValue::Pointer(pointer))) => {
+            pointer.pointer().offset == PointerOffsetTerm::Variable(variable)
+        }
+        ContractExpression::CFragment(CExpression::Value(value)) => {
+            crate::kernel::MachineIntegerType::from_c_type(value.c_type())
+                .is_some_and(|integer| *value == integer.symbolic_value(variable))
+        }
+        _ => false,
+    }
 }

@@ -4,8 +4,8 @@ Looking through a cast finds the caller's own requirement; without one,
 `strlen`'s precondition is still missing.
 
 ```c filename=strlen_cast_unproved.c
-int32 unproved(uint8 bytes[]) {
-    int32 n;
+uint64 unproved(uint8 bytes[]) {
+    uint64 n;
     n = strlen((const char *)bytes);
     return n;
 }
@@ -14,8 +14,8 @@ int32 unproved(uint8 bytes[]) {
 ```click
 verifying "strlen_cast_unproved.c";
 
-int32 unproved(uint8 bytes[]) {
-    ensures 0 <= result;
+uint64 unproved(uint8 bytes[]) {
+    ensures result == result;
 } by {
     execute();
     simp();

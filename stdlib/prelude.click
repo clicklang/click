@@ -825,43 +825,38 @@ predicate bytes_all_not_eq(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
     })
 }
 
-predicate cstr_prefix(bytes: uint8[], len: int32) {
-    bytes_all_not_eq(bytes, 0, len, '\0')
+// C strings, measured as C measures them: a length is a `size_t`. A string
+// of length `len` occupies `len + 1` bytes, so `len` is below `SIZE_MAX`,
+// which also keeps `len + 1` exact.
+predicate cstr_prefix(bytes: uint8[], len: uint64) {
+    forall (k: uint64) { k < len implies bytes[k] != '\0' }
 }
 
-predicate cstr_len(bytes: uint8[], len: int32) {
-    0 <= len and
-        viewable(bytes[0..len + 1]) and
+predicate cstr_len(bytes: uint8[], len: uint64) {
+    len < 18446744073709551615u64 and
+        viewable(bytes[0..len + 1u64]) and
         cstr_prefix(bytes, len) and
-        bytes_contains(bytes, len, len + 1, '\0')
+        bytes[len] == '\0'
 }
 
 predicate cstr(bytes: uint8[]) {
-    exists (len: int32) {
+    exists (len: uint64) {
         cstr_len(bytes, len)
     }
 }
 
-predicate cstr_readable_len(bytes: uint8[], len: int32) {
-    0 <= len and
-        viewable(bytes[0..len + 1]) and
-        forall (k: int32) {
-            0 <= k and k < len implies bytes[k] != '\0'
-        } and
+predicate cstr_readable_len(bytes: uint8[], len: uint64) {
+    len < 18446744073709551615u64 and
+        viewable(bytes[0..len + 1u64]) and
+        forall (k: uint64) { k < len implies bytes[k] != '\0' } and
         bytes[len] == '\0' and
-        forall (k: int32) { 0 <= k and k < len + 1 implies defined(bytes[k]) }
+        forall (k: uint64) { k < len + 1u64 implies defined(bytes[k]) }
 }
 
-theorem cstr_readable_len_unique(bytes: uint8[], left: int32, right: int32) {
-    requires 0 <= left;
-    requires forall (k: int32) {
-        0 <= k and k < left implies bytes[k] != '\0'
-    };
+theorem cstr_readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
+    requires forall (k: uint64) { k < left implies bytes[k] != '\0' };
     requires bytes[left] == '\0';
-    requires 0 <= right;
-    requires forall (k: int32) {
-        0 <= k and k < right implies bytes[k] != '\0'
-    };
+    requires forall (k: uint64) { k < right implies bytes[k] != '\0' };
     requires bytes[right] == '\0';
 
     ensures left == right by {
@@ -874,12 +869,8 @@ theorem cstr_readable_len_unique(bytes: uint8[], left: int32, right: int32) {
         }
         cases {
             left < right => {
-                instantiate(forall (k: int32) {
-                    0 <= k and k < right implies bytes[k] != '\0'
-                }, left) using {
-                    0 <= left;
-                    left < right;
-                }
+                instantiate(forall (k: uint64) { k < right implies bytes[k] != '\0' }, left)
+                    using { left < right; }
                 contradiction(bytes[left] == '\0');
             }
             not (left < right) => {
@@ -892,16 +883,15 @@ theorem cstr_readable_len_unique(bytes: uint8[], left: int32, right: int32) {
                 }
                 cases {
                     right < left => {
-                        instantiate(forall (k: int32) {
-                            0 <= k and k < left implies bytes[k] != '\0'
-                        }, right) using {
-                            0 <= right;
-                            right < left;
-                        }
+                        instantiate(forall (k: uint64) { k < left implies bytes[k] != '\0' }, right)
+                            using { right < left; }
                         contradiction(bytes[right] == '\0');
                     }
                     not (right < left) => {
-                        apply(int32_le_and_not_lt_implies_eq(left, right)) using {
+                        have left <= right by {
+                            simp();
+                        }
+                        apply(uint64_le_and_not_lt_implies_eq(left, right)) using {
                             left <= right;
                             not (left < right);
                         }
@@ -913,40 +903,29 @@ theorem cstr_readable_len_unique(bytes: uint8[], left: int32, right: int32) {
 }
 
 predicate cstr_readable(bytes: uint8[]) {
-    exists (len: int32) {
-        0 <= len and
-            viewable(bytes[0..len + 1]) and
-            forall (k: int32) {
-                0 <= k and k < len implies bytes[k] != '\0'
-            } and
+    exists (len: uint64) {
+        len < 18446744073709551615u64 and
+            viewable(bytes[0..len + 1u64]) and
+            forall (k: uint64) { k < len implies bytes[k] != '\0' } and
             bytes[len] == '\0' and
-        forall (k: int32) { 0 <= k and k < len + 1 implies defined(bytes[k]) }
+            forall (k: uint64) { k < len + 1u64 implies defined(bytes[k]) }
     }
 }
 
-predicate cstr_bounded(bytes: uint8[], max: int32) {
-    bytes_contains(bytes, 0, max, '\0')
+predicate cstr_bounded(bytes: uint8[], max: uint64) {
+    exists (k: uint64) { k < max and bytes[k] == '\0' }
 }
 
-theorem cstr_len_is_viewable(bytes: uint8[], len: int32) {
+theorem cstr_len_is_viewable(bytes: uint8[], len: uint64) {
     requires cstr_len(bytes, len);
 
-    ensures viewable(bytes[0..len + 1]) by {
+    ensures viewable(bytes[0..len + 1u64]) by {
         unfold(cstr_len);
         simp();
     }
 }
 
-theorem cstr_len_nonnegative(bytes: uint8[], len: int32) {
-    requires cstr_len(bytes, len);
-
-    ensures 0 <= len by {
-        unfold(cstr_len);
-        simp();
-    }
-}
-
-theorem cstr_len_has_prefix(bytes: uint8[], len: int32) {
+theorem cstr_len_has_prefix(bytes: uint8[], len: uint64) {
     requires cstr_len(bytes, len);
 
     ensures cstr_prefix(bytes, len) by {
@@ -955,10 +934,10 @@ theorem cstr_len_has_prefix(bytes: uint8[], len: int32) {
     }
 }
 
-theorem cstr_len_has_terminator(bytes: uint8[], len: int32) {
+theorem cstr_len_has_terminator(bytes: uint8[], len: uint64) {
     requires cstr_len(bytes, len);
 
-    ensures bytes_contains(bytes, len, len + 1, '\0') by {
+    ensures bytes[len] == '\0' by {
         unfold(cstr_len);
         simp();
     }
@@ -997,16 +976,14 @@ extern uint8* memset(uint8 destination[], int32 value, int32 bytes) {
     });
 }
 
-extern int32 strlen(const uint8* bytes) {
+extern uint64 strlen(const uint8* bytes) {
     requires cstr_readable(bytes);
-    ensures 0 <= result;
-    ensures viewable(bytes[0..result + 1]);
-    ensures forall (k: int32) {
-        0 <= k and k < result implies bytes[k] != '\0'
-    };
+    ensures result < 18446744073709551615u64;
+    ensures viewable(bytes[0..result + 1u64]);
+    ensures forall (k: uint64) { k < result implies bytes[k] != '\0' };
     ensures bytes[result] == '\0';
     ensures cstr_readable_len(bytes, result);
-    ensures old(bytes[0]) == '\0' implies result == 0;
+    ensures old(bytes[0]) == '\0' implies result == 0u64;
 }
 
 theorem uint32_widened_add_guard_by_integer_bound(left: uint32, right: uint32) {

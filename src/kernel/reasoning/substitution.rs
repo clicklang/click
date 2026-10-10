@@ -2657,7 +2657,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         memory,
         base,
         bytes,
-        wide: false,
+        wide,
     } = proposition
     else {
         unreachable!("memory-viewable helper called for another proposition carrier")
@@ -2678,7 +2678,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         memory: memory.clone(),
         base: pointer.pointer().clone(),
         bytes,
-        wide: false,
+        wide: *wide,
     })
 }
 
