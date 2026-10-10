@@ -1304,6 +1304,50 @@ pub fn verify_c0_prepared_project_functions(
     })
 }
 
+/// Verify selected proofs from a typed prepared program through the ordinary
+/// bounded engine, with other function contracts remaining interfaces.
+pub fn verify_program_prepared_project_theorem(
+    project: &ClickProject,
+    import: &impl PreparedProgramSource,
+    theorem: &str,
+) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+    instrumentation::with_default_tactic_limits(|| {
+        let sources = CSourceContext::program(import)?.with_click_project(project);
+        let file = resolve_click_project_context(project, &sources)?;
+        verify_c0_sources_with_context(
+            project.entry_source().expect("resolved entry source"),
+            &sources,
+            Some(VerificationTarget::Theorem(theorem.to_owned())),
+            None,
+            None,
+            Some(file),
+        )
+        .map(|(verified, _)| verified)
+    })
+}
+
+/// Verify only the named function contracts in a typed prepared program.
+pub fn verify_program_prepared_project_functions(
+    project: &ClickProject,
+    import: &impl PreparedProgramSource,
+    functions: impl IntoIterator<Item = String>,
+) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+    let functions = functions.into_iter().collect::<BTreeSet<_>>();
+    instrumentation::with_default_tactic_limits(|| {
+        let sources = CSourceContext::program(import)?.with_click_project(project);
+        let file = resolve_click_project_context(project, &sources)?;
+        verify_c0_sources_with_context(
+            project.entry_source().expect("resolved entry source"),
+            &sources,
+            Some(VerificationTarget::Functions(functions)),
+            None,
+            None,
+            Some(file),
+        )
+        .map(|(verified, _)| verified)
+    })
+}
+
 /// Verifies compiler-prepared translation units through the same engine used
 /// by legacy source bundles.
 pub fn verify_c0_prepared_sources(
@@ -1460,6 +1504,16 @@ pub fn c0_prepared_project_selected_proof_names(
     imports: &[PreparedCImport],
 ) -> Result<Vec<String>, ClickError> {
     let sources = CSourceContext::prepared(imports).with_click_project(project);
+    let file = resolve_click_project_context(project, &sources)?;
+    Ok(selected_entry_proof_names(&file))
+}
+
+/// Entry proofs available for selection in a typed prepared program.
+pub fn program_prepared_project_selected_proof_names(
+    project: &ClickProject,
+    import: &impl PreparedProgramSource,
+) -> Result<Vec<String>, ClickError> {
+    let sources = CSourceContext::program(import)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     Ok(selected_entry_proof_names(&file))
 }
