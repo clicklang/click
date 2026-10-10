@@ -1012,16 +1012,19 @@ fn reject_empty_compute(before: &str, after: &str) {
 }
 
 #[test]
+#[ignore = "nightly: original computation mutation, 16s locally; exceeded 30s in CI"]
 fn charon_adler2_empty_compute_rejects_missing_input_lock() {
     reject_empty_compute("requires bytes_len == 0u64;", "");
 }
 
 #[test]
+#[ignore = "nightly: original computation mutation, 12s locally"]
 fn charon_adler2_empty_compute_rejects_missing_scalar_b_premise() {
     reject_empty_compute("requires self->b == 0;", "");
 }
 
 #[test]
+#[ignore = "nightly: original computation mutation, 21s locally; exceeded 30s in CI"]
 fn charon_adler2_empty_compute_rejects_missing_ownership() {
     reject_empty_compute("owns self->a;", "");
     reject_empty_compute("owns self->b;", "");

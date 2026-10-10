@@ -525,6 +525,7 @@ impl AddressPoints {
 
 pub(super) enum MemoryAccessEntries {
     Intervals(read_intervals::CoveringIntervals),
+    Relative(Box<dyn Iterator<Item = ResourceEntryId>>),
     Prefixed(Option<ResourceEntryId>, read_intervals::CoveringIntervals),
     Exact(crate::persistent::OwnedSetValues<ResourceEntryId>),
     SingleSupplier(Option<ResourceEntryId>),
@@ -535,6 +536,7 @@ impl Iterator for MemoryAccessEntries {
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Self::Intervals(entries) => entries.next(),
+            Self::Relative(entries) => entries.next(),
             Self::Prefixed(first, entries) => first.take().or_else(|| entries.next()),
             Self::Exact(entries) => entries.next(),
             Self::SingleSupplier(entry) => entry.take(),
@@ -760,6 +762,11 @@ impl MemoryFactEntries {
             && let Some(entries) = index.symbolic.footprint_entries(class, owned)
         {
             streams.push(Box::new(entries.owned_values()));
+        }
+        if index.points_initialized
+            && let Some(entries) = index.symbolic.relative_entries(range, owned, graph)
+        {
+            streams.push(entries);
         }
         let start_pointer = range.start_pointer();
         let end_pointer = range.end_pointer();
@@ -1565,6 +1572,52 @@ impl ResourceContext {
         self.access_entries(pointer, bytes, assumptions, false)
     }
 
+    // Follow only the query's explicit additive prefixes. The relative
+    // interval lookup is indexed by each complete base's checked class.
+    fn relative_access_entries(
+        index: &PairedMemoryIndex,
+        pointer: &Pointer,
+        bytes: u32,
+        owned: bool,
+    ) -> Option<MemoryAccessEntries> {
+        if !index.points_initialized {
+            return None;
+        }
+        let mut base = pointer.clone();
+        let mut displacement = 0_i128;
+        let bytes = i128::from(crate::kernel::assumptions::read_candidate_byte_width(bytes));
+        loop {
+            if let Some(entries) = index.symbolic.relative_byte_entries(
+                &base,
+                AddressCoordinate(AffineOffset::constant(displacement)),
+                AddressCoordinate(AffineOffset::constant(displacement.checked_add(bytes)?)),
+                owned,
+                &index.graph,
+            ) {
+                let mut entries = entries.peekable();
+                if entries.peek().is_some() {
+                    return Some(MemoryAccessEntries::Relative(Box::new(entries)));
+                }
+            }
+            let (prefix, bytes) = match &base.offset {
+                PointerOffsetTerm::Add(left, right) => {
+                    if let Some(bytes) = right.as_const() {
+                        (left.as_ref().clone(), bytes)
+                    } else {
+                        let bytes = left.as_const()?;
+                        (right.as_ref().clone(), bytes)
+                    }
+                }
+                PointerOffsetTerm::Constant(bytes) if *bytes != 0 => {
+                    (PointerOffsetTerm::Constant(0), *bytes)
+                }
+                _ => return None,
+            };
+            base.offset = prefix;
+            displacement = displacement.checked_add(i128::from(bytes))?;
+        }
+    }
+
     fn access_entries(
         &self,
         pointer: &Pointer,
@@ -1583,6 +1636,7 @@ impl ResourceContext {
         let entries = if let Some(entries) =
             Self::indexed_access_entries(&index, pointer, bytes, owned)
                 .or_else(|| Self::partial_start_entries(&index, pointer, bytes, owned))
+                .or_else(|| Self::relative_access_entries(&index, selected_pointer, bytes, owned))
         {
             entries
         } else {
@@ -1802,6 +1856,164 @@ impl ResourceContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // A partial resource frame leaves a constant-base range covering two
+    // fields. A modeled pointer alias must still select an interior field.
+    #[test]
+    fn modeled_pointer_alias_selects_interior_of_constant_base_owner() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let parent = Pointer::symbolic(Variable(4000000));
+        let model = Pointer::symbolic(Variable(4065536));
+        let old_read = Pointer {
+            block: parent.block.clone(),
+            offset: PointerOffsetTerm::scale_int32(
+                Bitvector32Term::Variable(Variable(1542185793994)),
+                4,
+            ),
+        };
+        let cursor = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(
+                Bitvector32Term::Variable(Variable(2035320285104)),
+                4,
+            ),
+        };
+        let parameter = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(100000)), 4),
+        };
+        let facts = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::pointer_equal(parameter.clone(), parent),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::pointer_equal(old_read.clone(), model.clone()),
+                true,
+            )
+            .assume_condition(ConditionTerm::pointer_equal(cursor.clone(), old_read), true)
+            .assume_condition(
+                ConditionTerm::pointer_equal(cursor.clone(), model.clone()),
+                true,
+            );
+        let range = |base: Pointer, start: u32, end: u32| {
+            CMemoryRange::new_with_element_width(base, start.into(), end.into(), 4)
+        };
+        let resources = ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own_memory(range(parameter.clone(), 0, 2)))
+            .unchecked_with_fact(CResourceFact::own_memory(range(parameter, 4, 6)))
+            .unchecked_with_fact(CResourceFact::own_memory(range(model.clone(), 2, 6)))
+            .unchecked_with_fact(CResourceFact::own_memory(range(model.clone(), 20, 24)))
+            .unchecked_with_fact(CResourceFact::view_memory(range(model, 6, 8)));
+        resources.synchronize_memory_equalities(&facts);
+        let required = CResourceFact::own_memory(range(cursor.clone(), 4, 6));
+        let residual = resources
+            .clone()
+            .without_fact_incrementally(&required, &facts)
+            .expect("the selected interior field is owned");
+        assert!(residual.satisfies_fact(
+            &CResourceFact::own_memory(range(cursor.clone(), 2, 4)),
+            &facts
+        ));
+        assert!(!residual.satisfies_fact(&required, &facts));
+        assert!(resources.permits_memory_read(&cursor.offset_by_bytes(16), 8, &facts));
+        assert!(resources.permits_memory_read(&cursor.offset_by_bytes(24), 8, &facts));
+        for (start, end) in [(0, 2), (4, 7), (6, 8)] {
+            let unowned = CResourceFact::own_memory(range(cursor.clone(), start, end));
+            assert!(
+                resources
+                    .clone()
+                    .without_fact_incrementally(&unowned, &facts)
+                    .is_none()
+            );
+        }
+        assert!(
+            resources
+                .without_fact_incrementally(&required, &PureFactContext::new())
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn constant_base_interior_lookup_scales_with_selected_range() {
+        let mut samples = Vec::new();
+        for count in [16_u32, 64, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let parent = Pointer::symbolic(Variable(950_000));
+            let model = Pointer::symbolic(Variable(950_001));
+            let parameter = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(
+                    Bitvector32Term::Variable(Variable(950_002)),
+                    4,
+                ),
+            };
+            let old_read = Pointer {
+                block: parent.block.clone(),
+                offset: PointerOffsetTerm::scale_int32(
+                    Bitvector32Term::Variable(Variable(950_003)),
+                    4,
+                ),
+            };
+            let cursor = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(
+                    Bitvector32Term::Variable(Variable(950_004)),
+                    4,
+                ),
+            };
+            let prefix = PureFactContext::new()
+                .assume_condition(ConditionTerm::pointer_equal(parameter, parent), true)
+                .assume_condition(
+                    ConditionTerm::pointer_equal(old_read.clone(), model.clone()),
+                    true,
+                );
+            let resources = ResourceContext::new().unchecked_with_facts((0..count).map(|index| {
+                CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                    model.clone(),
+                    (index * 8 + 2).into(),
+                    (index * 8 + 6).into(),
+                    4,
+                ))
+            }));
+            resources.synchronize_memory_equalities(&prefix);
+            // A late base alias must update the indexed payload, not force a
+            // search through all the other spans relative to that same base.
+            let facts = prefix
+                .clone()
+                .assume_condition(ConditionTerm::pointer_equal(cursor.clone(), old_read), true)
+                .assume_condition(ConditionTerm::pointer_equal(cursor.clone(), model), true);
+            resources.synchronize_memory_equalities(&facts);
+            let required = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                cursor.clone(),
+                4u32.into(),
+                6u32.into(),
+                4,
+            ));
+            let (remaining, work) = crate::instrumentation::measure_deterministic_work(|| {
+                resources
+                    .clone()
+                    .without_fact_incrementally(&required, &facts)
+            });
+            assert!(remaining.is_some());
+            assert!(resources.permits_memory_read(&cursor.offset_by_bytes(16), 8, &facts));
+            assert!(
+                resources
+                    .clone()
+                    .without_fact_incrementally(&required, &prefix)
+                    .is_none()
+            );
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[1] <= pair[0] * 2),
+            "interior lookup grew faster than indexed paths: {samples:?}"
+        );
+        assert!(
+            samples[3] <= samples[0] * 3,
+            "interior lookup followed unrelated same-base spans: {samples:?}"
+        );
+    }
 
     #[test]
     fn modeled_pointer_alias_selects_one_of_multiple_owned_fields() {
