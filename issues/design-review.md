@@ -116,11 +116,14 @@ Remaining:
 - **Stage 2, what is left.** A range keeps 64-bit bounds whatever its
   start: `bytes[a..b]`, `bytes[1..length]`, `bytes[index..4]` and
   `bytes[index + 1u64..length]`
-  (`mdtests/a_64_bit_range_may_start_past_zero.md`). A range with a signed
-  64-bit bound, or an `int32` variable beside a 64-bit bound
-  (`bytes[i..length]`), still goes through the 32-bit conversion and needs
-  its bound shown to fit; plan step 9 and the signed wide kind in the
-  design. A cast written in a range
+  (`mdtests/a_64_bit_range_may_start_past_zero.md`). A signed 64-bit bound
+  and an `int32` variable beside a 64-bit bound are 64-bit too
+  (`bytes[0..n]` with `long n`, `bytes[i..length]` with `int i`;
+  `mdtests/a_range_with_a_signed_or_int32_bound_is_64_bit.md`). A call
+  proves the order of each range it hands over
+  (`mdtests/a_call_hands_over_a_range_in_order.md`). Left of step 9: a
+  64-bit constant beside an `int32` bound (`bytes[i..4u64]`) is still
+  converted to 32 bits. A cast written in a range
   bound, `bytes[0..(int32)length]`, truncates as a cast in a place does.
   Two scaling regressions cover wide ranges
   (`wide_range_membership_ignores_unrelated_index_bounds`,

@@ -8430,6 +8430,60 @@ fn prepare_verified_function_call<'a>(
     }
     drop(requirement_timing);
 
+    // The callee is given each of its ranges' extent guards on entry
+    // (`c_function_contract_entry_facts`), among them `start <= end`. The
+    // planner shows each range lies inside one the caller holds, which
+    // gives every other guard from the held range's own, but not the order:
+    // an inverted range `bytes[5..2]` lies inside `bytes[0..8]` by its
+    // endpoints alone. So the caller proves the order here, under its path,
+    // the arguments and the callee's established requirements.
+    let guard_context = assumptions_with_propositions(
+        &assumptions_with_path_context(
+            &requirement_context,
+            &[],
+            &obligations[assumed_obligations..],
+        ),
+        &established_requirements[assumed_requirements..],
+    );
+    for fact in transfer.callee_resources.facts() {
+        crate::instrumentation::record_deterministic_work(1);
+        let Some(range) = fact.memory_view_range().or_else(|| fact.memory_own_range()) else {
+            continue;
+        };
+        let order = match range.wide_bounds() {
+            Some((start, end)) => ConditionTerm::uint64_less_equal(start.clone(), end.clone()),
+            None => ConditionTerm::signed_less_equal(range.start().clone(), range.end().clone()),
+        };
+        match guard_context.decide(&order) {
+            Some(true) => {}
+            Some(false) => {
+                return Ok(Err(CFunctionPath {
+                    outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                        format!(
+                            "`{}` would be handed a range that ends before it starts; its \
+                             `views` and `owns` bounds have to be in order at this call",
+                            application.name
+                        ),
+                    )),
+                    facts,
+                    obligations,
+                    loan_evidence: empty_checked_loan_evidence_sequence(),
+                }));
+            }
+            None => {
+                let guard = Proposition::ConditionIs(order, true);
+                if required_obligation_is_exactly_discharged(&guard_context, &guard) {
+                    super::assumptions::record_reasoning_provenance(&guard_context, &guard);
+                } else {
+                    obligations.push(
+                        ProofObligation::verification_condition(guard)
+                            .with_context(format!("{} range bounds", application.name)),
+                    );
+                }
+            }
+        }
+    }
+
     // Applicability is determined entirely at entry. In particular, pending
     // obligations must not be assumed to authorize this interface's effects
     // or make its guarantees available to another candidate.

@@ -2211,6 +2211,55 @@ impl PureFactContext {
             )) == Some(true)
     }
 
+    /// An unsigned 64-bit comparison of signed values read as unsigned,
+    /// `(uint64)i < (uint64)n`, or of one beside a constant at most
+    /// `i64::MAX`: the bound a `long` range bound or index is given
+    /// ([`crate::kernel::wide_range_bounds`]). When each signed value is
+    /// decided nonnegative the two orders agree, so the signed comparison
+    /// answers. Anything else is left to the other rules.
+    pub(super) fn decide_unsigned_order_of_nonnegative_signed(
+        &self,
+        condition: &ConditionTerm,
+    ) -> Option<bool> {
+        type Signed = fn(Bitvector32Term, Bitvector32Term) -> ConditionTerm;
+        let (left, right, signed): (_, _, Signed) = match condition {
+            ConditionTerm::Bitvector64UnsignedLessThan(a, b) => {
+                (a, b, ConditionTerm::int64_signed_less_than)
+            }
+            ConditionTerm::Bitvector64UnsignedLessEqual(a, b) => {
+                (a, b, ConditionTerm::int64_signed_less_equal)
+            }
+            ConditionTerm::Bitvector64UnsignedGreaterThan(a, b) => {
+                (a, b, ConditionTerm::int64_signed_greater_than)
+            }
+            ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b) => {
+                (a, b, ConditionTerm::int64_signed_greater_equal)
+            }
+            _ => return None,
+        };
+        let reinterpreted = |term: &Bitvector32Term| match term {
+            Bitvector32Term::UInt64FromInt64(value) => Some(value.as_ref().clone()),
+            _ => None,
+        };
+        if reinterpreted(left).is_none() && reinterpreted(right).is_none() {
+            return None;
+        }
+        let as_signed = |term: &Bitvector32Term| {
+            if let Some(value) = reinterpreted(term) {
+                let nonnegative = self.decide(&ConditionTerm::int64_signed_less_equal(
+                    Bitvector32Term::Int64Constant(0),
+                    value.clone(),
+                )) == Some(true);
+                return nonnegative.then_some(value);
+            }
+            let constant = i64::try_from(term.uint64_as_const()?).ok()?;
+            Some(Bitvector32Term::Int64Constant(constant))
+        };
+        let left = as_signed(left)?;
+        let right = as_signed(right)?;
+        self.decide(&signed(left, right))
+    }
+
     /// Strengthen a constant bound using only the queried nonconstant endpoint's
     /// index. Never walk a shared constant's incident edges or unrelated facts.
     pub(super) fn decide_uint64_constant_order_bounds(
