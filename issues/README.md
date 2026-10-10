@@ -54,16 +54,10 @@ dependency marker, not a prescribed implementation order. An unsound rule is
 P1 whatever it is about: the claim is worthless if the verifier accepts false
 contracts, so soundness bugs come first even when rbtree does not exercise
 them. A gap that only a different program would hit is normally P2. The
-remaining shared-heap milestone is also P1: it checks the architecture
-before launch while rbtree remains the key demo. The selected
-control-flow, byte-representation, arena, and basic C++ milestones have
-landed with bounded support claims. The selected safe-Rust and shared C/Rust
+selected control-flow, byte-representation, arena, and basic C++ milestones
+have landed with bounded support claims. The selected safe-Rust and shared C/Rust
 checksum milestones are P1 by user direction; broader language,
 synchronization, and graph coverage remain P2.
-
-Soundness and kernel shape:
-
-- [Design resource invariants for sequential and concurrent shared heaps](shared-heap-graph-demo.md)
 
 Program import and execution:
 
