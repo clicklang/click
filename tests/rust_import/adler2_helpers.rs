@@ -289,11 +289,13 @@ fn reject_helper_add_observations(lane: usize) {
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate; lane 2 reaches the same code"]
 fn charon_adler2_helpers_add_rejects_false_observations_lane_0() {
     reject_helper_add_observations(0);
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate; lane 2 reaches the same code"]
 fn charon_adler2_helpers_add_rejects_false_observations_lane_1() {
     reject_helper_add_observations(1);
 }
@@ -304,6 +306,7 @@ fn charon_adler2_helpers_add_rejects_false_observations_lane_2() {
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate; lane 2 reaches the same code"]
 fn charon_adler2_helpers_add_rejects_false_observations_lane_3() {
     reject_helper_add_observations(3);
 }

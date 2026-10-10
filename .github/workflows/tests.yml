@@ -115,6 +115,7 @@ jobs:
       # and incremental artifacts, so use the raw cache action for this build
       # stage. The snapshot is saved at the end of this job, on `master` only.
       - uses: actions/cache/restore@v4
+        id: build_cache
         with:
           path: |
             ~/.cargo/registry
@@ -150,6 +151,9 @@ jobs:
       # Every test shard waits for this whole job, and saving the build
       # snapshot takes about a minute. A pull request or merge-queue run can
       # only read `master`'s snapshots, so only a push to `master` saves one.
+      # Save under the key the restore step computed: by now the build has
+      # written Charon's own Cargo.toml and Cargo.lock files under `target/`,
+      # so hashing `**/Cargo.toml` again would name a key no restore asks for.
       - uses: actions/cache/save@v4
         if: github.event_name == 'push'
         with:
@@ -158,7 +162,7 @@ jobs:
             ~/.cargo/git
             target/debug
             target/charon
-          key: ${{ runner.os }}-${{ runner.arch }}-click-build-v1-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'scripts/charon-toolchain.sh', 'scripts/build-charon.sh', 'src/languages/rust/charon-profile.json') }}-${{ github.sha }}
+          key: ${{ steps.build_cache.outputs.cache-primary-key }}
 
   test_shards:
     needs: [scope, prepare]

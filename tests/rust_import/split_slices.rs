@@ -95,18 +95,22 @@ fn expand_original(claim: &str) {
     assert_cli(&p, &["verify"]);
 }
 #[test]
+#[ignore = "nightly: 3s in the parallel gate; charon_split_at_original_tools_agree reaches the same code"]
 fn charon_split_at_expand_left_length() {
     expand_original("left_length.contract");
 }
 #[test]
+#[ignore = "nightly: 4s in the parallel gate; charon_split_at_original_tools_agree reaches the same code"]
 fn charon_split_at_expand_right_length() {
     expand_original("right_length.contract");
 }
 #[test]
+#[ignore = "nightly: 3s in the parallel gate; charon_split_at_original_tools_agree reaches the same code"]
 fn charon_split_at_expand_left_first() {
     expand_original("left_first.contract");
 }
 #[test]
+#[ignore = "nightly: 4s in the parallel gate; charon_split_at_original_tools_agree reaches the same code"]
 fn charon_split_at_expand_right_first() {
     expand_original("right_first.contract");
 }

@@ -1870,6 +1870,7 @@ fn charon_trial_live_refresh_and_compiler_rejections() {
     }
 }
 #[test]
+#[ignore = "nightly: 1.3s in the parallel gate; other gate tests reach the same code"]
 fn rust_typed_import_verifies_borrow_parent_reuse_and_field_frame() {
     let p = gate_fixtures::project("basic", SOURCE);
     let prepared = load_import(&p.config()).unwrap();
@@ -3583,6 +3584,7 @@ fn assert_slice_iterator_artifact(p: &Project) {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate; other gate tests reach the same code"]
 fn rust_empty_slice_iterator_needs_no_read_authority() {
     for expression in ["bytes", "bytes.iter()"] {
         let source = format!(

@@ -50,6 +50,7 @@ fn project(bounds: bool) -> Project {
     p
 }
 #[test]
+#[ignore = "nightly: 2s in the parallel gate; other gate tests reach the same code"]
 fn charon_array_lengths_preserve_unchanged_sources_and_reject_false_claims() {
     assert_eq!(
         ARRAYS_SOURCE,
