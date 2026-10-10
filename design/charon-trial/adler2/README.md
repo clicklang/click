@@ -220,8 +220,14 @@ and relates every lane to the corresponding original byte at exhaustion.
 The preserve proof executes both original helper calls, checks their numeric
 requirements and closes the back-edge claims. Its verification unit checks
 the iterator and lane lemma bodies alongside every original helper body.
-The contract still covers one four-byte vector; induction over larger batches
-remains to be supplied.
+Its final A and B fields equal the common mathematical specification on the
+four entry bytes, starting from A = 1 and B = 0.
+[The native recombination bridge](four-byte-spec.click) checks every unsigned
+addition, subtraction, multiplication and remainder, then removes the six
+multiples of 65521 in the original B expression. It preserves the ordered
+weights 4, 3, 2, 1; reversing the middle weights is rejected. The contract still
+covers one four-byte vector; the packed result and induction over larger
+batches remain to be supplied.
 
 A false byte-order contract exposed expensive premise presentation: each
 attempt to name a scalar atom copied every memory-backed local value across
@@ -231,7 +237,10 @@ checked alias, borrowing values and charging every inspected slot. Explicit
 certificate validation skips that search and uses the recorded load and memory
 epoch. The lookup never materializes unrelated heap storage. Scaling
 regressions cover increasing local counts, deep unrelated expressions, and a
-million-element seeded range. The caller names its stored cursor, chunk size,
+million-element seeded range. Historical premise reconstruction also bounds
+the total work across snapshot candidates, and charges each local alias it
+examines. An unavailable spelling cannot receive a fresh search allowance at
+every historical state. The caller names its stored cursor, chunk size,
 and remaining length explicitly at the head, so the four-byte transition uses those few checked facts.
 
 These implications match the adapter's stored remaining-byte state and

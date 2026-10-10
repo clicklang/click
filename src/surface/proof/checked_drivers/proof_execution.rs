@@ -1165,6 +1165,12 @@ pub(in crate::surface::proof) fn try_check_structural_function_proof<'a>(
     function: &'a CFunction,
     arguments: &'a [CExpression],
 ) -> Result<Option<Proof<'a>>, ClickError> {
+    // The linear driver owns these scripts. Running them here would execute
+    // their entire prefix only to decline for lack of structural tactics,
+    // forcing the caller to check the same execution again in the linear driver.
+    if linear_execution_tactics(program).is_some() {
+        return decline();
+    }
     // A retained proof or a terminal error publishes what the driver
     // captured; only a decline (`Ok(None)`) leaves the cursor untouched.
     let mut staged = expansion_capture.as_deref().cloned();

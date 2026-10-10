@@ -755,6 +755,12 @@ rejecting the fourfold rise of a quadratic checker.
 
 ## Checked execution reuse
 
+Select the function-proof driver before executing a wholly linear script.
+The structural driver declines that shape without advancing its frontier;
+the linear driver checks it once. Running a complete prefix merely to decline
+and repeat it in another driver multiplies all statement and tactic work.
+Regression coverage counts execution events at several proof sizes.
+
 Ordered finalization and opaque-contract certification may share
 function-body work only through `CCheckedFunctionExecution`, a
 kernel-created artifact. The

@@ -67,8 +67,11 @@ the A residue against the common specification; a four-byte B prefix lemma
 checks the ordered weighted update under explicit index and nonnegative
 representative bounds. Connecting those relations to the arbitrary-length
 computation’s nested loops remains incomplete.
-The unchanged Rust one-byte computation proves both fields equal the shared
-specification on the entry byte snapshot.
+The unchanged Rust one-byte and four-byte computations prove both fields equal
+the shared specification on the entry byte snapshot, starting from A = 1 and
+B = 0. The four-byte bridge checks the native unsigned recombination and its
+ordered B weights. Packed-result and general-length Rust correctness remain
+pending.
 The independently locked, unchanged zlib one-byte path proves its packed result
 equal the same specification and preserves its input byte; its empty path also
 verifies. General-length C correctness and C/Rust result equality remain pending. The specification is not yet connected

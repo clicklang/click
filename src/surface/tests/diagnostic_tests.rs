@@ -2050,6 +2050,29 @@ fn implicit_theorem_search_is_timed_without_a_written_tactic_path() {
     )));
 }
 
+#[test]
+fn linear_function_proofs_execute_once_at_multiple_sizes() {
+    use crate::instrumentation::{VerificationEvent, collect};
+    for size in [16, 64, 256] {
+        let premises = "have 0 == 0 by { normalize(); }\n".repeat(size);
+        let source = format!(
+            "verifying \"f.c\"; int32 f() {{ ensures result == 0; }} by {{ {premises} execute(); simp(); }}"
+        );
+        let (result, events) =
+            collect(|| verify_c0_sources(&source, &[("f.c", "int32 f() { return 0; }")]));
+        result.unwrap();
+        let executions = events
+            .iter()
+            .filter(|event| {
+                matches!(event,
+                    VerificationEvent::TacticStarted(tactic) if tactic.tactic_name == "execute"
+                )
+            })
+            .count();
+        assert_eq!(executions, 1, "linear proof with {size} premises");
+    }
+}
+
 /// A real child overwrite must report the exact rejected slot and null
 /// argument without suggesting that a missing equality is a verifier bug.
 #[test]

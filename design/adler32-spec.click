@@ -870,3 +870,25 @@ theorem adler_spec_checksum_concat(bytes: uint8[], prefix: int32, suffix: int32,
   simp();
  }
 }
+
+theorem adler_spec_four(bytes: uint8[]) {
+ ensures adler_spec_a(bytes, 4, 1) == truncating_remainder(1 + to_integer((int32)bytes[0]) + to_integer((int32)bytes[1]) + to_integer((int32)bytes[2]) + to_integer((int32)bytes[3]), 65521) by {
+  apply(adler_sum_empty(bytes, 0));
+  apply(adler_sum_append_four(bytes, 0));
+  have 1 + (to_integer((int32)bytes[0]) + to_integer((int32)bytes[1]) + to_integer((int32)bytes[2]) + to_integer((int32)bytes[3])) == 1 + to_integer((int32)bytes[0]) + to_integer((int32)bytes[1]) + to_integer((int32)bytes[2]) + to_integer((int32)bytes[3]) by { arithmetic() using {}; }
+  unfold(adler_spec_a(bytes, 4, 1));
+  rewrite(adler_byte_sum(bytes, 4) == adler_byte_sum(bytes, 0) + to_integer((int32)bytes[0]) + to_integer((int32)bytes[1]) + to_integer((int32)bytes[2]) + to_integer((int32)bytes[3]));
+  rewrite(adler_byte_sum(bytes, 0) == 0);
+  rewrite(1 + (to_integer((int32)bytes[0]) + to_integer((int32)bytes[1]) + to_integer((int32)bytes[2]) + to_integer((int32)bytes[3])) == 1 + to_integer((int32)bytes[0]) + to_integer((int32)bytes[1]) + to_integer((int32)bytes[2]) + to_integer((int32)bytes[3])); simp();
+ }
+ ensures adler_spec_b(bytes, 4, 1, 0) == truncating_remainder(4 + 4 * to_integer((int32)bytes[0]) + 3 * to_integer((int32)bytes[1]) + 2 * to_integer((int32)bytes[2]) + to_integer((int32)bytes[3]), 65521) by {
+  apply(adler_sum_empty(bytes, 0));
+  apply(adler_weighted_append_four(bytes, 0));
+  have 4 + (4 * to_integer((int32)bytes[0]) + 3 * to_integer((int32)bytes[1]) + 2 * to_integer((int32)bytes[2]) + to_integer((int32)bytes[3])) == 4 + 4 * to_integer((int32)bytes[0]) + 3 * to_integer((int32)bytes[1]) + 2 * to_integer((int32)bytes[2]) + to_integer((int32)bytes[3]) by { arithmetic() using {}; }
+  unfold(adler_spec_b(bytes, 4, 1, 0));
+  rewrite(adler_weighted_sum(bytes, 4, 4) == adler_weighted_sum(bytes, 0, 0) + 4 * adler_byte_sum(bytes, 0) + 4 * to_integer((int32)bytes[0]) + 3 * to_integer((int32)bytes[1]) + 2 * to_integer((int32)bytes[2]) + to_integer((int32)bytes[3]));
+  rewrite(adler_weighted_sum(bytes, 0, 0) == 0);
+  rewrite(adler_byte_sum(bytes, 0) == 0);
+  rewrite(4 + (4 * to_integer((int32)bytes[0]) + 3 * to_integer((int32)bytes[1]) + 2 * to_integer((int32)bytes[2]) + to_integer((int32)bytes[3])) == 4 + 4 * to_integer((int32)bytes[0]) + 3 * to_integer((int32)bytes[1]) + 2 * to_integer((int32)bytes[2]) + to_integer((int32)bytes[3])); simp();
+ }
+}
