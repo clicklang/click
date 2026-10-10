@@ -3093,3 +3093,286 @@ int32 probe(struct span__int__value_unsigned_long_18446744073709551615& span, in
     verify_program_prepared_project(&parsed, &import)
         .expect_err("a write through the returned reference needs its cell");
 }
+
+// Actual std::byte pointers retain native one-byte strides, checked nominal
+// identities and ordinary ownership across offline verification and expansion.
+#[test]
+fn pinned_std_byte_pointer_stores_verify_offline() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "byte-pointer",
+        "#include <span.h>\nstd::byte probe(std::byte* p, std::byte value) noexcept { *(p + 1) = value; return *(p + 1); }\n",
+        &["sysroot/usr/include/c++/12/cstddef"],
+    );
+    let source = "verifying \"span-probe.cpp\"; uint8 probe(uint8* p, uint8 value) { owns p[0..2]; ensures p[1] == value; ensures p[0] == old(p[0]); ensures result == value; } by { execute(); simp(); }";
+    check_pinned_byte_proof(&root, &import, source);
+    let bad = source.replace("owns p[0..2]", "views p[0..2]");
+    fs::write(root.join("bad.click"), &bad).unwrap();
+    assert!(
+        verify_program_prepared_project(
+            &read_click_project(&root.join("bad.click"), &bad).unwrap(),
+            &import
+        )
+        .is_err()
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn pinned_std_byte_automatic_pointer_store_initializes_offline() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "byte-address",
+        "#include <span.h>\nstd::byte probe(std::byte value) noexcept { std::byte obj; *(&obj) = value; return obj; }\n",
+        &["sysroot/usr/include/c++/12/cstddef"],
+    );
+    check_pinned_byte_proof(
+        &root,
+        &import,
+        "verifying \"span-probe.cpp\"; uint8 probe(uint8 value) { ensures result == value; } by { execute(); simp(); }",
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+fn check_pinned_byte_proof(root: &Path, import: &PreparedCppImport, source: &str) {
+    fs::write(root.join("byte.click"), source).unwrap();
+    let project = read_click_project(&root.join("byte.click"), source).unwrap();
+    verify_program_prepared_project(&project, import).unwrap();
+    let expanded =
+        expand_program_prepared_project_claim_source_by_label(&project, import, "probe.contract")
+            .unwrap();
+    let rewritten = project.with_entry_source(expanded.clone());
+    verify_program_prepared_project(&rewritten, import).unwrap();
+    let (session, _) =
+        C0VerificationSession::new_program_prepared_project(&project, import).unwrap();
+    let position =
+        program_prepared_project_tactic_source_position(&rewritten, import, "probe.contract", 0)
+            .unwrap();
+    session
+        .verify_at_project(&expanded, position.line, position.column)
+        .unwrap();
+}
+
+#[test]
+// Consistent rehashing cannot substitute another nominal enum or move its
+// declaration to another locked source to manufacture byte alias privilege.
+fn pinned_std_byte_pointer_artifacts_reject_forged_declarations_offline() {
+    let (root, _) = pinned_span_fixture_with_exact_dependencies(
+        "byte-pointer-forgery",
+        "#include <span.h>\nstd::byte probe(std::byte* p) noexcept { return *p; }\n",
+        &["sysroot/usr/include/c++/12/cstddef"],
+    );
+    let artifact_path = root.join("span.click-cpp.json");
+    let lock_path = root.join("span.click.import.json.lock");
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(&artifact_path).unwrap()).unwrap();
+    let lock: serde_json::Value = serde_json::from_slice(&fs::read(&lock_path).unwrap()).unwrap();
+    fn change_enums(value: &mut serde_json::Value, change: usize) {
+        match value {
+            serde_json::Value::Object(object) => {
+                if object.get("kind").and_then(|v| v.as_str()) == Some("enumeration") {
+                    match change {
+                        0 => {
+                            object.insert("name".into(), "Other".into());
+                            object.insert("declaration_id".into(), "c:@E@Other".into());
+                        }
+                        1 => {
+                            object.get_mut("span").unwrap()["file"] = "span-probe.cpp".into();
+                        }
+                        2 => {
+                            object.get_mut("span").unwrap()["start_line"] = 70.into();
+                        }
+                        3 => {
+                            object.get_mut("underlying_type").unwrap()["signed"] = true.into();
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                for child in object.values_mut() {
+                    change_enums(child, change);
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for child in values {
+                    change_enums(child, change);
+                }
+            }
+            _ => {}
+        }
+    }
+    for change in 0..5 {
+        let mut forged = artifact.clone();
+        if change == 4 {
+            forged["preprocessor_files"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|file| {
+                    !file["canonical_path"]
+                        .as_str()
+                        .unwrap()
+                        .ends_with("/cstddef")
+                });
+        } else {
+            change_enums(&mut forged, change);
+        }
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = sha256(&bytes).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(&artifact_path, bytes).unwrap();
+        fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
+        assert!(
+            load_import(&root.join("span.click.import.json")).is_err(),
+            "mutation {change}"
+        );
+    }
+    // A self-consistent dependency digest still cannot replace the standard
+    // header pin. Keep the declaration spelling and span unchanged.
+    let header = "sysroot/usr/include/c++/12/cstddef";
+    let mut header_bytes = fs::read(root.join(header)).unwrap();
+    header_bytes.extend_from_slice(b"\n// substituted standard header\n");
+    fs::write(root.join(header), &header_bytes).unwrap();
+    let mut forged_lock = lock;
+    forged_lock["dependencies"][header] = sha256(&header_bytes).into();
+    fs::write(
+        &artifact_path,
+        serde_json::to_vec_pretty(&artifact).unwrap(),
+    )
+    .unwrap();
+    // Preserve the original artifact bytes hashed by the lock, rather than
+    // relying on JSON formatting to round-trip byte-for-byte.
+    let restored = fs::read(&artifact_path).unwrap();
+    forged_lock["artifact_sha256"] = sha256(&restored).into();
+    forged_lock["artifact_bytes"] = restored.len().into();
+    fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
+    let error = load_import(&root.join("span.click.import.json")).unwrap_err();
+    assert!(
+        error.contains("std::byte declaration header differs"),
+        "{error}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+// Allocated enum scalars can lend their exact byte owner to an ordinary helper;
+// the returned contract value must refresh the caller binding.
+fn pinned_std_byte_modular_pointer_call_verifies_offline() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "byte-pointer-call",
+        "#include <span.h>\nvoid fill(std::byte* p, std::byte value) noexcept { *p = value; } std::byte probe(std::byte value) noexcept { std::byte obj = static_cast<std::byte>(0); fill(&obj, value); return obj; }\n",
+        &["sysroot/usr/include/c++/12/cstddef"],
+    );
+    check_pinned_byte_proof(
+        &root,
+        &import,
+        "verifying \"span-probe.cpp\"; void fill(uint8* p, uint8 value) { owns p[0..1]; ensures p[0] == value; } by { execute(); simp(); } uint8 probe(uint8 value) { ensures result == value; } by { execute(); simp(); }",
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+// Pointer reinterpretation supplies no initialization. Four concrete byte
+// stores complete the shared uint32 representation on the selected LE target.
+fn pinned_std_byte_reinterpretation_initializes_uint32_offline() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "byte-cast-word",
+        "#include <span.h>\nunsigned int probe() noexcept { unsigned int obj; std::byte* p = reinterpret_cast<std::byte*>(&obj); *p = static_cast<std::byte>(120); *(p + 1) = static_cast<std::byte>(86); *(p + 2) = static_cast<std::byte>(52); *(p + 3) = static_cast<std::byte>(18); return obj; }\n",
+        &["sysroot/usr/include/c++/12/cstddef"],
+    );
+    check_pinned_byte_proof(
+        &root,
+        &import,
+        "verifying \"span-probe.cpp\"; uint32 probe() { ensures result == 305419896u32; } by { execute(); simp(); }",
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn pinned_std_byte_reinterpreted_call_result_preserves_pointer_identity_offline() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "byte-cast-call",
+        "#include <span.h>\nunsigned int* echo(unsigned int* p) noexcept { return p; } std::byte* probe(unsigned int* p) noexcept { return reinterpret_cast<std::byte*>(echo(p)); }\n",
+        &["sysroot/usr/include/c++/12/cstddef"],
+    );
+    check_pinned_byte_proof(
+        &root,
+        &import,
+        "verifying \"span-probe.cpp\"; uint32* echo(uint32* p) { ensures result == p; } by { execute(); simp(); } uint8* probe(uint32* p) { ensures result == (uint8*)p; } by { execute(); simp(); }",
+    );
+    let artifact_path = root.join("span.click-cpp.json");
+    let lock_path = root.join("span.click.import.json.lock");
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(&artifact_path).unwrap()).unwrap();
+    let lock: serde_json::Value = serde_json::from_slice(&fs::read(&lock_path).unwrap()).unwrap();
+    for change in 0..4 {
+        let mut forged = artifact.clone();
+        let conversion = &mut forged["function"]["body"][0]["conversions"][0];
+        match change {
+            0 => conversion["cast_kind"] = "no_op".into(),
+            1 => conversion["explicit"] = false.into(),
+            2 => conversion["source_type"]["pointee"]["bits"] = 64.into(),
+            3 => {
+                conversion["value_type"]["pointee"]["name"] = "Other".into();
+                conversion["value_type"]["pointee"]["declaration_id"] = "c:@E@Other".into();
+            }
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = sha256(&bytes).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(&artifact_path, bytes).unwrap();
+        fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
+        assert!(
+            load_import(&root.join("span.click.import.json")).is_err(),
+            "mutation {change}"
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn pinned_std_byte_reinterpretation_does_not_initialize_partial_storage() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "byte-cast-partial",
+        "#include <span.h>\nunsigned int probe() noexcept { unsigned int obj; std::byte* p = reinterpret_cast<std::byte*>(&obj); *p = static_cast<std::byte>(120); return obj; }\n",
+        &["sysroot/usr/include/c++/12/cstddef"],
+    );
+    let source = "verifying \"span-probe.cpp\"; uint32 probe() { ensures result == 120u32; } by { execute(); simp(); }";
+    fs::write(root.join("bad.click"), source).unwrap();
+    let error = verify_program_prepared_project(
+        &read_click_project(&root.join("bad.click"), source).unwrap(),
+        &import,
+    )
+    .unwrap_err();
+    assert!(
+        error.message().contains("uninitialized"),
+        "{}",
+        error.message()
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+// Changing the access type cannot mint write permission over the original word.
+fn pinned_std_byte_reinterpretation_requires_original_storage_ownership() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "byte-cast-authority",
+        "#include <span.h>\nunsigned char probe(unsigned int* p) noexcept { std::byte* bytes = reinterpret_cast<std::byte*>(p); *bytes = static_cast<std::byte>(7); return static_cast<unsigned char>(*bytes); }\n",
+        &["sysroot/usr/include/c++/12/cstddef"],
+    );
+    let source = "verifying \"span-probe.cpp\"; uint8 probe(uint32* p) { owns p[0..1]; ensures result == 7u8; } by { execute(); simp(); }";
+    check_pinned_byte_proof(&root, &import, source);
+    for bad in [
+        source.replace("owns p[0..1];", "views p[0..1];"),
+        source.replace("owns p[0..1];", ""),
+    ] {
+        fs::write(root.join("bad.click"), &bad).unwrap();
+        assert!(
+            verify_program_prepared_project(
+                &read_click_project(&root.join("bad.click"), &bad).unwrap(),
+                &import
+            )
+            .is_err()
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}

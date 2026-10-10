@@ -556,3 +556,53 @@ fn compiler_import_dependency_closure_projection_is_an_explicit_checked_option()
         error.message()
     );
 }
+
+#[test]
+fn pinned_zlib_empty_contract_verifies_offline_and_relocates() {
+    let root = tempfile::tempdir().expect("isolated offline zlib fixture");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
+    for name in [
+        "adler32.c",
+        "zutil.h",
+        "zlib.h",
+        "zconf.h",
+        "adler32.i",
+        "empty.click",
+        "empty.click.import.json",
+        "empty.click.import.lock.json",
+    ] {
+        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
+    }
+    let config = root.path().join("empty.click.import.json");
+    let imports = load_imports(&config).expect("offline locked zlib source closure");
+    let proof = fs::read_to_string(root.path().join("empty.click")).unwrap();
+    let verified =
+        verify_c0_prepared_sources(&proof, &imports).expect("unchanged zlib empty input");
+    assert_eq!(verified.len(), 1);
+    assert_eq!(
+        verified[0].import_identity.as_deref(),
+        Some(imports[0].identity())
+    );
+    let offset = proof.find("execute();").unwrap();
+    let line = proof[..offset]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1;
+    let column = offset - proof[..offset].rfind('\n').unwrap();
+    let expanded = expand_c0_prepared_tactic_source_at(&proof, &imports, line, column)
+        .expect("checked zlib execution expansion");
+    verify_c0_prepared_sources(&expanded, &imports).expect("expanded zlib contract");
+    let false_claim = proof.replace("ensures result == 1u64", "ensures result == 2u64");
+    assert!(verify_c0_prepared_sources(&false_claim, &imports).is_err());
+    let header = root.path().join("zutil.h");
+    fs::write(
+        &header,
+        format!(
+            "{}\n/* changed original input */\n",
+            fs::read_to_string(&header).unwrap()
+        ),
+    )
+    .unwrap();
+    assert!(load_imports(&config).is_err());
+}

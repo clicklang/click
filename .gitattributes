@@ -1,0 +1,2 @@
+# Preserve the exact compiler-prepared bytes bound by the import lock.
+design/charon-trial/zlib/adler32.i whitespace=-blank-at-eol

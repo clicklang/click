@@ -556,7 +556,7 @@ trivial copy assignment and an exact nominal RHS temporary lasting for the full
 expression. Click constructs into distinct raw RHS storage, copies into the live
 LHS and retires the RHS. References into separate backing remain usable only
 under the caller's existing authority. Move assignment, user-defined assignment
-and other materialization shapes remain refused. Artifact schema 54 requires an
+and other materialization shapes remain refused. Artifact schema 56 requires an
 explicit refresh of earlier locks.
 
 Taking the address of a supported int32 record field uses its checked Clang
@@ -565,7 +565,7 @@ qualification inherited from the root object and does not read the field or
 grant permission to dereference the resulting pointer. Constructor initializers
 can therefore store a pointer to a field of the destination object. This differs
 from copying an existing descriptor, which preserves pointer values rather than
-rebasing them to a new object. Artifact schema 54 requires refreshing earlier
+rebasing them to a new object. Artifact schema 56 requires refreshing earlier
 locks. Returned constructors use the narrower eligibility restriction above.
 
 Native int32 reference results and locals can also bind supported record fields
@@ -582,7 +582,31 @@ or storing that value needs no pointee authority and grants none. Dereferencing
 it remains subject to the shared live-storage and access checks. Same-type
 explicit pointer casts preserve identity. Other pointee types, nonliteral
 `nullptr_t` expressions, and nonzero integer-to-pointer casts remain refused.
-These nodes use artifact schema 54; refresh earlier locks.
+These nodes use artifact schema 56; refresh earlier locks.
+
+Mutable pointers to the pinned libstdc++ `std::byte` declaration also use native
+`uint8*` contracts, with one-byte loads, stores, offsets and field layout.
+The importer checks the enum identity and declaration span against the locked
+libstdc++ header hash, including offline artifacts. Other enums retain their
+native scalar values but do not gain byte pointer or alias permission. The
+current standard-byte profile is limited to that pinned header; other standard
+library versions require a separately checked declaration pin. Taking an
+uninitialized automatic byte object's address does not read or initialize it;
+a checked store does. Initialized mutable native pointer locals retain their
+pointee types through direct values, captured calls and same-type assignment.
+Their initializer remains mandatory.
+
+Explicit `reinterpret_cast` to the authenticated `std::byte*` is admitted from
+mutable native int32, uint32 and unsigned-byte pointers. It changes the access
+type and byte stride without granting ownership or initialization, and retains
+an explicit artifact node or call-result conversion. Reverse typed casts,
+nonstandard enum targets, const removal and general character-pointer
+reinterpretation remain refused. Concrete byte stores use the shared byte
+representation rules; on the selected target, four checked stores can initialize
+an unwritten declared uint32, while partial stores cannot. Native contract
+expressions for pointer identity across different pointee types and writable
+span construction remain separate prerequisites.
+
 
 Static scalar methods use a distinct `static_method` artifact kind with their
 class and declaration identities, without an implicit receiver or object-layout

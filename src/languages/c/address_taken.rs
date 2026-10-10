@@ -211,7 +211,9 @@ fn walk_expression(expression: &C0Expression, summary: &mut AddressTakenSummary)
 /// including the names its embedded statements declare and read.
 pub(super) fn mentioned_names(expression: &C0Expression, names: &mut BTreeSet<String>) {
     match expression {
-        C0Expression::Variable(name) | C0Expression::Assignment { name, .. } => {
+        C0Expression::Variable(name)
+        | C0Expression::Assignment { name, .. }
+        | C0Expression::ScalarUpdate { name, .. } => {
             names.insert(name.clone());
         }
         _ => {}
@@ -257,6 +259,7 @@ fn child_expressions<'a>(
     statements: &mut Vec<&'a C0Statement>,
 ) {
     match expression {
+        C0Expression::ScalarUpdate { .. } => {}
         C0Expression::Void
         | C0Expression::Variable(_)
         | C0Expression::FunctionAddress(_)

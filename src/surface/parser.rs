@@ -10344,9 +10344,18 @@ impl Parser {
         if self.starts_contract_scalar_cast() {
             self.check_unary_nesting_limit(depth)?;
             self.position += 1;
-            let target_type = self.parse_type()?.c_type.to_kernel_type();
-            if target_type.is_pointer() {
-                return Err(self.error("contract scalar casts do not accept pointer target types"));
+            let parsed_type = self.parse_type()?;
+            let target_type = parsed_type.c_type.to_kernel_type();
+            if parsed_type.reference
+                || (target_type.is_pointer()
+                    && (parsed_type.constant || parsed_type.pointee_constant))
+            {
+                return Err(self.error("contract cast targets must be unqualified native types; byte views inherit the source qualification"));
+            }
+            if target_type.is_pointer() && target_type != CType::UInt8Pointer {
+                return Err(
+                    self.error("native contract pointer casts require a `uint8*` byte-view target")
+                );
             }
             self.expect(Token::RParen)?;
             let operand = self.parse_contract_unary_at_depth(depth + 1)?;

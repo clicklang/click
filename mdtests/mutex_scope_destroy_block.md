@@ -1,8 +1,8 @@
-# Mutex scope destroy: standalone block limitation
+# Destroy a mutex inside a standalone block
 
-This unchanged synthetic C example records a frontend limitation: standalone
-compound statements are not yet supported. It does not demonstrate the mutex
-lifetime check; the kernel scope-exit tests cover that boundary.
+The unchanged C example now parses its standalone compound statement and
+verifies the init, lock, unlock, and destroy sequence before returning.
+Kernel scope-exit tests independently cover lifetime rejection.
 
 ```c filename=mutex_scope_destroy.c
 #include <pthread.h>
@@ -28,5 +28,5 @@ int32 run() { ensures result == 0; } by { execute(); simp(); }
 ```
 
 ```expect
-fail: expected statement, got `{`
+pass
 ```

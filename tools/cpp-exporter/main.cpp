@@ -273,7 +273,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 54;
+    artifact["schema"] = 56;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -664,7 +664,21 @@ private:
     return !type.isVolatileQualified() && !type.isRestrictQualified() &&
         (context_.hasSameType(unqualified, context_.IntTy) ||
          context_.hasSameType(unqualified, context_.UnsignedIntTy) ||
-         context_.hasSameType(unqualified, context_.UnsignedCharTy));
+         context_.hasSameType(unqualified, context_.UnsignedCharTy) ||
+         (supported_byte_enum(type) &&
+          type->getAs<clang::EnumType>()->getDecl()->getQualifiedNameAsString() == "std::byte"));
+  }
+
+  bool supported_byte_pointer_cast(const clang::CastExpr *cast) const {
+    const auto *source = cast->getSubExpr()->getType()->getAs<clang::PointerType>();
+    const auto *target = cast->getType()->getAs<clang::PointerType>();
+    return llvm::isa<clang::CXXReinterpretCastExpr>(cast) &&
+        cast->getCastKind() == clang::CK_BitCast && source && target &&
+        !source->getPointeeType().hasQualifiers() &&
+        !target->getPointeeType().hasQualifiers() &&
+        supported_pointer_element(source->getPointeeType()) &&
+        supported_byte_enum(target->getPointeeType()) &&
+        target->getPointeeType()->getAs<clang::EnumType>()->getDecl()->getQualifiedNameAsString() == "std::byte";
   }
 
   bool supported_integer_type(clang::QualType type) const {
@@ -1670,6 +1684,13 @@ private:
           }
           kind = "no_op";
           break;
+        case clang::CK_BitCast:
+          if (!supported_byte_pointer_cast(cast)) {
+            fail(cast->getExprLoc(), "unsupported C++ call-result pointer reinterpretation");
+            return std::nullopt;
+          }
+          kind = "byte_pointer_cast";
+          break;
         case clang::CK_IntegralCast:
           kind = cast->getType()->isEnumeralType() ? "integral_to_enumeration" : "integral_cast";
           break;
@@ -1727,6 +1748,9 @@ private:
     }
     const bool mutable_int = supported_scalar_value_type(local->getType()) &&
                              !local->getType().hasQualifiers();
+    const auto *local_pointer = local->getType()->getAs<clang::PointerType>();
+    const bool mutable_pointer = local_pointer && !local->getType().hasQualifiers() &&
+        !local_pointer->getPointeeType().hasQualifiers() && supported_pointer_element(local_pointer->getPointeeType());
     const auto *local_reference = local->getType()->getAs<clang::LValueReferenceType>();
     const bool int_reference = local_reference != nullptr &&
         context_.hasSameType(local_reference->getPointeeType().getUnqualifiedType(), context_.IntTy);
@@ -1744,11 +1768,11 @@ private:
            "exception-enabled normal-only C++ local objects require trivial destruction");
       return std::nullopt;
     }
-    if (!mutable_int && !record_object && !int_reference) {
+    if (!mutable_int && !mutable_pointer && !record_object && !int_reference) {
       fail(local->getLocation(),
            "the supported automatic C++ local must resolve to mutable "
            "signed/unsigned "
-           "32/64/128-bit integer or unsigned char, an int lvalue reference, or one simple record object");
+           "32/64/128-bit integer or unsigned char, an initialized native object pointer, an int lvalue reference, or one simple record object");
       return std::nullopt;
     }
     if (!local->hasInit() && !mutable_int) {
@@ -2875,6 +2899,17 @@ private:
     }
     if (const auto *cast =
             llvm::dyn_cast<clang::ExplicitCastExpr>(expression)) {
+      if (supported_byte_pointer_cast(cast)) {
+        auto value = lower_expression(cast->getSubExpr(), function);
+        auto value_type = lower_type(cast->getType(), cast->getExprLoc());
+        if (!value || !value_type) return std::nullopt;
+        llvm::json::Object result;
+        result["kind"] = "byte_pointer_cast";
+        result["value"] = std::move(*value);
+        result["value_type"] = std::move(*value_type);
+        result["span"] = span(cast->getSourceRange());
+        return Json(std::move(result));
+      }
       if (cast->getType()->isEnumeralType() || cast->getSubExpr()->getType()->isEnumeralType()) {
         if (cast->getCastKind() != clang::CK_IntegralCast &&
             cast->getCastKind() != clang::CK_IntegralToBoolean &&

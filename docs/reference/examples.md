@@ -125,8 +125,8 @@ authorities.
 - `mdtests/c_shift_uint8_promoted.md`: `uint8` promotion through shifts.
 - `mdtests/c_statement_update_sugar.md`: standalone `++`, `--`, `+=`, `-=`,
   and `*=` statement sugar; `mdtests/xor_swap.md` exercises `^=`.
-- `mdtests/c_statement_update_rejects_expression.md`: update expressions remain
-  unsupported inside larger expressions.
+- `mdtests/c_postfix_update_assignment.md`: assigning a postfix update consumes
+  the original scalar value while preserving its side effect.
 - `mdtests/infinite_loop_partial_contract.md`: a `diverges` contract over a
   perpetual loop still proves finite-prefix safety.
 - `mdtests/infinite_loop_vacuous_ensure.md`: a postcondition is vacuous when a

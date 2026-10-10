@@ -1579,7 +1579,20 @@ fn validate_comparison_expression_types(
             }
             Ok(())
         }
-        (SpecValueType::Scalar(_), SpecValueType::Scalar(_)) => {
+        (SpecValueType::Scalar(left_type), SpecValueType::Scalar(right_type)) => {
+            if let (Some(left_type), Some(right_type)) = (left_type, right_type)
+                && left_type.to_kernel_type().is_pointer()
+                && right_type.to_kernel_type().is_pointer()
+                && !left_type
+                    .to_kernel_type()
+                    .pointer_types_compatible(right_type.to_kernel_type())
+            {
+                return Err(ClickError::new(format!(
+                    "incompatible pointer comparison in {context}: {} and {}; use a checked byte-view cast to compare byte views",
+                    describe_c0_type(left_type),
+                    describe_c0_type(right_type)
+                )));
+            }
             if operator == ComparisonOperator::In {
                 Err(ClickError::new(format!(
                     "right operand of `in` must be a sequence in {context}"
@@ -2731,12 +2744,9 @@ pub(super) fn infer_contract_expression_type(
     }
 }
 
-/// A contract pointer cast only converts an opaque `void *` back to the
-/// modeled object the C body reaches through the same conversion. Retyping a
-/// typed pointer would let a contract read a different object at the same
-/// address than the body can, so any operand with a known non-opaque type
-/// is rejected. Scalar casts and casts the parser synthesizes over untyped
-/// bases (global array decay) keep their existing meaning.
+/// Struct casts recover the modeled object from an opaque `void *`.
+/// Native byte-view casts retag scalar object pointers without changing
+/// allocation identity, permissions, or initialized storage.
 fn validate_pointer_cast_operands(
     expression: &CExpression,
     variables: &BTreeMap<String, C0Type>,
@@ -2746,9 +2756,25 @@ fn validate_pointer_cast_operands(
         CExpression::Cast {
             expression: operand,
             target_type,
+            pointee_struct,
             ..
         } => {
             if target_type.is_pointer() {
+                if *target_type == CType::UInt8Pointer && pointee_struct.is_none() {
+                    let actual = infer_c_expression_type(operand, variables);
+                    if actual.is_some()
+                        && !actual.is_some_and(|ty| {
+                            ty.to_kernel_type().pointee_type().is_some_and(|element| {
+                                !element.is_pointer() && element.byte_width() > 0
+                            })
+                        })
+                    {
+                        return Err(ClickError::new(format!(
+                            "native byte-view cast in {context} expects a scalar object pointer operand, got {actual:?}"
+                        )));
+                    }
+                    return validate_pointer_cast_operands(operand, variables, context);
+                }
                 match infer_c_expression_type(operand, variables) {
                     None | Some(C0Type::VoidPointer) => {}
                     Some(actual) => {

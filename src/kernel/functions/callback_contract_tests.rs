@@ -1082,70 +1082,88 @@ fn checked_transition_projection_ignores_unrelated_caller_frame() {
     };
     let mut samples = Vec::new();
     for used_members in [1usize, 4, 16, 64] {
-        let requirements = (0..used_members)
-            .map(|index| {
-                CResourceSpec::owned_memory(CMemorySegment::new(
-                    CExpression::Variable("p".into()),
-                    CExpression::Value(int32(index as u32)),
-                    CExpression::Value(int32(index as u32 + 1)),
-                ))
-            })
-            .collect::<Vec<_>>();
-        let owned = (0..used_members)
-            .map(|index| {
-                CResourceFact::own_memory(CMemoryRange::new(
-                    pointer.clone(),
-                    Bitvector32Term::Constant(index as u32),
-                    Bitvector32Term::Constant(index as u32 + 1),
-                ))
-            })
-            .chain((0..256).map(|index| {
-                CResourceFact::own_token(format!("unrelated_transition_token_{index}"), vec![])
-            }))
-            .collect::<Vec<_>>();
-        let state = CState::new()
-            .with_local("p", CValue::pointer(pointer.clone()))
-            .with_memory(CMemory::new().with_block(pointer.block.clone(), 512))
-            .with_resource_context(ResourceContext::new().unchecked_with_facts(owned));
-        let function = c_function(
-            CType::Void,
-            format!("transition_projection_{used_members}"),
-            vec![c_parameter("p", CType::Int32Pointer)],
-            CStatement::Skip,
-        )
-        .with_contract(vec![], vec![], vec![], vec![], true)
-        .with_resource_summary(requirements, vec![])
-        .with_resource_derived_mutable_frame();
-        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let transfer = prepare_contract_resource_transfer(
-                &state,
-                &state,
-                function.name(),
-                function.contract_interface(),
-                &PureFactContext::new(),
-                &mut ExecutionBudget::default(),
-                false,
-                ResourceTransitionPurpose::FunctionBoundary,
+        let mut frame_work = None;
+        for unrelated in [0, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let requirements = (0..used_members)
+                .map(|index| {
+                    CResourceSpec::owned_memory(CMemorySegment::new(
+                        CExpression::Variable("p".into()),
+                        CExpression::Value(int32(index as u32)),
+                        CExpression::Value(int32(index as u32 + 1)),
+                    ))
+                })
+                .collect::<Vec<_>>();
+            let owned = (0..used_members)
+                .map(|index| {
+                    CResourceFact::own_memory(CMemoryRange::new(
+                        pointer.clone(),
+                        Bitvector32Term::Constant(index as u32),
+                        Bitvector32Term::Constant(index as u32 + 1),
+                    ))
+                })
+                .chain((0..unrelated).map(|index| {
+                    CResourceFact::own_token(format!("unrelated_transition_token_{index}"), vec![])
+                }))
+                .collect::<Vec<_>>();
+            let state = CState::new()
+                .with_local("p", CValue::pointer(pointer.clone()))
+                .with_memory(CMemory::new().with_block(pointer.block.clone(), 512))
+                .with_resource_context(ResourceContext::new().unchecked_with_facts(owned));
+            let function = c_function(
+                CType::Void,
+                format!("transition_projection_{used_members}"),
+                vec![c_parameter("p", CType::Int32Pointer)],
+                CStatement::Skip,
             )
-            .unwrap()
-            .unwrap();
-            let mut inputs = transfer.borrowed_inputs.clone();
-            inputs.extend(transfer.consumed_inputs.clone());
-            project_contract_memory_effects(
-                &state,
-                function.contract_interface(),
-                Some(&inputs),
-                &PureFactContext::new(),
-                &mut ExecutionBudget::default(),
-            )
-        });
-        assert_eq!(result.unwrap().unwrap().ranges.len(), used_members);
-        samples.push((used_members, work));
+            .with_contract(vec![], vec![], vec![], vec![], true)
+            .with_resource_summary(requirements, vec![])
+            .with_resource_derived_mutable_frame();
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let transfer = prepare_contract_resource_transfer(
+                    &state,
+                    &state,
+                    function.name(),
+                    function.contract_interface(),
+                    &PureFactContext::new(),
+                    &mut ExecutionBudget::default(),
+                    false,
+                    ResourceTransitionPurpose::FunctionBoundary,
+                )
+                .unwrap()
+                .unwrap();
+                let mut inputs = transfer.borrowed_inputs.clone();
+                inputs.extend(transfer.consumed_inputs.clone());
+                project_contract_memory_effects(
+                    &state,
+                    function.contract_interface(),
+                    Some(&inputs),
+                    &PureFactContext::new(),
+                    &mut ExecutionBudget::default(),
+                )
+            });
+            assert_eq!(result.unwrap().unwrap().ranges.len(), used_members);
+            if let Some(previous) = frame_work {
+                assert_eq!(
+                    work, previous,
+                    "unrelated caller frame changed transition work"
+                );
+            }
+            frame_work = Some(work);
+        }
+        samples.push((used_members, frame_work.unwrap()));
     }
-    for pair in samples.windows(2) {
+    // A single member has only a zero-offset address; later members also
+    // register displaced addresses. Compare marginal work per added member
+    // rather than requiring these two different operations to cost the same.
+    for triple in samples.windows(3) {
+        let earlier_work = triple[1].1 - triple[0].1;
+        let later_work = triple[2].1 - triple[1].1;
+        let earlier_members = triple[1].0 - triple[0].0;
+        let later_members = triple[2].0 - triple[1].0;
         assert!(
-            pair[1].1 <= pair[0].1 * (pair[1].0 / pair[0].0).max(1) + 128,
-            "checked transition work should charge used members, not unrelated frame: {samples:?}"
+            later_work * earlier_members <= earlier_work * later_members,
+            "checked transition work per added member grew: {samples:?}"
         );
     }
 }

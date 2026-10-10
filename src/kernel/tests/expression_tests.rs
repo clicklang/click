@@ -1296,10 +1296,14 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let mut state = CState::new();
-    state.locals.set_typed(
+    state.locals.set_typed_with_all_qualifiers(
         "int32_p",
-        CValue::pointer(address.clone()),
+        CValue::typed_pointer_with_pointee_constant(address.clone(), CType::Int32Pointer, true),
         CType::Int32Pointer,
+        false,
+        false,
+        false,
+        true,
     );
     state.locals.set_typed(
         "uint8_p",
@@ -1322,6 +1326,31 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
         unreachable!();
     };
     assert_eq!(value.pointer(), &address);
+    assert!(
+        value.pointee_constant(),
+        "a byte view must retain source const qualification"
+    );
+    let (spec_value, _) = c_evaluate_spec_expression_at_state(
+        &state,
+        &SpecExpression::Cast(
+            Box::new(SpecExpression::Value(
+                CValue::typed_pointer_with_pointee_constant(
+                    address.clone(),
+                    CType::Int32Pointer,
+                    true,
+                ),
+            )),
+            CType::UInt8Pointer,
+        ),
+        None,
+        &PureFactContext::new(),
+    )
+    .unwrap();
+    let CValue::Pointer(spec_pointer) = spec_value else {
+        panic!("byte-view spec cast must yield a pointer");
+    };
+    assert_eq!(spec_pointer.pointer(), &address);
+    assert!(spec_pointer.pointee_constant());
 
     let equality = c_equal(c_variable("int32_p"), c_variable("uint8_p"));
     let equality_theorem = prove_c_expression_evaluation(state, equality.clone())

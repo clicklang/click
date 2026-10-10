@@ -416,6 +416,7 @@ fn decode_artifact(
         config.rtti,
         &config.dependencies,
     )?;
+    validate_standard_byte_declarations(&export, config, dependencies)?;
     // One explicit statement walk; contract lookup never scans the inventory per site.
     let contracts: BTreeMap<_, _> = config
         .library_assertions
@@ -482,6 +483,110 @@ fn decode_artifact(
         }
     }
     Ok(export)
+}
+
+/// Byte access is a language privilege of the actual pinned declaration, not
+/// of an arbitrary enum with the same integer representation. This borrowed
+/// metadata walk covers types in nested calls, conversions and expressions.
+fn validate_standard_byte_declarations(
+    export: &CppExport,
+    config: &Config,
+    dependencies: &[(String, PathBuf)],
+) -> Result<(), String> {
+    use super::schema::CppType;
+    use std::cell::RefCell;
+    let paths: BTreeMap<_, _> = dependencies
+        .iter()
+        .map(|(name, path)| (name.as_str(), path))
+        .collect();
+    let preprocessor_paths: std::collections::BTreeSet<_> = export
+        .preprocessor_files
+        .iter()
+        .map(|file| file.canonical_path.as_str())
+        .collect();
+    let checked = RefCell::new(std::collections::BTreeSet::new());
+    let check_type = |ty: &CppType| -> Result<(), String> {
+        fn check(
+            ty: &CppType,
+            paths: &BTreeMap<&str, &PathBuf>,
+            checked: &RefCell<std::collections::BTreeSet<String>>,
+            preprocessor_paths: &std::collections::BTreeSet<&str>,
+        ) -> Result<(), String> {
+            crate::instrumentation::record_deterministic_work(1);
+            match ty {
+                CppType::Pointer { pointee } | CppType::LvalueReference { pointee } => {
+                    check(pointee, paths, checked, preprocessor_paths)
+                }
+                CppType::Enumeration { span, .. } if super::scalar::is_standard_byte(ty) => {
+                    if (
+                        span.start_line,
+                        span.start_column,
+                        span.end_line,
+                        span.end_column,
+                    ) != (69, 3, 69, 37)
+                    {
+                        return Err(
+                            "std::byte requires the pinned standard declaration span".into()
+                        );
+                    }
+                    if checked.borrow().contains(&span.file) {
+                        return Ok(());
+                    }
+                    let path = paths
+                        .get(span.file.as_str())
+                        .ok_or("std::byte requires a locked standard header dependency")?;
+                    if !path
+                        .to_str()
+                        .is_some_and(|path| preprocessor_paths.contains(path))
+                    {
+                        return Err("std::byte declaration header must belong to the locked preprocessor closure".into());
+                    }
+                    let bytes = read_stable(path, MAX_SOURCE_BYTES, "std::byte header")?;
+                    if hex_digest(&bytes)
+                        != "51409c852efecb6e4de3ef7c31e51e63ddd4ec376ee00e3c68e85e6579fa8648"
+                    {
+                        return Err(
+                            "std::byte declaration header differs from the supported libstdc++ pin"
+                                .into(),
+                        );
+                    }
+                    checked.borrow_mut().insert(span.file.clone());
+                    Ok(())
+                }
+                _ => Ok(()),
+            }
+        }
+        check(ty, &paths, &checked, &preprocessor_paths)
+    };
+    let sources = std::collections::BTreeSet::from_iter(
+        std::iter::once(config.logical_source.clone()).chain(config.dependencies.iter().cloned()),
+    );
+    for function in std::iter::once(&export.function).chain(&export.reachable_functions) {
+        // An axiom has an interface and no source of its own: its types are
+        // checked, and its synthetic spans name no file to check.
+        if function.axiom.is_some() {
+            for parameter in &function.parameters {
+                check_type(&parameter.value_type)?;
+            }
+            check_type(&function.return_type)?;
+            continue;
+        }
+        super::validity::check_function_with_types(
+            function,
+            &function.span.file,
+            &sources,
+            &check_type,
+        )?;
+    }
+    for record in &export.records {
+        for field in &record.fields {
+            check_type(&field.value_type)?;
+        }
+    }
+    for constant in &export.constants {
+        check_type(&constant.value_type)?;
+    }
+    Ok(())
 }
 
 fn validate_library_pins(

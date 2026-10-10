@@ -79,9 +79,10 @@ impl Scalar {
     }
 
     /// The bounded native object-pointer profile. Enum values share uint8
-    /// contracts, but that alone cannot grant character alias access.
+    /// contracts, but only the authenticated standard byte declaration grants
+    /// character alias access. Import validation checks its locked header pin.
     pub fn pointer_element(value: &CppType, allow_const: bool) -> Option<Self> {
-        if !matches!(value, CppType::Integer { .. }) {
+        if !matches!(value, CppType::Integer { .. }) && !is_standard_byte(value) {
             return None;
         }
         Self::of(value).filter(|scalar| {
@@ -92,6 +93,21 @@ impl Scalar {
                 )
         })
     }
+}
+
+/// Nominal candidate only: the importer separately authenticates the declaration
+/// span against the pinned standard header before any lowering can use it.
+pub(super) fn is_standard_byte(value: &CppType) -> bool {
+    matches!(value, CppType::Enumeration { declaration_id, name, is_scoped: true,
+        is_fixed: true, .. } if declaration_id == "c:@N@std@E@byte" && name == "std::byte")
+}
+
+/// Reinterpretation changes only the access type and byte stride. It cannot
+/// grant authority, initialize storage or create a typed object from bytes.
+pub(super) fn byte_pointer_cast(source: &CppType, target: &CppType) -> bool {
+    matches!((source, target), (CppType::Pointer { pointee: source }, CppType::Pointer { pointee: target })
+        if Scalar::pointer_element(source, false).is_some() && is_standard_byte(target)
+            && Scalar::pointer_element(target, false).is_some())
 }
 
 impl ScalarKind {

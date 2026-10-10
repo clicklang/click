@@ -412,7 +412,7 @@ impl LoweringContext<'_> {
                     ))
                 }
                 (
-                    CppType::Integer { .. } | CppType::Enumeration { .. },
+                    CppType::Integer { .. } | CppType::Enumeration { .. } | CppType::Pointer { .. },
                     CppInitializer::Value { value },
                 ) => {
                     let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
@@ -427,6 +427,7 @@ impl LoweringContext<'_> {
                 (
                     CppType::Integer { .. }
                     | CppType::Enumeration { .. }
+                    | CppType::Pointer { .. }
                     | CppType::LvalueReference { .. },
                     CppInitializer::Call {
                         callee,
@@ -564,7 +565,7 @@ impl LoweringContext<'_> {
             CppStatement::Assign { target, value, .. } => {
                 let target_is_local = matches!(
                     self.place(target)?.value_type,
-                    CppType::Integer { .. } | CppType::Enumeration { .. }
+                    CppType::Integer { .. } | CppType::Enumeration { .. } | CppType::Pointer { .. }
                 );
                 let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
                 let assignment = if target_is_local {
@@ -993,6 +994,13 @@ impl LoweringContext<'_> {
                 let mut value = c_variable(capture.clone());
                 let mut result_type = capture_type;
                 for conversion in conversions {
+                    if matches!(conversion.value_type, CppType::Pointer { .. }) {
+                        result_type = cpp_return_scalar_type(&conversion.value_type)?;
+                        if conversion.cast_kind == super::CppScalarCastKind::BytePointerCast {
+                            value = c_cast(value, result_type);
+                        }
+                        continue;
+                    }
                     let source = Scalar::mutable_kind(&conversion.source_type)
                         .ok_or("unsupported C++ call conversion operand")?;
                     let target = Scalar::mutable_kind(&conversion.value_type)
@@ -1148,6 +1156,14 @@ impl LoweringContext<'_> {
                 (
                     input.prefix,
                     c_cast(crate::kernel::c_not(input.value), CType::Bool),
+                    input.may_throw,
+                )
+            }
+            CppExpression::BytePointerCast { value, .. } => {
+                let input = self.normalize_expression(value)?;
+                (
+                    input.prefix,
+                    c_cast(input.value, CType::UInt8Pointer),
                     input.may_throw,
                 )
             }
@@ -1452,13 +1468,12 @@ impl LoweringContext<'_> {
                 {
                     Ok(c_variable(self.variable_name(place)))
                 }
-                (CppType::Integer { .. }, CppType::Pointer { pointee })
-                    if Scalar::pointer_element(pointee, false).is_some() =>
-                {
-                    Ok(CExpression::AddressOf(Box::new(c_variable(
-                        self.variable_name(place),
-                    ))))
-                }
+                (
+                    CppType::Integer { .. } | CppType::Enumeration { .. },
+                    CppType::Pointer { pointee },
+                ) if Scalar::pointer_element(pointee, false).is_some() => Ok(
+                    CExpression::AddressOf(Box::new(c_variable(self.variable_name(place)))),
+                ),
                 _ => Err("C++ address-of is outside integer reference lowering".into()),
             },
             CppExpression::ReferenceBinding { address, .. } => {
@@ -1498,6 +1513,9 @@ impl LoweringContext<'_> {
                     ));
                 }
                 self.lower_typed_load(pointer, field_type)
+            }
+            CppExpression::BytePointerCast { value, .. } => {
+                Ok(c_cast(self.lower_expression(value)?, CType::UInt8Pointer))
             }
             CppExpression::IntegralCast {
                 value, value_type, ..
@@ -1681,6 +1699,7 @@ fn expression_contains_observer(expression: &CppExpression) -> bool {
         CppExpression::LogicalNot { value, .. }
         | CppExpression::IntegralCast { value, .. }
         | CppExpression::EnumCast { value, .. }
+        | CppExpression::BytePointerCast { value, .. }
         | CppExpression::ReferenceBinding { address: value, .. }
         | CppExpression::Dereference { pointer: value, .. } => expression_contains_observer(value),
         CppExpression::Binary { left, right, .. } => {
