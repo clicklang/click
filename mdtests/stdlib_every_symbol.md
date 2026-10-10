@@ -9,8 +9,12 @@ The `authority` resource's restricted empty-population source use is verified
 by `authority_establishes_and_retires_empty_stack_population` in
 `src/surface/tests/execution_tests.rs`.
 
-The external catalog symbols `memcpy`, `memcmp`, `memset`, and `strlen` are
-verified in `mdtests/stdlib_external_contracts.md`.
+The external catalog symbols `memcmp` and `strlen` are verified in
+[`strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md),
+`memcpy` in
+[`byte_representation_scalar_copy.md`](byte_representation_scalar_copy.md),
+and `memset`'s precondition is checked at a call in
+[`c_builtin_memset_header_checks_its_contract.md`](c_builtin_memset_header_checks_its_contract.md).
 
 The external catalog symbol `__click_constant_p_unknown`, the value of the C
 builtin `__builtin_constant_p`, is verified in

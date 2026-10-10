@@ -48,5 +48,5 @@ int32 run(struct holder *holder) {
 ```
 
 ```expect
-fail: missing resource fact `views ((char *)holder)[0..4]`
+fail: missing resource fact `views ((char *)holder)[0]`
 ```

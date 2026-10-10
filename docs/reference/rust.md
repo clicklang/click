@@ -38,6 +38,17 @@ cargo run --bin click -- expand --claim update.contract --in-place examples/basi
 cargo run --bin click -- verify examples/basic-rust/borrow.click
 ```
 
+Locked Rust imports also support focused proof tracing:
+
+```sh
+cargo run --bin click -- verify --trace-proof update examples/basic-rust/borrow.click
+```
+
+Use a function or theorem name declared in the sidecar. `--trace-to LINE[:COLUMN]`
+selects a written tactic within that proof. Only the named proof is checked;
+other function contracts remain interfaces. Tracing validates the ordinary
+import lock and does not rerun the compiler.
+
 The import configuration selects one `.rs` file, the exporter executable,
 and an artifact output. Refresh runs the compiler with a bounded process and
 writes the artifact and input lock. Ordinary verification loads those files

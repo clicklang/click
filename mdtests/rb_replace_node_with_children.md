@@ -24,7 +24,7 @@ requirement is the only thing relating the pointer `rb_parent(victim)`
 recomputes to the frame. Since a requirement states one whole model and
 `exists` cannot bind an ADT, the children are pinned too, and the wrapper's
 extra `left_child` and `right_child` parameters name their identities the way
-`mdtests/rb_at_link_helpers.md`'s `old_parent` names a resource argument. The
+`mdtests/rb_set_parent_red_ors_a_zero_color.md`'s `old_parent` names a resource argument. The
 grandchildren are `RbTree::Empty` and are handed straight back to each child's
 refold: the C writes no cell of theirs.
 

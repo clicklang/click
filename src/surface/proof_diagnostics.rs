@@ -155,6 +155,8 @@ fn render_diagnostic_labeled(
     // line, so a premise that reads exactly like the goal could be about
     // another state entirely — which is the one thing a reader compares these
     // lines to decide.
+    let tracing = crate::surface::proof_trace::enabled_for(&diagnostic.claim_label);
+    let mut internal_goal_shown = false;
     if summary.is_some()
         && let Some(goal) = diagnostic.kernel_goal()
     {
@@ -174,6 +176,7 @@ fn render_diagnostic_labeled(
                 if internal.contains("snapshot#") || internal.contains("snapshot<untracked>") {
                     rendered.push_str("\n  snapshot identity (internal): ");
                     rendered.push_str(&internal);
+                    internal_goal_shown = true;
                 }
             }
         } else if let Some(source) = render::render_simple_click_fact_labeled(goal, labels) {
@@ -185,8 +188,36 @@ fn render_diagnostic_labeled(
         } else if crate::surface::proof_trace::enabled_for(&diagnostic.claim_label) {
             rendered.push_str("\n  internal goal (no exact Click spelling): ");
             rendered.push_str(&render::render_internal_proposition_labeled(goal, labels));
+            internal_goal_shown = true;
         } else {
             rendered.push_str("\n  goal has no exact Click spelling at this frontier");
+        }
+    }
+    // A refined goal can lose its source presentation. An explicit trace
+    // must still show its numeric formats and exact snapshot identities.
+    if tracing
+        && !internal_goal_shown
+        && let Some(
+            goal @ Proposition::ConditionIs(
+                crate::kernel::ConditionTerm::IntegerEqual(..)
+                | crate::kernel::ConditionTerm::IntegerNotEqual(..)
+                | crate::kernel::ConditionTerm::IntegerLessThan(..)
+                | crate::kernel::ConditionTerm::IntegerLessEqual(..)
+                | crate::kernel::ConditionTerm::IntegerGreaterThan(..)
+                | crate::kernel::ConditionTerm::IntegerGreaterEqual(..),
+                _,
+            ),
+        ) = diagnostic.kernel_goal()
+    {
+        rendered.push_str("\n  integer goal identity (internal): ");
+        let internal = render::render_internal_proposition_labeled(goal, labels);
+        let mut end = internal.len().min(1024);
+        while !internal.is_char_boundary(end) {
+            end -= 1;
+        }
+        rendered.push_str(&internal[..end]);
+        if end < internal.len() {
+            rendered.push('…');
         }
     }
     if summary.is_some() {
@@ -355,6 +386,52 @@ mod tests {
         assert!(report.contains("stage: proof step"));
         assert!(report.contains("additional premises omitted"));
         assert!(state.calls.load(Ordering::Relaxed) >= 2);
+    }
+
+    #[test]
+    fn trace_context_retains_a_refined_integer_goal_without_a_source_spelling() {
+        use crate::kernel::{
+            Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType, Variable,
+        };
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::integer_equal(
+                IntegerTerm::from_machine(
+                    MachineIntegerType::Int32,
+                    Bitvector32Term::Variable(Variable(981_701)),
+                )
+                .unwrap(),
+                IntegerTerm::constant_i64(7),
+            ),
+            true,
+        );
+        let state = Arc::new(CountingState {
+            goal,
+            calls: AtomicUsize::new(0),
+        });
+        let diagnostic = ProofFailureDiagnostic {
+            origin: ProofDiagnosticOrigin {
+                stage: "proof step".into(),
+                location: "source tactic 4".into(),
+                source_tactic_path: None,
+            },
+            claim_label: "word.contract".into(),
+            reason: "reason".into(),
+            state: Some(state),
+        };
+        crate::surface::with_proof_trace("word", || {
+            let report = render_trace_context_labeled(
+                &diagnostic,
+                &[],
+                &mut render::SnapshotLabels::default(),
+            );
+            assert!(report.contains("machine-integer<Int32>"), "{report}");
+            assert_eq!(
+                report.matches("machine-integer<Int32>").count(),
+                1,
+                "{report}"
+            );
+            assert!(report.len() < 2048, "{report}");
+        });
     }
 
     #[test]

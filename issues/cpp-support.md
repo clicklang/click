@@ -459,16 +459,16 @@ Current standard-library policy exports system-header interfaces as axioms,
 without their bodies. The selected dynamic-extent
 `std::as_writable_bytes(std::span<int>)` therefore uses an explicit catalog
 contract, rather than a proof of libstdc++'s implementation or its `constexpr
-extent` initializer. The unchanged const-reference harness caller returns a standard-byte
-descriptor with the same backing address and native uint64 length `4 * N`.
+extent` initializer. The unchanged const-reference and by-value harness callers
+return a standard-byte descriptor with the same backing address and native
+uint64 length `4 * N`.
 Descriptor copies transfer no backing authority, initialize no backing bytes,
 and preserve the original allocation lifetime. Offline ordinary, expanded and
 retained checks cover that boundary. Shared read-only scalar construction
-remains available for actual non-system-header source. The by-value harness
-retains its unchanged source and true contract as a bounded failing regression
-for [pointer snapshot transport](../bugs/byte-span-by-value-pointer-snapshot.md);
-that proof gap remains to be repaired before claiming the same coverage there.
-Actual aggregate argument copies now check source read permission and
+remains available for actual non-system-header source. The by-value proof retains
+checked separation between the complete private parameter object and the result's
+pointer field across parameter cleanup. Actual aggregate argument copies check
+source read permission and
 initialization before private callee storage is allocated.
 
 The next decoder prerequisite is initialization across ordinary modular

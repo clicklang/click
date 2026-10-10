@@ -24,15 +24,16 @@ use click::surface::{
     c0_incremental_selection, c0_prepared_project_selected_proof_names,
     c0_prepared_project_summary, c0_prepared_project_tactic_source_positions,
     c0_project_selected_proof_names, c0_project_summary, c0_project_tactic_source_positions,
-    nested_tactic_source_position, program_prepared_project_summary,
-    program_prepared_project_tactic_source_positions, selected_c_target,
-    tactic_arm_containing_position, tactic_have_body_contains_position,
+    nested_tactic_source_position, program_prepared_project_selected_proof_names,
+    program_prepared_project_summary, program_prepared_project_tactic_source_positions,
+    selected_c_target, tactic_arm_containing_position, tactic_have_body_contains_position,
     tactic_line_has_multiple_starts, tactic_source_at_position, tactic_starts_on_line,
     verify_c0_prepared_project, verify_c0_prepared_project_at,
     verify_c0_prepared_project_functions, verify_c0_prepared_project_theorem, verify_c0_project,
     verify_c0_project_at, verify_c0_project_functions, verify_c0_project_theorem,
-    verify_program_prepared_project, verify_program_prepared_project_at, verifying_source_paths,
-    with_proof_trace,
+    verify_program_prepared_project, verify_program_prepared_project_at,
+    verify_program_prepared_project_functions, verify_program_prepared_project_theorem,
+    verifying_source_paths, with_proof_trace,
 };
 
 const USAGE: &str = "\
@@ -832,7 +833,7 @@ impl TraceUnit {
 }
 
 /// Resolves a `--trace-proof` argument against the proofs the sidecar
-/// selects: a C function or an entry-module theorem, by name. Validation
+/// selects: a function or an entry-module theorem, by name. Validation
 /// refuses a name declared as both, so the name alone identifies the proof.
 /// The error says why the name cannot be traced.
 fn trace_unit(
@@ -846,10 +847,8 @@ fn trace_unit(
         CInput::Prepared(imports) => {
             c0_prepared_project_selected_proof_names(project, imports).map_err(click_message)?
         }
-        CInput::PreparedProgram(_) => {
-            return Err(
-                "`--trace-proof` currently supports C sidecars, not typed compiler inputs".into(),
-            );
+        CInput::PreparedProgram(import) => {
+            program_prepared_project_selected_proof_names(project, import).map_err(click_message)?
         }
     };
     let selects = |kind: &str, name: &str| {
@@ -1471,7 +1470,7 @@ fn verify_file_within_limits(
             trace_unit(requested, &project, &inputs)
                 .map_err(|message| {
                     format!(
-                        "{message} in `{}`; `--trace-proof` takes the name of a C function or theorem the sidecar proves",
+                        "{message} in `{}`; `--trace-proof` takes the name of a function or theorem the sidecar proves",
                         click_path.display()
                     )
                 })
@@ -1495,7 +1494,12 @@ fn verify_file_within_limits(
             (CInput::Prepared(imports), Some(TraceUnit::Theorem(theorem))) => {
                 verify_c0_prepared_project_theorem(&project, imports, theorem)
             }
-            (CInput::PreparedProgram(_), Some(_)) => unreachable!(),
+            (CInput::PreparedProgram(import), Some(TraceUnit::Function(function))) => {
+                verify_program_prepared_project_functions(&project, import, [function.clone()])
+            }
+            (CInput::PreparedProgram(import), Some(TraceUnit::Theorem(theorem))) => {
+                verify_program_prepared_project_theorem(&project, import, theorem)
+            }
             (CInput::Bundle(sources), None) => verify_c0_project(&project, &source_refs(sources)),
             (CInput::Prepared(imports), None) => verify_c0_prepared_project(&project, imports),
             (CInput::PreparedProgram(import), None) => {

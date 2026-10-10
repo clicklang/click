@@ -11,8 +11,7 @@ it rather than as the pointer load it lowers to.
 contract with a `requires old->left != 0` added: the requirement reads the
 same cell and is refused for the same missing fact, which is the agreement
 between requirements and resource clauses this check exists to keep.
-`mdtests/augment_rotate_callback_child_read.md` is the accepted form, where
-`views old->left` holds the link.
+The accepted form adds `views old->left`, which holds the link.
 
 ```c filename=augment_rotate.c
 struct node {

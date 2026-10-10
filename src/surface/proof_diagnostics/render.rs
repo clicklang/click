@@ -1467,12 +1467,21 @@ impl Renderer<'_> {
             self.push(&name);
             return;
         }
+        if let Some(definition) = crate::surface::proof_trace::pointer_definition(p) {
+            let name = self.labels.pointer_value_name(p);
+            self.push(&name);
+            self.push("=");
+            self.bitvector(&definition);
+            return;
+        }
         // An address inside an object the caller's tables name reads as its
         // source spelling, not as a block and an offset.
         if let Some(tables) = self.labels.naming.clone() {
             let (parameters, arguments) = &*tables;
             let spelled = crate::surface::diagnostics::describe_pointer(p, parameters, arguments);
-            if !spelled.contains("the pointer value at this program point") {
+            if !spelled.contains("the pointer value at this program point")
+                && !spelled.contains('…')
+            {
                 self.push(&spelled);
                 return;
             }

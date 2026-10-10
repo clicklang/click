@@ -19,7 +19,7 @@ a heap-extent proof, and the second call nested a second such proof inside
 the first, so the read failed with a missing `views` fact.
 `three_consecutive_reallocating_calls_keep_the_returned_allocation_readable.md`
 and the four-call form extend the chain, and
-`consecutive_reallocating_calls_do_not_carry_an_unstated_value.md` is the
+`opaque_reallocating_call_does_not_carry_an_unstated_value.md` is a one-call
 negative.
 
 ```c filename=box.c

@@ -113,10 +113,14 @@ Remaining:
   is refused: splitting an owned 64-bit range is plan step 6. A window two
   offsets deep, taken by a call inside a chunk a loop holds, is covered too
   (`mdtests/a_callee_reads_inside_a_chunk_a_loop_holds.md`).
-- **Stage 2, what is left.** A range with a nonzero start
-  (`bytes[a..b]`) and a range with a signed 64-bit bound still go through
-  the 32-bit conversion and need their bound shown to fit; plan steps 5 and
-  9, and the signed wide kind, in the design. A cast written in a range
+- **Stage 2, what is left.** A range keeps 64-bit bounds whatever its
+  start: `bytes[a..b]`, `bytes[1..length]`, `bytes[index..4]` and
+  `bytes[index + 1u64..length]`
+  (`mdtests/a_64_bit_range_may_start_past_zero.md`). A range with a signed
+  64-bit bound, or an `int32` variable beside a 64-bit bound
+  (`bytes[i..length]`), still goes through the 32-bit conversion and needs
+  its bound shown to fit; plan step 9 and the signed wide kind in the
+  design. A cast written in a range
   bound, `bytes[0..(int32)length]`, truncates as a cast in a place does.
   Two scaling regressions cover wide ranges
   (`wide_range_membership_ignores_unrelated_index_bounds`,

@@ -55,8 +55,9 @@ population change, and the return partition checks the produced custody.
 Historical arguments are matched to the consumed population's authenticated
 identity before returning members to the caller. A global count never supplies
 missing owned units. The `authority_two_to_one_quantity_*` fixtures cover the
-exchange and its rejection cases; `shared_heap_two_parent_quantity_exchange.md`
-keeps the existing two-parent C and proof unchanged with that quantity contract.
+exchange and its rejection cases;
+`holder_drop_exchanges_two_separately_held_references.md` admits that quantity
+contract at a call whose caller holds the two units as separate facts.
 
 A function boundary retains the resource bindings checked at entry. If C clears
 `p->kid`, a borrowed `reference(p->kid)` still returns the reference actually

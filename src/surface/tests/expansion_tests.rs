@@ -1,6 +1,46 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: rechecks vector tactic and whole-proof certificates"]
+fn vector_field_input_pointer_certificates_round_trip() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/composite_resource_vector_fill_loop_snapshot.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let name = "composite_resource_vector_fill_loop_snapshot";
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(file, source)| (file.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    // Expand the affected `have` before any verification has initialized
+    // this function's universal inputs. Its naming scope is entered first.
+    let position =
+        expansion::position_at_offset(source, source.find("have i < owner->cap;").unwrap());
+    let expanded =
+        expand_c0_tactic_source_at(source, &sources, position.line, position.column).unwrap();
+    assert!(
+        expanded.contains("at(function.entry, owner)->cap"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("the pointer value at this program point"));
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let expanded = expand_c0_claim_source(source, &sources, name, CProofClaim::Grouped).unwrap();
+    assert!(
+        expanded.contains("at(function.entry, owner)->cap"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("the pointer value at this program point"));
+    assert!(
+        c0_smart_tactic_source_sites(&expanded, &sources)
+            .unwrap()
+            .is_empty()
+    );
+    verify_c0_sources(&expanded, &sources).unwrap();
+}
+
+#[test]
 fn builtin_header_null_pointer_expansion_round_trips() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/c_builtin_string_and_stdlib_headers.md");

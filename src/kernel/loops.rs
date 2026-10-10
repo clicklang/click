@@ -8687,27 +8687,15 @@ pub(super) fn evaluate_loop_effect_segment(
         "segment end",
         budget,
     )?;
-    if let (Ok(CValue::UInt64(start)), Ok(CValue::UInt64(end))) = (&start_value, &end_value) {
-        return Ok(Ok(EvaluatedMemorySegment {
-            base,
-            start: start.clone(),
-            end: end.clone(),
-            element_width: segment.element_width,
-            kind: RangeIndexKind::UInt64,
-        }));
-    }
-    // A range from constant zero to a symbolic native endpoint retains
-    // that endpoint's width. Evaluate each endpoint only once.
-    if matches!(
-        &start_value,
-        Ok(CValue::Int32(Bitvector32Term::Constant(0)))
-    ) && let Ok(CValue::UInt64(end)) = &end_value
-        && end.uint64_as_const().is_none()
+    // A range with an unsigned 64-bit bound retains that bound's width.
+    // Evaluate each endpoint only once.
+    if let (Ok(start), Ok(end)) = (&start_value, &end_value)
+        && let Some((start, end)) = crate::kernel::wide_range_bounds(start, end)
     {
         return Ok(Ok(EvaluatedMemorySegment {
             base,
-            start: Bitvector32Term::UInt64Constant(0),
-            end: end.clone(),
+            start,
+            end,
             element_width: segment.element_width,
             kind: RangeIndexKind::UInt64,
         }));
@@ -8816,31 +8804,16 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     };
     let start_value = evaluate(&segment.start, "segment start")?;
     let end_value = evaluate(&segment.end, "segment end")?;
-    if let (Ok(CValue::UInt64(start)), Ok(CValue::UInt64(end))) = (&start_value, &end_value) {
-        return Ok(Ok((
-            EvaluatedMemorySegment {
-                base,
-                start: start.clone(),
-                end: end.clone(),
-                element_width: segment.element_width,
-                kind: RangeIndexKind::UInt64,
-            },
-            facts.into(),
-        )));
-    }
-    // A range from constant zero to a symbolic native endpoint retains
-    // that endpoint's width. Evaluate each endpoint only once.
-    if matches!(
-        &start_value,
-        Ok(CValue::Int32(Bitvector32Term::Constant(0)))
-    ) && let Ok(CValue::UInt64(end)) = &end_value
-        && end.uint64_as_const().is_none()
+    // A range with an unsigned 64-bit bound retains that bound's width.
+    // Evaluate each endpoint only once.
+    if let (Ok(start), Ok(end)) = (&start_value, &end_value)
+        && let Some((start, end)) = crate::kernel::wide_range_bounds(start, end)
     {
         return Ok(Ok((
             EvaluatedMemorySegment {
                 base,
-                start: Bitvector32Term::UInt64Constant(0),
-                end: end.clone(),
+                start,
+                end,
                 element_width: segment.element_width,
                 kind: RangeIndexKind::UInt64,
             },

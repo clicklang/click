@@ -135,10 +135,9 @@ is measured:
 (`src/kernel/resource_tracker/tests.rs`) grows both states by unrelated
 instances over 8, 16, 32 and 64 and asserts two units
 at every size, with the answer checked each time. Deterministic work for a
-passing proof is unchanged to the unit: the named-operation totals of
-`augment_rotate_callback_child_read`,
-`contract_owns_composite_argument_across_forms` and
-`rb_replace_node_with_children` are identical with and without this chunk.
+passing proof was unchanged to the unit: the named-operation totals of
+`rb_replace_node_with_children` and two since-replaced mdtests were identical
+with and without this chunk.
 
 `last_same_point` is the only form on the hot path. It is what a term that
 reads memory is named by: a load variable embeds the oldest point its cell is
@@ -1346,7 +1345,7 @@ permitted stores or a transition that drops the fact:
   decrease along a derivation) and skips a store that leaves its cell with
   the same value in both; walking the later snapshot alone visited unrelated
   stores to object fields and dropped the fact
-  (`mdtests/iterated_ownership_survives_branch_reset.md`).
+  (`mdtests/iterated_ownership_run_scan_crosses_its_locals_ending.md`).
 - A loop-head havoc keeps the fact. The head is a generalization, not a
   write: a loop that inherits the fact runs every body store through the
   planner, and its back edge compares the fact like any other resource. A
@@ -1459,8 +1458,8 @@ permitted stores or a transition that drops the fact:
   (`mdtests/calls_havoc_an_uncached_field_the_caller_only_views.md`).
   Retaining the cached values instead made later loads of the block compare
   against more cached cells, and the arena pipeline's load resolution ran
-  past its time limit
-  (`mdtests/call_keeps_region_beside_folded_arena_state.md`).
+  past its time limit (in a since-replaced mdtest reduced from that
+  pipeline).
 
 ### Queries
 

@@ -47,5 +47,5 @@ int32 caller(int32* x, int32 i, int32 j) {
 ```
 
 ```expect
-fail: after reserving [`owns x[i..(i + 1)]`] for an earlier requirement of this call
+fail: after reserving [`owns x[i]`] for an earlier requirement of this call
 ```

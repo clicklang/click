@@ -340,7 +340,6 @@ This example is the scaffold: it fixes the shapes — the matched modeled
 resource, the context frame, `plug`, the loop binders, the structural
 measure — on C small enough to read in one sitting. The red-black work
 continues on verbatim Linux bodies in the `rb_*` mdtests, with
-[`mdtests/rb_at_link_helpers.md`](../../mdtests/rb_at_link_helpers.md),
 [`mdtests/rb_first_last.md`](../../mdtests/rb_first_last.md),
 [`mdtests/rb_replace_node.md`](../../mdtests/rb_replace_node.md), and
 [`mdtests/rb_ascending_walk_to_root.md`](../../mdtests/rb_ascending_walk_to_root.md)

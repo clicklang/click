@@ -7461,10 +7461,9 @@ impl<'a> Proof<'a> {
         // prerequisites before contextual compatibility reasoning can
         // discharge them invisibly. The retained proof retries the same
         // ordinary checked step after publishing its `have`.
-        let initial = self.apply_execution_statement_step_with_policy(
-            step.clone(),
-            StatementPrerequisitePolicy::Retained,
-        );
+        // Use the same checked-step entry point as written `step()` so
+        // smart execution retains its fact deltas in the opt-in trace too.
+        let initial = self.apply_step(step.clone());
         self.retry_statement_after_refusal(step, retried_requirements, initial)
     }
 

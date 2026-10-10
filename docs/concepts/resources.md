@@ -419,9 +419,9 @@ it grants no live authority or member rights. When the consumed control owns
 several authorities, cleanup checks and retires each one. Additional
 populations must have zero global count and no outstanding member custody;
 local absence alone does not establish emptiness. The
-[pool cleanup helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_pool_control_cleanup_helper.md)
-checks direct, nested, and zero-capacity calls using the original pool cleanup
-C. The caller unfolds and refolds the control to establish the required
+[pool cleanup fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_pool_control_cleanup.md)
+checks the original pool cleanup C at an arbitrary entry capacity, including
+zero. A caller unfolds and refolds the control to establish the required
 conservation and empty-population facts before calling cleanup. A caller
 holding a concrete numerical batch can pass it to an entry field-valued
 quantity when an available equality identifies that field with the sender's
@@ -771,8 +771,8 @@ consumes the slot, increments the C counter, creates the item, and closes the
 control. Closing checks both relationships against the updated ledgers;
 retaining the authority alone cannot restore a false invariant. Nested helpers
 transfer the same control, and callers can retain additional slots
-(`mdtests/authority_pool_control_return_full.md` shows both for the return
-helper).
+(`mdtests/authority_pool_control_two_members.md` calls `checkout` while its
+caller keeps the second slot).
 
 The fixture requires `pool->checked_out < 2147483647` to establish that the C
 increment is defined. It uses the existing unit-transfer sum theorem to restore
@@ -1244,9 +1244,10 @@ No step visits the range. `take` reads one guard cell; a loop that claims a
 run of `M` cells does `M` such steps; folding and unfolding the declaring
 resource move one fact. Because the free cells are simply the cells whose
 flag is clear, freeing two regions and reusing them for a larger run needs no
-merge step (`mdtests/iterated_ownership_coalescing.md`). The language
-reference lists the declaration rules and the exact step conditions under
-[Iterated guarded
+merge step
+(`mdtests/iterated_ownership_released_cells_feed_an_external_claim.md`). The
+language reference lists the declaration rules and the exact step conditions
+under [Iterated guarded
 ownership](../reference/language/index.md#iterated-guarded-ownership).
 
 ### Fields that choose cells
@@ -1512,8 +1513,8 @@ count, a predicate call, or a call to an undeclared function all make a function
 memory-dependent, and those keep the ambient snapshot they have always had. The
 regressions are `mdtests/fold_pointer_argument_body_fact.md` with its negative
 `mdtests/fold_pointer_argument_body_fact_rejects_other_owner.md`, and
-`mdtests/rb_at_link_helpers.md` and `mdtests/rb_first_last.md` for the
-parent/child consistency this makes statable in the body.
+`mdtests/rb_first_last.md` for the parent/child consistency this makes
+statable in the body.
 
 A checked pointer equality also lets a fold use an available body fact under
 an equal pointer spelling. This includes C pointers represented by a symbolic

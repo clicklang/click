@@ -34966,7 +34966,8 @@ mod stable_view_call_tests {
     /// arithmetic oracle can order neither. A valid resource context is a
     /// partition, so distinct owned occurrences are bytewise disjoint by
     /// construction and the call is accepted on that provenance alone. This
-    /// is the `augment_rotate_callback_child_read` shape in miniature.
+    /// is, in miniature, the shape of a rotation callback that reads its
+    /// argument's child augmentation.
     #[test]
     fn candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence() {
         let viewed = Pointer {
