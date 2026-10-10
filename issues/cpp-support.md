@@ -425,15 +425,13 @@ complete an unwritten declared uint32 representation; partial writes and writes
 without ownership remain refused. Call-result casts retain their explicit typed
 conversion chain. Artifact schema 56 requires refreshing older locks.
 
-Before verifying the unchanged writable-byte span conversion, choose its native
-contract expression for the cross-pointee identity: `(uint8*)p` is currently
-refused in contracts, while `result == p` with byte/word pointers reaches a type
-mismatch. A numerical `address(result) == address(p)` claim can verify but does
-not provide the provenance relation needed by the modular caller. Prefer checked
-native object-pointer casts preserving allocation identity and qualification,
-with access authority checked separately, over weakening source pointer
-compatibility or treating matching numerical addresses as allocation identity.
-Writable byte-span construction remains next after that contract decision. Byte alias access must be restricted to the actual pinned `std::byte` declaration;
+Checked native contract byte-view casts now express cross-pointee identity as
+`result == (uint8*)p`, preserving allocation identity, byte offset, and source
+qualification. Access authority and initialization remain separate. The pinned
+`std::byte*` call-result regression verifies this relation normally and with
+expanded and retained certificates. Incompatible pointer comparisons receive
+a direct type diagnostic instead of an empty-path kernel error.
+Writable byte-span construction remains next. Byte alias access must be restricted to the actual pinned `std::byte` declaration;
 an arbitrary enum with the same underlying type does not gain that privilege.
 Automatic scalar declarations now create explicit ownership of their exact
 byte extent in the shared kernel, independent of initialization. Direct reads

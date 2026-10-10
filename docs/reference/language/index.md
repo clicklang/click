@@ -2516,6 +2516,16 @@ boundaries and historical casts are in
 Wide examples are in
 [`wide_contract_scalar_casts.md`](https://github.com/clicklang/click/blob/master/mdtests/wide_contract_scalar_casts.md).
 
+Native scalar object pointers also support the checked byte-view cast
+`(uint8*)p`, with an unqualified target that inherits the source qualification.
+A claim such as `result == (uint8*)p` compares allocation identity
+and byte offset, rather than numerical addresses. The cast preserves the
+source pointer's const qualification and grants no ownership, read permission,
+or initialization. Pointer arithmetic after the cast counts bytes;
+`old((uint8*)p)` selects the entry-state pointer. Integer origins, pointer-to-pointer
+origins, and reverse casts from bytes to wider object types are rejected. See
+[`contract_byte_pointer_casts.md`](https://github.com/clicklang/click/blob/master/mdtests/contract_byte_pointer_casts.md).
+
 Contract expressions accept the unsigned narrowing cast `(uint32)x`, including
 `old((uint32)p->value)`. The operand must be
 a current scalar expression, including a pure-function call; put `old(...)`
@@ -2537,9 +2547,9 @@ ensures range_filled((struct range_job *)argument);
 
 The cast retypes the pointer for the clause; it does not change the pointer's
 value or provenance, and the C body's own conversion reaches the same object.
-Only `void *` parameters may be cast, and a block casts each parameter to one
+Only `void *` parameters may use these struct casts, and a block casts each parameter to one
 struct, so the proof and its synthesized certificates read the parameter with
-one layout. Casts of other pointers, and casts inside resource or predicate
+one layout. Struct casts of other pointers, and struct casts inside resource or predicate
 definitions (whose parameters are already typed), are rejected.
 
 When `old(p)` is passed as an array argument to a pure Click function or

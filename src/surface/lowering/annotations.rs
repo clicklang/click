@@ -3666,6 +3666,16 @@ impl AnnotationLowerer<'_> {
                 operator,
                 right,
             } => {
+                if let (Some(left_element), Some(right_element)) = (
+                    self.contract_pointer_element_type(left, environment),
+                    self.contract_pointer_element_type(right, environment),
+                ) && left_element != right_element
+                {
+                    return Err(format!(
+                        "incompatible pointer comparison: {:?} pointer and {:?} pointer; use a checked byte-view cast to compare byte views",
+                        left_element, right_element
+                    ));
+                }
                 if *operator == ComparisonOperator::In {
                     return Ok(SpecProposition::SequenceMembership {
                         element: self.lower_contract_expression_to_spec(left, environment)?,
@@ -4671,7 +4681,24 @@ impl AnnotationLowerer<'_> {
             ContractExpression::CUnary { operand, lowered } => {
                 let value = self.lower_contract_expression_to_spec(operand, environment)?;
                 match lowered {
-                    CExpression::Cast { target_type, .. } => {
+                    CExpression::Cast {
+                        target_type,
+                        pointee_struct,
+                        ..
+                    } => {
+                        if *target_type == CType::UInt8Pointer
+                            && pointee_struct.is_none()
+                            && !self
+                                .contract_pointer_element_type(operand, environment)
+                                .is_some_and(|element| {
+                                    !element.is_pointer() && element.byte_width() > 0
+                                })
+                        {
+                            return Err(
+                                "native byte-view cast expects a scalar object pointer operand"
+                                    .to_string(),
+                            );
+                        }
                         Ok(SpecExpression::Cast(Box::new(value), *target_type))
                     }
                     CExpression::PointerOffsetBytes { bytes, .. } => {

@@ -5257,7 +5257,7 @@ fn pinned_std_byte_reinterpretation_initializes_uint32_offline() {
 }
 
 #[test]
-fn pinned_std_byte_reinterpreted_call_result_preserves_address_offline() {
+fn pinned_std_byte_reinterpreted_call_result_preserves_pointer_identity_offline() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
         "byte-cast-call",
         "#include <span.h>\nunsigned int* echo(unsigned int* p) noexcept { return p; } std::byte* probe(unsigned int* p) noexcept { return reinterpret_cast<std::byte*>(echo(p)); }\n",
@@ -5266,7 +5266,7 @@ fn pinned_std_byte_reinterpreted_call_result_preserves_address_offline() {
     check_pinned_byte_proof(
         &root,
         &import,
-        "verifying \"span-probe.cpp\"; uint32* echo(uint32* p) { ensures result == p; } by { execute(); simp(); } uint8* probe(uint32* p) { ensures address(result) == address(p); } by { execute(); simp(); }",
+        "verifying \"span-probe.cpp\"; uint32* echo(uint32* p) { ensures result == p; } by { execute(); simp(); } uint8* probe(uint32* p) { ensures result == (uint8*)p; } by { execute(); simp(); }",
     );
     let artifact_path = root.join("span.click-cpp.json");
     let lock_path = root.join("span.click.import.json.lock");
