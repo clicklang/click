@@ -5143,29 +5143,17 @@ fn evaluate_spec_resource_at_state_in(
             (
                 vec![base.clone(), start.clone(), end.clone()],
                 Box::new(move |values| match values.as_slice() {
-                    [
-                        CValue::Pointer(base),
-                        CValue::UInt64(start),
-                        CValue::UInt64(end),
-                    ] => Some(CResource::Memory(CMemoryRange::new_wide(
-                        base.pointer().clone(),
-                        start.clone(),
-                        end.clone(),
-                        element_width,
-                    ))),
-                    // A range from constant zero to an unsigned 64-bit bound
-                    // is wide, here as in a contract clause, so a
-                    // `separate(...)` or containment names the range the
-                    // clause holds.
-                    [
-                        CValue::Pointer(base),
-                        CValue::Int32(Bitvector32Term::Constant(0)),
-                        CValue::UInt64(end),
-                    ] if end.uint64_as_const().is_none() => {
+                    // A range with an unsigned 64-bit bound is wide, here as
+                    // in a contract clause, so a `separate(...)` or
+                    // containment names the range the clause holds.
+                    [CValue::Pointer(base), start, end]
+                        if crate::kernel::wide_range_bounds(start, end).is_some() =>
+                    {
+                        let (start, end) = crate::kernel::wide_range_bounds(start, end)?;
                         Some(CResource::Memory(CMemoryRange::new_wide(
                             base.pointer().clone(),
-                            Bitvector32Term::UInt64Constant(0),
-                            end.clone(),
+                            start,
+                            end,
                             element_width,
                         )))
                     }
@@ -5343,21 +5331,21 @@ fn lower_spec_memory_loadable_at_state_in(
     )?
     .into_iter()
     .filter_map(|path| match path.values.as_slice() {
-        [
-            CValue::Pointer(base),
-            CValue::UInt64(start),
-            CValue::UInt64(end),
-        ] => {
-            // The proposition describes the same native range as a resource
-            // clause, including its extent guards. Neither endpoint is a
-            // signed observation of the source count.
+        // The proposition describes the same native range as a resource
+        // clause, including its extent guards, and states the wide liveness
+        // fact a contract holding it is given. Neither endpoint is a signed
+        // observation of the source count.
+        [CValue::Pointer(base), start, end]
+            if crate::kernel::wide_range_bounds(start, end).is_some() =>
+        {
+            let (start, end) = crate::kernel::wide_range_bounds(start, end)?;
             let range = CMemoryRange::new_wide(
                 Pointer {
                     block: base.block.clone(),
                     offset: crate::kernel::eval::canonical_offset_term(&base.offset),
                 },
-                crate::kernel::eval::canonical_term(start),
-                crate::kernel::eval::canonical_term(end),
+                crate::kernel::eval::canonical_term(&start),
+                crate::kernel::eval::canonical_term(&end),
                 element_width,
             );
             let mut obligations = path.obligations;
@@ -5373,10 +5361,9 @@ fn lower_spec_memory_loadable_at_state_in(
                 obligations,
             })
         }
-        // A range from constant zero to an unsigned 64-bit bound is wide, and states the wide liveness fact a contract
-        // holding it is given. A constant bound stays wide too, so the
-        // proposition is the one a symbolic bound lowers to once that bound
-        // is substituted by the constant.
+        // A range from constant zero to a constant unsigned 64-bit bound is
+        // wide here too, so the proposition is the one a symbolic bound
+        // lowers to once that bound is substituted by the constant.
         [
             CValue::Pointer(base),
             CValue::Int32(Bitvector32Term::Constant(0)),
