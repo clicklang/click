@@ -235,39 +235,53 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::FoldResource(ResourceClause::Named { binding, resource })
             if binding.fold_fields.is_some() =>
         {
+            // Hidden record fields are reconstructed from the child map by
+            // the parser. Their dotted internal names are not field labels.
+            let fields = binding.fold_fields.as_ref().unwrap();
+            let only_hidden =
+                !fields.is_empty() && fields.iter().all(|(name, _)| name.contains('.'));
+            let children = binding
+                .child_bindings
+                .as_ref()
+                .map(|children| {
+                    children
+                        .iter()
+                        .map(|(slot, name, _)| format!("{slot}: {name}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            let inputs = if only_hidden {
+                format!("{{ {children} }}")
+            } else {
+                let visible = fields
+                    .iter()
+                    .filter(|(name, _)| !name.contains('.'))
+                    .map(|(name, value)| format!("{name}: {}", describe_contract_expression(value)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(
+                    "{{ {visible} }}{}",
+                    if children.is_empty() {
+                        String::new()
+                    } else {
+                        format!(", {{ {children} }}")
+                    }
+                )
+            };
+            let result = if binding.name.starts_with('#') {
+                String::new()
+            } else {
+                format!("let {} = ", binding.name)
+            };
             line(
                 output,
                 &prefix,
                 &format!(
-                    "let {} = fold({}, {{ {} }}{});",
-                    binding.name,
-                    format_resource_target(resource),
-                    binding
-                        .fold_fields
-                        .as_ref()
-                        .unwrap()
-                        .iter()
-                        .map(|(name, value)| format!(
-                            "{name}: {}",
-                            describe_contract_expression(value)
-                        ))
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    binding
-                        .child_bindings
-                        .as_ref()
-                        .filter(|children| !children.is_empty())
-                        .map(|children| format!(
-                            ", {{ {} }}",
-                            children
-                                .iter()
-                                .map(|(slot, name, _)| format!("{slot}: {name}"))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        ))
-                        .unwrap_or_default(),
+                    "{result}fold({}, {inputs});",
+                    format_resource_target(resource)
                 ),
-            )
+            );
         }
         ProofTactic::FoldResource(resource) => line(
             output,
@@ -1250,8 +1264,12 @@ fn write_premise_list(output: &mut String, facts: &[ClickProposition], indent: u
 }
 
 pub(in crate::surface) fn format_resource_call(resource: &ResourceClause) -> String {
-    if let ResourceClause::Named { binding, .. } = resource {
-        return binding.name.clone();
+    if let ResourceClause::Named { binding, resource } = resource {
+        return if binding.name.starts_with('#') {
+            format_resource_call(resource)
+        } else {
+            binding.name.clone()
+        };
     }
     let ResourceClause::Declared {
         name,
@@ -1312,7 +1330,11 @@ fn format_resource_target(resource: &ResourceClause) -> String {
             format_resource_target(resource)
         ),
         ResourceClause::Named { binding, resource } => {
-            format!("{}: {}", binding.name, format_resource_target(resource))
+            if binding.name.starts_with('#') {
+                format_resource_target(resource)
+            } else {
+                format!("{}: {}", binding.name, format_resource_target(resource))
+            }
         }
         ResourceClause::Quantified { quantity, resource } => format!(
             "{} of {}",
