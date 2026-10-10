@@ -61,7 +61,6 @@ pub(in crate::kernel) use memory_loads::declare_load_access_width;
 pub(crate) use memory_loads::is_load_variable;
 pub(crate) use memory_loads::is_load_variable_defining_fact;
 pub(super) use memory_loads::known_pointer_read_variable_for_term;
-pub(crate) use memory_loads::latest_wide_load_observation;
 pub(crate) use memory_loads::load_access_width_at_address_or_widest;
 pub(crate) use memory_loads::load_access_width_or_widest;
 #[cfg(test)]
@@ -98,6 +97,7 @@ pub(super) use memory_loads::{
     canonical_offset_term, evaluate_c_memory_load_paths, evaluate_logical_memory_load_paths,
     evaluate_spec_memory_load_paths, symbolic_load_value,
 };
+pub(crate) use memory_loads::{latest_pointer_read_observation, latest_wide_load_observation};
 #[cfg(test)]
 pub(super) use memory_loads::{load_substitution_term_visits, reset_load_substitution_term_visits};
 #[cfg(test)]

@@ -200,6 +200,11 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
                     LoadPurpose::Logical,
                 )
                 .or_else(|| value_type.accepts(&stored).then_some(stored))
+                .inspect(|value| {
+                    if let CValue::Pointer(value) = value {
+                        record_pointer_read_observation(value.pointer(), memory, &pointer);
+                    }
+                })
             })
         })
         .or_else(|| {
@@ -1596,6 +1601,7 @@ fn canonicalized_symbolic_load_value_with_identity(
         Pointer::loaded(block.clone(), Bitvector32Term::Variable(fresh), byte_width)
     };
     if matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity) {
+        record_pointer_read_observation(&pointer, memory, &address);
         // The logical evaluator constructs a term, not a C access. Retain
         // its exact typed definition in the trusted graph's term metadata;
         // logical evaluation still exports no defining proposition premise.
@@ -1744,9 +1750,12 @@ struct RegisteredLoad {
 }
 
 thread_local! {
-    // Latest producer observation of each canonical wide value. One entry per
-    // value and function epoch; observations never change the defining name.
+    // Latest complete pointer and wide-word reads, indexed by value and
+    // function epoch. Observations never change the defining name.
     // Persistent roots keep session capture/restore from copying the table.
+    static POINTER_READ_OBSERVATIONS: std::cell::RefCell<
+        imbl::HashMap<(u64, Pointer), (SharedCMemory, Pointer)>,
+    > = std::cell::RefCell::new(imbl::HashMap::new());
     static WIDE_LOAD_OBSERVATIONS: std::cell::RefCell<
         imbl::HashMap<(u64, Variable), (SharedCMemory, Pointer)>,
     > = std::cell::RefCell::new(imbl::HashMap::new());
@@ -1810,6 +1819,7 @@ pub(crate) fn clear_load_canonicalization_caches() {
 /// each check.
 #[derive(Clone)]
 pub(crate) struct LoadRegistryState {
+    pointer_observations: imbl::HashMap<(u64, Pointer), (SharedCMemory, Pointer)>,
     wide_observations: imbl::HashMap<(u64, Variable), (SharedCMemory, Pointer)>,
     variables: std::collections::HashMap<Variable, RegisteredLoad>,
     pointers: std::collections::HashMap<PointerLoadId, (SharedCMemory, Pointer)>,
@@ -1829,6 +1839,7 @@ pub(crate) fn load_registry_entry_count() -> usize {
 
 pub(crate) fn capture_load_variable_registry() -> LoadRegistryState {
     LoadRegistryState {
+        pointer_observations: POINTER_READ_OBSERVATIONS.with(|registry| registry.borrow().clone()),
         wide_observations: WIDE_LOAD_OBSERVATIONS.with(|registry| registry.borrow().clone()),
         variables: LOAD_VARIABLE_REGISTRY.with(|registry| registry.borrow().clone()),
         pointers: POINTER_LOAD_REGISTRY.with(|registry| registry.borrow().clone()),
@@ -1841,6 +1852,8 @@ pub(crate) fn capture_load_variable_registry() -> LoadRegistryState {
 }
 
 pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
+    POINTER_READ_OBSERVATIONS
+        .with(|registry| *registry.borrow_mut() = state.pointer_observations.clone());
     WIDE_LOAD_OBSERVATIONS
         .with(|registry| *registry.borrow_mut() = state.wide_observations.clone());
     crate::kernel::equality_graph::restore_logical_pointer_reads(&state.logical_pointer_reads);
@@ -1854,6 +1867,7 @@ pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
 }
 
 pub(crate) fn clear_load_variable_registry() {
+    POINTER_READ_OBSERVATIONS.with(|registry| registry.borrow_mut().clear());
     WIDE_LOAD_OBSERVATIONS.with(|registry| registry.borrow_mut().clear());
     crate::kernel::equality_graph::clear_logical_pointer_reads();
     LOAD_VARIABLE_REGISTRY.with(|registry| registry.borrow_mut().clear());
@@ -3893,6 +3907,34 @@ fn record_wide_load_observation(term: &Bitvector32Term, variable: Variable) {
     });
 }
 
+// Only a typed producer records an unconditional pointer-read expression.
+fn record_pointer_read_observation(value: &Pointer, memory: &CMemory, address: &Pointer) {
+    let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
+    crate::instrumentation::record_deterministic_work(1);
+    let memory = crate::kernel::intern_c_memory_ref(memory);
+    POINTER_READ_OBSERVATIONS.with(|registry| {
+        let mut registry = registry.borrow_mut();
+        let key = (epoch, value.clone());
+        if registry
+            .get(&key)
+            .is_some_and(|(known_memory, known_address)| {
+                known_memory == &memory && known_address == address
+            })
+        {
+            return;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        registry.insert(key, (memory, address.clone()));
+    });
+}
+
+pub(crate) fn latest_pointer_read_observation(value: &Pointer) -> Option<(SharedCMemory, Pointer)> {
+    let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
+    crate::instrumentation::record_deterministic_work(1);
+    POINTER_READ_OBSERVATIONS
+        .with(|registry| registry.borrow().get(&(epoch, value.clone())).cloned())
+}
+
 pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<Bitvector32Term> {
     let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
     crate::instrumentation::record_deterministic_work(1);
@@ -4346,6 +4388,89 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Typed observations must preserve the complete pointer, selected alias
+    // premises, snapshot changes, and session boundaries without corpus scans.
+    #[test]
+    fn pointer_read_observations_check_frames_scope_and_scaling() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Pointer::symbolic(Variable(960_000));
+        let alias = Pointer::symbolic(Variable(960_001));
+        let base = CMemory::new();
+        let empty = PureFactContext::new();
+        let facts = empty.clone().assume_condition(
+            ConditionTerm::pointer_equal(address.clone(), alias.clone()),
+            true,
+        );
+        let read = |memory: &CMemory, address: &Pointer, purpose| {
+            let CValue::Pointer(value) = canonicalized_symbolic_load_value_with_identity(
+                memory,
+                address,
+                CType::Int32Pointer,
+                &mut Vec::new().into(),
+                &empty,
+                false,
+                None,
+                purpose,
+            )
+            .unwrap() else {
+                panic!("expected a typed pointer read");
+            };
+            value.pointer().clone()
+        };
+        let left = read(&base, &address, LoadPurpose::Logical);
+        let right = read(&base, &alias, LoadPurpose::Logical);
+        let equal = |left: &Pointer, right: &Pointer, facts: &PureFactContext| {
+            crate::kernel::memory_provenance::pointer_read_has_recorded_value(left, right, facts)
+        };
+        assert!(equal(&left, &right, &facts));
+        assert!(!equal(&left, &right, &empty));
+        let partial = base
+            .clone()
+            .store(address.offset_by_bytes(4), CValue::Int32(0u32.into()));
+        let changed = read(&partial, &address, LoadPurpose::Logical);
+        assert!(!equal(&left, &changed, &facts));
+        let replaced = base.clone().store(
+            address.clone(),
+            CValue::typed_pointer(Pointer::null(), CType::Int32Pointer),
+        );
+        let changed = read(&replaced, &address, LoadPurpose::Logical);
+        assert!(!equal(&left, &changed, &facts));
+        let mut previous = None;
+        for count in [16_u64, 64, 256, 1024] {
+            for index in 0..count {
+                read(
+                    &base,
+                    &Pointer::symbolic(Variable(970_000 + index)),
+                    LoadPurpose::Logical,
+                );
+            }
+            let (proved, work) =
+                crate::instrumentation::measure_deterministic_work(|| equal(&left, &right, &facts));
+            assert!(proved);
+            if let Some(previous) = previous {
+                assert!(work <= previous + 16, "{count}: {work} after {previous}");
+            }
+            previous = Some(work);
+        }
+        let original = latest_pointer_read_observation(&left).unwrap();
+        let saved = capture_load_variable_registry();
+        begin_load_origin_epoch();
+        assert!(latest_pointer_read_observation(&left).is_none());
+        let volatile = read(&base, &address, LoadPurpose::VolatileProgram);
+        assert!(latest_pointer_read_observation(&volatile).is_none());
+        let scalar = Bitvector32Term::MemoryLoad(
+            intern_c_memory(base.clone()),
+            Box::new(address.clone()),
+            LoadKind::Bits32,
+        );
+        let scalar = load_variable_for_term(&scalar).unwrap().0;
+        assert!(latest_pointer_read_observation(&Pointer::symbolic(scalar)).is_none());
+        restore_load_variable_registry(&saved);
+        assert_eq!(latest_pointer_read_observation(&left), Some(original));
+        clear_load_variable_registry();
+        assert!(latest_pointer_read_observation(&left).is_none());
+    }
 
     // Model arms can share a canonical word but have different live DAGs.
     // Refresh only its producer observation, including on a naming-cache hit.

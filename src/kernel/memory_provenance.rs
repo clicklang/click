@@ -2310,6 +2310,9 @@ pub(crate) fn pointer_read_has_recorded_value(
     right: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
+    if pointer_reads_share_recorded_cell(left, right, assumptions) {
+        return true;
+    }
     [(left, right), (right, left)]
         .into_iter()
         .any(|(read, value)| {
@@ -2317,6 +2320,40 @@ pub(crate) fn pointer_read_has_recorded_value(
                 stored == *value || assumptions.pointers_known_equal(&stored, value)
             })
         })
+}
+
+/// Compare complete typed reads in one producer-retained snapshot using only
+/// the selected address equality. This adds neither memory transport nor
+/// permission to read the cell.
+fn pointer_reads_share_recorded_cell(
+    left: &Pointer,
+    right: &Pointer,
+    assumptions: &PureFactContext,
+) -> bool {
+    let read = |value: &Pointer| {
+        if let Some(observation) = crate::kernel::eval::latest_pointer_read_observation(value) {
+            return Some((observation.0, Box::new(observation.1)));
+        }
+        let Bitvector32Term::MemoryLoad(memory, address, kind) =
+            crate::kernel::equality_graph::logical_pointer_read_term(value)?
+        else {
+            return None;
+        };
+        (crate::kernel::load_term_access_width(&memory, &address, kind)
+            == crate::kernel::C_POINTER_BYTE_WIDTH)
+            .then_some((memory, address))
+    };
+    let (Some((left_memory, left_address)), Some((right_memory, right_address))) =
+        (read(left), read(right))
+    else {
+        return false;
+    };
+    left_memory == right_memory
+        && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+            &left_address,
+            &right_address,
+            assumptions,
+        )
 }
 
 /// The offset projection of an exact typed pointer read can use the same
