@@ -5163,6 +5163,8 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 CExpression::TypedLoad { value_type, .. } => format!(
                     "load_{}({operand})",
                     crate::kernel::c_type_spelling(*value_type)
+                        .replace(' ', "")
+                        .replace('*', "_pointer")
                 ),
                 CExpression::Load(_) => format!("*({operand})"),
                 CExpression::AddressOf(_) => format!("&({operand})"),

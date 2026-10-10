@@ -431,7 +431,22 @@ qualification. Access authority and initialization remain separate. The pinned
 `std::byte*` call-result regression verifies this relation normally and with
 expanded and retained certificates. Incompatible pointer comparisons receive
 a direct type diagnostic instead of an empty-path kernel error.
-Writable byte-span construction remains next. Byte alias access must be restricted to the actual pinned `std::byte` declaration;
+Trivial by-value record parameters now use the same independent aggregate
+copies as C. A checked `record_copy` call argument preserves nominal identity
+and source projection; copying a descriptor preserves its backing pointer
+without creating backing authority. Moves, prvalue arguments, and nontrivial
+copying or destruction remain outside this bounded slice. Artifact schema 57
+requires refreshing older locks. Current-memory typed loads through an entry
+pointer can state backing effects independently of the callee's private copy.
+
+Writable byte-span construction remains next. Its unchanged `constexpr auto
+extent` local exposes the next shared choice: model read-only automatic scalar
+initialization and object lifetime, or adopt a narrower compile-time value
+boundary that refuses address/identity observations. C and C++ currently lack
+checked read-only automatic scalar initialization. Preserve const
+qualification and initialization as distinct from ordinary assignment; do not
+erase the source declaration or lower it as mutable merely to admit this helper.
+Byte alias access must be restricted to the actual pinned `std::byte` declaration;
 an arbitrary enum with the same underlying type does not gain that privilege.
 Automatic scalar declarations now create explicit ownership of their exact
 byte extent in the shared kernel, independent of initialization. Direct reads

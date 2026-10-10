@@ -301,6 +301,20 @@ to supported simple record types with distinct proof-facing names. Selected func
 signed/unsigned 64/128-bit integers, `unsigned int`, `unsigned char`, `bool`, mutable `int*`, `unsigned int*` or `unsigned char*`,
 `int&`, `const int&`, or `void`.
 
+Free and ordinary member functions also admit mutable by-value simple-record
+parameters with trivial copying and destruction, without base subobjects.
+Clang-resolved trivial copy arguments retain a distinct `record_copy` artifact
+node, nominal type, lvalue projection, and span. The shared aggregate model
+copies the descriptor into separately owned parameter storage; pointer fields
+keep their original backing allocation and do not grant access to it. Moves,
+prvalue arguments, user-defined copy bodies, and nontrivial destruction remain
+refused. Artifact schema 57 requires refreshing older locks.
+
+Contracts cannot observe a modified private parameter object as though it were
+the caller's original object. Entry-state pointer values can still name
+backing effects: `load_int32(old(value.data))` reads current memory through the
+entry pointer, while `old(load_int32(value.data))` reads entry memory.
+
 The `int64-predicate` fixture is the first narrow bridge toward Bitcoin Core's
 `MoneyRange`: Clang retains the declaration identity and source span for a
 direct `typedef long CAmount`, lowers `const CAmount&` as a const `int64*`,
@@ -551,7 +565,7 @@ trivial copy assignment and an exact nominal RHS temporary lasting for the full
 expression. Click constructs into distinct raw RHS storage, copies into the live
 LHS and retires the RHS. References into separate backing remain usable only
 under the caller's existing authority. Move assignment, user-defined assignment
-and other materialization shapes remain refused. Artifact schema 56 requires an
+and other materialization shapes remain refused. Artifact schema 57 requires an
 explicit refresh of earlier locks.
 
 Taking the address of a supported int32 record field uses its checked Clang
@@ -560,7 +574,7 @@ qualification inherited from the root object and does not read the field or
 grant permission to dereference the resulting pointer. Constructor initializers
 can therefore store a pointer to a field of the destination object. This differs
 from copying an existing descriptor, which preserves pointer values rather than
-rebasing them to a new object. Artifact schema 56 requires refreshing earlier
+rebasing them to a new object. Artifact schema 57 requires refreshing earlier
 locks. Returned constructors use the narrower eligibility restriction above.
 
 Native int32 reference results and locals can also bind supported record fields
@@ -580,7 +594,7 @@ or storing that value needs no pointee authority and grants none. Dereferencing
 it remains subject to the shared live-storage and access checks. Same-type
 explicit pointer casts preserve identity. Other pointee types, nonliteral
 `nullptr_t` expressions, and nonzero integer-to-pointer casts remain refused.
-These nodes use artifact schema 56; refresh earlier locks.
+These nodes use artifact schema 57; refresh earlier locks.
 
 Mutable pointers to the pinned libstdc++ `std::byte` declaration also use native
 `uint8*` contracts, with one-byte loads, stores, offsets and field layout.
@@ -602,8 +616,10 @@ nonstandard enum targets, const removal and general character-pointer
 reinterpretation remain refused. Concrete byte stores use the shared byte
 representation rules; on the selected target, four checked stores can initialize
 an unwritten declared uint32, while partial stores cannot. Native contract
-expressions for pointer identity across different pointee types and writable
-span construction remain separate prerequisites.
+casts such as `result == (uint8*)p` express pointer identity across access
+types without granting authority. Writable-span construction remains next;
+the unchanged helper's `constexpr` scalar local requires a separate checked
+initialization policy for read-only automatic objects.
 
 
 Static scalar methods use a distinct `static_method` artifact kind with their

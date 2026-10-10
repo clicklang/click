@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 56;
+pub(crate) const EXPORT_SCHEMA: u32 = 57;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -662,6 +662,12 @@ pub enum CppCallArgument {
     },
     Reference {
         place: CppPlaceReference,
+    },
+    /// Clang resolved a trivial copy construction of a by-value parameter.
+    RecordCopy {
+        place: CppPlaceReference,
+        value_type: CppType,
+        span: CppSpan,
     },
     Call {
         callee: CppFunctionReference,
@@ -1858,6 +1864,13 @@ impl CppFunction {
                 CppType::Integer { .. } | CppType::Enumeration { .. } => {
                     require_scalar_integer(&parameter.value_type, "by-value parameter")?;
                 }
+                CppType::Record {
+                    declaration_id,
+                    name,
+                    is_const: false,
+                } => {
+                    validate_trivial_record_value(records, declaration_id, name)?;
+                }
                 CppType::LvalueReference { pointee } => {
                     if let CppType::Record {
                         declaration_id,
@@ -1877,7 +1890,7 @@ impl CppFunction {
                 }
                 _ => {
                     return Err(
-                        "the supported C++ parameters are by-value `bool`, `int&`, `const int&`, `int*`, and one simple record reference"
+                        "the supported C++ parameters are native scalars, supported references/pointers, and trivial simple-record values"
                             .into(),
                     );
                 }
@@ -3075,6 +3088,7 @@ fn validate_call_in_context(
                         && !(isolated && field_scalar_argument(value))
                 }
                 CppCallArgument::Reference { .. } => true,
+                CppCallArgument::RecordCopy { .. } => false,
             }))
     {
         return Err("nested C++ call arguments require one call and order-independent scalar siblings to preserve evaluation order".into());
@@ -3102,7 +3116,9 @@ fn scalar_only_arguments(arguments: &[CppCallArgument]) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         match argument {
             CppCallArgument::Value { value } => Scalar::of(value.value_type()).is_some(),
-            CppCallArgument::Call { .. } | CppCallArgument::Reference { .. } => false,
+            CppCallArgument::Call { .. }
+            | CppCallArgument::Reference { .. }
+            | CppCallArgument::RecordCopy { .. } => false,
         }
     })
 }
@@ -3199,6 +3215,39 @@ impl CppCallArgument {
         logical_source: &str,
     ) -> Result<(), String> {
         match self {
+            Self::RecordCopy {
+                place,
+                value_type,
+                span,
+            } => {
+                span.validate(logical_source)?;
+                let root = validate_root_reference(place, places, logical_source)?;
+                for projection in &place.projections {
+                    projection.span().validate(logical_source)?;
+                }
+                let (actual, _) = resolve_reference_type(root, place, records)?;
+                let (
+                    CppType::Record {
+                        declaration_id,
+                        name,
+                        is_const: false,
+                    },
+                    CppType::Record {
+                        declaration_id: actual_id,
+                        name: actual_name,
+                        ..
+                    },
+                ) = (value_type, actual)
+                else {
+                    return Err(
+                        "C++ by-value record argument requires a trivial record lvalue copy".into(),
+                    );
+                };
+                if declaration_id != actual_id || name != actual_name {
+                    return Err("C++ by-value record copy has mismatched nominal identity".into());
+                }
+                validate_trivial_record_value(records, declaration_id, name)
+            }
             Self::Call {
                 callee,
                 arguments,
@@ -4554,6 +4603,9 @@ fn validate_call_arguments(
     }
     for (index, (argument, parameter)) in arguments.iter().zip(parameters).enumerate() {
         let compatible = match (argument, &parameter.value_type) {
+            (CppCallArgument::RecordCopy { value_type, .. }, CppType::Record { .. }) => {
+                value_type == &parameter.value_type
+            }
             (CppCallArgument::Call { value_type, .. }, expected) => {
                 same_scalar_type(value_type, expected)
             }
@@ -5071,7 +5123,9 @@ impl CppCallArgument {
     fn references_place(&self, declaration_id: &str) -> bool {
         match self {
             Self::Value { value } => value.references_place(declaration_id),
-            Self::Reference { place } => place.declaration_id == declaration_id,
+            Self::Reference { place } | Self::RecordCopy { place, .. } => {
+                place.declaration_id == declaration_id
+            }
             Self::Call { arguments, .. } => arguments
                 .iter()
                 .any(|argument| argument.references_place(declaration_id)),
@@ -5097,7 +5151,7 @@ impl CppCallArgument {
                 }
                 Ok(())
             }
-            Self::Reference { .. } => Ok(()),
+            Self::Reference { .. } | Self::RecordCopy { .. } => Ok(()),
         }
     }
 }

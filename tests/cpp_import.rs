@@ -23,6 +23,131 @@ use click::surface::{
 };
 
 #[test]
+// A by-value descriptor copy owns only its fields, and still aliases its backing allocation.
+fn trivial_record_parameter_copy_keeps_caller_fields_and_shared_backing() {
+    check_trivial_record_parameter_copy(false);
+}
+
+#[test]
+#[ignore = "nightly: expanded and retained by-value record proof rechecks"]
+fn trivial_record_parameter_copy_expands_and_retains_offline() {
+    check_trivial_record_parameter_copy(true);
+}
+
+#[test]
+// A by-value boundary must not erase a user copy body, a move, or prvalue construction.
+fn trivial_record_parameter_copy_refuses_nontrivial_move_and_prvalue_arguments() {
+    for source in [
+        "struct View { int size; View(const View& v) noexcept : size(v.size) {} }; int probe(View value) noexcept { return value.size; }",
+        "struct View { int size; }; int take(View v) noexcept { return v.size; } int probe(View& v) noexcept { return take(static_cast<View&&>(v)); }",
+        "struct View { int size; }; int take(View v) noexcept { return v.size; } int probe() noexcept { return take(View{7}); }",
+    ] {
+        let project = Project::with_fixture("copy.cpp", "probe", source);
+        assert!(refresh_import(&project.config()).is_err());
+    }
+}
+
+fn check_trivial_record_parameter_copy(tools: bool) {
+    let project = Project::with_fixture(
+        "copy.cpp",
+        "probe",
+        "struct View { int* data; int size; }; int change(View value) noexcept { value.size = 7; *value.data = 9; return value.size; } int probe(View& input) noexcept { int result = change(input); return input.size + result + *input.data; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = r#"verifying "copy.cpp";
+int32 change(struct View value) {
+ owns value.data[0..1];
+ ensures result == 7;
+ ensures load_int32(old(value.data)) == 9;
+} by { execute(); simp(); }
+int32 probe(struct View& input) {
+ views input.data; views input.size;
+ owns input.data[0..1];
+ requires input.size <= 2147483631;
+ ensures result == old(input.size) + 16;
+ ensures input.size == old(input.size);
+ ensures input.data == old(input.data);
+ ensures input.data[0] == 9;
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, proof);
+    if tools {
+        let parsed =
+            read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
+        let expanded = expand_program_prepared_project_claim_source_by_label(
+            &parsed,
+            &import,
+            "probe.contract",
+        )
+        .unwrap();
+        verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
+            .unwrap();
+        let (session, _) =
+            C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+        let rewritten = parsed.with_entry_source(expanded.clone());
+        let position = program_prepared_project_tactic_source_position(
+            &rewritten,
+            &import,
+            "probe.contract",
+            0,
+        )
+        .unwrap();
+        session
+            .verify_at_project(&expanded, position.line, position.column)
+            .unwrap();
+    }
+    let invalid = proof.replace("owns input.data[0..1];", "views input.data[0..1];");
+    fs::write(project.directory.join("invalid.click"), &invalid).unwrap();
+    assert!(
+        verify_program_prepared_project(
+            &read_click_project(&project.directory.join("invalid.click"), &invalid).unwrap(),
+            &import
+        )
+        .is_err()
+    );
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    assert_eq!(
+        artifact["function"]["body"][0]["initializer"]["arguments"][0]["kind"],
+        "record_copy"
+    );
+    for mutation in 0..4 {
+        let mut forged = artifact.clone();
+        let argument = &mut forged["function"]["body"][0]["initializer"]["arguments"][0];
+        match mutation {
+            0 => {
+                argument["kind"] = "reference".into();
+                argument.as_object_mut().unwrap().remove("value_type");
+                argument.as_object_mut().unwrap().remove("span");
+            }
+            1 => argument["value_type"]["declaration_id"] = "c:@S@Other".into(),
+            2 => argument["place"]["declaration_id"] = "expired_local".into(),
+            3 => argument["span"]["file"] = "unlocked.cpp".into(),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        use sha2::{Digest, Sha256};
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(
+            project.lock(),
+            serde_json::to_vec_pretty(&forged_lock).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            load_import(&project.config()).is_err(),
+            "mutation {mutation}"
+        );
+    }
+}
+
+#[test]
 fn trivial_record_return_preserves_nested_descriptor_values_offline() {
     let project = Project::with_fixture(
         "copy.cpp",
@@ -1408,7 +1533,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 56);
+    assert_eq!(prepared.export().schema, 57);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -2645,7 +2770,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 56);
+    assert_eq!(import.export().schema, 57);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -2762,7 +2887,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 56);
+    assert_eq!(import.export().schema, 57);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -2873,7 +2998,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 56);
+    assert_eq!(import.export().schema, 57);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -2934,7 +3059,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 56);
+    assert_eq!(import.export().schema, 57);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -2980,7 +3105,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 56);
+    assert_eq!(import.export().schema, 57);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -3613,7 +3738,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 56);
+    assert_eq!(import.export().schema, 57);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -3691,7 +3816,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 56);
+    assert_eq!(import.export().schema, 57);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -3809,7 +3934,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 56);
+    assert_eq!(import.export().schema, 57);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -3947,7 +4072,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 56);
+    assert_eq!(import.export().schema, 57);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -4049,7 +4174,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 56);
+    assert_eq!(import.export().schema, 57);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -4149,7 +4274,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 56);
+    assert_eq!(import.export().schema, 57);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -4296,7 +4421,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 56);
+    assert_eq!(import.export().schema, 57);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -4447,7 +4572,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 56);
+    assert_eq!(import.export().schema, 57);
     let destructor = import
         .export()
         .reachable_functions
@@ -4635,7 +4760,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 56);
+    assert_eq!(import.export().schema, 57);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -4739,7 +4864,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 56);
+    assert_eq!(import.export().schema, 57);
     let destructor = import
         .export()
         .reachable_functions
@@ -10678,7 +10803,7 @@ fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        assert_eq!(import.export().schema, 56);
+        assert_eq!(import.export().schema, 57);
         let source = format!(
             "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures to_integer(result) == {helper}(to_integer(a), to_integer(b)); }} by {{ execute(); simp(); }}"
         );
@@ -10862,7 +10987,7 @@ fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
             refresh_import(&project.config()).unwrap();
             fs::remove_file(&project.exporter).unwrap();
             let import = load_import(&project.config()).unwrap();
-            assert_eq!(import.export().schema, 56);
+            assert_eq!(import.export().schema, 57);
             let relation = format!("to_integer(a) {op} to_integer(b)");
             let proof = format!(
                 "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ ensures result == 1 implies ({relation}); ensures result == 0 implies not ({relation}); }} by {{ execute(); simp(); }}"

@@ -11184,19 +11184,32 @@ impl Parser {
             let pointer = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
             let source_pointer = pointer.clone();
-            let Some(pointer) = contract_expression_as_c_fragment(&pointer) else {
-                return Err(self.error("typed load expects a current C pointer expression"));
-            };
-            return Ok(crate::surface::lowering::contract_c_unary(
-                source_pointer,
-                CExpression::TypedLoad {
+            if let Some(pointer) = contract_expression_as_c_fragment(&pointer) {
+                return Ok(crate::surface::lowering::contract_c_unary(
+                    source_pointer,
+                    CExpression::TypedLoad {
+                        pointer: Box::new(pointer),
+                        value_type,
+                        volatile: false,
+                        pointee_constant: false,
+                        source: Default::default(),
+                    },
+                ));
+            }
+            // The operand remains authoritative during spec lowering. A
+            // historical pointer selects an address, while this load uses
+            // the surrounding clause's memory snapshot.
+            let pointer = CExpression::Value(int32(0));
+            return Ok(ContractExpression::CUnary {
+                operand: Box::new(source_pointer),
+                lowered: CExpression::TypedLoad {
                     pointer: Box::new(pointer),
                     value_type,
                     volatile: false,
                     pointee_constant: false,
                     source: Default::default(),
                 },
-            ));
+            });
         }
 
         // `count(resource(args))` is the declared-resource population operator.

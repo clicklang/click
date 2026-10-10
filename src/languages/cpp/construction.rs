@@ -226,7 +226,7 @@ impl Eligibility<'_, '_> {
                 CppCallArgument::Call {
                     callee, arguments, ..
                 } => self.arguments(arguments, values)? && self.function(callee)?,
-                CppCallArgument::Reference { .. } => false,
+                CppCallArgument::Reference { .. } | CppCallArgument::RecordCopy { .. } => false,
             };
             if !valid {
                 return Ok(false);

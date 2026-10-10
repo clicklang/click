@@ -278,6 +278,15 @@ impl Metadata<'_> {
             match argument {
                 CppCallArgument::Value { value } => self.expression(value)?,
                 CppCallArgument::Reference { place } => self.reference(place)?,
+                CppCallArgument::RecordCopy {
+                    place,
+                    value_type,
+                    span,
+                } => {
+                    self.reference(place)?;
+                    self.value_type(value_type)?;
+                    span.validate(self.logical_source)?;
+                }
                 CppCallArgument::Call {
                     callee,
                     arguments,
