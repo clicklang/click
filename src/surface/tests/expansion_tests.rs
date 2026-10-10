@@ -1,5 +1,22 @@
 use super::*;
 
+#[test]
+fn builtin_header_null_pointer_expansion_round_trips() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/c_builtin_string_and_stdlib_headers.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c0_claim_source(source, &sources, "copy_pair", CProofClaim::Grouped).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+}
+
 // A synthesized read through a struct-pointer field must keep the scalar
 // stride when printed; `p->kid[1]` would advance by an entire child record.
 #[test]

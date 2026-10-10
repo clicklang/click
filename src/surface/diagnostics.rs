@@ -4711,6 +4711,16 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             pointee_struct,
             ..
         } => {
+            // The contract parser accepts the null pointer constant directly;
+            // a C header's `(void *)0` must not expose the kernel type name.
+            if target_type.is_pointer()
+                && matches!(
+                    expression.as_ref(),
+                    CExpression::Value(CValue::Int32(Bitvector32Term::Constant(0)))
+                )
+            {
+                return "0".into();
+            }
             if let Some(struct_name) = pointee_struct {
                 return format!(
                     "((struct {struct_name} *){})",

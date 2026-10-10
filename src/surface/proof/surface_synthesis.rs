@@ -3322,25 +3322,38 @@ fn synthesize_parameter_field_indexed_int32_load(
             .or_else(|| pointer_field_and_index(right, Some(left)))?,
         PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => return None,
     };
-    // Preserve the ordinary indexed spelling when the declaration really is
-    // an int32 array pointer. Unknown/local and aggregate pointer fields use
-    // the explicit byte address below instead of guessing their stride.
+    // Preserve array indexing for a declared int32 pointer, including fields
+    // reached through automatic struct-pointer locals. Their layout is already
+    // indexed by local name in the function's synthesis scope.
     if let ContractExpression::Field {
         base, field: name, ..
     } = &field
         && let ContractExpression::CFragment(CExpression::Variable(owner)) = base.as_ref()
-        && parameters
-            .iter()
-            .find(|parameter| parameter.name() == owner)
-            .and_then(|parameter| parameter.struct_layout())
-            .and_then(|layout| layout.fields().get(name))
-            .is_some_and(|declaration| {
+    {
+        let has_scalar_stride = |layout: &syntax::C0StructLayout| {
+            layout.fields().get(name).is_some_and(|declaration| {
                 declaration.c_type().to_kernel_type() == CType::Int32Pointer
                     && declaration.struct_name().is_none()
                     && declaration.union_name().is_none()
             })
-    {
-        return Some(ContractExpression::Index(Box::new(field), Box::new(index)));
+        };
+        let declared_array = parameters
+            .iter()
+            .find(|parameter| parameter.name() == owner)
+            .and_then(|parameter| parameter.struct_layout())
+            .map(has_scalar_stride)
+            .unwrap_or_else(|| {
+                SYNTHESIS_STRUCT_OWNERS.with(|slot| {
+                    let owners = slot.borrow();
+                    owners
+                        .as_ref()
+                        .and_then(|owners| owners.locals.get(owner))
+                        .is_some_and(has_scalar_stride)
+                })
+            });
+        if declared_array {
+            return Some(ContractExpression::Index(Box::new(field), Box::new(index)));
+        }
     }
     // The kernel indexed a four-byte scalar. The field's written C type
     // may instead be a pointer to a struct, whose indexing scales by that
