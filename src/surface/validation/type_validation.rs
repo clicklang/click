@@ -1534,6 +1534,19 @@ fn infer_scoped_range_fold_type(
             "range fold accumulator must be scalar in {context}"
         )));
     };
+    // The C-valued kernel fold has signed int32 endpoints and an int32
+    // accumulator. Wider endpoints are supported by the Integer fold only;
+    // accepting them here would silently discard every lowering path.
+    if uint64_index {
+        return Err(ClickError::new(format!(
+            "range fold with uint64 bounds requires an Integer accumulator in {context}; C-valued range folds support only int32 bounds"
+        )));
+    }
+    if initial_type != Some(C0Type::Int32) {
+        return Err(ClickError::new(format!(
+            "C-valued range fold requires an int32 accumulator in {context}; other C accumulator types are not supported"
+        )));
+    }
     let SpecValueType::Scalar(body_type) = body_type else {
         return Err(ClickError::new(format!(
             "range fold body must preserve accumulator type in {context}"
@@ -3576,6 +3589,42 @@ fn validate_predicate_calls_in_proposition_one(
             Ok(())
         }
     }
+}
+
+pub(super) fn validate_c_valued_function_folds(
+    definition: &ClickFunctionDefinition,
+    click_functions: &BTreeMap<String, ClickFunctionType>,
+) -> Result<(), ClickError> {
+    if !matches!(definition.return_type(), ClickType::C(_))
+        || !contains_scoped_expression_shape(definition.body(), ScopedExpressionShape::RangeFold)
+    {
+        return Ok(());
+    }
+    let variables = definition
+        .parameters()
+        .iter()
+        .filter_map(|parameter| {
+            parameter
+                .click_type()
+                .c_type()
+                .map(|ty| (parameter.name().to_string(), ty))
+        })
+        .collect();
+    let integer_bindings = definition
+        .parameters()
+        .iter()
+        .filter(|parameter| *parameter.click_type() == ClickType::Integer)
+        .map(|parameter| parameter.name().to_string())
+        .collect();
+    infer_scoped_spec_value_type(
+        definition.body(),
+        &variables,
+        &integer_bindings,
+        click_functions,
+        &format!("function `{}`", definition.name()),
+        false,
+    )?;
+    Ok(())
 }
 
 pub(super) fn validate_click_function_expression(

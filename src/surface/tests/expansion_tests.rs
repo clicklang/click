@@ -1718,6 +1718,107 @@ theorem indexed_integer_exists(values: int32[]) {
 }
 
 #[test]
+fn c_valued_range_fold_rejects_unsupported_carriers_before_lowering() {
+    // Keep the report's original C body and proof, including its array reads.
+    let c_source = r#"int32 g(uint8 p[], uint8 x) {
+    int32 count;
+    count = 0;
+    if (p[0] == x) { count = count + 1; }
+    if (p[1] == x) { count = count + 1; }
+    return count;
+}"#;
+    let source = r#"verifying "g.c";
+function my_count(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) -> int32 {
+    (lo..hi).fold(0, |acc, k| { acc + if bytes[k] == value { 1 } else { 0 } })
+}
+int32 g(uint8 p[], uint8 x) {
+    views p[0..2];
+    ensures result == my_count(p, 0u64, 2u64, x) by {
+        execute();
+        unfold(my_count(p, 0u64, 2u64, x));
+        simp();
+    }
+}
+"#;
+    let error = verify_c0_sources(source, &[("g.c", c_source)])
+        .expect_err("uint64 C-valued fold must be refused during validation");
+    assert!(
+        error
+            .message()
+            .contains("range fold with uint64 bounds requires an Integer accumulator"),
+        "{}",
+        error.message()
+    );
+    assert!(error.message().contains("my_count"), "{}", error.message());
+    assert!(!error.message().contains("produced 0 paths"));
+
+    // Reject the same unsupported carrier for symbolic, concrete,
+    // and empty bounds: support must not depend on unfolding a call.
+    for bounds in ["lo..hi", "0u64..2u64", "lo..lo"] {
+        let source = format!(
+            "function wide(lo: uint64, hi: uint64) -> int32 {{ ({bounds}).fold(0, |acc, k| {{ acc + 1 }}) }}"
+        );
+        let error =
+            verify_c0_sources(&source, &[]).expect_err("wide C-valued fold must be rejected");
+        assert!(
+            error
+                .message()
+                .contains("range fold with uint64 bounds requires an Integer accumulator"),
+            "{}",
+            error.message()
+        );
+    }
+    for (ty, initial, body) in [
+        ("uint64", "0u64", "acc + 1u64"),
+        ("int64", "0i64", "acc + 1i64"),
+        ("uint32", "z", "acc"),
+        ("uint8", "z", "acc"),
+        ("bool", "z", "acc"),
+    ] {
+        let source = format!(
+            "function unsupported(lo: int32, hi: int32, z: {ty}) -> {ty} {{ (lo..hi).fold({initial}, |acc, k| {{ {body} }}) }}"
+        );
+        let error =
+            verify_c0_sources(&source, &[]).expect_err("non-int32 C accumulator must be rejected");
+        assert!(
+            error
+                .message()
+                .contains("C-valued range fold requires an int32 accumulator"),
+            "{ty}: {}",
+            error.message()
+        );
+    }
+
+    // C-valued subfolds inside Integer expressions also need a named refusal.
+    let wrapped = r#"
+function wrapped(lo: uint64, hi: uint64) -> Integer {
+    to_integer((lo..hi).fold(0, |acc, k| { acc + 1 }))
+}
+theorem check_wrapped(lo: uint64, hi: uint64) {
+    ensures wrapped(lo, hi) == 0 by { unfold(wrapped(lo, hi)); simp(); }
+}
+"#;
+    let error = verify_c0_sources(wrapped, &[]).expect_err("unsupported subfold must be refused");
+    assert!(
+        error.message().contains("Integer accumulator"),
+        "{}",
+        error.message()
+    );
+    assert!(!error.message().contains("produced 0 paths"));
+
+    // The same program's supported int32 fold still verifies and expands.
+    let supported = source
+        .replace("uint64", "int32")
+        .replace("0u64", "0")
+        .replace("2u64", "2");
+    let sources = [("g.c", c_source)];
+    verify_c0_sources(&supported, &sources).expect("int32 count fold should verify");
+    let expanded = expand_c0_claim_source_by_label(&supported, &sources, "g.ensures_0")
+        .expect("int32 count proof should expand");
+    verify_c0_sources(&expanded, &sources).expect("expanded int32 count proof should recheck");
+}
+
+#[test]
 fn integer_range_fold_surface_typing_and_unfolding() {
     let source = r#"
 function sum_machine_range(n: int32) -> Integer {

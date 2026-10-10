@@ -5327,6 +5327,26 @@ impl AnnotationLowerer<'_> {
                 item,
                 body,
             } => {
+                let start = self.lower_contract_expression_to_spec(start, environment)?;
+                let end = self.lower_contract_expression_to_spec(end, environment)?;
+                let initial = self.lower_contract_expression_to_spec(initial, environment)?;
+                // C-valued subfolds can occur inside Integer expressions, so
+                // guard the kernel's carrier here as well as in validation.
+                let c_type = |expression: &SpecExpression| match expression {
+                    SpecExpression::Cast(_, ty) => {
+                        Some(ClickType::C(generics::c0_type_from_kernel(*ty)))
+                    }
+                    _ => spec_expression_click_type(expression),
+                };
+                let unsupported = |expression: &SpecExpression| {
+                    c_type(expression).is_some_and(|ty| ty != ClickType::C(C0Type::Int32))
+                };
+                if unsupported(&start) || unsupported(&end) {
+                    return Err("C-valued range fold requires int32 bounds; uint64 bounds require an Integer accumulator".to_string());
+                }
+                if unsupported(&initial) {
+                    return Err("C-valued range fold requires an int32 accumulator; other C accumulator types are not supported".to_string());
+                }
                 let mut body_environment = environment.clone();
                 body_environment.values.insert(
                     accumulator.clone(),
@@ -5337,11 +5357,9 @@ impl AnnotationLowerer<'_> {
                     SpecExpression::CExpression(CExpression::Variable(item.clone())),
                 );
                 Ok(SpecExpression::RangeFold {
-                    start: Box::new(self.lower_contract_expression_to_spec(start, environment)?),
-                    end: Box::new(self.lower_contract_expression_to_spec(end, environment)?),
-                    initial: Box::new(
-                        self.lower_contract_expression_to_spec(initial, environment)?,
-                    ),
+                    start: Box::new(start),
+                    end: Box::new(end),
+                    initial: Box::new(initial),
                     accumulator: accumulator.clone(),
                     item: item.clone(),
                     body: Box::new(
