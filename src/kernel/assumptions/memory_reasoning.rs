@@ -365,9 +365,23 @@ impl PureFactContext {
             return true;
         }
         // A constant count names the same bytes as the 32-bit range of that
-        // many bytes, which the narrow prover carries through snapshots.
+        // many bytes, which the narrow prover carries through snapshots. It
+        // is consulted only when this base indexes such a 32-bit range, so a
+        // refusal stays independent of other addresses' facts.
         if let Some(count) = bytes.uint64_as_const()
             && let Ok(count) = u32::try_from(count)
+            && self
+                .memory_loadable_exact_candidates_for_base(base)
+                .any(|fact| {
+                    matches!(
+                        fact,
+                        Proposition::CMemoryLoadable {
+                            bytes: Bitvector32Term::Constant(held),
+                            wide: false,
+                            ..
+                        } if *held >= count
+                    )
+                })
             && self.proves_memory_loadable(memory, base, &Bitvector32Term::Constant(count))
         {
             return true;
