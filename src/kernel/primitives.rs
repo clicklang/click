@@ -27,7 +27,7 @@ pub(crate) use contracts::{
     memory_range_extent_guard_spellings, memory_range_extent_guards, scaled_extent_element_width,
     stated_extent_element_width, stated_loadable_extent_guard_spellings,
     stated_loadable_extent_guards, stated_separation_extent_bounds,
-    stated_separation_extent_guards, wide_loadable_element_count,
+    stated_separation_extent_guards, wide_loadable_element_count, wide_range_bounds,
 };
 mod integer;
 mod machine_integer;

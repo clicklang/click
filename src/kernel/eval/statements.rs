@@ -1063,9 +1063,11 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
             return Some(CResourceFact::view_memory(
                 CMemoryRange::new_with_element_width(
                     source.offset_by_bytes(field.offset_bytes()),
-                    0.into(),
-                    field.c_type().byte_width().into(),
-                    1,
+                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::Constant(1),
+                    crate::kernel::assumptions::read_candidate_byte_width(
+                        field.c_type().byte_width(),
+                    ),
                 ),
             ));
         }
@@ -1082,9 +1084,9 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
             return Some(CResourceFact::view_memory(
                 CMemoryRange::new_with_element_width(
                     pointer,
-                    0.into(),
-                    union.size_bytes().into(),
-                    1,
+                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::Constant(1),
+                    union.size_bytes(),
                 ),
             ));
         }

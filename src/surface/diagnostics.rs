@@ -2256,12 +2256,34 @@ pub(super) fn describe_parameter_relative_range(
         }
         return Some(format!("{}[{low}]", name));
     }
+    // One element at a symbolic index is that element: `bytes[index]`.
+    if range_end_is_next_element(&start, &end) {
+        return Some(format!(
+            "{}[{}]",
+            name,
+            describe_bitvector_with_context(&start, parameters, arguments)
+        ));
+    }
     Some(format!(
         "{}[{}..{}]",
         name,
         describe_bitvector_with_context(&start, parameters, arguments),
         describe_bitvector_with_context(&end, parameters, arguments)
     ))
+}
+
+/// Whether `end` is written as `start + 1`, so the range is one element.
+fn range_end_is_next_element(start: &Bitvector32Term, end: &Bitvector32Term) -> bool {
+    let one =
+        |term: &Bitvector32Term| term.as_const() == Some(1) || term.uint64_as_const() == Some(1);
+    match end {
+        Bitvector32Term::Add(left, right)
+        | Bitvector32Term::Int64Add(left, right)
+        | Bitvector32Term::UInt64Add(left, right) => {
+            (left.as_ref() == start && one(right)) || (right.as_ref() == start && one(left))
+        }
+        _ => false,
+    }
 }
 
 /// The parameter a range is spelled against, with the element index of the

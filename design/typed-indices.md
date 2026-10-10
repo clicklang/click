@@ -142,8 +142,12 @@ gives: a range from constant zero to a symbolic `uint64` bound is wide, in
 contracts, loop clauses and proofs, and a 64-bit index is never narrowed.
 Steps 0 to 4, 7 and 8 below are done for that shape, with `viewable` over a
 wide range, `uint64` folds for model functions, and the Rust iterators
-counting a `usize`. Not built: a nonzero start (step 5), the remaining
-clause shapes and the deletion of the 32-bit conversion for them (step 9),
+counting a `usize`. Step 5 is done too (2026-10-10): a range with a
+`uint64` bound is wide whatever its start, and an integer literal beside the
+64-bit bound is read as `uint64` (`wide_range_bounds` in
+`src/kernel/primitives/contracts.rs`, the one rule every lowering asks). Not
+built: the remaining clause shapes, among them an `int32` variable beside a
+64-bit bound, and the deletion of the 32-bit conversion for them (step 9),
 and the signed wide kind. What was learned along the way:
 
 - Offsets of two unequal 64-bit indices are different without a no-wrap

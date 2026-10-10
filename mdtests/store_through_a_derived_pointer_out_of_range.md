@@ -26,5 +26,5 @@ void put(int32* a, int32 k) {
 ```
 
 ```expect
-fail: missing resource fact `owns a[(k + 1)..((k + 1) + 1)]`
+fail: missing resource fact `owns a[(k + 1)]`
 ```

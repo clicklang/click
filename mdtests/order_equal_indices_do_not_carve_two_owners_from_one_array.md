@@ -43,5 +43,5 @@ int32 caller(int32* x, int32 i, int32 j) {
 ```
 
 ```expect
-fail: missing resource fact `owns x[j..(j + 1)]`
+fail: missing resource fact `owns x[j]`
 ```

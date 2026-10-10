@@ -2713,28 +2713,10 @@ fn lower_resource_segment_with_values(
             ))),
         }
     };
-    // Explicit native endpoints keep their width here as they do in the
-    // kernel's resource and proposition lowering.
-    if let (CValue::UInt64(start), CValue::UInt64(end)) = (&start_value, &end_value) {
-        return Ok(CMemoryRange::new_wide(
-            base,
-            start.clone(),
-            end.clone(),
-            element_width,
-        ));
-    }
-    // A range from constant zero to an unsigned 64-bit bound keeps that
-    // bound's type (`design/typed-indices.md`, stage 2).
-    if matches!(&start_value, CValue::Int32(Bitvector32Term::Constant(0)))
-        && let CValue::UInt64(end) = &end_value
-        && end.uint64_as_const().is_none()
-    {
-        return Ok(CMemoryRange::new_wide(
-            base,
-            Bitvector32Term::UInt64Constant(0),
-            end.clone(),
-            element_width,
-        ));
+    // A range with an unsigned 64-bit bound keeps that bound's type, here as
+    // in the kernel's resource and proposition lowering.
+    if let Some((start, end)) = crate::kernel::wide_range_bounds(&start_value, &end_value) {
+        return Ok(CMemoryRange::new_wide(base, start, end, element_width));
     }
     let start = bound(&segment.start, start_value, "start")?;
     let end = bound(&segment.end, end_value, "end")?;
