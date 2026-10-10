@@ -56,7 +56,18 @@ pub(super) fn read_extent(fact: &CResourceFact) -> Option<u64> {
         return None;
     }
     let range = fact.memory_range()?;
-    // A wide range has no constant extent here; it is an unsupported entry.
+    // Native constant bounds can supply a physical interval only when both
+    // scaled endpoints fit the pointer coordinate domain. Symbolic native
+    // bounds remain unsupported; their low words never supply an extent.
+    if let Some((start, end)) = range.wide_bounds() {
+        let start = start.uint64_as_const()?;
+        let end = end.uint64_as_const()?;
+        let width = u64::from(range.element_width());
+        if start >= end || end > i64::MAX as u64 / width {
+            return None;
+        }
+        return end.checked_sub(start)?.checked_mul(width);
+    }
     let (start, end) = range.int32_bounds()?;
     let start = start.as_const()? as i32;
     let end = end.as_const()? as i32;
@@ -899,8 +910,13 @@ impl MemoryFactEntries {
                 // but cannot start a walk outside the requested footprint.
                 if super::resource_algebra::memory_range_covers(&requested, &aligned, &assumptions)
                 {
-                    cursor = memory_candidate_coordinate(available, available.end())
-                        .map(|(base, end)| base.offset_by_elements(end, available.element_width()));
+                    cursor = if available.wide_bounds().is_some() {
+                        Some(aligned.end_pointer())
+                    } else {
+                        memory_candidate_coordinate(available, available.end()).map(
+                            |(base, end)| base.offset_by_elements(end, available.element_width()),
+                        )
+                    };
                 }
                 Some(entry)
             })));

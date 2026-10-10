@@ -8638,35 +8638,46 @@ pub(super) fn evaluate_loop_effect_segment(
         }
         Err(message) => return Ok(Err(message)),
     };
-    // As in `evaluate_loop_effect_segment_with_facts`.
-    if matches!(
-        evaluate_loop_effect_segment_value(
-            state,
-            &segment.start,
-            assumptions,
-            "segment start",
-            budget
-        )?,
-        Ok(CValue::Int32(Bitvector32Term::Constant(0)))
-    ) && let Ok(CValue::UInt64(end)) =
-        evaluate_loop_effect_segment_value(state, &segment.end, assumptions, "segment end", budget)?
-        && end.uint64_as_const().is_none()
-    {
-        return Ok(Ok(EvaluatedMemorySegment {
-            base,
-            start: Bitvector32Term::UInt64Constant(0),
-            end,
-            element_width: segment.element_width,
-            kind: RangeIndexKind::UInt64,
-        }));
-    }
-    let start = match evaluate_loop_effect_segment_value(
+    let start_value = evaluate_loop_effect_segment_value(
         state,
         &segment.start,
         assumptions,
         "segment start",
         budget,
-    )? {
+    )?;
+    let end_value = evaluate_loop_effect_segment_value(
+        state,
+        &segment.end,
+        assumptions,
+        "segment end",
+        budget,
+    )?;
+    if let (Ok(CValue::UInt64(start)), Ok(CValue::UInt64(end))) = (&start_value, &end_value) {
+        return Ok(Ok(EvaluatedMemorySegment {
+            base,
+            start: start.clone(),
+            end: end.clone(),
+            element_width: segment.element_width,
+            kind: RangeIndexKind::UInt64,
+        }));
+    }
+    // A range from constant zero to a symbolic native endpoint retains
+    // that endpoint's width. Evaluate each endpoint only once.
+    if matches!(
+        &start_value,
+        Ok(CValue::Int32(Bitvector32Term::Constant(0)))
+    ) && let Ok(CValue::UInt64(end)) = &end_value
+        && end.uint64_as_const().is_none()
+    {
+        return Ok(Ok(EvaluatedMemorySegment {
+            base,
+            start: Bitvector32Term::UInt64Constant(0),
+            end: end.clone(),
+            element_width: segment.element_width,
+            kind: RangeIndexKind::UInt64,
+        }));
+    }
+    let start = match start_value {
         Ok(CValue::Int32(value)) => value,
         // A 64-bit bound is converted as `(int32)bound` converts it.
         Ok(CValue::Int64(_) | CValue::UInt64(_)) => match evaluate_loop_effect_segment_value(
@@ -8693,13 +8704,7 @@ pub(super) fn evaluate_loop_effect_segment(
         }
         Err(message) => return Ok(Err(message)),
     };
-    let end = match evaluate_loop_effect_segment_value(
-        state,
-        &segment.end,
-        assumptions,
-        "segment end",
-        budget,
-    )? {
+    let end = match end_value {
         Ok(CValue::Int32(value)) => value,
         // A 64-bit bound is converted as `(int32)bound` converts it.
         Ok(CValue::Int64(_) | CValue::UInt64(_)) => match evaluate_loop_effect_segment_value(
@@ -8774,26 +8779,40 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         }
         Err(message) => return Ok(Err(message)),
     };
-    // A range from constant zero to an unsigned 64-bit bound keeps that
-    // bound's type.
-    if matches!(
-        evaluate(&segment.start, "segment start")?,
-        Ok(CValue::Int32(Bitvector32Term::Constant(0)))
-    ) && let Ok(CValue::UInt64(end)) = evaluate(&segment.end, "segment end")?
-        && end.uint64_as_const().is_none()
-    {
+    let start_value = evaluate(&segment.start, "segment start")?;
+    let end_value = evaluate(&segment.end, "segment end")?;
+    if let (Ok(CValue::UInt64(start)), Ok(CValue::UInt64(end))) = (&start_value, &end_value) {
         return Ok(Ok((
             EvaluatedMemorySegment {
                 base,
-                start: Bitvector32Term::UInt64Constant(0),
-                end,
+                start: start.clone(),
+                end: end.clone(),
                 element_width: segment.element_width,
                 kind: RangeIndexKind::UInt64,
             },
             facts.into(),
         )));
     }
-    let start = match evaluate(&segment.start, "segment start")? {
+    // A range from constant zero to a symbolic native endpoint retains
+    // that endpoint's width. Evaluate each endpoint only once.
+    if matches!(
+        &start_value,
+        Ok(CValue::Int32(Bitvector32Term::Constant(0)))
+    ) && let Ok(CValue::UInt64(end)) = &end_value
+        && end.uint64_as_const().is_none()
+    {
+        return Ok(Ok((
+            EvaluatedMemorySegment {
+                base,
+                start: Bitvector32Term::UInt64Constant(0),
+                end: end.clone(),
+                element_width: segment.element_width,
+                kind: RangeIndexKind::UInt64,
+            },
+            facts.into(),
+        )));
+    }
+    let start = match start_value {
         Ok(CValue::Int32(value)) => value,
         // A 64-bit bound is converted as `(int32)bound` converts it.
         Ok(CValue::Int64(_) | CValue::UInt64(_)) => {
@@ -8819,7 +8838,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         }
         Err(message) => return Ok(Err(message)),
     };
-    let end = match evaluate(&segment.end, "segment end")? {
+    let end = match end_value {
         Ok(CValue::Int32(value)) => value,
         // A 64-bit bound is converted as `(int32)bound` converts it.
         Ok(CValue::Int64(_) | CValue::UInt64(_)) => {

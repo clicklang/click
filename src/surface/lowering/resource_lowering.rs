@@ -2645,12 +2645,17 @@ fn lower_resource_segment_with_values(
     // cast `(int32)bound` converts it; function setup refuses a contract
     // whose requirements do not show the bound fits
     // (`design/typed-indices.md`, stage 1).
-    let bound = |expression: &CExpression, original: Option<&ContractExpression>, which: &str| {
-        let value = evaluate(expression, original).map_err(|message| {
-            ClickError::new(format!(
-                "could not lower `{resource_name}` resource: {message}"
-            ))
-        })?;
+    let start_value = evaluate(&segment.start, surface_start).map_err(|message| {
+        ClickError::new(format!(
+            "could not lower `{resource_name}` resource: {message}"
+        ))
+    })?;
+    let end_value = evaluate(&segment.end, surface_end).map_err(|message| {
+        ClickError::new(format!(
+            "could not lower `{resource_name}` resource: {message}"
+        ))
+    })?;
+    let bound = |expression: &CExpression, value: CValue, which: &str| {
         let value = match value {
             CValue::Int64(_) | CValue::UInt64(_) => evaluate(
                 &crate::kernel::place_index_from_wide(expression.clone()),
@@ -2670,23 +2675,31 @@ fn lower_resource_segment_with_values(
             ))),
         }
     };
+    // Explicit native endpoints keep their width here as they do in the
+    // kernel's resource and proposition lowering.
+    if let (CValue::UInt64(start), CValue::UInt64(end)) = (&start_value, &end_value) {
+        return Ok(CMemoryRange::new_wide(
+            base,
+            start.clone(),
+            end.clone(),
+            element_width,
+        ));
+    }
     // A range from constant zero to an unsigned 64-bit bound keeps that
     // bound's type (`design/typed-indices.md`, stage 2).
-    if matches!(
-        evaluate(&segment.start, surface_start),
-        Ok(CValue::Int32(Bitvector32Term::Constant(0)))
-    ) && let Ok(CValue::UInt64(end)) = evaluate(&segment.end, surface_end)
+    if matches!(&start_value, CValue::Int32(Bitvector32Term::Constant(0)))
+        && let CValue::UInt64(end) = &end_value
         && end.uint64_as_const().is_none()
     {
         return Ok(CMemoryRange::new_wide(
             base,
             Bitvector32Term::UInt64Constant(0),
-            end,
+            end.clone(),
             element_width,
         ));
     }
-    let start = bound(&segment.start, surface_start, "start")?;
-    let end = bound(&segment.end, surface_end, "end")?;
+    let start = bound(&segment.start, start_value, "start")?;
+    let end = bound(&segment.end, end_value, "end")?;
     if let (Bitvector32Term::Constant(start), Bitvector32Term::Constant(end)) = (&start, &end)
         && end < start
     {
@@ -2709,6 +2722,26 @@ fn loadable_requirement_props(
     memory: &CMemory,
     assumptions: &PureFactContext,
 ) -> Result<Vec<Proposition>, ClickError> {
+    if let Requirement::LoadableSegment { segment } = requirement
+        && segment.state == ContractSegmentState::Current
+    {
+        let state = CState::new().with_memory(memory.clone());
+        let values = parameter_values(parameters, arguments)?;
+        let range = lower_resource_segment_with_values(
+            "viewable",
+            segment,
+            &values,
+            &array_refs_for_parameters(parameters, &values, memory),
+            &state,
+            None,
+            contract_segment_element_width(parameters, segment),
+        )?;
+        let guards = memory_range_loadable_guards(&range);
+        reject_impossible_range_guards(&guards, assumptions)?;
+        let mut propositions = vec![memory_range_loadable_atom_prop(memory, &range)];
+        propositions.extend(guards);
+        return Ok(propositions);
+    }
     let (base, bytes, guards) = loadable_base_and_bytes(requirement, parameters, arguments)?;
     reject_impossible_range_guards(&guards, assumptions)?;
     let mut propositions = vec![Proposition::CMemoryLoadable {

@@ -247,6 +247,12 @@ impl PureFactContext {
                 memory,
                 base,
                 bytes,
+                wide: true,
+            } => self.proves_native_memory_loadable(memory, base, bytes),
+            Proposition::CMemoryLoadable {
+                memory,
+                base,
+                bytes,
                 wide: false,
             } => self.proves_memory_loadable(memory, base, bytes),
             Proposition::CMemoryCanStore {
@@ -334,6 +340,12 @@ impl PureFactContext {
                 pointer,
                 value_type,
             } => self.proves_memory_read_defined(memory, pointer, *value_type),
+            Proposition::CMemoryLoadable {
+                memory,
+                base,
+                bytes,
+                wide: true,
+            } => self.proves_native_memory_loadable(memory, base, bytes),
             Proposition::CMemoryLoadable {
                 memory,
                 base,

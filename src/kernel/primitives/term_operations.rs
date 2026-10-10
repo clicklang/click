@@ -2254,7 +2254,7 @@ impl ConditionTerm {
         None
     }
 
-    /// A sufficient guard for two non-wrapping unsigned successor rules.
+    /// A sufficient guard for non-wrapping unsigned successor rules.
     /// The guard is deliberately a premise, never an unconditional rewrite.
     pub(crate) fn uint64_successor_guard(&self) -> Option<Self> {
         fn predecessor(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
@@ -2265,10 +2265,24 @@ impl ConditionTerm {
             }
         }
         match self {
+            Self::Bitvector64UnsignedLessEqual(n, next)
+                if predecessor(next) == Some(n.as_ref()) =>
+            {
+                Some(Self::uint64_less_equal(
+                    n.as_ref().clone(),
+                    Bitvector32Term::UInt64Constant(u64::MAX - 1),
+                ))
+            }
             Self::Bitvector64UnsignedLessEqual(next, n) => Some(Self::uint64_less_than(
                 predecessor(next)?.clone(),
                 n.as_ref().clone(),
             )),
+            Self::Bitvector64UnsignedLessThan(n, next) if predecessor(next) == Some(n.as_ref()) => {
+                Some(Self::uint64_less_equal(
+                    n.as_ref().clone(),
+                    Bitvector32Term::UInt64Constant(u64::MAX - 1),
+                ))
+            }
             Self::Bitvector64UnsignedLessThan(next_distance, old_distance) => {
                 let Bitvector32Term::UInt64Subtract(n, next) = next_distance.as_ref() else {
                     return None;

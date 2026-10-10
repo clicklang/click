@@ -8645,3 +8645,116 @@ fn wide_ranges_are_compared_and_refused_without_a_32_bit_reading() {
     assert!(!covers(&wide(&end, 1), &words, &facts));
     assert!(!covers(&words, &wide(&end, 1), &facts));
 }
+
+#[test]
+fn native_range_coverage_checks_complete_signed_observations() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = Pointer::symbolic(Variable(983_400));
+    let index = Bitvector32Term::Variable(Variable(983_401));
+    let next = Bitvector32Term::uint64_add(index.clone(), Bitvector32Term::UInt64Constant(1));
+    let available = CMemoryRange::new_wide(base.clone(), index.clone(), next.clone(), 4);
+    let narrow = Bitvector32Term::uint32_from_64(index.clone());
+    let required = CMemoryRange::new(
+        base.clone(),
+        narrow.clone(),
+        Bitvector32Term::add(narrow.clone(), Bitvector32Term::Constant(1)),
+    );
+    let bounded = PureFactContext::new().assume_condition(
+        ConditionTerm::uint64_less_than(index.clone(), Bitvector32Term::UInt64Constant(3)),
+        true,
+    );
+    let covers = crate::kernel::primitives::wide_memory_range_covers;
+    let access_facts = bounded.clone().assume_condition(
+        ConditionTerm::uint64_less_equal(
+            next.clone(),
+            Bitvector32Term::UInt64Constant(i64::MAX as u64 / 4),
+        ),
+        true,
+    );
+    assert_eq!(
+        crate::kernel::split_memory_range(&available, &required, &bounded),
+        Some(Vec::new())
+    );
+    for (observation, wide) in [
+        (narrow.clone(), false),
+        (index.clone(), false),
+        (index.clone(), true),
+    ] {
+        let selected = base.offset_by_typed_elements(observation, 4, wide, wide);
+        assert!(access_facts.pointer_access_in_wide_range(&selected, 4, &available));
+        assert!(!PureFactContext::new().pointer_access_in_wide_range(&selected, 4, &available));
+    }
+    assert!(covers(&available, &required, &bounded));
+    assert!(!covers(&available, &required, &PureFactContext::new()));
+    let low_only = PureFactContext::new().assume_condition(
+        ConditionTerm::signed_less_than(narrow.clone(), Bitvector32Term::Constant(3)),
+        true,
+    );
+    assert!(!covers(&available, &required, &low_only));
+    let signed_edge = PureFactContext::new().assume_condition(
+        ConditionTerm::uint64_equal(
+            index.clone(),
+            Bitvector32Term::UInt64Constant(i32::MAX as u64),
+        ),
+        true,
+    );
+    assert!(!covers(&available, &required, &signed_edge));
+    let native_wrap = PureFactContext::new().assume_condition(
+        ConditionTerm::uint64_equal(index.clone(), Bitvector32Term::UInt64Constant(u64::MAX)),
+        true,
+    );
+    assert!(!covers(&available, &required, &native_wrap));
+    let too_long = CMemoryRange::new(
+        base.clone(),
+        narrow.clone(),
+        Bitvector32Term::add(narrow.clone(), Bitvector32Term::Constant(2)),
+    );
+    assert!(!covers(&available, &too_long, &bounded));
+    let wrong_base = CMemoryRange::new(
+        Pointer::symbolic(Variable(983_402)),
+        narrow.clone(),
+        Bitvector32Term::add(narrow, Bitvector32Term::Constant(1)),
+    );
+    assert!(!covers(&available, &wrong_base, &bounded));
+}
+
+#[test]
+fn native_owned_fragments_supply_indexed_writes() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = Pointer::symbolic(Variable(983_410));
+    let range = |start, end| {
+        CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(start),
+            Bitvector32Term::UInt64Constant(end),
+            4,
+        )
+    };
+    let mut resources = ResourceContext::new();
+    for (start, end) in [(0, 1), (2, 3), (1, 2)] {
+        resources = resources.unchecked_with_fact(CResourceFact::own_memory(range(start, end)));
+    }
+    let facts = PureFactContext::new();
+    for index in 0..3 {
+        let pointer = base.offset_by_elements(Bitvector32Term::Constant(index), 4);
+        assert_eq!(
+            resources.memory_write_range(&pointer, 4, &facts).cloned(),
+            Some(range(index as u64, index as u64 + 1))
+        );
+    }
+    for required in [
+        range(0, 3),
+        CMemoryRange::new(base.clone(), 0u32.into(), 3u32.into()),
+    ] {
+        let remaining = resources
+            .clone()
+            .without_fact_incrementally(&CResourceFact::own_memory(required), &facts)
+            .expect("all three owned fragments cover the complete request");
+        assert!(remaining.facts().is_empty());
+    }
+    let outside = base.offset_by_elements(Bitvector32Term::Constant(3), 4);
+    assert!(resources.memory_write_range(&outside, 4, &facts).is_none());
+    let viewed = ResourceContext::new()
+        .unchecked_with_fact(CResourceFact::View(CResource::Memory(range(0, 3))));
+    assert!(viewed.memory_write_range(&base, 4, &facts).is_none());
+}

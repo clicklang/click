@@ -2103,6 +2103,14 @@ impl CMemoryRange {
         self.element_width
     }
 
+    /// Rebase a range without changing the domain of either endpoint.
+    pub(crate) fn with_base(&self, base: Pointer) -> Self {
+        Self {
+            base,
+            ..self.clone()
+        }
+    }
+
     /// Rebuilds a range with different bounds while preserving its element
     /// coordinate system.
     pub(crate) fn with_bounds(

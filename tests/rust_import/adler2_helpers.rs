@@ -1833,6 +1833,7 @@ fn adler_lane_state_expands_and_rejects_false_relations() {
         "adler_lane_b_reduction.ensures_0",
         "adler_prefix_a_step_four.ensures_0",
         "adler_prefix_a_step_one.ensures_0",
+        "adler_prefix_b_step_four.ensures_0",
     ] {
         let expanded = click::surface::expand_c0_claim_source_by_label(&source, &[], claim)
             .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
@@ -1847,6 +1848,15 @@ fn adler_lane_state_expands_and_rejects_false_relations() {
             "requires 0 <= adler_lane_b(b, a1, a2, a3, b0, b1, b2, b3);",
             "",
         ),
+        (
+            "+ 3 * to_integer((int32)bytes[n + 1]) + 2 * to_integer((int32)bytes[n + 2])",
+            "+ 2 * to_integer((int32)bytes[n + 1]) + 3 * to_integer((int32)bytes[n + 2])",
+        ),
+        (
+            "adler_spec_b(bytes, n + 4, a_seed, b_seed) by",
+            "adler_spec_b(bytes, n + 4, a_seed, b_seed + 1) by",
+        ),
+        ("requires 0 <= b_rep;", ""),
         ("requires n <= 2147483643;", "requires n <= 2147483644;"),
         (
             "adler_spec_a(bytes, n + 1, seed) by",

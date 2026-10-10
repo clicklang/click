@@ -6117,6 +6117,9 @@ enum ResourceNormalizationKey {
     ExactShapeAnchoredAll(ResourceFamily, String, usize),
     MemoryStart(MemoryBaseRoot, bool, Bitvector32Term),
     MemoryEnd(MemoryBaseRoot, bool, Bitvector32Term),
+    // Native adjacency retains the exact base, width and full endpoint.
+    MemoryNativeStart(Pointer, u32, bool, Bitvector32Term),
+    MemoryNativeEnd(Pointer, u32, bool, Bitvector32Term),
     MemoryByteStart(MemoryBaseRoot, bool, i64),
     MemoryByteEnd(MemoryBaseRoot, bool, i64),
 }
@@ -6212,9 +6215,21 @@ impl ResourceNormalizationIndex {
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
             | CResource::Publication(_) => {}
-            // A wide range is not joined to a neighbour yet, so it has no
-            // endpoint to be found by.
-            CResource::Memory(range) if range.wide_bounds().is_some() => {}
+            CResource::Memory(range) if range.wide_bounds().is_some() => {
+                let (start, end) = range.bound_terms();
+                keys.push(ResourceNormalizationKey::MemoryNativeStart(
+                    range.base().clone(),
+                    range.element_width(),
+                    fact.is_own(),
+                    start.clone(),
+                ));
+                keys.push(ResourceNormalizationKey::MemoryNativeEnd(
+                    range.base().clone(),
+                    range.element_width(),
+                    fact.is_own(),
+                    end.clone(),
+                ));
+            }
             CResource::Memory(range) => {
                 if self.byte_endpoints
                     && let Some(start) =
@@ -6313,7 +6328,21 @@ impl ResourceNormalizationIndex {
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
             | CResource::Publication(_) => {}
-            CResource::Memory(range) if range.wide_bounds().is_some() => {}
+            CResource::Memory(range) if range.wide_bounds().is_some() => {
+                let (start, end) = range.bound_terms();
+                keys.push(ResourceNormalizationKey::MemoryNativeEnd(
+                    range.base().clone(),
+                    range.element_width(),
+                    fact.is_own(),
+                    start.clone(),
+                ));
+                keys.push(ResourceNormalizationKey::MemoryNativeStart(
+                    range.base().clone(),
+                    range.element_width(),
+                    fact.is_own(),
+                    end.clone(),
+                ));
+            }
             CResource::Memory(range) => {
                 let mut roots = related_memory_base_roots(range.base(), assumptions);
                 for alias in assumptions.exact_pointer_aliases(range.base()) {
@@ -8233,10 +8262,57 @@ fn memory_range_covers_with_separation(
             ))
 }
 
+/// Interpret a signed endpoint as a native coordinate only when its complete
+/// value survives truncation. Addition commutes modulo 2^32; the native upper
+/// bound below rules out both truncation and crossing the signed high bit.
+pub(in crate::kernel) fn checked_native_range_endpoint(
+    term: &Bitvector32Term,
+    assumptions: &PureFactContext,
+) -> Option<Bitvector32Term> {
+    let wide = match term {
+        Bitvector32Term::Constant(value) if *value <= i32::MAX as u32 => {
+            return Some(Bitvector32Term::UInt64Constant(u64::from(*value)));
+        }
+        Bitvector32Term::Variable(_) => term.clone(),
+        Bitvector32Term::UInt32From64(value) => value.as_ref().clone(),
+        Bitvector32Term::Add(left, right) => {
+            let (value, constant) = match (left.as_ref(), right.as_ref()) {
+                (value, Bitvector32Term::Constant(constant))
+                | (Bitvector32Term::Constant(constant), value)
+                    if *constant <= i32::MAX as u32 =>
+                {
+                    let value = match value {
+                        Bitvector32Term::Variable(_) => value.clone(),
+                        Bitvector32Term::UInt32From64(inner) => inner.as_ref().clone(),
+                        _ => return None,
+                    };
+                    (value, *constant)
+                }
+                _ => return None,
+            };
+            // Check the operand too: an overflowing native sum can be small.
+            if assumptions.decide(&ConditionTerm::uint64_less_equal(
+                value.clone(),
+                Bitvector32Term::UInt64Constant(i32::MAX as u64 - u64::from(constant)),
+            )) != Some(true)
+            {
+                return None;
+            }
+            Bitvector32Term::uint64_add(value, Bitvector32Term::UInt64Constant(u64::from(constant)))
+        }
+        _ => return None,
+    };
+    (assumptions.decide(&ConditionTerm::uint64_less_equal(
+        wide.clone(),
+        Bitvector32Term::UInt64Constant(i32::MAX as u64),
+    )) == Some(true))
+    .then_some(wide)
+}
+
 /// Coverage where either range is wide, for two equal-width ranges at one
 /// base. Each range's bounds are read as unsigned 64-bit values: a wide
 /// range's are its own, and an `Int32` range's are taken only when both
-/// are nonnegative constants, where the two readings are one number. The
+/// are checked to retain their complete nonnegative values. The
 /// required range is covered when `available.start <= required.start` and
 /// `required.end <= available.end` are decided as 64-bit comparisons. Any
 /// other pairing is not covered.
@@ -8259,14 +8335,10 @@ pub(in crate::kernel) fn wide_memory_range_covers(
     }
     let bounds = |range: &CMemoryRange| match range.wide_bounds() {
         Some((start, end)) => Some((start.clone(), end.clone())),
-        None => {
-            let start = u64::try_from(range.signed_constant_start()?).ok()?;
-            let end = u64::try_from(range.signed_constant_end()?).ok()?;
-            Some((
-                Bitvector32Term::UInt64Constant(start),
-                Bitvector32Term::UInt64Constant(end),
-            ))
-        }
+        None => Some((
+            checked_native_range_endpoint(range.start(), assumptions)?,
+            checked_native_range_endpoint(range.end(), assumptions)?,
+        )),
     };
     let (Some((available_start, available_end)), Some((required_start, required_end))) =
         (bounds(available), bounds(required))
@@ -8762,6 +8834,59 @@ pub(in crate::kernel) fn split_memory_range(
     required: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<Vec<CMemoryRange>> {
+    if available.wide_bounds().is_some() || required.wide_bounds().is_some() {
+        if available.element_width() != required.element_width()
+            || !pointers_proven_equal_for_memory_resolution(
+                available.base(),
+                required.base(),
+                assumptions,
+            )
+        {
+            return None;
+        }
+        let bounds = |range: &CMemoryRange| match range.wide_bounds() {
+            Some((start, end)) => Some((start.clone(), end.clone())),
+            None => Some((
+                checked_native_range_endpoint(range.start(), assumptions)?,
+                checked_native_range_endpoint(range.end(), assumptions)?,
+            )),
+        };
+        let (start, end) = bounds(available)?;
+        let (first, last) = bounds(required)?;
+        let holds = |lower: &Bitvector32Term, upper: &Bitvector32Term| {
+            lower == upper
+                || assumptions.decide(&ConditionTerm::uint64_less_equal(
+                    lower.clone(),
+                    upper.clone(),
+                )) == Some(true)
+        };
+        if !holds(&start, &first) || !holds(&first, &last) || !holds(&last, &end) {
+            return None;
+        }
+        let equal = |left: &Bitvector32Term, right: &Bitvector32Term| {
+            left == right
+                || assumptions.decide(&ConditionTerm::uint64_equal(left.clone(), right.clone()))
+                    == Some(true)
+        };
+        let mut residues = Vec::new();
+        if !equal(&start, &first) {
+            residues.push(CMemoryRange::new_wide(
+                available.base().clone(),
+                start,
+                first,
+                available.element_width(),
+            ));
+        }
+        if !equal(&last, &end) {
+            residues.push(CMemoryRange::new_wide(
+                available.base().clone(),
+                last,
+                end,
+                available.element_width(),
+            ));
+        }
+        return Some(residues);
+    }
     if available.element_width() != required.element_width() {
         // Subtraction is bytewise for the same reason coverage is: the
         // residue is the available bytes the requirement does not name, and
@@ -8880,13 +9005,12 @@ fn memory_ranges_proven_overlapping_with_separation(
     let left_aliases = aliases(left);
     let right_aliases = aliases(right);
     for (left_index, left_base) in left_aliases.iter().cloned().enumerate() {
-        let left_alias = left.with_bounds(left_base, left.start().clone(), left.end().clone());
+        let left_alias = left.with_base(left_base);
         for (right_index, right_base) in right_aliases.iter().cloned().enumerate() {
             if left_index != 0 || right_index != 0 {
                 crate::instrumentation::record_deterministic_work(1);
             }
-            let right_alias =
-                right.with_bounds(right_base, right.start().clone(), right.end().clone());
+            let right_alias = right.with_base(right_base);
             if memory_ranges_proven_overlapping_without_aliases(
                 &left_alias,
                 &right_alias,
@@ -8908,6 +9032,14 @@ fn memory_ranges_proven_overlapping_without_aliases(
 ) -> bool {
     if left.base().blocks_proven_distinct(right.base()) {
         return false;
+    }
+    if left.wide_bounds().is_some() || right.wide_bounds().is_some() {
+        return wide_memory_ranges_proven_overlapping(left, right, assumptions)
+            && (!use_separation
+                || !assumptions
+                    .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                        left, right,
+                    ));
     }
     // Footprints are bytes (D6): two spellings of overlapping bytes at
     // different element widths overlap, so the memory family's validity check
@@ -9343,6 +9475,42 @@ fn merge_memory_ranges(
     right: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<CMemoryRange> {
+    if left.wide_bounds().is_some() || right.wide_bounds().is_some() {
+        if left.element_width() != right.element_width() || left.base() != right.base() {
+            return None;
+        }
+        let bounds = |range: &CMemoryRange| match range.wide_bounds() {
+            Some((start, end)) => Some((start.clone(), end.clone())),
+            None => Some((
+                checked_native_range_endpoint(range.start(), assumptions)?,
+                checked_native_range_endpoint(range.end(), assumptions)?,
+            )),
+        };
+        let (first, middle) = bounds(left)?;
+        let (next, last) = bounds(right)?;
+        let equal = |a: &Bitvector32Term, b: &Bitvector32Term| {
+            a == b
+                || assumptions.decide(&ConditionTerm::uint64_equal(a.clone(), b.clone()))
+                    == Some(true)
+        };
+        if equal(&middle, &next) {
+            return Some(CMemoryRange::new_wide(
+                left.base().clone(),
+                first,
+                last,
+                left.element_width(),
+            ));
+        }
+        if equal(&last, &first) {
+            return Some(CMemoryRange::new_wide(
+                left.base().clone(),
+                next,
+                middle,
+                left.element_width(),
+            ));
+        }
+        return None;
+    }
     if left.element_width() != right.element_width() {
         // Bytes that abut still abut under either spelling, so a bytewise
         // split's residue rejoins the owner it came from instead of leaving

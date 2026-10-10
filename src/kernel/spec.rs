@@ -5143,6 +5143,16 @@ fn evaluate_spec_resource_at_state_in(
             (
                 vec![base.clone(), start.clone(), end.clone()],
                 Box::new(move |values| match values.as_slice() {
+                    [
+                        CValue::Pointer(base),
+                        CValue::UInt64(start),
+                        CValue::UInt64(end),
+                    ] => Some(CResource::Memory(CMemoryRange::new_wide(
+                        base.pointer().clone(),
+                        start.clone(),
+                        end.clone(),
+                        element_width,
+                    ))),
                     // A range from constant zero to an unsigned 64-bit bound
                     // is wide, here as in a contract clause, so a
                     // `separate(...)` or containment names the range the
@@ -5333,6 +5343,36 @@ fn lower_spec_memory_loadable_at_state_in(
     )?
     .into_iter()
     .filter_map(|path| match path.values.as_slice() {
+        [
+            CValue::Pointer(base),
+            CValue::UInt64(start),
+            CValue::UInt64(end),
+        ] => {
+            // The proposition describes the same native range as a resource
+            // clause, including its extent guards. Neither endpoint is a
+            // signed observation of the source count.
+            let range = CMemoryRange::new_wide(
+                Pointer {
+                    block: base.block.clone(),
+                    offset: crate::kernel::eval::canonical_offset_term(&base.offset),
+                },
+                crate::kernel::eval::canonical_term(start),
+                crate::kernel::eval::canonical_term(end),
+                element_width,
+            );
+            let mut obligations = path.obligations;
+            if enforce_range_guards {
+                for guard in crate::kernel::memory_range_extent_guards(&range) {
+                    add_proof_obligation(&mut obligations, assumptions, guard)?;
+                }
+            }
+            Some(SpecPropositionPath {
+                introductions: Vec::new(),
+                proposition: range.loadable_fact(memory),
+                facts: path.facts,
+                obligations,
+            })
+        }
         // A range from constant zero to an unsigned 64-bit bound is wide, and states the wide liveness fact a contract
         // holding it is given.
         [

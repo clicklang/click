@@ -4681,6 +4681,21 @@ impl PureFactContext {
         &self,
         base: &Pointer,
     ) -> impl Iterator<Item = &Proposition> {
+        self.memory_loadable_candidates_for_base_with_aliases(base, true)
+    }
+
+    pub(crate) fn memory_loadable_exact_candidates_for_base(
+        &self,
+        base: &Pointer,
+    ) -> impl Iterator<Item = &Proposition> {
+        self.memory_loadable_candidates_for_base_with_aliases(base, false)
+    }
+
+    fn memory_loadable_candidates_for_base_with_aliases(
+        &self,
+        base: &Pointer,
+        include_other_spellings: bool,
+    ) -> impl Iterator<Item = &Proposition> {
         let exact_key = (base.block.clone(), memory_blind_pointer_fingerprint(base));
         let shape_index = self.memory_loadable_shape_facts.get_or_init(|| {
             let mut index: BTreeMap<(PointerBlock, u64), BTreeSet<Proposition>> = BTreeMap::new();
@@ -4708,7 +4723,11 @@ impl PureFactContext {
             ))
             .filter(move |(key, _)| **key != exact_key)
             .flat_map(|(_, facts)| facts.iter());
-        exact.chain(fallback)
+        exact.chain(fallback.take(if include_other_spellings {
+            usize::MAX
+        } else {
+            0
+        }))
     }
 
     /// The read-defined facts stated at `pointer` for `value_type`, at one
@@ -6218,6 +6237,11 @@ fn memory_range_contained_by_exact_arithmetic(
     parent: &CMemoryRange,
     assumptions: Option<&PureFactContext>,
 ) -> bool {
+    if range.wide_bounds().is_some() || parent.wide_bounds().is_some() {
+        return assumptions.is_some_and(|assumptions| {
+            crate::kernel::primitives::wide_memory_range_covers(parent, range, assumptions)
+        });
+    }
     if range.element_width() != parent.element_width() {
         // Construction owns raw bytes while a constructor's write footprint
         // names typed fields. Constant bounds can be compared in exact byte
@@ -6245,13 +6269,6 @@ fn memory_range_contained_by_exact_arithmetic(
             return false;
         };
         return parent_start <= start && start <= end && end <= parent_end;
-    }
-    // With a wide range on either side the endpoints are compared as
-    // unsigned 64-bit values at one base, which needs the facts.
-    if range.wide_bounds().is_some() || parent.wide_bounds().is_some() {
-        return assumptions.is_some_and(|assumptions| {
-            crate::kernel::primitives::wide_memory_range_covers(parent, range, assumptions)
-        });
     }
     let Some(base_delta) = range.base().exact_element_delta_from_base(
         parent.base(),
@@ -6319,6 +6336,9 @@ pub(super) fn memory_range_contained_for_memory_resolution(
     // refused; the recursive element-index rules below require equal widths.
     if memory_range_shallowly_contained_with_facts(range, parent, assumptions) {
         return true;
+    }
+    if range.wide_bounds().is_some() || parent.wide_bounds().is_some() {
+        return false;
     }
     if range.element_width() != parent.element_width() {
         return false;
