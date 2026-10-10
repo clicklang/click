@@ -1384,10 +1384,17 @@ impl Proof<'_> {
                 surface_view = Some(rendered);
             }
         }
+        let pointer_view = match &kernel {
+            Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
+                self.trace_pointer_pair(left, right)
+            }
+            _ => None,
+        };
         crate::surface::proof_trace::TraceFact {
             kernel,
             source,
             surface_view,
+            pointer_view,
         }
     }
 
@@ -1450,6 +1457,7 @@ impl Proof<'_> {
                             kernel,
                             source: None,
                             surface_view: None,
+                            pointer_view: None,
                         }
                     };
                     if fact_index == 0
@@ -1505,6 +1513,7 @@ impl Proof<'_> {
                             kernel,
                             source: None,
                             surface_view: None,
+                            pointer_view: None,
                         }
                     }
                 })

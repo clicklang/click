@@ -446,6 +446,7 @@ mod tests {
                         kernel: at(memory.clone()),
                         source: None,
                         surface_view: None,
+                        pointer_view: None,
                     }],
                     more_facts: 0,
                     frontier: None,

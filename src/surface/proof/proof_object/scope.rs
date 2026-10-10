@@ -859,17 +859,15 @@ impl<'a> ProofScope<'a> {
                         .path()
                         .unwrap_or_else(|| "checked have".into());
                     let node = Arc::as_ptr(&successor.node) as usize;
+                    let mut fact = successor.checked_trace_fact(kernel);
+                    fact.source = Some(source.clone());
                     crate::surface::proof_trace::record(
                         node,
                         crate::surface::proof_trace::TraceStep {
                             header: format!("{location}: have {source}"),
                             source_tactic_path: self.root.site().source_tactic_path(),
                             call_source: None,
-                            facts: vec![crate::surface::proof_trace::TraceFact {
-                                kernel,
-                                source: Some(source),
-                                surface_view: None,
-                            }],
+                            facts: vec![fact],
                             more_facts: 0,
                             frontier: None,
                             resources: Vec::new(),
