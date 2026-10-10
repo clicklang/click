@@ -5,7 +5,6 @@
 //! shared DAG, include whole memory snapshots, and grow without relation to
 //! the useful part of a diagnostic.
 
-#[cfg(test)]
 use crate::kernel::CResourceFact;
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, Bitvector32Term,
@@ -601,8 +600,29 @@ impl Renderer<'_> {
                 self.push(" contains ");
                 self.resource(child);
             }
-            Proposition::CResourceComposition(_) => {
-                self.push("resource-composition(<validated resource context>)")
+            Proposition::CResourceComposition(context) => {
+                self.push("resource-composition[");
+                for (index, fact) in context.facts().iter().enumerate() {
+                    if !self.visit() {
+                        break;
+                    }
+                    if index > 0 {
+                        self.push(", ");
+                    }
+                    match fact {
+                        CResourceFact::Own(resource, quantity) => {
+                            self.push("owns ");
+                            self.resource(resource);
+                            self.push(" x ");
+                            self.bitvector(quantity);
+                        }
+                        CResourceFact::View(resource) => {
+                            self.push("views ");
+                            self.resource(resource);
+                        }
+                    }
+                }
+                self.push("]");
             }
             Proposition::CMemoryMutatesOnly {
                 before,
@@ -969,6 +989,7 @@ impl Renderer<'_> {
                 self.binary_condition_bv(a, b, "int32 >=")
             }
             ConditionTerm::Bitvector32Equal(a, b) => self.binary_condition_bv(a, b, "int32 ="),
+            ConditionTerm::Bitvector64Equal(a, b) => self.binary_condition_bv(a, b, "bits64 ="),
             ConditionTerm::AlgebraicEqual(a, b) => {
                 self.algebraic(a);
                 self.push(" = ");
@@ -1256,6 +1277,12 @@ impl Renderer<'_> {
             Bitvector32Term::Add(a, b) => self.binary_bv("+", a, b),
             Bitvector32Term::Subtract(a, b) => self.binary_bv("-", a, b),
             Bitvector32Term::Multiply(a, b) => self.binary_bv("*", a, b),
+            Bitvector32Term::Int64Add(a, b) => self.binary_bv(" +i64 ", a, b),
+            Bitvector32Term::Int64Subtract(a, b) => self.binary_bv(" -i64 ", a, b),
+            Bitvector32Term::Int64Multiply(a, b) => self.binary_bv(" *i64 ", a, b),
+            Bitvector32Term::UInt64Add(a, b) => self.binary_bv(" +u64 ", a, b),
+            Bitvector32Term::UInt64Subtract(a, b) => self.binary_bv(" -u64 ", a, b),
+            Bitvector32Term::UInt64Multiply(a, b) => self.binary_bv(" *u64 ", a, b),
             Bitvector32Term::RangeFold {
                 start,
                 end,
@@ -1361,12 +1388,21 @@ impl Renderer<'_> {
         }
     }
     fn pointer(&mut self, p: &Pointer) {
+        if let Some(definition) = crate::surface::proof_trace::pointer_definition(p) {
+            let name = self.labels.pointer_value_name(p);
+            self.push(&name);
+            self.push("=");
+            self.bitvector(&definition);
+            return;
+        }
         // An address inside an object the caller's tables name reads as its
         // source spelling, not as a block and an offset.
         if let Some(tables) = self.labels.naming.clone() {
             let (parameters, arguments) = &*tables;
             let spelled = crate::surface::diagnostics::describe_pointer(p, parameters, arguments);
-            if !spelled.contains("the pointer value at this program point") {
+            if !spelled.contains("the pointer value at this program point")
+                && !spelled.contains('…')
+            {
                 self.push(&spelled);
                 return;
             }

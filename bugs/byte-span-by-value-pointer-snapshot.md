@@ -39,13 +39,19 @@ The test currently asserts the bounded refusal; change it to the positive
 Execution completes, but simplification refuses `probe.ensures_0` with
 “the two sides read the same address in different memory snapshots”. Both
 current-field and entry-field formulations have reproduced the pointer failure.
-A focused `with_proof_trace("probe", ...)` capture at the failing step
-currently reports only “no checked simple steps recorded on this path”; it
-provides neither the decisive pointer comparison nor its snapshot transport.
-The test prints that trace with `--no-capture`. This does not establish an
-underlying cause: investigate trace coverage and the comparison before further
-local proof variations. The ordinary diagnostic supplies the snapshot mismatch
-quoted above.
+Investigation found that smart `execute()` used the lower-level checked
+statement entry point, bypassing the normal trace recorder. It now uses the
+same entry point as written `step()`, preserving the existing fact-delta trace.
+A focused `with_proof_trace("probe", ...)` capture now shows the library call
+and return. Facts without an exact Click spelling now use the existing
+bounded internal renderer, sharing stable value and snapshot labels with the
+rest of the report. They are explicitly marked as internal rather than usable
+Click proof syntax; the trace no longer substitutes counts for their content.
+The test prints that trace with `--no-capture` and checks that execution steps,
+actual fact additions and snapshot labels remain present. This still does
+not establish the pointer proof gap's underlying cause: inspect the checked
+facts before further local proof variations. The ordinary diagnostic supplies
+the snapshot mismatch quoted above.
 
 The independent reference fixture proves address, length, and unchanged input
 fields with ordinary, expanded, and retained certificates. Its field-view
@@ -54,8 +60,9 @@ requirements are essential and must remain checked.
 ## Intended regression and acceptance criteria
 
 - Preserve the by-value C++ source and its general true contract above.
-- Make the focused trace expose the failed pointer comparison and the relevant
-  checked call/entry facts, rather than an empty path.
+- Use the repaired execution fact trace to diagnose the missing checked
+  snapshot/value transport, preserving the actual facts and read identities.
+  Do not infer the cause from a bounded simplification miss alone.
 - Prove pointer and length relations ordinarily, after expansion, and with
   retained certificates, using checked snapshot/value transport.
 - Keep actual aggregate argument reads subject to source read permission and

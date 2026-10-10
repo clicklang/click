@@ -1244,6 +1244,29 @@ fn pinned_writable_byte_span_by_value_snapshot_gap_is_bounded() {
         error.proof_source_site(),
         Some(("probe.contract", &[1][..]))
     );
+    assert!(!trace.contains("<no checked simple steps"), "{trace}");
+    assert!(
+        trace.contains("adds (internal, not Click proof syntax):"),
+        "{trace}"
+    );
+    assert!(
+        !trace.contains("checked fact(s) with no exact Click spelling"),
+        "{trace}"
+    );
+    assert!(trace.contains("snapshot#"), "{trace}");
+    assert!(trace.contains("bits64 ="), "{trace}");
+    assert!(trace.contains("resource-composition[owns"), "{trace}");
+    assert!(!trace.contains("… = …"), "{trace}");
+    assert!(!trace.contains("condition(<bounded operation>)"), "{trace}");
+    assert!(
+        !trace.contains("bitvector(<bounded opaque operation>)"),
+        "{trace}"
+    );
+    assert!(
+        trace.contains(" *u64 ") && trace.contains("4u64"),
+        "{trace}"
+    );
+    assert!(trace.contains("step("), "{trace}");
     eprintln!("{trace}");
 }
 
