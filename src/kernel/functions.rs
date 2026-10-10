@@ -21417,112 +21417,144 @@ fn evaluate_contract_return_resource_context(
     // Evaluates one returned clause that has no checked entry borrow against
     // the cells the contract makes readable, including the unmatched bodies
     // of the field-bearing instances already returned beside it.
-    let evaluate_returned =
-        |resource: &CResourceSpec,
-         context: &ResourceContext,
-         canonical_by_checked: &mut BTreeMap<CResourceFact, VecDeque<CResourceFact>>,
-         budget: &mut ExecutionBudget|
-         -> ExecutionResult<Result<CResourceFact, CRuntimeError>> {
-            // Snapshot selection is carried by the normalized specification.
-            // A named instance uses post fields while retaining entry identity.
-            let state = match resource.snapshot() {
-                CResourceSnapshot::Entry => entry_state,
-                CResourceSnapshot::Current | CResourceSnapshot::Post => post_state,
-            };
-            // A returned view or a clause with no checked entry borrow still
-            // evaluates against the cells the contract makes readable.
-            let mut supply = state.resources().clone();
-            for fact in context.facts() {
-                if !matches!(fact.resource(), CResource::Instance(_))
-                    || !supply.contains_exact_representation(fact)
-                {
-                    supply = supply.unchecked_with_fact(fact.clone());
+    // The cells readable while a returned clause is evaluated: the state's
+    // own resources, the clauses returned so far, and the views both open.
+    // One supply per snapshot absorbs each returned fact once, so a return
+    // of `n` clauses costs `n` absorptions rather than `n` per clause.
+    struct ReturnSupply {
+        supply: ResourceContext,
+        absorbed: usize,
+    }
+    let new_supply = |state: &CState, entry: bool| {
+        let mut views = instance_arm_views(
+            state.resources(),
+            interface.composite_resource_definitions(),
+            state,
+            assumptions,
+        );
+        if entry {
+            views.extend(entry_opened_views.iter().cloned());
+        }
+        ReturnSupply {
+            supply: state.resources().clone().unchecked_with_facts(views),
+            absorbed: 0,
+        }
+    };
+    let mut entry_supply: Option<ReturnSupply> = None;
+    let mut post_supply: Option<ReturnSupply> = None;
+    type CanonicalOwners = BTreeMap<CResourceFact, VecDeque<CResourceFact>>;
+    let mut evaluate_returned = |resource: &CResourceSpec,
+                                 returned: &[CResourceFact],
+                                 canonical_by_checked: &mut CanonicalOwners,
+                                 budget: &mut ExecutionBudget|
+     -> ExecutionResult<Result<CResourceFact, CRuntimeError>> {
+        // Snapshot selection is carried by the normalized specification.
+        // A named instance uses post fields while retaining entry identity.
+        let (state, cached) = match resource.snapshot() {
+            CResourceSnapshot::Entry => (entry_state, &mut entry_supply),
+            CResourceSnapshot::Current | CResourceSnapshot::Post => (post_state, &mut post_supply),
+        };
+        let cached = cached.get_or_insert_with(|| {
+            new_supply(state, resource.snapshot() == CResourceSnapshot::Entry)
+        });
+        // A returned view or a clause with no checked entry borrow still
+        // evaluates against the cells the contract makes readable. A
+        // field-bearing instance this return has already produced
+        // supplies its decided arm's cells and its unmatched body's cells
+        // to the other returned clauses, exactly as it does while the
+        // entry section is evaluated. Only the contract's own returned
+        // clauses are visited.
+        for fact in &returned[cached.absorbed..] {
+            let mut views = Vec::new();
+            match fact.resource() {
+                CResource::Instance(_) if cached.supply.contains_exact_representation(fact) => {}
+                resource => {
+                    if let CResource::Instance(instance) = resource
+                        && !interface.composite_resource_definitions().is_empty()
+                    {
+                        views.extend(instance_arm_read_authority(
+                            instance,
+                            interface.composite_resource_definitions(),
+                            state,
+                            assumptions,
+                        ));
+                    }
+                    cached.supply = cached.supply.clone().unchecked_with_fact(fact.clone());
                 }
             }
-            let mut views = instance_arm_views(
-                &supply,
+            views.extend(unmatched_instance_body_views(
+                fact,
                 interface.composite_resource_definitions(),
                 state,
                 assumptions,
-            );
-            if resource.snapshot() == CResourceSnapshot::Entry {
-                views.extend(entry_opened_views.iter().cloned());
+            ));
+            if !views.is_empty() {
+                cached.supply = cached.supply.clone().unchecked_with_facts(views);
             }
-            // A field-bearing instance this return has already produced supplies
-            // its unmatched body's cells to the other returned clauses, exactly as
-            // it does while the entry section is evaluated. Only the contract's
-            // own returned clauses are visited.
-            for fact in context.facts() {
-                views.extend(unmatched_instance_body_views(
-                    fact,
-                    interface.composite_resource_definitions(),
-                    state,
-                    assumptions,
-                ));
-            }
-            let evaluation_state = state
-                .clone()
-                .with_resource_context(supply.unchecked_with_facts(views));
-            let evaluated = match evaluate_function_resource_spec_with_entry(
-                &entry_state_for_argument_reads,
-                &evaluation_state,
-                resource,
+        }
+        cached.absorbed = returned.len();
+        let evaluation_state = state.clone().with_resource_context(cached.supply.clone());
+        let evaluated = match evaluate_function_resource_spec_with_entry(
+            &entry_state_for_argument_reads,
+            &evaluation_state,
+            resource,
+            assumptions,
+            budget,
+        )? {
+            Ok(resource) => resource,
+            Err(error) => return Ok(Err(error)),
+        };
+        let evaluated = if let Some((output, population)) = &quantity_output
+            && std::ptr::eq(resource, *output)
+        {
+            if !crate::kernel::c_resources_directly_match(
+                population,
+                evaluated.resource(),
                 assumptions,
-                budget,
-            )? {
-                Ok(resource) => resource,
-                Err(error) => return Ok(Err(error)),
-            };
-            let evaluated = if let Some((output, population)) = &quantity_output
-                && std::ptr::eq(resource, *output)
+            ) {
+                return Ok(Err(CRuntimeError::FunctionContract(
+                    "quantity exchange must return members of the same population".into(),
+                )));
+            }
+            CResourceFact::own_quantity(
+                population.clone(),
+                evaluated
+                    .owned_quantity_term()
+                    .expect("owned output")
+                    .clone(),
+            )
+        } else if resource.role() == CResourceTransferRole::Produce {
+            match consumed_control_frontier.directly_supporting_fact(&evaluated, assumptions) {
+                Some(source) if source.is_own() => {
+                    let CResourceFact::Own(_, quantity) = &evaluated else {
+                        return Ok(Ok(evaluated));
+                    };
+                    CResourceFact::Own(source.resource().clone(), quantity.clone())
+                }
+                _ => evaluated,
+            }
+        } else {
+            evaluated
+        };
+        Ok(Ok(
+            if resource.role() == CResourceTransferRole::Borrow
+                && resource.snapshot() == CResourceSnapshot::Entry
+                && !resource.is_view()
             {
-                if !crate::kernel::c_resources_directly_match(
-                    population,
-                    evaluated.resource(),
-                    assumptions,
-                ) {
-                    return Ok(Err(CRuntimeError::FunctionContract(
-                        "quantity exchange must return members of the same population".into(),
-                    )));
-                }
-                CResourceFact::own_quantity(
-                    population.clone(),
-                    evaluated
-                        .owned_quantity_term()
-                        .expect("owned output")
-                        .clone(),
-                )
-            } else if resource.role() == CResourceTransferRole::Produce {
-                match consumed_control_frontier.directly_supporting_fact(&evaluated, assumptions) {
-                    Some(source) if source.is_own() => {
-                        let CResourceFact::Own(_, quantity) = &evaluated else {
-                            return Ok(Ok(evaluated));
-                        };
-                        CResourceFact::Own(source.resource().clone(), quantity.clone())
-                    }
-                    _ => evaluated,
-                }
+                canonical_by_checked
+                    .get_mut(&evaluated)
+                    .and_then(VecDeque::pop_front)
+                    .unwrap_or(evaluated)
             } else {
                 evaluated
-            };
-            Ok(Ok(
-                if resource.role() == CResourceTransferRole::Borrow
-                    && resource.snapshot() == CResourceSnapshot::Entry
-                    && !resource.is_view()
-                {
-                    canonical_by_checked
-                        .get_mut(&evaluated)
-                        .and_then(VecDeque::pop_front)
-                        .unwrap_or(evaluated)
-                } else {
-                    evaluated
-                },
-            ))
-        };
+            },
+        ))
+    };
     // A clause whose address loads a cell a later returned clause supplies
     // waits for it: clause order does not decide what a contract returns,
     // just as it does not decide what it requires.
     let mut deferred: Vec<(&CResourceSpec, CRuntimeError)> = Vec::new();
+    let mut returned: Vec<CResourceFact> = Vec::new();
     for resource in interface.resource_ensures().iter().take(count) {
         if let Some(guard) = resource.guard() {
             match evaluate_guarded_contract_condition_with_loop_entry(
@@ -21551,7 +21583,7 @@ fn evaluate_contract_return_resource_context(
         let resource = if let Some(entry_borrow) = entry_borrow {
             entry_borrow
         } else {
-            match evaluate_returned(resource, &context, &mut canonical_by_checked, budget)? {
+            match evaluate_returned(resource, &returned, &mut canonical_by_checked, budget)? {
                 Ok(resource) => resource,
                 Err(error) if resource_clause_failure_awaits_supply(&error) => {
                     deferred.push((resource, error));
@@ -21564,11 +21596,12 @@ fn evaluate_contract_return_resource_context(
         // the whole return is normalized once at the end, not after every
         // clause.
         context = match context
-            .try_compose_into_valid_context_delaying_normalization([resource], assumptions)
+            .try_compose_into_valid_context_delaying_normalization([resource.clone()], assumptions)
         {
             Ok(context) => context,
             Err(error) => return Ok(Err(resource_context_runtime_error(error))),
         };
+        returned.push(resource);
     }
     // Each retry pass returns at least one waiting clause or stops, so the
     // passes are bounded by the number of clauses that waited.
@@ -21576,15 +21609,16 @@ fn evaluate_contract_return_resource_context(
         let waited = deferred.len();
         let mut waiting = Vec::new();
         for (resource, error) in std::mem::take(&mut deferred) {
-            match evaluate_returned(resource, &context, &mut canonical_by_checked, budget)? {
-                Ok(returned) => {
+            match evaluate_returned(resource, &returned, &mut canonical_by_checked, budget)? {
+                Ok(fact) => {
                     context = match context.try_compose_into_valid_context_delaying_normalization(
-                        [returned],
+                        [fact.clone()],
                         assumptions,
                     ) {
                         Ok(context) => context,
                         Err(error) => return Ok(Err(resource_context_runtime_error(error))),
                     };
+                    returned.push(fact);
                 }
                 Err(retry_error) if resource_clause_failure_awaits_supply(&retry_error) => {
                     waiting.push((resource, error));
@@ -25061,15 +25095,18 @@ fn resource_context_contains_exact_owned_fact(
         return exact_parts.validity_error(assumptions).is_none()
             && exact_parts.satisfies_fact(required, assumptions);
     }
-    context.direct_match_candidates(required).any(|available| {
-        if !available.is_own() || available.family() != required.family() {
-            return false;
-        }
-        ResourceContext::new_with_equalities(assumptions)
-            .unchecked_with_fact(available.clone())
-            .without_fact_delaying_normalization(required, assumptions)
-            .is_some_and(|remaining| remaining.is_empty())
-    })
+    context
+        .direct_match_candidates_for(required, assumptions)
+        .into_iter()
+        .any(|available| {
+            if !available.is_own() || available.family() != required.family() {
+                return false;
+            }
+            ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(available.clone())
+                .without_fact_delaying_normalization(required, assumptions)
+                .is_some_and(|remaining| remaining.is_empty())
+        })
 }
 
 /// The proposition asserting the opposite of `proposition`, without adding a

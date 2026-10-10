@@ -1103,14 +1103,23 @@ fn evaluate_c_fragment_with_binding_policy(
     logical_arguments: bool,
     original: Option<&ContractExpression>,
 ) -> Result<CValue, String> {
-    let mut states = FixedStateLowering::new(values, array_refs, state, state, result);
-    if logical_arguments {
-        states.entry_values.extend(values.clone());
-        states.current_values.extend(values.clone());
-    }
     let fragment = ContractExpression::CFragment(expression.clone());
+    let elaborated = original.unwrap_or(&fragment);
+    // Bind only the names the fragment reads: a contract evaluates one
+    // fragment per clause, and binding every value in scope for each would
+    // make a contract with many parameters quadratic.
+    let mut states =
+        FixedStateLowering::for_expression(elaborated, values, array_refs, state, state, result);
+    if logical_arguments {
+        for name in crate::surface::lowering::contract_expression_referenced_names(elaborated) {
+            if let Some(value) = values.get(&name) {
+                states.entry_values.insert(name.clone(), value.clone());
+                states.current_values.insert(name, value.clone());
+            }
+        }
+    }
     let spec = crate::surface::lowering::elaborate_fixed_state_expression(
-        original.unwrap_or(&fragment),
+        elaborated,
         states.element_types,
         &states.entry_state,
         states.entry_values,

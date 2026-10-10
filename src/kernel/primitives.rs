@@ -6390,6 +6390,11 @@ pub(super) struct ResourceContextIndex {
     /// branch that tests the value (`publication::resolve_observed_publications`).
     pub(super) observed_publications: PersistentMap<(), ResourceEntryIds>,
     pub(super) exact_shapes: PersistentMap<(ResourceFamily, String, usize), ResourceEntryIds>,
+    /// Tokens and composites keyed by shape and by the root of their first
+    /// argument when it is a pointer (`None` otherwise). Every pointer
+    /// parameter shares one block, so a lookup by shape alone would compare
+    /// a parameter's fact with every other parameter's.
+    pub(super) exact_shapes_by_root: PersistentMap<ShapeRootKey, ResourceEntryIds>,
     pub(super) memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     /// Iterated guarded-ownership facts keyed by both blocks their
     /// denotation depends on: the element base and the guard cells. A store,
@@ -6469,6 +6474,10 @@ impl ConditionMatchKey {
 /// The block and first symbolic atom (canonical) of a memory base; see
 /// `ResourceContextIndex::owned_memory_by_root`.
 pub(super) type MemoryBaseRoot = (PointerBlock, Option<PointerOffsetTerm>);
+
+/// A token or composite's shape and first-pointer root; see
+/// `ResourceContextIndex::exact_shapes_by_root`.
+pub(super) type ShapeRootKey = (ResourceFamily, String, usize, Option<MemoryBaseRoot>);
 
 impl std::fmt::Debug for ResourceContext {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
