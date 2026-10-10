@@ -119,7 +119,18 @@ The result function specifies the exact whole-tree model; balance, parent
 consistency, and in-order contents follow across the entire loop. All 39
 expansion-audit sites pass. Mutations reject either missing cursor assignment,
 missing parent blackening, and incorrect sibling recoloring. Rotations remain
-on both sides.
+outside that sidecar's selector.
+
+`rbtree_erase_color_flips_outer.click` extends repeated propagation with a
+terminal case-4 rotation in either direction. It admits a nonempty black focus
+after propagation, a near subtree of either color, and arbitrary children of
+the red far node. The same contract also covers red-parent and root exits.
+Every continuing edge decreases the context, and the result specifies the
+exact balanced, parent-consistent whole tree with unchanged in-order contents.
+All 21 proofs and 168 expansion-audit sites pass. Eight mutation checks reject
+broken cursor ascent, parent blackening, sibling recoloring, either parent
+child link, far-child blackening, and near-child reparenting. Inner rotations
+and red-sibling cases after propagation remain.
 
 The combined sidecar has 1,091 lines, against the pinned function's 182 lines
 including its remaining rotations. On this development build it profiles at
