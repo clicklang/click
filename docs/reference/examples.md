@@ -136,7 +136,6 @@ authorities.
 
 - `mdtests/pointer_range.md`: basic pointer viewability.
 - `mdtests/pointer_range_missing_requires.md`: missing viewable range fails.
-- `mdtests/pointer_range_segment_syntax.md`: segment syntax.
 - `mdtests/fill3_memory_postconditions.md`: post-state memory facts.
 - `mdtests/fill3_bad_memory_postcondition.md`: failing memory postcondition.
 - `mdtests/write_second_old_keeps_first.md`: old-value frame fact.
@@ -220,10 +219,12 @@ authorities.
   parameter retains the ABI stride for indexed field loads and stores.
 - `mdtests/struct_by_value_embedded_copy.md`: by-value structs recursively copy
   fields from an embedded struct into fresh address-backed storage.
-- `mdtests/struct_by_value_embedded_array_copy.md`: by-value structs flatten
-  one-dimensional embedded-struct arrays into typed leaf-field copies.
-- `mdtests/struct_by_value_embedded_array_multidim_copy.md`: by-value structs
-  flatten multidimensional embedded-struct arrays row-major with ABI strides.
+- `mdtests/struct_by_value_embedded_array_copy.md` and
+  `mdtests/struct_by_value_embedded_array_multidim_copy.md`: partial embedded
+  arrays cannot acquire initialized fields through by-value argument binding.
+- `mdtests/struct_by_value_embedded_array_initialized_copy.md`: fully initialized
+  one- and two-dimensional embedded arrays retain ABI stride and independent
+  copied values.
 - `mdtests/struct_field_address.md`: addresses of direct and nested scalar
   struct fields preserve ABI offsets and update the selected leaf through the
   resulting pointer.
@@ -283,7 +284,6 @@ authorities.
   from its enclosing arbitrary-iteration frontier.
 - `mdtests/count_to_three_bad_assert.md`: assertion failure.
 - `mdtests/fill_n_symbolic_pointer_loop.md`: symbolic pointer-loop safety.
-- `mdtests/fill_n_segment_invariant.md`: quantified written-segment invariant.
 - `mdtests/fill_tail_keeps_first.md`: old-value invariant.
 - `mdtests/copy_n_segment_invariant.md`: copied segment invariant.
 
@@ -291,8 +291,6 @@ authorities.
 
 - `mdtests/immutable_stack_locals.md`: stack-local writes with nothing owned.
 - `mdtests/fill_n_loop_mutable_segment.md`: a loop over an owned segment.
-- `mdtests/loop_frame_segment_shapes.md`: shifted, growing, and multi-segment
-  loop effects.
 - `mdtests/shifted_loop_effect_preserves_prefix.md`: effect summary preserves
   prefix.
 - `mdtests/resource_context_write.md`: first owned-memory resource-context
@@ -401,35 +399,18 @@ sequence:
   exposes one view layer, so nested facts require repeated observation.
 - `mdtests/composite_resource_observe_hides_permissions.md`: `observe(...)`
   does not expose contained write permission.
-- `mdtests/composite_resource_struct_owned_buffer.md`: a conservative
-  struct-owned-buffer pattern with explicit owner and buffer parameters.
-- `mdtests/composite_resource_owner_buffer_field_dependent.md`: the desired
-  field-dependent owner-buffer shape, with the derived buffer resource and
-  non-aliasing fact packaged inside the composite resource.
 - `mdtests/composite_resource_owned_buffer_len_cap_data.md`: a len/cap/data
   owned-buffer resource with a stronger "has room" pre-state resource that
   folds back to the ordinary well-formed buffer after push.
-- `mdtests/composite_resource_owned_buffer_observe_len.md`: a len/cap/data
-  owned-buffer getter that uses `observe(...)` to read through the folded
-  resource without unfolding owned contained resources.
-- `mdtests/composite_resource_owned_buffer_get.md`: first-cell backing-buffer
-  read through a len/cap/data owned-buffer resource.
-- `mdtests/composite_resource_owned_buffer_observe_indexed.md`:
-  field-dependent indexed backing-array read with only `observe(...)`.
-- `mdtests/composite_resource_owned_buffer_set.md`: first-cell backing-buffer
-  mutation that unfolds and folds the owned composite resource.
-- `mdtests/composite_resource_owned_buffer_clear.md`: field mutation that
-  restores the same owned composite resource after clearing `len`.
-- `mdtests/composite_resource_execute_until_direct_mutate.md`: first passing
-  execution proof, pausing before a direct mutation so the composite
-  resource can be unfolded at the mutation point.
-- `mdtests/composite_resource_step_direct_mutate.md`: statement-level
-  execution proof, using `step()` to interleave execution with
-  `observe`, `unfold`, and `fold`.
-- `mdtests/composite_resource_view_then_mutate.md`: caller observes an owned
-  composite before a view-only helper call, then unfolds before a later owned
-  mutation. The helper call transfers the folded view through its verified
-  contract without exposing contained resources to the caller.
+- `mdtests/composite_resource_viewable_fact.md`: `observe(...)` on a folded
+  composite resource exposes the `viewable(...)` fact an indexed read needs,
+  without unfolding it.
+- `mdtests/composite_resource_fold_before_call.md`: statement-level execution
+  proof, using `step()` to interleave execution with `unfold` and `fold` so
+  the refolded composite resource satisfies the following call.
+- `mdtests/resource_verbs_composite_proofs.md`: an `owns` composite with an
+  explicit unfold/execute/fold proof, a `views` composite opened for a read,
+  and a `consumes`/`produces` resource-state transition.
 - `mdtests/opaque_function_contract_call.md`: a mutating helper call executes
   as one step and exposes only its verified resource and memory postconditions.
 - `mdtests/opaque_call_requires_verified_rule.md`: expected-fail coverage for a
@@ -444,9 +425,6 @@ sequence:
 - `mdtests/opaque_resource_proposition_contract.md`: `separate(...)`,
   `contains(...)`, and `viewable(...)` cross an opaque call as ordinary
   state-indexed propositions.
-- `mdtests/composite_resource_observe_nested_separate_contains.md`: explicit
-  chained observation exposes `contains(...)` and `separate(...)` facts for a
-  nested composite resource.
 - `mdtests/composite_resource_nested_observe_not_automatic.md`: expected-fail
   coverage for the deliberate boundary where `auto` does not recursively
   observe nested composite resources.
@@ -524,8 +502,6 @@ sequence:
   predicates and `obtain (...)` after explicit predicate unfolding.
 - `mdtests/cstr_stdlib.md`: first C-string predicates over `uint8[]`, including
   exact spec length, bounded terminator, and plain existential string facts.
-- `mdtests/cstr_dynamic_viewability.md`: a dynamically viewable C-string
-  witness used to verify the variable-length `strlen` contract.
 - `mdtests/cstr_dynamic_indexed_read.md`: a `strlen` result used for a real
   indexed terminator read with an explicitly framed dynamic view.
 - `mdtests/cstr_dynamic_indexed_read_requires_permission.md`: the matching
@@ -540,8 +516,6 @@ sequence:
 - `mdtests/compare_swap2_permutation.md`: stdlib `permutation` proof over a
   current array and `old(p)`.
 - `mdtests/sort3_sorted.md`: three-cell sorting.
-- `mdtests/sort3_permutation.md`: stdlib `permutation` proof for three-cell
-  sorting.
 - `mdtests/sort3_permutation_predicate.md`: explicit permutation packaged as a
   predicate.
 - `mdtests/bubble_sort3_loop_sorted.md`: loop-shaped three-cell sorting.
@@ -593,11 +567,10 @@ sequence:
   or a return expression, and each is named with the call step's `let` binder;
   `mdtests/call_result_in_condition.md` is the minimal form of that naming,
   with `mdtests/call_result_wrong_value.md` and
-  `mdtests/call_result_discarded.md` as its negatives. The negative rotations
-  are `mdtests/rotation_model_rejects_dropped_subtree.md`,
-  `mdtests/rotation_model_rejects_reused_child.md`, and
-  `mdtests/rotation_model_rejects_swapped_order.md`, with
-  `mdtests/rotation_model_preserved.md` as their passing sibling.
+  `mdtests/call_result_discarded.md` as its negatives. The negative rotation
+  `mdtests/rotation_model_rejects_swapped_order.md` keeps every node and
+  subtree but breaks the in-order sequence, so it fails only at the model
+  equation the example's own rotations prove.
   `tree_contains` also relates the C test `root == target` to the model's
   identity payload; `mdtests/model_identity_pointer_payload.md` is the minimal
   form of that bridge, `mdtests/model_identity_pointer_payload_rejects_other_cell.md`
@@ -689,10 +662,11 @@ a subtree and `ctx_at(child, root)` for the frame above it.
   `mdtests/rb_at_rejects_wrong_color_bit.md` and
   `mdtests/rb_at_rejects_wrong_parent_word.md`, which refuse a fold that
   proposes a color or a parent the node's own word does not carry.
-- `mdtests/rb_ctx_change_child.md`: `__rb_change_child` under one contract
-  covering all three frames, `Top`, `Left`, and `Right`, since the cell it
-  writes always belongs to the frame. The negative
-  `mdtests/rb_change_child_rejects_wrong_slot.md` exchanges the two writes.
+- `mdtests/rb_change_child_rejects_wrong_slot.md`: `__rb_change_child` with
+  its two writes exchanged, contracted on a `Left` frame, is refused because
+  the frame's sibling is no longer its child. The unchanged helper runs
+  inlined in all three frames, `Top`, `Left`, and `Right`, in
+  `mdtests/rb_replace_node.md`.
 - `mdtests/rb_first_last.md`: the unchanged `rb_first` and `rb_last`, the
   descending walk that produces a frame and a focused subtree with
   `plug(ctx.model, sub.model) == old(t.model)` and states the result as the
@@ -704,21 +678,20 @@ a subtree and `ctx_at(child, root)` for the frame above it.
   victim, whose model effect is the identity substitution `rb_substitute`, in
   all three frame positions. `mdtests/rb_replace_node_with_children.md` is the
   general case, where each child's parent word is rewritten and refolded.
-  `mdtests/rb_replace_node_keeps_victim.md` and
-  `mdtests/rb_replace_node_keeps_parent_link.md` are the negatives that claim
-  the tree still holds the victim, or that the splice left the root cell alone.
-- `mdtests/rb_child_load_identity_across_unfold.md`: a child's packed word
-  keeps one load identity across the `unfold` that exposed it, which is what
-  lets the rewritten word's arm fact discharge exactly at the refold. Its
-  negative is `mdtests/rb_child_load_identity_rejects_a_wrong_color.md`.
+  `mdtests/rb_replace_node_keeps_parent_link.md` is the negative that claims
+  the splice left the root cell alone.
+- `mdtests/rb_child_load_identity_rejects_a_wrong_color.md`: a child's packed
+  word keeps one load identity across the `unfold` that exposed it, but that
+  identity proves nothing about the value, so a refold proposing the wrong
+  color is refused. The passing refold of the rewritten word is the child
+  case of `mdtests/rb_replace_node_with_children.md`.
 - `mdtests/rb_ascending_walk_to_root.md`: the ascent every rbtree fixup loop
   performs, on `rb_at(p)` and `ctx_at(child, root)` with `decreases c;`. Each
   iteration consumes one frame and folds the node it owned into a larger
   focused subtree, and the exit is an arm refutation from the failed guard.
-  `mdtests/rb_ascent_conjunctive_guard.md` and
-  `mdtests/rb_ascent_parent_link_guard.md` are the same ascent under
-  `rb_next`'s short-circuit guard, the second reading the parent's link through
-  the folded frame.
+  `mdtests/rb_ascent_parent_link_guard.md` is the same ascent under
+  `rb_next`'s short-circuit guard, reading the parent's link through the
+  folded frame.
 - `mdtests/rb_next.md`: the unchanged Linux `rb_next` with its successor
   contract, certified. The descent and the ascent loop are written out, each
   with a checked structural measure, and the section after the ascent hands
@@ -732,7 +705,7 @@ a subtree and `ctx_at(child, root)` for the frame above it.
   certified, the mirror of `rb_next.md` with its own list lemmas where the
   model's are not symmetric; `mdtests/rb_prev_rejects_a_dropped_context.md` is
   its negative.
-- `mdtests/rb_augment_callbacks_table.md` and the neighboring
+- `mdtests/rb_augment_callbacks_const_suite.md` and the neighboring
   `rb_augment_callbacks_helper*.md` fixtures: the augmented-rbtree callback
   suite as a const table of function pointers, with the effect and ownership
   negatives around it.

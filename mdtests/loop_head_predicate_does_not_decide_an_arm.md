@@ -1,7 +1,9 @@
 # a predicate that does not decide an arm refutes nothing
 
-The negative of
-[`loop_head_predicate_refutes_an_arm.md`](loop_head_predicate_refutes_an_arm.md).
+The negative of the loop-head refutation in
+[`rb_ascending_walk_to_root.md`](rb_ascending_walk_to_root.md), where the
+guard fact `parent != 0` decides `ctx_node_is`'s declared body at
+`Context::Top`.
 `list_nonempty_or_null` is `1` at both constructors — at `Nil` because the
 pointer is null, at `Cons` because the head is this node — so
 `list_nonempty_or_null(l.model, node) == 1` says nothing about which

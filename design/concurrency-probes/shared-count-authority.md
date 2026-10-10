@@ -61,11 +61,12 @@ implementation below, but typed-use sharing of them remains refused.
 
 The local test now distinguishes membership from body permission:
 
-- `mdtests/population_mutex_helper_held.md` initializes three units, deposits a
-  wrapper containing one, and retains two. An ordinary helper whose contract
-  says `owns member(p)` opens the population and reads its body under the lock.
-- `mdtests/population_mutex_helper_unheld.md` calls the same helper without
-  acquisition and fails with `Requires owns mutex_guard(&p->mutex)`.
+- `mdtests/authority_mutex_locked_release.md` locks the mutex, opens the
+  acquired control, and spends a lent member and decrements the counter under
+  the population authority the control carries.
+- `mdtests/population_mutex_helper_unheld.md` calls an ordinary helper that
+  borrows the population authority and counter without acquisition and fails
+  with `Requires owns authority(member(...))`.
 - Companion negative fixtures reject a unit hidden in another wrapper at
   publication or release, a second mutex for the same population, and full
   population cleanup before mutex destruction.
@@ -330,21 +331,17 @@ is part of this design.
 
 ## What actually verifies today
 
-`mdtests/counted_resource_contribution_counter.md` is a passing sequential
-control. Its seven verified functions:
+`mdtests/population_consumption_at_close.md` is a passing sequential
+control. Its verified functions:
 
-1. Write zero and produce three `remaining` units by folding the memory body.
-2. Preserve one unit and consume another while incrementing the uint32 value.
-3. Call initialization and two contributions, unfold the final unit, and prove
-   the returned value is exactly two.
-4. Initialize directly after the C assignment with `fold(3 of remaining(p))`,
-   call the two contributions, and again prove the returned value is two.
-5. Initialize and recover all three units with `unfold(3 of remaining(p))`,
-   proving the untouched value is zero.
-6. Make one contribution, recover the two remaining units with
-   `unfold(2 of remaining(p))`, and prove the value is one.
-7. Recover a positive symbolic quantity `n` using `unfold(n of remaining(p))`
-   when the contract supplies ownership and proves `count(remaining(p)) == n`.
+1. Preserve one unit and consume another while incrementing the uint32 value,
+   directly, around a nested call, and on either branch.
+2. Initialize directly after the C assignment with `fold(3 of remaining(p))`,
+   call two contributions, unfold the final unit, and prove the returned value
+   is exactly two.
+
+`mdtests/population_cleanup_consumes_whole_quantity.md` recovers all three
+units after the same initialization with `unfold(3 of remaining(p))`.
 
 The arithmetic proof explicitly establishes that subtracting one leaves at
 least one unit and preserves the body equality. Existing population transitions

@@ -582,6 +582,10 @@ impl<'a> Proof<'a> {
                     &refusal,
                     self.facts().assumptions(),
                 )
+                .map(|mut comparison| {
+                    comparison.name_values(|left, right| self.trace_pointer_pair(left, right));
+                    comparison
+                })
             } else {
                 None
             };

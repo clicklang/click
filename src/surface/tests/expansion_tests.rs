@@ -1,5 +1,98 @@
 use super::*;
 
+#[test]
+fn builtin_header_null_pointer_expansion_round_trips() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/c_builtin_string_and_stdlib_headers.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c0_claim_source(source, &sources, "copy_pair", CProofClaim::Grouped).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+}
+
+// A synthesized read through a struct-pointer field must keep the scalar
+// stride when printed; `p->kid[1]` would advance by an entire child record.
+#[test]
+fn struct_pointer_field_scalar_read_expansion_keeps_its_width() {
+    let c = r#"
+        struct child { int32 refs; int32 payload; };
+        struct parent { struct child* kid; };
+        void put(struct parent* p, struct child* kid) { p->kid = kid; }
+        int32 read(struct parent* p) {
+            struct child* kid = p->kid;
+            return kid->payload;
+        }
+        int32 caller(struct parent* p, struct child* kid) {
+            put(p, kid);
+            int32 observed = read(p);
+            return observed;
+        }
+    "#;
+    let source = r#"
+        verifying "read.c";
+        void put(struct parent* p, struct child* kid) {
+            owns p->kid;
+            ensures p->kid == kid;
+        } by { execute(); simp(); }
+        int32 read(struct parent* p) {
+            views p->kid;
+            views p->kid->payload;
+            ensures result == p->kid->payload;
+        } by { execute(); simp(); }
+        int32 caller(struct parent* p, struct child* kid) {
+            owns p->kid;
+            views kid->payload;
+            ensures result == kid->payload;
+        } by {
+            step(put(p, kid), {});
+            step();
+            step(read(p), {});
+            have p->kid == kid;
+            have observed == kid->payload;
+            execute();
+            simp();
+        }
+    "#;
+    let sources = [("read.c", c)];
+    let expanded = expand_c0_claim_source(source, &sources, "caller", CProofClaim::Grouped)
+        .expect("the scalar read should expand through a byte address");
+    assert!(expanded.contains("load_int32("), "{expanded}");
+    verify_c0_sources(&expanded, &sources)
+        .expect("the printed read must retain its four-byte offset");
+}
+
+// Whole-claim expansion must print hidden record ownership and fold inputs
+// in the syntax the author can write, then independently verify them.
+#[test]
+fn hidden_record_resource_expansion_round_trips() {
+    for name in [
+        "a_hidden_record_resource_is_held_without_a_name",
+        "a_hidden_record_resource_passes_through_a_call",
+        "a_resource_without_fields_names_a_child_with_fields",
+    ] {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("mdtests/{name}.md"));
+        let markdown = std::fs::read_to_string(&path).unwrap();
+        let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+        let source = fixture.click_source.as_deref().unwrap();
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c0_claim_source(source, &sources, "get", CProofClaim::Grouped)
+            .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+        verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| panic!("{name}: {error:?}"));
+    }
+}
+
 // The reconstruction rule must survive checked tactic expansion and retained
 // verification, rather than working only during ordinary execution search.
 #[test]
@@ -412,8 +505,8 @@ int32 caller(int32 x, int32 y) {
 #[test]
 fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
     let c_source = r#"
-        int32 read_terminator(uint8 haystack[], int32 known_len) {
-            int32 length;
+        uint64 read_terminator(uint8 haystack[], uint64 known_len) {
+            uint64 length;
             length = strlen(haystack);
             return length;
         }
@@ -421,13 +514,13 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
     let click_source = r#"
         verifying "source_identity.c";
 
-        int32 read_terminator(uint8 haystack[], int32 known_len) {
-            requires 0 <= known_len;
-            requires defined(known_len + 1);
-            requires viewable(haystack[0..known_len + 1]);
+        uint64 read_terminator(uint8 haystack[], uint64 known_len) {
+            requires known_len < 18446744073709551615u64;
+            requires defined(known_len + 1u64);
+            requires viewable(haystack[0..known_len + 1u64]);
             requires cstr_readable(haystack);
-            views haystack[0..known_len + 1];
-            ensures result >= 0;
+            views haystack[0..known_len + 1u64];
+            ensures result < 18446744073709551615u64;
         } by {
             execute();
             simp();
@@ -461,7 +554,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
     )
     .expect("the source-identity retry should expand into source");
     assert!(
-        expanded_source.contains("obtain (len: int32) { at(function.entry,"),
+        expanded_source.contains("obtain (len: uint64) { at(function.entry,"),
         "the expansion should state the established entry existential: {expanded_source}"
     );
     assert!(

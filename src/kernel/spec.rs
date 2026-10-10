@@ -5374,12 +5374,14 @@ fn lower_spec_memory_loadable_at_state_in(
             })
         }
         // A range from constant zero to an unsigned 64-bit bound is wide, and states the wide liveness fact a contract
-        // holding it is given.
+        // holding it is given. A constant bound stays wide too, so the
+        // proposition is the one a symbolic bound lowers to once that bound
+        // is substituted by the constant.
         [
             CValue::Pointer(base),
             CValue::Int32(Bitvector32Term::Constant(0)),
             CValue::UInt64(end),
-        ] if end.uint64_as_const().is_none() => {
+        ] => {
             let range = CMemoryRange::new_wide(
                 Pointer {
                     block: base.block.clone(),

@@ -3971,23 +3971,27 @@ impl<'a> Proof<'a> {
                 // automatic local that has since left scope. Its recorded
                 // pair remains a valid kernel fact, but the unanchored
                 // spelling cannot be used as a source `rewrite`.
-                let names_a_dead_local = self
-                    .focused_outcome_data()
-                    .is_some_and(|data| !data.call_routes.is_empty())
-                    && self.premise_fixed_state_view().is_some_and(|view| {
-                        let mut current_names = BTreeSet::new();
-                        crate::surface::collect_current_proposition_variables(
-                            candidate,
-                            &mut current_names,
-                        );
-                        current_names.iter().any(|name| {
-                            !view.state.locals().contains_name(name)
-                                && view
-                                    .recorded_snapshots
-                                    .iter()
-                                    .any(|(_, snapshot)| snapshot.locals().contains_name(name))
-                        })
-                    });
+                // Only names in this candidate are queried. An outcome's
+                // recorded pair cannot make an out-of-scope temporary legal
+                // source, even when no call-outcome route was selected.
+                let names_a_dead_local = self.premise_fixed_state_view().is_some_and(|view| {
+                    let mut current_names = BTreeSet::new();
+                    crate::surface::collect_current_proposition_variables(
+                        candidate,
+                        &mut current_names,
+                    );
+                    current_names.iter().any(|name| {
+                        !(name == "result" && view.result.is_some())
+                            && !view.state.locals().contains_name(name)
+                            && !view.pre_state.locals().contains_name(name)
+                            && !premise_anchor
+                                .and_then(|anchor| view.recorded_snapshots.get(anchor))
+                                .is_some_and(|snapshot| snapshot.locals().contains_name(name))
+                            && self.local_binding(name).is_none()
+                            && self.local_integer_values().get(name).is_none()
+                            && self.local_algebraic_values().get(name).is_none()
+                    })
+                });
                 // A statement selector can be recorded again on a later
                 // loop iteration. Its old pair remains a checked fact, but
                 // an explicit snapshot spelling must still denote it now.
@@ -7845,6 +7849,10 @@ impl<'a> Proof<'a> {
         };
         let mut proof = witnessed;
         for source in &source_leaves {
+            // At the entry snapshot the leaves already close the goal.
+            if proof.focused_discharged() {
+                return Ok(Some(proof));
+            }
             let Some(extracted) =
                 attempt::candidate_outcome(proof.apply_step(ProofStep::Extract(source.clone())))?
             else {
@@ -7852,7 +7860,102 @@ impl<'a> Proof<'a> {
             };
             proof = extracted;
         }
+        if proof.focused_discharged() {
+            return Ok(Some(proof));
+        }
+        if let Some(closed) = proof.try_simp_closure_with_surfaces(&source_leaves)? {
+            return Ok(Some(closed));
+        }
+        // The leaves hold at function entry. A conjunct this frontier does
+        // not state exactly, such as a wide range or a universal over reads,
+        // is carried here by one explicit transport of its entry form.
+        let Some(goal) = proof.surface_goal().cloned() else {
+            return Ok(None);
+        };
+        let mut conjuncts = Vec::new();
+        let mut pending = vec![goal];
+        while let Some(proposition) = pending.pop() {
+            match proposition {
+                ClickProposition::And(left, right) => {
+                    pending.push(*right);
+                    pending.push(*left);
+                }
+                conjunct => conjuncts.push(conjunct),
+            }
+        }
+        let mut carried_any = false;
+        for conjunct in conjuncts {
+            check_verification_deadline()?;
+            let Ok(lowered) =
+                proof.lower_surface_proposition(&conjunct, "caller requirement conjunct")
+            else {
+                return Ok(None);
+            };
+            if proof.facts().pure_assumption_available(&lowered) {
+                continue;
+            }
+            let Some(carried) = proof.try_carry_entry_conjunct(&conjunct)? else {
+                return Ok(None);
+            };
+            proof = carried;
+            carried_any = true;
+        }
+        if !carried_any {
+            return Ok(None);
+        }
         proof.try_simp_closure_with_surfaces(&source_leaves)
+    }
+
+    /// Proves `conjunct` at this frontier from its function-entry form: a
+    /// plain fact by one `transport`, and a guarded universal by introducing
+    /// its binder and guard, instantiating the entry universal there, and
+    /// transporting that one conclusion. Every step is the checked operation.
+    fn try_carry_entry_conjunct(
+        &self,
+        conjunct: &ClickProposition,
+    ) -> Result<Option<Self>, ClickError> {
+        let entry = |proposition: &ClickProposition| ClickProposition::At {
+            selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Function,
+                kind: ProgramPointKind::Entry,
+            }),
+            proposition: Box::new(proposition.clone()),
+        };
+        let transport = |proposition: &ClickProposition| ProofStep::TransportUsing {
+            source: entry(proposition),
+            target: proposition.clone(),
+            premises: vec![entry(proposition)],
+        };
+        let steps = match conjunct {
+            ClickProposition::ForAll { name, body, .. } => {
+                let ClickProposition::Implies(guard, consequent) = body.as_ref() else {
+                    return Ok(None);
+                };
+                vec![
+                    ProofStep::IntroAs(name.clone()),
+                    ProofStep::Intro,
+                    ProofStep::InstantiateUsing {
+                        quantified: entry(conjunct),
+                        argument: ContractExpression::CFragment(CExpression::Variable(
+                            name.clone(),
+                        )),
+                        premises: Some(vec![guard.as_ref().clone()]),
+                    },
+                    transport(consequent),
+                ]
+            }
+            _ => vec![transport(conjunct)],
+        };
+        let Some(mut scope) = attempt::candidate_outcome(self.begin_have(conjunct.clone()))? else {
+            return Ok(None);
+        };
+        for step in steps {
+            let Some(next) = attempt::candidate_outcome(scope.apply_step(step))? else {
+                return Ok(None);
+            };
+            scope = next;
+        }
+        attempt::candidate_outcome(scope.join())
     }
 
     pub(in crate::surface::proof) fn try_statement_step_with_apply(
@@ -8376,6 +8479,7 @@ fn source_backed_call_requirement_surface(
             let argument = match caller_parameter_through_identity_cast(
                 argument,
                 context.parsed_function.parameters(),
+                &execution.core.state,
             ) {
                 Some(slot) => CExpression::Variable(
                     context.parsed_function.parameters()[slot]
@@ -8431,6 +8535,7 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
             let caller_slot = caller_parameter_through_identity_cast(
                 &resolved.arguments[callee_slot],
                 context.parsed_function.parameters(),
+                &execution.core.state,
             )?;
             Some((predicate_argument_slot, caller_slot))
         })
@@ -8483,6 +8588,7 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
 fn caller_parameter_through_identity_cast(
     argument: &CExpression,
     parameters: &[syntax::C0Parameter],
+    state: &crate::kernel::CState,
 ) -> Option<usize> {
     let (name, cast_type) = match argument {
         CExpression::Variable(name) => (name, None),
@@ -8497,9 +8603,22 @@ fn caller_parameter_through_identity_cast(
         },
         _ => return None,
     };
+    // A local holding a parameter's own pointer value, as `p = bytes;`
+    // leaves it, names the same storage; the caller has already required
+    // that no effect separates entry from this call.
     let slot = parameters
         .iter()
-        .position(|parameter| parameter.name() == name)?;
+        .position(|parameter| parameter.name() == name)
+        .or_else(|| {
+            let held = state.scalar_local_value(name)?;
+            let mut matching = parameters.iter().enumerate().filter(|(_, parameter)| {
+                state.scalar_local_value(parameter.name()).as_ref() == Some(&held)
+            });
+            match (matching.next(), matching.next()) {
+                (Some((slot, _)), None) => Some(slot),
+                _ => None,
+            }
+        })?;
     match cast_type {
         Some(target_type) if target_type != parameters[slot].c_type().to_kernel_type() => None,
         _ => Some(slot),

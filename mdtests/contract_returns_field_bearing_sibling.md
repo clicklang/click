@@ -1,8 +1,7 @@
 # A contract returns an instance whose argument a field-bearing sibling supplies
 
-The return-side twin of
-[`contract_owns_through_field_bearing_instance.md`](contract_owns_through_field_bearing_instance.md).
-`probe` borrows `r: prefix_region(region)`, which carries a plain field and
+A folded field-bearing instance supplies a sibling clause's argument at the
+return as well as at entry. `probe` borrows `r: prefix_region(region)`, which carries a plain field and
 owns the region descriptor, and `st: live_count(region->arena)`, whose argument
 loads `region->arena` from a cell `r` owns. Both are returned when the body
 finishes, still folded.

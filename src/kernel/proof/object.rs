@@ -1205,19 +1205,29 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .open_branches
             .get(self.focused_branch)
             .ok_or(PropositionCloseError::Unavailable)?;
-        if !branch.state.facts.contains_proper_conjunct(&proposition)
-            && !branch
+        let proposition = if branch.state.facts.contains_proper_conjunct(&proposition)
+            || branch
                 .state
                 .facts
                 .contains_discharged_implication_consequent(&proposition)
-            && !branch
+            || branch
                 .state
                 .facts
                 .assumptions()
                 .contains_algebraic_constructor_field_equality(&proposition)
         {
+            proposition
+        } else if let Some(conjunct) = branch
+            .state
+            .facts
+            .alpha_equivalent_proper_conjunct(&proposition)
+        {
+            // The cited universal under other binder names: extract the
+            // conjunct itself.
+            conjunct
+        } else {
             return Err(PropositionCloseError::ExtractUnavailable(proposition));
-        }
+        };
         let added_facts = (!branch.state.facts.contains_top_level(&proposition))
             .then(|| proposition.clone())
             .into_iter()

@@ -6,9 +6,8 @@ at the arm's constructor, the predicate's value there, and the `contradiction`
 between them.
 
 A `contradiction` refutes the path it stands on wherever on that path it
-stands, inside a loop's `preserve`
-([`preserve_arm_contradiction_after_a_have.md`](preserve_arm_contradiction_after_a_have.md))
-and in a `match` at the function's own level. An arm that only bridges facts
+stands, inside a loop's `preserve` and in a `match` at the function's own
+level. An arm that only bridges facts
 before its `contradiction` (`have`s, unfolds, theorem applications, but no C
 step) runs that bridge inside the arm, and the arm is then excluded from the
 facts the bridge reached, exactly as a sole `contradiction` excludes it. It

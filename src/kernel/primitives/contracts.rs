@@ -2452,6 +2452,38 @@ fn collect_stated_loadable_extent_guards(
             collect_stated_loadable_extent_guards(left, guards, every_spelling);
             collect_stated_loadable_extent_guards(right, guards, every_spelling);
         }
+        // A wide range's object-size guard, in the element form its contract
+        // states. Only a citation asks for it: a 32-bit-free count has no
+        // further guard a proof owes.
+        Proposition::CMemoryLoadable {
+            bytes, wide: true, ..
+        } => {
+            if !every_spelling {
+                return;
+            }
+            let (elements, width) = match bytes {
+                Bitvector32Term::UInt64Multiply(elements, width) => {
+                    match width
+                        .uint64_as_const()
+                        .and_then(|width| u32::try_from(width).ok())
+                    {
+                        Some(width) if width > 1 => (elements.as_ref(), width),
+                        _ => return,
+                    }
+                }
+                _ => (bytes, 1),
+            };
+            let guard = Proposition::ConditionIs(
+                ConditionTerm::uint64_less_equal(
+                    elements.clone(),
+                    Bitvector32Term::UInt64Constant(i64::MAX as u64 / u64::from(width)),
+                ),
+                true,
+            );
+            if !guards.contains(&guard) {
+                guards.push(guard);
+            }
+        }
         Proposition::CMemoryLoadable { bytes, .. } => {
             let Some(element_width) = stated_extent_element_width(bytes) else {
                 return;

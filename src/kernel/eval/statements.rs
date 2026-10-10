@@ -1038,32 +1038,40 @@ fn missing_aggregate_copy_write_resource(
     None
 }
 
-fn missing_aggregate_copy_read_resource(
+pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     state: &CState,
     source: &Pointer,
     layout: &CAggregateLayout,
     assumptions: &PureFactContext,
 ) -> Option<CResourceFact> {
-    if !crate::kernel::eval::is_external_memory_pointer(source)
-        || assumptions.should_allow_symbolic_contract_loads()
+    if (!crate::kernel::eval::is_external_memory_pointer(source)
+        && !state.memory.requires_explicit_scalar_ownership(source)
+        && !assumptions.should_require_owned_expression_loads())
+        || (assumptions.should_allow_symbolic_contract_loads()
+            && !assumptions.should_require_owned_expression_loads())
     {
         return None;
     }
     for field in layout.fields() {
+        crate::instrumentation::record_deterministic_work(1);
         if !crate::kernel::reasoning::resource_context_has_read(
             state.resources(),
             &source.offset_by_bytes(field.offset_bytes()),
             field.c_type().byte_width(),
             assumptions,
         ) {
-            return Some(CResourceFact::view_memory(CMemoryRange::new(
-                source.offset_by_bytes(field.offset_bytes()),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
-            )));
+            return Some(CResourceFact::view_memory(
+                CMemoryRange::new_with_element_width(
+                    source.offset_by_bytes(field.offset_bytes()),
+                    0.into(),
+                    field.c_type().byte_width().into(),
+                    1,
+                ),
+            ));
         }
     }
     for union in layout.unions() {
+        crate::instrumentation::record_deterministic_work(1);
         let pointer = source.offset_by_bytes(union.offset_bytes());
         if !crate::kernel::reasoning::resource_context_has_read(
             state.resources(),
@@ -1071,11 +1079,14 @@ fn missing_aggregate_copy_read_resource(
             union.size_bytes(),
             assumptions,
         ) {
-            return Some(CResourceFact::view_memory(CMemoryRange::new(
-                pointer,
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
-            )));
+            return Some(CResourceFact::view_memory(
+                CMemoryRange::new_with_element_width(
+                    pointer,
+                    0.into(),
+                    union.size_bytes().into(),
+                    1,
+                ),
+            ));
         }
     }
     None

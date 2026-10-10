@@ -6185,7 +6185,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
         )
         .is_none()
     );
-    assert!(c_external_function_rule(function.clone()).is_none());
+    assert!(c_external_function_rule(function.clone()).is_some());
     assert!(CFunctionContract::new("ConstructionCallback", function.clone()).is_none());
     let mut environment = CExecutionEnvironment::new()
         .with_function(function.clone())

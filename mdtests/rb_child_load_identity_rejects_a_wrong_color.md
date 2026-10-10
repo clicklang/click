@@ -1,9 +1,11 @@
 # Naming the unfolded child's cells does not make the fold vacuous
 
-The negative beside `mdtests/rb_child_load_identity_across_unfold.md`. The same
-C rewrites the child's packed word, but the refold proposes `Color::Black` for
-a child whose arm bound an arbitrary color. The exact body-fact check still has
-to discharge `(((old & 1) | address(new_node)) & 1) == color_bit(Color::Black)`
+`rb_set_parent(victim->rb_left, new_node)` rewrites the unfolded child's packed
+word, and an `unfold` names the child's cells so that the C's read of that
+word is the load its arm spoke about (the positive refold of rewritten child
+words is `mdtests/rb_replace_node_with_children.md`). Here the refold
+proposes `Color::Black` for a child whose arm bound an arbitrary color. The
+exact body-fact check still has to discharge `(((old & 1) | address(new_node)) & 1) == color_bit(Color::Black)`
 and the premise says only that the word's bit is `color_bit(lc)`, so the fold
 is refused. Naming the cells one `unfold` exposes settles *which* value the two
 sides talk about; it proves nothing about that value.

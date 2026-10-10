@@ -1892,14 +1892,14 @@ int32 increment(int32 x) {
 
 #[test]
 fn expanded_post_execution_apply_retains_its_facts_for_the_closer() {
-    let c_source = "int32 inspect(uint8 p[], int32 len) { return 0; }";
+    let c_source = "int32 inspect(uint8 p[], uint64 len) { return 0; }";
     let click_source = r#"verifying "inspect.c";
-int32 inspect(uint8 p[], int32 len) {
-    requires viewable(p[0..len + 1]);
+int32 inspect(uint8 p[], uint64 len) {
+    requires viewable(p[0..len + 1u64]);
     requires cstr_len(p, len);
-    ensures 0 <= len by {
+    ensures p[len] == '\0' by {
         execute();
-        apply(cstr_len_nonnegative(p, len));
+        apply(cstr_len_has_terminator(p, len));
         simp();
     }
 }"#;
@@ -1913,7 +1913,7 @@ int32 inspect(uint8 p[], int32 len) {
     )
     .expect("post-execution apply should expand");
 
-    assert!(expanded.contains("apply(cstr_len_nonnegative(p, len)) using"));
+    assert!(expanded.contains("apply(cstr_len_has_terminator(p, len)) using"));
     verify_c0_sources(&expanded, &[("inspect.c", c_source)])
         .expect("explicit apply conclusions should remain available to the trailing simp");
 }

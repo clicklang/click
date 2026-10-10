@@ -1112,6 +1112,11 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         // A proof `let r = step(...)` holds the exact scalar result, so its
         // user-chosen name wins over the synthesized C assignment target.
         for (name, expression) in self.0.state().locals().values.iter() {
+            if let ContractExpression::CFragment(CExpression::Value(CValue::Pointer(pointer))) =
+                expression
+            {
+                labels.immutable_pointer_name(pointer.pointer(), name);
+            }
             if let ContractExpression::CFragment(CExpression::Value(value)) = expression
                 && let Some(variable) = diagnostic_value_variable(value)
             {
@@ -1198,6 +1203,16 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         if !crate::surface::proof_trace::enabled_for(claim) {
             return None;
         }
+        if let Some(branch) = self.0.state().open_branches().get(self.0.focused_branch())
+            && let Some(execution) = branch.state.execution.as_deref()
+        {
+            for (selector, state) in execution.presentation.recorded_snapshots.recent(32) {
+                labels.source_state(
+                    state,
+                    crate::surface::diagnostics::describe_snapshot_selector(selector),
+                );
+            }
+        }
         let lineage = trace_path_lineage(&self.1, self.0.focused_branch());
         let mut trace = crate::surface::proof_trace::render(
             claim,
@@ -1211,6 +1226,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         if let Some(comparison) = &self.5 {
             comparison.append_to(&mut trace, labels);
         }
+        crate::surface::proof_trace::append_legend(&mut trace, labels);
         Some(trace)
     }
 }
@@ -1384,10 +1400,17 @@ impl Proof<'_> {
                 surface_view = Some(rendered);
             }
         }
+        let pointer_view = match &kernel {
+            Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
+                self.trace_pointer_pair(left, right)
+            }
+            _ => None,
+        };
         crate::surface::proof_trace::TraceFact {
             kernel,
             source,
             surface_view,
+            pointer_view,
         }
     }
 
@@ -1450,6 +1473,7 @@ impl Proof<'_> {
                             kernel,
                             source: None,
                             surface_view: None,
+                            pointer_view: None,
                         }
                     };
                     if fact_index == 0
@@ -1505,6 +1529,7 @@ impl Proof<'_> {
                             kernel,
                             source: None,
                             surface_view: None,
+                            pointer_view: None,
                         }
                     }
                 })

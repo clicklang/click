@@ -2057,13 +2057,14 @@ fn child_argument_trace_reports_the_rejected_pair() {
     let c = "struct node { struct node *left; struct node *right; }; void f(struct node *p) { p->right = 0; }";
     let source = r#"
 verifying "f.c";
-spec enum Tree { Empty, Node(struct node*, Tree, Tree) }
+spec enum Tree { Empty, Node(struct node*, struct node*, Tree, Tree) }
 resource tree(p: struct node*) {
     field model: Tree;
     match model {
         Tree::Empty => { fact p == 0; },
-        Tree::Node(id, lm, rm) => {
+        Tree::Node(id, link, lm, rm) => {
             owns p->left; owns p->right;
+            fact p->right == link;
             owns left: tree(p->left); owns right: tree(p->right);
             fact p != 0; fact p == id;
             fact left.model == lm; fact right.model == rm;
@@ -2077,10 +2078,12 @@ void f(struct node* p) {
 } by {
     match t.model {
         Tree::Empty => { contradiction(t.model == Tree::Empty); },
-        Tree::Node(id, lm, rm) => {
+        Tree::Node(id, link, lm, rm) => {
             let { left: l, right: r } = unfold(t);
+            mark before_store;
+            have p->right == link by { assumption(); }
             step();
-            let t = fold(tree(id), { model: Tree::Node(id, lm, rm) }, { left: l, right: r });
+            let t = fold(tree(id), { model: Tree::Node(id, link, lm, rm) }, { left: l, right: r });
             execute(); simp();
         },
     }
@@ -2097,11 +2100,18 @@ void f(struct node* p) {
         let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
         let report = error.trace_context_report().unwrap();
         assert!(report.contains("child `right`, argument 1"), "{report}");
-        assert!(report.contains("supplied: value#"), "{report}");
-        assert!(report.contains("required: value#"), "{report}");
-        assert!(report.contains("null pointer (0)"), "{report}");
+        assert!(report.contains("supplied: at("), "{report}");
+        assert!(report.contains("required: 0"), "{report}");
         assert!(
-            report.contains("defining pointer read at snapshot#"),
+            report.contains("at(statement(1).entry, p)->right"),
+            "{report}"
+        );
+        let have = report.split("have p->right == link").nth(1).unwrap();
+        let added = have.lines().find(|line| line.contains("adds")).unwrap();
+        assert!(
+            added.contains("->right")
+                && added.contains("link")
+                && (added.contains("at(") || added.contains("adds at ")),
             "{report}"
         );
         assert!(!report.contains("Missing:"), "{report}");

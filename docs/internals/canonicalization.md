@@ -58,7 +58,7 @@ two-stage composition:
    value is the pointer a typed load of the same cell produces: the cell's
    block offset by that load's variable at the pointee's width. So owning a
    second descriptor, which materializes its pointer fields, does not rename
-   a load of the first (`mdtests/unfold_region_beside_an_object_of_its_type.md`).
+   a load of the first (`mdtests/unfold_region_then_write_a_descriptor_of_its_type.md`).
 2. **Replace each remaining load with its load variable**: the kernel
    variable identified by the cell and the snapshot of its last write, found
    by walking the memory derivation DAG.
@@ -221,8 +221,7 @@ refers to one through a snapshot form such as `at(statement(3).entry, x)` or
   `*new = *victim; rb_set_parent(victim->rb_left, new);` is exactly that shape:
   the child's word is read after the copy, and the fold's exact body-fact check
   needs it to be the variable the child's own arm spoke about
-  (`mdtests/rb_child_load_identity_across_unfold.md`, and
-  `mdtests/rb_replace_node_with_children.md`). Certification
+  (`mdtests/rb_replace_node_with_children.md`). Certification
   checks this without re-running the projection: an instance rewrite may change
   memory only by adding cells, and each added cell must hold the canonical load
   form of its own pointer at the pre-rewrite snapshot
@@ -233,10 +232,10 @@ refers to one through a snapshot form such as `at(statement(3).entry, x)` or
   held field-bearing instance always has, so `project_initial_composite_resource_cores`
   projects it as it projects a selected arm. A store to a separately owned
   object keeps those cells when the store opens the held instance one body
-  layer (`docs/internals/resource-tracker.md`, "Two owners are two places"),
-  so an `unfold` after the store reloads a pointer field at the name the
-  instance was folded at, not at a fresh post-store name
-  (`mdtests/unfold_region_after_writing_a_descriptor_of_its_type.md`).
+  layer (`docs/internals/resource-tracker.md`, "Two owners are two places";
+  `mdtests/a_store_keeps_a_cell_a_folded_instance_owns.md`), so an `unfold`
+  after the store reloads a pointer field at the name the instance was folded
+  at, not at a fresh post-store name.
 - Surface synthesis resolves load variables it cannot otherwise express
   through the registry (`resolve_load_variables_from_registry`) —
   the sanctioned display direction: rendering a variable as source syntax

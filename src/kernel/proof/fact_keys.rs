@@ -3305,12 +3305,14 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
             memory,
             base,
             bytes,
-            wide: false,
+            wide,
         } => {
             if !ALLOW_LOADS {
                 return None;
             }
             bindings.raw_snapshot_load_seen = true;
+            // A wide (64-bit extent) range keys like a narrow one, with its
+            // width kind kept in the key so the two never alpha-match.
             // Loadability is an explicit checked premise, so its memory
             // snapshot is part of the alpha identity.  Raw MemoryLoad terms
             // keep the existing snapshot-blind selection behavior above;
@@ -3333,7 +3335,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                         bindings,
                         next_binder,
                     )?,
-                    wide: false,
+                    wide: *wide,
                 })
             })();
             bindings.snapshot_aware = prior_snapshot_aware;

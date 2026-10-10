@@ -4780,6 +4780,20 @@ pub(super) fn execute_c_function_call_paths(
             });
             continue;
         };
+        if let Some(outcome) = aggregate_argument_read_refusal(
+            caller_state,
+            function.parameters(),
+            &argument_values,
+            &path_assumptions,
+        ) {
+            paths.push(CFunctionPath {
+                outcome,
+                facts: arguments_path.facts,
+                obligations: argument_obligations,
+                loan_evidence: empty_checked_loan_evidence_sequence(),
+            });
+            continue;
+        }
         let Some(callee_state) =
             bind_c_function_arguments(caller_state, function, &argument_values)
         else {
@@ -7741,6 +7755,19 @@ fn prepare_verified_function_call<'a>(
             loan_evidence: empty_checked_loan_evidence_sequence(),
         }));
     };
+    if let Some(outcome) = aggregate_argument_read_refusal(
+        caller_state,
+        contract_interface.parameters(),
+        &argument_values,
+        &path_assumptions,
+    ) {
+        return Ok(Err(CFunctionPath {
+            outcome,
+            facts: arguments_path.facts,
+            obligations: argument_obligations,
+            loan_evidence: empty_checked_loan_evidence_sequence(),
+        }));
+    }
     let Some(mut entry_state) = bind_c_contract_arguments(
         caller_state,
         contract_interface,
@@ -18571,6 +18598,43 @@ fn local_view_range_within_block(range: &CMemoryRange, memory: &CMemory) -> bool
     memory.access_in_bounds(&base, bytes)
 }
 
+/// Check actual argument reads before allocating the callee's private copy.
+fn aggregate_argument_read_refusal(
+    state: &CState,
+    parameters: &[CParameter],
+    values: &[CValue],
+    assumptions: &PureFactContext,
+) -> Option<CFunctionOutcome> {
+    for (parameter, value) in parameters.iter().zip(values) {
+        let Some(layout) = parameter.aggregate_layout() else {
+            continue;
+        };
+        let CValue::Pointer(source) = value else {
+            continue;
+        };
+        // Actual calls use the same read boundary as ordinary aggregate
+        // assignment. Entry images are evaluated values, not caller reads.
+        if let Some(resource) = crate::kernel::eval::missing_aggregate_copy_read_resource(
+            state,
+            source.pointer(),
+            layout,
+            assumptions,
+        ) {
+            return Some(CFunctionOutcome::RuntimeError(
+                CRuntimeError::MissingResource {
+                    resource: Box::new(resource),
+                },
+            ));
+        }
+        if aggregate_copy_reads_uninitialized(&state.memory, source.pointer(), layout) {
+            return Some(CFunctionOutcome::UndefinedBehavior(
+                CUndefinedBehavior::UninitializedRead,
+            ));
+        }
+    }
+    None
+}
+
 /// Whole-struct assignment copies every member (C11 6.5.16.1p2), but
 /// `copy_aggregate_fields` skips a carried field with no source cell. Copying
 /// from never-written source storage would then leave the destination's own
@@ -18765,8 +18829,8 @@ pub(super) fn copy_aggregate_fields_checked(
 
 // Module-private on purpose: cross-module aggregate copies must go through
 // `copy_aggregate_fields_checked` so the uninitialized-source read is always
-// reported. (Aggregate argument binding below keeps the raw form for now;
-// diagnosing uninitialized reads of call arguments is a separate follow-up.)
+// reported. Actual call arguments are checked before binding; entry proof
+// images use the raw form because their incoming aggregate values are evaluated.
 fn copy_aggregate_fields(
     mut memory: CMemory,
     source: &Pointer,
@@ -19043,6 +19107,74 @@ fn copy_aggregate_union_member(
 #[cfg(test)]
 mod aggregate_union_copy_tests {
     use super::*;
+
+    // A private argument copy must not manufacture read permission or turn
+    // an unwritten source object into an initialized parameter.
+    #[test]
+    fn aggregate_argument_reads_require_authority_and_initialization_and_scale() {
+        for count in [4u32, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let source = Pointer {
+                block: "aggregate-argument-source".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let layout = CAggregateLayout::new(
+                count * 4,
+                4,
+                (0..count)
+                    .map(|i| CAggregateField::new(format!("field_{i}"), i * 4, CType::Int32))
+                    .collect(),
+            );
+            let parameters =
+                [CParameter::new("input", CType::Int32Pointer).with_aggregate_layout(layout)];
+            let values = [CValue::pointer(source.clone())];
+            let assumptions = PureFactContext::new();
+            let empty = CMemory::new().with_uninitialized_block(source.block.clone(), count * 4);
+            let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+                CMemoryRange::new_with_element_width(
+                    source.clone(),
+                    0.into(),
+                    (count * 4).into(),
+                    1,
+                ),
+            ));
+            let unwritten = CState::new()
+                .with_memory(empty.clone())
+                .with_resource_context(resources.clone());
+            assert!(matches!(
+                aggregate_argument_read_refusal(&unwritten, &parameters, &values, &assumptions),
+                Some(CFunctionOutcome::UndefinedBehavior(
+                    CUndefinedBehavior::UninitializedRead
+                ))
+            ));
+            let mut memory = empty;
+            for i in 0..count {
+                memory = memory.store(source.offset_by_bytes(i * 4), int32(i));
+            }
+            let unreadable = CState::new().with_memory(memory);
+            assert!(matches!(
+                aggregate_argument_read_refusal(&unreadable, &parameters, &values, &assumptions),
+                Some(CFunctionOutcome::RuntimeError(
+                    CRuntimeError::MissingResource { .. }
+                ))
+            ));
+            let readable = unreadable.with_resource_context(resources);
+            // Warm the resource index outside the measurement. The measured
+            // field walk must grow with the selected aggregate, not its square.
+            assert!(
+                aggregate_argument_read_refusal(&readable, &parameters, &values, &assumptions)
+                    .is_none()
+            );
+            let (refusal, work) = crate::instrumentation::measure_deterministic_work(|| {
+                aggregate_argument_read_refusal(&readable, &parameters, &values, &assumptions)
+            });
+            assert!(refusal.is_none());
+            assert!(
+                work <= count as usize * 128 + 128,
+                "{count} fields: {work} work"
+            );
+        }
+    }
 
     #[test]
     fn copying_a_union_drops_destination_views_absent_from_source() {

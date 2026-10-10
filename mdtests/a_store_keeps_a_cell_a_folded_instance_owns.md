@@ -9,8 +9,8 @@ member than the one holding the written bytes, so the partition law places
 the two apart exactly as it does for two flat members. The postcondition
 reads the entry value without unfolding `r`.
 
-The negatives are `a_store_forgets_a_cell_of_a_matched_folded_instance.md`
-(a matched body is not opened) and
+Only an unconditional, unmatched body is opened this way: a matched body,
+decided or not, is not. The negative is
 `a_store_through_an_equal_descriptor_forgets_a_folded_instance_cell.md` (the
 addresses are proven equal).
 

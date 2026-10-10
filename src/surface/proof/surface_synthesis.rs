@@ -3322,7 +3322,72 @@ fn synthesize_parameter_field_indexed_int32_load(
             .or_else(|| pointer_field_and_index(right, Some(left)))?,
         PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => return None,
     };
-    Some(ContractExpression::Index(Box::new(field), Box::new(index)))
+    // Preserve array indexing for a declared int32 pointer, including fields
+    // reached through automatic struct-pointer locals. Their layout is already
+    // indexed by local name in the function's synthesis scope.
+    if let ContractExpression::Field {
+        base, field: name, ..
+    } = &field
+        && let ContractExpression::CFragment(CExpression::Variable(owner)) = base.as_ref()
+    {
+        let has_scalar_stride = |layout: &syntax::C0StructLayout| {
+            layout.fields().get(name).is_some_and(|declaration| {
+                declaration.c_type().to_kernel_type() == CType::Int32Pointer
+                    && declaration.struct_name().is_none()
+                    && declaration.union_name().is_none()
+            })
+        };
+        let declared_array = parameters
+            .iter()
+            .find(|parameter| parameter.name() == owner)
+            .and_then(|parameter| parameter.struct_layout())
+            .map(has_scalar_stride)
+            .unwrap_or_else(|| {
+                SYNTHESIS_STRUCT_OWNERS.with(|slot| {
+                    let owners = slot.borrow();
+                    owners
+                        .as_ref()
+                        .and_then(|owners| owners.locals.get(owner))
+                        .is_some_and(has_scalar_stride)
+                })
+            });
+        if declared_array {
+            return Some(ContractExpression::Index(Box::new(field), Box::new(index)));
+        }
+    }
+    // The kernel indexed a four-byte scalar. The field's written C type
+    // may instead be a pointer to a struct, whose indexing scales by that
+    // struct's size. Spell the address through the supported byte view and
+    // retain the scalar load's width explicitly.
+    let bytes = ContractExpression::CUnary {
+        lowered: CExpression::Cast {
+            expression: Box::new(contract_expression_to_c_fragment(&field)?),
+            target_type: CType::UInt8Pointer,
+            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        },
+        operand: Box::new(field),
+    };
+    let address = ContractExpression::Add(
+        Box::new(bytes),
+        Box::new(ContractExpression::Multiply(
+            Box::new(index),
+            Box::new(ContractExpression::CFragment(CExpression::Value(int32(4)))),
+        )),
+    );
+    Some(ContractExpression::CUnary {
+        lowered: CExpression::TypedLoad {
+            pointer: Box::new(contract_expression_to_c_fragment(&address)?),
+            value_type: CType::Int32,
+            volatile: false,
+            pointee_constant: false,
+            source: Default::default(),
+        },
+        operand: Box::new(address),
+    })
 }
 
 /// A scalar field of a struct-pointer local whose cell currently holds
@@ -3840,6 +3905,35 @@ fn synthesize_owned_pointer_field(pointer: &Pointer, state: &CState) -> Option<C
     })
 }
 
+/// The element index `pointer` is at from `base`, as the term a source index
+/// expression lowers to. A 64-bit index (`bytes[k]` for a `uint64` `k`) is
+/// its own 64-bit value: spelled back, it lowers to the same displacement,
+/// and every synthesized candidate is re-lowered and compared before use.
+fn synthesis_element_index(
+    pointer: &Pointer,
+    base: &Pointer,
+    element_width: u32,
+) -> Option<Bitvector32Term> {
+    if let Some(index) = pointer.element_index_from_base_with_width(base, element_width) {
+        return Some(index);
+    }
+    if pointer.block != base.block {
+        return None;
+    }
+    let displacement = match &pointer.offset {
+        offset if base.offset == PointerOffsetTerm::Constant(0) => offset,
+        PointerOffsetTerm::Add(left, right) if left.as_ref() == &base.offset => right.as_ref(),
+        PointerOffsetTerm::Add(left, right) if right.as_ref() == &base.offset => left.as_ref(),
+        _ => return None,
+    };
+    match displacement {
+        PointerOffsetTerm::Int64Scaled {
+            value, byte_width, ..
+        } if *byte_width == i64::from(element_width) => Some(value.as_ref().clone()),
+        _ => None,
+    }
+}
+
 fn synthesize_surface_pointer(
     pointer: &Pointer,
     parameters: &[syntax::C0Parameter],
@@ -3863,7 +3957,7 @@ fn synthesize_surface_pointer(
                 .pointee_type()?
                 .to_kernel_type()
                 .byte_width();
-            let index = pointer.element_index_from_base_with_width(base, element_width)?;
+            let index = synthesis_element_index(pointer, base, element_width)?;
             let base = CExpression::Variable(parameter.name().to_string());
             if index == Bitvector32Term::Constant(0) {
                 return Some(base);
@@ -3888,7 +3982,7 @@ fn synthesize_surface_pointer(
             return None;
         };
         let element_width = base.c_type().pointee_type()?.byte_width();
-        let index = pointer.element_index_from_base_with_width(base, element_width)?;
+        let index = synthesis_element_index(pointer, base, element_width)?;
         let base = CExpression::Variable(surface_local_name(name).to_string());
         if index == Bitvector32Term::Constant(0) {
             return Some(base);

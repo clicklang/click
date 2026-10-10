@@ -946,8 +946,10 @@ impl<'a> Proof<'a> {
             checked.push(fact);
         }
         let mut transition = self.checked_fact_transition(locals, facts, false, added, checked);
-        if let Some((chosen_body, variable, sort @ (Sort::CInt32 | Sort::CPointer(_)))) =
-            first_opened
+        // Every machine-integer witness projects as `int32` does: a C string's
+        // `size_t` length is chosen the same way as an `int32` index.
+        if let Some((chosen_body, variable, sort)) = first_opened
+            && (sort.machine_integer_type().is_some() || matches!(sort, Sort::CPointer(_)))
             && let Some(projection) =
                 self.build_existential_projection(binding, &chosen_body, variable, &sort)?
             && let Some(branch) = transition.branch.as_mut()
@@ -1056,7 +1058,11 @@ impl<'a> Proof<'a> {
                         view.click_function_environment,
                     )
                     .map_err(|message| self.step_error(message))?;
-                    if lowered == leaf {
+                    // A quantified leaf re-lowers with fresh binders, so it
+                    // is the same proposition up to alpha-renaming.
+                    if lowered == leaf
+                        || crate::kernel::proof::propositions_are_alpha_equal(&lowered, &leaf)
+                    {
                         leaves.push(ExistentialProjectionLeaf {
                             connective_path: path,
                             surface,
@@ -2686,16 +2692,7 @@ impl<'a> Proof<'a> {
         let Some(binding) = self.local_binding(&projection.chosen_name) else {
             return Ok(None);
         };
-        let binding_is_chosen = match binding {
-            ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::Variable(variable),
-            ))) => *variable == projection.chosen_variable,
-            ContractExpression::CFragment(CExpression::Value(CValue::Pointer(pointer))) => {
-                pointer.pointer().offset == PointerOffsetTerm::Variable(projection.chosen_variable)
-            }
-            _ => false,
-        };
-        if !binding_is_chosen {
+        if !binding_names_chosen_variable(binding, projection.chosen_variable) {
             return Ok(None);
         }
         let surface = self.substitute_fixed_state_locals_in_proposition(surface)?;
@@ -2758,29 +2755,28 @@ impl<'a> Proof<'a> {
         let Some(binding) = self.local_binding(&projection.chosen_name) else {
             return Ok(None);
         };
-        let binding_is_chosen = match binding {
-            ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::Variable(variable),
-            ))) => *variable == projection.chosen_variable,
-            ContractExpression::CFragment(CExpression::Value(CValue::Pointer(pointer))) => {
-                pointer.pointer().offset == PointerOffsetTerm::Variable(projection.chosen_variable)
-            }
-            _ => false,
-        };
-        if !binding_is_chosen {
+        if !binding_names_chosen_variable(binding, projection.chosen_variable) {
             return Ok(None);
         }
-        let surface = self.substitute_fixed_state_locals_in_proposition(surface)?;
+        // A leaf names the chosen binder, which the citation may already
+        // spell as its bound value; compare both after the same substitution.
+        let cited = self.substitute_fixed_state_locals_in_proposition(surface)?;
+        let mut leaf_surfaces = Vec::with_capacity(projection.leaves.len());
+        for leaf in &projection.leaves {
+            leaf_surfaces.push(self.substitute_fixed_state_locals_in_proposition(&leaf.surface)?);
+        }
         let mut matches = projection
             .leaves
             .iter()
-            .filter(|leaf| leaf.surface == surface);
-        let Some(leaf) = matches.next() else {
-            return Ok(None);
+            .zip(&leaf_surfaces)
+            .filter(|(leaf, leaf_surface)| leaf.surface == cited || **leaf_surface == cited)
+            .map(|(leaf, _)| leaf);
+        let leaf = match (matches.next(), matches.next()) {
+            (Some(leaf), None) => leaf,
+            _ => return Ok(None),
         };
-        if matches.next().is_some()
-            || proposition_at_connective_path(&projection.chosen_body, &leaf.connective_path)
-                != Some(&leaf.kernel)
+        if proposition_at_connective_path(&projection.chosen_body, &leaf.connective_path)
+            != Some(&leaf.kernel)
         {
             return Ok(None);
         }
@@ -3347,6 +3343,77 @@ impl<'a> Proof<'a> {
     /// over some other base. Reporting the first for all three sent readers to
     /// state a range they had already stated. Keep the rejected candidates so
     /// the refusal can name which side it was looking at.
+    /// A `size_t`-bounded goal range and a constant 32-bit range stated over
+    /// the same base: the stated range covers the goal exactly when the
+    /// goal's byte count is at most the constant, which is what to name.
+    fn unproved_wide_range_goal_reason(
+        &self,
+        goal: &ClickProposition,
+        target: &str,
+    ) -> Option<String> {
+        let Proposition::CMemoryLoadable {
+            bytes: goal_bytes,
+            wide: true,
+            ..
+        } = self
+            .lower_surface_proposition_direct(goal, "wide viewable goal")
+            .ok()?
+        else {
+            return None;
+        };
+        let ClickProposition::Loadable { segment } = goal else {
+            return None;
+        };
+        let (goal_base, _, _) = segment.surface_range()?;
+        let propositions = self.context_surface_propositions()?;
+        for kernel in propositions.atomic_kernel_facts() {
+            let Proposition::CMemoryLoadable {
+                bytes: Bitvector32Term::Constant(held),
+                wide: false,
+                ..
+            } = kernel
+            else {
+                continue;
+            };
+            if !self.facts().exact_available_across_effects(kernel, &[]) {
+                continue;
+            }
+            for surface in propositions.surfaces(kernel) {
+                let ClickProposition::Loadable { segment } = surface else {
+                    continue;
+                };
+                if segment.surface_range().map(|(base, _, _)| base) != Some(goal_base) {
+                    continue;
+                }
+                // The goal's byte count, written over its own bounds; a
+                // wider element has no single comparison to name.
+                let count = (!matches!(goal_bytes, Bitvector32Term::UInt64Multiply(..)))
+                    .then(|| loadable_surface_range_endpoints(goal))
+                    .flatten()
+                    .map(|(start, end)| match start {
+                        ContractExpression::IntegerLiteral(literal) if literal == "0" => end,
+                        _ => ContractExpression::Subtract(Box::new(end), Box::new(start)),
+                    });
+                let needed = count
+                    .map(|count| {
+                        describe_click_proposition(&ClickProposition::Comparison {
+                            left: count,
+                            operator: ComparisonOperator::LessEqual,
+                            right: ContractExpression::CFragment(CExpression::Value(
+                                CValue::UInt64(Bitvector32Term::UInt64Constant(u64::from(*held))),
+                            )),
+                        })
+                    })
+                    .unwrap_or_else(|| format!("a byte count of at most {held}"));
+                return Some(format!(
+                    "`{target}` does not follow from `{}`: that range covers {held} bytes, so it covers `{target}` only when `{needed}`, which is not an available fact",
+                    describe_click_proposition(surface)
+                ));
+            }
+        }
+        None
+    }
+
     fn stated_loadable_range_lookup(&self, goal: &ClickProposition) -> StatedLoadableRanges {
         let mut lookup = StatedLoadableRanges::default();
         let Some(propositions) = self.context_surface_propositions() else {
@@ -3458,6 +3525,9 @@ impl<'a> Proof<'a> {
         let goal = self.surface_goal()?;
         loadable_surface_range_endpoints(goal)?;
         let target = describe_click_proposition(goal);
+        if let Some(reason) = self.unproved_wide_range_goal_reason(goal, &target) {
+            return Some(reason);
+        }
         let lookup = self.stated_loadable_range_lookup(goal);
         let candidates = &lookup.available;
         for (stated, _) in candidates {
@@ -4130,4 +4200,19 @@ fn loadable_surface_range_endpoints(
     segment
         .surface_range()
         .map(|(_, start, end)| (start.clone(), end.clone()))
+}
+
+/// Whether a proof-local binding is the symbolic value `choose` introduced
+/// for `variable`: a machine integer of any width, or a pointer offset.
+fn binding_names_chosen_variable(binding: &ContractExpression, variable: Variable) -> bool {
+    match binding {
+        ContractExpression::CFragment(CExpression::Value(CValue::Pointer(pointer))) => {
+            pointer.pointer().offset == PointerOffsetTerm::Variable(variable)
+        }
+        ContractExpression::CFragment(CExpression::Value(value)) => {
+            crate::kernel::MachineIntegerType::from_c_type(value.c_type())
+                .is_some_and(|integer| *value == integer.symbolic_value(variable))
+        }
+        _ => false,
+    }
 }

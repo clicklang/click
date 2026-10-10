@@ -33,7 +33,6 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
     } }
     step();
     step();
-    step();
     have -9223372036854775808 <= truncating_quotient(to_integer(n), to_integer(d)) by {
         apply(integer_positive_divisor_quotient_lower(to_integer(n), to_integer(d), -9223372036854775808));
     }
@@ -68,7 +67,6 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
     } }
     apply(int64_less_equal_of_to_integer(-9223372036854775808i64, quot));
     apply(int64_less_equal_of_to_integer(quot, 9223372036854775807i64));
-    step();
     step();
     have -2147483646 <= truncating_remainder(to_integer(n), to_integer(d)) by { arithmetic_certificate special {
         premise 0: -19807040619342712361531211776 <= to_integer(n) => -19807040619342712361531211776 <= to_integer(n);

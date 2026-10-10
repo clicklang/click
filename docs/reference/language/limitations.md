@@ -265,8 +265,9 @@ the body is needed.
 
 Plain `cstr(p)` introduces an exact spec length, but it does not by itself
 produce a structural `viewable` fact. `cstr_readable(p)` is the corresponding
-dynamic-viewability relation: it carries an existential length together with
-`viewable(p[0..len + 1])` and the prefix/terminator conditions. Unfold it when a
+dynamic-viewability relation: it carries an existential `size_t` length
+together with `viewable(p[0..len + 1u64])` and the prefix/terminator
+conditions. Unfold it when a
 proof needs that witness. `viewable` still covers read safety only; it does not
 grant `views` or `owns`, so a later dynamic array read may need a separate
 permission/resource fact.

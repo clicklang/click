@@ -369,7 +369,7 @@ verified repairs beside them:
 `mdtests/model_field_across_a_call_that_promises_nothing.md` /
 `model_field_kept_by_a_call.md`,
 `model_field_across_a_loop_without_an_invariant.md` /
-`model_field_kept_by_a_loop.md`,
+`c_reads_through_a_resource_with_fields_across_a_loop.md`,
 and `fold_field_names_a_consumed_model.md` /
 `fold_field_names_the_entry_model.md`.
 
@@ -990,10 +990,7 @@ and 1024 unrelated instances (heap-block instances and parameter instances
 with no cached cell), and
 `a_store_opens_folded_instances_in_work_linear_in_the_aliasing_ones` 272,
 520, 1016, 2008 at 8, 16, 32, 64 aliasing ones
-(`mdtests/unfold_region_after_writing_a_descriptor_of_its_type.md`,
-`mdtests/unfold_region_after_writing_through_another_descriptors_pool.md`,
-`mdtests/a_store_keeps_a_cell_a_folded_instance_owns.md`; negatives
-`mdtests/a_store_forgets_a_cell_of_a_matched_folded_instance.md` and
+(`mdtests/a_store_keeps_a_cell_a_folded_instance_owns.md`; negative
 `mdtests/a_store_through_an_equal_descriptor_forgets_a_folded_instance_cell.md`).
 `a_composition_separates_a_store_from_a_load_only_through_two_owners`
 (`src/kernel/tests/memory_reasoning_tests.rs`) is the attack set — an owner
@@ -1395,10 +1392,8 @@ permitted stores or a transition that drops the fact:
   recursive composite the expansion left folded all contributed nothing, so
   a loop or call holding one was summarized as writing none of its memory
   (`mdtests/call_through_deep_instance_chain_footprint_includes_its_memory.md`,
-  `mdtests/loop_over_recursive_list_footprint_includes_its_nodes.md`,
   `mdtests/call_through_witness_footprint_includes_its_memory.md`,
-  `mdtests/call_through_matched_arm_child_footprint_includes_its_memory.md`,
-  `mdtests/call_through_recursive_list_footprint_includes_its_nodes.md`, and
+  `mdtests/call_through_matched_arm_child_footprint_includes_its_memory.md`, and
   the earlier `mdtests/loop_binder_instance_footprint_includes_its_memory.md`
   and `mdtests/call_through_instance_footprint_includes_its_memory.md`). An
   exact footprint keeps a cell no clause owns
@@ -1409,9 +1404,7 @@ permitted stores or a transition that drops the fact:
   declared resources: the body holds that cell only as a view and a store
   needs ownership, so the partition at the loop entry keeps it apart from
   anything the loop can come to hold
-  (`mdtests/loop_keeps_cells_the_function_keeps_owning.md`,
-  `mdtests/loop_body_cannot_write_function_owned_cells.md`,
-  `mdtests/loop_over_recursive_list_keeps_cells_the_function_keeps.md`). The kept cells
+  (`mdtests/loop_body_cannot_write_function_owned_cells.md`). The kept cells
   are found through the kept context's base index, one lookup per cell.
 - A call is the same argument at a call boundary. The callee's footprint
   over-approximates what it owns, so a cell an owned member of the caller's
@@ -1454,10 +1447,7 @@ permitted stores or a transition that drops the fact:
   cell lost a member whose cell an earlier call's havoc had dropped and no
   load had cached again, so a load after the later call could not be named
   across it
-  (`mdtests/call_keeps_an_uncached_flat_field_beside_folded_state.md`,
-  `mdtests/calls_keep_an_uncached_flat_field_across_three_calls.md`,
-  `mdtests/consecutive_calls_through_recursive_list_keep_caller_cells.md`,
-  `mdtests/consecutive_calls_through_recursive_tree_keep_child_links.md`).
+  (`mdtests/call_keeps_an_uncached_flat_field_beside_folded_state.md`).
   A member in a block proven distinct from every write-set base is left
   out, since the separation rule keeps its cells, and a write set that
   reaches unnamed memory sits in a symbolic block whose candidates are every
@@ -1470,10 +1460,7 @@ permitted stores or a transition that drops the fact:
   Retaining the cached values instead made later loads of the block compare
   against more cached cells, and the arena pipeline's load resolution ran
   past its time limit
-  (`mdtests/call_keeps_caller_object_beside_folded_state.md`,
-  `mdtests/call_keeps_region_beside_folded_arena_state.md`,
-  `mdtests/call_havocs_cell_the_caller_only_views.md`,
-  `mdtests/call_havocs_cell_of_unopened_residual_instance.md`).
+  (`mdtests/call_keeps_region_beside_folded_arena_state.md`).
 
 ### Queries
 

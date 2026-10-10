@@ -1,10 +1,10 @@
 # an ascending walk on the node-keyed rbtree shapes
 
-This is the ascent of
-[`loop_ascending_walk_to_root.md`](loop_ascending_walk_to_root.md) on the
-node-keyed rbtree shapes, `rb_at(p)` and `ctx_at(child, root)`, the model
-package C1b re-keyed so that the top-level traversals in
-[`rb_first_last.md`](rb_first_last.md) could name their instances at all. Every
+This is an ascending walk to the root, a loop that consumes one context frame
+per iteration while its cursor climbs, on the node-keyed rbtree shapes,
+`rb_at(p)` and `ctx_at(child, root)`, the model package C1b re-keyed so that
+the top-level traversals in [`rb_first_last.md`](rb_first_last.md) could name
+their instances at all. Every
 rbtree fixup loop climbs this way, so the boundary the walk ends at is the one
 `rb_insert_color`, `rb_next` and `__rb_erase_color` need.
 
@@ -23,15 +23,13 @@ Three verifier rules meet here, and each was a gap.
 
 The head refutes `Context::Top`. The failed-guard fact `parent != 0` decides
 `ctx_node_is`'s declared body at `Top`, `if parent == 0 { 1 } else { 0 }`, to
-be `0` where the invariant says `1` (package A21;
-[`loop_head_predicate_refutes_an_arm.md`](loop_head_predicate_refutes_an_arm.md)).
+be `0` where the invariant says `1` (package A21).
 
 The exit refutes `Left` and `Right`. There the body at
 `Context::Left(identity, ..)` is `if identity == parent { 1 } else { 0 }`, and
 the arm's own `fact identity != 0` decides it against the exit's `parent == 0`,
 so the walk learns what its frame *is*, `c.model == Context::Top`, and can fold
-the root frame (package A21;
-[`contract_predicate_refutes_a_framed_arm.md`](contract_predicate_refutes_a_framed_arm.md)).
+the root frame (package A21).
 
 The body reads the frame through the C local. `unfold(c)` owns, names, and
 states the arm's cells at the pointer the proved equality identifies the

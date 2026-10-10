@@ -1,8 +1,8 @@
 # an rbtree ascent whose guard reads the parent's link through the frame
 
-This is the ascent of
-[`rb_ascent_conjunctive_guard.md`](rb_ascent_conjunctive_guard.md) with the
-second conjunct `rb_next` actually writes: `node == parent->rb_right`. Every
+This is an ascent on the parameter-keyed rbtree shapes `rb_at(p, parent)` and
+`ctx_at(child, parent, root)` under a short-circuit guard whose second
+conjunct is the one `rb_next` actually writes: `node == parent->rb_right`. Every
 iteration consumes one frame — unfold the frame, take the C step that moves the
 cursor up, fold the node the frame owned into a larger subtree — and the measure
 is the context, `decreases c;`.

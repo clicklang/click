@@ -13,9 +13,7 @@ Linux's `__rb_insert` uses `continue` for both uncle-red cases, the ones that
 recolour and climb two frames. `count_down` is that shape reduced to one
 statement and a `continue`.
 
-A `continue` under a structural measure is
-[`loop_body_continue_structural_measure.md`](loop_body_continue_structural_measure.md);
-a `continue` that does not hand its binder back is refused by name in
+A `continue` that does not hand its binder back is refused by name in
 [`loop_body_continue_drops_binder.md`](loop_body_continue_drops_binder.md).
 
 ```c filename=count_down.c

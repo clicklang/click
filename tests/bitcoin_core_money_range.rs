@@ -1177,6 +1177,185 @@ fn pinned_std_byte_values_verify_with_native_integer_contracts_offline() {
     fs::remove_dir_all(root).unwrap();
 }
 
+// A nominal template argument must survive even if its record fields never
+// mention the enum. This closes the offline declaration-authentication gap.
+#[test]
+fn pinned_std_byte_template_record_keeps_nominal_argument() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "byte-template-record",
+        "#include <span.h>\ntemplate<class T> struct Holder { int value; };\nusing Byte = std::byte;\nint probe(const Holder<Byte>& h) noexcept { return h.value; }\n",
+        &["sysroot/usr/include/c++/12/cstddef"],
+    );
+    let record = import
+        .export()
+        .records
+        .iter()
+        .find(|record| record.name == "Holder__std_byte")
+        .unwrap();
+    assert_eq!(record.byte_template_arguments.len(), 1);
+    assert_eq!(record.byte_template_arguments[0].index, 0);
+    let source = "verifying \"span-probe.cpp\"; int32 probe(const struct Holder__std_byte& h) { views h.value; ensures result == h.value; } by { execute(); simp(); }";
+    check_pinned_byte_proof(&root, &import, source);
+}
+
+// The selected assumed interface preserves the descriptor's address and
+// length. Reading its fields requires views, but grants no backing authority.
+#[test]
+fn pinned_writable_byte_span_reference_preserves_view_offline() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "writable-byte-span-reference",
+        "#include <span.h>\nstd::span<std::byte> probe(const std::span<int>& span) noexcept { return std::as_writable_bytes(span); }\n",
+        &[
+            "sysroot/usr/include/c++/12/cstddef",
+            "sysroot/usr/include/c++/12/span",
+            "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
+        ],
+    );
+    let source = "verifying \"span-probe.cpp\"; struct span__std_byte__value_unsigned_long_18446744073709551615 probe(const struct span__int__value_unsigned_long_18446744073709551615& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == (uint8*)std_span_data(span); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); } by { execute(); simp(); }";
+    check_pinned_byte_proof(&root, &import, source);
+}
+
+// Keep the fixed by-value source and true claim for the documented snapshot
+// proof gap. Restore the positive E/R check when that gap is repaired.
+#[test]
+#[ignore = "nightly: retained reproduction of the by-value pointer snapshot gap"]
+fn pinned_writable_byte_span_by_value_snapshot_gap_is_bounded() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "writable-byte-span",
+        "#include <span.h>\nstd::span<std::byte> probe(std::span<int> span) noexcept { return std::as_writable_bytes(span); }\n",
+        &[
+            "sysroot/usr/include/c++/12/cstddef",
+            "sysroot/usr/include/c++/12/span",
+            "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
+        ],
+    );
+    let source = "verifying \"span-probe.cpp\"; struct span__std_byte__value_unsigned_long_18446744073709551615 probe(struct span__int__value_unsigned_long_18446744073709551615 span) { ensures std_span_data(result) == old((uint8*)std_span_data(span)); ensures std_span_size(result) == old(std_span_size(span)) * 4u64; } by { execute(); simp(); }";
+    fs::write(root.join("byte.click"), source).unwrap();
+    let project = read_click_project(&root.join("byte.click"), source).unwrap();
+    let (error, trace) = click::surface::with_proof_trace("probe", || {
+        let error = verify_program_prepared_project(&project, &import).unwrap_err();
+        let trace = error
+            .trace_context_report()
+            .expect("bounded snapshot trace");
+        (error, trace)
+    });
+    assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+    assert_eq!(
+        error.proof_source_site(),
+        Some(("probe.contract", &[1][..]))
+    );
+    eprintln!("{trace}");
+}
+
+#[test]
+#[ignore = "nightly: repeated offline artifact and contract refusals"]
+fn pinned_byte_template_metadata_and_span_authority_are_checked() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "byte-template-rejections",
+        "#include <span.h>\ntemplate<class T> struct Holder { int value; };\nint probe(const Holder<std::byte>& h) noexcept { return h.value; }\n",
+        &["sysroot/usr/include/c++/12/cstddef"],
+    );
+    let artifact_path = root.join("span.click-cpp.json");
+    let lock_path = root.join("span.click.import.json.lock");
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(&artifact_path).unwrap()).unwrap();
+    let lock: serde_json::Value = serde_json::from_slice(&fs::read(&lock_path).unwrap()).unwrap();
+    for change in 0..7 {
+        let mut forged = artifact.clone();
+        let record = forged["records"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|record| record["name"] == "Holder__std_byte")
+            .unwrap();
+        match change {
+            0 => record["byte_template_arguments"] = serde_json::json!([]),
+            1 => record["byte_template_arguments"][0]["index"] = 1.into(),
+            2 => {
+                record["byte_template_arguments"][0]["value_type"]["declaration_id"] =
+                    "c:@E@Other".into()
+            }
+            3 => {
+                record["byte_template_arguments"][0]["value_type"]["span"]["file"] =
+                    "span-probe.cpp".into()
+            }
+            4 => {
+                record["byte_template_arguments"][0]["value_type"]["underlying_type"]["bits"] =
+                    32.into()
+            }
+            5 => {
+                let duplicate = record["byte_template_arguments"][0].clone();
+                record["byte_template_arguments"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(duplicate);
+            }
+            6 => forged["preprocessor_files"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|file| {
+                    !file["canonical_path"]
+                        .as_str()
+                        .unwrap()
+                        .ends_with("/cstddef")
+                }),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = sha256(&bytes).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(&artifact_path, bytes).unwrap();
+        fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
+        assert!(
+            load_import(&root.join("span.click.import.json")).is_err(),
+            "mutation {change}"
+        );
+    }
+    drop(import);
+
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "writable-byte-span-authority",
+        "#include <span.h>\nstd::span<std::byte> probe(std::span<int> span) noexcept { return std::as_writable_bytes(span); }\n",
+        &[
+            "sysroot/usr/include/c++/12/cstddef",
+            "sysroot/usr/include/c++/12/span",
+            "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
+        ],
+    );
+    let base = "verifying \"span-probe.cpp\"; struct span__std_byte__value_unsigned_long_18446744073709551615 probe(struct span__int__value_unsigned_long_18446744073709551615 span) { ensures std_span_size(result) == std_span_size(span) * 4u64; } by { execute(); simp(); }";
+    for bad in [
+        base.replace(" * 4u64", " * 3u64"),
+        base.replace("ensures std_span_size(result)", "ensures std_span_data(result) == (uint8*)std_span_data(span) + 1; ensures std_span_size(result)"),
+        base.replace("ensures std_span_size(result)", "ensures 1u64 <= std_span_size(result); ensures std_span_size(result)"),
+        base.replace(
+            "ensures std_span_size(result)",
+            "ensures std_span_data(result)[0] == 0u8; ensures std_span_size(result)",
+        ),
+    ] {
+        fs::write(root.join("bad.click"), &bad).unwrap();
+        let project = read_click_project(&root.join("bad.click"), &bad).unwrap();
+        assert!(verify_program_prepared_project(&project, &import).is_err());
+    }
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "writable-byte-span-reference",
+        "#include <span.h>\nstd::span<std::byte> probe(const std::span<int>& span) noexcept { return std::as_writable_bytes(span); }\n",
+        &[
+            "sysroot/usr/include/c++/12/cstddef",
+            "sysroot/usr/include/c++/12/span",
+            "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
+        ],
+    );
+    let source = "verifying \"span-probe.cpp\"; struct span__std_byte__value_unsigned_long_18446744073709551615 probe(const struct span__int__value_unsigned_long_18446744073709551615& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == (uint8*)std_span_data(span); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); } by { execute(); simp(); }";
+    check_pinned_byte_proof(&root, &import, source);
+    for field in ["std_span_data", "std_span_size"] {
+        let bad = source.replace(&format!("views {field}(span);"), "");
+        fs::write(root.join("bad.click"), &bad).unwrap();
+        let project = read_click_project(&root.join("bad.click"), &bad).unwrap();
+        assert!(verify_program_prepared_project(&project, &import).is_err());
+    }
+}
+
 fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }

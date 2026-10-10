@@ -273,7 +273,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 58;
+    artifact["schema"] = 59;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -3546,6 +3546,26 @@ private:
     result["size_bytes"] = static_cast<std::int64_t>(size);
     result["alignment_bytes"] = static_cast<std::int64_t>(alignment);
     result["fields"] = std::move(fields);
+    // Keep the new nominal type argument even when no field mentions it.
+    // The offline importer authenticates its actual locked declaration.
+    llvm::json::Array byte_arguments;
+    if (const auto *instance =
+            llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(record)) {
+      const auto arguments = instance->getTemplateArgs().asArray();
+      for (unsigned index = 0; index < arguments.size(); ++index) {
+        const auto &argument = arguments[index];
+        if (argument.getKind() != clang::TemplateArgument::Type ||
+            !supported_byte_enum(argument.getAsType()))
+          continue;
+        auto value_type = lower_type(argument.getAsType(), record->getLocation());
+        if (!value_type) return std::nullopt;
+        llvm::json::Object entry;
+        entry["index"] = static_cast<std::int64_t>(index);
+        entry["value_type"] = std::move(*value_type);
+        byte_arguments.push_back(std::move(entry));
+      }
+    }
+    result["byte_template_arguments"] = std::move(byte_arguments);
     if (record->getNumBases() == 1) {
       const auto &base = *record->bases_begin();
       auto value_type = lower_type(base.getType(), base.getBeginLoc());
@@ -3854,6 +3874,14 @@ private:
           return {};
         }
         const char *name = builtin_template_type_name(type);
+        if (name == nullptr && allow_tags && supported_byte_enum(type)) {
+          const auto *enumeration = type->getAs<clang::EnumType>()->getDecl();
+          if (declaration_id(enumeration) == "c:@N@std@E@byte" &&
+              enumeration->getQualifiedNameAsString() == "std::byte") {
+            suffix += "__std_byte";
+            continue;
+          }
+        }
         if (name == nullptr && allow_tags) {
           const auto *tag = type->getAsCXXRecordDecl();
           if (tag != nullptr && tag->getDefinition() != nullptr) {

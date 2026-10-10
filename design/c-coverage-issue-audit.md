@@ -63,7 +63,7 @@ numbered milestones and acceptance criteria:
 | Milestones / requirement | Representative executable evidence |
 | --- | --- |
 | 1–3: byte arrays, embedded structs, array indexing and named enums | `struct_inline_byte_array`, `struct_embedded_scalar_field`, `local_array_of_structs`, `struct_array_parameter_fields`, `struct_enum_field` |
-| 4, 7–9: scalar, nested, pointer and embedded-array by-value copies | `struct_by_value_scalar_copy`, `struct_by_value_enum_copy`, `struct_by_value_array_copy`, `struct_by_value_embedded_copy`, `struct_by_value_pointer_copy`, `struct_by_value_embedded_array_copy`, `struct_by_value_embedded_array_multidim_copy` |
+| 4, 7–9: scalar, nested, pointer and embedded-array by-value copies | `struct_by_value_scalar_copy`, `struct_by_value_enum_copy`, `struct_by_value_array_copy`, `struct_by_value_embedded_copy`, `struct_by_value_pointer_copy`, `struct_by_value_embedded_array_copy`, `struct_by_value_embedded_array_multidim_copy`, `struct_by_value_embedded_array_initialized_copy` |
 | 5, 23–24: tagged-union reads, addresses and overlapping copies | `struct_tagged_union`, `struct_union_member_address`, `struct_union_by_value_copy`; negative `struct_tagged_union_rejects_writes` |
 | 6, 11: multidimensional array shape and stride | `struct_array_of_embedded_structs`, `struct_multidimensional_embedded_array`, `struct_multidimensional_scalar_array` |
 | 10, 12–13: field addresses, scalar width and layout | `struct_field_address`, `struct_scalar_array_element_address`, `struct_wide_scalar_fields`; negative `struct_byte_array_resource_range_rejects_neighbor` |
