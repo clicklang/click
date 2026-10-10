@@ -1,8 +1,7 @@
-# Ordinary calls still require explicit writable resources
+# Ordinary calls borrow scalar allocation ownership
 
-The unchanged caller currently cannot lend write ownership of its local scalar
-through an ordinary function contract. Nothrow does not supply that ownership;
-this regression records the existing call-boundary limitation.
+The unchanged caller lends its declaration-provided ownership through the
+ordinary writable contract, including across the nothrow helper boundary.
 
 ```c filename=include/helpers.h
 extern int set(int *p) __attribute__((__nothrow__));
@@ -36,5 +35,5 @@ int run() {
 ```
 
 ```expect
-fail: missing resource fact `owns value[0..1]`
+pass
 ```

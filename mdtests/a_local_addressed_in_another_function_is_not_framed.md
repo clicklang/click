@@ -14,9 +14,10 @@ served to the next one. A name that any function addresses is therefore
 absent for every function, which costs proofs about innocent same-named
 locals and can never serve a stale answer.
 
-Recovering the proof is a rename away, and the refusal is a lost proof rather
-than a wrong one: `read_literal`'s claim is true, and Click simply has nothing
-left that says the store to `guard` misses the read.
+The original program is retained here. The conservative refusal now occurs
+while establishing that the final addition cannot overflow, before checking
+the result postcondition: `read_literal`'s claim is true, but the symbolic
+frame still cannot preserve the values needed for that definedness check.
 
 ```c filename=a_local_addressed_in_another_function_is_not_framed.c
 int32* echo(int32* p) { return p; }
@@ -72,5 +73,5 @@ int32 read_literal() {
 ```
 
 ```expect
-fail: unclosed goal: result == (107u8 + 3)
+fail: signed overflow
 ```

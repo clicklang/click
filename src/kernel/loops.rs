@@ -5,6 +5,30 @@ use super::loans::{
 use super::prelude::*;
 
 #[cfg(test)]
+mod empty_loop_rule_tests {
+    use super::*;
+
+    /// A genuinely unannotated loop without a checked rule must retain the
+    /// evaluator's unrolling bound, even though rule dispatch checks all loops.
+    #[test]
+    fn unannotated_loop_without_rule_keeps_unrolling_bound() {
+        let statement = c_while(c_int32_literal(1), Vec::new(), CStatement::Skip);
+        let mut budget = ExecutionBudget::default().with_loop_unrolls(0);
+        let (execution, rule) =
+            prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
+                CState::new(),
+                statement,
+                PureFactContext::new(),
+                CExecutionEnvironment::new(),
+                CExecutionSemantics::APPLY_VERIFIED_RULES,
+                &mut budget,
+            );
+        assert_eq!(execution.limit, Some(ExecutionLimit::LoopUnrolls));
+        assert!(rule.is_none());
+    }
+}
+
+#[cfg(test)]
 mod pointee_const_return_tests {
     use super::*;
     // Surface planning; only this test reaches it from inside the kernel.
@@ -2215,7 +2239,29 @@ pub(super) fn execute_c_statement_verification_paths(
         budget.consume_statement_step()?;
     }
     if execution_semantics.loops == CLoopSemantics::ApplyVerifiedRules
-        && matches!(
+        && matches!(statement, CStatement::While { .. })
+    {
+        // A checked rule may have no invariant, effect, or measure checks.
+        // Its authority is the rule itself, not a nonempty annotation bundle.
+        if let Some(rule) = environment.applicable_verified_loop_rule(state, statement, assumptions)
+        {
+            let paths = rule
+                .paths
+                .iter()
+                .cloned()
+                .map(|mut path| {
+                    path.facts = path
+                        .facts
+                        .into_iter()
+                        .map(ExecutionPureFact::into_certified)
+                        .collect();
+                    path
+                })
+                .collect::<Vec<_>>();
+            budget.check_path_width(paths.len())?;
+            return Ok(paths);
+        }
+        if matches!(
             statement,
             CStatement::While {
                 invariant_checks,
@@ -2227,27 +2273,9 @@ pub(super) fn execute_c_statement_verification_paths(
                 || !effect_checks.is_empty()
                 || !ranking_measures.is_empty()
                 || structural_measure.is_some()
-        )
-    {
-        let Some(rule) = environment.applicable_verified_loop_rule(state, statement, assumptions)
-        else {
+        ) {
             return Ok(Vec::new());
-        };
-        let paths = rule
-            .paths
-            .iter()
-            .cloned()
-            .map(|mut path| {
-                path.facts = path
-                    .facts
-                    .into_iter()
-                    .map(ExecutionPureFact::into_certified)
-                    .collect();
-                path
-            })
-            .collect::<Vec<_>>();
-        budget.check_path_width(paths.len())?;
-        return Ok(paths);
+        }
     }
     let paths = match statement {
         CStatement::Seq(first, second) => {
@@ -3056,6 +3084,11 @@ fn join_loop_exit_paths(
                 .iter()
                 .filter(|proposition| {
                     !shared_propositions.contains(proposition)
+                        // Composition certificates establish a well-formed
+                        // resource context, not an observable exit guard.
+                        // Dropping this conjunct weakens the path disjunction
+                        // and keeps its pure successor facts spellable.
+                        && !matches!(proposition, Proposition::CResourceComposition(_))
                         && !matches!(
                             proposition,
                             Proposition::ConditionIs(ConditionTerm::Constant(actual), expected)
@@ -7697,23 +7730,31 @@ fn loop_body_resource_context(
         Err(failure) => return Ok((top_state.clone(), vec![failure])),
     };
     let mut body_resources = declared.clone();
-    if !resource_specs.iter().any(resource_spec_is_view) {
-        for fact in withheld.facts() {
-            let Some(viewed) = viewed_form_of_resource_fact(fact) else {
-                continue;
-            };
-            if body_resources.satisfies_fact(&viewed, assumptions) {
-                continue;
-            }
-            match body_resources
-                .clone()
-                .try_compose_with_fact(viewed, assumptions)
-            {
-                Ok(composed) => body_resources = composed,
-                // An un-composable remainder is read authority the body
-                // simply does not get; it is not a contract failure.
-                Err(_) => continue,
-            }
+    let allow_frame_views = !resource_specs.iter().any(resource_spec_is_view);
+    for fact in withheld.facts() {
+        let allocation_owner = fact.is_own()
+            && matches!(fact.resource(),
+            CResource::Memory(range) if top_state.memory().requires_explicit_scalar_ownership(range.base()));
+        if !allocation_owner && !allow_frame_views {
+            continue;
+        }
+        let Some(viewed) = viewed_form_of_resource_fact(fact) else {
+            continue;
+        };
+        if body_resources.satisfies_fact(&viewed, assumptions) {
+            continue;
+        }
+        let supplied = if allocation_owner {
+            fact.clone()
+        } else {
+            viewed
+        };
+        match body_resources
+            .clone()
+            .try_compose_with_fact(supplied, assumptions)
+        {
+            Ok(composed) => body_resources = composed,
+            Err(_) => continue,
         }
     }
     body_resources = with_owner_read_authority_rederived(

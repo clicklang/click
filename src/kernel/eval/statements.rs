@@ -357,7 +357,22 @@ pub(in crate::kernel) fn memory_write_permission_outcome(
     if let Some(error) = super::super::mutexes::storage_write_refusal(state, &range, assumptions) {
         return Some(CStatementOutcome::RuntimeError(error));
     }
-    stable_loan_memory_range_outcome(state, &range, assumptions)
+    if let Some(outcome) = stable_loan_memory_range_outcome(state, &range, assumptions) {
+        return Some(outcome);
+    }
+    if state.memory.requires_explicit_scalar_ownership(pointer)
+        && state
+            .resources()
+            .memory_write_range(pointer, bytes, assumptions)
+            .is_none()
+    {
+        return Some(CStatementOutcome::RuntimeError(
+            CRuntimeError::MissingResource {
+                resource: Box::new(CResourceFact::own_memory(range)),
+            },
+        ));
+    }
+    None
 }
 
 fn stable_loan_memory_range_outcome(
@@ -4098,7 +4113,7 @@ fn local_declaration_pointer(state: &mut CState, name: &str) -> Result<Pointer, 
 /// Consume its complete byte owner through the indexed supplier frontier;
 /// ordinary locals with implicit authority have no such fact to consume.
 /// Live loans and protocol reservations must be checked before calling this.
-fn retire_automatic_storage_owner(state: &mut CState, range: &CMemoryRange) {
+pub(in crate::kernel) fn retire_automatic_storage_owner(state: &mut CState, range: &CMemoryRange) {
     let owner = CResourceFact::own_memory(range.clone());
     if let Some(resources) = state
         .resources
@@ -4495,6 +4510,17 @@ pub(in crate::kernel) fn declare_local(
         byte_width,
         c_type,
     ));
+    state.resources = state
+        .resources
+        .clone()
+        .unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(
+                pointer.clone(),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(byte_width),
+                1,
+            ),
+        ));
     if volatile {
         state.locals.set_uninitialized_with_all_qualifiers(
             name.to_string(),
@@ -4647,6 +4673,32 @@ pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
     if overlap == crate::kernel::reasoning::memory_resolution::AccessByteOverlap::Separate {
         return;
     }
+    refresh_scalar_local_binding(state, name, slot, c_type, assumptions);
+}
+
+/// Reconcile one address-backed scalar after a checked call effect. Memory
+/// decides its current value and initialization; a postcondition is not a store.
+pub(in crate::kernel) fn refresh_scalar_local_from_memory(
+    state: &mut CState,
+    slot: &Pointer,
+    assumptions: &PureFactContext,
+) {
+    let Some(name) = state.locals.name_for_slot(slot).map(str::to_string) else {
+        return;
+    };
+    let Some(c_type) = state.locals.scalar_object_type(&name) else {
+        return;
+    };
+    refresh_scalar_local_binding(state, name, slot.clone(), c_type, assumptions);
+}
+
+fn refresh_scalar_local_binding(
+    state: &mut CState,
+    name: String,
+    slot: Pointer,
+    c_type: CType,
+    assumptions: &PureFactContext,
+) {
     let current = state
         .memory
         .known_value(&slot)

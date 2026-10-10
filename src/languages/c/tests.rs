@@ -10865,6 +10865,12 @@ fn c0_assignment_expression_short_circuits_a_guard_read() {
 
 #[test]
 fn c0_assignment_expression_loop_guard_reexecutes_once_after_continue() {
+    let calls_owner =
+        crate::kernel::CResourceSpec::owned_memory(crate::kernel::CMemorySegment::new(
+            crate::kernel::c_variable("calls"),
+            crate::kernel::c_int32_literal(0),
+            crate::kernel::c_int32_literal(1),
+        ));
     let tick = syntax::parse_function(
         r#"
         int32 tick(int32 *calls, int32 value) {
@@ -10874,7 +10880,8 @@ fn c0_assignment_expression_loop_guard_reexecutes_once_after_continue() {
         "#,
     )
     .expect("the counter helper should parse")
-    .to_kernel_function();
+    .to_kernel_function()
+    .with_resource_summary(vec![calls_owner.clone()], vec![calls_owner]);
     let caller = syntax::parse_functions(
         r#"
         int32 tick(int32 *calls, int32 value);
@@ -10912,7 +10919,10 @@ fn c0_assignment_expression_loop_guard_reexecutes_once_after_continue() {
         ..
     } = theorem.proposition()
     else {
-        panic!("the loop should return normally");
+        panic!(
+            "the loop should return normally: {:?}",
+            theorem.proposition()
+        );
     };
     assert_eq!(value, &crate::kernel::int32(3));
     let calls = crate::kernel::Pointer {

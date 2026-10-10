@@ -2367,6 +2367,29 @@ impl StableViewRecovery {
     }
 }
 
+/// Whether a loan's lent view covers what a callee requires of it.
+///
+/// The lent view covers the requirement directly, or through the view the
+/// caller holds under the loan: a loop that took `views chunk[0..n]` out of
+/// `views bytes[0..length]` holds the smaller view under the same loan, and
+/// a requirement inside `chunk[0..n]` is inside `bytes[0..length]` because
+/// the held view is. Both steps are checked here; neither is assumed from
+/// how the held view came to be bound.
+fn bound_view_covers_requirement(
+    viewed: &CResourceFact,
+    held: Option<&CResourceFact>,
+    requirement: &CResourceFact,
+    assumptions: &PureFactContext,
+) -> bool {
+    let covers = |available: &CResourceFact, required: &CResourceFact| {
+        ResourceContext::new_with_equalities(assumptions)
+            .unchecked_with_fact(available.clone())
+            .satisfies_fact(required, assumptions)
+    };
+    covers(viewed, requirement)
+        || held.is_some_and(|held| covers(viewed, held) && covers(held, requirement))
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum StableViewPlanError {
     InvalidRequirement,
@@ -2961,10 +2984,12 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         }
         if let Some((parent_occurrence, binding)) = bound_occurrence {
             ledger.validate_view_binding(binding.clone(), caller)?;
-            if !ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(binding.viewed.clone())
-                .satisfies_fact(&requirement.fact, assumptions)
-            {
+            if !bound_view_covers_requirement(
+                &binding.viewed,
+                caller_resources.view_fact_for_occurrence(parent_occurrence),
+                &requirement.fact,
+                assumptions,
+            ) {
                 return Err(StableViewPlanError::Loan(LoanRefusal::InvalidEvidence));
             }
             let grouped = rebound
@@ -3465,10 +3490,12 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         }
         let mut child_occurrence = None;
         for (index, requirement) in group {
-            if !ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(binding.viewed.clone())
-                .satisfies_fact(&requirement.fact, assumptions)
-            {
+            if !bound_view_covers_requirement(
+                &binding.viewed,
+                caller_resources.view_fact_for_occurrence(parent_occurrence),
+                &requirement.fact,
+                assumptions,
+            ) {
                 return Err(StableViewPlanError::Loan(LoanRefusal::InvalidEvidence));
             }
             let (next_resources, occurrence) = callee_resources
@@ -3491,7 +3518,12 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             callee_view_bindings =
                 callee_view_bindings.with_inserted(occurrence, child_binding.clone());
             let description = planned_ledger
-                .describe_view(opening.loan, requirement.fact.clone(), assumptions)
+                .describe_view_through(
+                    opening.loan,
+                    requirement.fact.clone(),
+                    caller_resources.view_fact_for_occurrence(parent_occurrence),
+                    assumptions,
+                )
                 .map_err(|_| {
                     StableViewPlanError::ConflictingRequirement(requirement.fact.clone())
                 })?;
@@ -5365,6 +5397,22 @@ impl LoanLedger {
         viewed: CResourceFact,
         assumptions: &PureFactContext,
     ) -> Result<StableViewDescription, LoanRefusal> {
+        self.describe_view_through(loan, viewed, None, assumptions)
+    }
+
+    /// [`Self::describe_view`] for a view reached through one the holder
+    /// already has under the loan: `held` lies in what the loan permits and
+    /// `viewed` lies in `held`, both checked here, so `viewed` lies in what
+    /// the loan permits. A requirement inside a chunk taken from a lent
+    /// range is described this way, where its position in the whole range
+    /// is two offsets deep.
+    pub(crate) fn describe_view_through(
+        &self,
+        loan: LoanId,
+        viewed: CResourceFact,
+        held: Option<&CResourceFact>,
+        assumptions: &PureFactContext,
+    ) -> Result<StableViewDescription, LoanRefusal> {
         self.require_arena(loan.arena)?;
         let record = self
             .storage
@@ -5382,11 +5430,17 @@ impl LoanLedger {
         {
             return Err(LoanRefusal::ScopeEnded);
         }
+        let covers = |available: &CResourceFact, required: &CResourceFact| {
+            ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(available.clone())
+                .satisfies_fact(required, assumptions)
+        };
         if !viewed.is_view()
             || !record.permitted.iter().any(|permitted| {
-                ResourceContext::new_with_equalities(assumptions)
-                    .unchecked_with_fact(permitted.clone())
-                    .satisfies_fact(&viewed, assumptions)
+                covers(permitted, &viewed)
+                    || held.is_some_and(|held| {
+                        held.is_view() && covers(permitted, held) && covers(held, &viewed)
+                    })
             })
         {
             return Err(LoanRefusal::InvalidEvidence);

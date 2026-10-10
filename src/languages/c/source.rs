@@ -344,6 +344,53 @@ fn push_blank_line(expanded: &mut String, line_map: &mut ExpandedLineMap) {
     line_map.push(None);
 }
 
+/// The object-like macros of Click's built-in `<limits.h>`, for the LP64
+/// layout and unsigned plain `char` that every supported target selects.
+const LIMITS_MACROS: &[(&str, &str)] = &[
+    ("CHAR_BIT", "8"),
+    ("SCHAR_MIN", "(-128)"),
+    ("SCHAR_MAX", "127"),
+    ("UCHAR_MAX", "255"),
+    ("CHAR_MIN", "0"),
+    ("CHAR_MAX", "255"),
+    ("SHRT_MIN", "(-32768)"),
+    ("SHRT_MAX", "32767"),
+    ("USHRT_MAX", "65535"),
+    ("INT_MIN", "(-2147483647 - 1)"),
+    ("INT_MAX", "2147483647"),
+    ("UINT_MAX", "4294967295U"),
+    ("LONG_MIN", "(-9223372036854775807L - 1)"),
+    ("LONG_MAX", "9223372036854775807L"),
+    ("ULONG_MAX", "18446744073709551615UL"),
+    ("LLONG_MIN", "(-9223372036854775807LL - 1)"),
+    ("LLONG_MAX", "9223372036854775807LL"),
+    ("ULLONG_MAX", "18446744073709551615ULL"),
+];
+
+/// Defines the built-in `<limits.h>` macros. Including the header again is
+/// harmless, but a program's own different definition of one of its names
+/// is a conflicting redefinition, as it would be under a C compiler.
+fn define_limits_macros(
+    source_path: &str,
+    line_number: usize,
+    macros: &mut BTreeMap<String, MacroDefinition>,
+    defined_macros: &mut BTreeSet<String>,
+) -> Result<(), CSourceError> {
+    for &(name, value) in LIMITS_MACROS {
+        let definition = MacroDefinition::ObjectLike(value.to_string());
+        if defined_macros.contains(name) && macros.get(name) != Some(&definition) {
+            return Err(CSourceError::new(
+                source_path,
+                line_number,
+                format!("macro `{name}` is redefined by <limits.h>"),
+            ));
+        }
+        macros.insert(name.to_string(), definition);
+        defined_macros.insert(name.to_string());
+    }
+    Ok(())
+}
+
 fn unsupported_system_header(
     source_path: &str,
     line_number: usize,
@@ -529,6 +576,32 @@ fn expand_source<'a>(
                             MacroDefinition::ObjectLike("((void*)0)".into()),
                         );
                         defined_macros.insert("NULL".into());
+                    }
+                    (_, "limits.h") => {
+                        define_limits_macros(source_path, line_number, macros, defined_macros)?;
+                    }
+                    (super::target::CTarget::X86_64LinuxUserspace, "string.h" | "stdlib.h") => {
+                        let (name, text) = if header == "string.h" {
+                            ("<string.h>", include_str!("modeled_string.h"))
+                        } else {
+                            ("<stdlib.h>", include_str!("modeled_stdlib.h"))
+                        };
+                        expand_source(
+                            name,
+                            text,
+                            sources,
+                            target,
+                            stack,
+                            dependencies,
+                            expanded_once,
+                            macros,
+                            defined_macros,
+                            Some((source_path, line_number)),
+                            false,
+                            expanded,
+                            line_map,
+                            origin_names,
+                        )?;
                     }
                     (super::target::CTarget::X86_64LinuxUserspace, "stdatomic.h") => {
                         expand_source(
@@ -731,6 +804,23 @@ fn collect_local_include_paths(
                             MacroDefinition::ObjectLike("((void*)0)".into()),
                         );
                         defined_macros.insert("NULL".into());
+                    }
+                    (_, "limits.h") => {
+                        define_limits_macros(
+                            source_path,
+                            line_number,
+                            &mut macros,
+                            &mut defined_macros,
+                        )?;
+                    }
+                    (super::target::CTarget::X86_64LinuxUserspace, "string.h" | "stdlib.h") => {
+                        if !defined_macros.contains("NULL") {
+                            macros.insert(
+                                "NULL".into(),
+                                MacroDefinition::ObjectLike("((void*)0)".into()),
+                            );
+                            defined_macros.insert("NULL".into());
+                        }
                     }
                     (super::target::CTarget::X86_64LinuxUserspace, "pthread.h" | "stdatomic.h") => {
                     }
@@ -1268,6 +1358,9 @@ fn parse_directive(
                         | "stddef.h"
                         | "pthread.h"
                         | "stdatomic.h"
+                        | "limits.h"
+                        | "string.h"
+                        | "stdlib.h"
                 ) && trailing_comments_only(&rest[end + 1..])
                 {
                     return Ok(Some(SourceDirective::SystemInclude(header.to_string())));

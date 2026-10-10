@@ -29,56 +29,25 @@ require third-party toolchains or system headers. The rule:
 
 ## Current departures
 
-### 1. The gate requires every frontend
+### 1. The gate requires every frontend (done)
 
-`scripts/check.sh` always runs `scripts/build-cpp-exporter.sh` (LLVM/Clang
-19.1.7) and `scripts/build-charon.sh` (Charon plus its pinned nightly rustc)
-before running any test, so a C-only change cannot be checked locally without
-both toolchains. A missing or stale Charon checkout stops the whole gate
-before any test runs.
+`scripts/check.sh` builds the C++ exporter and Charon only when their
+toolchains are present, skips the suites that need a missing one, and reports
+each skipped suite at the start and end of the run. CI runs everything.
 
-Make the local gate build and run the C++ and Rust frontend tests only when
-the toolchains are present or the change touches those frontends, and say
-clearly which suites it skipped. CI keeps running everything.
+### 2. glibc's `<pthread.h>` as a pthread source (done)
 
-### 2. glibc's `<pthread.h>` as a pthread source
+The modeled pthread runtime accepts its declarations only from Click's
+built-in `<pthread.h>` and refuses a compiler-imported header with a
+diagnostic naming the built-in one. The glibc lock fixture, its tests, and the
+native-validation plan in the concurrency design records are gone; the
+lookalike refusals remain.
 
-The modeled pthread runtime accepts its declarations from either Click's
-built-in `<pthread.h>` or a locked compiler import of the real glibc header.
-The import path is the "native binding" groundwork:
+### 3. glibc's `<limits.h>` in the cross-host C fixture (done)
 
-- `ModeledPthreadBinding::imported` (`src/languages/c/thread_runtime.rs`),
-  its selection in `src/surface/verification.rs`, the locked-header
-  provenance check `has_locked_pthread_declaration_at`
-  (`src/languages/c/compiler_import.rs`), and
-  `compatible_with_modeled_pthread` (`src/languages/c/syntax.rs`);
-- `tests/fixtures/pthread-linux-import/` (an Ubuntu GCC 13/glibc 2.39 lock of
-  `fork_join.c`) with
-  `frozen_pthread_gcc_import_verifies_modeled_fork_join_offline` in
-  `src/languages/c/compiler_import.rs`;
-- `userspace_frozen_pthread_probe_records_real_header_boundary` in
-  `tests/compiler_import.rs`, which needs the host's GCC and glibc headers;
-- the native-runtime plans in
-  [`pthread-binding-design.md`](../design/concurrency-probes/pthread-binding-design.md)
-  (sections "Bind the modeled runtime first, then validate native runtimes"
-  and step 4 of its implementation plan) and the "Compiler-import
-  checkpoint" and Debian Bookworm GCC 12/glibc 2.36 profile in the
-  [probe record](../design/concurrency-probes/README.md).
-
-Remove the imported-header binding, so that the built-in `<pthread.h>` is
-the only accepted source of the modeled declarations, and retire the
-fixture and tests whose purpose is the glibc lock. Rewrite the design
-records to state the interface boundary and drop the native-validation plan.
-Keep the lookalike refusals: a local definition, shadowing, or noncanonical
-redeclaration of a modeled name must still be refused.
-
-### 3. glibc's `<limits.h>` in the cross-host C fixture
-
-`tests/fixtures/cross-host-c-import/` exercises lock portability by importing
-`main.c`, which includes Ubuntu's `<limits.h>`. The lock test is useful; the
-library header is not. Use only project-local headers in that fixture, and
-give Click a built-in `<limits.h>` (item 5) for programs that need
-`CHAR_BIT` and friends.
+`tests/fixtures/cross-host-c-import/` now includes only project-local headers,
+and its lock records no system-header dependency. Click's built-in
+`<limits.h>` (item 5) serves programs that need `CHAR_BIT` and friends.
 
 ### 4. libstdc++, glibc and Boost headers in the Bitcoin Core integration
 
@@ -97,25 +66,25 @@ Core's functions against it, and drop the sysroot and the libstdc++
 implementation proofs. The two `cpp-verification` fixtures that include a
 fixture-owned `<cstdint>` should then use Click's.
 
-### 5. Missing built-in C headers
+### 5. Missing built-in C headers (done)
 
-Click's C preprocessor provides `<stdint.h>`, `<inttypes.h>`, and
-`<stdbool.h>`, and for the user-space target `<stddef.h>`, `<pthread.h>`,
-and `<stdatomic.h>`. Every other system include is refused, so a program
-that includes `<string.h>` or `<stdlib.h>` cannot be verified as written,
-although the standard library already has contracts for `memcpy`, `memcmp`,
-`memset`, and `strlen`, and the kernel models `malloc`, `calloc`,
-`realloc`, and `free`. Add built-in `<string.h>`, `<stdlib.h>`, and
-`<limits.h>` declaring exactly the modeled subset, so ordinary C uses those
-contracts without a compiler import. Add further headers only when an example
-needs them.
+Click's preprocessor provides `<limits.h>` on every target and, for the
+user-space target, declaration-only `<string.h>` (`memcpy`, `memcmp`,
+`memset`) and `<stdlib.h>` (`malloc`, `calloc`, `realloc`, `free`) declaring
+exactly the modeled subset, so ordinary C reaches those contracts without a
+compiler import. `strlen`'s contract takes a `uint8` array, so `<string.h>`
+does not declare its `const char *` prototype. Add further headers only when an
+example needs them.
 
-### 6. Documentation
+### 6. Documentation (done, except item 4's wording)
 
-Document the rule above in one place in the reference (the C0 and `click
-import` pages), including the trust statement users see: proofs assume a C
-library implementing Click's interfaces as specified. Remove wording that
-presents a locked system-header import as a step toward verifying a library.
+The [`click import`](../docs/reference/cli/import.md#interface-boundary)
+page states the rule, and the C0 reference's
+[system headers](../docs/reference/language/c0.md#system-headers) section
+lists Click's headers with the trust statement users see: proofs assume a C
+library implementing Click's interfaces as specified. The modeled pthread
+runtime's assumption says the same. The `click import` page's descriptions of
+the libstdc++ `std::span` proofs go with item 4.
 
 ## Not departures
 

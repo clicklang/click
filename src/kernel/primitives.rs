@@ -4600,6 +4600,9 @@ pub struct CLocalEnvironment {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(super) enum CLocalBinding {
     Object {
+        /// True only for an allocated scalar binding, not a logical parameter
+        /// whose compatibility pseudo-slot happens to have the same name.
+        storage_declared: bool,
         value: CValue,
         c_type: CType,
         slot: Pointer,
@@ -6406,6 +6409,9 @@ pub(super) struct ResourceContextIndex {
     memory_addresses: memory_equality_index::MemoryAddresses,
     memory_objects: memory_equality_index::symbolic::ObjectSuppliers,
     pub(super) owned_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
+    /// Automatic memory owners, indexed independently of external and global
+    /// holdings. Addressability is checked when projecting observable facts.
+    pub(super) owned_automatic_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     /// The blocks holding two or more owned memory ranges. Only those can
     /// contribute same-block separation candidates, so projecting a
     /// composition's pairs visits these blocks and not one per allocation.

@@ -2142,19 +2142,20 @@ impl PureFactContext {
                         right,
                         |pointer, range| {
                             if range.wide_bounds().is_some() {
-                                return self.pointer_access_in_wide_range(
+                                self.pointer_access_in_wide_range(
                                     pointer,
                                     range.element_width(),
                                     range,
-                                );
+                                )
+                            } else {
+                                self.pointer_in_range_by_shallow_fact_graph_with_width(
+                                    pointer,
+                                    range.base(),
+                                    range.start(),
+                                    range.end(),
+                                    range.element_width(),
+                                )
                             }
-                            self.pointer_in_range_by_shallow_fact_graph_with_width(
-                                pointer,
-                                range.base(),
-                                range.start(),
-                                range.end(),
-                                range.element_width(),
-                            )
                         },
                     );
                     if proved {
@@ -2269,7 +2270,7 @@ impl PureFactContext {
             // The proof-aware form of the shallow composition fallback above:
             // the same containment relation the materialized-pair loops use,
             // served by the compact composition's indexed candidates.
-            resources.proves_owned_memory_ranges_separate_by(left, right, |child, parent| {
+            resources.proves_owned_memory_ranges_separate_by(left, right, self, |child, parent| {
                 memory_range_contained_for_memory_resolution(child, parent, self)
             })
         })
@@ -3252,6 +3253,20 @@ impl PureFactContext {
                     index,
                     Bitvector32Term::UInt64Constant(elements),
                 ));
+            }
+            // Two symbolic indices, `base[i]` then `[j]` from there: a chunk
+            // of a chunk. The access is at index `i + j` when the sum does
+            // not wrap, decided here as both being at most `i64::MAX`.
+            if let (Some(outer), Some(inner)) = (symbolic_index(&first), symbolic_index(&second)) {
+                let small = |index: &Bitvector32Term| {
+                    self.decide(&ConditionTerm::uint64_less_equal(
+                        index.clone(),
+                        Bitvector32Term::UInt64Constant(i64::MAX as u64),
+                    )) == Some(true)
+                };
+                if small(&outer) && small(&inner) {
+                    return Some(Bitvector32Term::uint64_add(outer, inner));
+                }
             }
         }
         let PointerOffsetTerm::Int32Scaled { value, byte_width } =

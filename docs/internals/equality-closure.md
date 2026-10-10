@@ -164,6 +164,27 @@ produce premise-path evidence. Those are distinct operations, not a second
 Boolean equality checker. This chunk does not migrate the 64-bit adjacency
 index, mathematical-integer equality, or constant discovery.
 
+Wide-read alias checks retain the latest producer observation for each load
+identity in the current function epoch. Assigning a load identity, including a
+cache hit, records its complete live snapshot and address. Two model match arms
+can reuse one identity while their live histories are
+unconnected; the selected check tries these observations before its original
+origin-based rule. Both routes retain the eight-byte kind and check pointer
+aliases and intervening effects. The observation creates no read authority and
+never changes the identity's defining equation. Lookup touches only the selected
+identities, with one retained observation per identity and epoch. Session capture and
+restore share its persistent map root; scope, changed-word, width, cache-hit, and
+16/64/256/1024 unrelated-observation regressions cover it.
+
+Resource body checks use the retained 64-bit adjacency index when a copied
+word receives a different read name. They query only the stated equation's
+endpoints and captured variables, apply the existing checked equality rewrite,
+and require the rewritten body fact in the original context. This covers a word
+that recurs inside its packed parent address or color mask. It assumes no proposed
+body fact, creates no memory authority, and does not promote a 32-bit equality to
+a 64-bit one. The regression measures the same query beside 16, 64, 256, and 1024
+unrelated equalities and checks missing, out-of-scope, and narrow aliases.
+
 The central memory resolver now asks pointer classes for cross-block equality
 and offset classes for exact same-block byte-offset equality. Its pointer
 query still rejects structurally distinct blocks and explicitly separated

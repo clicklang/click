@@ -400,13 +400,35 @@ assignment, and offline validation rejects forged uninitialized record or
 reference declarations. This changes the artifact schema to 53; refresh older
 locks. Native `unsigned char` scalar values and fields now use `uint8`
 contracts, retaining promotions, modulo casts and one-byte field layout. Other
-character types remain outside the importer profile. The C++ importer still
-needs native byte pointers, checked `std::byte` identities and writable byte-span
-construction before the
-unchanged decoder can use it. The agreed enum boundary uses native integer
-contracts while checking nominal enum identities in the C++ importer. Byte
-alias access must be restricted to the actual pinned `std::byte` declaration;
+character types remain outside the importer profile. The C++ importer now admits mutable native `int32*`, `uint32*` and
+`unsigned char*` pointers, retaining their element types and strides in loads,
+stores, calls and field layouts. Taking the address of an automatic native
+scalar does not initialize or read it; a checked typed store initializes it.
+Pointer loads and call boundaries reject substituted pointee types. Writable
+byte-span construction and pointer reinterpretation remain prerequisites for
+the unchanged decoder. Scoped fixed unsigned-char-backed enum values
+now use native `uint8` contracts while retaining checked nominal identities and locked declaration
+spans in the importer. Explicit numeric conversions preserve the underlying
+bits, including all 256 values of empty enums. The actual pinned `std::byte`
+declaration has offline normal, expanded and retained forwarding coverage.
+Artifact schema 54 requires refreshing older locks. Enum pointers and byte
+alias permission are not part of this value slice. Byte alias access must be restricted to the actual pinned `std::byte` declaration;
 an arbitrary enum with the same underlying type does not gain that privilege.
+Automatic scalar declarations now create explicit ownership of their exact
+byte extent in the shared kernel, independent of initialization. Direct reads
+and writes require that permission; modular helper calls can borrow and return
+it without caller-side ownership annotations. Scope exit and re-declaration
+retire the allocation owner. Caller scalar bindings are refreshed from memory
+after modular effects, rather than retaining stale pre-call values. The same
+allocation transition serves C, C++ and Rust.
+
+Another decoder prerequisite is initialization across ordinary modular
+output-buffer calls. A regular `owns` contract does not guarantee that an
+initially unwritten object becomes initialized, even when a value postcondition
+names its memory. Concrete checked stores and construction destinations already
+establish initialization separately. Preserve that distinction when selecting
+the ordinary output contract and its body-certified initialization effect.
+
 `ReadCompactSize` additionally brings stream failure and canonical
 encoding rules; do not bundle those decisions into this span slice.
 

@@ -23,7 +23,15 @@ memory accesses must be covered by the current resource context:
 
 - a load requires a viewed or owned memory resource,
 - a store requires an owned memory resource,
-- local stack memory does not require a resource.
+- automatic scalar declarations create ownership of their exact byte extent;
+  ordinary local access uses it without additional proof annotations,
+- legacy automatic array and ordinary aggregate declarations retain implicit
+  local access; construction destinations have explicit allocation ownership.
+
+Scalar allocation ownership is independent of initialization. It can be lent to
+an ordinary helper contract and is retired when storage leaves its scope or is
+re-declared. Folding or transferring the permission does not leave a second
+implicit capability for direct local access.
 
 ## Resource context and families
 

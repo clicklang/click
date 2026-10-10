@@ -29,6 +29,71 @@ fn loadability_coverage_refuses_a_wrapped_byte_end() {
     );
 }
 
+/// Unaddressable scalar declarations keep their permissions without growing
+/// the observable pointer frame. Addressable locals must remain observable.
+#[test]
+fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
+    let saved = crate::kernel::capture_block_registries();
+    let base = ResourceContext::new()
+        .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+            Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Variable(Variable(93_600)),
+            },
+            0u32.into(),
+            1u32.into(),
+        )))
+        .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+            Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Variable(Variable(93_601)),
+            },
+            0u32.into(),
+            1u32.into(),
+        )));
+    let assumptions = PureFactContext::new();
+    let expected = base.observable_facts_assuming_valid(&assumptions);
+    let mut measured_work = Vec::new();
+    for count in [0, 64, 256, 1024] {
+        crate::kernel::set_never_address_taken_locals(
+            (0..count).map(|i| format!("hidden_{i}")).collect(),
+        );
+        let mut resources = base.clone();
+        for i in 0..count {
+            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
+                CMemoryRange::new_with_element_width(
+                    CMemory::local_pointer(&format!("hidden_{i}")),
+                    0u32.into(),
+                    4u32.into(),
+                    1,
+                ),
+            ));
+        }
+        let (observed, work) = crate::instrumentation::measure_deterministic_work(|| {
+            resources.observable_facts_assuming_valid(&assumptions)
+        });
+        assert_eq!(observed, expected);
+        measured_work.push((count, work));
+        assert_eq!(resources.facts().len(), count + 2);
+        let addressed = CResourceFact::own_memory(CMemoryRange::new(
+            CMemory::local_pointer("addressed"),
+            0u32.into(),
+            1u32.into(),
+        ));
+        let observable = resources
+            .unchecked_with_fact(addressed.clone())
+            .observable_facts_assuming_valid(&assumptions);
+        assert!(observable.iter().any(|fact| matches!(fact, Proposition::CResourceComposition(context) if context.facts().contains(&addressed))));
+    }
+    crate::kernel::restore_block_registries(&saved);
+    assert!(
+        measured_work
+            .iter()
+            .all(|(count, work)| *work <= measured_work[0].1 * 4 + *count * 128 + 32),
+        "observable frame projection exceeded bounded work: {measured_work:?}"
+    );
+}
+
 #[test]
 fn loadability_coverage_refuses_a_negative_signed_additive_shift() {
     let memory = CMemory::new();

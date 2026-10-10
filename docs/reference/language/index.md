@@ -1339,6 +1339,13 @@ of `first_of_four(bytes + index)`, is covered by it when `index <= length`
 and `4 <= length - index`
 (`mdtests/a_callee_takes_a_window_of_a_64_bit_range.md`). This holds for
 `views`; an owned window is not yet split out of an owned 64-bit range.
+A window two `size_t` offsets deep, `first_of_four(chunk + index)` with
+`chunk` at `bytes + start`, is at index `start + index` when each offset is
+at most `9223372036854775807`
+(`mdtests/a_window_two_offsets_into_a_64_bit_range.md`). A loop that holds
+a chunk of the range, `views chunk[0..16]`, lends a callee any part of that
+chunk without placing it in the whole range
+(`mdtests/a_callee_reads_inside_a_chunk_a_loop_holds.md`).
 A stored cursor can name the same window when a checked equality relates it
 to the input's native index. Address normalization and the cursor's indexed
 alias are checked separately; the alias supplies no access authority and the

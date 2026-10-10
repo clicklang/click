@@ -45,7 +45,6 @@ struct PreparedInner {
     logical_source: String,
     source: String,
     source_map: CSourceMap,
-    locked_pthread_headers: BTreeSet<String>,
     identity: String,
     promises: PromiseAttributes,
 }
@@ -64,17 +63,6 @@ impl PreparedCImport {
     pub fn source_map(&self) -> &CSourceMap {
         &self.inner.source_map
     }
-    pub(crate) fn has_locked_pthread_declaration_at(&self, line: usize) -> bool {
-        let position = self
-            .inner
-            .source_map
-            .lookup(crate::source::SourcePosition::new(line, 1));
-        position.origin.is_some_and(|origin| {
-            self.inner
-                .locked_pthread_headers
-                .contains(origin.filename.as_ref())
-        })
-    }
     pub fn identity(&self) -> &str {
         &self.inner.identity
     }
@@ -90,6 +78,15 @@ impl PreparedCImport {
     }
 
     #[cfg(test)]
+    pub(crate) fn for_test_on(target: CTarget, logical_source: &str, source: &str) -> Self {
+        let mut import = Self::for_test(logical_source, source);
+        Arc::get_mut(&mut import.inner)
+            .expect("a fresh test import is unshared")
+            .target = target;
+        import
+    }
+
+    #[cfg(test)]
     pub(crate) fn for_test_with(
         logical_source: &str,
         source: &str,
@@ -102,7 +99,6 @@ impl PreparedCImport {
                 logical_source: logical_source.to_string(),
                 source,
                 source_map,
-                locked_pthread_headers: BTreeSet::new(),
                 identity: format!("test-{logical_source}"),
                 promises,
             }),
@@ -332,17 +328,6 @@ fn load_imports_inner(config_path: &Path) -> Result<Vec<PreparedCImport>, String
                 logical_source: source.logical_source.clone(),
                 source: clean,
                 source_map: map,
-                locked_pthread_headers: locked
-                    .dependencies
-                    .keys()
-                    .filter(|path| {
-                        path.as_str() == "/usr/include/pthread.h"
-                            && Path::new(path)
-                                .strip_prefix(&lock.config_directory)
-                                .is_err()
-                    })
-                    .cloned()
-                    .collect(),
                 identity: locked.identity.clone(),
                 promises: if config.profile().is_some_and(OptionProfile::optimizes) {
                     PromiseAttributes::Refuse
@@ -2046,6 +2031,7 @@ mod tests {
         let fixture = CopiedFixture(root);
         for name in [
             "main.c",
+            "bits.h",
             "local.h",
             "main.click",
             "main.click.import.json",
@@ -2057,19 +2043,25 @@ mod tests {
         let config = fixture.0.join("main.click.import.json");
         let lock: Lock = serde_json::from_slice(&fs::read(lock_path(&config)).unwrap()).unwrap();
         assert_ne!(lock.config_directory, fixture.0.to_string_lossy());
+        // The program's own headers are its only dependencies: a standard
+        // interface such as `<limits.h>` comes from Click, not the platform.
+        assert_eq!(
+            lock.sources[0]
+                .local_dependencies
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["bits.h", "local.h"]
+        );
+        assert_eq!(
+            lock.sources[0].dependencies.len(),
+            lock.sources[0].local_dependencies.len()
+        );
         #[cfg(target_os = "macos")]
-        {
-            assert!(
-                !Path::new(&lock.toolchain.cc1_path).exists(),
-                "the Linux compiler backend must be absent on the Mac verification host"
-            );
-            assert!(
-                lock.sources[0]
-                    .dependencies
-                    .keys()
-                    .any(|path| path.starts_with("/usr/") && !Path::new(path).exists())
-            );
-        }
+        assert!(
+            !Path::new(&lock.toolchain.cc1_path).exists(),
+            "the Linux compiler backend must be absent on the Mac verification host"
+        );
 
         let sidecar = fixture.0.join("main.click");
         let proof = fs::read_to_string(&sidecar).unwrap();
@@ -2107,119 +2099,6 @@ mod tests {
         let artifact = fixture.0.join("main.i");
         fs::write(&artifact, "int answer(void) { return 43; }\n").unwrap();
         assert!(load_imports(&config).is_err());
-    }
-
-    #[test]
-    fn frozen_pthread_gcc_import_verifies_modeled_fork_join_offline() {
-        struct CopiedFixture(PathBuf);
-        impl Drop for CopiedFixture {
-            fn drop(&mut self) {
-                let _ = fs::remove_dir_all(&self.0);
-            }
-        }
-
-        static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let original =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pthread-linux-import");
-        assert_eq!(
-            fs::read(original.join("main.c")).unwrap(),
-            fs::read(
-                Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("examples/concurrency-fork-join/fork_join.c")
-            )
-            .unwrap(),
-            "the compiler fixture must keep the frozen C source unchanged"
-        );
-        let root = fs::canonicalize(std::env::temp_dir())
-            .unwrap()
-            .join(format!(
-                "click-pthread-gcc-offline-{}-{}",
-                std::process::id(),
-                NEXT.fetch_add(1, Ordering::Relaxed)
-            ));
-        fs::create_dir(&root).unwrap();
-        let fixture = CopiedFixture(root);
-        for name in [
-            "main.c",
-            "main.click",
-            "main.click.import.json",
-            "main.click.import.lock.json",
-            "main.i",
-        ] {
-            fs::copy(original.join(name), fixture.0.join(name)).unwrap();
-        }
-        let config = fixture.0.join("main.click.import.json");
-        let lock: Lock = serde_json::from_slice(&fs::read(lock_path(&config)).unwrap()).unwrap();
-        assert_ne!(lock.config_directory, fixture.0.to_string_lossy());
-        assert!(
-            lock.sources[0]
-                .dependencies
-                .keys()
-                .any(|path| path.ends_with("/pthread.h"))
-        );
-        #[cfg(target_os = "macos")]
-        assert!(!Path::new(&lock.toolchain.cc1_path).exists());
-
-        let sidecar = fixture.0.join("main.click");
-        let proof = fs::read_to_string(&sidecar).unwrap();
-        let example_proof = include_str!("../../../examples/concurrency-fork-join/fork_join.click");
-        assert_eq!(
-            proof,
-            format!(
-                "target \"x86_64-linux-userspace\";\nruntime \"modeled-pthread\";\n{}",
-                example_proof.replacen("verifying \"fork_join.c\";", "verifying \"main.c\";", 1)
-            ),
-            "the locked fixture must use the existing fork/join proof"
-        );
-        let crate::cli::CInput::Prepared(imports) =
-            crate::cli::read_c_inputs(&sidecar, &proof).unwrap()
-        else {
-            panic!("ordinary loading must select the locked pthread GCC artifact");
-        };
-        assert_eq!(
-            imports[0].identity(),
-            load_imports(&original.join("main.click.import.json")).unwrap()[0].identity()
-        );
-        let verified = crate::surface::verify_c0_prepared_sources(&proof, &imports).unwrap();
-        let proved_functions = verified
-            .iter()
-            .map(|theorem| theorem.function_block.signature().name())
-            .collect::<BTreeSet<_>>();
-        assert_eq!(
-            proved_functions,
-            BTreeSet::from(["fill_range", "fill_parallel"])
-        );
-        assert!(
-            verified
-                .iter()
-                .all(|theorem| theorem.import_identity.as_deref() == Some(imports[0].identity()))
-        );
-        let binding = verified[0]
-            .selection
-            .as_ref()
-            .unwrap()
-            .modeled_pthread_binding
-            .as_ref()
-            .unwrap();
-        assert_ne!(
-            binding.identity(),
-            crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin().identity()
-        );
-        assert!(verified.iter().all(|theorem| {
-            theorem
-                .selection
-                .as_ref()
-                .is_some_and(|selection| selection.runtime_assumptions.len() == 1)
-        }));
-    }
-
-    #[test]
-    fn pthread_origin_marker_alone_does_not_authorize_imported_binding() {
-        let import = PreparedCImport::for_test(
-            "main.c",
-            "# 1 \"/usr/include/pthread.h\" 1 3 4\nint pthread_join(unsigned long, void **);\n",
-        );
-        assert!(!import.has_locked_pthread_declaration_at(2));
     }
 
     #[test]

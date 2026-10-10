@@ -246,9 +246,9 @@ impl Eligibility<'_, '_> {
             CppExpression::Load { place, .. } => {
                 place.projections.is_empty() && values.contains(place.declaration_id.as_str())
             }
-            CppExpression::LogicalNot { value, .. } | CppExpression::IntegralCast { value, .. } => {
-                self.value(value, values)?
-            }
+            CppExpression::LogicalNot { value, .. }
+            | CppExpression::IntegralCast { value, .. }
+            | CppExpression::EnumCast { value, .. } => self.value(value, values)?,
             CppExpression::Binary { left, right, .. } => {
                 self.value(left, values)? && self.value(right, values)?
             }

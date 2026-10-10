@@ -14,14 +14,7 @@
     {
       "logical_source": "main.c",
       "path": "main.c",
-      "args": [
-        "-isystem",
-        "/usr/lib/gcc/x86_64-linux-gnu/13/include",
-        "-isystem",
-        "/usr/include/x86_64-linux-gnu",
-        "-isystem",
-        "/usr/include"
-      ],
+      "args": [],
       "artifact": "main.i"
     }
   ]

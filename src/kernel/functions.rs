@@ -7058,6 +7058,30 @@ fn execute_verified_function_applications_with_suspension(
 
         let mut return_state = caller_state.clone();
         return_state.set_memory(post_state.memory.clone());
+        // A modular write changes address-backed scalar bindings as well as
+        // memory. Visit only blocks named by this effect or its checked alias
+        // class, never the caller's unrelated local environment.
+        let mut refreshed_blocks = BTreeSet::new();
+        for range in &transfer.memory_effects {
+            for pointer in std::iter::once(range.base().clone()).chain(
+                effective_assumptions
+                    .equality_graph
+                    .pointer_spellings(range.base()),
+            ) {
+                if !refreshed_blocks.insert(pointer.block.clone()) {
+                    continue;
+                }
+                let slot = Pointer {
+                    block: pointer.block,
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                crate::kernel::eval::refresh_scalar_local_from_memory(
+                    &mut return_state,
+                    &slot,
+                    &effective_assumptions,
+                );
+            }
+        }
         return_state.resources = return_resources;
         return_state.loan_ledger = return_ledger;
         return_state.loan_participant = return_participant;
@@ -20235,6 +20259,9 @@ fn prepare_contract_resource_transfer_unexplained(
             let unsupplied_local = |range: &CMemoryRange| {
                 range.base().block.starts_with("local:")
                     && callee_state.memory().has_block(&range.base().block)
+                    && !callee_state
+                        .memory()
+                        .requires_explicit_scalar_ownership(range.base())
                     && caller_state
                         .resources()
                         .directly_supporting_owned_entry(&requirement.fact, assumptions)
@@ -20908,6 +20935,9 @@ fn prepare_contract_resource_transfer_unexplained(
         if let CResourceFact::View(CResource::Memory(range)) = resource
             && range.base().block.starts_with("local:")
             && callee_state.memory().has_block(&range.base().block)
+            && !callee_state
+                .memory()
+                .requires_explicit_scalar_ownership(range.base())
             && local_view_range_within_block(range, callee_state.memory())
         {
             continue;
@@ -21530,7 +21560,12 @@ fn evaluate_contract_return_resource_context(
                 Err(error) => return Ok(Err(error)),
             }
         };
-        context = match context.try_compose_with_fact(resource, assumptions) {
+        // Each returned fact is checked against the context as it grows, and
+        // the whole return is normalized once at the end, not after every
+        // clause.
+        context = match context
+            .try_compose_into_valid_context_delaying_normalization([resource], assumptions)
+        {
             Ok(context) => context,
             Err(error) => return Ok(Err(resource_context_runtime_error(error))),
         };
@@ -21543,7 +21578,10 @@ fn evaluate_contract_return_resource_context(
         for (resource, error) in std::mem::take(&mut deferred) {
             match evaluate_returned(resource, &context, &mut canonical_by_checked, budget)? {
                 Ok(returned) => {
-                    context = match context.try_compose_with_fact(returned, assumptions) {
+                    context = match context.try_compose_into_valid_context_delaying_normalization(
+                        [returned],
+                        assumptions,
+                    ) {
                         Ok(context) => context,
                         Err(error) => return Ok(Err(resource_context_runtime_error(error))),
                     };
@@ -21561,7 +21599,7 @@ fn evaluate_contract_return_resource_context(
         }
         deferred = waiting;
     }
-    Ok(Ok(context))
+    Ok(Ok(context.normalized(assumptions)))
 }
 
 /// The memory a context's owned composites hold, opened through their
@@ -22537,6 +22575,46 @@ fn resource_body_fact_is_established(
 ) -> bool {
     if required_obligation_is_exactly_discharged(established, proposition) {
         return true;
+    }
+    // A copied wide word can have a fresh read name that recurs inside its
+    // packed-word equation. Query only exact 64-bit neighbors of the stated
+    // endpoints and captured variables, using checked equality substitution. A
+    // candidate must still be established by the original context.
+    if let Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(left, right), true) =
+        proposition
+    {
+        let mut variables = std::collections::BTreeSet::new();
+        crate::kernel::reasoning::variable_collection::collect_proposition_capture_variables(
+            proposition,
+            &mut variables,
+        );
+        let endpoints = [left.as_ref().clone(), right.as_ref().clone()]
+            .into_iter()
+            .chain(variables.into_iter().map(Bitvector32Term::Variable));
+        for endpoint in endpoints {
+            for (alias, evidence) in established.exact_uint64_equalities(&endpoint) {
+                crate::instrumentation::record_deterministic_work(1);
+                let equality = Proposition::ConditionIs(
+                    ConditionTerm::Bitvector64Equal(
+                        Box::new(endpoint.clone()),
+                        Box::new(alias.clone()),
+                    ),
+                    true,
+                );
+                let evidence = Proposition::ConditionIs(evidence.clone(), true);
+                if let Ok(candidate) =
+                    crate::kernel::proof::equality_rewrite::rewrite_proposition_by_exact_equality(
+                        proposition,
+                        &equality,
+                        std::slice::from_ref(&evidence),
+                    )
+                    && candidate != *proposition
+                    && required_obligation_is_exactly_discharged(established, &candidate)
+                {
+                    return true;
+                }
+            }
+        }
     }
     if matches!(
         proposition,
@@ -24593,7 +24671,7 @@ pub(super) fn instance_body_evaluation(
         if let AlgebraicValue::C(value) = value {
             evaluation
                 .locals
-                .set_typed(name.clone(), value.clone(), value.c_type());
+                .bind_logical_typed(name.clone(), value.clone(), value.c_type());
         }
     }
     for (parameter, value) in definition.parameters.iter().zip(instance.arguments.iter()) {
@@ -24603,7 +24681,7 @@ pub(super) fn instance_body_evaluation(
         if value.c_type() != parameter.c_type() {
             return Err("resource argument type mismatch");
         }
-        evaluation.locals.set_typed(
+        evaluation.locals.bind_logical_typed(
             parameter.name().to_owned(),
             value.clone(),
             parameter.c_type(),
@@ -24954,22 +25032,23 @@ fn resource_context_contains_exact_owned_fact(
         return false;
     }
     if let CResourceFact::Own(CResource::Memory(required_range), _) = required {
+        // The pieces lying inside the required range start inside it, so
+        // the address index's candidates for that range include them all.
         let exact_parts = context
-            .facts()
-            .iter()
+            .owned_memory_candidates_for(required_range, assumptions)
+            .into_iter()
             .filter(|available| {
                 available.memory_own_range().is_some_and(|available_range| {
                     memory_range_covers(required_range, available_range, assumptions)
                 })
             })
-            .cloned()
             .collect::<Vec<_>>();
         let exact_parts =
             ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(exact_parts);
         return exact_parts.validity_error(assumptions).is_none()
             && exact_parts.satisfies_fact(required, assumptions);
     }
-    context.facts().iter().any(|available| {
+    context.direct_match_candidates(required).any(|available| {
         if !available.is_own() || available.family() != required.family() {
             return false;
         }
@@ -26775,24 +26854,23 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
         Ok(evaluated) => evaluated,
         Err(error) => return Ok(Err(error)),
     };
-    let mut context = ResourceContext::new_with_equalities(assumptions);
+    let context = ResourceContext::new_with_equalities(assumptions);
     let checked = evaluated;
-    for resource in &checked {
-        // Instance rewrites retain the declared memory pieces so folding does
-        // not need to normalize an ambient block just to consume those pieces.
-        let composed = if normalize {
-            context.try_compose_with_fact(resource.fact.clone(), assumptions)
-        } else {
-            context.try_compose_into_valid_context_delaying_normalization(
-                [resource.fact.clone()],
-                assumptions,
-            )
-        };
-        context = match composed {
-            Ok(context) => context,
-            Err(error) => return Ok(Err(resource_context_runtime_error(error))),
-        };
-    }
+    // The section's facts are composed together: one validity check and one
+    // normalization for the whole section, not one per fact over the growing
+    // context. Instance rewrites retain the declared memory pieces so folding
+    // does not need to normalize an ambient block just to consume those
+    // pieces.
+    let facts = checked.iter().map(|resource| resource.fact.clone());
+    let composed = if normalize {
+        context.try_compose_with_facts(facts, assumptions)
+    } else {
+        context.try_compose_into_valid_context_delaying_normalization(facts, assumptions)
+    };
+    let context = match composed {
+        Ok(context) => context,
+        Err(error) => return Ok(Err(resource_context_runtime_error(error))),
+    };
     Ok(Ok((context, checked)))
 }
 
@@ -31993,6 +32071,23 @@ pub(super) fn function_outcome_from_body(
             }
             caller_state = caller_state
                 .with_resource_context(return_resources.cloned().unwrap_or(state.resources));
+            for block in &retired_creation_blocks {
+                let Some(bytes) = state.memory.block_size(block).cloned() else {
+                    continue;
+                };
+                crate::kernel::eval::retire_automatic_storage_owner(
+                    &mut caller_state,
+                    &CMemoryRange::new_with_element_width(
+                        Pointer {
+                            block: block.clone(),
+                            offset: PointerOffsetTerm::Constant(0),
+                        },
+                        0.into(),
+                        bytes,
+                        1,
+                    ),
+                );
+            }
             caller_state.population_access = state.population_access.clone();
             caller_state.observed_population_families = state.observed_population_families;
 
@@ -32057,6 +32152,23 @@ pub(super) fn function_outcome_from_body(
             }
             caller_state = caller_state
                 .with_resource_context(return_resources.cloned().unwrap_or(state.resources));
+            for block in &retired_creation_blocks {
+                let Some(bytes) = state.memory.block_size(block).cloned() else {
+                    continue;
+                };
+                crate::kernel::eval::retire_automatic_storage_owner(
+                    &mut caller_state,
+                    &CMemoryRange::new_with_element_width(
+                        Pointer {
+                            block: block.clone(),
+                            offset: PointerOffsetTerm::Constant(0),
+                        },
+                        0.into(),
+                        bytes,
+                        1,
+                    ),
+                );
+            }
             caller_state.population_access = state.population_access.clone();
             caller_state.observed_population_families = state.observed_population_families;
 
@@ -35380,6 +35492,89 @@ mod inline_loop_boundary_tests {
 #[cfg(test)]
 mod composite_pointer_body_fact_tests {
     use super::*;
+
+    // A fold's packed-word equation can use a new name for a checked copy.
+    // Rewriting that name must remain scoped, full-width, and independent
+    // of unrelated facts. No memory observation or ownership is invented.
+    #[test]
+    fn fold_copied_wide_word_preserves_scope_width_and_scales() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let word = Bitvector32Term::Variable(Variable(710_000));
+        let copied = Bitvector32Term::Variable(Variable(710_001));
+        let changed = Bitvector32Term::Variable(Variable(710_002));
+        let address =
+            Bitvector32Term::PointerAddress(Box::new(Pointer::symbolic(Variable(710_003))));
+        let packed = |word: &Bitvector32Term| {
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector64Equal(
+                    Box::new(word.clone()),
+                    Box::new(Bitvector32Term::UInt64Add(
+                        Box::new(address.clone()),
+                        Box::new(Bitvector32Term::UInt64BitwiseAnd(
+                            Box::new(word.clone()),
+                            Box::new(Bitvector32Term::UInt64Constant(1)),
+                        )),
+                    )),
+                ),
+                true,
+            )
+        };
+        let alias = Proposition::ConditionIs(
+            ConditionTerm::Bitvector64Equal(Box::new(copied.clone()), Box::new(word.clone())),
+            true,
+        );
+        // Force the selected-alias route rather than general condition reasoning.
+        let parent = PureFactContext::new()
+            .defer_non_exact_condition_reasoning()
+            .assume_proposition(packed(&word));
+        let context = parent.clone().assume_proposition(alias.clone());
+        assert!(resource_body_fact_is_established(
+            &context,
+            &packed(&copied)
+        ));
+        assert!(!resource_body_fact_is_established(
+            &parent,
+            &packed(&copied)
+        ));
+        assert!(!resource_body_fact_is_established(
+            &context,
+            &packed(&changed)
+        ));
+        assert!(!resource_body_fact_is_established(
+            &PureFactContext::new().assume_proposition(alias),
+            &packed(&copied),
+        ));
+        let narrow = parent.clone().assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(Box::new(copied.clone()), Box::new(word.clone())),
+            true,
+        ));
+        assert!(!resource_body_fact_is_established(
+            &narrow,
+            &packed(&copied)
+        ));
+        let mut previous = None;
+        for count in [16_u64, 64, 256, 1024] {
+            let mut padded = context.clone();
+            for index in 0..count {
+                padded = padded.assume_proposition(Proposition::ConditionIs(
+                    ConditionTerm::Bitvector64Equal(
+                        Box::new(Bitvector32Term::Variable(Variable(720_000 + index))),
+                        Box::new(Bitvector32Term::UInt64Constant(index)),
+                    ),
+                    true,
+                ));
+            }
+            padded.build_stated_proposition_index();
+            let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                resource_body_fact_is_established(&padded, &packed(&copied))
+            });
+            assert!(proved);
+            if let Some(previous) = previous {
+                assert!(work <= previous + 64, "{count}: {work} after {previous}");
+            }
+            previous = Some(work);
+        }
+    }
 
     fn pointer_fact(left: &Pointer, right: &Pointer, equal: bool) -> Proposition {
         Proposition::ConditionIs(

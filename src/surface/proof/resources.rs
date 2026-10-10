@@ -3679,6 +3679,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
 fn fold_composite_resources_on_outcome_with_facts(
     resource_environment: &ResourceEnvironment,
     resource_folds: &[ResourceClause],
+    source_resource: Option<&ResourceClause>,
     claim_label: &str,
     path_index: usize,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
@@ -3966,6 +3967,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             pure_facts.assumptions(),
         );
         for fact in body_facts {
+            let source_fact = fact;
             let fact = substitute_click_proposition(fact, &substitutions).map_err(|message| {
                     ClickError::new(format!(
                         "`{claim_label}` path {path_index}: could not instantiate `fold({})` fact: {message}",
@@ -4074,10 +4076,22 @@ fn fold_composite_resources_on_outcome_with_facts(
                     String::new()
                 };
                 if authority_control_body {
+                    // Captured arguments are semantic values; render the written
+                    // operand so its C names survive a failing body check.
+                    let source_resource = source_resource.unwrap_or(resource);
+                    let source_substitutions = resource_argument_substitutions(
+                        definition,
+                        source_resource,
+                        claim_label,
+                        path_index,
+                    )?;
+                    let source_fact =
+                        substitute_click_proposition(source_fact, &source_substitutions)
+                            .map_err(ClickError::new)?;
                     return Err(ClickError::new(format!(
                         "`{claim_label}` path {path_index}: `fold({})` Requires {}",
-                        describe_resource_clause(resource),
-                        describe_click_proposition(&fact),
+                        describe_resource_clause(source_resource),
+                        describe_click_proposition(&source_fact),
                     )));
                 }
                 return Err(ClickError::new(format!(
@@ -4450,6 +4464,7 @@ pub(super) struct CheckedOutcomeResourceFold {
 pub(super) fn fold_composite_resource_for_proof(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
+    source_resource: &ResourceClause,
     claim_label: &str,
     tactic_index: usize,
     facts: ProofFacts,
@@ -4465,6 +4480,7 @@ pub(super) fn fold_composite_resource_for_proof(
     fold_composite_resource_for_proof_with_closure(
         resource_environment,
         resource,
+        source_resource,
         claim_label,
         tactic_index,
         facts,
@@ -4506,6 +4522,7 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
     let outcome = fold_composite_resources_on_outcome_with_facts(
         resource_environment,
         std::slice::from_ref(resource),
+        None,
         claim_label,
         path_index,
         execution_pure_facts,
@@ -4584,6 +4601,7 @@ pub(super) fn close_open_resource_for_proof(
     fold_composite_resource_for_proof_with_closure(
         resource_environment,
         resource,
+        resource,
         claim_label,
         tactic_index,
         facts,
@@ -4605,6 +4623,7 @@ pub(super) fn close_open_resource_for_proof(
 fn fold_composite_resource_for_proof_with_closure(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
+    source_resource: &ResourceClause,
     claim_label: &str,
     tactic_index: usize,
     facts: ProofFacts,
@@ -4626,6 +4645,7 @@ fn fold_composite_resource_for_proof_with_closure(
     let outcome = fold_composite_resources_on_outcome_with_facts(
         resource_environment,
         std::slice::from_ref(resource),
+        Some(source_resource),
         claim_label,
         tactic_index,
         &[],

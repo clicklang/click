@@ -41,7 +41,7 @@ fn authority_control_extra_payload_does_not_replace_counter_ownership() {
 }
 
 #[test]
-fn authority_member_local_body_requires_explicit_ownership() {
+fn authority_member_local_body_uses_scalar_allocation_ownership() {
     let c_source = r#"
         int32 value(void) {
             int32 x = 7;
@@ -68,12 +68,8 @@ fn authority_member_local_body_requires_explicit_ownership() {
             simp();
         }
     "#;
-    let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
-        .expect_err("local storage alone does not provide a separable body resource");
-    assert!(
-        error.message().contains("Requires the private body"),
-        "{error:?}"
-    );
+    verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+        .expect("scalar allocation supplies the body, and unfold restores it before local access");
 }
 
 #[test]
@@ -235,7 +231,7 @@ fn authority_helpers_create_and_consume_member_with_private_memory_body() {
 }
 
 #[test]
-fn authority_creating_helper_requires_caller_private_body() {
+fn authority_creating_helper_cannot_outlive_caller_scalar_storage() {
     let c_source = r#"
         int32 acquire(int32* p) { *p = 7; return 7; }
         int32 value(void) {
@@ -267,11 +263,9 @@ fn authority_creating_helper_requires_caller_private_body() {
         }
     "#;
     let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
-        .expect_err("authority and local storage do not supply a separable private body");
+        .expect_err("the live population authority prevents retiring its backing scalar");
     assert!(
-        error
-            .message()
-            .contains("missing resource fact `owns x[0..1]`"),
+        error.message().contains("OutstandingAuthority"),
         "{error:?}"
     );
 }
