@@ -7708,6 +7708,7 @@ impl ExecutionPureFact {
             proposition,
             public: true,
             certified: false,
+            logical_read_equation: false,
             join_summary: false,
             certified_store: None,
             transport: None,
@@ -7721,6 +7722,7 @@ impl ExecutionPureFact {
             proposition,
             public: false,
             certified: false,
+            logical_read_equation: false,
             join_summary: false,
             certified_store: None,
             transport: None,
@@ -7753,12 +7755,27 @@ impl ExecutionPureFact {
             proposition,
             public: true,
             certified: true,
+            logical_read_equation: false,
             join_summary: false,
             certified_store: None,
             transport: None,
             generated_load_binding: None,
             generated_load_source_events: Default::default(),
         }
+    }
+
+    pub(in crate::kernel) fn logical_read_equation(value: Pointer, read: Pointer) -> Self {
+        Self {
+            logical_read_equation: true,
+            ..Self::certified(Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(value, read),
+                true,
+            ))
+        }
+    }
+
+    pub(in crate::kernel) fn is_logical_read_equation(&self) -> bool {
+        self.certified && self.logical_read_equation
     }
 
     pub(super) fn certified_store(
@@ -7776,6 +7793,7 @@ impl ExecutionPureFact {
             },
             public: false,
             certified: true,
+            logical_read_equation: false,
             join_summary: false,
             certified_store: Some(Box::new(CertifiedMemoryStore {
                 before,
@@ -7805,6 +7823,7 @@ impl ExecutionPureFact {
             // producer equation.  Retaining its binding would let a later
             // surface consumer infer an epoch or pointer from a different
             // proposition.
+            self.logical_read_equation = false;
             self.generated_load_binding = None;
             self.generated_load_source_events = Default::default();
         }
@@ -7838,6 +7857,7 @@ impl ExecutionPureFact {
             proposition: target,
             public: false,
             certified: true,
+            logical_read_equation: false,
             join_summary: false,
             certified_store: None,
             transport: Some(Box::new(CertifiedExecutionFactTransport {

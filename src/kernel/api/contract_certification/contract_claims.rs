@@ -2985,6 +2985,35 @@ mod checked_proposition_index_tests {
     }
 
     #[test]
+    fn read_equations_follow_a_selected_route_without_selecting_one() {
+        let route = route(71_030, true);
+        let context = PureFactContext::new().assume_proposition(route.clone());
+        let pointer = Pointer::symbolic(Variable(71_031));
+        let equation = ExecutionPureFact::logical_read_equation(
+            pointer.clone(),
+            Pointer::loaded_value(&intern_c_memory(CMemory::new()), &pointer),
+        );
+        let mut paths = vec![
+            lowering_candidate(false, vec![]),
+            lowering_candidate(true, vec![route]),
+        ];
+        for path in &mut paths {
+            path.facts.push(equation.clone());
+        }
+        assert_eq!(
+            exactly_selected_spec_proposition_path(&paths, &context)
+                .unwrap()
+                .proposition,
+            paths[1].proposition
+        );
+        assert!(exactly_selected_spec_proposition_path(&paths, &PureFactContext::new()).is_none());
+        let mut forged = equation.clone();
+        forged.certified = false;
+        paths[1].facts = vec![forged].into();
+        assert!(exactly_selected_spec_proposition_path(&paths, &context).is_none());
+    }
+
+    #[test]
     fn outcome_selection_rejects_ambiguous_or_unrouted_candidates() {
         let shared = route(71_010, true);
         let assumptions = PureFactContext::new().assume_proposition(shared.clone());

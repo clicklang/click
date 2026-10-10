@@ -41,6 +41,19 @@ and retained by input checkpoints; rebuilding a context without its evidence dro
 Offset equality queries register the same producer-retained typed-read
 definitions as full-pointer queries. Registration visits only the selected
 operands; it never infers pointer-block identity from equal offsets.
+
+When a logical read returns a cached pointer, its path also carries the
+producer-derived equation between that value and the current cell's typed
+read. A named scalar cache supplies this equation only when its original
+producer recorded a complete eight-byte pointer load. The equation enters the
+ordinary equality graph with the path facts; the evaluator does not mutate
+the caller's context or promote a global observation into proof evidence.
+These equations are distinguished from branch conditions: they neither select
+a lowering candidate nor add premises to a quantified goal or an execution
+theorem. Pure capture may discard them, and symbolic match arms and range-fold
+bodies keep their equations local. Changed cells, missing aliases, restricted
+contexts, and narrower scalar reads cannot reuse the old relation. No read
+permission is introduced.
 Compound pointer and offset queries retain the generation at which their read
 dependencies were registered. Repeated queries reuse that result; a newly registered logical
 read definition changes the generation and invalidates earlier misses. This

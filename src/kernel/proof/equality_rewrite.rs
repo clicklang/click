@@ -2240,7 +2240,7 @@ mod tests {
                 let [path] = paths.as_slice() else {
                     panic!("one logical read");
                 };
-                assert!(path.facts.is_empty() && path.obligations.is_empty());
+                assert!(!path.facts.has_path_conditions() && path.obligations.is_empty());
                 let crate::kernel::CExpressionOutcome::Value(CValue::Pointer(value)) =
                     &path.outcome
                 else {

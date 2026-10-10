@@ -9776,6 +9776,9 @@ pub struct ExecutionPureFact {
     pub(super) proposition: Proposition,
     pub(super) public: bool,
     pub(super) certified: bool,
+    /// A value equation derived by a logical read, not a condition selecting
+    /// an evaluation path. It travels with the result's existing premises.
+    pub(super) logical_read_equation: bool,
     /// Set on the memory summary a checked interface join produced from its
     /// arms' own checked effects. See
     /// [`ExecutionPureFact::certified_join_summary`].

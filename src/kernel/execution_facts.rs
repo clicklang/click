@@ -74,6 +74,12 @@ impl ExecutionFacts {
     pub fn is_empty(&self) -> bool {
         self.data.len == 0
     }
+
+    /// Logical read equations are checked consequences of selecting a value,
+    /// not additional conditions on a pure expression or its branch.
+    pub(in crate::kernel) fn has_path_conditions(&self) -> bool {
+        self.iter().any(|fact| !fact.is_logical_read_equation())
+    }
     pub fn iter(&self) -> ExecutionFactsIter<'_> {
         ExecutionFactsIter {
             blocks: self.data.blocks.iter(),

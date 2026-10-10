@@ -44,7 +44,10 @@ pub(in crate::kernel) fn wrap_proof_facts(
     let proposition = facts
         .fact_iter()
         .filter(|fact| fact.is_public())
-        .filter(|fact| !crate::kernel::eval::is_load_variable_defining_fact(fact.proposition()))
+        .filter(|fact| {
+            !fact.is_logical_read_equation()
+                && !crate::kernel::eval::is_load_variable_defining_fact(fact.proposition())
+        })
         .rev()
         .fold(proposition, |body, fact| {
             Proposition::Implies(Box::new(fact.proposition().clone()), Box::new(body))
@@ -141,7 +144,10 @@ pub(in crate::kernel) fn guard_quantified_witness(
 ) -> Proposition {
     facts
         .fact_iter()
-        .filter(|fact| !crate::kernel::eval::is_load_variable_defining_fact(fact.proposition()))
+        .filter(|fact| {
+            !fact.is_logical_read_equation()
+                && !crate::kernel::eval::is_load_variable_defining_fact(fact.proposition())
+        })
         .rev()
         .fold(proposition, |body, fact| {
             Proposition::And(Box::new(fact.proposition().clone()), Box::new(body))
@@ -164,13 +170,14 @@ pub(in crate::kernel) fn wrap_path_context_with_introductions(
             Proposition::Implies(Box::new(obligation.proposition().clone()), Box::new(body))
         });
 
-    // A load-variable defining equation is true by construction;
-    // wrapping it as a premise only buries the consequent behind an
-    // antecedent every prover then has to discharge.
+    // Load definitions and producer-derived read equations are consequences
+    // of term evaluation, not additional hypotheses. Wrapping either as a
+    // premise would change the goal instead of retaining its read evidence.
     let retained = || {
-        facts
-            .fact_iter()
-            .filter(|fact| !crate::kernel::eval::is_load_variable_defining_fact(fact.proposition()))
+        facts.fact_iter().filter(|fact| {
+            !fact.is_logical_read_equation()
+                && !crate::kernel::eval::is_load_variable_defining_fact(fact.proposition())
+        })
     };
 
     let introductions = retained()

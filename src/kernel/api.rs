@@ -3001,10 +3001,11 @@ pub(in crate::kernel) fn exactly_selected_spec_proposition_path<'a>(
     let mut selected = None;
     for path in paths {
         crate::instrumentation::record_deterministic_work(1);
-        if path.facts.is_empty()
+        if !path.facts.has_path_conditions()
             || !path
                 .facts
                 .iter()
+                .filter(|fact| !fact.is_logical_read_equation())
                 .all(|fact| assumptions.states_required_goal(fact.proposition()))
         {
             continue;
