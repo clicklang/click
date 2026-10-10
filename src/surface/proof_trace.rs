@@ -1114,7 +1114,6 @@ fn append_added_facts(
     labels: &mut SnapshotLabels,
     indent: &str,
 ) {
-    let mut unspelled = 0;
     for fact in facts {
         if !visible_checked_fact(&fact.kernel) {
             continue;
@@ -1151,13 +1150,15 @@ fn append_added_facts(
                 trace_text(surface, 240)
             ));
         } else {
-            unspelled += 1;
+            // These are the same checked fact deltas as the source-facing
+            // entries above. Keep their content visible when no exact proof
+            // spelling exists; the bounded renderer shares snapshot labels.
+            let internal = render::render_internal_proposition_labeled(&fact.kernel, labels);
+            output.push_str(&format!(
+                "\n{indent}adds (internal, not Click proof syntax): {}",
+                trace_text(&internal, 2048)
+            ));
         }
-    }
-    if unspelled > 0 {
-        output.push_str(&format!(
-            "\n{indent}adds: {unspelled} checked fact(s) with no exact Click spelling"
-        ));
     }
 }
 
@@ -1430,10 +1431,14 @@ mod tests {
             .unwrap();
             assert!(goal.contains("snapshot#1"), "{goal}");
             assert!(
-                trace.contains("adds: 2 checked fact(s) with no exact Click spelling"),
+                trace
+                    .matches("adds (internal, not Click proof syntax): viewable(")
+                    .count()
+                    == 2,
                 "{trace}"
             );
-            assert!(!trace.contains("snapshot#2"), "{trace}");
+            assert!(trace.contains("snapshot#1"), "{trace}");
+            assert!(trace.contains("snapshot#2"), "{trace}");
         });
     }
 

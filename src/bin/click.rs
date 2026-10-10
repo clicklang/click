@@ -830,7 +830,10 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
         // The call's implication ensure and the resource composition of its
         // frame, which the call records.
         assert!(
-            report.contains("2 checked fact(s) with no exact Click spelling"),
+            report
+                .matches("adds (internal, not Click proof syntax):")
+                .count()
+                >= 2,
             "{report}"
         );
         assert_eq!(

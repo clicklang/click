@@ -38,7 +38,11 @@ whose structure cannot be rendered within the fixed budget are omitted with
 one bounded explanation per context. Transport failures keep
 the written source and target and name stores that may have changed the cell.
 An explicitly requested `--trace-proof` can additionally show bounded internal
-facts and snapshot identities for debugging.
+facts and snapshot identities for debugging. Checked fact additions that
+cannot be displayed as source expressions use bounded internal notation with
+stable value and snapshot labels, marked as not being Click proof syntax.
+Their content is displayed rather than replaced by a count. Existing step,
+fact and output limits still explicitly report omissions.
 
 For pointer equalities with retained read identities, the trace recovers
 source expressions against the read's defining snapshot. When the reads share one snapshot it prints a common

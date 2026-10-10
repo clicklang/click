@@ -2117,3 +2117,28 @@ void f(struct node* p) {
         assert!(!report.contains("Missing:"), "{report}");
     });
 }
+
+/// Smart execution must record the same checked call facts as written steps,
+/// even when the later postcondition cannot be proved.
+#[test]
+fn execute_failure_trace_retains_checked_call_facts() {
+    let c = "int helper(void) { return 1; } int f(void) { return helper(); }";
+    for execution in ["execute();", "step(); step();"] {
+        let source = format!(
+            "verifying \"f.c\"; int32 helper() {{ ensures result == 1; }} by {{ execute(); simp(); }} \
+             int32 f() {{ ensures result == 2; }} by {{ {execution} simp(); }}"
+        );
+        with_proof_trace("f", || {
+            let error = verify_c0_sources(&source, &[("f.c", c)])
+                .expect_err("the intentionally false postcondition must fail");
+            let trace = error.trace_context_report().expect("failure trace");
+            assert!(!trace.contains("<no checked simple steps"), "{trace}");
+            assert!(trace.contains("step(helper("), "{trace}");
+            assert!(trace.contains("adds"), "{trace}");
+            assert!(
+                trace.contains("== 1") || trace.contains(", 1) is true"),
+                "{trace}"
+            );
+        });
+    }
+}
