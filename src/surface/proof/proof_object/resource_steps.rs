@@ -589,7 +589,55 @@ impl<'a> Proof<'a> {
             } else {
                 None
             };
-            self.step_error_with_comparison(refusal.describe(), comparison)
+            let declaration = match &refusal {
+                crate::kernel::ResourceRewriteRefusal::BodyFactNotEstablished {
+                    arm,
+                    index,
+                    ..
+                }
+                | crate::kernel::ResourceRewriteRefusal::BodyFactPrerequisiteNotEstablished {
+                    arm,
+                    index,
+                    ..
+                } => context
+                    .resource_environment
+                    .get(instance.name())
+                    .and_then(|definition| {
+                        let source = match arm {
+                            None => definition.composite_body()?.facts().get(*index).cloned(),
+                            Some(variant) => crate::surface::validation::resource_match_arm_scopes(
+                                definition,
+                                |name| {
+                                    context
+                                        .click_function_environment
+                                        .algebraic_type_definitions
+                                        .get(name)
+                                },
+                                |name| context.resource_environment.get(name),
+                            )
+                            .ok()?
+                            .into_iter()
+                            .find(|(name, _, _)| name == variant)
+                            .and_then(|(_, _, arm)| {
+                                arm.composite_body()?.facts().get(*index).cloned()
+                            }),
+                        }?;
+                        Some(crate::surface::printing::source_click_proposition(&source))
+                    }),
+                _ => None,
+            };
+            let requirement = match &refusal {
+                crate::kernel::ResourceRewriteRefusal::BodyFactNotEstablished {
+                    proposition,
+                    ..
+                } => Some(("required body fact", proposition.clone(), declaration)),
+                crate::kernel::ResourceRewriteRefusal::BodyFactPrerequisiteNotEstablished {
+                    proposition,
+                    ..
+                } => Some(("unproved prerequisite", proposition.clone(), declaration)),
+                _ => None,
+            };
+            self.step_error_with_requirement(refusal.describe(), comparison, requirement)
         })?;
         crate::kernel::model_fields::register_instance_spelling(instance.identity(), &binding.name);
         let clause_presentations = if unfold {

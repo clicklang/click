@@ -1065,6 +1065,7 @@ struct ProofDiagnosticProofState(
     Option<SurfacePropositionMap>,
     Option<CState>,
     Option<crate::surface::proof_trace::ChildArgumentTrace>,
+    Option<(&'static str, Box<Proposition>, Option<String>)>,
 );
 
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
@@ -1162,6 +1163,16 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         // be abbreviated as `…`. Let the state-aware printer recover their
         // local names instead of treating that abbreviation as an exact goal.
         (!source.contains("__click_") && !source.contains('…')).then_some(source)
+    }
+
+    fn failed_requirement(&self) -> Option<(&str, &Proposition)> {
+        self.6
+            .as_ref()
+            .map(|(label, fact, _)| (*label, fact.as_ref()))
+    }
+
+    fn failed_requirement_declaration(&self) -> Option<&str> {
+        self.6.as_ref()?.2.as_deref()
     }
 
     fn kernel_goal(&self) -> Option<&Proposition> {
@@ -1578,6 +1589,7 @@ impl Proof<'_> {
                 ProofContext::FixedState(context) => Some(context.state.clone()),
                 _ => None,
             },
+            None,
             None,
         )
     }
@@ -2550,17 +2562,19 @@ impl<'a> Proof<'a> {
     /// lineage of the current block instead. The proof-tree depth is never
     /// reported as if it were a step number.
     pub(in crate::surface::proof) fn step_error(&self, message: impl Into<String>) -> ClickError {
-        self.step_error_with_comparison(message, None)
+        self.step_error_with_requirement(message, None, None)
     }
 
-    fn step_error_with_comparison(
+    fn step_error_with_requirement(
         &self,
         message: impl Into<String>,
         comparison: Option<crate::surface::proof_trace::ChildArgumentTrace>,
+        requirement: Option<(&'static str, Box<Proposition>, Option<String>)>,
     ) -> ClickError {
         let reason = message.into();
         let mut diagnostic_state = self.diagnostic_state();
         diagnostic_state.5 = comparison;
+        diagnostic_state.6 = requirement;
         let location = self
             .site
             .path()

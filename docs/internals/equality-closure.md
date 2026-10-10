@@ -50,7 +50,9 @@ ordinary equality graph with the path facts; the evaluator does not mutate
 the caller's context or promote a global observation into proof evidence.
 These equations are distinguished from branch conditions: they neither select
 a lowering candidate nor add premises to a quantified goal or an execution
-theorem. Pure capture may discard them, and symbolic match arms and range-fold
+theorem. Definedness checks omit them from safety conditions, and checked
+branch interfaces keep them local rather than requiring another arm or the
+abstract successor to establish them. Pure capture may discard them, and symbolic match arms and range-fold
 bodies keep their equations local. Changed cells, missing aliases, restricted
 contexts, and narrower scalar reads cannot reuse the old relation. No read
 permission is introduced.

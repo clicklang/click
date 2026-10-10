@@ -5199,14 +5199,21 @@ fn interface_spec_paths(
     reference_state: &CState,
     assumptions: &PureFactContext,
 ) -> Option<Vec<crate::kernel::spec::SpecPropositionPath>> {
-    crate::kernel::spec::lower_spec_proposition_at_state_with_loop_entry(
+    let mut paths = crate::kernel::spec::lower_spec_proposition_at_state_with_loop_entry(
         state,
         spec,
         Some(reference_state),
         assumptions,
         &mut ExecutionBudget::beside_live_state(),
     )
-    .ok()
+    .ok()?;
+    for path in &mut paths {
+        // Producer-derived read equations are local consequences of this
+        // lowering, not interface requirements. Do not export them from an
+        // arm or ask the other arm or abstract successor to establish them.
+        path.facts.retain(|fact| !fact.is_logical_read_equation());
+    }
+    Some(paths)
 }
 
 fn evaluate_interface_resource_spec(

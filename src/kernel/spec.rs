@@ -1708,6 +1708,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 proposition_and_all(
                     path.facts
                         .into_iter()
+                        // A cached read equation follows from the selected
+                        // value; it is not a condition for the read to exist.
+                        .filter(|fact| !fact.is_logical_read_equation())
                         .filter_map(|fact| {
                             drop_verified_load_definition_conjuncts(fact.proposition().clone())
                         })
