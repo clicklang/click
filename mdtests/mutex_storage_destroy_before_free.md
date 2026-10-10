@@ -1,11 +1,12 @@
 # Destruction permits releasing mutex storage
 
-This C0 fixture uses the allocator builtins directly; the unsupported
-`stdlib.h` include is omitted. The modeled pthread declarations are retained.
+The allocator comes from Click's built-in `<stdlib.h>` and the mutex from its
+built-in `<pthread.h>`.
 
 
 ```c filename=mutex_storage_destroy_before_free.c
 #include <pthread.h>
+#include <stdlib.h>
 struct holder { int prefix; pthread_mutex_t mu; };
 int run(void) {
     struct holder *holder = malloc(sizeof(struct holder));

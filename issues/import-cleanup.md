@@ -43,13 +43,11 @@ diagnostic naming the built-in one. The glibc lock fixture, its tests, and the
 native-validation plan in the concurrency design records are gone; the
 lookalike refusals remain.
 
-### 3. glibc's `<limits.h>` in the cross-host C fixture
+### 3. glibc's `<limits.h>` in the cross-host C fixture (done)
 
-`tests/fixtures/cross-host-c-import/` exercises lock portability by importing
-`main.c`, which includes Ubuntu's `<limits.h>`. The lock test is useful; the
-library header is not. Use only project-local headers in that fixture, and
-give Click a built-in `<limits.h>` (item 5) for programs that need
-`CHAR_BIT` and friends.
+`tests/fixtures/cross-host-c-import/` now includes only project-local headers,
+and its lock records no system-header dependency. Click's built-in
+`<limits.h>` (item 5) serves programs that need `CHAR_BIT` and friends.
 
 ### 4. libstdc++, glibc and Boost headers in the Bitcoin Core integration
 
@@ -68,18 +66,15 @@ Core's functions against it, and drop the sysroot and the libstdc++
 implementation proofs. The two `cpp-verification` fixtures that include a
 fixture-owned `<cstdint>` should then use Click's.
 
-### 5. Missing built-in C headers
+### 5. Missing built-in C headers (done)
 
-Click's C preprocessor provides `<stdint.h>`, `<inttypes.h>`, and
-`<stdbool.h>`, and for the user-space target `<stddef.h>`, `<pthread.h>`,
-and `<stdatomic.h>`. Every other system include is refused, so a program
-that includes `<string.h>` or `<stdlib.h>` cannot be verified as written,
-although the standard library already has contracts for `memcpy`, `memcmp`,
-`memset`, and `strlen`, and the kernel models `malloc`, `calloc`,
-`realloc`, and `free`. Add built-in `<string.h>`, `<stdlib.h>`, and
-`<limits.h>` declaring exactly the modeled subset, so ordinary C uses those
-contracts without a compiler import. Add further headers only when an example
-needs them.
+Click's preprocessor provides `<limits.h>` on every target and, for the
+user-space target, declaration-only `<string.h>` (`memcpy`, `memcmp`,
+`memset`) and `<stdlib.h>` (`malloc`, `calloc`, `realloc`, `free`) declaring
+exactly the modeled subset, so ordinary C reaches those contracts without a
+compiler import. `strlen`'s contract takes a `uint8` array, so `<string.h>`
+does not declare its `const char *` prototype. Add further headers only when an
+example needs them.
 
 ### 6. Documentation
 

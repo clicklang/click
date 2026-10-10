@@ -2031,6 +2031,7 @@ mod tests {
         let fixture = CopiedFixture(root);
         for name in [
             "main.c",
+            "bits.h",
             "local.h",
             "main.click",
             "main.click.import.json",
@@ -2042,19 +2043,25 @@ mod tests {
         let config = fixture.0.join("main.click.import.json");
         let lock: Lock = serde_json::from_slice(&fs::read(lock_path(&config)).unwrap()).unwrap();
         assert_ne!(lock.config_directory, fixture.0.to_string_lossy());
+        // The program's own headers are its only dependencies: a standard
+        // interface such as `<limits.h>` comes from Click, not the platform.
+        assert_eq!(
+            lock.sources[0]
+                .local_dependencies
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["bits.h", "local.h"]
+        );
+        assert_eq!(
+            lock.sources[0].dependencies.len(),
+            lock.sources[0].local_dependencies.len()
+        );
         #[cfg(target_os = "macos")]
-        {
-            assert!(
-                !Path::new(&lock.toolchain.cc1_path).exists(),
-                "the Linux compiler backend must be absent on the Mac verification host"
-            );
-            assert!(
-                lock.sources[0]
-                    .dependencies
-                    .keys()
-                    .any(|path| path.starts_with("/usr/") && !Path::new(path).exists())
-            );
-        }
+        assert!(
+            !Path::new(&lock.toolchain.cc1_path).exists(),
+            "the Linux compiler backend must be absent on the Mac verification host"
+        );
 
         let sidecar = fixture.0.join("main.click");
         let proof = fs::read_to_string(&sidecar).unwrap();
