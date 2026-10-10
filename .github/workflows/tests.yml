@@ -204,12 +204,33 @@ jobs:
         with:
           path: ~/.cache/click/llvm
           key: ${{ runner.os }}-${{ runner.arch }}-click-llvm-${{ hashFiles('scripts/setup-environment.sh') }}
+      # A download normally takes 10-30 seconds, but one has stalled for
+      # twelve minutes and held the whole run. Cut a stalled attempt off and
+      # try once more; a second stall fails the shard.
       - uses: actions/download-artifact@v4
+        id: download_tests
+        timeout-minutes: 3
+        continue-on-error: true
         with:
           name: compiled-tests
           path: ${{ runner.temp }}/compiled-tests
       - uses: actions/download-artifact@v4
+        if: steps.download_tests.outcome != 'success'
+        timeout-minutes: 5
+        with:
+          name: compiled-tests
+          path: ${{ runner.temp }}/compiled-tests
+      - uses: actions/download-artifact@v4
+        id: download_rust
         if: matrix.suite == 'rust'
+        timeout-minutes: 3
+        continue-on-error: true
+        with:
+          name: rust-toolchain
+          path: ${{ runner.temp }}/compiled-tests/rust
+      - uses: actions/download-artifact@v4
+        if: matrix.suite == 'rust' && steps.download_rust.outcome != 'success'
+        timeout-minutes: 5
         with:
           name: rust-toolchain
           path: ${{ runner.temp }}/compiled-tests/rust
