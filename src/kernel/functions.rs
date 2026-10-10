@@ -22616,6 +22616,19 @@ fn resource_body_fact_is_established(
             }
         }
     }
+    // A model binding can select an equal address spelling while the
+    // logical read retains its own producer identity. Reuse only the exact
+    // typed read relation already checked for contract facts: it requires
+    // the same recorded snapshot and address, or a checked stored value.
+    if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = proposition
+        && crate::kernel::memory_provenance::pointer_read_has_recorded_value(
+            left,
+            right,
+            established,
+        )
+    {
+        return true;
+    }
     if matches!(
         proposition,
         Proposition::ConditionIs(
