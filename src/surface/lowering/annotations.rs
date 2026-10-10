@@ -591,6 +591,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
             result_type: CType::Int32,
             entry_values: BTreeMap::new(),
             aggregate_parameters: BTreeSet::new(),
+            c_parameter_types: BTreeMap::new(),
             local_type_state: None,
             pointer_element_types: definition
                 .parameters()
@@ -647,6 +648,7 @@ fn lower_kernel_pure_function_definition(
         result_type: CType::Int32,
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
+        c_parameter_types: BTreeMap::new(),
         local_type_state: None,
         pointer_element_types: definition
             .parameters()
@@ -734,6 +736,7 @@ pub(in crate::surface) fn lower_composite_resource_condition(
         result_type: CType::Int32,
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
+        c_parameter_types: BTreeMap::new(),
         local_type_state: None,
         pointer_element_types: definition
             .parameters()
@@ -816,6 +819,7 @@ pub(in crate::surface) fn lower_composite_resource_facts_with_bindings(
         result_type: CType::Int32,
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
+        c_parameter_types: BTreeMap::new(),
         local_type_state: None,
         pointer_element_types: definition
             .parameters()
@@ -1017,6 +1021,16 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
             .iter()
             .filter(|p| p.is_struct_value())
             .map(|p| p.name().to_string())
+            .collect(),
+        c_parameter_types: parsed_function
+            .parameters()
+            .iter()
+            .map(|parameter| {
+                (
+                    parameter.name().to_string(),
+                    parameter.c_type().to_kernel_type(),
+                )
+            })
             .collect(),
         local_type_state: None,
         pointer_element_types: parsed_function
@@ -1276,6 +1290,16 @@ pub(in crate::surface) fn lower_branch_interface_fact(
             .filter(|p| p.is_struct_value())
             .map(|p| p.name().to_string())
             .collect(),
+        c_parameter_types: parsed_function
+            .parameters()
+            .iter()
+            .map(|parameter| {
+                (
+                    parameter.name().to_string(),
+                    parameter.c_type().to_kernel_type(),
+                )
+            })
+            .collect(),
         local_type_state: Some(current_state),
         pointer_element_types: parsed_function
             .parameters()
@@ -1333,6 +1357,7 @@ fn fixed_state_elaboration<'a>(
         result_type: result.map(CValue::c_type).unwrap_or(CType::Int32),
         entry_values,
         aggregate_parameters: BTreeSet::new(),
+        c_parameter_types: BTreeMap::new(),
         local_type_state: None,
         pointer_element_types: array_element_types,
         parameter_pointer_element_widths,
@@ -1671,6 +1696,15 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
         result_type: CType::Int32,
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
+        c_parameter_types: parameters
+            .iter()
+            .map(|parameter| {
+                (
+                    parameter.name().to_string(),
+                    parameter.c_type().to_kernel_type(),
+                )
+            })
+            .collect(),
         local_type_state: None,
         pointer_element_types: parameters
             .iter()
@@ -1735,6 +1769,16 @@ pub(in crate::surface) fn function_contract_summary(
         result_type: parsed_function.return_type().to_kernel_type(),
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
+        c_parameter_types: parsed_function
+            .parameters()
+            .iter()
+            .map(|parameter| {
+                (
+                    parameter.name().to_string(),
+                    parameter.c_type().to_kernel_type(),
+                )
+            })
+            .collect(),
         local_type_state: None,
         pointer_element_types: parsed_function
             .parameters()
@@ -2182,6 +2226,10 @@ struct AnnotationLowerer<'a> {
     /// Live declaration types for state-parametric branch facts; values remain symbolic.
     /// Each referenced name uses the state's existing index, without a body/history scan.
     local_type_state: Option<&'a CState>,
+    /// Declared C types of the function's parameters, where a function is
+    /// in scope: a clause's range over a `size_t` parameter is a `size_t`
+    /// range.
+    c_parameter_types: BTreeMap<String, CType>,
     /// Declared pointee types of parameters and encountered automatic locals.
     /// Local names are the frontend's distinct kernel bindings.
     pointer_element_types: BTreeMap<String, CType>,
@@ -3405,19 +3453,23 @@ impl AnnotationLowerer<'_> {
                 body,
             } => {
                 let display_item = written_item.as_ref().unwrap_or(item);
+                // A range with a `uint64` endpoint ranges over `uint64` values,
+                // as a range fold's does: its item is a `size_t` index.
+                let wide = self.range_bounds_are_uint64(start, end, environment);
                 let start = self.lower_contract_expression_to_spec(start, environment)?;
                 let end = self.lower_contract_expression_to_spec(end, environment)?;
                 let variable = allocate_quantifier_variable(&mut self.next_quantifier_variable)?;
-                let item_value =
-                    SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(variable)));
+                let item_carrier = if wide {
+                    CValue::UInt64(Bitvector32Term::Variable(variable))
+                } else {
+                    CValue::Int32(Bitvector32Term::Variable(variable))
+                };
+                let item_value = SpecExpression::Value(item_carrier.clone());
                 let mut body_environment = environment.clone();
                 body_environment
                     .values
                     .insert(item.clone(), item_value.clone());
-                let previous = self.quantified_values.insert(
-                    item.clone(),
-                    CValue::Int32(Bitvector32Term::Variable(variable)),
-                );
+                let previous = self.quantified_values.insert(item.clone(), item_carrier);
                 let body = self.click_proposition_to_spec_proposition(body, &body_environment)?;
                 match previous {
                     Some(value) => {
@@ -3428,10 +3480,20 @@ impl AnnotationLowerer<'_> {
                     }
                 }
                 let range = spec_range_membership_proposition(start, item_value, end);
-                Ok(SpecProposition::ForAllInt32 {
-                    name: display_item.clone(),
-                    variable,
-                    body: Box::new(SpecProposition::Implies(Box::new(range), Box::new(body))),
+                let body = Box::new(SpecProposition::Implies(Box::new(range), Box::new(body)));
+                Ok(if wide {
+                    SpecProposition::ForAllMachineInteger {
+                        name: display_item.clone(),
+                        variable,
+                        integer_type: crate::kernel::MachineIntegerType::UInt64,
+                        body,
+                    }
+                } else {
+                    SpecProposition::ForAllInt32 {
+                        name: display_item.clone(),
+                        variable,
+                        body,
+                    }
                 })
             }
             _ => unreachable!("proposition dispatched to the wrong lowering helper"),
@@ -3453,19 +3515,23 @@ impl AnnotationLowerer<'_> {
                 body,
             } => {
                 let display_item = written_item.as_ref().unwrap_or(item);
+                // A range with a `uint64` endpoint ranges over `uint64` values,
+                // as a range fold's does: its item is a `size_t` index.
+                let wide = self.range_bounds_are_uint64(start, end, environment);
                 let start = self.lower_contract_expression_to_spec(start, environment)?;
                 let end = self.lower_contract_expression_to_spec(end, environment)?;
                 let variable = allocate_quantifier_variable(&mut self.next_quantifier_variable)?;
-                let item_value =
-                    SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(variable)));
+                let item_carrier = if wide {
+                    CValue::UInt64(Bitvector32Term::Variable(variable))
+                } else {
+                    CValue::Int32(Bitvector32Term::Variable(variable))
+                };
+                let item_value = SpecExpression::Value(item_carrier.clone());
                 let mut body_environment = environment.clone();
                 body_environment
                     .values
                     .insert(item.clone(), item_value.clone());
-                let previous = self.quantified_values.insert(
-                    item.clone(),
-                    CValue::Int32(Bitvector32Term::Variable(variable)),
-                );
+                let previous = self.quantified_values.insert(item.clone(), item_carrier);
                 let body = self.click_proposition_to_spec_proposition(body, &body_environment)?;
                 match previous {
                     Some(value) => {
@@ -3476,10 +3542,20 @@ impl AnnotationLowerer<'_> {
                     }
                 }
                 let range = spec_range_membership_proposition(start, item_value, end);
-                Ok(SpecProposition::ExistsInt32 {
-                    name: display_item.clone(),
-                    variable,
-                    body: Box::new(SpecProposition::And(Box::new(range), Box::new(body))),
+                let body = Box::new(SpecProposition::And(Box::new(range), Box::new(body)));
+                Ok(if wide {
+                    SpecProposition::ExistsMachineInteger {
+                        name: display_item.clone(),
+                        variable,
+                        integer_type: crate::kernel::MachineIntegerType::UInt64,
+                        body,
+                    }
+                } else {
+                    SpecProposition::ExistsInt32 {
+                        name: display_item.clone(),
+                        variable,
+                        body,
+                    }
                 })
             }
             _ => unreachable!("proposition dispatched to the wrong lowering helper"),
@@ -3877,6 +3953,38 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Option<ClickType> {
         self.contract_expression_click_type_in_scope(expression, environment, &mut Vec::new())
+    }
+
+    /// Whether a range's endpoints make its item a `uint64`: one endpoint
+    /// is a `uint64`, as for a range fold.
+    fn range_bounds_are_uint64(
+        &self,
+        start: &ContractExpression,
+        end: &ContractExpression,
+        environment: &SpecElaborationContext,
+    ) -> bool {
+        [start, end].into_iter().any(|bound| {
+            self.contract_expression_click_type(bound, environment)
+                == Some(ClickType::C(C0Type::UInt64))
+                || matches!(bound, ContractExpression::CFragment(CExpression::Variable(name))
+                    if self.c_variable_type(name) == Some(CType::UInt64))
+                || matches!(bound, ContractExpression::CFragment(CExpression::Value(value))
+                    if value.c_type() == CType::UInt64)
+        })
+    }
+
+    /// The declared C type of a parameter or local named in a clause, from
+    /// its typed entry value or the live declaration state.
+    fn c_variable_type(&self, name: &str) -> Option<CType> {
+        self.c_parameter_types
+            .get(name)
+            .copied()
+            .or_else(|| self.entry_values.get(name).map(CValue::c_type))
+            .or_else(|| self.entry_state.locals().get(name).map(CValue::c_type))
+            .or_else(|| {
+                self.local_type_state
+                    .and_then(|state| state.local_object_type(name))
+            })
     }
 
     fn contract_expression_click_type_in_scope(

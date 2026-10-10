@@ -2488,14 +2488,14 @@ function byte_count(bytes: uint8[], lo: int32, hi: int32, value: uint8) -> int32
 ### `bytes_equal`
 
 ```click
-predicate bytes_equal(left: uint8[], left_lo: int32, right: uint8[], right_lo: int32, len: int32) {
-    (0..len).all(|k| {
+predicate bytes_equal(left: uint8[], left_lo: uint64, right: uint8[], right_lo: uint64, len: uint64) {
+    (0u64..len).all(|k| {
         left[left_lo + k] == right[right_lo + k]
     })
 }
 ```
 
-**Meaning:** States that the `len` bytes starting at `left_lo` and `right_lo` are pairwise equal.
+**Meaning:** States that the `len` bytes starting at `left_lo` and `right_lo` are pairwise equal. Offsets and lengths are `size_t` values.
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -2504,7 +2504,7 @@ predicate bytes_equal(left: uint8[], left_lo: int32, right: uint8[], right_lo: i
 ### `bytes_equal_range`
 
 ```click
-predicate bytes_equal_range(left: uint8[], right: uint8[], lo: int32, hi: int32) {
+predicate bytes_equal_range(left: uint8[], right: uint8[], lo: uint64, hi: uint64) {
     (lo..hi).all(|k| {
         left[k] == right[k]
     })
@@ -2520,7 +2520,7 @@ predicate bytes_equal_range(left: uint8[], right: uint8[], lo: int32, hi: int32)
 ### `bytes_all_eq`
 
 ```click
-predicate bytes_all_eq(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
+predicate bytes_all_eq(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     (lo..hi).all(|k| {
         bytes[k] == value
     })
@@ -2536,7 +2536,7 @@ predicate bytes_all_eq(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
 ### `bytes_contains`
 
 ```click
-predicate bytes_contains(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
+predicate bytes_contains(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     (lo..hi).any(|k| {
         bytes[k] == value
     })
@@ -2552,7 +2552,7 @@ predicate bytes_contains(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
 ### `bytes_all_not_eq`
 
 ```click
-predicate bytes_all_not_eq(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
+predicate bytes_all_not_eq(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     (lo..hi).all(|k| {
         bytes[k] != value
     })
@@ -2819,17 +2819,16 @@ about the result beyond its being 0 or 1, and a proof covers both.
 ### `memcpy`
 
 ```click
-extern uint8* memcpy(uint8 destination[], uint8 source[], int32 bytes) {
-    requires 0 <= bytes;
+extern uint8* memcpy(uint8 destination[], uint8 source[], uint64 bytes) {
     requires viewable(source[0..bytes]);
     owns destination[0..bytes];
     requires separate(memory(destination[0..bytes]), memory(source[0..bytes]));
     ensures result == destination;
-    ensures bytes_equal(destination, 0, old(source), 0, bytes);
+    ensures bytes_equal(destination, 0u64, old(source), 0u64, bytes);
 }
 ```
 
-**Meaning:** Copies `bytes` bytes from a readable, non-overlapping source to
+**Meaning:** Copies `bytes` bytes, a `size_t` count as in C, from a readable, non-overlapping source to
 an owned destination and returns the destination pointer. This exact
 standard-library declaration also carries the checked representation-copy
 effect: after the call, each initialized typed cell whose complete byte
@@ -2845,17 +2844,16 @@ effect is bound to this declaration, not to the name `memcpy`.
 ### `memcmp`
 
 ```click
-extern int32 memcmp(uint8 left[], uint8 right[], int32 bytes) {
-    requires 0 <= bytes;
+extern int32 memcmp(uint8 left[], uint8 right[], uint64 bytes) {
     requires viewable(left[0..bytes]);
     requires viewable(right[0..bytes]);
-    requires forall (k: int32) { 0 <= k and k < bytes implies defined(left[k]) and defined(right[k]) };
-    ensures result == 0 implies bytes_equal(left, 0, right, 0, bytes);
-    ensures result != 0 implies not bytes_equal(left, 0, right, 0, bytes);
+    requires forall (k: uint64) { k < bytes implies defined(left[k]) and defined(right[k]) };
+    ensures result == 0 implies bytes_equal(left, 0u64, right, 0u64, bytes);
+    ensures result != 0 implies not bytes_equal(left, 0u64, right, 0u64, bytes);
 }
 ```
 
-**Meaning:** Reads both byte ranges without mutation and distinguishes equal
+**Meaning:** Reads both `bytes`-long byte ranges (a `size_t` count, as in C) without mutation and distinguishes equal
 from unequal prefixes by whether the result is zero.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
@@ -2865,20 +2863,22 @@ from unequal prefixes by whether the result is zero.
 ### `memset`
 
 ```click
-extern uint8* memset(uint8 destination[], int32 value, int32 bytes) {
+extern uint8* memset(uint8 destination[], int32 value, uint64 bytes) {
     requires 0 <= value;
     requires value <= 255;
-    requires 0 <= bytes;
     owns destination[0..bytes];
     ensures result == destination;
-    ensures (0..bytes).all(|k| {
+    ensures (0u64..bytes).all(|k| {
         defined(destination[k]) and destination[k] == value
     });
 }
 ```
 
-**Meaning:** Fills an owned destination with the low byte of a representable
-value and returns the destination pointer.
+**Meaning:** Fills `bytes` bytes (a `size_t` count, as in C) of an owned
+destination with a value C0 can represent as `unsigned char`, and returns the
+destination pointer. C converts any `int` fill value to `unsigned char`; C0
+models that narrowing only for a representable value, so the contract requires
+one.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
