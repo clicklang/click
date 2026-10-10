@@ -8600,22 +8600,6 @@ pub(super) fn collect_loop_effect_check_obligations(
     Ok(obligations)
 }
 
-/// A 64-bit index or bound as the 32-bit index a place takes: the conversion
-/// the cast `(int32)index` makes. A contract keeps a bound in its own
-/// integer type; function setup requires that it fits
-/// (`design/typed-indices.md`, stage 1).
-pub(crate) fn place_index_from_wide(index: CExpression) -> CExpression {
-    CExpression::Cast {
-        expression: Box::new(index),
-        target_type: CType::Int32,
-        integer_mode: CIntegerCastMode::Standard,
-        pointee_struct: None,
-        pointee_volatile: false,
-        pointee_constant: false,
-        explicit_qualification: false,
-    }
-}
-
 pub(super) fn evaluate_loop_effect_segment(
     state: &CState,
     segment: &CMemorySegment,
@@ -8652,7 +8636,7 @@ pub(super) fn evaluate_loop_effect_segment(
         "segment end",
         budget,
     )?;
-    // A range with an unsigned 64-bit bound retains that bound's width.
+    // A range with a 64-bit bound retains that bound's width.
     // Evaluate each endpoint only once.
     if let (Ok(start), Ok(end)) = (&start_value, &end_value)
         && let Some((start, end)) = crate::kernel::wide_range_bounds(start, end)
@@ -8667,23 +8651,9 @@ pub(super) fn evaluate_loop_effect_segment(
     }
     let start = match start_value {
         Ok(CValue::Int32(value)) => value,
-        // A 64-bit bound is converted as `(int32)bound` converts it.
-        Ok(CValue::Int64(_) | CValue::UInt64(_)) => match evaluate_loop_effect_segment_value(
-            state,
-            &place_index_from_wide(segment.start.clone()),
-            assumptions,
-            "segment start",
-            budget,
-        )? {
-            Ok(CValue::Int32(value)) => value,
-            Ok(value) => {
-                return Ok(Err(format!(
-                    "segment start evaluated to a {} value, not an integer index",
-                    super::functions::c_type_spelling(value.c_type())
-                )));
-            }
-            Err(message) => return Ok(Err(message)),
-        },
+        Ok(value) if crate::kernel::narrow_range_constant(&value).is_some() => {
+            crate::kernel::narrow_range_constant(&value).expect("checked above")
+        }
         Ok(value) => {
             return Ok(Err(format!(
                 "segment start evaluated to a {} value, not an int32",
@@ -8694,23 +8664,9 @@ pub(super) fn evaluate_loop_effect_segment(
     };
     let end = match end_value {
         Ok(CValue::Int32(value)) => value,
-        // A 64-bit bound is converted as `(int32)bound` converts it.
-        Ok(CValue::Int64(_) | CValue::UInt64(_)) => match evaluate_loop_effect_segment_value(
-            state,
-            &place_index_from_wide(segment.end.clone()),
-            assumptions,
-            "segment end",
-            budget,
-        )? {
-            Ok(CValue::Int32(value)) => value,
-            Ok(value) => {
-                return Ok(Err(format!(
-                    "segment end evaluated to a {} value, not an integer index",
-                    super::functions::c_type_spelling(value.c_type())
-                )));
-            }
-            Err(message) => return Ok(Err(message)),
-        },
+        Ok(value) if crate::kernel::narrow_range_constant(&value).is_some() => {
+            crate::kernel::narrow_range_constant(&value).expect("checked above")
+        }
         Ok(value) => {
             return Ok(Err(format!(
                 "segment end evaluated to a {} value, not an int32",
@@ -8769,7 +8725,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     };
     let start_value = evaluate(&segment.start, "segment start")?;
     let end_value = evaluate(&segment.end, "segment end")?;
-    // A range with an unsigned 64-bit bound retains that bound's width.
+    // A range with a 64-bit bound retains that bound's width.
     // Evaluate each endpoint only once.
     if let (Ok(start), Ok(end)) = (&start_value, &end_value)
         && let Some((start, end)) = crate::kernel::wide_range_bounds(start, end)
@@ -8787,21 +8743,8 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     }
     let start = match start_value {
         Ok(CValue::Int32(value)) => value,
-        // A 64-bit bound is converted as `(int32)bound` converts it.
-        Ok(CValue::Int64(_) | CValue::UInt64(_)) => {
-            match evaluate(
-                &place_index_from_wide(segment.start.clone()),
-                "segment start",
-            )? {
-                Ok(CValue::Int32(value)) => value,
-                Ok(value) => {
-                    return Ok(Err(format!(
-                        "segment start evaluated to a {} value, not an integer index",
-                        super::functions::c_type_spelling(value.c_type())
-                    )));
-                }
-                Err(message) => return Ok(Err(message)),
-            }
+        Ok(value) if crate::kernel::narrow_range_constant(&value).is_some() => {
+            crate::kernel::narrow_range_constant(&value).expect("checked above")
         }
         Ok(value) => {
             return Ok(Err(format!(
@@ -8813,18 +8756,8 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     };
     let end = match end_value {
         Ok(CValue::Int32(value)) => value,
-        // A 64-bit bound is converted as `(int32)bound` converts it.
-        Ok(CValue::Int64(_) | CValue::UInt64(_)) => {
-            match evaluate(&place_index_from_wide(segment.end.clone()), "segment end")? {
-                Ok(CValue::Int32(value)) => value,
-                Ok(value) => {
-                    return Ok(Err(format!(
-                        "segment end evaluated to a {} value, not an integer index",
-                        super::functions::c_type_spelling(value.c_type())
-                    )));
-                }
-                Err(message) => return Ok(Err(message)),
-            }
+        Ok(value) if crate::kernel::narrow_range_constant(&value).is_some() => {
+            crate::kernel::narrow_range_constant(&value).expect("checked above")
         }
         Ok(value) => {
             return Ok(Err(format!(
@@ -8911,8 +8844,8 @@ fn evaluate_loop_effect_segment_value_with_facts(
             .iter()
             .map(|obligation| obligation.context().unwrap_or("an unnamed condition"))
             .collect::<Vec<_>>();
-        // A bound wider than 32 bits is converted to the index a place
-        // takes, and the conversion has to be exact. Say what to state.
+        // A cast to `int32` written in a bound has to be exact. Say what
+        // to state, and that the range needs no cast.
         let narrowing = contexts
             .iter()
             .any(|context| context.contains("int32 narrowing"));
@@ -8921,9 +8854,9 @@ fn evaluate_loop_effect_segment_value_with_facts(
             contexts.len(),
             contexts.join("; "),
             if narrowing {
-                "; this bound is converted to a 32-bit index, so the contract has to state that \
-                 it fits one, as in `requires n <= 2147483647`; a range from zero to an unsigned \
-                 64-bit bound written without a cast needs no such bound"
+                "; this bound is cast to a 32-bit index, so the contract has to state that it \
+                 fits one, as in `requires n <= 2147483647`; a range with a 64-bit bound written \
+                 without a cast needs no such bound"
             } else {
                 ""
             }

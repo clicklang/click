@@ -2,13 +2,11 @@ verifying "arrays.rs";
 
 fn first(bytes: &[u8]) -> u8 {
     requires bytes.len() > 0u64;
-    requires bytes.len() <= 2147483647u64;
     views bytes[0..1];
     ensures result == bytes[0];
 } by { execute(); simp(); }
 fn set(bytes: &mut [u8]) {
     requires bytes.len() > 1u64;
-    requires bytes.len() <= 2147483647u64;
     owns bytes[1..2];
     ensures bytes[1] == 7;
 } by { execute(); simp(); }

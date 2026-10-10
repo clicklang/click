@@ -31,7 +31,6 @@ fn accumulate(n: i32, value: i32) -> i32 {
 }
 
 fn walk(bytes: &[u8]) -> usize {
-    requires bytes.len() <= 2147483647u64;
     views bytes[0..bytes.len()];
     ensures result == bytes.len();
 } by {

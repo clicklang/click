@@ -2554,12 +2554,28 @@ pub(crate) fn memory_range_extent_guards(range: &CMemoryRange) -> Vec<Propositio
 }
 
 /// The bounds of a wide range written with `start` and `end`, when it is
-/// one: both bounds are unsigned 64-bit, or one is a symbolic 64-bit term,
-/// signed or unsigned. Every bound is read as an unsigned 64-bit value, a
-/// signed one by its sign extension. `bytes[0..length]`, `bytes[1..length]`,
-/// `bytes[a..b]`, `bytes[index..4]`, `bytes[i..length]` with `int32 i` and
-/// `bytes[0..n]` with `int64 n` are wide; two `int32` bounds are not
-/// (`design/typed-indices.md`, stage 2).
+/// one: a bound is a 64-bit integer, signed or unsigned. Every bound is read
+/// as an unsigned 64-bit value, a signed one by its sign extension.
+/// `bytes[0..length]`, `bytes[1..length]`, `bytes[a..b]`, `bytes[index..4]`,
+/// `bytes[i..length]` with `int32 i`, `bytes[i..4u64]` and `bytes[0..n]`
+/// with `int64 n` are wide. A range with two `int32` bounds is not, and
+/// neither is one whose bounds are constants that fit an `int32`, unless
+/// both are written `uint64`: `memcpy(dst, src, 16)` holds `dst[0..16]` as a
+/// local array does (`design/typed-indices.md`, stage 2).
+/// A range bound's value as an `int32` index, when it is a constant that
+/// fits one: the only 64-bit bound a narrow range takes
+/// ([`wide_range_bounds`]).
+pub(crate) fn narrow_range_constant(value: &CValue) -> Option<Bitvector32Term> {
+    let constant = match value {
+        CValue::Int32(Bitvector32Term::Constant(bits)) => i64::from(*bits as i32),
+        CValue::Int64(Bitvector32Term::Int64Constant(value)) => *value,
+        CValue::UInt64(term) => i64::try_from(term.uint64_as_const()?).ok()?,
+        _ => return None,
+    };
+    let constant = i32::try_from(constant).ok()?;
+    Some(Bitvector32Term::Constant(constant as u32))
+}
+
 pub(crate) fn wide_range_bounds(
     start: &CValue,
     end: &CValue,
@@ -2580,14 +2596,14 @@ pub(crate) fn wide_range_bounds(
         CValue::Int64(term) => Some(Bitvector32Term::UInt64FromInt64(Box::new(term.clone()))),
         _ => None,
     };
-    let uint64 = |value: &CValue| matches!(value, CValue::UInt64(_));
-    let symbolic = |value: &CValue| match value {
-        CValue::UInt64(term) => term.uint64_as_const().is_none(),
-        CValue::Int64(term) => !matches!(term, Bitvector32Term::Int64Constant(_)),
-        _ => false,
-    };
-    let wide = (uint64(start) && uint64(end)) || symbolic(start) || symbolic(end);
-    if !wide {
+    let wide_typed = |value: &CValue| matches!(value, CValue::UInt64(_) | CValue::Int64(_));
+    if narrow_range_constant(start).is_some()
+        && narrow_range_constant(end).is_some()
+        && !(matches!(start, CValue::UInt64(_)) && matches!(end, CValue::UInt64(_)))
+    {
+        return None;
+    }
+    if !wide_typed(start) && !wide_typed(end) {
         return None;
     }
     Some((widened(start)?, widened(end)?))

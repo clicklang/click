@@ -669,18 +669,6 @@ impl Context<'_> {
                 "Rust split_at panic check",
             ),
         );
-        // Pointer offsets use the shared signed-word memory model. Check the
-        // full-width midpoint before narrowing; slice lengths remain usize.
-        result = c_seq(
-            result,
-            c_labeled_assert(
-                c_less_equal(
-                    c_variable(&midpoint_name),
-                    c_uint64_literal(i32::MAX as u64),
-                ),
-                "Rust split_at memory-model offset bound",
-            ),
-        );
         for (place, pointer, length) in [
             (left, c_variable(&pointer_name), c_variable(&midpoint_name)),
             (

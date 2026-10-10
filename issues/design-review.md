@@ -65,9 +65,6 @@ Remaining:
   sidecar (`bytes[0..(int32)bytes_len]`). They parse back; they are not what
   the sidecar writes. Decided 2026-10-08: do this after the
   typed-index work (A5), which removes most of the conversions printed.
-- A 32-bit index is the memory model's limit, so a slice contract states
-  `requires bytes.len() <= 2147483647u64`. Dropping it needs range bounds
-  wider than 32 bits in the kernel (A5).
 - An array by value, a reference to a reference, generics and lifetimes in
   a `fn` signature are refused.
 
@@ -121,9 +118,12 @@ Remaining:
   (`bytes[0..n]` with `long n`, `bytes[i..length]` with `int i`;
   `mdtests/a_range_with_a_signed_or_int32_bound_is_64_bit.md`). A call
   proves the order of each range it hands over
-  (`mdtests/a_call_hands_over_a_range_in_order.md`). Left of step 9: a
-  64-bit constant beside an `int32` bound (`bytes[i..4u64]`) is still
-  converted to 32 bits. A cast written in a range
+  (`mdtests/a_call_hands_over_a_range_in_order.md`). A range with any
+  64-bit bound, a constant included, is 64-bit, and no bound is converted
+  to 32 bits unless the contract writes the cast
+  (`mdtests/a_64_bit_constant_beside_an_int32_bound_is_64_bit.md`). The
+  Rust examples state no bound on a slice's length, and `split_at` no
+  longer asserts its midpoint fits 32 bits. A cast written in a range
   bound, `bytes[0..(int32)length]`, truncates as a cast in a place does.
   Two scaling regressions cover wide ranges
   (`wide_range_membership_ignores_unrelated_index_bounds`,
