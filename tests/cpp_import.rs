@@ -5457,22 +5457,33 @@ fn conditional_construction_cleans_up_only_the_constructed_arm() {
         "verify cleanup on constructed paths without calling the destructor on the skipped path",
     );
 
-    let execute = program_prepared_project_tactic_source_position(
+    let expanded = expand_program_prepared_project_claim_source_by_label(
         &click_project,
+        &import,
+        "conditional_restore.contract",
+    )
+    .expect("fully expand the proof across the conditional lifetime");
+    let rewritten = click_project.with_entry_source(expanded.clone());
+    verify_program_prepared_project(&rewritten, &import)
+        .expect("the fully expanded conditional-construction proof must reverify");
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
+        .expect("retain the original conditional-construction verification environment");
+    let next = program_prepared_project_tactic_source_position(
+        &rewritten,
         &import,
         "conditional_restore.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
-        &click_project,
-        &import,
-        execute.line,
-        execute.column,
-    )
-    .expect("expand the proof across the conditional lifetime");
-    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
-        .expect("the expanded conditional-construction proof must reverify");
+    session
+        .verify_at_project(&expanded, next.line, next.column)
+        .expect("retained audit must verify the fully expanded cleanup proof");
+
+    let false_restoration =
+        CONDITIONAL_CONSTRUCTION_SIDECAR.replace("ensures value == 41;", "ensures value == 42;");
+    let false_project = read_click_project(&sidecar, &false_restoration).unwrap();
+    verify_program_prepared_project(&false_project, &import)
+        .expect_err("the caller cannot claim a different restored value");
 
     let wrong_skipped_result = CONDITIONAL_CONSTRUCTION_SIDECAR.replace(
         "ensures construct == 0 implies result == 41;",

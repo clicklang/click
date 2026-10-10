@@ -3929,6 +3929,104 @@ fn two_edge_pointer_alias_witness_rechecks_each_named_premise() {
 }
 
 #[test]
+fn named_snapshot_alias_equality_does_not_depend_on_sibling_observation_origins() {
+    let mut samples = Vec::new();
+    for unrelated in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let left = Pointer::symbolic(Variable(977_110));
+        let middle = Pointer::symbolic(Variable(977_111));
+        let right = Pointer::symbolic(Variable(977_112));
+        let first = ConditionTerm::pointer_equal(left.clone(), middle.clone());
+        let second = ConditionTerm::pointer_equal(middle, right.clone());
+        let mut assumptions = PureFactContext::new()
+            .assume_condition(first.clone(), true)
+            .assume_condition(second.clone(), true);
+        for index in 0..unrelated {
+            assumptions = assumptions.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(978_100 + index)),
+                    Bitvector32Term::Constant(index as u32),
+                ),
+                true,
+            );
+        }
+        let named = crate::kernel::intern_c_memory(CMemory::new());
+        let origins = ["local:first-arm", "local:second-arm"]
+            .map(|block| crate::kernel::intern_c_memory(CMemory::new().with_block(block, 4)));
+        let variables = [(&left, &origins[0]), (&right, &origins[1])].map(|(pointer, origin)| {
+            crate::kernel::eval::load_variable_for_cell_with_origin(
+                &named,
+                pointer,
+                LoadKind::Bits32,
+                4,
+                origin,
+            )
+        });
+        let [left_load, right_load] = variables.map(Bitvector32Term::Variable);
+        let (witness, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let capture = CheckedLoadEqualityCapture::start();
+            assert!(checked_origin_load_equality(
+                &left_load,
+                &right_load,
+                &assumptions
+            ));
+            let witnesses = capture.finish();
+            let [witness] = witnesses.as_slice() else {
+                panic!("expected one named-snapshot alias witness");
+            };
+            assert!(witness.checks(&assumptions));
+            witness.clone()
+        });
+        // Withdrawal constructs a new assumption context and is outside the
+        // measurement of the selected equality check.
+        for premise in [first.clone(), second.clone()] {
+            let withdrawn =
+                assumptions.without_exact_fact(&Proposition::ConditionIs(premise, true));
+            assert!(!witness.checks(&withdrawn));
+        }
+        // The witness names the exact snapshot, address, and read kind.
+        let changed = crate::kernel::intern_c_memory(
+            CMemory::new().with_block("local:different-snapshot", 4),
+        );
+        for retargeted in [
+            Bitvector32Term::MemoryLoad(changed, Box::new(right.clone()), LoadKind::Bits32),
+            Bitvector32Term::MemoryLoad(
+                named.clone(),
+                Box::new(right.offset_by_bytes(4)),
+                LoadKind::Bits32,
+            ),
+            Bitvector32Term::MemoryLoad(named.clone(), Box::new(right.clone()), LoadKind::UInt8),
+        ] {
+            assert!(!witness.checks_retargeted_for_test(
+                left_load.clone(),
+                retargeted,
+                &assumptions,
+                &crate::kernel::proof::CheckedCallEvents::default(),
+            ));
+        }
+        // Widening a registered read must invalidate the retained 4-byte rule.
+        crate::kernel::eval::load_variable_for_cell_with_origin(
+            &named,
+            &right,
+            LoadKind::Bits32,
+            8,
+            &origins[1],
+        );
+        assert!(!witness.checks(&assumptions));
+        assert!(!checked_origin_load_equality(
+            &left_load,
+            &right_load,
+            &assumptions
+        ));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 16),
+        "{samples:?}"
+    );
+}
+
+#[test]
 fn kept_range_lookup_follows_exact_aliases_without_scanning_unrelated_members() {
     let input = |name| Pointer {
         block: PointerBlock::ExternalArgument,

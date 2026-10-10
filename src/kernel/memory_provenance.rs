@@ -570,8 +570,8 @@ enum CheckedLoadEqualityEvidence {
         right: OriginLoadEndpoint,
         offset: PointerOffsetCongruenceEvidence,
     },
-    /// Equal-width scalar reads at one execution snapshot, with one exact
-    /// pointer equality retained as their address witness. The source load
+    /// Equal-width scalar reads at one execution or explicitly named snapshot,
+    /// with exact pointer equality retained as their address witness. The source load
     /// names remain distinct, so explicit proof rewrites keep their addresses.
     OriginAliasedSnapshot {
         left: OriginLoadEndpoint,
@@ -579,6 +579,9 @@ enum CheckedLoadEqualityEvidence {
         alias: Box<Proposition>,
         alias_path: Option<Vec<(Pointer, Pointer)>>,
         snapshots: Option<Box<CheckedLoadEquality>>,
+        /// Named endpoints use only a shared defining snapshot, never a
+        /// first-observed origin or a call-event correspondence.
+        named_snapshot: bool,
     },
     /// The two source-level load terms meet along the recorded memory DAG
     /// when viewed at their original execution snapshots.
@@ -640,6 +643,18 @@ impl OriginLoadEndpoint {
             pointer,
             kind,
         })
+    }
+
+    /// The snapshot explicitly named by a term or its registered defining load.
+    /// Unlike an observation origin, this identity is independent of which
+    /// execution arm first observed a load variable.
+    fn for_named_term(term: &Bitvector32Term) -> Option<Self> {
+        match term {
+            Bitvector32Term::Variable(variable) => Self::for_term(
+                &crate::kernel::eval::registered_load_term_for_variable(variable)?,
+            ),
+            _ => Self::for_term(term),
+        }
     }
 
     /// The access width a walk from this endpoint uses.
@@ -1097,9 +1112,16 @@ impl CheckedLoadEquality {
                 alias,
                 alias_path,
                 snapshots,
+                named_snapshot,
             } => {
-                left.matches_term(&self.left)
-                    && right.matches_term(&self.right)
+                let endpoints_match = if *named_snapshot {
+                    snapshots.is_none()
+                        && OriginLoadEndpoint::for_named_term(&self.left).as_ref() == Some(left)
+                        && OriginLoadEndpoint::for_named_term(&self.right).as_ref() == Some(right)
+                } else {
+                    left.matches_term(&self.left) && right.matches_term(&self.right)
+                };
+                endpoints_match
                     && left.kind == right.kind
                     && match snapshots {
                         None => left.memory == right.memory,
@@ -1406,10 +1428,18 @@ pub(crate) fn checked_origin_load_equality(
     let Some(_query) = CheckedOriginLoadEqualityGuard::enter(left, right) else {
         return false;
     };
-    let (Some(left_endpoint), Some(right_endpoint)) = (
-        OriginLoadEndpoint::for_term(left),
-        OriginLoadEndpoint::for_term(right),
-    ) else {
+    // Equal names are definitionally one snapshot. Address congruence at
+    // that snapshot does not require connecting first-observed origins,
+    // which may belong to disconnected execution arms.
+    let named_endpoints = OriginLoadEndpoint::for_named_term(left)
+        .zip(OriginLoadEndpoint::for_named_term(right))
+        .filter(|(left, right)| {
+            left.memory == right.memory && left.pointer.block != right.pointer.block
+        });
+    let named_snapshot = named_endpoints.is_some();
+    let Some((left_endpoint, right_endpoint)) = named_endpoints
+        .or_else(|| OriginLoadEndpoint::for_term(left).zip(OriginLoadEndpoint::for_term(right)))
+    else {
         return false;
     };
     if left_endpoint.kind != right_endpoint.kind {
@@ -1476,6 +1506,7 @@ pub(crate) fn checked_origin_load_equality(
                             alias: Box::new(alias),
                             alias_path,
                             snapshots,
+                            named_snapshot,
                         },
                     });
                     return true;
