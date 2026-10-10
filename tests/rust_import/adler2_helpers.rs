@@ -2114,3 +2114,134 @@ fn charon_adler2_checksum_tools_recheck_original_contract() {
     );
     assert_cli(&p, &["verify"]);
 }
+
+const PUBLIC_ONE_BYTE: &str =
+    include_str!("../../design/charon-trial/adler2/public-one-byte.click");
+
+fn public_one_byte_proof() -> String {
+    format!(
+        "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_ONE_BYTE}",
+        compute_proof(SINGLE_BYTE_COMPUTE)
+    )
+}
+
+fn verify_public_one_byte_unit(
+    source: &str,
+    prepared: &click::languages::rust::PreparedRustImport,
+    name: &str,
+) -> Result<(), click::surface::ClickError> {
+    let start = source.find(&format!("{name}(")).unwrap();
+    let offset = start + source[start..].find("} by {").unwrap() + "} by {".len();
+    let offset = offset + source[offset..].len() - source[offset..].trim_start().len();
+    let prefix = &source[..offset];
+    let line = prefix.bytes().filter(|&b| b == b'\n').count() + 1;
+    let column = prefix.rsplit('\n').next().unwrap().len() + 1;
+    click::surface::verify_program_prepared_sources_at(source, prepared, line, column).map(|_| ())
+}
+
+#[test]
+fn charon_adler2_public_checksum_matches_one_byte_spec() {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    let source = public_one_byte_proof();
+    for name in [
+        "__rust_q_I6_adler2_I7_Adler32_default",
+        "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I3_new",
+        "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I11_write_slice",
+        "__rust_q_I6_adler2_I13_adler32_slice",
+    ] {
+        verify_public_one_byte_unit(&source, &prepared, name).unwrap();
+    }
+}
+
+#[test]
+#[ignore = "nightly: public checksum false-result and authority mutations"]
+fn charon_adler2_public_checksum_rejects_false_result_length_and_authority() {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    for (before, after) in [
+        (
+            "ensures to_integer(result) == old(adler_spec_checksum(data, 1, 1, 0));",
+            "ensures to_integer(result) == old(adler_spec_checksum(data, 1, 1, 0)) + 1;",
+        ),
+        (
+            "adler_spec_checksum(data, 1, 1, 0)",
+            "adler_spec_checksum(data, 1, 0, 1)",
+        ),
+        ("requires data_len == 1u64;", "requires data_len == 0u64;"),
+        ("views data[0..1];", ""),
+        (
+            "ensures data[0] == old(data[0]);",
+            "ensures data[0] == old(data[0]) + 1;",
+        ),
+    ] {
+        let contract = PUBLIC_ONE_BYTE.replacen(before, after, 1);
+        assert_ne!(contract, PUBLIC_ONE_BYTE, "{before}");
+        let source = format!(
+            "{}\n{PACKING}\n{CHECKSUM}\n{contract}",
+            compute_proof(SINGLE_BYTE_COMPUTE)
+        );
+        let error =
+            verify_public_one_byte_unit(&source, &prepared, "__rust_q_I6_adler2_I13_adler32_slice")
+                .expect_err("false public result or insufficient call authority must be refused");
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: original public checksum and all helper bodies"]
+fn charon_adler2_public_checksum_checks_all_original_callee_bodies() {
+    let p = adler2_helpers_project();
+    C0VerificationSession::new_program_prepared(
+        &public_one_byte_proof(),
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: public checksum verify/profile/audit/expansion agreement"]
+fn charon_adler2_public_checksum_tools_recheck_original_contracts() {
+    let p = adler2_helpers_project();
+    let source = public_one_byte_proof();
+    fs::write(p.root.join("borrow.click"), &source).unwrap();
+    for command in ["verify", "profile"] {
+        assert_cli(&p, &[command]);
+    }
+    let offset = source
+        .find("have to_integer(__rust_mir_0) == old(adler_spec_checksum(data")
+        .unwrap();
+    let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
+    let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
+    let audit = Command::new(env!("CARGO_BIN_EXE_click"))
+        .args(["audit", "--start-at", &cursor, "--max-sites", "1"])
+        .arg(p.root.join("borrow.click"))
+        .output()
+        .unwrap();
+    assert!(
+        audit.status.success(),
+        "{}",
+        String::from_utf8_lossy(&audit.stderr)
+    );
+    for name in [
+        "__rust_q_I6_adler2_I7_Adler32_default",
+        "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I3_new",
+        "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I11_write_slice",
+        "__rust_q_I6_adler2_I13_adler32_slice",
+    ] {
+        assert_cli(
+            &p,
+            &[
+                "expand",
+                "--claim",
+                &format!("{name}.contract"),
+                "--in-place",
+            ],
+        );
+    }
+    assert_cli(&p, &["verify"]);
+}

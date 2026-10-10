@@ -1,0 +1,49 @@
+# Contracts for the unchanged constructor and single-byte public API.
+struct __rust_q_I6_adler2_I7_Adler32 __rust_q_I6_adler2_I7_Adler32_default() {
+ ensures result.a == 1;
+ ensures result.b == 0;
+} by { execute(); simp(); }
+
+struct __rust_q_I6_adler2_I7_Adler32 __rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I3_new() {
+ ensures result.a == 1;
+ ensures result.b == 0;
+} by { execute(); simp(); }
+
+void __rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I11_write_slice(struct __rust_q_I6_adler2_I7_Adler32* self, const uint8* bytes, uint64 bytes_len) {
+ requires bytes_len == 1u64;
+ requires self->a == 1;
+ requires self->b == 0;
+ owns self->a;
+ owns self->b;
+ views bytes[0..1];
+ ensures to_integer(self->a) == old(adler_spec_a(bytes, 1, 1));
+ ensures to_integer(self->b) == old(adler_spec_b(bytes, 1, 1, 0));
+ ensures bytes[0] == old(bytes[0]);
+} by { execute(); simp(); }
+
+uint32 __rust_q_I6_adler2_I13_adler32_slice(const uint8* data, uint64 data_len) {
+ requires data_len == 1u64;
+ views data[0..1];
+ ensures to_integer(result) == old(adler_spec_checksum(data, 1, 1, 0));
+ ensures data[0] == old(data[0]);
+} by {
+ execute_until(assignment(__rust_mir_0, 0));
+ have to_integer(h.a) == old(adler_spec_a(data, 1, 1)) by { simp(); }
+ have to_integer(h.b) == old(adler_spec_b(data, 1, 1, 0)) by { simp(); }
+ have 65536 * to_integer(h.b) + to_integer(h.a) == old(adler_spec_checksum(data, 1, 1, 0)) by {
+  unfold(adler_spec_checksum(data, 1, 1, 0));
+  rewrite(to_integer(h.a) == old(adler_spec_a(data, 1, 1)));
+  rewrite(to_integer(h.b) == old(adler_spec_b(data, 1, 1, 0)));
+  simp();
+ }
+ step();
+ have to_integer(__rust_mir_0) == 65536 * to_integer(h.b) + to_integer(h.a) by { simp(); }
+ have to_integer(__rust_mir_0) == old(adler_spec_checksum(data, 1, 1, 0)) by {
+  arithmetic() using {
+   to_integer(__rust_mir_0) == 65536 * to_integer(h.b) + to_integer(h.a);
+   65536 * to_integer(h.b) + to_integer(h.a) == old(adler_spec_checksum(data, 1, 1, 0));
+  }
+ }
+ execute();
+ simp();
+}
