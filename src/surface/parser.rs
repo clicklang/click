@@ -3333,6 +3333,8 @@ impl Parser {
                 );
             }
         }
+        let pointee_field_places =
+            super::pointee_field_places(parameter_field_places.values(), &self.struct_layouts);
         Ok(FunctionBlock {
             signature,
             external,
@@ -3349,6 +3351,7 @@ impl Parser {
             grouped_proof,
             parameter_struct_casts,
             parameter_field_places,
+            pointee_field_places,
         })
     }
 

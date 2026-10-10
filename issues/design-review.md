@@ -24,39 +24,6 @@ position and refused in another without a reason a user could give.
 Design and progress: `design/place-based-resource-clauses.md`. Steps 1 to 5
 are done. These remain.
 
-### A1. Referents in printed kernel terms
-
-C++ reference parameters are done: a sidecar declares `int32& value`, the
-name is the referent, `&value` is its address, and the pointer that carries
-it is named `&value` throughout (`reference_carrier_name` in
-`src/languages/c/syntax.rs`; design section "Reference parameters"). A
-member function's receiver is the pointer `this`.
-
-A fact or a failed goal about a referent prints it as the sidecar writes
-it: `value`, `owns value`, and `box.first` for a read at the start of a
-struct referent.
-
-The "C operation" line of a failure prints a read through a reference as
-the sidecar writes it, `value` or `c.first`: a step records the stepped
-function's reference parameters, and the printer of a kernel term consults
-them (`describe_read_through_reference` in `src/surface/diagnostics.rs`).
-`click expand` does the same from the sidecar's function block
-(`ParameterPlaceScope`): a read through a scalar reference is `value`, and
-a read at a field of a struct is the field place, through a parameter or a
-local: `c.second` through `struct cell& c`, `p->second`, a pointer field
-`p->next`, and a field of a struct nested by value, `p->in.y`.
-
-One gap remains: a field read through a pointer that was itself loaded,
-`p->next->second`, is expanded as
-`load_int32(byte_offset(p->next, 4))`. The printer names fields of the
-function's own parameters and locals, and the type of a loaded pointer is
-not among them. It parses back and verifies.
-
-Regression: `click expand` on a branch over `p->next->second` writes the
-condition with the field place.
-
-Done when: no expansion prints `load_...` for a field of a struct.
-
 ### A4. Rust sidecars in Rust syntax: respelling and the refusals
 
 Decided 2026-10-08: a Rust sidecar looks like Rust, and Click's own words

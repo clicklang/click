@@ -1194,6 +1194,9 @@ pub struct FunctionBlock {
     /// local struct pointer's, by name. Printing only: `click expand` writes a read at a field's
     /// offset as the field place.
     parameter_field_places: BTreeMap<String, Vec<FieldPlace>>,
+    /// The scalar fields of each struct those places point to, by struct
+    /// name, transitively. Printing only, as above.
+    pointee_field_places: BTreeMap<String, Vec<FieldPlace>>,
 }
 
 /// Turns the source clause of each flattened clause into its position among
@@ -1280,6 +1283,9 @@ pub(in crate::surface) struct FieldPlace {
     offset_bytes: u32,
     value_type: CType,
     pointee_constant: bool,
+    /// For a pointer to a struct, that struct: a read through the loaded
+    /// pointer names the struct's fields, `p->next->second`.
+    pointee_struct: Option<String>,
 }
 
 /// The fields of `layout` a typed read can name: its scalar fields, and
@@ -1332,6 +1338,10 @@ pub(in crate::surface) fn scalar_field_places(
                     offset_bytes,
                     value_type: field.c_type().to_kernel_type(),
                     pointee_constant: field.pointee_is_constant(),
+                    pointee_struct: field
+                        .struct_name()
+                        .filter(|_| field.c_type().is_pointer())
+                        .map(str::to_string),
                 }),
             }
         }
@@ -1339,6 +1349,37 @@ pub(in crate::surface) fn scalar_field_places(
     let mut places = Vec::new();
     collect(layout, layouts, "", 0, 0, &mut places);
     places
+}
+
+/// The field places of every struct a pointer field of `places` reaches,
+/// transitively, by struct name: what a read through a loaded pointer,
+/// `p->next->second`, can name. Each struct is laid out once.
+pub(in crate::surface) fn pointee_field_places<'a>(
+    places: impl IntoIterator<Item = &'a Vec<FieldPlace>>,
+    layouts: &BTreeMap<String, syntax::C0StructLayout>,
+) -> BTreeMap<String, Vec<FieldPlace>> {
+    let mut reached = BTreeMap::new();
+    let mut pending = places
+        .into_iter()
+        .flatten()
+        .filter_map(|place| place.pointee_struct.clone())
+        .collect::<Vec<_>>();
+    while let Some(name) = pending.pop() {
+        if reached.contains_key(&name) {
+            continue;
+        }
+        let Some(layout) = layouts.get(&name) else {
+            continue;
+        };
+        let fields = scalar_field_places(layout, layouts);
+        pending.extend(
+            fields
+                .iter()
+                .filter_map(|place| place.pointee_struct.clone()),
+        );
+        reached.insert(name, fields);
+    }
+    reached
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -6896,6 +6937,10 @@ impl FunctionBlock {
 
     pub(in crate::surface) fn parameter_field_places(&self) -> &BTreeMap<String, Vec<FieldPlace>> {
         &self.parameter_field_places
+    }
+
+    pub(in crate::surface) fn pointee_field_places(&self) -> &BTreeMap<String, Vec<FieldPlace>> {
+        &self.pointee_field_places
     }
 
     pub fn is_external(&self) -> bool {
