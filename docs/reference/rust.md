@@ -402,9 +402,9 @@ uint8 read(const uint8* bytes, uint64 bytes_len, uint64 index) {
 ```
 
 A range bounded by a `usize` has 64-bit bounds, so the contract states no
-limit on the length. `.len()` alone needs no byte resource. Slice returns, general range subscripts,
-indexed compound assignment, other slice element types, and slices in owned-value
-MIR functions remain unsupported. Normal numeric contract casts now include
+limit on the length. `.len()` alone needs no byte resource. General slice returns, range subscripts, indexed compound assignment, and
+other slice element types remain unsupported. Supported shared slice splitting
+is described below. Normal numeric contract casts now include
 `(int32)`, `(uint32)`, `(int64)`, and `(uint64)`.
 Use signed 64-bit widening to state full-width u32 addition guards, for
 example `((int64)x + (int64)y) <= 4294967295i64`.
@@ -521,9 +521,9 @@ rules. Sidecars can declare `invariant`, memory/resource clauses, and numeric
 `decreases` measures. Entry and preservation are separate obligations;
 arithmetic and indexing in the body retain Rust's panic-freedom checks.
 A decreasing measure proves termination through the existing loop checker.
-Unshadowed HIR locals use their Rust names in sidecars. Shadowed locals and
-names starting with `__rust_` retain distinct compiler-generated identities.
-Owned-value MIR loops remain outside this increment.
+Charon locals with unique source names use those names in sidecars. Unnamed
+and ambiguous locals use collision-checked `__rust_mir_ID` identities from the
+locked artifact. These compiler identities can change when the artifact is refreshed.
 
 Conditions currently support scalar comparisons, boolean combinations,
 negation, casts, and builtin `.len()`. Calls, indexing, and arithmetic in a
@@ -567,15 +567,14 @@ binding; reference patterns bind a shared `&u8` address whose dereferences
 require view authority. Shared-reference qualifiers survive local declarations.
 The original Rust source stays unchanged.
 
-The typed artifact retains a `SliceFor` operation with its receiver, yielded
-binding, and original body. Its checked implementation has an explicit cursor
-and remaining slice length, named `__rust_iter_LINE_COLUMN_cursor` and
-`__rust_iter_LINE_COLUMN_remaining` for the `for` expression's location.
-A successful `next()` saves the cursor as the yielded shared address
-(`__rust_iter_LINE_COLUMN_item`), advances the cursor, and reduces the remaining
-length before entering the Rust body. Copied patterns then read that address;
-reference patterns bind it directly. An exhausted iterator exits without a
-read or pointer advance, including for an empty slice.
+The adapter retains Charon's native control flow, iterator calls, and `Option`
+branches. A shared iterator named `iter` exposes `iter_cursor`,
+`iter_remaining`, and `iter_live`; unnamed or ambiguous iterators use their
+`__rust_mir_ID` identity as the prefix. A successful `next()` records the
+shared element address in the returned option, advances the cursor, and
+reduces the remaining length before entering the Rust body. Copied patterns
+read that address; reference patterns bind it directly. An exhausted iterator
+exits without a read or pointer advance, including for an empty slice.
 
 There is no generated processed-count or index variable. Sidecars choose their
 own properties of iterator state. The sum examples explicitly relate the cursor
@@ -594,22 +593,28 @@ verification have regressions. The
 [reference iterator fixture](https://github.com/clicklang/click/blob/master/examples/rust-iter-references/sum.rs)
 proves the same sum using `for byte in bytes.iter()` and `*byte`. Missing views
 and attempts to write through yielded shared references are rejected.
-Array iteration, `.iter_mut()`, stored `Iter` locals, custom iterators,
-labels, `break`, and `continue` remain outside this subset.
+Shared iteration over fixed `i32`, `u8`, and `u32` arrays is also supported,
+including borrowed arrays, local arrays, explicit `.iter()` calls, stored
+`Iter` locals, and moves of the remaining iterator. See the locked
+[array iteration trial](https://github.com/clicklang/click/tree/master/design/charon-trial/array-iteration).
+Moving an iterator retires its source; repeated exhaustion yields no element.
+`.iter_mut()`, by-value array iteration, custom iterators, labels, `break`, and
+`continue` remain outside this subset.
 
 ## Primitive unsigned conversions
 
 Calls such as `u32::from(byte)` and `<u32 as From<u16>>::from(half)` support
 compiler-resolved core `From` conversions between modeled unsigned scalar
 types (`u8`, `u16`, `u32`, `usize`) when the source width is no greater than
-the destination width. The exporter records a distinct `IntegerFrom` node;
+the destination width. The Charon adapter validates the selected core
+implementation, signature, and concrete types before constructing Click's
+`IntegerFrom` operation;
 lowering preserves the value and evaluates its argument once in source order.
 These pinned standard-library primitive conversions are interpreted builtins;
 their library bodies are not imported. Matching a method's spelling alone does
 not authorize a conversion. User conversion implementations, `.into()`, bool
-conversions, and general trait dispatch remain unsupported. This support is
-in the scalar/reference exporter path; external conversion calls in owned-record
-MIR functions remain unsupported.
+conversions, and general trait dispatch remain unsupported. The same adapter
+rule applies inside supported owned-record functions.
 
 `u16` has checked arithmetic, scalar references, and compiler-layout record
 fields with two-byte storage. It does not extend the supported fixed-array

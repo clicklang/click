@@ -57,6 +57,130 @@ fn rewritten_load_store_witness_binds_value_address_and_snapshot() {
 }
 
 #[test]
+fn rewritten_integer_word_observations_retain_checked_store_evidence() {
+    use crate::kernel::proof::ProofFacts;
+    let pointer = arc_pointer(4);
+    crate::kernel::eval::declare_load_access_width(&pointer, 4);
+    let value = Bitvector32Term::Variable(Variable(989_001));
+    for stored in [CValue::Int32(value.clone()), CValue::UInt32(value.clone())] {
+        let memory = CMemory::new()
+            .with_block("arg-memory", 16)
+            .store(pointer.clone(), stored);
+        let load = |memory: &CMemory, pointer: Pointer| {
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(memory),
+                Box::new(pointer),
+                crate::kernel::LoadKind::Bits32,
+            )
+        };
+        let goal = |ty, bits| {
+            Proposition::ConditionIs(
+                ConditionTerm::integer_equal(
+                    IntegerTerm::from_machine(ty, bits).unwrap(),
+                    IntegerTerm::constant_i64(17),
+                ),
+                true,
+            )
+        };
+        let facts = ProofFacts::default();
+        for ty in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+            let original = goal(ty, load(&memory, pointer.clone()));
+            let presented = goal(ty, value.clone());
+            assert!(
+                facts
+                    .with_checked_rewritten_loads(&original, &presented)
+                    .is_some(),
+                "the same stored word has the same observation in its fixed format"
+            );
+            let source = Bitvector32Term::Variable(Variable(989_003));
+            let cited =
+                Proposition::ConditionIs(ConditionTerm::equal(source.clone(), value.clone()), true);
+            let mut rewrite = facts
+                .clone()
+                .with_fact(cited.clone())
+                .check_equality_rewrite(&goal(ty, source), &cited)
+                .unwrap();
+            assert!(rewrite.try_present_as(&original));
+            assert_eq!(rewrite.proposition(), &original);
+            let other = match ty {
+                MachineIntegerType::Int32 => MachineIntegerType::UInt32,
+                _ => MachineIntegerType::Int32,
+            };
+            assert!(
+                facts
+                    .with_checked_rewritten_loads(&original, &goal(other, value.clone()))
+                    .is_none(),
+                "equal bits do not equate signed and unsigned mathematical values"
+            );
+            assert!(
+                facts
+                    .with_checked_rewritten_loads(
+                        &goal(ty, load(&memory, arc_pointer(8))),
+                        &presented,
+                    )
+                    .is_none(),
+                "a different cell has no stored-value witness"
+            );
+            let overwritten = memory
+                .clone()
+                .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(8)));
+            assert!(
+                facts
+                    .with_checked_rewritten_loads(
+                        &goal(ty, load(&overwritten, pointer.clone())),
+                        &presented,
+                    )
+                    .is_none(),
+                "a changed cell cannot use the old stored-value witness"
+            );
+        }
+    }
+}
+
+#[test]
+fn rewritten_integer_observations_preserve_binders_and_selected_goal_work() {
+    use crate::kernel::proof::ProofFacts;
+    let variable = Variable(989_002);
+    let word = Bitvector32Term::Variable(variable);
+    let one = Bitvector32Term::Constant(1);
+    let facts = ProofFacts::from_ordered(&[Proposition::ConditionIs(
+        ConditionTerm::equal(word.clone(), one.clone()),
+        true,
+    )]);
+    let observed = |bits| IntegerTerm::from_machine(MachineIntegerType::Int32, bits).unwrap();
+    let goal = |bits| Proposition::ForAll {
+        var: variable,
+        sort: Sort::CInt32,
+        body: Box::new(Proposition::ConditionIs(
+            ConditionTerm::integer_equal(observed(bits), IntegerTerm::constant_i64(1)),
+            true,
+        )),
+    };
+    assert!(
+        facts
+            .with_checked_rewritten_loads(&goal(word.clone()), &goal(one))
+            .is_none()
+    );
+    let leaf = Proposition::ConditionIs(
+        ConditionTerm::integer_equal(observed(word.clone()), observed(word)),
+        true,
+    );
+    // Corresponding-leaf validation must not scan unrelated premises or
+    // revisit a goal's growing conjunction prefix.
+    for size in [4, 8, 16, 32] {
+        let mut proposition = leaf.clone();
+        for _ in 0..size {
+            proposition = Proposition::And(Box::new(leaf.clone()), Box::new(proposition));
+        }
+        let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.with_checked_rewritten_loads(&proposition, &proposition)
+        });
+        assert!(checked.is_some());
+        assert_eq!(work, 2 * size + 1);
+    }
+}
+
+#[test]
 fn rewritten_goal_comparison_visits_only_the_selected_proposition() {
     let facts = crate::kernel::proof::ProofFacts::default();
     for size in [4, 8, 16, 32] {
