@@ -2675,6 +2675,9 @@ theorem cstr_readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
                         contradiction(bytes[right] == '\0');
                     }
                     not (right < left) => {
+                        have left <= right by {
+                            simp();
+                        }
                         apply(uint64_le_and_not_lt_implies_eq(left, right)) using {
                             left <= right;
                             not (left < right);

@@ -412,8 +412,8 @@ int32 caller(int32 x, int32 y) {
 #[test]
 fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
     let c_source = r#"
-        int32 read_terminator(uint8 haystack[], int32 known_len) {
-            int32 length;
+        uint64 read_terminator(uint8 haystack[], uint64 known_len) {
+            uint64 length;
             length = strlen(haystack);
             return length;
         }
@@ -421,13 +421,13 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
     let click_source = r#"
         verifying "source_identity.c";
 
-        int32 read_terminator(uint8 haystack[], int32 known_len) {
-            requires 0 <= known_len;
-            requires defined(known_len + 1);
-            requires viewable(haystack[0..known_len + 1]);
+        uint64 read_terminator(uint8 haystack[], uint64 known_len) {
+            requires known_len < 18446744073709551615u64;
+            requires defined(known_len + 1u64);
+            requires viewable(haystack[0..known_len + 1u64]);
             requires cstr_readable(haystack);
-            views haystack[0..known_len + 1];
-            ensures result >= 0;
+            views haystack[0..known_len + 1u64];
+            ensures result < 18446744073709551615u64;
         } by {
             execute();
             simp();
@@ -461,7 +461,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
     )
     .expect("the source-identity retry should expand into source");
     assert!(
-        expanded_source.contains("obtain (len: int32) { at(function.entry,"),
+        expanded_source.contains("obtain (len: uint64) { at(function.entry,"),
         "the expansion should state the established entry existential: {expanded_source}"
     );
     assert!(
