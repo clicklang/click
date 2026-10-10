@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 55;
+pub(crate) const EXPORT_SCHEMA: u32 = 56;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -544,6 +544,12 @@ pub enum CppExpression {
         value_type: CppType,
         span: CppSpan,
     },
+    /// Explicit object-pointer reinterpretation to the authenticated byte type.
+    BytePointerCast {
+        value: Box<CppExpression>,
+        value_type: CppType,
+        span: CppSpan,
+    },
     Binary {
         operator: CppBinaryOperator,
         left: Box<CppExpression>,
@@ -769,19 +775,39 @@ pub enum CppScalarCastKind {
     IntegralToEnumeration,
     IntegralToBoolean,
     BooleanToSignedIntegral,
+    BytePointerCast,
 }
 
 impl CppScalarConversion {
     fn validate(&self, source: &CppType, logical_source: &str) -> Result<(), String> {
         self.span.validate(logical_source)?;
+        if !same_scalar_type(source, &self.source_type) {
+            return Err("C++ call conversion chain has a mismatched source type".into());
+        }
+        if self.cast_kind == CppScalarCastKind::BytePointerCast {
+            return if self.explicit
+                && super::scalar::byte_pointer_cast(&self.source_type, &self.value_type)
+            {
+                Ok(())
+            } else {
+                Err("C++ byte pointer conversion requires an explicit supported object-to-byte reinterpretation".into())
+            };
+        }
+        if matches!(self.source_type, CppType::Pointer { .. })
+            && self.cast_kind == CppScalarCastKind::NoOp
+        {
+            return if same_scalar_type(&self.source_type, &self.value_type) {
+                Ok(())
+            } else {
+                Err("C++ pointer no-op conversion changed pointee identity".into())
+            };
+        }
         let from = Scalar::mutable_kind(&self.source_type)
             .ok_or("unsupported C++ call conversion operand")?;
         let to = Scalar::mutable_kind(&self.value_type)
             .ok_or("unsupported C++ call conversion result")?;
-        if !same_scalar_type(source, &self.source_type) {
-            return Err("C++ call conversion chain has a mismatched source type".into());
-        }
         let valid = match self.cast_kind {
+            CppScalarCastKind::BytePointerCast => unreachable!("checked pointer conversion"),
             CppScalarCastKind::NoOp => same_scalar_type(&self.source_type, &self.value_type),
             CppScalarCastKind::IntegralCast => {
                 to.is_integer()
@@ -2073,6 +2099,12 @@ impl CppFunction {
                     CppType::Integer { .. } | CppType::Enumeration { .. } => {
                         require_scalar_integer(&local.value_type, "automatic local")?;
                     }
+                    CppType::Pointer { .. } => {
+                        require_native_object_pointer(
+                            &local.value_type,
+                            "automatic pointer local",
+                        )?;
+                    }
                     CppType::LvalueReference { pointee } => {
                         require_int32(pointee, true, "automatic reference local")?;
                     }
@@ -2587,6 +2619,9 @@ impl CppStatement {
                     CppType::Integer { .. } | CppType::Enumeration { .. } => {
                         require_scalar_integer(target_type, "assignment target")?;
                     }
+                    CppType::Pointer { .. } => {
+                        require_native_object_pointer(target_type, "assignment target")?;
+                    }
                     _ => {
                         return Err(
                             "C++ assignment target is not a mutable reference or local".into()
@@ -2601,7 +2636,11 @@ impl CppStatement {
                 if !same_scalar_type(expected, value.value_type()) {
                     return Err("C++ assignment requires matching widths and signedness".into());
                 }
-                require_scalar_integer(value.value_type(), "assignment value")
+                if matches!(value.value_type(), CppType::Pointer { .. }) {
+                    require_native_object_pointer(value.value_type(), "assignment value")
+                } else {
+                    require_scalar_integer(value.value_type(), "assignment value")
+                }
             }
             Self::Store {
                 pointer,
@@ -2875,6 +2914,14 @@ impl CppInitializer {
                 }
                 validate_call(callee, arguments, span, places, records, logical_source)
             }
+            (Self::Value { value }, CppType::Pointer { .. }) => {
+                value.validate(places, records, logical_source)?;
+                require_native_object_pointer(local_type, "automatic pointer initializer")?;
+                if !same_scalar_type(local_type, value.value_type()) {
+                    return Err("C++ pointer initializer changed pointee identity".into());
+                }
+                Ok(())
+            }
             (Self::Value { value }, CppType::Integer { .. } | CppType::Enumeration { .. }) => {
                 value.validate(places, records, logical_source)?;
                 if !same_scalar_type(local_type, value.value_type()) {
@@ -2891,7 +2938,7 @@ impl CppInitializer {
                     conversions,
                     span,
                 },
-                CppType::Integer { .. } | CppType::Enumeration { .. },
+                CppType::Integer { .. } | CppType::Enumeration { .. } | CppType::Pointer { .. },
             ) => {
                 validate_call(callee, arguments, span, places, records, logical_source)?;
                 validate_scalar_conversions(conversions, local_type, logical_source)
@@ -3066,7 +3113,8 @@ pub(super) fn field_scalar_argument(expression: &CppExpression) -> bool {
         CppExpression::MemberLoad { value_type, .. } => Scalar::of(value_type).is_some(),
         CppExpression::LogicalNot { value, .. }
         | CppExpression::IntegralCast { value, .. }
-        | CppExpression::EnumCast { value, .. } => field_scalar_argument(value),
+        | CppExpression::EnumCast { value, .. }
+        | CppExpression::BytePointerCast { value, .. } => field_scalar_argument(value),
         _ => false,
     }
 }
@@ -3090,7 +3138,8 @@ fn stable_scalar_argument(expression: &CppExpression, places: &ValidationPlaces<
         ),
         CppExpression::LogicalNot { value, .. }
         | CppExpression::IntegralCast { value, .. }
-        | CppExpression::EnumCast { value, .. } => stable_scalar_argument(value, places),
+        | CppExpression::EnumCast { value, .. }
+        | CppExpression::BytePointerCast { value, .. } => stable_scalar_argument(value, places),
         _ => false,
     }
 }
@@ -3201,6 +3250,7 @@ impl CppExpression {
             Self::LogicalNot { value, .. }
             | Self::IntegralCast { value, .. }
             | Self::EnumCast { value, .. }
+            | Self::BytePointerCast { value, .. }
             | Self::ReferenceBinding { address: value, .. }
             | Self::Dereference { pointer: value, .. } => value.contains_observer(),
             Self::Binary { left, right, .. } => {
@@ -3258,6 +3308,7 @@ impl CppExpression {
             | Self::MemberLoad { value_type, .. }
             | Self::IntegralCast { value_type, .. }
             | Self::EnumCast { value_type, .. }
+            | Self::BytePointerCast { value_type, .. }
             | Self::Binary { value_type, .. } => value_type,
         }
     }
@@ -3281,7 +3332,10 @@ impl CppExpression {
             }
             | Self::LogicalNot { value: pointer, .. }
             | Self::IntegralCast { value: pointer, .. }
-            | Self::EnumCast { value: pointer, .. } => pointer.references_place(declaration_id),
+            | Self::EnumCast { value: pointer, .. }
+            | Self::BytePointerCast { value: pointer, .. } => {
+                pointer.references_place(declaration_id)
+            }
             Self::MemberLoad { object, .. } => object.declaration_id == declaration_id,
             Self::Binary { left, right, .. } => {
                 left.references_place(declaration_id) || right.references_place(declaration_id)
@@ -3539,6 +3593,18 @@ impl CppExpression {
                 }
                 require_integral_scalar(value.value_type(), "enum cast operand")?;
                 require_integral_scalar(value_type, "enum cast result")
+            }
+            Self::BytePointerCast {
+                value,
+                value_type,
+                span,
+            } => {
+                span.validate(logical_source)?;
+                value.validate(places, records, logical_source)?;
+                if !super::scalar::byte_pointer_cast(value.value_type(), value_type) {
+                    return Err("C++ byte pointer cast requires a supported mutable object pointer and the pinned std::byte pointee".into());
+                }
+                Ok(())
             }
             Self::Binary {
                 operator: operator @ (CppBinaryOperator::Add | CppBinaryOperator::Subtract),
@@ -4401,7 +4467,8 @@ fn collect_expression_calls<'a>(value: &'a CppExpression, calls: &mut Vec<Collec
         | CppExpression::Dereference { pointer: value, .. }
         | CppExpression::LogicalNot { value, .. }
         | CppExpression::IntegralCast { value, .. }
-        | CppExpression::EnumCast { value, .. } => collect_expression_calls(value, calls),
+        | CppExpression::EnumCast { value, .. }
+        | CppExpression::BytePointerCast { value, .. } => collect_expression_calls(value, calls),
         CppExpression::Binary { left, right, .. } => {
             collect_expression_calls(left, calls);
             collect_expression_calls(right, calls);
@@ -5090,7 +5157,8 @@ impl CppExpression {
             ),
             Self::LogicalNot { value, .. }
             | Self::IntegralCast { value, .. }
-            | Self::EnumCast { value, .. } => {
+            | Self::EnumCast { value, .. }
+            | Self::BytePointerCast { value, .. } => {
                 value.validate_constant_references(logical_source, constants, referenced_constants)
             }
             Self::Binary { left, right, .. } => {

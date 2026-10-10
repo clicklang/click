@@ -417,8 +417,23 @@ ordinary ownership. Offline normal, expanded and retained regressions cover
 stores, automatic enum addresses and modular helper calls. The importer checks
 the declaration span and locked libstdc++ header hash; rehashed artifacts cannot
 substitute another enum or declaration source. Other enum pointers remain
-refused. Artifact schema 55 requires refreshing older locks. Pointer
-reinterpretation and writable byte-span construction remain next. Byte alias access must be restricted to the actual pinned `std::byte` declaration;
+refused. Artifact schema 55 requires refreshing older locks. Explicit one-way `reinterpret_cast` from mutable supported native object
+pointers to the authenticated `std::byte*` now preserves allocation identity
+and uses the shared byte-access rules. Initialized native pointer locals and
+same-type assignment use ordinary scalar allocation. Four concrete byte writes
+complete an unwritten declared uint32 representation; partial writes and writes
+without ownership remain refused. Call-result casts retain their explicit typed
+conversion chain. Artifact schema 56 requires refreshing older locks.
+
+Before verifying the unchanged writable-byte span conversion, choose its native
+contract expression for the cross-pointee identity: `(uint8*)p` is currently
+refused in contracts, while `result == p` with byte/word pointers reaches a type
+mismatch. A numerical `address(result) == address(p)` claim can verify but does
+not provide the provenance relation needed by the modular caller. Prefer checked
+native object-pointer casts preserving allocation identity and qualification,
+with access authority checked separately, over weakening source pointer
+compatibility or treating matching numerical addresses as allocation identity.
+Writable byte-span construction remains next after that contract decision. Byte alias access must be restricted to the actual pinned `std::byte` declaration;
 an arbitrary enum with the same underlying type does not gain that privilege.
 Automatic scalar declarations now create explicit ownership of their exact
 byte extent in the shared kernel, independent of initialization. Direct reads
