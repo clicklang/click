@@ -1801,6 +1801,68 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
     );
 }
 
+#[test]
+fn wide_arithmetic_promotes_unsuffixed_literals_in_checked_bridge_arguments() {
+    for (carrier, suffix) in [("uint64", "u64"), ("int64", "i64")] {
+        let source = format!(
+            "theorem span(n: {carrier}) {{ requires 4{suffix} <= n; requires n <= 16{suffix}; \
+             ensures (16 - n) + 4 <= 16 by {{ arithmetic() using {{ 4 <= n; n <= 16; }} }} }}"
+        );
+        verify_c0_sources(&source, &[]).expect("implicit wide literals must verify");
+        let expanded = expand_c0_claim_source_by_label(&source, &[], "span.ensures_0")
+            .expect("the promoted bridge arguments must expand");
+        assert!(
+            expanded.contains(&format!("{carrier}_subtract_to_integer(16{suffix}, n)")),
+            "{expanded}"
+        );
+        assert!(!expanded.contains("arithmetic()"), "{expanded}");
+        verify_c0_sources(&expanded, &[]).expect("the explicit bridges must independently verify");
+        let missing_bound = source.replace("4 <= n; n <= 16;", "n <= 16;");
+        verify_c0_sources(&missing_bound, &[])
+            .expect_err("the final inequality lacks its lower bound");
+        let false_result = source.replace("+ 4 <= 16 by", "+ 5 <= 16 by");
+        verify_c0_sources(&false_result, &[]).expect_err("promotion cannot prove a false bound");
+    }
+}
+
+#[test]
+fn wide_arithmetic_reads_listed_bounds_at_their_named_snapshot() {
+    for carrier in ["uint64", "int64"] {
+        let c_source = format!("{carrier} advance({carrier} n) {{ n = n - 4; return n; }}");
+        let source = format!(
+            r#"verifying "advance.c";
+{carrier} advance({carrier} n) {{
+    requires 4 <= n;
+    requires n <= 16;
+    ensures result <= 12 by {{
+        mark before;
+        execute();
+        have result <= 12 by {{
+            arithmetic() using {{
+                at(before, 4 <= n);
+                at(before, n <= 16);
+                result == at(before, n) - 4;
+            }}
+        }}
+        simp();
+    }}
+}}"#
+        );
+        let sources = [("advance.c", c_source.as_str())];
+        verify_c0_sources(&source, &sources).expect("snapshot bounds must verify");
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, "advance.ensures_0")
+            .expect("snapshot bridges must expand");
+        assert!(!expanded.contains("arithmetic()"), "{expanded}");
+        verify_c0_sources(&expanded, &sources).expect("snapshot bridges must independently verify");
+        let missing_bound = source.replace("at(before, n <= 16);", "");
+        verify_c0_sources(&missing_bound, &sources)
+            .expect_err("a historical upper bound cannot be inferred from type bounds");
+        let false_result = source.replace("result <= 12", "result <= 11");
+        verify_c0_sources(&false_result, &sources)
+            .expect_err("snapshot facts cannot prove a false bound");
+    }
+}
+
 /// The same for a signed 64-bit goal: each sum is shown defined from its
 /// Integer bounds before it is observed, and a premise over a sum is
 /// carried only once that sum is defined.

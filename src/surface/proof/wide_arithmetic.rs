@@ -54,6 +54,48 @@ impl Carrier {
         }
     }
 
+    /// Preserve the comparison's implicit promotion when emitting arguments
+    /// for a bridge whose binders explicitly require a 64-bit value.
+    fn typed_literals(self, expression: &ContractExpression) -> ContractExpression {
+        match expression {
+            ContractExpression::IntegerLiteral(text) => {
+                let value = match self {
+                    Self::UInt64 => text
+                        .parse::<u64>()
+                        .ok()
+                        .map(|value| CValue::UInt64(Bitvector32Term::UInt64Constant(value))),
+                    Self::Int64 => text
+                        .parse::<i64>()
+                        .ok()
+                        .map(|value| CValue::Int64(Bitvector32Term::Int64Constant(value))),
+                };
+                value
+                    .map(|value| ContractExpression::CFragment(CExpression::Value(value)))
+                    .unwrap_or_else(|| expression.clone())
+            }
+            ContractExpression::Add(left, right) => ContractExpression::Add(
+                Box::new(self.typed_literals(left)),
+                Box::new(self.typed_literals(right)),
+            ),
+            ContractExpression::Subtract(left, right) => ContractExpression::Subtract(
+                Box::new(self.typed_literals(left)),
+                Box::new(self.typed_literals(right)),
+            ),
+            ContractExpression::At {
+                selector,
+                expression,
+            } => {
+                let read = at_operand(selector, expression);
+                if matches!(read, ContractExpression::At { .. }) {
+                    read
+                } else {
+                    self.typed_literals(&read)
+                }
+            }
+            _ => expression.clone(),
+        }
+    }
+
     /// The bridge theorem `<type>_<stem>`.
     fn theorem(self, stem: &str) -> String {
         format!("{}_{stem}", self.name())
@@ -76,6 +118,19 @@ enum Relation {
 fn relation_parts(
     proposition: &ClickProposition,
 ) -> Option<(ContractExpression, ContractExpression, Relation, bool)> {
+    if let ClickProposition::At {
+        selector,
+        proposition,
+    } = proposition
+    {
+        let (lower, upper, relation, forward) = relation_parts(proposition)?;
+        return Some((
+            at_operand(selector, &lower),
+            at_operand(selector, &upper),
+            relation,
+            forward,
+        ));
+    }
     let (proposition, negated) = match proposition {
         ClickProposition::Not(body) => (body.as_ref(), true),
         other => (other, false),
@@ -101,6 +156,32 @@ fn relation_parts(
         _ => return None,
     };
     Some((lower.clone(), upper.clone(), relation, written_forward))
+}
+
+/// Read linear arithmetic in its named snapshot. Constants are independent
+/// of memory; each other operand retains the selector checked by lowering.
+fn at_operand(selector: &SnapshotSelector, expression: &ContractExpression) -> ContractExpression {
+    match expression {
+        ContractExpression::IntegerLiteral(_)
+        | ContractExpression::CFragment(CExpression::Value(
+            CValue::UInt64(Bitvector32Term::UInt64Constant(_))
+            | CValue::Int64(Bitvector32Term::Int64Constant(_)),
+        ))
+        | ContractExpression::At { .. }
+        | ContractExpression::Old(_) => expression.clone(),
+        ContractExpression::Add(left, right) => ContractExpression::Add(
+            Box::new(at_operand(selector, left)),
+            Box::new(at_operand(selector, right)),
+        ),
+        ContractExpression::Subtract(left, right) => ContractExpression::Subtract(
+            Box::new(at_operand(selector, left)),
+            Box::new(at_operand(selector, right)),
+        ),
+        _ => ContractExpression::At {
+            selector: selector.clone(),
+            expression: Box::new(expression.clone()),
+        },
+    }
 }
 
 fn relate(
@@ -336,6 +417,8 @@ impl<'a> Proof<'a> {
             )));
         }
 
+        let goal_lower = carrier.typed_literals(&goal_lower);
+        let goal_upper = carrier.typed_literals(&goal_upper);
         let mut proof = self.clone();
         // The Integer facts established so far, each an exact premise of
         // the Integer steps that follow.
@@ -376,7 +459,10 @@ impl<'a> Proof<'a> {
             if kernel == Proposition::ConditionIs(ConditionTerm::Constant(true), true)
                 && let Some((left, right, Relation::Equal, _)) = relation_parts(premise)
             {
-                for side in [&left, &right] {
+                for side in [
+                    &carrier.typed_literals(&left),
+                    &carrier.typed_literals(&right),
+                ] {
                     collect_operations(side, &mut operations);
                     collect_atoms(side, &mut atoms);
                 }
@@ -388,6 +474,8 @@ impl<'a> Proof<'a> {
                 continue;
             }
             let (lower, upper, relation, forward) = relation_parts(premise).ok_or(None)?;
+            let lower = carrier.typed_literals(&lower);
+            let upper = carrier.typed_literals(&upper);
             // A negated order is read with its sides exchanged, which the
             // bridge accepts as the same fact. An order written with `>` is
             // not, and is asked for the other way round.
@@ -453,7 +541,7 @@ impl<'a> Proof<'a> {
                         // A negated order is first stated as the order it
                         // is, which is the same fact to the kernel.
                         let stated = relate(lower.clone(), upper.clone(), *relation);
-                        let restated = if matches!(premise, ClickProposition::Not(_)) {
+                        let restated = if premise != &stated {
                             proof.apply_step(have(stated.clone(), vec![ProofStep::Assumption]))
                         } else {
                             Ok(proof.clone())
