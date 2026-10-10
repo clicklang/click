@@ -503,6 +503,10 @@ struct EqualityGraphState {
     terms: terms::TermClasses,
     input_history: Option<std::sync::Arc<inputs::History>>,
     logical_values: crate::persistent::PersistentSet<Pointer>,
+    /// Compound query dependencies already registered at this metadata
+    /// generation. Later producer definitions invalidate a miss lazily.
+    logical_query_dependencies: crate::persistent::PersistentMap<Pointer, u64>,
+    typed_reads: crate::persistent::PersistentSet<PointerBlock>,
     checked_read_generation: u64,
     /// The exact class-merge delta stream. A consumer with a persistent
     /// class-keyed index can update only entries in the moved class. Clones
@@ -648,6 +652,14 @@ impl EqualityGraph {
                 continue;
             }
             let Some((application, address)) = reads.definitions.get(&value) else {
+                if matches!(value.offset, PointerOffsetTerm::Add(..)) {
+                    if state.logical_query_dependencies.get(&value) == Some(&reads.generation) {
+                        continue;
+                    }
+                    state
+                        .logical_query_dependencies
+                        .insert(value.clone(), reads.generation);
+                }
                 // Register only producer-retained dependencies of the selected
                 // expression. The lookup identifies an original definition;
                 // it does not assert that arbitrary scaled arithmetic is a
@@ -694,7 +706,9 @@ impl EqualityGraph {
             // A nested load may use a previously constructed logical pointer
             // as its source address. Register only that explicit dependency.
             pending.push(address.clone());
-            definitions.push((value, application.clone()));
+            if value != *application {
+                definitions.push((value, application.clone()));
+            }
             // Canonical projection is unconditional producer metadata. An
             // exact registry lookup connects the application to its original
             // snapshot without searching history or inspecting other reads.
@@ -711,6 +725,11 @@ impl EqualityGraph {
         drop(reads);
         for (value, application) in &definitions {
             state.register_blocks([value.block.clone(), application.block.clone()]);
+        }
+        for (value, application) in &definitions {
+            let value = state.register_pointer_address(value);
+            let application = state.register_pointer_address(application);
+            state.terms.add_address_equality(value, application);
         }
         state.close(definitions);
     }
@@ -1184,6 +1203,7 @@ impl EqualityGraph {
     ) -> bool {
         let state = self.state.get_mut().expect("equality graph");
         let changed = state.terms.add_int32_equality(left, right);
+        state.close(Vec::new());
         if changed {
             state.remember_input(inputs::Input::Int32(left.clone(), right.clone()));
         }
@@ -1198,6 +1218,7 @@ impl EqualityGraph {
     ) -> bool {
         let state = self.state.get_mut().expect("equality graph");
         let changed = state.terms.add_equality(left, right);
+        state.close(Vec::new());
         if changed {
             state.remember_input(inputs::Input::Offset(left.clone(), right.clone()));
         }
@@ -1376,7 +1397,7 @@ impl EqualityGraphState {
         let mut equalities = Vec::new();
         while let Some(block) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
-            if self.loads.contains_key(&block) {
+            if self.loads.contains_key(&block) || self.typed_reads.contains(&block) {
                 continue;
             }
             let definition = match &block {
@@ -1401,6 +1422,25 @@ impl EqualityGraphState {
             let Some((memory, address, kind)) = definition else {
                 continue;
             };
+            if matches!(block, PointerBlock::LoadedPointer(_)) {
+                self.typed_reads = self.typed_reads.with_value(block.clone());
+                let address_term = self.register_pointer_address(&address);
+                let value_term = self.register_pointer_address(&Pointer {
+                    block: block.clone(),
+                    offset: PointerOffsetTerm::Constant(0),
+                });
+                self.terms.pointer_read(
+                    memory.read_identity(),
+                    address_term,
+                    kind,
+                    value_term,
+                    block.clone(),
+                );
+                if is_load(&address.block) {
+                    pending.push(address.block);
+                }
+                continue;
+            }
             let Some(address_offset) = AffineOffset::of(&address.offset) else {
                 continue;
             };
@@ -1561,7 +1601,27 @@ impl EqualityGraphState {
 
     fn close(&mut self, mut equalities: Vec<(Pointer, Pointer)>) -> bool {
         let mut changed = false;
-        while let Some((left, right)) = equalities.pop() {
+        loop {
+            equalities.extend(
+                self.terms
+                    .take_read_merges()
+                    .into_iter()
+                    .map(|(left, right)| {
+                        (
+                            Pointer {
+                                block: left,
+                                offset: PointerOffsetTerm::Constant(0),
+                            },
+                            Pointer {
+                                block: right,
+                                offset: PointerOffsetTerm::Constant(0),
+                            },
+                        )
+                    }),
+            );
+            let Some((left, right)) = equalities.pop() else {
+                break;
+            };
             crate::instrumentation::record_deterministic_work(1);
             let (Some(left), Some(right)) = (self.canonical(&left), self.canonical(&right)) else {
                 continue;
@@ -2504,6 +2564,45 @@ mod tests {
         }
     }
 
+    // Whole-offset equality is not an affine block merge. All read consumers
+    // must nevertheless see it, including when learned after registration.
+    #[test]
+    fn typed_reads_follow_whole_address_congruence() {
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let p = at_offset(
+            symbolic(910_001),
+            PointerOffsetTerm::scale_int32(index(910_002), 8),
+        );
+        let q = at_offset(
+            symbolic(910_001),
+            PointerOffsetTerm::scale_int32(index(910_003), 8),
+        );
+        let left = Pointer::loaded_value(&memory, &p);
+        let right = Pointer::loaded_value(&memory, &q);
+        for early in [false, true] {
+            let mut graph = EqualityGraph::default();
+            let sibling = graph.clone();
+            if !early {
+                assert!(!graph.are_equal(&left, &right));
+            }
+            graph.add_offset_equality(&p.offset, &q.offset);
+            assert!(graph.are_equal(&p, &q));
+            assert!(graph.are_equal(&left, &right));
+            assert!(!sibling.are_equal(&left, &right));
+            assert!(!graph.are_equal(
+                &left,
+                &Pointer::loaded_value(&memory, &q.offset_by_bytes(8))
+            ));
+            let changed = crate::kernel::intern_c_memory(
+                memory
+                    .memory()
+                    .clone()
+                    .store(p.clone(), CValue::Int32(Bitvector32Term::Constant(7))),
+            );
+            assert!(!graph.are_equal(&left, &Pointer::loaded_value(&changed, &q)));
+        }
+    }
+
     #[test]
     fn loads_at_equal_pointers_of_one_snapshot_are_one_value() {
         let memory = crate::kernel::intern_c_memory(
@@ -2832,7 +2931,8 @@ mod tests {
     #[test]
     fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
         let memory = crate::kernel::intern_c_memory(CMemory::new());
-        for size in [16u64, 64, 256] {
+        let mut costs = Vec::new();
+        for size in [16u64, 64, 256, 1024] {
             let mut graph = EqualityGraph::default();
             let mut pairs = Vec::new();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -2865,8 +2965,14 @@ mod tests {
                     assert!(graph.are_equal(left, right));
                 }
             });
-            assert!(work <= 96 * size as usize, "size={size}, work={work}");
+            costs.push(work);
         }
+        // Read applications now include complete address terms. Check growth
+        // across sizes rather than the old affine-only operation constant.
+        assert!(
+            costs.windows(2).all(|pair| pair[1] <= 5 * pair[0]),
+            "{costs:?}"
+        );
     }
 
     #[test]

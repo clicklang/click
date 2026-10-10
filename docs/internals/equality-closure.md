@@ -12,6 +12,41 @@ has its own remaining frontier; completing it is not an additional equality
 migration requirement. Wider theories in this note remain reference material,
 not new P1 acceptance criteria.
 
+## Shared typed pointer reads
+
+A registered typed pointer read is a congruence application of its snapshot
+read identity, complete address, and load interpretation. Complete address
+classes, rather than only affine block coordinates, determine equality of
+these applications. The existing parent-use index propagates late address
+merges to the affected reads. Each read-value class retains one typed-read
+witness. Merging classes emits equality of the corresponding zero-offset
+pointer values into the existing affine class-update stream. Ownership and
+range indexes therefore receive the same consequences without rediscovering
+read equality or enumerating aliases. The pending stream is persistent so a
+context fork cannot copy unrelated deferred work.
+
+This rule establishes values only: it supplies
+no read authority, initialization, allocation identity, or cross-snapshot
+frame proof. Snapshot read identities retain their existing independently
+checked representation-only normalization.
+
+Immutable definitions and checked read evidence serve different purposes.
+An existing C value can keep its original load definition when a later read
+returns it from a cached cell. A checked resource-index evaluation retains
+that later snapshot and selected address in its certified producer binding.
+After its prerequisites pass, it admits `value == Read(snapshot, address)`
+through the graph's existing checked-equality input. It does not mutate the
+value's definition or install a global observation. The input is branch-local
+and retained by input checkpoints; rebuilding a context without its evidence drops it.
+Compound pointer queries retain the generation at which their read dependencies
+were registered. Repeated queries reuse that result; a newly registered logical
+read definition changes the generation and invalidates earlier misses. This
+cache retains term dependencies only, never a successful equality judgment.
+
+Ordinary and volatile program reads do not use this resource-index admission
+path. Other producer migrations and removal of older consumer recovery rules
+remain separate work; this first change does not claim universal read adoption.
+
 ## Current interface and trust boundary
 
 `kernel::equality_graph::EqualityGraph` is part of the **trusted kernel**.

@@ -9757,6 +9757,9 @@ pub(crate) enum GeneratedLoadBinding {
         /// The C value produced by a completed, nonvolatile pointer read.
         /// Scalar and volatile reads have no pointer bridge.
         typed_pointer_value: Option<Pointer>,
+        /// The current cell read by a checked resource-index expression.
+        /// Its cached value can retain an older defining load.
+        observed_pointer_read: Option<(SharedCMemory, Pointer)>,
     },
     Ambiguous {
         variable: Variable,

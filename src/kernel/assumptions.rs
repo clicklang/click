@@ -7681,6 +7681,7 @@ impl ExecutionPureFact {
                 pointer: address,
                 load: Bitvector32Term::MemoryLoad(memory, _, _),
                 typed_pointer_value: Some(value),
+                observed_pointer_read,
                 ..
             },
         ) = self.generated_load_binding()
@@ -7691,6 +7692,12 @@ impl ExecutionPureFact {
             && crate::kernel::eval::typed_pointer_read_variable(value) == Some(*variable)
         {
             context.register_checked_pointer_read(value, memory, address);
+            if let Some((observed_memory, observed_address)) = observed_pointer_read {
+                context.equality_graph.add_checked_read_equality(
+                    value,
+                    &Pointer::loaded_value(observed_memory, observed_address),
+                );
+            }
         }
     }
 
