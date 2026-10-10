@@ -23,6 +23,7 @@ enum Int32Binary {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Node {
     Address(u64, u64),
+    AddressShift(u64, i64),
     Footprint(u64, u64),
     Int32(MachineAtom),
     Int32Add(u64, u64),
@@ -39,6 +40,7 @@ enum Node {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Application {
     Address(u64, u64),
+    AddressShift(u64, i64),
     Footprint(u64, u64),
     Add(u64, u64),
     Int32Add(u64, u64),
@@ -57,6 +59,7 @@ impl Application {
             | Self::Int32Binary(_, left, right)
             | Self::Footprint(left, right) => [Some(left), Some(right)],
             Self::Address(_, value)
+            | Self::AddressShift(value, _)
             | Self::Int32Scaled(value, _)
             | Self::Int32Load(_, _, value) => [Some(value), None],
         }
@@ -67,6 +70,7 @@ impl Application {
     fn signature(self, classes: &TermClasses) -> Self {
         match self {
             Self::Address(block, offset) => Self::Address(block, classes.root(offset)),
+            Self::AddressShift(address, bytes) => Self::AddressShift(classes.root(address), bytes),
             Self::Footprint(start, end) => Self::Footprint(classes.root(start), classes.root(end)),
             Self::Add(left, right) => Self::Add(classes.root(left), classes.root(right)),
             Self::Int32Add(left, right) => Self::Int32Add(classes.root(left), classes.root(right)),
@@ -120,6 +124,9 @@ pub(super) struct TermClasses {
     markers: PersistentMap<u64, Arc<()>>,
     address_uses: PersistentMap<PointerBlock, PersistentMap<u64, Arc<PointerOffsetTerm>>>,
     address_nodes: PersistentSet<u64>,
+    // A displacement definition is permanent for one raw address spelling.
+    // Repeated queries reuse it without re-registering its base or closure.
+    registered_address_shifts: PersistentSet<(u64, u64)>,
     // One offset witness per exact block in each address class. When address
     // classes merge, a shared block proves its two offsets equal. Small-side
     // class union visits only moved witnesses, never ambient pointer facts.
@@ -191,6 +198,42 @@ impl TermClasses {
         block: PointerBlock,
         offset: PointerOffsetTerm,
     ) -> (u64, bool) {
+        let (address, new, raw_offset) = self.address_without_shift(block.clone(), offset.clone());
+        // Preserve the byte displacement as an operation on the complete
+        // address. Flattening it into a block's affine coordinates can hide
+        // the aliased base subexpression after a previous block merge.
+        // One selected prefix suffices; do not recursively publish prefixes
+        // or enumerate other addresses in the class.
+        let shift = match &offset {
+            PointerOffsetTerm::Add(base, displacement) => displacement
+                .as_const()
+                .filter(|bytes| *bytes != 0)
+                .map(|bytes| (base.as_ref().clone(), bytes)),
+            PointerOffsetTerm::Constant(bytes) if *bytes != 0 => {
+                Some((PointerOffsetTerm::Constant(0), *bytes))
+            }
+            _ => None,
+        };
+        if let Some((base, bytes)) = shift
+            && !self
+                .registered_address_shifts
+                .contains(&(address, raw_offset))
+        {
+            let base = self.address_without_shift(block, base).0;
+            let shifted = self.intern_node(Node::AddressShift(base, bytes));
+            self.close_with_affine_definition(vec![(address, shifted)], true);
+            self.registered_address_shifts = self
+                .registered_address_shifts
+                .with_value((address, raw_offset));
+        }
+        (address, new)
+    }
+
+    fn address_without_shift(
+        &mut self,
+        block: PointerBlock,
+        offset: PointerOffsetTerm,
+    ) -> (u64, bool, u64) {
         // Affine normalization is already trusted by pointer equality. Keep
         // the original syntax connected to its definitional normal form so
         // whole-offset premises and affine addresses share these applications.
@@ -216,7 +259,7 @@ impl TermClasses {
             uses.insert(id, Arc::new(offset));
             self.address_uses.insert(block, uses);
         }
-        (id, new)
+        (id, new, raw)
     }
 
     /// Only original concrete address inputs carry storage evidence. Affine
@@ -530,6 +573,10 @@ impl TermClasses {
                 self.offsets_by_address_block
                     .insert(id, PersistentMap::default().with_inserted(*block, *offset));
                 Some(Application::Address(*block, *offset))
+            }
+            Node::AddressShift(address, bytes) => {
+                self.address_nodes = self.address_nodes.with_value(id);
+                Some(Application::AddressShift(*address, *bytes))
             }
             Node::Footprint(start, end) => Some(Application::Footprint(*start, *end)),
             Node::Add(left, right) => Some(Application::Add(*left, *right)),

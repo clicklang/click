@@ -102,6 +102,16 @@ Raw applications preserve these exact premises independently of affine
 coordinates; derived load merges retain their existing indexed closure
 without eagerly duplicating every application.
 
+A selected address with a constant byte displacement also registers a shift
+application on its complete base address. Equal base addresses therefore remain
+equal after the same displacement, even when an earlier block merge flattened
+the base into affine coordinates. Registration publishes one selected prefix;
+it does not enumerate aliases or recursively publish every prefix. Each raw
+address spelling retains its registered shift definition, so repeated queries
+do not repeat base registration or closure. This supplies address equality only: field access still requires an owned range of the correct
+width. Regressions cover multiple owned fields, late cursor aliases, different
+offsets, missing ownership, and constant query work as unrelated fields grow.
+
 Explicit int32 equalities use typed nodes in the same term-class engine
 as offsets. Int32 addition, unsigned division/remainder and bitwise XOR have
 operation-tagged application signatures and shallow child IDs; other scalar

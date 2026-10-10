@@ -1803,6 +1803,137 @@ impl ResourceContext {
 mod tests {
     use super::*;
 
+    #[test]
+    fn modeled_pointer_alias_selects_one_of_multiple_owned_fields() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let parent = Pointer::symbolic(Variable(4000000));
+        let model = Pointer::symbolic(Variable(4065536));
+        let old_read = Pointer {
+            block: parent.block.clone(),
+            offset: PointerOffsetTerm::scale_int32(
+                Bitvector32Term::Variable(Variable(1542185793994)),
+                4,
+            ),
+        };
+        let cursor = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(
+                Bitvector32Term::Variable(Variable(2035320285104)),
+                4,
+            ),
+        };
+        let parameter = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(100000)), 4),
+        };
+        let facts = PureFactContext::new()
+            .assume_condition(ConditionTerm::pointer_equal(parameter, parent), true)
+            .assume_condition(
+                ConditionTerm::pointer_equal(old_read.clone(), model.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::pointer_equal(cursor.clone(), old_read.clone()),
+                true,
+            )
+            .assume_condition(ConditionTerm::pointer_equal(cursor.clone(), model), true);
+        let owner = |offset| {
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                old_read.offset_by_bytes(offset),
+                0u32.into(),
+                1u32.into(),
+                8,
+            ))
+        };
+        let resources = ResourceContext::new()
+            .unchecked_with_fact(owner(8))
+            .unchecked_with_fact(owner(0));
+        resources.synchronize_memory_equalities(&facts);
+        assert!(
+            facts
+                .equality_graph
+                .are_equal(&cursor.offset_by_bytes(8), &old_read.offset_by_bytes(8))
+        );
+        assert!(resources.permits_memory_read(&cursor.offset_by_bytes(8), 8, &facts));
+        assert!(
+            !facts
+                .equality_graph
+                .are_equal(&cursor.offset_by_bytes(8), &old_read.offset_by_bytes(16))
+        );
+        assert!(!resources.permits_memory_read(&cursor.offset_by_bytes(8), 9, &facts));
+        assert!(!resources.permits_memory_read(&cursor.offset_by_bytes(16), 8, &facts));
+        let missing_alias = PureFactContext::new();
+        assert!(!resources.permits_memory_read(&cursor.offset_by_bytes(8), 8, &missing_alias));
+    }
+
+    #[test]
+    fn modeled_pointer_alias_field_lookup_scales_with_selected_addresses() {
+        let mut previous = None;
+        for count in [16_u32, 64, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let parent = Pointer::symbolic(Variable(940_000));
+            let model = Pointer::symbolic(Variable(940_001));
+            let parameter = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(
+                    Bitvector32Term::Variable(Variable(940_002)),
+                    4,
+                ),
+            };
+            let old_read = Pointer {
+                block: parent.block.clone(),
+                offset: PointerOffsetTerm::scale_int32(
+                    Bitvector32Term::Variable(Variable(940_003)),
+                    4,
+                ),
+            };
+            let cursor = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(
+                    Bitvector32Term::Variable(Variable(940_004)),
+                    4,
+                ),
+            };
+            let prefix = PureFactContext::new()
+                .assume_condition(ConditionTerm::pointer_equal(parameter, parent), true)
+                .assume_condition(
+                    ConditionTerm::pointer_equal(old_read.clone(), model.clone()),
+                    true,
+                );
+            let resources = ResourceContext::new().unchecked_with_facts((0..count).map(|index| {
+                CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                    old_read.offset_by_bytes(index * 16),
+                    0u32.into(),
+                    1u32.into(),
+                    8,
+                ))
+            }));
+            resources.synchronize_memory_equalities(&prefix);
+            // Publish the cursor alias after the suppliers. Only address
+            // applications affected by this equality may be reindexed.
+            let facts = prefix
+                .clone()
+                .assume_condition(
+                    ConditionTerm::pointer_equal(cursor.clone(), old_read.clone()),
+                    true,
+                )
+                .assume_condition(ConditionTerm::pointer_equal(cursor.clone(), model), true);
+            resources.synchronize_memory_equalities(&facts);
+            let (permitted, work) = crate::instrumentation::measure_deterministic_work(|| {
+                resources.permits_memory_read(&cursor.offset_by_bytes(16), 8, &facts)
+            });
+            assert!(permitted);
+            if let Some(previous) = previous {
+                assert_eq!(
+                    work, previous,
+                    "selected-address work changed with {count} suppliers"
+                );
+            }
+            previous = Some(work);
+            assert!(!resources.permits_memory_read(&cursor.offset_by_bytes(16), 8, &prefix));
+        }
+    }
+
     fn view(base: &Pointer, start: u32, end: u32) -> CResourceFact {
         CResourceFact::view_memory(CMemoryRange::new_with_element_width(
             base.clone(),
