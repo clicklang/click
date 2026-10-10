@@ -3431,6 +3431,11 @@ fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointe
     canonical.blocks = std::sync::Arc::new(blocks);
     canonical.cells = std::sync::Arc::new(cells);
     canonical.union_cells = std::sync::Arc::new(union_cells);
+    canonical.record_diagnostic_transform(
+        "project memory for pointer read",
+        vec![memory.clone()],
+        vec![CValue::pointer(pointer.clone())],
+    );
     canonical
 }
 

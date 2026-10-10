@@ -4919,6 +4919,13 @@ fn join_loop_exit_storage_bookkeeping(
             CMemory::new().with_block(format!("loop-exit-join:{}", marker.0).as_str(), 0),
         );
         memory.mark_forgotten_from(&minted);
+        memory.record_diagnostic_transform(
+            "join loop exit markers",
+            std::iter::once(successor.memory.clone())
+                .chain(exits.iter().map(|state| state.memory.clone()))
+                .collect(),
+            Vec::new(),
+        );
         *successor = successor.clone().with_memory(memory);
     }
     Ok(true)
@@ -5099,6 +5106,13 @@ fn abstract_loop_exit_memory(
             cells.insert(pointer.clone(), value);
             abstracted.insert(pointer);
         }
+        memory.record_diagnostic_transform(
+            "abstract loop exit cells",
+            std::iter::once(successor.memory.clone())
+                .chain(exits.iter().map(|state| state.memory.clone()))
+                .collect(),
+            Vec::new(),
+        );
         *successor = successor.clone().with_memory(memory);
     }
     Ok(abstracted)
@@ -5228,6 +5242,7 @@ fn loop_exit_residual_difference(
     }
     if bookkeeping {
         witness.next_local_lifetime = seated.next_local_lifetime;
+        let diagnostic_base = witness.memory.clone();
         witness.memory.forgotten = seated.memory.forgotten.clone();
         let changes = witness
             .memory
@@ -5245,6 +5260,11 @@ fn loop_exit_residual_difference(
                 blocks.remove(&key);
             }
         }
+        witness.memory.record_diagnostic_transform(
+            "align loop exit markers",
+            vec![diagnostic_base, seated.memory.clone()],
+            Vec::new(),
+        );
     }
     for (name, c_type) in locals {
         let value = seated.locals().get(name)?.clone();
@@ -5274,6 +5294,16 @@ fn loop_exit_residual_difference(
                 }
             }
         }
+        memory.record_diagnostic_transform(
+            "restore loop exit cells",
+            vec![witness.memory.clone(), seated.memory.clone()],
+            cells.iter().cloned().map(CValue::pointer).collect(),
+        );
+        exit_memory.record_diagnostic_transform(
+            "abstract unmatched loop exit cells",
+            vec![seated.memory.clone(), witness.memory.clone()],
+            cells.iter().cloned().map(CValue::pointer).collect(),
+        );
         witness = witness.with_memory(memory);
         seated = seated.with_memory(exit_memory);
     }
@@ -7226,6 +7256,11 @@ pub(super) fn prepare_loop_top_state(
         }
     }
 
+    framed_memory.record_diagnostic_transform(
+        "retain checked loop frame",
+        vec![top_state.memory().clone(), entry_state.memory().clone()],
+        Vec::new(),
+    );
     if framed_memory != *top_state.memory() {
         top_state = top_state.with_memory(framed_memory);
         summaries = collect_whole_loop_effect_summaries(entry_state, &top_state, &effect_ranges);

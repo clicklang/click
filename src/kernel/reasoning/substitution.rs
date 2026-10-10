@@ -5501,7 +5501,8 @@ fn substitute_bitvector_variable_in_memory_contents(
         },
         |run| run_slot_named_by_load_variable(run, from),
     ));
-    CMemory {
+    let mut result = CMemory {
+        construction: None,
         blocks: std::sync::Arc::new(
             memory
                 .blocks
@@ -5649,7 +5650,16 @@ fn substitute_bitvector_variable_in_memory_contents(
                 })
                 .collect(),
         }),
-    }
+    };
+    result.record_diagnostic_transform(
+        "substitute scalar variable",
+        vec![memory.clone()],
+        vec![
+            CValue::Int32(Bitvector32Term::Variable(from)),
+            CValue::Int32(to.clone()),
+        ],
+    );
+    result
 }
 
 pub(in crate::kernel) fn substitute_bitvector_variable_in_c_value(
@@ -7013,7 +7023,8 @@ pub(crate) fn substitute_pointer_variable_in_memory(
     from: Variable,
     to: &Pointer,
 ) -> CMemory {
-    CMemory {
+    let mut result = CMemory {
+        construction: None,
         blocks: std::sync::Arc::new(
             memory
                 .blocks
@@ -7178,7 +7189,16 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                 })
                 .collect(),
         }),
-    }
+    };
+    result.record_diagnostic_transform(
+        "substitute pointer variable",
+        vec![memory.clone()],
+        vec![
+            CValue::pointer(Pointer::symbolic(from)),
+            CValue::pointer(to.clone()),
+        ],
+    );
+    result
 }
 
 fn substitute_pointer_variable_in_block(

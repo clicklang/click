@@ -1894,6 +1894,11 @@ pub(in crate::kernel) fn c_effect_memories_definitionally_equal(
         std::sync::Arc::make_mut(&mut external.forgotten)
             .ended_local_blocks
             .clear();
+        external.record_diagnostic_transform(
+            "project external effect memory",
+            vec![memory.clone()],
+            Vec::new(),
+        );
         external
     };
     let left = without_locals(left);
@@ -1958,6 +1963,11 @@ pub(in crate::kernel) fn c_effect_memory_advances_over_internal_heap_state(
     std::sync::Arc::make_mut(&mut stripped.heap)
         .zeroed_pending_allocations
         .retain(|pointer| !fresh_blocks.contains(&pointer.block));
+    stripped.record_diagnostic_transform(
+        "remove internal heap bookkeeping",
+        vec![after.clone(), before.clone(), function_entry.clone()],
+        Vec::new(),
+    );
     c_effect_memories_definitionally_equal(before, &stripped, assumptions)
 }
 

@@ -57,10 +57,22 @@ through a local from another state is qualified separately, as in
 defining snapshots do not by themselves establish unequal values.
 A bounded legend after the trace defines generated address and snapshot labels.
 It shows immutable proof names, pointer-read constructions, byte offsets, and
-recorded memory transitions where available. Referenced labels are expanded
-within the report budget. Unknown origins and omitted definitions are explicit;
-nearby source statements are never guessed as origins. These definitions describe
-constructions, not additional checked equalities or a complete execution history.
+memory constructions with their inputs. An initial empty memory is an explicit
+root. Other snapshots describe a recorded transition or an internal transformation,
+such as projecting a source memory for a particular pointer read, substituting a
+variable, or joining branch memories. Read projections name both their source
+snapshot and their pointer. Seeded cells name their source and stride; call and
+loop effects show their write footprints when those are specified.
+
+Construction records travel with snapshots across threads and are excluded from
+memory equality and proof evidence. A missing record on a noninitial snapshot is
+reported as an internal recording defect, not a normal unknown origin. New memory
+constructors must retain their operation and inputs; snapshots changed without
+updating their record must not inherit an old explanation. Referenced labels are
+expanded within the report budget, with display omissions explicit. Source marks
+and program points are used only for matching snapshots, never guessed from nearby
+statements. These definitions describe constructions, not additional checked
+equalities or a complete execution history.
 
 When an exact source spelling is unavailable, `adds (internal):` prints the
 fact's typed diagnostic form. This includes pointer and scalar equalities,

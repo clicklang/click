@@ -2516,7 +2516,16 @@ impl CMemory {
         // but tests and any future caller may write them through this
         // constructor, so the refusal lives here.
         if block.starts_with("havoc:") || block.starts_with("call-havoc:") {
-            std::sync::Arc::make_mut(&mut self.blocks).insert(block, CBlock::new(size));
+            let diagnostic_base = self.clone();
+            std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::new(size));
+            self.record_diagnostic_transform(
+                "insert havoc marker",
+                vec![diagnostic_base],
+                vec![CValue::pointer(Pointer {
+                    block,
+                    offset: PointerOffsetTerm::Constant(0),
+                })],
+            );
             return self;
         }
         let base = intern_derivation_base(&mut self);
@@ -2578,8 +2587,20 @@ impl CMemory {
     /// existing writes remain recorded, a symbolic identity can still alias
     /// arguments, and no memory-DAG transport edge is granted.
     pub fn with_uninitialized_block(mut self, block: impl Into<PointerBlock>, size: u32) -> Self {
+        let diagnostic_base = self.clone();
         let block = block.into();
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::new(size));
+        self.record_diagnostic_transform(
+            "declare uninitialized block",
+            vec![diagnostic_base],
+            vec![
+                CValue::pointer(Pointer {
+                    block: block.clone(),
+                    offset: PointerOffsetTerm::Constant(0),
+                }),
+                CValue::Int32(size.into()),
+            ],
+        );
         self.with_uninitialized_object(
             Pointer {
                 block,
@@ -2593,9 +2614,15 @@ impl CMemory {
     /// containing allocation. Proof-entry ownership supplies its storage
     /// authority and liveness separately; this marker supplies neither.
     pub fn with_uninitialized_object(mut self, pointer: Pointer, size: u32) -> Self {
+        let diagnostic_base = self.clone();
         std::sync::Arc::make_mut(&mut self.heap)
             .uninitialized_objects
-            .insert(pointer, size);
+            .insert(pointer.clone(), size);
+        self.record_diagnostic_transform(
+            "mark uninitialized object",
+            vec![diagnostic_base],
+            vec![CValue::pointer(pointer.clone()), CValue::Int32(size.into())],
+        );
         self
     }
 
@@ -2665,7 +2692,20 @@ impl CMemory {
         block: impl Into<PointerBlock>,
         size: u32,
     ) -> Self {
-        std::sync::Arc::make_mut(&mut self.blocks).insert(block.into(), CBlock::new(size));
+        let diagnostic_base = self.clone();
+        let block = block.into();
+        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::new(size));
+        self.record_diagnostic_transform(
+            "declare synthetic block",
+            vec![diagnostic_base],
+            vec![
+                CValue::pointer(Pointer {
+                    block: block.clone(),
+                    offset: PointerOffsetTerm::Constant(0),
+                }),
+                CValue::Int32(size.into()),
+            ],
+        );
         self
     }
 
@@ -3202,18 +3242,28 @@ impl CMemory {
         copied_cells: Vec<(PointerOffsetTerm, CValue)>,
         initialized_prefix: Vec<(i64, u32)>,
     ) -> Self {
+        let diagnostic_base = self.clone();
         std::sync::Arc::make_mut(&mut self.heap)
             .pending_reallocations
             .insert(
-                base,
+                base.clone(),
                 CPendingReallocation {
-                    old_pointer,
-                    old_bytes,
+                    old_pointer: old_pointer.clone(),
+                    old_bytes: old_bytes.clone(),
                     zeroed_prefix,
                     copied_cells,
                     initialized_prefix,
                 },
             );
+        self.record_diagnostic_transform(
+            "register pending reallocation",
+            vec![diagnostic_base],
+            vec![
+                CValue::pointer(base.clone()),
+                CValue::pointer(old_pointer.clone()),
+                CValue::Int32(old_bytes.clone()),
+            ],
+        );
         self
     }
 
@@ -3313,9 +3363,15 @@ impl CMemory {
         succeeds: bool,
         assumptions: &PureFactContext,
     ) -> Option<(Self, Bitvector32Term, Pointer, CPendingReallocation)> {
+        let diagnostic_base = self.clone();
         let pending = std::sync::Arc::make_mut(&mut self.heap)
             .pending_reallocations
             .remove(base)?;
+        self.record_diagnostic_transform(
+            "consume pending reallocation",
+            vec![diagnostic_base.clone()],
+            vec![CValue::pointer(base.clone())],
+        );
         let (mut memory, bytes, resolved_base) = if succeeds {
             self = self
                 .free_heap_block(&pending.old_pointer, assumptions)
@@ -3343,6 +3399,11 @@ impl CMemory {
                         .insert(resolved_base.clone(), zeroed_prefix.clone());
                 }
             }
+            memory.record_diagnostic_transform(
+                "restore reallocation zeroed prefix",
+                vec![diagnostic_base.clone()],
+                vec![CValue::pointer(resolved_base.clone())],
+            );
             for (offset, value) in &pending.copied_cells {
                 memory = memory.store(
                     Pointer {
@@ -3530,6 +3591,7 @@ impl CMemory {
         sibling_memories: &[&CMemory],
         ledger: Option<&crate::kernel::loans::LoanLedger>,
     ) -> Result<Self, String> {
+        let diagnostic_base = self.clone();
         let Some(first) = sibling_memories.first() else {
             return Err("an interface memory join has no sibling states".to_string());
         };
@@ -3801,6 +3863,13 @@ impl CMemory {
             pending_reallocations,
         });
         self.forget_zero_readings_under(forgotten_blocks.iter());
+        self.record_diagnostic_transform(
+            "join branch memories",
+            std::iter::once(diagnostic_base)
+                .chain(sibling_memories.iter().map(|memory| (*memory).clone()))
+                .collect(),
+            Vec::new(),
+        );
         Ok(self)
     }
 
@@ -5264,6 +5333,7 @@ impl CMemory {
         written_bytes: u32,
         views: Vec<(Pointer, CType, CValue)>,
     ) -> Self {
+        let diagnostic_base = self.clone();
         let mut memory = self.without_possible_aliasing_cells(
             &written_pointer,
             written_bytes,
@@ -5286,6 +5356,14 @@ impl CMemory {
                 record.record(&pointer, width);
             }
         }
+        memory.record_diagnostic_transform(
+            "replace union views",
+            vec![diagnostic_base],
+            vec![
+                CValue::pointer(written_pointer.clone()),
+                CValue::Int32(written_bytes.into()),
+            ],
+        );
         memory
     }
 
@@ -5301,6 +5379,7 @@ impl CMemory {
         offset_bytes: u32,
         c_type: CType,
     ) -> Self {
+        let diagnostic_base = self.clone();
         let Some(field_start) = base
             .offset
             .as_const()
@@ -5354,10 +5433,20 @@ impl CMemory {
         {
             memory.mark_forgotten_from(&source);
         }
+        memory.record_diagnostic_transform(
+            "forget copied field contents",
+            vec![diagnostic_base],
+            vec![
+                CValue::pointer(base.clone()),
+                CValue::Int32(offset_bytes.into()),
+                CValue::Int32(c_type.byte_width().into()),
+            ],
+        );
         memory
     }
 
     pub(in crate::kernel) fn without_cell(&self, pointer: &Pointer) -> Self {
+        let diagnostic_base = self.clone();
         let mut memory = self.clone();
         std::sync::Arc::make_mut(&mut memory.cells).remove(pointer);
         memory.remove_union_views_at(pointer);
@@ -5371,6 +5460,11 @@ impl CMemory {
             .get(pointer)
             .map_or(0, |value| value.byte_width());
         memory.forget_initialized_bytes(pointer, width);
+        memory.record_diagnostic_transform(
+            "remove cell for conditional load",
+            vec![diagnostic_base],
+            vec![CValue::pointer(pointer.clone())],
+        );
         memory
     }
 

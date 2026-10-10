@@ -19,6 +19,8 @@ pub(crate) const MUTEX_HELD_PREDICATE_NAME: &str = "__click_mutex_held";
 
 mod contracts;
 #[cfg(test)]
+mod memory_construction_tests;
+#[cfg(test)]
 pub(crate) use contracts::memory_range_byte_count_guards;
 pub(crate) use contracts::{
     MemoryRangeExtent, element_count_limit_constrains_int32, is_unnamed_footprint_base,
@@ -4719,6 +4721,7 @@ pub struct CForgottenKnowledge {
 
 #[derive(Clone, Debug, Default)]
 pub struct CMemory {
+    pub(super) construction: Option<Arc<CMemoryConstruction>>,
     pub(super) blocks: std::sync::Arc<SnapshotMap<PointerBlock, CBlock>>,
     pub(super) cells: std::sync::Arc<CellStore>,
     /// Typed views of address-overlapping union storage. A union member is
@@ -4730,7 +4733,84 @@ pub struct CMemory {
     pub(super) heap: std::sync::Arc<CHeapMemory>,
 }
 
+/// A retained explanation, deliberately excluded from memory equality, hashing,
+/// interning keys, and every proof rule. It travels with the snapshot, including
+/// across threads. Roots guard against accidentally inheriting a stale origin
+/// when a constructor edits a cloned snapshot without recording its operation.
+#[derive(Clone)]
+pub(crate) struct CMemoryConstruction {
+    roots: CMemory,
+    pub(crate) kind: CMemoryConstructionKind,
+}
+
+// Avoid recursively dumping the entire construction history in an assertion.
+impl std::fmt::Debug for CMemoryConstruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let operation = match &self.kind {
+            CMemoryConstructionKind::Transition(edge) => edge.kind_name(),
+            CMemoryConstructionKind::Transform { operation, .. } => operation,
+        };
+        f.debug_tuple("MemoryConstruction")
+            .field(&operation)
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum CMemoryConstructionKind {
+    Transition(Arc<CMemoryDerivation>),
+    Transform {
+        operation: &'static str,
+        sources: Vec<CMemory>,
+        arguments: Vec<CValue>,
+    },
+}
+
 impl CMemory {
+    // Pin the described roots so an in-place Arc mutation or allocator address
+    // reuse cannot make a stale construction appear to describe new contents.
+    // Dropping the origin here avoids a self-reference through this pin.
+    fn diagnostic_roots(&self) -> Self {
+        let mut roots = self.clone();
+        roots.construction = None;
+        roots
+    }
+
+    pub(crate) fn diagnostic_construction(&self) -> Option<&CMemoryConstructionKind> {
+        self.construction
+            .as_ref()
+            .filter(|origin| origin.roots.same_storage_roots(self))
+            .map(|origin| &origin.kind)
+    }
+
+    pub(crate) fn is_initial_diagnostic_memory(&self) -> bool {
+        self.blocks.is_empty()
+            && self.cells.len() == 0
+            && self.union_cells.is_empty()
+            && *self.forgotten == CForgottenKnowledge::default()
+            && *self.heap == CHeapMemory::default()
+    }
+
+    pub(in crate::kernel) fn record_diagnostic_transform(
+        &mut self,
+        operation: &'static str,
+        sources: Vec<CMemory>,
+        arguments: Vec<CValue>,
+    ) {
+        crate::instrumentation::record_deterministic_work(1 + sources.len());
+        if sources.len() == 1 && self.same_storage_roots(&sources[0]) {
+            return;
+        }
+        self.construction = Some(Arc::new(CMemoryConstruction {
+            roots: self.diagnostic_roots(),
+            kind: CMemoryConstructionKind::Transform {
+                operation,
+                sources,
+                arguments,
+            },
+        }));
+    }
+
     /// O(1) diagnostic identity for a snapshot without interning or walking
     /// its contents. This is intentionally only an identity label; equal
     /// labels imply shared storage roots, not semantic inequality otherwise.
@@ -4803,13 +4883,16 @@ impl CMemory {
     /// derivation, which would hand back the arena's canonical instance.
     #[cfg(test)]
     pub(crate) fn with_fresh_storage_roots(&self) -> Self {
-        Self {
+        let mut result = Self {
+            construction: None,
             blocks: std::sync::Arc::new((*self.blocks).clone()),
             cells: std::sync::Arc::new((*self.cells).clone()),
             union_cells: std::sync::Arc::new((*self.union_cells).clone()),
             forgotten: std::sync::Arc::new((*self.forgotten).clone()),
             heap: std::sync::Arc::new((*self.heap).clone()),
-        }
+        };
+        result.record_diagnostic_transform("copy snapshot storage", vec![self.clone()], Vec::new());
+        result
     }
 
     /// Whether two snapshots are the same stored snapshot, by the storage
@@ -5694,6 +5777,11 @@ pub(crate) fn intern_derivation_base(memory: &mut CMemory) -> SharedCMemory {
 /// one shares storage roots with whatever the arena already holds, so facts
 /// and terms that embed equal snapshots compare by root identity.
 pub(crate) fn record_c_memory_derivation(result: &mut CMemory, derivation: CMemoryDerivation) {
+    let derivation = Arc::new(derivation);
+    result.construction = Some(Arc::new(CMemoryConstruction {
+        roots: result.diagnostic_roots(),
+        kind: CMemoryConstructionKind::Transition(derivation.clone()),
+    }));
     if let Some(child) = recorded_child_matching(result, derivation.base()) {
         // Already this base's recorded child: its derivation slot is filled,
         // so recording would change nothing but the storage handed back.
@@ -5701,7 +5789,7 @@ pub(crate) fn record_c_memory_derivation(result: &mut CMemory, derivation: CMemo
         return;
     }
     // Interning borrows the arena, so it has to finish before the write.
-    let read_identity = match &derivation {
+    let read_identity = match derivation.as_ref() {
         CMemoryDerivation::CellsForgotten { base } => Some(base.read_identity()),
         CMemoryDerivation::CellsSeeded { base, run }
             if matches!(run.value_mode(), cell_store::RunValueMode::Load)
@@ -5746,7 +5834,7 @@ pub(crate) fn record_c_memory_derivation(result: &mut CMemory, derivation: CMemo
             return;
         }
         let base_id = derivation.base().id;
-        *slot = Some(std::sync::Arc::new(derivation));
+        *slot = Some(derivation);
         arena
             .derived_children
             .entry((base_id, derived.content_hash))

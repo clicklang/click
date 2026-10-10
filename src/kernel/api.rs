@@ -1485,6 +1485,13 @@ fn abstract_c_state_for_join_across_with_policy(
                 .insert(block, contents.clone());
         }
     }
+    abstract_state.memory.record_diagnostic_transform(
+        "retain sibling havoc markers",
+        std::iter::once(state.memory.clone())
+            .chain(sibling_states.iter().map(|state| state.memory.clone()))
+            .collect(),
+        Vec::new(),
+    );
     abstract_state.next_local_lifetime = sibling_states
         .iter()
         .map(|sibling| sibling.next_local_lifetime)

@@ -1,6 +1,6 @@
 //! Definitions for report-local labels, never additional proof evidence.
 use super::*;
-use crate::kernel::{CMemoryDerivation, CValue, PointerBlock};
+use crate::kernel::{CMemoryConstructionKind, CMemoryDerivation, CValue, PointerBlock};
 
 const MAX_ROUNDS: usize = 96;
 const MAX_LEGEND_BYTES: usize = 12 * 1024;
@@ -62,7 +62,22 @@ impl SnapshotLabels {
                 self.snapshot_name(memory.memory()),
                 self.pointer_value_name(address)
             ),
-            _ => "<scalar construction not available in this legend>".into(),
+            _ => {
+                let mut renderer = Renderer {
+                    output: String::new(),
+                    nodes: 0,
+                    depth: 0,
+                    truncated: false,
+                    labels: self,
+                    bound_names: Vec::new(),
+                    trace_facts: true,
+                };
+                renderer.bitvector(value);
+                if renderer.truncated {
+                    renderer.output.push('…');
+                }
+                renderer.output
+            }
         }
     }
 
@@ -143,6 +158,59 @@ impl SnapshotLabels {
         format!("{base_name} + {}", self.legend_offset(&pointer.offset, 4))
     }
 
+    fn legend_value(&mut self, value: &CValue) -> String {
+        match value {
+            CValue::Pointer(pointer) => self.pointer_value_name(pointer.pointer()),
+            CValue::Int32(bits)
+            | CValue::UInt32(bits)
+            | CValue::Int64(bits)
+            | CValue::UInt64(bits) => self.legend_bits(bits),
+            _ => {
+                let mut renderer = Renderer {
+                    output: String::new(),
+                    nodes: 0,
+                    depth: 0,
+                    truncated: false,
+                    labels: self,
+                    bound_names: Vec::new(),
+                    trace_facts: true,
+                };
+                renderer.cvalue(value);
+                if renderer.truncated {
+                    renderer.output.push('…');
+                }
+                renderer.output
+            }
+        }
+    }
+
+    fn legend_ranges(&mut self, ranges: &[crate::kernel::CMemoryRange]) -> String {
+        let mut renderer = Renderer {
+            output: String::new(),
+            nodes: 0,
+            depth: 0,
+            truncated: false,
+            labels: self,
+            bound_names: Vec::new(),
+            trace_facts: true,
+        };
+        renderer.push("[");
+        for (index, range) in ranges.iter().enumerate() {
+            if !renderer.visit() {
+                break;
+            }
+            if index > 0 {
+                renderer.push(", ");
+            }
+            renderer.resource(&crate::kernel::CResource::Memory(range.clone()));
+        }
+        renderer.push("]");
+        if renderer.truncated {
+            renderer.output.push('…');
+        }
+        renderer.output
+    }
+
     fn legend_snapshot(&mut self, memory: &CMemory) -> String {
         let point = self
             .source_memories
@@ -152,34 +220,182 @@ impl SnapshotLabels {
             })
             .map(|(_, point, _)| format!("recorded at {}; ", short(point)))
             .unwrap_or_default();
-        let shared = crate::kernel::intern_c_memory_ref(memory);
-        let Some(edge) = shared.derivation() else {
-            return format!("{point}memory construction provenance unavailable");
+        // Labels denote memory contents, so a reconstruction equal to its
+        // input gets the input's explanation. Otherwise structural label
+        // reuse could produce "snapshot#1 derived from snapshot#1".
+        // This bounded walk happens only while printing, never during checking.
+        let mut described = memory;
+        for _ in 0..MAX_ROUNDS {
+            let Some(CMemoryConstructionKind::Transform { sources, .. }) =
+                described.diagnostic_construction()
+            else {
+                break;
+            };
+            let Some(source) = sources.iter().find(|source| *source == described) else {
+                break;
+            };
+            described = source;
+        }
+        if let Some(CMemoryConstructionKind::Transform { sources, .. }) =
+            described.diagnostic_construction()
+            && sources.iter().any(|source| source == described)
+        {
+            return format!("{point}equal-content construction chain omitted (legend limit)");
+        }
+        let memory = described;
+        let edge = match memory.diagnostic_construction() {
+            Some(CMemoryConstructionKind::Transition(edge)) => edge.clone(),
+            Some(CMemoryConstructionKind::Transform {
+                operation,
+                sources,
+                arguments,
+            }) => {
+                let bases = sources
+                    .iter()
+                    .map(|source| self.snapshot_name(source))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let args = arguments
+                    .iter()
+                    .map(|value| self.legend_value(value))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return format!("{point}{operation}({args}), based on {bases}");
+            }
+            None if memory.is_initial_diagnostic_memory() => {
+                return format!("{point}initial empty memory");
+            }
+            None => {
+                let shared = crate::kernel::intern_c_memory_ref(memory);
+                let Some(edge) = shared.derivation() else {
+                    return format!(
+                        "{point}INTERNAL ERROR: snapshot constructor did not record its origin"
+                    );
+                };
+                edge
+            }
         };
         let base = self.snapshot_name(edge.base().memory());
         let operation = match edge.as_ref() {
             CMemoryDerivation::Store { pointer, value, .. } => {
                 let address = self.pointer_value_name(pointer);
-                let value = match value {
-                    CValue::Pointer(value) => self.pointer_value_name(value.pointer()),
-                    CValue::Int32(bits)
-                    | CValue::UInt32(bits)
-                    | CValue::Int64(bits)
-                    | CValue::UInt64(bits) => self.legend_bits(bits),
-                    _ => "<stored value presentation unavailable>".into(),
-                };
+                let value = self.legend_value(value);
                 format!("store {value} at address {address}")
             }
             CMemoryDerivation::CellsForgotten { .. } => {
                 "cached cells forgotten (not a program write)".into()
             }
-            CMemoryDerivation::CallHavoc { .. } => {
-                "call effect: permitted memory may change".into()
+            CMemoryDerivation::CallHavoc {
+                mutable_ranges,
+                kept_by_caller,
+                ..
+            } => {
+                let ranges = self.legend_ranges(mutable_ranges);
+                format!(
+                    "call effect: may write {ranges}{}",
+                    if kept_by_caller.is_some() {
+                        "; caller-owned frame retained"
+                    } else {
+                        ""
+                    }
+                )
             }
-            CMemoryDerivation::LoopHavoc { .. } => {
-                "loop effect: permitted memory may change".into()
+            CMemoryDerivation::LoopHavoc { mutable_ranges, .. } => match mutable_ranges {
+                Some(ranges) => format!("loop effect: may write {}", self.legend_ranges(ranges)),
+                None => "loop effect: unknown write footprint".into(),
+            },
+            CMemoryDerivation::BlockDeclared { block, .. } => {
+                let address = self.pointer_value_name(&Pointer {
+                    block: block.clone(),
+                    offset: PointerOffsetTerm::Constant(0),
+                });
+                format!("declare block at {address}")
             }
-            other => format!("{} memory transition", other.kind_name()),
+            CMemoryDerivation::LocalLifetimeEnded { block, .. } => {
+                let address = self.pointer_value_name(&Pointer {
+                    block: block.clone(),
+                    offset: PointerOffsetTerm::Constant(0),
+                });
+                format!("end local lifetime at {address}")
+            }
+            CMemoryDerivation::HeapAllocated { block, bytes, .. } => {
+                let address = self.pointer_value_name(&Pointer {
+                    block: block.clone(),
+                    offset: PointerOffsetTerm::Constant(0),
+                });
+                let bytes = self.legend_bits(bytes);
+                format!("allocate {bytes} bytes at {address}")
+            }
+            CMemoryDerivation::HeapAllocationPending {
+                allocation_base,
+                bytes,
+                ..
+            }
+            | CMemoryDerivation::ContractAllocationRetired {
+                allocation_base,
+                bytes,
+                ..
+            }
+            | CMemoryDerivation::HeapFreed {
+                allocation_base,
+                bytes,
+                ..
+            } => {
+                let address = self.pointer_value_name(allocation_base);
+                let bytes = self.legend_bits(bytes);
+                format!("{}({address}, {bytes} bytes)", edge.kind_name())
+            }
+            CMemoryDerivation::ObjectInitializationRecorded { pointer, bytes, .. } => {
+                let address = self.pointer_value_name(pointer);
+                format!("record {bytes} initialized bytes at {address}")
+            }
+            CMemoryDerivation::HeapAllocationFailed { .. } => "resolve failed allocation".into(),
+            CMemoryDerivation::ContractAllocationClaimsChanged { .. } => {
+                "update contract allocation claims".into()
+            }
+            CMemoryDerivation::CellsSeeded { run, .. } => {
+                let address = self.pointer_value_name(run.base());
+                let source = if run.source() == edge.base() {
+                    "base".to_owned()
+                } else {
+                    self.snapshot_name(run.source())
+                };
+                let mode = match run.value_mode() {
+                    crate::kernel::RunValueMode::Load => format!("reads from {source}"),
+                    crate::kernel::RunValueMode::SymbolicStorage => {
+                        format!("symbolic storage from {source}")
+                    }
+                    crate::kernel::RunValueMode::Copy { source_base } => format!(
+                        "copy from {source} at {}",
+                        self.pointer_value_name(source_base)
+                    ),
+                    crate::kernel::RunValueMode::Constant(value) => {
+                        format!("constant {}", self.legend_value(value))
+                    }
+                };
+                let holes = if run.holes().interval_count() == 0 {
+                    String::new()
+                } else {
+                    format!(
+                        ", holes {:?}{}",
+                        run.holes()
+                            .diagnostic_intervals()
+                            .take(8)
+                            .collect::<Vec<_>>(),
+                        if run.holes().interval_count() > 8 {
+                            "; further holes omitted (display limit)"
+                        } else {
+                            ""
+                        }
+                    )
+                };
+                format!(
+                    "seed {} {:?} cells at {address}, stride {} bytes, {mode}{holes}",
+                    run.count(),
+                    run.element_type(),
+                    run.element_width()
+                )
+            }
         };
         format!("{point}{operation}, based on {base}")
     }
@@ -237,6 +453,57 @@ mod tests {
     use super::*;
 
     #[test]
+    fn equal_content_reconstruction_has_a_definition_not_a_self_reference() {
+        let pointer = Pointer {
+            block: "local:unchanged".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let memory = CMemory::new()
+            .with_uninitialized_object(pointer.clone(), 4)
+            .with_uninitialized_object(pointer, 4);
+        let mut labels = SnapshotLabels::default();
+        labels.snapshot_name(&memory);
+        let text = labels.trace_legend();
+        assert!(text.contains("based on snapshot#2"), "{text}");
+        assert!(!text.contains("based on snapshot#1"), "{text}");
+        assert!(text.contains("initial empty memory"), "{text}");
+    }
+
+    #[test]
+    fn snapshot_origin_survives_thread_and_arena_changes() {
+        let memory = std::thread::spawn(|| {
+            CMemory::new().with_block("local:origin-test", 4).store(
+                Pointer {
+                    block: "local:origin-test".into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                CValue::Int32(Bitvector32Term::Constant(9)),
+            )
+        })
+        .join()
+        .unwrap();
+        let mut labels = SnapshotLabels::default();
+        labels.snapshot_name(&memory);
+        let text = labels.trace_legend();
+        assert!(text.contains("store 9 at address"), "{text}");
+        assert!(text.contains("declare block at"), "{text}");
+        assert!(text.contains("initial empty memory"), "{text}");
+        assert!(!text.contains("INTERNAL ERROR"), "{text}");
+    }
+
+    #[test]
+    fn proof_entry_construction_is_not_an_unknown_root() {
+        let memory = CMemory::new().with_uninitialized_block("local:object", 8);
+        let mut labels = SnapshotLabels::default();
+        labels.snapshot_name(&memory);
+        let text = labels.trace_legend();
+        assert!(text.contains("mark uninitialized object"), "{text}");
+        assert!(text.contains("declare uninitialized block"), "{text}");
+        assert!(text.contains("initial empty memory"), "{text}");
+        assert!(!text.contains("INTERNAL ERROR"), "{text}");
+    }
+
+    #[test]
     fn legend_defines_loaded_address_and_displacement_recursively() {
         let memory = crate::kernel::intern_c_memory(CMemory::new());
         let base = Pointer::symbolic(Variable(986_401));
@@ -251,10 +518,7 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("value#2 = zid"), "{text}");
-        assert!(
-            text.contains("snapshot#1 = memory construction provenance unavailable"),
-            "{text}"
-        );
+        assert!(text.contains("snapshot#1 = initial empty memory"), "{text}");
         assert_eq!(text, labels.trace_legend());
     }
 
