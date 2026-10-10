@@ -214,7 +214,8 @@ pub fn accepted_proof_trace(
         have_body_contains,
         target,
     )
-    .map(|trace| {
+    .map(|mut trace| {
+        proof_trace::append_legend(&mut trace, &mut labels);
         trace
             .lines()
             .map(|line| line.strip_prefix("  ").unwrap_or(line))
