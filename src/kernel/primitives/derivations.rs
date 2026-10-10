@@ -1772,10 +1772,16 @@ fn c_statement_source_cost(statement: &CStatement) -> CSourceCost {
             | CStatement::Break
             | CStatement::Continue
             | CStatement::Goto { .. }
-            | CStatement::Declare { .. }
+            | CStatement::Declare {
+                initializer: None, ..
+            }
             | CStatement::DeclareAggregate { .. } => {}
             CStatement::ForStep { step, .. } => pending.push(step),
-            CStatement::Assign { expression, .. } => {
+            CStatement::Declare {
+                initializer: Some(expression),
+                ..
+            }
+            | CStatement::Assign { expression, .. } => {
                 cost.add_expression(1); // assignment target lvalue
                 cost.add_expression(c_expression_source_steps(expression));
             }

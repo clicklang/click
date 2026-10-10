@@ -1,6 +1,24 @@
 use super::*;
 
 #[test]
+// Read-only C locals have actual storage and can initialize from a checked helper result.
+fn readonly_scalar_initialization_preserves_address_and_expands() {
+    let source = "int32 seven() { return 7; } int32 probe() { const int32 x = seven(); const int32* p = &x; return *p; }";
+    let proof = r#"verifying "readonly.c";
+        int32 seven() { ensures result == 7; } by { execute(); simp(); }
+        int32 probe() { ensures result == 7; } by { execute(); simp(); }"#;
+    verify_c0_sources(proof, &[("readonly.c", source)]).unwrap();
+    let expanded = expand_c0_claim_source(
+        proof,
+        &[("readonly.c", source)],
+        "probe",
+        CProofClaim::Ensure(0),
+    )
+    .unwrap();
+    verify_c0_sources(&expanded, &[("readonly.c", source)]).unwrap();
+}
+
+#[test]
 // A historical pointer value and the memory snapshot of a load are independent.
 fn typed_load_through_entry_pointer_reads_current_memory() {
     let source = "void probe(int32* p, int32* q) { *p = 7; p = q; }";

@@ -2547,6 +2547,7 @@ pub enum C0Statement {
         direct_function_body: bool,
     },
     Declare {
+        initializer: Option<C0Expression>,
         c_type: C0Type,
         name: String,
         volatile: bool,
@@ -4688,16 +4689,26 @@ impl C0Statement {
                 constant,
                 pointee_constant,
                 zero_fill,
+                initializer,
                 ..
-            } => crate::kernel::c_declare_with_zero_fill(
-                name.clone(),
-                c_type.to_kernel_type(),
-                *volatile,
-                *pointee_volatile,
-                *constant,
-                *pointee_constant,
-                zero_fill.as_ref().map(C0ZeroFill::to_kernel),
-            ),
+            } => {
+                let mut statement = crate::kernel::c_declare_with_zero_fill(
+                    name.clone(),
+                    c_type.to_kernel_type(),
+                    *volatile,
+                    *pointee_volatile,
+                    *constant,
+                    *pointee_constant,
+                    zero_fill.as_ref().map(C0ZeroFill::to_kernel),
+                );
+                if let crate::kernel::CStatement::Declare {
+                    initializer: value, ..
+                } = &mut statement
+                {
+                    *value = initializer.as_ref().map(C0Expression::to_kernel_expression);
+                }
+                statement
+            }
             Self::DeclareStructValue { name, layout, .. } => crate::kernel::c_declare_aggregate(
                 name.clone(),
                 layout.to_kernel_aggregate_layout(),
@@ -14201,11 +14212,6 @@ impl Parser {
                 "enum local declarations are not supported; use enum values in struct fields",
             ));
         }
-        if parsed_type.is_constant {
-            return Err(self.error_here(
-                "const-qualified local objects are not supported in this slice; use file-scope or static storage",
-            ));
-        }
         self.validate_volatile_type(&parsed_type)?;
         if parsed_type.is_volatile && self.peek() == Some(&Token::LParen) {
             return Err(self.error_here(
@@ -14234,6 +14240,7 @@ impl Parser {
                 pointee_volatile: false,
                 constant: false,
                 pointee_constant: false,
+                initializer: None,
                 zero_fill: None,
                 site: C0Site::NONE,
             };
@@ -14462,6 +14469,7 @@ impl Parser {
                 pointee_volatile,
                 constant: object_constant,
                 pointee_constant,
+                initializer: None,
                 zero_fill: None,
                 site: C0Site::NONE,
             };
@@ -14476,6 +14484,9 @@ impl Parser {
                         | C0Type::Float64Array(_)
                         | C0Type::PointerArray(_, _)
                 ) {
+                    if object_constant {
+                        return Err(self.error_here("const automatic array initialization is outside the scalar initialization slice"));
+                    }
                     // A volatile object keeps one access per element.
                     let compact = !object_volatile && !pointee_volatile;
                     let (zero_fill, initializer) = if is_plain_struct_type(&parsed_type) {
@@ -14514,13 +14525,15 @@ impl Parser {
                             pointee_volatile,
                             constant,
                             pointee_constant,
+                            initializer: None,
                             zero_fill,
                             site: C0Site::NONE,
                         },
                         _ => unreachable!("an array declaration is a plain declaration"),
                     };
                     C0Statement::Seq(Box::new(declaration), Box::new(initializer))
-                } else if matches!(self.peek(), Some(Token::Ident(_)))
+                } else if !object_constant
+                    && matches!(self.peek(), Some(Token::Ident(_)))
                     && self.peek_next() == Some(&Token::LParen)
                 {
                     let call_start = self.position;
@@ -14574,16 +14587,27 @@ impl Parser {
                         &expression,
                     )?;
                     self.reject_discarded_const_pointer(c_type, pointee_constant, &expression)?;
-                    C0Statement::Seq(
-                        Box::new(declaration),
-                        Box::new(C0Statement::Assign {
-                            name,
-                            expression,
-                            site: C0Site::NONE,
-                        }),
-                    )
+                    if object_constant {
+                        let mut declaration = declaration;
+                        if let C0Statement::Declare { initializer, .. } = &mut declaration {
+                            *initializer = Some(expression);
+                        }
+                        declaration
+                    } else {
+                        C0Statement::Seq(
+                            Box::new(declaration),
+                            Box::new(C0Statement::Assign {
+                                name,
+                                expression,
+                                site: C0Site::NONE,
+                            }),
+                        )
+                    }
                 }
             } else {
+                if object_constant {
+                    return Err(self.error_here("const automatic scalars require an initializer"));
+                }
                 declaration
             };
             declarations.push(statement);
@@ -15107,6 +15131,7 @@ impl Parser {
                     pointee_volatile,
                     constant: object_constant,
                     pointee_constant,
+                    initializer: None,
                     zero_fill: None,
                     site: C0Site::NONE,
                 }),
@@ -16175,8 +16200,18 @@ impl Parser {
                 | C0Statement::Break
                 | C0Statement::Continue
                 | C0Statement::Goto { .. }
-                | C0Statement::Declare { .. }
+                | C0Statement::Declare {
+                    initializer: None, ..
+                }
                 | C0Statement::DeclareStructValue { .. } => {}
+                C0Statement::Declare {
+                    initializer: Some(expression),
+                    ..
+                } => {
+                    if self.expression_contains_lowerable_expression(expression) {
+                        return true;
+                    }
+                }
             }
         }
         false
@@ -16520,8 +16555,37 @@ impl Parser {
             | C0Statement::Break
             | C0Statement::Continue
             | C0Statement::Goto { .. }
-            | C0Statement::Declare { .. }
+            | C0Statement::Declare {
+                initializer: None, ..
+            }
             | C0Statement::DeclareStructValue { .. } => Ok(statement),
+            C0Statement::Declare {
+                initializer: Some(expression),
+                c_type,
+                name,
+                volatile,
+                pointee_volatile,
+                constant,
+                pointee_constant,
+                zero_fill,
+                site,
+            } => {
+                let (prefix, expression) = self.lower_expression_calls(expression)?;
+                Ok(prepend_statements(
+                    prefix,
+                    C0Statement::Declare {
+                        initializer: Some(expression),
+                        c_type,
+                        name,
+                        volatile,
+                        pointee_volatile,
+                        constant,
+                        pointee_constant,
+                        zero_fill,
+                        site,
+                    },
+                ))
+            }
             C0Statement::Label {
                 name,
                 statement,
@@ -16624,6 +16688,7 @@ impl Parser {
                     pointee_volatile: false,
                     constant: false,
                     pointee_constant: false,
+                    initializer: None,
                     zero_fill: None,
                     site: site.clone(),
                 });
@@ -17163,6 +17228,7 @@ impl Parser {
                             pointee_volatile: false,
                             constant: false,
                             pointee_constant,
+                            initializer: None,
                             zero_fill: None,
                             site: C0Site::NONE,
                         },
@@ -17206,6 +17272,7 @@ impl Parser {
                     pointee_volatile: false,
                     constant: false,
                     pointee_constant,
+                    initializer: None,
                     zero_fill: None,
                     site: C0Site::NONE,
                 });
@@ -17416,6 +17483,7 @@ impl Parser {
                     pointee_volatile: false,
                     constant: false,
                     pointee_constant: false,
+                    initializer: None,
                     zero_fill: None,
                     site: C0Site::NONE,
                 });
@@ -17457,6 +17525,7 @@ impl Parser {
                     pointee_volatile: false,
                     constant: false,
                     pointee_constant,
+                    initializer: None,
                     zero_fill: None,
                     site: C0Site::NONE,
                 }];
@@ -17560,6 +17629,7 @@ impl Parser {
                     pointee_volatile: false,
                     constant: false,
                     pointee_constant,
+                    initializer: None,
                     zero_fill: None,
                     site: C0Site::NONE,
                 });
@@ -17736,6 +17806,7 @@ impl Parser {
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
+            initializer: None,
             zero_fill: None,
             site: C0Site::NONE,
         });
@@ -17842,6 +17913,7 @@ impl Parser {
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
+            initializer: None,
             zero_fill: None,
             site: C0Site::NONE,
         });

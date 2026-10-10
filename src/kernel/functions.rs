@@ -16672,7 +16672,9 @@ fn collect_c_memory_read_expressions(statement: &CStatement, reads: &mut Vec<CEx
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
+        | CStatement::Declare {
+            initializer: None, ..
+        }
         | CStatement::DeclareAggregate { .. } => {}
         CStatement::ForStep { step, .. } => collect_c_memory_read_expressions(step, reads),
         CStatement::CopyAggregate { target, source, .. }
@@ -16680,7 +16682,11 @@ fn collect_c_memory_read_expressions(statement: &CStatement, reads: &mut Vec<CEx
             lvalue_address(target, reads);
             values(source, reads);
         }
-        CStatement::Assign { expression, .. } => values(expression, reads),
+        CStatement::Declare {
+            initializer: Some(expression),
+            ..
+        }
+        | CStatement::Assign { expression, .. } => values(expression, reads),
         CStatement::CallAssign { arguments, .. } | CStatement::Call { arguments, .. } => {
             for argument in arguments {
                 values(argument, reads);

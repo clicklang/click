@@ -2255,6 +2255,7 @@ pub fn c_declare_with_all_qualifiers(
         pointee_volatile,
         constant,
         pointee_constant,
+        initializer: None,
         zero_fill: None,
     }
 }
@@ -2278,7 +2279,31 @@ pub fn c_declare_with_zero_fill(
         pointee_volatile,
         constant,
         pointee_constant,
+        initializer: None,
         zero_fill,
+    }
+}
+
+/// Allocate a fresh scalar and initialize it once. Ordinary stores remain
+/// subject to the object's const qualification after this transition.
+pub fn c_declare_initialized(
+    name: impl Into<String>,
+    c_type: CType,
+    expression: CExpression,
+    volatile: bool,
+    pointee_volatile: bool,
+    constant: bool,
+    pointee_constant: bool,
+) -> CStatement {
+    CStatement::Declare {
+        name: name.into(),
+        c_type,
+        volatile,
+        pointee_volatile,
+        constant,
+        pointee_constant,
+        zero_fill: None,
+        initializer: Some(expression),
     }
 }
 

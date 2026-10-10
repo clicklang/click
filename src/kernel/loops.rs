@@ -9590,7 +9590,9 @@ pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement)
         | CStatement::Continue
         | CStatement::Goto { .. }
         | CStatement::Declare {
-            zero_fill: None, ..
+            zero_fill: None,
+            initializer: None,
+            ..
         }
         | CStatement::DeclareAggregate { .. }
         | CStatement::Assert { .. }
@@ -9600,6 +9602,10 @@ pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement)
         // the element stores it stands for did.
         CStatement::Declare {
             zero_fill: Some(_), ..
+        }
+        | CStatement::Declare {
+            initializer: Some(_),
+            ..
         } => true,
         CStatement::Assign { name, .. } => state.locals.is_global_object(name),
         CStatement::CallAssign { .. }
@@ -9799,7 +9805,9 @@ pub(super) fn collect_loop_modified_locals(statement: &CStatement, names: &mut B
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
+        | CStatement::Declare {
+            initializer: None, ..
+        }
         | CStatement::DeclareAggregate { .. }
         | CStatement::Assert { .. }
         | CStatement::Throw(_)
@@ -9813,7 +9821,12 @@ pub(super) fn collect_loop_modified_locals(statement: &CStatement, names: &mut B
                 names.insert(name.clone());
             }
         }
-        CStatement::Assign { name, .. } => {
+        CStatement::Declare {
+            name,
+            initializer: Some(_),
+            ..
+        }
+        | CStatement::Assign { name, .. } => {
             names.insert(name.clone());
         }
         CStatement::CallAssign { target, .. } => {
@@ -9961,9 +9974,15 @@ pub(crate) fn collect_address_taken_locals(statement: &CStatement, names: &mut B
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
+        | CStatement::Declare {
+            initializer: None, ..
+        }
         | CStatement::DeclareAggregate { .. } => {}
-        CStatement::Assign { expression, .. } => {
+        CStatement::Declare {
+            initializer: Some(expression),
+            ..
+        }
+        | CStatement::Assign { expression, .. } => {
             collect_address_taken_in_expression(expression, names)
         }
         CStatement::CallAssign { arguments, .. } => {

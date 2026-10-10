@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 57;
+pub(crate) const EXPORT_SCHEMA: u32 = 58;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -2162,7 +2162,10 @@ impl CppFunction {
                 }
                 match &local.value_type {
                     CppType::Integer { .. } | CppType::Enumeration { .. } => {
-                        require_scalar_integer(&local.value_type, "automatic local")?;
+                        require_scalar_integer(
+                            &super::scalar::scalar_value_type(&local.value_type),
+                            "automatic local",
+                        )?;
                     }
                     CppType::Pointer { .. } => {
                         require_native_object_pointer(
@@ -2935,6 +2938,13 @@ impl CppInitializer {
             }
             _ => {}
         }
+        if matches!(self, Self::Uninitialized)
+            && Scalar::of(local_type).is_some_and(|scalar| scalar.is_const)
+        {
+            return Err("const automatic scalars require an initializer".into());
+        }
+        let scalar_type = super::scalar::scalar_value_type(local_type);
+        let local_type = &scalar_type;
         match (self, local_type) {
             (Self::Uninitialized, CppType::Integer { .. } | CppType::Enumeration { .. }) => {
                 require_scalar_integer(local_type, "uninitialized automatic local")
@@ -3539,8 +3549,9 @@ impl CppExpression {
                         require_bool(value_type, false, "loaded value type")
                     }
                     CppType::Integer { .. } | CppType::Enumeration { .. } => {
-                        require_scalar_integer(place_type, "loaded scalar")?;
-                        if !same_scalar_type(place_type, value_type) {
+                        let scalar_type = super::scalar::scalar_value_type(place_type);
+                        require_scalar_integer(&scalar_type, "loaded scalar")?;
+                        if !same_scalar_type(&scalar_type, value_type) {
                             return Err(
                                 "C++ scalar load requires matching widths and signedness".into()
                             );
@@ -4066,8 +4077,8 @@ fn validate_reachable_calls(
     functions: &BTreeMap<String, &CppFunction>,
     records: &RecordIndex<'_>,
     visiting: &mut Vec<String>,
-    visited: &mut BTreeMap<String, usize>,
-) -> Result<usize, String> {
+    visited: &mut BTreeMap<String, (usize, bool)>,
+) -> Result<(usize, bool), String> {
     crate::instrumentation::record_deterministic_work(1);
     if let Some(depth) = visited.get(declaration_id) {
         return Ok(*depth);
@@ -4104,7 +4115,28 @@ fn validate_reachable_calls(
     let mut calls = Vec::new();
     collect_calls(&function.body, &mut calls);
     let mut depth = 1usize;
+    let mut observes_constant_context = false;
     for call in calls {
+        if let CollectedCall::ConstantEvaluationObservation {
+            scalar_initialization,
+        } = &call
+        {
+            if *scalar_initialization {
+                return Err(
+                    "read-only scalar initialization cannot observe constant-evaluation context"
+                        .into(),
+                );
+            }
+            observes_constant_context = true;
+            continue;
+        }
+        let scalar_initialization = matches!(
+            &call,
+            CollectedCall::Ordinary {
+                scalar_initialization: true,
+                ..
+            }
+        );
         crate::instrumentation::record_deterministic_work(1);
         let (callee, arguments) = match &call {
             CollectedCall::Ordinary {
@@ -4120,6 +4152,9 @@ fn validate_reachable_calls(
                 callee, arguments, ..
             } => (*callee, *arguments),
             CollectedCall::Destructor { callee, .. } => (*callee, &[][..]),
+            CollectedCall::ConstantEvaluationObservation { .. } => {
+                unreachable!("observation handled above")
+            }
         };
         callee.span.validate(&function.span.file)?;
         let target = functions.get(&callee.declaration_id).ok_or_else(|| {
@@ -4144,7 +4179,11 @@ fn validate_reachable_calls(
                     return Err("C++ expression observers require nonthrowing callees".into());
                 }
                 if destination.is_some_and(|value| {
-                    value != &target.return_type && !same_scalar_type(value, &target.return_type)
+                    value != &target.return_type
+                        && !same_scalar_type(
+                            &super::scalar::scalar_value_type(value),
+                            &target.return_type,
+                        )
                 }) {
                     return Err("C++ call result does not match its capture or return type".into());
                 }
@@ -4293,29 +4332,43 @@ fn validate_reachable_calls(
                     ));
                 }
             }
+            CollectedCall::ConstantEvaluationObservation { .. } => {
+                unreachable!("observation handled above")
+            }
         }
-        let child_depth = validate_reachable_calls(
+        let (child_depth, child_observes_constant_context) = validate_reachable_calls(
             &callee.declaration_id,
             functions,
             records,
             visiting,
             visited,
         )?;
+        if scalar_initialization && child_observes_constant_context {
+            return Err(
+                "read-only scalar initialization requires context-independent callees".into(),
+            );
+        }
+        observes_constant_context |= child_observes_constant_context;
         // Cached subgraphs still contribute their full depth to this path.
         depth = depth.max(child_depth + 1);
         super::budget::limit("call graph depth", depth, super::budget::MAX_CALL_DEPTH)?;
     }
     visiting.pop();
-    visited.insert(declaration_id.to_string(), depth);
-    Ok(depth)
+    let summary = (depth, observes_constant_context);
+    visited.insert(declaration_id.to_string(), summary);
+    Ok(summary)
 }
 
 enum CollectedCall<'a> {
+    ConstantEvaluationObservation {
+        scalar_initialization: bool,
+    },
     Ordinary {
         callee: &'a CppFunctionReference,
         arguments: &'a [CppCallArgument],
         destination: Option<&'a CppType>,
         observer: bool,
+        scalar_initialization: bool,
     },
     Constructor {
         local: &'a CppPlace,
@@ -4341,6 +4394,7 @@ enum CollectedCall<'a> {
 
 fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCall<'a>>) {
     for statement in statements {
+        let first = calls.len();
         collect_statement_expression_calls(statement, calls);
         match statement {
             CppStatement::ReturnConstruct {
@@ -4499,6 +4553,22 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
             | CppStatement::MemberStore { .. }
             | CppStatement::TrivialCopy { .. } => {}
         }
+        if matches!(statement, CppStatement::Declare { local, .. }
+            if Scalar::of(&local.value_type).is_some_and(|scalar| scalar.is_const))
+        {
+            for call in &mut calls[first..] {
+                match call {
+                    CollectedCall::Ordinary {
+                        scalar_initialization,
+                        ..
+                    }
+                    | CollectedCall::ConstantEvaluationObservation {
+                        scalar_initialization,
+                    } => *scalar_initialization = true,
+                    _ => {}
+                }
+            }
+        }
     }
 }
 
@@ -4544,6 +4614,11 @@ fn collect_statement_expression_calls<'a>(
 fn collect_expression_calls<'a>(value: &'a CppExpression, calls: &mut Vec<CollectedCall<'a>>) {
     crate::instrumentation::record_deterministic_work(1);
     match value {
+        CppExpression::RuntimeConstantEvaluation { .. } => {
+            calls.push(CollectedCall::ConstantEvaluationObservation {
+                scalar_initialization: false,
+            })
+        }
         CppExpression::ObserverCall {
             callee,
             arguments,
@@ -4555,6 +4630,7 @@ fn collect_expression_calls<'a>(value: &'a CppExpression, calls: &mut Vec<Collec
                 arguments,
                 destination: Some(value_type),
                 observer: true,
+                scalar_initialization: false,
             });
             let first = calls.len();
             collect_nested_calls(arguments, calls);
@@ -4610,6 +4686,7 @@ fn collect_scalar_call<'a>(
         arguments,
         destination,
         observer: false,
+        scalar_initialization: false,
     });
     collect_nested_calls(arguments, calls);
 }
@@ -4631,6 +4708,7 @@ fn collect_nested_calls<'a>(arguments: &'a [CppCallArgument], calls: &mut Vec<Co
                 arguments,
                 destination: Some(value_type),
                 observer: false,
+                scalar_initialization: false,
             });
             collect_nested_calls(arguments, calls);
         }
@@ -7184,7 +7262,7 @@ mod tests {
                     &mut BTreeMap::new(),
                 )
             });
-            assert_eq!(result.unwrap(), 2);
+            assert_eq!(result.unwrap(), (2, false));
             assert!(
                 work >= size && work <= 10 * size + 16,
                 "{size} places and reference edges: {work} work"
@@ -7351,7 +7429,7 @@ mod tests {
                 )
             });
             if size < super::super::budget::MAX_CALL_DEPTH {
-                assert_eq!(result.unwrap(), size + 1);
+                assert_eq!(result.unwrap(), (size + 1, false));
             } else {
                 assert!(
                     result
@@ -7861,7 +7939,7 @@ mod tests {
                     &mut BTreeMap::new(),
                 )
             });
-            assert_eq!(result.unwrap(), 3);
+            assert_eq!(result.unwrap(), (3, false));
             assert!(work <= 12 * size + 16, "{size}: {work}");
             let mut forged = functions[1].clone();
             let CppStatement::Call { callee, .. } = &mut forged.body[0] else {

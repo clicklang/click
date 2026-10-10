@@ -24,11 +24,11 @@ use crate::kernel::{
     CAggregateLayout, CExpression, CFunction, CStatement, CType, LoadSourceId, LoadSourceOwnerId,
     c_add, c_allocate_aggregate_destination, c_and, c_assign, c_call, c_call_assign, c_cast,
     c_checked_object_address, c_copy_aggregate, c_declare, c_declare_aggregate,
-    c_declare_with_all_qualifiers, c_divide, c_end_automatic_lifetimes, c_equal, c_function,
-    c_greater_equal, c_greater_than, c_if, c_less_equal, c_less_than, c_multiply, c_not_equal,
-    c_parameter, c_pointer_offset_bytes, c_remainder, c_return, c_seq, c_skip, c_subtract,
-    c_try_catch_int32, c_try_catch_int32_with_cleanup, c_typed_load, c_typed_load_with_source,
-    c_typed_store, c_variable, int32,
+    c_declare_initialized, c_declare_with_all_qualifiers, c_divide, c_end_automatic_lifetimes,
+    c_equal, c_function, c_greater_equal, c_greater_than, c_if, c_less_equal, c_less_than,
+    c_multiply, c_not_equal, c_parameter, c_pointer_offset_bytes, c_remainder, c_return, c_seq,
+    c_skip, c_subtract, c_try_catch_int32, c_try_catch_int32_with_cleanup, c_typed_load,
+    c_typed_load_with_source, c_typed_store, c_variable, int32,
 };
 
 /// One kernel function together with the immutable semantic artifact that
@@ -433,11 +433,16 @@ impl LoweringContext<'_> {
                     CppInitializer::Value { value },
                 ) => {
                     let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
-                    Ok(c_seq(
-                        c_declare(local.name.clone(), evaluation.value_type),
-                        evaluate_then(
-                            evaluation.prefix,
-                            c_assign(local.name.clone(), evaluation.value),
+                    Ok(evaluate_then(
+                        evaluation.prefix,
+                        c_declare_initialized(
+                            local.name.clone(),
+                            evaluation.value_type,
+                            evaluation.value,
+                            false,
+                            false,
+                            Scalar::of(&local.value_type).is_some_and(|scalar| scalar.is_const),
+                            false,
                         ),
                     ))
                 }
@@ -456,6 +461,8 @@ impl LoweringContext<'_> {
                     let raw_type = conversions
                         .first()
                         .map_or(&local.value_type, |cast| &cast.source_type);
+                    let raw_value_type = scalar::scalar_value_type(raw_type);
+                    let raw_type = &raw_value_type;
                     // A reference bound to a call's result is carried by a
                     // pointer named for the address it holds.
                     let name = if is_reference_local(local) {
@@ -470,14 +477,27 @@ impl LoweringContext<'_> {
                             value_type: raw_type,
                             conversions,
                         },
-                        conversions.is_empty().then_some(name.as_str()),
+                        (conversions.is_empty()
+                            && !Scalar::of(&local.value_type)
+                                .is_some_and(|scalar| scalar.is_const))
+                        .then_some(name.as_str()),
                     )?;
-                    if conversions.is_empty() {
+                    let constant =
+                        Scalar::of(&local.value_type).is_some_and(|scalar| scalar.is_const);
+                    if conversions.is_empty() && !constant {
                         return Ok(evaluation.prefix);
                     }
-                    Ok(c_seq(
-                        c_declare(name.clone(), cpp_return_scalar_type(&local.value_type)?),
-                        evaluate_then(evaluation.prefix, c_assign(name, evaluation.value)),
+                    Ok(evaluate_then(
+                        evaluation.prefix,
+                        c_declare_initialized(
+                            name,
+                            cpp_return_scalar_type(&scalar::scalar_value_type(&local.value_type))?,
+                            evaluation.value,
+                            false,
+                            false,
+                            constant,
+                            false,
+                        ),
                     ))
                 }
                 (
@@ -1419,8 +1439,9 @@ impl LoweringContext<'_> {
                 (
                     CppType::Integer { .. } | CppType::Enumeration { .. },
                     CppType::Integer { .. } | CppType::Enumeration { .. },
-                ) if cpp_scalar_kernel_type(&self.place(place)?.value_type)?
-                    == cpp_scalar_kernel_type(value_type)? =>
+                ) if cpp_scalar_kernel_type(&scalar::scalar_value_type(
+                    &self.place(place)?.value_type,
+                ))? == cpp_scalar_kernel_type(value_type)? =>
                 {
                     Ok(c_variable(self.variable_name(place)))
                 }
@@ -1491,7 +1512,7 @@ impl LoweringContext<'_> {
                 (
                     CppType::Integer { .. } | CppType::Enumeration { .. },
                     CppType::Pointer { pointee },
-                ) if Scalar::pointer_element(pointee, false).is_some() => Ok(
+                ) if Scalar::pointer_element(pointee, true).is_some() => Ok(
                     CExpression::AddressOf(Box::new(c_variable(self.variable_name(place)))),
                 ),
                 _ => Err("C++ address-of is outside integer reference lowering".into()),

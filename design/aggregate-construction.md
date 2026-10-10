@@ -67,6 +67,38 @@ checks, removes only the named objects and their ownership, and preserves copied
 pointer values and independently live backing storage. C++ lowering records and
 emits full-expression retirement for admitted assignment temporaries.
 
+## Scalar initialization
+
+Scalar declaration construction also has a checked initial-value transition.
+`c_declare_initialized` allocates fresh automatic scalar storage and its exact
+byte ownership, evaluates the initializer, checks its native conversion, and
+writes the initial value. A read-only scalar is then frozen in both its local
+binding and its allocation metadata. Freezing preserves the declared type,
+extent, allocation generation, initialized cells, and ownership; even an
+unqualified alias cannot write that allocation. Ordinary assignment has no
+initialization privilege. There is no reusable operation that can initialize a
+read-only object again after forgetting its value.
+
+The declaration initializer participates in expression traversal, substitution,
+address-taken analysis, and checked execution certificates. Reading an unwritten
+initializer input still fails. Scope retirement and redeclaration retain the
+existing generation checks, so initialization cannot revive a stale address.
+
+C admits initialized read-only automatic scalars, including native pointers.
+C++ admits supported integer and fixed-byte enum `const`/`constexpr` locals;
+qualification remains on the object, while lvalue-to-rvalue conversion produces
+the corresponding unqualified scalar value. A captured helper result initializes
+the source object after the checked call, using a distinct mutable capture.
+Read-only initializer calls must be context-independent: the checked call graph
+tracks constant-evaluation observations, including nested calls and cached
+subgraphs, and refuses them in these initializers. Closed compiler constants
+retain their existing checked profile; unrelated runtime observers are unaffected.
+Initializers that observe their own not-yet-bound destination through a call,
+const automatic aggregates/arrays, and general constant evaluation remain outside
+this bounded frontend slice. Existing Rust MIR assignments retain their current
+rules; the shared construction operation is available without introducing C++
+mutability or borrow rules into Rust.
+
 ## Surface and source boundary
 
 Keep native result signatures, `result` field projections, and existing

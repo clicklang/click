@@ -413,7 +413,29 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    if lvalue.is_constant() {
+    write_c_lvalue_paths_for_initialization(
+        state,
+        lvalue,
+        value,
+        facts,
+        obligations,
+        assumptions,
+        budget,
+        false,
+    )
+}
+
+fn write_c_lvalue_paths_for_initialization(
+    state: &CState,
+    lvalue: CLValue,
+    value: CValue,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+    initialization: bool,
+) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+    if lvalue.is_constant() && !initialization {
         return Ok(vec![CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
             outcome: CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
@@ -438,6 +460,7 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
             assumptions.assume_proposition(fact)
         });
     let mut facts = facts;
+    let constant = lvalue.is_constant();
     let is_volatile = lvalue.is_volatile();
     let value_type = lvalue.value_type;
     let pointee_volatile = lvalue.pointee_is_volatile();
@@ -526,7 +549,7 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
                 value_type,
                 is_volatile,
                 pointee_volatile,
-                false,
+                constant,
                 pointee_constant,
             );
             Ok(vec![CStatementExecutionPath {
@@ -2852,6 +2875,7 @@ fn execute_c_statement_leaf_paths(
         match statement {
             CStatement::Declare {
                 name,
+                initializer: None,
                 c_type:
                     CType::Int8
                     | CType::Int16
@@ -3056,6 +3080,7 @@ fn execute_c_statement_leaf_paths(
             pointee_volatile,
             constant,
             pointee_constant,
+            initializer,
             zero_fill,
         } => {
             let outcome = if *c_type == CType::Void {
@@ -3080,14 +3105,119 @@ fn execute_c_statement_leaf_paths(
                     Err(refusal) => CStatementOutcome::RuntimeError(refusal),
                 }
             };
-            vec![CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome,
-                facts: Vec::new().into(),
-                obligations: Vec::new(),
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }]
+            if let (Some(expression), CStatementOutcome::Normal(declared)) = (initializer, &outcome)
+            {
+                if zero_fill.is_some()
+                    || matches!(
+                        c_type,
+                        CType::Int8Array(_)
+                            | CType::Int16Array(_)
+                            | CType::UInt16Array(_)
+                            | CType::Int32Array(_)
+                            | CType::UInt8Array(_)
+                            | CType::UInt32Array(_)
+                            | CType::Int64Array(_)
+                            | CType::Int128Array(_)
+                            | CType::UInt128Array(_)
+                            | CType::UInt64Array(_)
+                            | CType::Float32Array(_)
+                            | CType::Float64Array(_)
+                            | CType::PointerArray(_, _)
+                    )
+                {
+                    return Ok(vec![CStatementExecutionPath {
+                        loop_invariant_correspondence: Default::default(),
+                        outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                        facts: Vec::new().into(),
+                        obligations: Vec::new(),
+                        loan_evidence: empty_checked_loan_evidence_sequence(),
+                    }]);
+                }
+                let mut paths = Vec::new();
+                for path in evaluate_c_expression_paths(declared, expression, assumptions, budget)?
+                {
+                    match path.outcome {
+                        CExpressionOutcome::Value(value) => {
+                            let lvalue = CLValue::local_with_qualifiers(
+                                name.clone(),
+                                *c_type,
+                                *volatile,
+                                *pointee_volatile,
+                            )
+                            .with_constant(*constant)
+                            .with_pointee_constant(*pointee_constant);
+                            paths.extend(write_c_lvalue_paths_for_initialization(
+                                declared,
+                                lvalue,
+                                value,
+                                path.facts,
+                                path.obligations,
+                                assumptions,
+                                budget,
+                                true,
+                            )?);
+                        }
+                        CExpressionOutcome::UndefinedBehavior(error) => {
+                            paths.push(CStatementExecutionPath {
+                                loop_invariant_correspondence: Default::default(),
+                                outcome: CStatementOutcome::UndefinedBehavior(error),
+                                facts: path.facts,
+                                obligations: path.obligations,
+                                loan_evidence: empty_checked_loan_evidence_sequence(),
+                            })
+                        }
+                        CExpressionOutcome::RuntimeError(error) => {
+                            paths.push(CStatementExecutionPath {
+                                loop_invariant_correspondence: Default::default(),
+                                outcome: CStatementOutcome::RuntimeError(error),
+                                facts: path.facts,
+                                obligations: path.obligations,
+                                loan_evidence: empty_checked_loan_evidence_sequence(),
+                            })
+                        }
+                    }
+                }
+                if *constant {
+                    for path in &mut paths {
+                        if let CStatementOutcome::Normal(state) = &mut path.outcome {
+                            let block = state
+                                .locals
+                                .slot(name)
+                                .expect("initialized scalar slot")
+                                .block
+                                .clone();
+                            state.set_memory(state.memory.clone().freeze_declared_scalar(&block));
+                        }
+                    }
+                }
+                paths
+            } else {
+                let outcome = match outcome {
+                    CStatementOutcome::Normal(mut state)
+                        if *constant
+                            && initializer.is_none()
+                            && zero_fill.is_none()
+                            && state.locals.is_uninitialized_object(name) =>
+                    {
+                        let block = state
+                            .locals
+                            .slot(name)
+                            .expect("declared scalar slot")
+                            .block
+                            .clone();
+                        state.set_memory(state.memory.clone().freeze_declared_scalar(&block));
+                        CStatementOutcome::Normal(state)
+                    }
+                    outcome => outcome,
+                };
+                vec![CStatementExecutionPath {
+                    loop_invariant_correspondence: Default::default(),
+                    outcome,
+                    facts: Vec::new().into(),
+                    obligations: Vec::new(),
+                    loan_evidence: empty_checked_loan_evidence_sequence(),
+                }]
+            }
         }
         CStatement::DeclareAggregate { name, layout, kind } => {
             let declared = match kind {

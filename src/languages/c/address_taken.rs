@@ -369,10 +369,16 @@ fn child_statements<'a>(
         | C0Statement::Break
         | C0Statement::Continue
         | C0Statement::Goto { .. }
-        | C0Statement::Declare { .. }
+        | C0Statement::Declare {
+            initializer: None, ..
+        }
         | C0Statement::DeclareStructValue { .. } => {}
         C0Statement::Label { statement, .. } => statements.push(statement),
-        C0Statement::Assign { expression, .. } => expressions.push(expression),
+        C0Statement::Declare {
+            initializer: Some(expression),
+            ..
+        }
+        | C0Statement::Assign { expression, .. } => expressions.push(expression),
         C0Statement::CallAssign { arguments, .. } | C0Statement::Call { arguments, .. } => {
             expressions.extend(arguments.iter());
         }

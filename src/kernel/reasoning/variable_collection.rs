@@ -510,12 +510,18 @@ pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
+        | CStatement::Declare {
+            initializer: None, ..
+        }
         | CStatement::DeclareAggregate { .. } => {}
         CStatement::ForStep { step, .. } => {
             collect_c_statement_bitvector_variables(step, variables);
         }
-        CStatement::Assign { expression, .. }
+        CStatement::Declare {
+            initializer: Some(expression),
+            ..
+        }
+        | CStatement::Assign { expression, .. }
         | CStatement::Return(expression)
         | CStatement::Throw(expression)
         | CStatement::Assert {

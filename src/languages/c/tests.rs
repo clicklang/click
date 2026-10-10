@@ -10684,9 +10684,21 @@ fn c0_syntax_lowers_calls_in_conditional_expression_branches() {
         !debug.contains("Conditional {"),
         "the lowered body does not evaluate conditional call branches eagerly"
     );
+    fn has_prefix_binding(statement: &syntax::C0Statement) -> bool {
+        match statement {
+            syntax::C0Statement::Declare {
+                c_type: syntax::C0Type::Int32,
+                ..
+            } => true,
+            syntax::C0Statement::Seq(first, second) => {
+                has_prefix_binding(first) || has_prefix_binding(second)
+            }
+            _ => false,
+        }
+    }
     assert!(
-        debug.contains("Declare { c_type: Int32"),
-        "the conditional result has a stack binding before either arm"
+        has_prefix_binding(function.body()),
+        "the conditional result has a stack binding outside either arm"
     );
 }
 

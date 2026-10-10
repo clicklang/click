@@ -2550,6 +2550,29 @@ impl CMemory {
         self
     }
 
+    /// Complete scalar construction without changing its extent, type, cells,
+    /// ownership, or allocation generation. Checked declaration execution is
+    /// the only caller; later alias writes see the block's read-only status.
+    pub(in crate::kernel) fn freeze_declared_scalar(mut self, block: &PointerBlock) -> Self {
+        let base = intern_derivation_base(&mut self);
+        let mut declaration = self
+            .blocks
+            .get(block)
+            .expect("freshly allocated scalar block")
+            .clone();
+        assert!(declaration.declared_scalar_type.is_some());
+        declaration.read_only = true;
+        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
+        record_c_memory_derivation(
+            &mut self,
+            CMemoryDerivation::BlockDeclared {
+                base,
+                block: block.clone(),
+            },
+        );
+        self
+    }
+
     /// Describe initially unwritten complete-object storage. This builds a
     /// proof-entry snapshot, not an allocation transition or lifetime reset:
     /// existing writes remain recorded, a symbolic identity can still alias

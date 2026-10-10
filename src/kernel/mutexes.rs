@@ -4332,6 +4332,7 @@ mod tests {
                 pointee_volatile: false,
                 constant: false,
                 pointee_constant: false,
+                initializer: None,
                 zero_fill: None,
             },
             CStatement::DeclareAggregate {
