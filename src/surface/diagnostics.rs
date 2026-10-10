@@ -35,8 +35,12 @@ impl CStatementSiteScope {
     ) -> Self {
         let site = layout.site(statement_index).cloned();
         C_STATEMENT_SITES.with(|sites| sites.borrow_mut().push(site));
-        REFERENCE_CARRIERS
-            .with(|carriers| carriers.borrow_mut().push(reference_carriers(function)));
+        REFERENCE_CARRIERS.with(|carriers| {
+            carriers.borrow_mut().push(PlaceScope {
+                carriers: reference_carriers(function),
+                structs: BTreeMap::new(),
+            })
+        });
         Self(())
     }
 }
@@ -65,11 +69,21 @@ enum PointeeShape {
     },
 }
 
-thread_local! {
+/// What one scope lets the printer name.
+#[derive(Default)]
+struct PlaceScope {
     /// The parameters whose reads are printed as places, by the name each
-    /// has in a kernel term. The printer of a kernel term has no parameter
-    /// list; a step scope or an expansion scope supplies this one.
-    static REFERENCE_CARRIERS: std::cell::RefCell<Vec<BTreeMap<String, PointeeShape>>> =
+    /// has in a kernel term.
+    carriers: BTreeMap<String, PointeeShape>,
+    /// The fields of each struct a pointer field reaches, by struct name, so
+    /// a read through a loaded pointer is a place too.
+    structs: BTreeMap<String, Vec<crate::surface::FieldPlace>>,
+}
+
+thread_local! {
+    /// The printer of a kernel term has no parameter list; a step scope or
+    /// an expansion scope supplies the innermost of these.
+    static REFERENCE_CARRIERS: std::cell::RefCell<Vec<PlaceScope>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -130,7 +144,12 @@ impl ParameterPlaceScope {
                 },
             );
         }
-        REFERENCE_CARRIERS.with(|scopes| scopes.borrow_mut().push(shapes));
+        REFERENCE_CARRIERS.with(|scopes| {
+            scopes.borrow_mut().push(PlaceScope {
+                carriers: shapes,
+                structs: block.pointee_field_places().clone(),
+            })
+        });
         Self(())
     }
 }
@@ -143,36 +162,87 @@ impl Drop for ParameterPlaceScope {
     }
 }
 
+/// A pointer expression with the constant byte offsets added to it
+/// stripped: a field of a nested struct is one offset inside another.
+fn strip_byte_offsets(mut pointer: &CExpression) -> Option<(&CExpression, u32)> {
+    let mut offset_bytes = 0u32;
+    while let CExpression::PointerOffsetBytes {
+        pointer: base,
+        bytes,
+    } = pointer
+    {
+        offset_bytes = offset_bytes.checked_add(*bytes)?;
+        pointer = base;
+    }
+    Some((pointer, offset_bytes))
+}
+
+/// The field a typed read at `offset_bytes` into a struct with `fields`
+/// finds.
+fn field_at(
+    fields: &[crate::surface::FieldPlace],
+    offset_bytes: u32,
+    value_type: CType,
+    pointee_constant: bool,
+) -> Option<&crate::surface::FieldPlace> {
+    fields.iter().find(|field| {
+        field.offset_bytes == offset_bytes
+            && field.value_type == value_type
+            && field.pointee_constant == pointee_constant
+    })
+}
+
+/// A pointer to a struct the scope can name the fields of, as the sidecar
+/// writes it, with those fields: a struct parameter or local `p`, or a
+/// pointer loaded from a field of one, `p->next`, to any depth.
+fn struct_pointer_place<'a>(
+    pointer: &CExpression,
+    scope: &'a PlaceScope,
+) -> Option<(String, &'a [crate::surface::FieldPlace])> {
+    match pointer {
+        CExpression::Variable(variable) => match scope.carriers.get(variable)? {
+            PointeeShape::Struct { fields } => Some((variable.clone(), fields)),
+            PointeeShape::ScalarReferent => None,
+        },
+        CExpression::TypedLoad {
+            pointer,
+            value_type,
+            volatile: false,
+            pointee_constant,
+            ..
+        } => {
+            let (base, offset_bytes) = strip_byte_offsets(pointer)?;
+            let (base, fields) = struct_pointer_place(base, scope)?;
+            let field = field_at(fields, offset_bytes, *value_type, *pointee_constant)?;
+            let fields = scope.structs.get(field.pointee_struct.as_ref()?)?;
+            Some((describe_field_place(&base, &field.name), fields))
+        }
+        _ => None,
+    }
+}
+
 /// A typed read through `pointer`, as a sidecar writes it, when `pointer`
-/// is a parameter the innermost scope names, or a field's offset from one.
+/// is a parameter the innermost scope names, a field's offset from one, or
+/// a field's offset from a struct pointer loaded through one.
 fn describe_read_through_parameter(
     pointer: &CExpression,
     value_type: CType,
     pointee_constant: bool,
 ) -> Option<String> {
-    // A field of a nested struct is one offset inside another.
-    let mut offset_bytes = 0u32;
-    let mut base = pointer;
-    while let CExpression::PointerOffsetBytes { pointer, bytes } = base {
-        offset_bytes = offset_bytes.checked_add(*bytes)?;
-        base = pointer;
-    }
-    let CExpression::Variable(variable) = base else {
-        return None;
-    };
-    REFERENCE_CARRIERS.with(|shapes| match shapes.borrow().last()?.get(variable)? {
-        PointeeShape::ScalarReferent if offset_bytes == 0 => {
-            syntax::referent_of_carrier(variable).map(str::to_string)
+    let (base, offset_bytes) = strip_byte_offsets(pointer)?;
+    REFERENCE_CARRIERS.with(|scopes| {
+        let scopes = scopes.borrow();
+        let scope = scopes.last()?;
+        if let CExpression::Variable(variable) = base
+            && let Some(PointeeShape::ScalarReferent) = scope.carriers.get(variable)
+        {
+            return (offset_bytes == 0)
+                .then(|| syntax::referent_of_carrier(variable).map(str::to_string))
+                .flatten();
         }
-        PointeeShape::ScalarReferent => None,
-        PointeeShape::Struct { fields } => fields
-            .iter()
-            .find(|field| {
-                field.offset_bytes == offset_bytes
-                    && field.value_type == value_type
-                    && field.pointee_constant == pointee_constant
-            })
-            .map(|field| describe_field_place(variable, &field.name)),
+        let (base, fields) = struct_pointer_place(base, scope)?;
+        let field = field_at(fields, offset_bytes, value_type, pointee_constant)?;
+        Some(describe_field_place(&base, &field.name))
     })
 }
 

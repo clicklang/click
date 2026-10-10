@@ -1752,6 +1752,26 @@ fn expanded_branch_condition_names_nested_and_pointer_fields() {
         .expect("the expansion naming the fields should verify");
 }
 
+/// A field read through a pointer that was itself loaded from a field is
+/// written as the place, `p->next->second`, not as a byte offset from it.
+#[test]
+fn expanded_branch_condition_names_a_field_through_a_loaded_pointer() {
+    let c_source = "struct node { int first; int second; struct node *next; };\nint pick(struct node *p) { if (p->next->second > 0) { return 1; } return 0; }";
+    let click_source = "verifying \"pick.c\";\nint32 pick(struct node* p) { views p->next; views p->next->second; ensures result >= 0; } by { execute(); simp(); }\n";
+    let expanded = expand_top_level_tactic_for_test(
+        click_source,
+        &[("pick.c", c_source)],
+        "pick",
+        CProofClaim::Grouped,
+        0,
+    )
+    .expect("a branch over a field through a loaded pointer should expand");
+    assert!(expanded.contains("p->next->second) > "), "{expanded}");
+    assert!(!expanded.contains("load_"), "{expanded}");
+    verify_c0_sources(&expanded, &[("pick.c", c_source)])
+        .expect("the expansion naming the field should verify");
+}
+
 /// `arithmetic` on a `uint64` goal expands to the bridge steps it took,
 /// and the expansion verifies with no `arithmetic()` left to plan.
 #[test]
