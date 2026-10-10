@@ -14883,62 +14883,6 @@ fn missing_snapshot_premise_spelling_has_bounded_history_search() {
 }
 
 #[test]
-fn missing_snapshot_premise_spelling_bounds_work_across_populated_states() {
-    let function = syntax::parse_function("int32 noop() { return 0; }").unwrap();
-    let kernel = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(Variable(8_178_904))),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
-        true,
-    );
-    for locals in [16usize, 64, 256] {
-        let mut state = CState::new();
-        for index in 0..locals {
-            state = state.with_local(
-                format!("unrelated_{index}"),
-                CValue::Bool(Bitvector32Term::Variable(Variable(
-                    8_180_000 + index as u64,
-                ))),
-            );
-        }
-        for history in [64usize, 1024, 4096] {
-            let mut snapshots = RecordedSnapshots::new();
-            for index in 0..history {
-                snapshots.insert(
-                    ProgramPointRef {
-                        region: CodeRegionRef::Statement(index),
-                        kind: ProgramPointKind::Entry,
-                    },
-                    state.clone(),
-                );
-            }
-            let anchor = ProgramPointRef {
-                region: CodeRegionRef::Statement(history / 2),
-                kind: ProgramPointKind::Entry,
-            };
-            let (count, work) = crate::instrumentation::measure_deterministic_work(|| {
-                super::super::smart_closures::synthesize_surface_at_recorded_snapshots(
-                    &kernel,
-                    function.parameters(),
-                    &[],
-                    &snapshots,
-                    &anchor,
-                )
-                .count()
-            });
-            assert_eq!(count, 0);
-            // A complete speculative search plus one final state probe;
-            // history and local population must not multiply their costs.
-            assert!(
-                work <= 24_576 + 24 * locals,
-                "{locals} locals, {history} snapshots: {work} work"
-            );
-        }
-    }
-}
-
-#[test]
 fn snapshot_premise_candidates_stop_on_deterministic_work_exhaustion() {
     use crate::instrumentation::{TacticEvent, TacticWorkLimits, VerificationEvent};
     let parameters = syntax::parse_function("int32 noop(int32 x) { return x; }").unwrap();

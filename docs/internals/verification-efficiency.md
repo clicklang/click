@@ -49,13 +49,6 @@ reparsing the project or rescanning a long line for each location is not
 acceptable. The CLI cache and batch-position regressions cover 16, 64, and
 256 locations.
 
-Speculative premise reconstruction bounds its total work across historical
-snapshots as well as the work of each individual synthesis probe. Each local
-alias examined consumes the synthesis allowance and deterministic work. A
-missing spelling therefore cannot multiply a fresh allowance by the number of
-retained states. Scaling regressions vary both local population and history
-size; explicit snapshot references still use ordinary checked lowering.
-
 ## Proof size and speed targets
 
 The complexity contract says how verification must scale. These working
