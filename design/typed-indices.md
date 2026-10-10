@@ -145,10 +145,22 @@ wide range, `uint64` folds for model functions, and the Rust iterators
 counting a `usize`. Step 5 is done too (2026-10-10): a range with a
 `uint64` bound is wide whatever its start, and an integer literal beside the
 64-bit bound is read as `uint64` (`wide_range_bounds` in
-`src/kernel/primitives/contracts.rs`, the one rule every lowering asks). Not
-built: the remaining clause shapes, among them an `int32` variable beside a
-64-bit bound, and the deletion of the 32-bit conversion for them (step 9),
-and the signed wide kind. What was learned along the way:
+`src/kernel/primitives/contracts.rs`, the one rule every lowering asks).
+Signed bounds followed (2026-10-11): a range with a symbolic 64-bit bound,
+signed or unsigned, is wide, and an `int32` or `int64` bound in it is read
+as its sign extension. No signed kind was needed. A negative bound reads as
+at least 2^63, past every range's end, so the range's own guards rule it
+out; a signed access index is read the same way, and an unsigned order
+between sign extensions of values known nonnegative is decided by the
+signed order. Not built: the deletion of the 32-bit conversion for the last
+shape that reaches it, a 64-bit constant beside an `int32` bound (step 9).
+What was learned along the way:
+
+- A callee is given its ranges' guards on entry, `start <= end` among them,
+  and the call did not prove that one: the planner places a range by its
+  endpoints, and `bytes[5..2]` lies inside `bytes[0..8]` by them. A call
+  now proves the order of each range it hands over; the other guards follow
+  from the range that covers it.
 
 - Offsets of two unequal 64-bit indices are different without a no-wrap
   bound. An `Int64Scaled` offset is the exact product, folded to a constant
@@ -249,9 +261,9 @@ Four more, the same day:
   it says in the same way (decided 2026-10-09): the range up to the
   truncated length, a 32-bit range whose bound has to be shown to fit.
   The kernel used to drop one such cast and read the range as 64-bit.
-- A signed 64-bit bound, `views a[0..n]` with `long n`, keeps the stage 1
-  cast until the unsigned series has landed. A signed wide kind follows it
-  by the same mechanism.
+- A signed 64-bit bound, `views a[0..n]` with `long n`, kept the stage 1
+  cast until the unsigned series had landed. It is now read as its sign
+  extension in the unsigned kind (status above).
 
 **To keep.** The `Int32` body of `pointer_access_in_range`; ranges indexed
 by the root of their base, with a wide range at the same root and out of

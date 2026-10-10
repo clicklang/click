@@ -3230,7 +3230,8 @@ impl PureFactContext {
     /// rewritten to a signed 32-bit index is read back: `(int32)i` scaled,
     /// or `(int32)i + c`, is the offset of `i` or `i + c` when that 64-bit
     /// value is decided to be at most `INT_MAX`, since truncation commutes
-    /// with the addition and is then exact and nonnegative.
+    /// with the addition and is then exact and nonnegative. Any other `int32`
+    /// index is read as its sign extension.
     pub(in crate::kernel) fn wide_element_index_of_access(
         &self,
         pointer: &Pointer,
@@ -3239,6 +3240,22 @@ impl PureFactContext {
     ) -> Option<Bitvector32Term> {
         if let Some(index) = pointer.wide_element_index_from_base(base, element_width) {
             return Some(index);
+        }
+        // A signed 64-bit index is read as the same bits unsigned: a negative
+        // one is then at least 2^63, beyond every wide range's end.
+        if let Some(PointerOffsetTerm::Int64Scaled {
+            value,
+            byte_width,
+            unsigned: false,
+        }) = pointer.offset_from_base(base)
+            && byte_width == i64::from(element_width)
+        {
+            return Some(match *value {
+                Bitvector32Term::Int64Constant(constant) => {
+                    Bitvector32Term::UInt64Constant(constant as u64)
+                }
+                value => Bitvector32Term::UInt64FromInt64(Box::new(value)),
+            });
         }
         // An index advanced by whole elements, `base[i]` then `+ k`: the
         // access is at index `i + k` when that sum does not wrap, which is
@@ -3304,7 +3321,12 @@ impl PureFactContext {
         if byte_width != i64::from(element_width) {
             return None;
         }
+        // Otherwise the index is the `int32` value itself, read as its sign
+        // extension, the spelling a range bound of that type is given
+        // ([`crate::kernel::wide_range_bounds`]). A negative index becomes at
+        // least 2^63, beyond every wide range's end, so no caller places it.
         crate::kernel::primitives::checked_native_range_endpoint(&value, self)
+            .or(Some(Bitvector32Term::UInt64FromInt32(value)))
     }
 
     /// A complete aligned access lies outside a native range. Both byte

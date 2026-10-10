@@ -2553,29 +2553,39 @@ pub(crate) fn memory_range_extent_guards(range: &CMemoryRange) -> Vec<Propositio
     }
 }
 
-/// The byte count of a wide liveness fact over `elements` elements of
-/// `width` bytes: the count itself at width one, and otherwise the product
-/// with the width on the right, so the two parts can be read back.
 /// The bounds of a wide range written with `start` and `end`, when it is
-/// one: both bounds are unsigned 64-bit, or one is a symbolic unsigned
-/// 64-bit term and the other a nonnegative integer literal, which is read
-/// as that type. `bytes[0..length]`, `bytes[1..length]`, `bytes[a..b]` and
-/// `bytes[index..4]` are wide; two `int32` bounds, or a signed one beside a
-/// 64-bit one, are not (`design/typed-indices.md`, stage 2).
+/// one: both bounds are unsigned 64-bit, or one is a symbolic 64-bit term,
+/// signed or unsigned. Every bound is read as an unsigned 64-bit value, a
+/// signed one by its sign extension. `bytes[0..length]`, `bytes[1..length]`,
+/// `bytes[a..b]`, `bytes[index..4]`, `bytes[i..length]` with `int32 i` and
+/// `bytes[0..n]` with `int64 n` are wide; two `int32` bounds are not
+/// (`design/typed-indices.md`, stage 2).
 pub(crate) fn wide_range_bounds(
     start: &CValue,
     end: &CValue,
 ) -> Option<(Bitvector32Term, Bitvector32Term)> {
     let widened = |value: &CValue| match value {
         CValue::UInt64(term) => Some(term.clone()),
-        CValue::Int32(Bitvector32Term::Constant(bits)) if (*bits as i32) >= 0 => {
-            Some(Bitvector32Term::UInt64Constant(u64::from(*bits)))
+        // A signed bound is read as its sign extension, the same bits as an
+        // unsigned 64-bit value. A negative one becomes larger than any
+        // extent the range's guards allow, so the range denotes memory only
+        // when its bounds are nonnegative.
+        CValue::Int32(Bitvector32Term::Constant(bits)) => {
+            Some(Bitvector32Term::UInt64Constant(*bits as i32 as i64 as u64))
         }
+        CValue::Int32(term) => Some(Bitvector32Term::UInt64FromInt32(Box::new(term.clone()))),
+        CValue::Int64(Bitvector32Term::Int64Constant(value)) => {
+            Some(Bitvector32Term::UInt64Constant(*value as u64))
+        }
+        CValue::Int64(term) => Some(Bitvector32Term::UInt64FromInt64(Box::new(term.clone()))),
         _ => None,
     };
     let uint64 = |value: &CValue| matches!(value, CValue::UInt64(_));
-    let symbolic =
-        |value: &CValue| matches!(value, CValue::UInt64(term) if term.uint64_as_const().is_none());
+    let symbolic = |value: &CValue| match value {
+        CValue::UInt64(term) => term.uint64_as_const().is_none(),
+        CValue::Int64(term) => !matches!(term, Bitvector32Term::Int64Constant(_)),
+        _ => false,
+    };
     let wide = (uint64(start) && uint64(end)) || symbolic(start) || symbolic(end);
     if !wide {
         return None;
@@ -2583,6 +2593,9 @@ pub(crate) fn wide_range_bounds(
     Some((widened(start)?, widened(end)?))
 }
 
+/// The byte count of a wide liveness fact over `elements` elements of
+/// `width` bytes: the count itself at width one, and otherwise the product
+/// with the width on the right, so the two parts can be read back.
 pub(crate) fn wide_loadable_byte_count(elements: Bitvector32Term, width: u32) -> Bitvector32Term {
     if width == 1 {
         return elements;

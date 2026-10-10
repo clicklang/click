@@ -355,6 +355,9 @@ impl PureFactContext {
         if let Some(value) = self.decide_widened_sum_bound(condition) {
             return Some(value);
         }
+        if let Some(value) = self.decide_unsigned_order_of_nonnegative_signed(condition) {
+            return Some(value);
+        }
         // Wide comparisons may use a recorded constant equality. Consult only
         // the queried terms' equality components, never unrelated conditions.
         let wide_comparison = match condition {
