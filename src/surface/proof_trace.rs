@@ -1474,6 +1474,7 @@ mod tests {
             ),
             source: None,
             surface_view: None,
+            pointer_view: None,
         };
         let mut output = String::new();
         append_added_facts(&mut output, &[fact], &mut SnapshotLabels::default(), "  ");
