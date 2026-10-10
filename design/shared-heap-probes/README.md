@@ -1,8 +1,8 @@
 # Shared-parent ownership proof
 
-This source-backed probe for the P1
-[shared-heap-graph demo](../../issues/shared-heap-graph-demo.md) uses explicit
-population authority. Its
+This source-backed probe for
+[resource invariants](../../docs/internals/resource-invariants.md) uses
+explicit population authority. Its
 [`shared_parent.c`](shared_parent.c) remains the frozen sequential C source.
 The sidecar [`shared_parent.click`](shared_parent.click) describes initialization,
 retain, branch-on-count release, parent attachment, payload reads, detachment,

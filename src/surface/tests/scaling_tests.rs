@@ -7276,9 +7276,8 @@ fn retain_amid_unrelated_children_project(count: usize) -> (String, String) {
 /// A retain does not pay for the unrelated shared children that are live:
 /// every pointer parameter shares one memory block, so a lookup that walks
 /// that block instead of the queried object's own facts grows with them.
-#[test]
-fn a_retain_ignores_unrelated_live_children() {
-    let samples = [2, 4, 8, 16]
+fn assert_retain_ignores_unrelated_live_children(sizes: [usize; 4]) {
+    let samples = sizes
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = retain_amid_unrelated_children_project(size);
@@ -7292,6 +7291,17 @@ fn a_retain_ignores_unrelated_live_children() {
         })
         .collect::<Vec<_>>();
     assert_near_linear_scaling("a retain amid unrelated live children", &samples);
+}
+
+#[test]
+fn a_retain_ignores_unrelated_live_children() {
+    assert_retain_ignores_unrelated_live_children([2, 4, 8, 16]);
+}
+
+#[test]
+#[ignore = "nightly: 22s debug verify of up to 64 unrelated children"]
+fn a_retain_ignores_many_unrelated_live_children() {
+    assert_retain_ignores_unrelated_live_children([8, 16, 32, 64]);
 }
 
 /// A function owning `count` heap objects through its pointer parameters
@@ -7320,7 +7330,7 @@ fn owned_parameters_project(count: usize) -> (String, String) {
 /// memory block, and no check pairs each of them with all the others.
 #[test]
 fn owned_pointer_parameters_scale_with_their_number() {
-    let samples = [3, 6, 12, 24]
+    let samples = [8, 16, 32, 64]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = owned_parameters_project(size);
