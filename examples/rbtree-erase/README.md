@@ -129,8 +129,18 @@ Every continuing edge decreases the context, and the result specifies the
 exact balanced, parent-consistent whole tree with unchanged in-order contents.
 All 21 proofs and 168 expansion-audit sites pass. Eight mutation checks reject
 broken cursor ascent, parent blackening, sibling recoloring, either parent
-child link, far-child blackening, and near-child reparenting. Inner rotations
-and red-sibling cases after propagation remain.
+child link, far-child blackening, and near-child reparenting.
+
+`rbtree_erase_color_flips_rotations.click` adds terminal cases 3 and 4 in both
+directions after repeated propagation. It covers all black-sibling cases,
+including nonempty focus, far, and inner-grandchild subtrees. The first rotation
+reparents one grandchild under the old sibling; the second reparents the other
+under the old parent. The contract retains the exact balanced, parent-consistent
+whole-tree result and unchanged in-order contents. All 31 proofs and 300
+expansion-audit sites pass. Eight
+additional mutation checks reject broken inner links, the first grandchild's
+parent/color write, and the two cursor assignments between rotations.
+Red-sibling handling after propagation remains.
 
 The combined sidecar has 1,091 lines, against the pinned function's 182 lines
 including its remaining rotations. On this development build it profiles at
