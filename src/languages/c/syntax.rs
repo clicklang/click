@@ -145,6 +145,9 @@ pub struct C0Function {
     return_pointee_constant: bool,
     return_reference: bool,
     return_struct_name: Option<String>,
+    /// A foreign opaque declaration can retain result construction without
+    /// carrying an executable body. Ordinary C aggregate results use Copy.
+    aggregate_return_mode: crate::kernel::CAggregateReturnMode,
     return_pointer_struct_name: Option<String>,
     /// The C spelling used by a sidecar contract. Header-provided internal
     /// functions use a translation-unit-qualified kernel name in `name`.
@@ -2976,6 +2979,7 @@ impl C0Function {
             return_pointee_constant: false,
             return_reference: false,
             return_struct_name: None,
+            aggregate_return_mode: crate::kernel::CAggregateReturnMode::Copy,
             return_pointer_struct_name: None,
             source_name: name.clone(),
             name,
@@ -3099,6 +3103,14 @@ impl C0Function {
         self.return_type = struct_value_type(&layout);
         self.structs.insert(name.clone(), layout);
         self.return_struct_name = Some(name);
+        self
+    }
+
+    pub(crate) fn with_aggregate_return_mode(
+        mut self,
+        mode: crate::kernel::CAggregateReturnMode,
+    ) -> Self {
+        self.aggregate_return_mode = mode;
         self
     }
 
@@ -3642,7 +3654,14 @@ impl C0Function {
                 .get(name)
                 .expect("struct return has a parsed layout")
                 .to_kernel_aggregate_layout();
-            function = function.with_return_aggregate_layout(layout);
+            function = match self.aggregate_return_mode {
+                crate::kernel::CAggregateReturnMode::Copy => {
+                    function.with_return_aggregate_layout(layout)
+                }
+                crate::kernel::CAggregateReturnMode::Construction => {
+                    function.with_construction_return(layout)
+                }
+            };
         }
         self.with_kernel_static_storage(function, true)
     }
@@ -8821,6 +8840,7 @@ impl Parser {
             return_pointee_constant: header.return_pointee_constant,
             return_reference: false,
             return_struct_name: header.return_struct_name,
+            aggregate_return_mode: crate::kernel::CAggregateReturnMode::Copy,
             return_pointer_struct_name: header.return_pointer_struct_name,
             source_name: header.source_name,
             name: header.name,

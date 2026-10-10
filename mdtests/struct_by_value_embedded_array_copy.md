@@ -1,9 +1,10 @@
 # Embedded struct arrays copied by value
 
-One-dimensional arrays of embedded structs are part of the recursive
-by-value aggregate model. The array elements retain their complete ABI stride
-and are copied as typed leaf fields, so updating a nested element in the copy
-does not mutate the caller's original element.
+This fixed source writes only the selected embedded element. The other
+modeled value fields remain unwritten, so the bounded aggregate-value copy
+must refuse it before creating private callee storage. Previously argument
+binding manufactured symbolic initialized values for those missing fields.
+The initialized counterpart retains positive shape and copy coverage.
 
 ```c filename=struct_by_value_embedded_array_finish.c
 struct point {
@@ -73,5 +74,5 @@ int32 run_struct_by_value_embedded_array() {
 ```
 
 ```expect
-pass
+fail: read of uninitialized storage
 ```

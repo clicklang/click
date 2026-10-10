@@ -342,7 +342,7 @@ pub(in crate::surface) fn initial_call_state(
     // entry initialization unable to install its stable typed cells.
     let initial = CState::new().with_population_creation_tracking();
     let mut state = crate::kernel::initialize_c_function_globals(&initial, function);
-    let construction_result = if function.contract_interface().aggregate_return_mode()
+    if function.contract_interface().aggregate_return_mode()
         == crate::kernel::CAggregateReturnMode::Construction
     {
         let layout = function
@@ -364,17 +364,19 @@ pub(in crate::surface) fn initial_call_state(
             crate::kernel::C_CONTRACT_RESULT_NAME,
             CValue::typed_pointer(destination.clone(), function.return_type()),
         );
-        Some(CResourceFact::own_memory(
-            CMemoryRange::new_with_element_width(
-                destination,
-                0.into(),
-                layout.size_bytes().into(),
-                1,
-            ),
-        ))
-    } else {
-        None
-    };
+        let storage = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            destination,
+            0.into(),
+            layout.size_bytes().into(),
+            1,
+        ));
+        // Materializing by-value arguments also binds the function's selected
+        // return destination. Install its existing implicit byte owner with
+        // the raw storage, before that checked binding; requirement lowering
+        // below retains the owner rather than manufacturing a second one.
+        let resources = state.resources().clone().unchecked_with_fact(storage);
+        state = state.with_resource_context(resources);
+    }
     if let Some((index, layout)) = function.contract_interface().construction_parameter() {
         let parameter = parameters
             .get(index)
@@ -438,11 +440,7 @@ pub(in crate::surface) fn initial_call_state(
     let memory =
         materialize_symbolic_access_resource_cells(memory, requires, parameters, &arguments)?;
     let state = state.with_memory(memory);
-    let mut resources =
-        resource_context_from_requirements(requires, parameters, &arguments, &state)?;
-    if let Some(storage) = construction_result {
-        resources = resources.unchecked_with_facts([storage]);
-    }
+    let resources = resource_context_from_requirements(requires, parameters, &arguments, &state)?;
     let mut state =
         crate::kernel::c_state_with_assumed_mutex_inputs(state.with_resource_context(resources));
     {

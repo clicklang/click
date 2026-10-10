@@ -449,10 +449,31 @@ address observations, stale-address rejection, and expanded/retained proof
 checks remain explicit. Const aggregate/array locals and general constant
 evaluation remain outside this bounded slice.
 
-Writable byte-span construction remains next. Its unchanged `constexpr auto
-extent` local can now use shared scalar construction instead of being erased or
-lowered as mutable. Continue with authenticated standard-byte template arguments
-and the unchanged pinned helper, preserving the same construction rules.
+Authenticated standard-byte class-template arguments are now retained with
+their positions and enum declaration metadata, including in records whose
+fields do not mention the argument. Offline validation checks the encoded
+identity and the actual locked standard header. Other enum arguments remain
+refused. Artifact schema 59 requires refreshing earlier locks.
+
+Current standard-library policy exports system-header interfaces as axioms,
+without their bodies. The selected dynamic-extent
+`std::as_writable_bytes(std::span<int>)` therefore uses an explicit catalog
+contract, rather than a proof of libstdc++'s implementation or its `constexpr
+extent` initializer. The unchanged const-reference harness caller returns a standard-byte
+descriptor with the same backing address and native uint64 length `4 * N`.
+Descriptor copies transfer no backing authority, initialize no backing bytes,
+and preserve the original allocation lifetime. Offline ordinary, expanded and
+retained checks cover that boundary. Shared read-only scalar construction
+remains available for actual non-system-header source. The by-value harness
+retains its unchanged source and true contract as a bounded failing regression
+for [pointer snapshot transport](../bugs/byte-span-by-value-pointer-snapshot.md);
+that proof gap remains to be repaired before claiming the same coverage there.
+Actual aggregate argument copies now check source read permission and
+initialization before private callee storage is allocated.
+
+The next decoder prerequisite is initialization across ordinary modular
+output-buffer calls, below. Keep the bounded extent and explicit ownership
+profile while selecting that effect; span construction alone cannot establish it.
 Byte alias access must be restricted to the actual pinned `std::byte` declaration;
 an arbitrary enum with the same underlying type does not gain that privilege.
 Automatic scalar declarations now create explicit ownership of their exact

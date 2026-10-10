@@ -232,6 +232,7 @@ mod tests {
     }
     fn record() -> CppRecord {
         CppRecord {
+            byte_template_arguments: vec![],
             base: None,
             declaration_id: "Guard".into(),
             name: "Guard".into(),

@@ -37,8 +37,11 @@ body-certified modular summaries share that destination; completing a result
 does not allocate or copy. The initial kernel slice requires complete-object
 storage, an explicit byte owner, and ordered non-overlapping scalar fields.
 Construction returns still require complete-object destinations. Union/array
-layouts, exceptional construction, external construction assumptions, and
-constructor callbacks remain refused. Contract
+layouts, exceptional construction, external void-constructor assumptions, and
+constructor callbacks remain refused. Explicit external construction-return
+contracts may assume that the selected caller-owned result is completed with
+initialized value fields. These are reported external assumptions, not body
+certificates, and do not grant initialization to ordinary output buffers. Contract
 matching, state substitution, branch joins, and checked snapshot comparisons
 include the destination and result mode. C++ source admission uses the bounded
 copy-equivalence restriction below.
