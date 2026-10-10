@@ -4073,6 +4073,51 @@ pub(crate) fn wide_read_has_recorded_value(
     };
     let left_origin = origin(left);
     let right_origin = origin(right);
+    // A canonical name can occur in several model arms. A producer records
+    // the complete load expression it just named, independently of the name's
+    // first live origin. Check those selected observations, then retain the
+    // original route for facts whose earlier origin is the useful one.
+    let latest = |term: &Bitvector32Term| match term {
+        Bitvector32Term::Variable(variable) => {
+            crate::kernel::eval::latest_wide_load_observation(variable)
+        }
+        Bitvector32Term::MemoryLoad(..) => Some(term.clone()),
+        _ => None,
+    };
+    let latest_left = latest(left);
+    let latest_right = latest(right);
+    if (latest_left
+        .as_ref()
+        .is_some_and(|load| Some(load) != left_origin.as_ref())
+        || latest_right
+            .as_ref()
+            .is_some_and(|load| Some(load) != right_origin.as_ref()))
+        && wide_read_observations_have_value(
+            left,
+            right,
+            latest_left.as_ref().or(left_origin.as_ref()),
+            latest_right.as_ref().or(right_origin.as_ref()),
+            assumptions,
+        )
+    {
+        return true;
+    }
+    wide_read_observations_have_value(
+        left,
+        right,
+        left_origin.as_ref(),
+        right_origin.as_ref(),
+        assumptions,
+    )
+}
+
+fn wide_read_observations_have_value(
+    left: &Bitvector32Term,
+    right: &Bitvector32Term,
+    left_origin: Option<&Bitvector32Term>,
+    right_origin: Option<&Bitvector32Term>,
+    assumptions: &PureFactContext,
+) -> bool {
     if left_origin.is_none() && right_origin.is_none() {
         return false;
     }
@@ -4091,7 +4136,7 @@ pub(crate) fn wide_read_has_recorded_value(
     if let (
         Some(Bitvector32Term::MemoryLoad(left_memory, left_pointer, LoadKind::Bits64)),
         Some(Bitvector32Term::MemoryLoad(right_memory, right_pointer, LoadKind::Bits64)),
-    ) = (&left_origin, &right_origin)
+    ) = (left_origin, right_origin)
         && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
             left_pointer,
             right_pointer,
@@ -4146,8 +4191,7 @@ pub(crate) fn wide_read_has_recorded_value(
         };
         &value == other
     };
-    stored_value_matches(left_origin.as_ref(), right)
-        || stored_value_matches(right_origin.as_ref(), left)
+    stored_value_matches(left_origin, right) || stored_value_matches(right_origin, left)
 }
 
 /// Deep, assumption-free canonical form for a term: every load resolves its

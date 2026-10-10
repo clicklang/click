@@ -164,6 +164,18 @@ produce premise-path evidence. Those are distinct operations, not a second
 Boolean equality checker. This chunk does not migrate the 64-bit adjacency
 index, mathematical-integer equality, or constant discovery.
 
+Wide-read alias checks also retain the latest producer observation of each
+canonical load name in the current function epoch. Naming a load, including a
+naming-cache hit, records its complete live snapshot and address. Two model
+match arms can reuse one canonical name while their live histories are
+unconnected; the selected check tries these observations before its original
+origin-based rule. Both routes retain the eight-byte kind and check pointer
+aliases and intervening effects. The observation creates no read authority and
+never changes the name's defining equation. Lookup touches only the selected
+names, with one retained observation per name and epoch. Session capture and
+restore share its persistent map root; scope, changed-word, width, cache-hit, and
+16/64/256/1024 unrelated-observation regressions cover it.
+
 Resource body checks use the retained 64-bit adjacency index when a copied
 word receives a different read name. They query only the stated equation's
 endpoints and captured variables, apply the existing checked equality rewrite,
