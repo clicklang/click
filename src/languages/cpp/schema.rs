@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 58;
+pub(crate) const EXPORT_SCHEMA: u32 = 59;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -300,10 +300,20 @@ pub struct CppRecord {
     pub size_bytes: u32,
     pub alignment_bytes: u32,
     pub fields: Vec<CppField>,
+    /// Nominal standard-byte arguments, including those absent from fields.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub byte_template_arguments: Vec<CppByteTemplateArgument>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base: Option<CppBase>,
     pub destructor: Option<CppFunctionReference>,
     pub span: CppSpan,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CppByteTemplateArgument {
+    pub index: u32,
+    pub value_type: CppType,
 }
 
 /// A distinct public, non-virtual base subobject, never a copied field list.
@@ -1563,6 +1573,10 @@ fn validate_reachable_records(
         }
     }
     for function in functions.values() {
+        // Record-valued forwarding may have no declaration or receiver in
+        // the body. Its result layout is still part of the reachable interface.
+        crate::instrumentation::record_deterministic_work(1);
+        reference(&function.return_type, &mut referenced);
         for parameter in &function.parameters {
             crate::instrumentation::record_deterministic_work(1);
             reference(&parameter.value_type, &mut referenced);
@@ -1669,6 +1683,36 @@ impl CppRecord {
             return Err("C++ record is missing declaration identity".into());
         }
         self.span.validate_in(sources)?;
+        if self.byte_template_arguments.len() > 32
+            || !self
+                .name
+                .split("__")
+                .skip(1)
+                .enumerate()
+                .filter_map(|(index, part)| (part == "std_byte").then_some(index as u32))
+                .eq(self
+                    .byte_template_arguments
+                    .iter()
+                    .map(|argument| argument.index))
+        {
+            return Err("C++ standard-byte template identity is incomplete".into());
+        }
+        let mut previous_index = None;
+        for argument in &self.byte_template_arguments {
+            crate::instrumentation::record_deterministic_work(1);
+            if argument.index >= 32
+                || previous_index.is_some_and(|previous| previous >= argument.index)
+                || !super::scalar::is_standard_byte(&argument.value_type)
+                || matches!(
+                    argument.value_type,
+                    CppType::Enumeration { is_const: true, .. }
+                )
+            {
+                return Err("C++ standard-byte template argument is invalid".into());
+            }
+            argument.value_type.validate_aliases_in(sources)?;
+            previous_index = Some(argument.index);
+        }
         if let Some(destructor) = &self.destructor {
             if destructor.declaration_id.is_empty() || destructor.name.is_empty() {
                 return Err(format!(
@@ -6131,6 +6175,7 @@ mod tests {
     #[test]
     fn field_sibling_artifacts_require_a_scalar_isolated_input_call() {
         let record = CppRecord {
+            byte_template_arguments: vec![],
             declaration_id: "record".into(),
             name: "Box".into(),
             size_bytes: 4,
@@ -6570,6 +6615,7 @@ mod tests {
     #[test]
     fn method_receiver_constness_and_field_authority_are_checked_in_artifacts() {
         let record = CppRecord {
+            byte_template_arguments: vec![],
             declaration_id: "record".into(),
             name: "State".into(),
             size_bytes: 8,
@@ -7447,6 +7493,7 @@ mod tests {
     #[test]
     fn record_inventory_reachability_rejects_unused_layouts() {
         let record = CppRecord {
+            byte_template_arguments: vec![],
             declaration_id: "record".into(),
             name: "R".into(),
             size_bytes: 4,
@@ -7546,11 +7593,63 @@ mod tests {
     }
 
     #[test]
+    fn standard_byte_template_metadata_validation_scales_with_inventory() {
+        for size in [4, 16, 64, 256] {
+            let inventory: Vec<_> = (0..size)
+                .map(|index| CppRecord {
+                    declaration_id: format!("record_{index}"),
+                    name: format!("Holder{index}__std_byte"),
+                    size_bytes: 4,
+                    alignment_bytes: 4,
+                    base: None,
+                    destructor: None,
+                    span: cleanup_span(),
+                    fields: vec![CppField {
+                        declaration_id: format!("field_{index}"),
+                        name: "value".into(),
+                        value_type: signed_integer(32, false),
+                        offset_bytes: 0,
+                        size_bytes: 4,
+                        span: cleanup_span(),
+                    }],
+                    byte_template_arguments: vec![CppByteTemplateArgument {
+                        index: 0,
+                        value_type: CppType::Enumeration {
+                            declaration_id: "c:@N@std@E@byte".into(),
+                            name: "std::byte".into(),
+                            underlying_type: Box::new(CppType::Integer {
+                                bits: 8,
+                                signed: false,
+                                is_const: false,
+                                source_aliases: vec![],
+                            }),
+                            is_scoped: true,
+                            is_fixed: true,
+                            is_const: false,
+                            span: cleanup_span(),
+                        },
+                    }],
+                })
+                .collect();
+            let sources = BTreeSet::from(["fixture.cpp".into()]);
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                validate_record_inventory(&inventory, "fixture.cpp", &sources)
+            });
+            result.unwrap();
+            assert!(
+                work >= size && work <= 32 * size + 16,
+                "{size} records: {work} work"
+            );
+        }
+    }
+
+    #[test]
     fn embedded_record_graph_validation_is_linear_and_rejects_cycles() {
         let sources = BTreeSet::from(["fixture.cpp".into()]);
         for size in [8, 32, 128, 256] {
             let mut inventory = (0..size)
                 .map(|index| CppRecord {
+                    byte_template_arguments: vec![],
                     declaration_id: format!("r{index}"),
                     name: format!("R{index}"),
                     size_bytes: 4,
@@ -7639,6 +7738,7 @@ mod tests {
     fn field_projection_lookup_does_not_scan_sibling_fields() {
         for size in [8usize, 32, 128, 256] {
             let record = CppRecord {
+                byte_template_arguments: vec![],
                 declaration_id: "r".into(),
                 name: "R".into(),
                 size_bytes: size as u32 * 4,
@@ -7780,6 +7880,7 @@ mod tests {
         for size in [8, 32, 128] {
             let mut inventory = (0..size)
                 .map(|index| CppRecord {
+                    byte_template_arguments: vec![],
                     declaration_id: format!("r{index}"),
                     name: format!("R{index}"),
                     size_bytes: 4,

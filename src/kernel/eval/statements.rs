@@ -1038,18 +1038,22 @@ fn missing_aggregate_copy_write_resource(
     None
 }
 
-fn missing_aggregate_copy_read_resource(
+pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     state: &CState,
     source: &Pointer,
     layout: &CAggregateLayout,
     assumptions: &PureFactContext,
 ) -> Option<CResourceFact> {
-    if !crate::kernel::eval::is_external_memory_pointer(source)
-        || assumptions.should_allow_symbolic_contract_loads()
+    if (!crate::kernel::eval::is_external_memory_pointer(source)
+        && !state.memory.requires_explicit_scalar_ownership(source)
+        && !assumptions.should_require_owned_expression_loads())
+        || (assumptions.should_allow_symbolic_contract_loads()
+            && !assumptions.should_require_owned_expression_loads())
     {
         return None;
     }
     for field in layout.fields() {
+        crate::instrumentation::record_deterministic_work(1);
         if !crate::kernel::reasoning::resource_context_has_read(
             state.resources(),
             &source.offset_by_bytes(field.offset_bytes()),
@@ -1069,6 +1073,7 @@ fn missing_aggregate_copy_read_resource(
         }
     }
     for union in layout.unions() {
+        crate::instrumentation::record_deterministic_work(1);
         let pointer = source.offset_by_bytes(union.offset_bytes());
         if !crate::kernel::reasoning::resource_context_has_read(
             state.resources(),

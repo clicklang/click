@@ -371,9 +371,7 @@ steps that leave the typed range unchanged, with unchanged lifetime metadata.
 The walk stops at the named premise's snapshot rather than traversing its
 earlier history. A failed allocation now records its no-write memory edge,
 so allocation-failure cleanup can retain a preceding initialization guarantee.
-`population_initialized_cleanup.md` verifies this complete lifecycle. The
-older `shared_heap_population_initialized_body_gap.md` now documents the
-intentional rejection when the resource omits initialization guarantees.
+`population_initialized_cleanup.md` verifies this complete lifecycle.
 
 Unknown pointer values read from heap or temporary storage now receive opaque
 identities, including reads from materialized load-variable cells. They cannot

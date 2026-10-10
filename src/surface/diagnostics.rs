@@ -3410,6 +3410,46 @@ pub(in crate::surface) fn diagnostic_source_load_cell(
         .then(|| cell.text())
 }
 
+/// A pointer-valued field at exactly this address. Keep the field's type
+/// check here: the internal pointer-read registry uses a scalar carrier whose
+/// load kind alone does not describe the source C type.
+pub(in crate::surface) fn diagnostic_source_pointer_cell(
+    pointer: &Pointer,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+    base_point: Option<&str>,
+) -> Option<String> {
+    for (parameter, argument) in parameters.iter().zip(arguments) {
+        let CExpression::Value(CValue::Pointer(base)) = argument else {
+            continue;
+        };
+        let Some(layout) = parameter
+            .pointee_struct_layout()
+            .or_else(|| parameter.struct_layout())
+        else {
+            continue;
+        };
+        let mut fields = layout.fields().iter().filter(|(_, field)| {
+            let expected = base.pointer().offset_by_bytes(field.offset_bytes());
+            expected.block == pointer.block
+                && crate::kernel::offsets_have_same_canonical_form(
+                    &expected.offset,
+                    &pointer.offset,
+                )
+        });
+        if let (Some((name, field)), None) = (fields.next(), fields.next())
+            && field.c_type().is_pointer()
+        {
+            let base = base_point.map_or_else(
+                || parameter.name().to_string(),
+                |point| format!("at({point}, {})", parameter.name()),
+            );
+            return Some(describe_field_place(&base, name));
+        }
+    }
+    None
+}
+
 /// The source spelling [`describe_source_cell`] gives an address, for the
 /// surface tests.
 #[cfg(test)]
@@ -4733,6 +4773,16 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             pointee_struct,
             ..
         } => {
+            // The contract parser accepts the null pointer constant directly;
+            // a C header's `(void *)0` must not expose the kernel type name.
+            if target_type.is_pointer()
+                && matches!(
+                    expression.as_ref(),
+                    CExpression::Value(CValue::Int32(Bitvector32Term::Constant(0)))
+                )
+            {
+                return "0".into();
+            }
             if let Some(struct_name) = pointee_struct {
                 return format!(
                     "((struct {struct_name} *){})",

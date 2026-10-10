@@ -90,6 +90,14 @@ struct CatalogEntry {
 // precondition; they form an address and read nothing.
 const CATALOG: &[CatalogEntry] = &[
     CatalogEntry {
+        qualified_name: "std::as_writable_bytes",
+        signature: "class std::span<enum std::byte> (class std::span<int>) noexcept",
+        contract: "extern struct {result_record} {name}(struct {argument_record} {p0}) {
+    ensures std_span_data(result) == old((uint8*)std_span_data({p0}));
+    ensures std_span_size(result) == old(std_span_size({p0})) * 4u64;
+}",
+    },
+    CatalogEntry {
         qualified_name: "std::span<int>::size",
         signature: "unsigned long (void) const noexcept",
         contract: "extern uint64 {name}(const struct {record}* this) {
@@ -173,7 +181,19 @@ pub(super) fn contracts(
             .contract
             .replace("{name}", names.require(&function.declaration_id)?)
             .replace("{record}", record);
-        for (index, parameter) in function.parameters.iter().enumerate().skip(1) {
+        if let super::CppType::Record { name, .. } = &function.return_type {
+            contract = contract.replace("{result_record}", name);
+        }
+        if let Some(parameter) = function.parameters.first()
+            && let super::CppType::Record { name, .. } = &parameter.value_type
+        {
+            contract = contract.replace("{argument_record}", name);
+        }
+        let receiver_count = usize::from(matches!(
+            function.function_kind,
+            super::CppFunctionKind::Method { .. }
+        ));
+        for (index, parameter) in function.parameters.iter().enumerate().skip(receiver_count) {
             contract = contract.replace(&format!("{{p{index}}}"), &parameter.name);
         }
         source.push_str(&contract);

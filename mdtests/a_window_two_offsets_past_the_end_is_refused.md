@@ -1,7 +1,7 @@
 # A window two offsets past the end is refused
 
-The call of `a_window_two_offsets_into_a_64_bit_range.md` with only three
-elements known to remain after `start + index`. The callee's four bytes
+`first_of_four(chunk + index)` where `chunk` is itself `bytes + start`, with
+only three elements known to remain after `start + index`. The callee's four bytes
 may reach one element past `bytes[0..length]`, so the call is refused.
 
 ```c filename=a_window_two_offsets_past_the_end_is_refused.c

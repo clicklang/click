@@ -100,8 +100,7 @@ Both loops that write the map must own all of it, because the iterated
 fact's guard cells must be owned by the body that declares it, so each loop
 havocs every occupancy cell. What a loop leaves alone is a frame invariant
 against the loop's entry, and the contracts' frames chain those to the
-function entry (`mdtests/loop_frame_through_folded_state_field_cells.md`,
-`mdtests/loop_keeps_cells_the_function_keeps_owning.md`).
+function entry (`mdtests/loop_frame_at_loop_entry_through_folded_state.md`).
 
 ## The pipeline
 
@@ -160,7 +159,7 @@ the state as `arena_state(middle->arena)`. An earlier version copied the
 field into a local first and named the state `arena_state(old(middle->arena))`;
 neither is needed now that a region can be unfolded while the caller also
 owns another descriptor of its type
-(`mdtests/unfold_region_beside_an_object_of_its_type.md`) and a descriptor
+(`mdtests/unfold_region_then_write_a_descriptor_of_its_type.md`) and a descriptor
 field the caller holds flat is carried across a later call whether or not its
 value is cached
 (`mdtests/call_keeps_an_uncached_flat_field_beside_folded_state.md`).

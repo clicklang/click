@@ -107,9 +107,9 @@ it does not establish any concurrency property.
 
 ## Sequential worker checkpoint
 
-`mdtests/fork_join_worker_sequential.md` verifies `fill_range` from the frozen
-source with the contract a spawn transfers as the worker's task. That earlier
-sequential proof alone made no concurrency claim.
+An earlier sequential mdtest verified `fill_range` from the frozen source with
+the contract a spawn transfers as the worker's task; that proof alone made no
+concurrency claim.
 `mdtests/fork_join_worker_direct_contract.md` verifies the same worker with
 direct `views`/`owns` clauses; its generated certificates expand and reverify.
 The complete example sidecar uses that direct contract for its checked spawns.

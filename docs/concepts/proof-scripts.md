@@ -178,9 +178,8 @@ and model cases.
 
 A binding declared `struct ...*` is also a memory base in the arm, as it is in
 a resource arm: `id->word` names the cell the arm's own `fact p == id`
-identifies with `p->word`, and either spelling may be read in a goal that also
-calls a pure Click function
-(`mdtests/have_goal_reads_through_an_arm_binding.md`). A binding of any other
+identifies with `p->word`, and either spelling may be read in a goal
+(`mdtests/egraph_resource_pointer_load_alias.md`). A binding of any other
 declared type is refused as a field base, naming the type it was given.
 
 <!-- verified-example: mdtests/proof_match_after_c_step.md -->
@@ -215,7 +214,8 @@ shape the Linux insert fixup has: one `match` on the cursor's model at entry
 and a `while` loop inside it. Contract certification discharges the arm's case
 premise against the contract's own context and reuses the checked body as it
 does for a flat proof
-(`mdtests/rb_ascending_walk_in_entry_match.md`).
+(`mdtests/loop_clause_reads_arm_bindings.md`, a ranked loop inside the `Node`
+arm of an entry `match`).
 
 The split also reads what the premises standing at that frontier force on the
 scrutinee's instance. A path fact that refutes an arm's own fact says the
@@ -229,7 +229,8 @@ The `contradiction` need not be the arm's only tactic. It closes the path it
 stands on wherever it is reached, so an arm may run a `have`, a resource
 unfold, or any other checked operation first to bring the refuting fact into its own
 spelling, and then close. Nothing written after it on that path is executed or
-proved (`mdtests/preserve_arm_contradiction_after_an_unfold.md`). In a
+proved (`mdtests/do_while_returns_rebound_resources.md`, whose loop body's
+`Empty` arm unfolds the binder and then closes by `contradiction`). In a
 `match` at the function's own level, whose arms otherwise each have to reach
 function exit, the bridge may not run C: `have`s, unfolds and theorem
 applications, then the `contradiction`. The arm is then excluded like one whose

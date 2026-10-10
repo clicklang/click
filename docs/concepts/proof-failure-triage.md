@@ -40,20 +40,38 @@ the written source and target and name stores that may have changed the cell.
 An explicitly requested `--trace-proof` can additionally show bounded internal
 facts and snapshot identities for debugging.
 
-For pointer equalities involving retained read definitions, the trace adds
-stable report-local `value#N` labels alongside the source expression and names
-the defining read's snapshot and address. Equal source spellings can therefore
-be distinguished when they denote different internal values. Different labels
-identify different terms, not necessarily unequal values; a defining snapshot
-describes the original read, not a claim that its value is stale.
+For pointer equalities with retained read identities, the trace recovers
+source expressions against the read's defining snapshot. When the reads share one snapshot it prints a common
+heading, for example `adds at before_rotation: p->left == rid`. Mixed reads
+are qualified individually, for example
+`adds: at(before_rotation, p->left) == at(after_rotation, sibling->left)`.
+Immutable proof-local names such as `rid` need no snapshot qualifier.
+
+Named marks and recorded program points are preferred; unnamed snapshots use
+stable report-local `snapshot#N` labels. Source names are used only when their
+values and field addresses match: reassigning a C local must not rename an
+older read as a current one. If source recovery fails, the trace retains its
+explicit `at(snapshot#N, pointer_read(address value#M))` fallback. An address
+through a local from another state is qualified separately, as in
+`at(snapshot#N, at(before_rotation, sibling)->left)`. Different terms or
+defining snapshots do not by themselves establish unequal values.
+A bounded legend after the trace defines generated address and snapshot labels.
+It shows immutable proof names, pointer-read constructions, byte offsets, and
+recorded memory transitions where available. Referenced labels are expanded
+within the report budget. Unknown origins and omitted definitions are explicit;
+nearby source statements are never guessed as origins. These definitions describe
+constructions, not additional checked equalities or a complete execution history.
+
+Only the new facts at each checked step are printed, not the accumulated set.
 
 A failed pointer-valued resource child argument comparison reports the exact
 supplied and required values and the argument position. Up to four explicit
 equalities sharing the supplied value may be shown as potentially relevant
 evidence. That selection is diagnostic guidance, not a claim about the cause
 of failure or a prescription for the missing proof. The comparison uses the
-same value and snapshot labels as the preceding trace facts. These details
-are diagnostic only and do not add equalities or change proof checking.
+same source expressions and snapshot conventions as the preceding trace facts.
+These details are diagnostic only and do not add equalities or change proof
+checking.
 
 ## Three strikes during example development
 

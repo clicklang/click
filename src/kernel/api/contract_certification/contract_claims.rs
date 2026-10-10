@@ -2769,9 +2769,11 @@ pub fn c_verified_function_rule(
 /// Packages a body-less external contract as an opaque assumption. The
 /// contract still has to be structurally complete and representable by the
 /// kernel, but no body-safety or postcondition proof is claimed for it.
+/// A construction return assumes completion into the checked caller-owned
+/// destination, including its initialized value fields. Ordinary writable
+/// buffers and void construction parameters receive no such guarantee.
 pub fn c_external_function_rule(function: CFunction) -> Option<CExternalFunctionRule> {
     (!function.is_program_entry()
-        && function.contract_interface().aggregate_return_mode() == CAggregateReturnMode::Copy
         && function
             .contract_interface()
             .construction_parameter()

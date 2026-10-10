@@ -3,8 +3,7 @@
 The loop declares ownership of `a[0..n]` only, so the function keeps
 `*b`, and the body sees it only as a view. The store `b->x = 7` inside
 the body is refused for want of ownership. This refusal is what lets a loop
-head keep every cell the function keeps owning unchanged
-(`mdtests/loop_keeps_cells_the_function_keeps_owning.md`): the body cannot
+head keep every cell the function keeps owning unchanged: the body cannot
 write one, even when the loop's footprint may cover it.
 
 ```c filename=loop_body_frame_write.c

@@ -12,7 +12,7 @@ The three contracts are deliberately different, so binding a field to the
 wrong function is a proof failure rather than a signature coincidence:
 `Propagate` works on its first argument's left link, `Copy` on its second
 argument's left link, and `Rotate` on both links of its second argument.
-`mdtests/rb_augment_callbacks_table.md` binds the three fields to the three
+`mdtests/rb_augment_callbacks_const_suite.md` binds the three fields to the three
 no-op helpers through a `const` table, and
 `mdtests/rb_augment_callbacks_rejects_mismatch.md` binds `.rotate` to a
 function that satisfies `Copy` and is refused.

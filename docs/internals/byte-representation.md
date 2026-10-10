@@ -202,8 +202,8 @@ A copied pointer keeps its allocation identity, and nothing else:
 
 - **Authority.** Loading through the restored pointer needs a resource for the
   pointee, exactly as loading through the original would.
-  `mdtests/byte_representation_symbolic_roundtrip.md` proves the load with
-  the caller's `views p[0..1]`, and
+  `examples/byte-representation`'s `g` (`rep_copy_symbolic.c`) proves the
+  load with the caller's `views p[0..1]`, and
   `mdtests/byte_representation_restored_pointer_needs_authority.md` refuses
   the same load without it, naming `p` because identity was preserved.
 - **Lifetime.** Restoring a representation does not restore a freed
