@@ -48,6 +48,34 @@ Run the full suite with:
 scripts/check.sh
 ```
 
+For repeated full-suite runs, opt into optimized test executables:
+
+```sh
+scripts/check.sh --optimized
+```
+
+This selects Cargo test optimization level 1. It retains debug assertions,
+overflow checks, all selected tests, deterministic proof budgets, and nextest's
+timeouts. Development builds and the default gate keep their existing profiles.
+Put `--optimized` first when combining flags, for example
+`scripts/check.sh --optimized --nightly`.
+
+On a four-core machine, the same tree (`ead443338`, 2026-10-09) passed the
+complete gate with both settings:
+
+| Test phase | Default | Optimized |
+| --- | ---: | ---: |
+| 5,820 ordinary tests | 242 s | 81 s |
+| 21 fixture harness and example tests | 296 s | 68 s |
+| Total test execution | 538 s | 149 s |
+
+These timings exclude compilation and quality checks. The optimized gate took
+2m54s with prepared binaries and warm quality checks. Its first test build took
+31m32s with incremental compilation disabled and one build job. Rust source
+edits require optimized recompilation; proof fixture edits can reuse the
+executables. Use the default gate for frequent Rust edits and this option for
+repeated corpus or nightly runs.
+
 For a change limited to prose or documentation metadata, use the focused
 documentation gate:
 
