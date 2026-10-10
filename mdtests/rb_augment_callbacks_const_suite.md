@@ -1,6 +1,8 @@
 # A const callback table supplies a packaged read-only suite
 
-This uses the unchanged C from `rb_augment_callbacks_table.md`. The package
+The C is `lib/rbtree.c`'s shape, unchanged: a `static const` table
+`dummy_callbacks` binds the three fields to three no-op helpers, and
+`erase_dummy` passes `&dummy_callbacks` to an erase-shaped helper. The package
 contains read-only views of the three callback cells, together with their
 named contract facts; it does not claim write ownership of const storage.
 Explicit refinement theorems establish the concrete callback facts before

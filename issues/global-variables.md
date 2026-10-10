@@ -16,7 +16,7 @@ substantially overtaken that diagnosis:
 
 | Delivered capability | Representative evidence in `mdtests/` |
 | --- | --- |
-| Stable scalar globals, cross-file extern linkage, private statics and ordinary current-value contracts | `file_scope_globals.md`, `file_scope_static_globals.md`, `global_entry_requires_current_value.md`, `file_scope_global_link_errors.md`, `file_scope_static_link_errors.md` |
+| Stable scalar globals, cross-file extern linkage, private statics and ordinary current-value contracts | `file_scope_globals.md`, `file_scope_static_arrays.md`, `global_entry_requires_current_value.md`, `file_scope_global_link_errors.md`, `file_scope_static_link_errors.md` |
 | Data-only translation units, typed objects and relocations | `data_only_translation_unit.md`, `data_only_duplicate_definition.md`, `data_only_private_not_external.md` |
 | Tentative-definition coalescing, incomplete extern arrays and compatible shape resolution | `file_scope_tentative_globals.md`, `file_scope_tentative_arrays.md`, `file_scope_tentative_aggregates.md`, `file_scope_incomplete_extern_arrays.md`, and their link-error regressions |
 | Fixed/inferred scalar arrays, supported multidimensional shapes and one-dimensional struct arrays | `file_scope_multidimensional_arrays.md`, `file_scope_inferred_multidimensional_array_bounds.md`, `file_scope_static_inferred_multidimensional_array_bounds.md`, `static_array_parity_aggregate.md`, `static_array_parity_scalar.md`, `static_array_parity_multidimensional.md`, `static_array_parity_fixed_multidimensional.md` |
@@ -53,9 +53,8 @@ The blanket statement that resources over globals are inexpressible is false:
 mutable globals from two translation units, starting at `main`.
 
 For const callback tables the distinction is read authority versus ownership.
-The unchanged C in `rb_augment_callbacks_table.md` already verifies using
-explicit named contracts on the table fields. A combined packaged caller and
-helper now verifies as
+The unchanged C first verified using explicit named contracts on the table
+fields. A combined packaged caller and helper now verifies as
 `rb_augment_callbacks_const_suite.md`:
 
 - `callback_suite` contains `views` of its three const callback cells, not

@@ -15,7 +15,6 @@ is only exact when `old`, the child's word as the C read it *after*
 `*new = *victim`, is the same load variable the child's own arm spoke about
 before that write. It is, because an `unfold` names the cells it exposes the
 way contract lowering does; see
-`mdtests/rb_child_load_identity_across_unfold.md` and
 [the canonicalization internals](../docs/internals/canonicalization.md).
 
 The frame is `Context::Top`, and the victim's model is pinned by a requirement

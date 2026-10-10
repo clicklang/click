@@ -264,10 +264,9 @@ at all. This publication belongs to the contract's own clauses at its entry
 and return; it is not one of the frontiers where a matched instance's arms
 are decided, so a loop head does not read through a folded field-bearing
 instance. The regressions are
-`mdtests/contract_owns_through_field_bearing_instance.md` (both clause
-orders), `mdtests/contract_returns_field_bearing_sibling.md` (both clause
-orders), `mdtests/call_through_field_bearing_sibling.md` (a caller applying
-such a contract), `mdtests/contract_postcondition_reads_through_field_bearing_instance.md`,
+`mdtests/contract_returns_field_bearing_sibling.md` (both clause
+orders), `mdtests/borrowed_instance_argument_reads_old_field.md` (a caller applying
+such a contract),
 `mdtests/arena_prefix_free_reads_region_arena.md`,
 `mdtests/contract_field_bearing_instance_views_grant_no_write.md`, and
 `mdtests/contract_field_bearing_instance_views_only_owned_cells.md`.
@@ -407,8 +406,9 @@ batch with `owns control(pool); owns pool->capacity of slot(pool);`. The
 helper must return both. Authority custody and batch custody move separately:
 receiving only one grants neither the other's ownership nor permission to
 consume members. A field-valued zero quantity moves no member rights. The
-[symbolic batch helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_symbolic_batch_helper.md)
-checks direct and nested calls. A cleanup helper can instead consume the
+[zero-quantity helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_symbolic_batch_helper_zero.md)
+checks a helper that borrows the control and its whole field-valued batch,
+called from one that holds a zero batch. A cleanup helper can instead consume the
 control and complete entry-sized batch with `consumes`, retire its authority,
 and return ordinary storage with `produces *pool`. The
 [symbolic cleanup helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_symbolic_batch_cleanup_helper.md)
@@ -434,10 +434,13 @@ batch with `produces amount of slot(pool)`. The transfer changes batch custody
 without changing the already-checked population delta or moving preexisting
 members. It requires the actual born quantity and its current holder; returning
 a different quantity or spending the transfer twice is rejected. The
-[growth helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_pool_grow_helper.md)
-checks this boundary with arbitrary entry totals and nonnegative growth. The
-caller establishes the count addition's definedness from the control before
-calling. Splitting batches remains separate work.
+bounded-pool example's [`pool_grow`](https://github.com/clicklang/click/blob/master/examples/bounded-pool/bounded_pool.click)
+checks this boundary with arbitrary entry totals and nonnegative growth,
+establishing the count addition's definedness from the control before the
+birth, and the
+[large symbolic birth fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_large_symbolic_population_total.md)
+returns a helper's fresh symbolic batch through its caller. Splitting batches
+remains separate work.
 
 A unit-exchange helper can move one unit of each of two families between two
 distinct anchors. It consumes the two incoming members and produces the two
@@ -473,8 +476,8 @@ produce the control on its nonfinal branch using the existing guarded
 `produces` clause. The final branch consumes its last reference, retires
 authority, and frees storage. Numeric nested calls transfer these capabilities
 explicitly; a helper cannot strand a reference while returning control.
-The [conditional release fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_conditional_release_transfer.md)
-checks both lifetime branches and the caller’s exact count and payload claims.
+The [branch-on-count release fixture](https://github.com/clicklang/click/blob/master/mdtests/child_release_branch_on_count.md)
+checks both lifetime branches and the exact count decrement.
 
 An authority-bearing resource need not tie its count to a C field. Before an
 initializer writes the C counter, its storage resource can carry authority
@@ -750,7 +753,7 @@ ownership on entry.
 An ordinary control resource can own both authorities and the C fields that
 record their totals. A checkout helper borrows that control as one resource:
 
-<!-- verified-example: mdtests/authority_pool_control_checkout.md -->
+<!-- verified-example: mdtests/authority_pool_control_two_members.md -->
 ```click
 resource control(pool: struct pool*) {
     owns *pool;
@@ -767,7 +770,9 @@ The helper contract uses `owns control(pool)`, `consumes slot(pool)`,
 consumes the slot, increments the C counter, creates the item, and closes the
 control. Closing checks both relationships against the updated ledgers;
 retaining the authority alone cannot restore a false invariant. Nested helpers
-transfer the same control, and callers can retain additional slots.
+transfer the same control, and callers can retain additional slots
+(`mdtests/authority_pool_control_return_full.md` shows both for the return
+helper).
 
 The fixture requires `pool->checked_out < 2147483647` to establish that the C
 increment is defined. It uses the existing unit-transfer sum theorem to restore
@@ -1401,8 +1406,8 @@ the arm's own `fact identity != 0` refutes that arm once the guard has failed
 with `parent == 0`. Only a declared body the kernel can evaluate to one
 unconditional value takes part, and an arm binding a mathematical `Integer`
 takes part in neither direction. The regressions are
-`mdtests/loop_head_predicate_refutes_an_arm.md` for a field-free arm,
-`mdtests/contract_predicate_refutes_a_framed_arm.md` for an arm with bindings,
+`mdtests/rb_ascending_walk_to_root.md`, whose loop head refutes the field-free
+`Top` arm and whose exit refutes the `Left` and `Right` arms with bindings,
 and `mdtests/loop_head_predicate_does_not_decide_an_arm.md` for a predicate
 that is the same at both constructors and therefore refutes nothing.
 
@@ -1466,10 +1471,8 @@ every arm of every held instance per clause would cost the arms of the section
 rather than the arms of the frontier.
 
 The regressions are `mdtests/resource_refuted_arm_model_fact.md` for both
-directions, `mdtests/loop_head_refuted_arm_closes_the_match.md` for the loop
-head and `mdtests/loop_ascending_walk_to_root.md` for the exit,
-`mdtests/arm_publication_sites.md` for the same refutation stated at each of
-the eight frontiers, and
+directions, `mdtests/loop_decreases_strict_descendant.md` for the loop
+head and `mdtests/loop_ascending_walk_to_root.md` for the exit, and
 [`examples/modeled-binary-tree`](https://github.com/clicklang/click/tree/master/examples/modeled-binary-tree)
 is the verified walk that needs both.
 

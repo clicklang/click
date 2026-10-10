@@ -39,8 +39,8 @@ negative evidence to the positive C alias probe.
 The two contract-migration probes were added for the P1
 [stable-views investigation](../../docs/internals/stable-views.md) at base `79411f40` and
 also passed ordinary bounded verification. `field-split.c` is copied unchanged
-from `mdtests/composite_piece_caller_frames_viewed_field.md`; its sidecar views
-only the unchanged field. These probes validate migration options under the
+from a since-removed mdtest in which a caller owning the whole composite frames
+the field the callee only views; its sidecar views only the unchanged field. These probes validate migration options under the
 current verifier, not the proposed stronger borrowing rules. They used the
 same target profile and unchanged verifier implementation described above.
 

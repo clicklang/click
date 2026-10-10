@@ -1,9 +1,12 @@
 # A restored pointer does not authorize its pointee
 
-[`byte_representation_symbolic_roundtrip.md`](byte_representation_symbolic_roundtrip.md)
-without the caller's `views p[0..1]` clause (and the bounds that mention
-`p[0]`). The byte round trip still restores `dst->target` with its identity,
-which is why the refusal names `p`: the load of `*dst->target` needs
+`g` stores an arbitrary `tag` and a caller-supplied `int *p` into a heap
+record, copies all its bytes through a 16-byte heap buffer into a distinct
+heap record, and loads `*dst->target`, with no clause over `p`'s storage. The
+byte round trip still restores `dst->target` with its identity (as in
+[`byte_representation_roundtrip.md`](byte_representation_roundtrip.md), where
+the function owns the pointee and the load succeeds), which is why the refusal
+names `p`: the load of `*dst->target` needs
 authority over `p[0..1]`, and nothing in the function holds it. Copying a
 pointer's representation copies the address and its allocation identity,
 never its pointee's resource.

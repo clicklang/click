@@ -1,12 +1,11 @@
 # Consecutive calls do not keep an uncached cell the caller only views
 
-The negative of `calls_keep_an_uncached_flat_field_across_three_calls.md`:
-`keep` holds `b->v` only as a view. A view's owner may be anywhere, including
+The negative of `call_keeps_an_uncached_flat_field_beside_folded_state.md`,
+across consecutive calls: `keep` holds `b->v` only as a view. A view's owner may be anywhere, including
 inside the `cells` the caller lends, so each call may write the cell. The kept
 ranges a call records come from what the caller *owns* outside the transfer,
 and a view is not ownership, so no edge records `b->v` and the `transport`
-across the calls finds no frame evidence
-(`call_havocs_cell_the_caller_only_views.md` pins the one-call, cached form).
+across the calls finds no frame evidence.
 
 ```c filename=calls_havoc_an_uncached_field_the_caller_only_views.c
 struct box {

@@ -111,9 +111,8 @@ Remaining:
   offset into a 64-bit range is covered
   (`mdtests/a_callee_takes_a_window_of_a_64_bit_range.md`). An owned window
   is refused: splitting an owned 64-bit range is plan step 6. A window two
-  offsets deep and a call inside a chunk a loop holds are covered too
-  (`mdtests/a_window_two_offsets_into_a_64_bit_range.md`,
-  `mdtests/a_callee_reads_inside_a_chunk_a_loop_holds.md`).
+  offsets deep, taken by a call inside a chunk a loop holds, is covered too
+  (`mdtests/a_callee_reads_inside_a_chunk_a_loop_holds.md`).
 - **Stage 2, what is left.** A range with a nonzero start
   (`bytes[a..b]`) and a range with a signed 64-bit bound still go through
   the 32-bit conversion and need their bound shown to fit; plan steps 5 and

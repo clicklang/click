@@ -4,8 +4,9 @@ A loop head is an arbitrary visit, so a binder the loop owns carries whatever
 the invariants state about its model — never the model it happened to hold at
 loop entry. With no invariant about `rank`, the field after the loop is a fresh
 one, and the refusal names the loop and prints the invariant that carries it
-through. [`model_field_kept_by_a_loop.md`](model_field_kept_by_a_loop.md) is
-that invariant verifying.
+through. [`c_reads_through_a_resource_with_fields_across_a_loop.md`](c_reads_through_a_resource_with_fields_across_a_loop.md)
+carries a field through a loop with that form of invariant,
+`invariant c.v == old(c.v);`, and verifies.
 
 ```c filename=model_field_across_a_loop_without_an_invariant.c
 void spin(int32* p, int32 n) {

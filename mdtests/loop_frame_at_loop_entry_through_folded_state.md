@@ -1,8 +1,9 @@
 # Framing against the loop entry through a folded state's field
 
-The loop-entry form of `loop_frame_through_folded_state_field_cells.md`: the
-frame is `arena->occupied[k] == at(mark.entry, arena->occupied[k])`, and the
-state is unfolded first. `examples/arena` frames its scan, mark, and clear
+A loop frame over a map whose fields a field-bearing `state` resource owns,
+framed against the loop entry rather than the function entry: the frame is
+`arena->occupied[k] == at(mark.entry, arena->occupied[k])`, and the state is
+unfolded first. `examples/arena` frames its scan, mark, and clear
 loops this way, because its map is never viewable at the function entry: it
 is owned by a child of the folded state.
 

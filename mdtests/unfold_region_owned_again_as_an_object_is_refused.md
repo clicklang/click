@@ -1,7 +1,7 @@
 # Unfolding a region whose descriptor is also owned flat is refused
 
-The negative of `unfold_region_beside_an_object_of_its_type.md`: the "other"
-descriptor is the region's own. The contract owns `*s` both inside
+The negative of `unfold_region_then_write_a_descriptor_of_its_type.md`: the
+"other" descriptor is the region's own. The contract owns `*s` both inside
 `pool_slot(s)` and beside it, so unfolding the region would own the
 descriptor twice, and the unfold is refused.
 
