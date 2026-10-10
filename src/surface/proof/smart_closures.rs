@@ -3971,23 +3971,27 @@ impl<'a> Proof<'a> {
                 // automatic local that has since left scope. Its recorded
                 // pair remains a valid kernel fact, but the unanchored
                 // spelling cannot be used as a source `rewrite`.
-                let names_a_dead_local = self
-                    .focused_outcome_data()
-                    .is_some_and(|data| !data.call_routes.is_empty())
-                    && self.premise_fixed_state_view().is_some_and(|view| {
-                        let mut current_names = BTreeSet::new();
-                        crate::surface::collect_current_proposition_variables(
-                            candidate,
-                            &mut current_names,
-                        );
-                        current_names.iter().any(|name| {
-                            !view.state.locals().contains_name(name)
-                                && view
-                                    .recorded_snapshots
-                                    .iter()
-                                    .any(|(_, snapshot)| snapshot.locals().contains_name(name))
-                        })
-                    });
+                // Only names in this candidate are queried. An outcome's
+                // recorded pair cannot make an out-of-scope temporary legal
+                // source, even when no call-outcome route was selected.
+                let names_a_dead_local = self.premise_fixed_state_view().is_some_and(|view| {
+                    let mut current_names = BTreeSet::new();
+                    crate::surface::collect_current_proposition_variables(
+                        candidate,
+                        &mut current_names,
+                    );
+                    current_names.iter().any(|name| {
+                        !(name == "result" && view.result.is_some())
+                            && !view.state.locals().contains_name(name)
+                            && !view.pre_state.locals().contains_name(name)
+                            && !premise_anchor
+                                .and_then(|anchor| view.recorded_snapshots.get(anchor))
+                                .is_some_and(|snapshot| snapshot.locals().contains_name(name))
+                            && self.local_binding(name).is_none()
+                            && self.local_integer_values().get(name).is_none()
+                            && self.local_algebraic_values().get(name).is_none()
+                    })
+                });
                 // A statement selector can be recorded again on a later
                 // loop iteration. Its old pair remains a checked fact, but
                 // an explicit snapshot spelling must still denote it now.

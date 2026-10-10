@@ -3322,7 +3322,72 @@ fn synthesize_parameter_field_indexed_int32_load(
             .or_else(|| pointer_field_and_index(right, Some(left)))?,
         PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => return None,
     };
-    Some(ContractExpression::Index(Box::new(field), Box::new(index)))
+    // Preserve array indexing for a declared int32 pointer, including fields
+    // reached through automatic struct-pointer locals. Their layout is already
+    // indexed by local name in the function's synthesis scope.
+    if let ContractExpression::Field {
+        base, field: name, ..
+    } = &field
+        && let ContractExpression::CFragment(CExpression::Variable(owner)) = base.as_ref()
+    {
+        let has_scalar_stride = |layout: &syntax::C0StructLayout| {
+            layout.fields().get(name).is_some_and(|declaration| {
+                declaration.c_type().to_kernel_type() == CType::Int32Pointer
+                    && declaration.struct_name().is_none()
+                    && declaration.union_name().is_none()
+            })
+        };
+        let declared_array = parameters
+            .iter()
+            .find(|parameter| parameter.name() == owner)
+            .and_then(|parameter| parameter.struct_layout())
+            .map(has_scalar_stride)
+            .unwrap_or_else(|| {
+                SYNTHESIS_STRUCT_OWNERS.with(|slot| {
+                    let owners = slot.borrow();
+                    owners
+                        .as_ref()
+                        .and_then(|owners| owners.locals.get(owner))
+                        .is_some_and(has_scalar_stride)
+                })
+            });
+        if declared_array {
+            return Some(ContractExpression::Index(Box::new(field), Box::new(index)));
+        }
+    }
+    // The kernel indexed a four-byte scalar. The field's written C type
+    // may instead be a pointer to a struct, whose indexing scales by that
+    // struct's size. Spell the address through the supported byte view and
+    // retain the scalar load's width explicitly.
+    let bytes = ContractExpression::CUnary {
+        lowered: CExpression::Cast {
+            expression: Box::new(contract_expression_to_c_fragment(&field)?),
+            target_type: CType::UInt8Pointer,
+            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        },
+        operand: Box::new(field),
+    };
+    let address = ContractExpression::Add(
+        Box::new(bytes),
+        Box::new(ContractExpression::Multiply(
+            Box::new(index),
+            Box::new(ContractExpression::CFragment(CExpression::Value(int32(4)))),
+        )),
+    );
+    Some(ContractExpression::CUnary {
+        lowered: CExpression::TypedLoad {
+            pointer: Box::new(contract_expression_to_c_fragment(&address)?),
+            value_type: CType::Int32,
+            volatile: false,
+            pointee_constant: false,
+            source: Default::default(),
+        },
+        operand: Box::new(address),
+    })
 }
 
 /// A scalar field of a struct-pointer local whose cell currently holds
