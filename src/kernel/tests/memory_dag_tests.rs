@@ -4536,3 +4536,148 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
+    let mut costs = Vec::new();
+    for count in [16u32, 64, 256] {
+        crate::kernel::eval::clear_load_variable_registry();
+        let retired = CMemory::frame_local_pointer(u64::from(count), "span");
+        let read = Pointer::symbolic(Variable(140_000 + u64::from(count)));
+        let bytes = |base, end| CMemoryRange::new_with_element_width(base, 0u32.into(), end, 1);
+        let retired_range = bytes(retired.clone(), 16u32.into());
+        let read_range = bytes(read.clone(), 8u32.into());
+        let mut memory = CMemory::new()
+            .with_block(retired.block.clone(), 16)
+            .with_block(read.block.clone(), 16);
+        let mut resources = ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own_memory(retired_range.clone()))
+            .unchecked_with_fact(CResourceFact::own_memory(read_range.clone()));
+        for index in 0..count {
+            let other = CMemory::frame_local_pointer(u64::from(count + index + 1), "unrelated");
+            memory = memory.with_block(other.block.clone(), 16);
+            resources = resources
+                .unchecked_with_fact(CResourceFact::own_memory(bytes(other, 16u32.into())));
+        }
+        let assumptions =
+            PureFactContext::new().assume_proposition(Proposition::CResourceComposition(resources));
+        crate::kernel::eval::declare_load_access_width(&read, 8);
+        let before = crate::kernel::intern_c_memory_ref(&memory);
+        let after = crate::kernel::intern_c_memory_ref(&memory.without_local_block(&retired.block));
+        let load = |memory| {
+            Bitvector32Term::MemoryLoad(
+                memory,
+                Box::new(read.clone()),
+                crate::kernel::LoadKind::Bits32,
+            )
+        };
+        // Measure this selected cleanup edge's decision and certificate check,
+        // excluding the pre-existing walks through the fixture's declarations.
+        let (effect, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            with_extended_dag_bridging(|| {
+                use crate::kernel::resource_tracker::step_effect;
+                let effect = step_effect::affects(
+                    after.derivation().unwrap().as_ref(),
+                    &after,
+                    crate::kernel::resource_tracker::Resource::Cell {
+                        pointer: &read,
+                        bytes: 8,
+                    },
+                    &step_effect::Evidence {
+                        assumptions: &assumptions,
+                        cross_loop_havoc: true,
+                    },
+                );
+                if let step_effect::StepEffect::Separate(step_effect::Separation::Cell(hop)) =
+                    &effect
+                {
+                    assert!(hop.checks(
+                        after.derivation().unwrap().as_ref(),
+                        &read,
+                        8,
+                        &assumptions
+                    ));
+                } else {
+                    panic!("expected a checked cell separation: {effect:?}");
+                }
+                effect
+            })
+        });
+        assert!(matches!(
+            effect,
+            crate::kernel::resource_tracker::step_effect::StepEffect::Separate(_)
+        ));
+        let capture = CheckedLoadEqualityCapture::start();
+        let equal =
+            checked_atomic_load_equality(&load(after.clone()), &load(before.clone()), &assumptions);
+        assert!(
+            equal,
+            "a separated caller pointer survives private-object cleanup"
+        );
+        costs.push(cost);
+        let equalities = capture.finish();
+        let [equality] = equalities.as_slice() else {
+            panic!("expected one equality: {equalities:?}");
+        };
+        assert!(equality.checks(&assumptions));
+        assert!(!equality.checks(&PureFactContext::new()));
+        let Some(AtomicMemoryLoadEqualityEvidence::SameCell(evidence)) =
+            equality.memory_dag_evidence_for_test()
+        else {
+            panic!("expected typed DAG evidence");
+        };
+        let hop = &retained_memory_dag_path(&evidence.left)[0];
+        assert!(matches!(
+            hop.justification,
+            MemoryDagHopJustification::LocalLifetimeEndedSeparatedRanges { .. }
+        ));
+        assert!(
+            hop.justification
+                .checks(hop.derivation.as_ref(), &read, 8, &assumptions)
+        );
+        assert!(
+            !hop.justification
+                .checks(hop.derivation.as_ref(), &read, 16, &assumptions)
+        );
+        assert!(
+            !hop.justification
+                .checks(hop.derivation.as_ref(), &retired, 8, &assumptions)
+        );
+        let larger = CMemory::new().with_block(retired.block.clone(), 32);
+        let larger_end =
+            crate::kernel::intern_c_memory_ref(&larger.without_local_block(&retired.block));
+        assert!(!hop.justification.checks(
+            larger_end.derivation().unwrap().as_ref(),
+            &read,
+            8,
+            &assumptions
+        ));
+        for (retired_bytes, read_bytes) in [(8u32, 8u32), (16, 4)] {
+            let partial = ResourceContext::new()
+                .unchecked_with_fact(CResourceFact::own_memory(bytes(
+                    retired.clone(),
+                    retired_bytes.into(),
+                )))
+                .unchecked_with_fact(CResourceFact::own_memory(bytes(
+                    read.clone(),
+                    read_bytes.into(),
+                )));
+            let partial = PureFactContext::new()
+                .assume_proposition(Proposition::CResourceComposition(partial));
+            assert!(!checked_atomic_load_equality(
+                &load(after.clone()),
+                &load(before.clone()),
+                &partial
+            ));
+        }
+        assert!(!checked_atomic_load_equality(
+            &load(after.clone()),
+            &load(before.clone()),
+            &PureFactContext::new()
+        ));
+    }
+    assert!(
+        costs.iter().all(|cost| *cost <= 250),
+        "indexed lifetime separation grew with unrelated members: {costs:?}"
+    );
+}

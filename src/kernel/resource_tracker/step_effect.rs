@@ -349,6 +349,9 @@ fn cell_effect(
             }
         }
         CMemoryDerivation::LocalLifetimeEnded { block, .. } => {
+            // Cleanup can name a private object while the surviving result
+            // uses a symbolic block. Frame the full retired extent, not just
+            // its base address, using retained range membership evidence.
             if pointer.block != *block
                 && extended_dag_bridging_active()
                 && pointers_proven_distinct_for_memory_resolution(
@@ -363,6 +366,52 @@ fn cell_effect(
                 hop(MemoryDagHopJustification::LocalLifetimeEndedOfOtherBlock)
             } else if pointer.block == *block {
                 StepEffect::Affected
+            } else if extended_dag_bridging_active()
+                && block.starts_with("local:")
+                && let Some(extent) = step
+                    .base()
+                    .block_size(block)
+                    .and_then(|size| size.as_const())
+                && let Some(MemoryDagHopJustification::StoreSeparatedRanges {
+                    authority,
+                    left,
+                    right,
+                    orientation,
+                    write_membership,
+                    load_membership,
+                }) = typed_store_separated_ranges_evidence(
+                    &Pointer {
+                        block: block.clone(),
+                        offset: PointerOffsetTerm::Constant(0),
+                    },
+                    extent,
+                    pointer,
+                    bytes,
+                    assumptions,
+                )
+                .or_else(|| {
+                    owned_composition_store_separated_evidence(
+                        &Pointer {
+                            block: block.clone(),
+                            offset: PointerOffsetTerm::Constant(0),
+                        },
+                        extent,
+                        pointer,
+                        bytes,
+                        assumptions,
+                    )
+                })
+            {
+                hop(
+                    MemoryDagHopJustification::LocalLifetimeEndedSeparatedRanges {
+                        authority,
+                        left,
+                        right,
+                        orientation,
+                        write_membership,
+                        load_membership,
+                    },
+                )
             } else {
                 unknown()
             }
