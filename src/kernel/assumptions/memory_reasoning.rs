@@ -1713,6 +1713,9 @@ impl PureFactContext {
         {
             return true;
         }
+        if range.wide_bounds().is_some() {
+            return false;
+        }
         let contains = |pointer: &Pointer| {
             self.pointer_in_range_with_width(
                 pointer,
@@ -1763,6 +1766,9 @@ impl PureFactContext {
         bytes: u32,
         range: &CMemoryRange,
     ) -> bool {
+        if range.wide_bounds().is_some() {
+            return self.pointer_access_in_wide_range(pointer, bytes, range);
+        }
         let width = range.element_width();
         if width == 0 {
             return false;
@@ -1792,34 +1798,24 @@ impl PureFactContext {
         if self.pointers_proven_equal_ignoring_memory_separation(left, right) {
             return false;
         }
+        let contains = |pointer: &Pointer, range: &CMemoryRange| {
+            if range.wide_bounds().is_some() {
+                self.pointer_access_in_wide_range(pointer, range.element_width(), range)
+            } else {
+                self.pointer_in_range_with_width(
+                    pointer,
+                    range.base(),
+                    range.start(),
+                    range.end(),
+                    range.element_width(),
+                )
+            }
+        };
         let direct = self
             .memory_separation_candidates(&left.block, &right.block)
             .find_map(|(proposition, left_range, right_range)| {
-                let contained = self.pointer_in_range_with_width(
-                    left,
-                    left_range.base(),
-                    left_range.start(),
-                    left_range.end(),
-                    left_range.element_width(),
-                ) && self.pointer_in_range_with_width(
-                    right,
-                    right_range.base(),
-                    right_range.start(),
-                    right_range.end(),
-                    right_range.element_width(),
-                ) || self.pointer_in_range_with_width(
-                    right,
-                    left_range.base(),
-                    left_range.start(),
-                    left_range.end(),
-                    left_range.element_width(),
-                ) && self.pointer_in_range_with_width(
-                    left,
-                    right_range.base(),
-                    right_range.start(),
-                    right_range.end(),
-                    right_range.element_width(),
-                );
+                let contained = contains(left, left_range) && contains(right, right_range)
+                    || contains(right, left_range) && contains(left, right_range);
                 (contained
                     && !self.memory_ranges_overlap_after_base_equality(left_range, right_range))
                 .then_some(proposition)
@@ -1828,15 +1824,6 @@ impl PureFactContext {
             record_implicit_reasoning_provenance(self, proposition);
             return true;
         }
-        let contains = |pointer: &Pointer, range: &CMemoryRange| {
-            self.pointer_in_range_with_width(
-                pointer,
-                range.base(),
-                range.start(),
-                range.end(),
-                range.element_width(),
-            )
-        };
         if let Some((resources, _, _)) = self.composition_separated_members(
             &left.block,
             &right.block,
@@ -2154,6 +2141,13 @@ impl PureFactContext {
                         left,
                         right,
                         |pointer, range| {
+                            if range.wide_bounds().is_some() {
+                                return self.pointer_access_in_wide_range(
+                                    pointer,
+                                    range.element_width(),
+                                    range,
+                                );
+                            }
                             self.pointer_in_range_by_shallow_fact_graph_with_width(
                                 pointer,
                                 range.base(),
@@ -2597,6 +2591,27 @@ impl PureFactContext {
         {
             return false;
         }
+        if left.wide_bounds().is_some() || right.wide_bounds().is_some() {
+            if left.element_width() != right.element_width() {
+                return true;
+            }
+            let bounds = |range: &CMemoryRange| match range.wide_bounds() {
+                Some((start, end)) => Some((start.clone(), end.clone())),
+                None => Some((
+                    crate::kernel::primitives::checked_native_range_endpoint(range.start(), self)?,
+                    crate::kernel::primitives::checked_native_range_endpoint(range.end(), self)?,
+                )),
+            };
+            let (Some((left_start, left_end)), Some((right_start, right_end))) =
+                (bounds(left), bounds(right))
+            else {
+                return true;
+            };
+            return !(self.decide(&ConditionTerm::uint64_less_equal(left_end, right_start))
+                == Some(true)
+                || self.decide(&ConditionTerm::uint64_less_equal(right_end, left_start))
+                    == Some(true));
+        }
         if left.element_width() == right.element_width()
             && (self.decide(&ConditionTerm::signed_less_equal(
                 left.end().clone(),
@@ -2889,6 +2904,9 @@ impl PureFactContext {
 
         if let (CResource::Memory(left), CResource::Memory(right)) = (left, right) {
             let composition_covers = |target: &CMemoryRange, other: &CMemoryRange| {
+                if target.wide_bounds().is_some() {
+                    return false;
+                }
                 self.resource_compositions.iter().any(|resources| {
                     let intervals = resources
                         .owned_memory_ranges_separate_from(
@@ -2898,6 +2916,9 @@ impl PureFactContext {
                         )
                         .into_iter()
                         .filter_map(|range| {
+                            if range.wide_bounds().is_some() {
+                                return None;
+                            }
                             self.fact_range_interval_on_target(
                                 target,
                                 range.base(),
@@ -2929,6 +2950,9 @@ impl PureFactContext {
         if self.memory_ranges_proven_equal(parent, child) {
             return true;
         }
+        if parent.wide_bounds().is_some() || child.wide_bounds().is_some() {
+            return crate::kernel::primitives::wide_memory_range_covers(parent, child, self);
+        }
         if Bitvector32Term::subtract(child.end().clone(), child.start().clone()).as_const()
             == Some(1)
         {
@@ -2947,6 +2971,10 @@ impl PureFactContext {
     }
 
     fn memory_ranges_proven_equal(&self, left: &CMemoryRange, right: &CMemoryRange) -> bool {
+        if left.wide_bounds().is_some() || right.wide_bounds().is_some() {
+            return crate::kernel::primitives::wide_memory_range_covers(left, right, self)
+                && crate::kernel::primitives::wide_memory_range_covers(right, left, self);
+        }
         let left_length = memory_range_length_term(left);
         let right_length = memory_range_length_term(right);
         left.element_width() == right.element_width()
@@ -3063,6 +3091,9 @@ impl PureFactContext {
         target: &CMemoryRange,
         other: &CMemoryRange,
     ) -> bool {
+        if target.wide_bounds().is_some() {
+            return false;
+        }
         let mut intervals = Vec::new();
         for proposition in self.prop_facts.iter() {
             let Proposition::CResourceSeparate { left, right } = proposition else {
@@ -3074,6 +3105,7 @@ impl PureFactContext {
 
             if self.proves_resource_contains(right, &CResource::Memory(other.clone()))
                 && let CResource::Memory(left) = &**left
+                && left.wide_bounds().is_none()
                 && let Some(interval) = self.fact_range_interval_on_target(
                     target,
                     left.base(),
@@ -3086,6 +3118,7 @@ impl PureFactContext {
 
             if self.proves_resource_contains(left, &CResource::Memory(other.clone()))
                 && let CResource::Memory(right) = &**right
+                && right.wide_bounds().is_none()
                 && let Some(interval) = self.fact_range_interval_on_target(
                     target,
                     right.base(),
@@ -3229,27 +3262,48 @@ impl PureFactContext {
         if byte_width != i64::from(element_width) {
             return None;
         }
-        let small = |term: &Bitvector32Term| match term {
-            Bitvector32Term::Constant(value) if *value <= i32::MAX as u32 => Some(*value as u64),
-            _ => None,
+        crate::kernel::primitives::checked_native_range_endpoint(&value, self)
+    }
+
+    /// A complete aligned access lies outside a native range. Both byte
+    /// extents remain non-wrapping; a low-word index supplies no separation.
+    fn pointer_access_outside_wide_range(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        range: &CMemoryRange,
+    ) -> bool {
+        let Some((start, end)) = range.wide_bounds() else {
+            return false;
         };
-        let wide = match value.as_ref() {
-            Bitvector32Term::UInt32From64(wide) => wide.as_ref().clone(),
-            Bitvector32Term::Add(left, right) => match (left.as_ref(), right.as_ref()) {
-                (Bitvector32Term::UInt32From64(wide), constant)
-                | (constant, Bitvector32Term::UInt32From64(wide)) => Bitvector32Term::uint64_add(
-                    wide.as_ref().clone(),
-                    Bitvector32Term::UInt64Constant(small(constant)?),
-                ),
-                _ => return None,
-            },
-            _ => return None,
+        let width = range.element_width();
+        let Some(span) = crate::kernel::memory_provenance::access_element_span(bytes, width)
+            .and_then(|span| u64::try_from(span).ok())
+        else {
+            return false;
         };
-        (self.decide(&ConditionTerm::uint64_less_equal(
-            wide.clone(),
-            Bitvector32Term::UInt64Constant(i32::MAX as u64),
-        )) == Some(true))
-        .then_some(wide)
+        let selected = self
+            .equality_graph
+            .pointer_at_base(pointer, range.base())
+            .unwrap_or_else(|| pointer.clone());
+        let Some(index) = self.wide_element_index_of_access(&selected, range.base(), width) else {
+            return false;
+        };
+        let limit = i64::MAX as u64 / u64::from(width);
+        let Some(last_start) = limit.checked_sub(span) else {
+            return false;
+        };
+        let holds = |lower: Bitvector32Term, upper: Bitvector32Term| {
+            lower == upper
+                || self.decide(&ConditionTerm::uint64_less_equal(lower, upper)) == Some(true)
+        };
+        holds(end.clone(), Bitvector32Term::UInt64Constant(limit))
+            && holds(index.clone(), Bitvector32Term::UInt64Constant(last_start))
+            && (holds(end.clone(), index.clone())
+                || holds(
+                    Bitvector32Term::uint64_add(index, Bitvector32Term::UInt64Constant(span)),
+                    start.clone(),
+                ))
     }
 
     /// Whether an access of `byte_width` bytes at `pointer` lies in the wide
@@ -3546,13 +3600,15 @@ impl PureFactContext {
                             || self.memory_range_contained_by_decided_endpoints(range, available)
                     },
                     |pointer, available| {
-                        self.pointer_in_range_by_shallow_fact_graph_with_width(
-                            pointer,
-                            available.base(),
-                            available.start(),
-                            available.end(),
-                            available.element_width(),
-                        ) || self.pointer_directly_in_memory_range(pointer, available)
+                        (available.wide_bounds().is_none()
+                            && self.pointer_in_range_by_shallow_fact_graph_with_width(
+                                pointer,
+                                available.base(),
+                                available.start(),
+                                available.end(),
+                                available.element_width(),
+                            ))
+                            || self.pointer_directly_in_memory_range(pointer, available)
                     },
                 )
             })
@@ -3609,6 +3665,9 @@ impl PureFactContext {
             if range.base.blocks_proven_distinct(pointer) {
                 return true;
             }
+            if range.wide_bounds().is_some() {
+                return self.pointer_access_outside_wide_range(pointer, byte_width, range);
+            }
             if pointer_in_memory_range_shallow_with_facts(pointer, range, self) {
                 return false;
             }
@@ -3617,13 +3676,15 @@ impl PureFactContext {
                     range,
                     pointer,
                     |pointer, available| {
-                        self.pointer_in_range_by_shallow_fact_graph_with_width(
-                            pointer,
-                            available.base(),
-                            available.start(),
-                            available.end(),
-                            available.element_width(),
-                        ) || self.pointer_directly_in_memory_range(pointer, available)
+                        (available.wide_bounds().is_none()
+                            && self.pointer_in_range_by_shallow_fact_graph_with_width(
+                                pointer,
+                                available.base(),
+                                available.start(),
+                                available.end(),
+                                available.element_width(),
+                            ))
+                            || self.pointer_directly_in_memory_range(pointer, available)
                     },
                 )
             }) {
@@ -3926,6 +3987,13 @@ impl PureFactContext {
         if range.base.blocks_proven_distinct(pointer) {
             return true;
         }
+        if range.wide_bounds().is_some() {
+            return self.pointer_access_outside_wide_range(
+                pointer,
+                access_byte_width_for_separation(pointer),
+                range,
+            );
+        }
         if self.pointer_overlaps_range_after_path_equality(pointer, range) {
             return false;
         }
@@ -3934,13 +4002,15 @@ impl PureFactContext {
                 range,
                 pointer,
                 |pointer, available| {
-                    self.pointer_in_range_by_shallow_fact_graph_with_width(
-                        pointer,
-                        available.base(),
-                        available.start(),
-                        available.end(),
-                        available.element_width(),
-                    ) || self.pointer_directly_in_memory_range(pointer, available)
+                    (available.wide_bounds().is_none()
+                        && self.pointer_in_range_by_shallow_fact_graph_with_width(
+                            pointer,
+                            available.base(),
+                            available.start(),
+                            available.end(),
+                            available.element_width(),
+                        ))
+                        || self.pointer_directly_in_memory_range(pointer, available)
                 },
             )
         };
@@ -4081,6 +4151,15 @@ impl PureFactContext {
         start: &Bitvector32Term,
         end: &Bitvector32Term,
     ) -> bool {
+        if range.wide_bounds().is_some() {
+            let available = CMemoryRange::new_with_element_width(
+                base.clone(),
+                start.clone(),
+                end.clone(),
+                range.element_width(),
+            );
+            return crate::kernel::primitives::wide_memory_range_covers(&available, range, self);
+        }
         if &range.base == base {
             let same_base_timing = crate::instrumentation::OperationTiming::new(
                 "kernel",

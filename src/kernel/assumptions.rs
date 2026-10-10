@@ -6237,6 +6237,11 @@ fn memory_range_contained_by_exact_arithmetic(
     parent: &CMemoryRange,
     assumptions: Option<&PureFactContext>,
 ) -> bool {
+    if range.wide_bounds().is_some() || parent.wide_bounds().is_some() {
+        return assumptions.is_some_and(|assumptions| {
+            crate::kernel::primitives::wide_memory_range_covers(parent, range, assumptions)
+        });
+    }
     if range.element_width() != parent.element_width() {
         // Construction owns raw bytes while a constructor's write footprint
         // names typed fields. Constant bounds can be compared in exact byte
@@ -6264,13 +6269,6 @@ fn memory_range_contained_by_exact_arithmetic(
             return false;
         };
         return parent_start <= start && start <= end && end <= parent_end;
-    }
-    // With a wide range on either side the endpoints are compared as
-    // unsigned 64-bit values at one base, which needs the facts.
-    if range.wide_bounds().is_some() || parent.wide_bounds().is_some() {
-        return assumptions.is_some_and(|assumptions| {
-            crate::kernel::primitives::wide_memory_range_covers(parent, range, assumptions)
-        });
     }
     let Some(base_delta) = range.base().exact_element_delta_from_base(
         parent.base(),
@@ -6338,6 +6336,9 @@ pub(super) fn memory_range_contained_for_memory_resolution(
     // refused; the recursive element-index rules below require equal widths.
     if memory_range_shallowly_contained_with_facts(range, parent, assumptions) {
         return true;
+    }
+    if range.wide_bounds().is_some() || parent.wide_bounds().is_some() {
+        return false;
     }
     if range.element_width() != parent.element_width() {
         return false;

@@ -16076,10 +16076,11 @@ fn set_contract_result(state: &mut CState, interface: &CFunctionContractInterfac
     {
         if interface.aggregate_return_mode() == CAggregateReturnMode::Copy {
             state.set_memory(
-                if matches!(
-                    pointer.block,
-                    PointerBlock::Symbolic(_) | PointerBlock::Temporary(_)
-                ) {
+                // A returned-by-value temporary is fresh caller storage. Its
+                // declaration must remain in the memory history so copying
+                // its fields does not disconnect unrelated input snapshots.
+                // A symbolic pointer still supplies only a synthetic layout.
+                if matches!(pointer.block, PointerBlock::Symbolic(_)) {
                     state
                         .memory
                         .clone()

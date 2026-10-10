@@ -1,6 +1,7 @@
 //! Copy-return compatibility and checked construction-destination oracles.
 //! C++ source admission is tested separately from these shared operations.
 use super::*;
+use crate::surface::planning::proposition_search::PropositionSearch;
 
 fn node_layout() -> CAggregateLayout {
     CAggregateLayout::new(
@@ -819,6 +820,48 @@ fn aggregate_copy_symbolic_result_has_a_fresh_identity_per_call() {
     assert!(matches!(pointer(&first).block, PointerBlock::Temporary(_)));
     assert!(matches!(pointer(&second).block, PointerBlock::Temporary(_)));
     assert_ne!(pointer(&first).block, pointer(&second).block);
+}
+
+// A by-value result must not erase the caller's read history. Check the
+// value judgment and its certificate, then refuse it across an actual write.
+#[test]
+fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let input = CMemory::local_pointer("input-byte");
+    let before = CMemory::new().with_block(input.block.clone(), 1);
+    let read = |memory: &CMemory| {
+        Bitvector32Term::MemoryLoad(
+            crate::kernel::intern_c_memory(memory.clone()),
+            Box::new(input.clone()),
+            LoadKind::UInt8,
+        )
+    };
+    let equality = |memory: &CMemory| {
+        Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(Box::new(read(memory)), Box::new(read(&before))),
+            true,
+        )
+    };
+    let function = copy_function();
+    let mut state = CState::new().with_memory(before.clone());
+    let result = symbolic_contract_result(function.contract_interface(), Variable(870_003));
+    set_function_result(&mut state, &function, result);
+    let context = PureFactContext::new();
+    let proof = context
+        .derive_simp_atomic_proposition(&equality(state.memory()))
+        .expect("a returned record leaves the caller's byte unchanged");
+    assert!(proof.check(&context));
+    assert!(proof.context_premises().is_empty());
+
+    let written = state
+        .memory()
+        .clone()
+        .store(input.clone(), CValue::UInt8(Bitvector32Term::Constant(7)));
+    assert!(
+        context
+            .derive_simp_atomic_proposition(&equality(&written))
+            .is_none()
+    );
 }
 
 // Return completion must reject before allocating a result or copying any

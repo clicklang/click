@@ -2001,6 +2001,12 @@ pub(in crate::kernel) fn typed_range_disjoint_from_pointer_evidence(
             fact.clone(),
         ));
     }
+    // Native footprints need native separation evidence, never a signed
+    // forward-offset certificate. Distinct blocks and exact facts above
+    // already retain their complete typed extents.
+    if range.wide_bounds().is_some() {
+        return None;
+    }
     let element_width = range.element_width();
     if let (Some(index), Some(span), Some(start), Some(end)) = (
         direct_constant_element_index(pointer, range.base(), element_width),
