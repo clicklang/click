@@ -1,11 +1,12 @@
-//! Exact, bounded source spellings. Unknown operands invalidate the whole
-//! candidate; a partially named kernel fact is never presented as Click.
+//! Bounded source spellings. Exact rendering refuses unknown operands;
+//! diagnostic-only partial rendering labels them with explicit placeholders.
 use super::*;
 
 pub(super) fn render(proposition: &Proposition, labels: &SnapshotLabels) -> Option<String> {
     Printer {
         labels,
         remaining: 512,
+        unnamed: None,
     }
     .proposition(proposition, 0)
     .filter(|text| text.len() <= 2048)
@@ -15,6 +16,7 @@ pub(super) fn integer(value: &IntegerTerm, labels: &SnapshotLabels) -> Option<St
     Printer {
         labels,
         remaining: 512,
+        unnamed: None,
     }
     .integer(value, 0)
     .filter(|text| text.len() <= 2048)
@@ -23,9 +25,37 @@ pub(super) fn integer(value: &IntegerTerm, labels: &SnapshotLabels) -> Option<St
 struct Printer<'a> {
     labels: &'a SnapshotLabels,
     remaining: usize,
+    unnamed: Option<&'a mut HashMap<Variable, String>>,
+}
+
+/// A presentation-only partial spelling. Exact citation rendering above
+/// still refuses unnamed operands. Share report-local placeholder identities.
+pub(super) fn partial(proposition: &Proposition, labels: &mut SnapshotLabels) -> Option<String> {
+    let mut unnamed = std::mem::take(&mut labels.anonymous_names);
+    let text = Printer {
+        labels,
+        remaining: 512,
+        unnamed: Some(&mut unnamed),
+    }
+    .proposition(proposition, 0)
+    .filter(|text| text.len() <= 2048);
+    labels.anonymous_names = unnamed;
+    text
 }
 
 impl Printer<'_> {
+    fn unnamed_variable(&mut self, variable: Variable) -> Option<String> {
+        let names = self.unnamed.as_deref_mut()?;
+        let next = names.len();
+        let name = names
+            .entry(variable)
+            .or_insert_with(|| format!("value {}", alphabetic_label(next)));
+        Some(format!(
+            "<unnamed {}>",
+            name.strip_prefix("value ").unwrap_or(name)
+        ))
+    }
+
     fn visit(&mut self, depth: usize) -> Option<()> {
         if depth >= 32 || self.remaining == 0 {
             return None;
@@ -201,6 +231,9 @@ impl Printer<'_> {
         signed: Option<bool>,
         depth: usize,
     ) -> Option<String> {
+        if signed == Some(true) && matches!(value, Bitvector32Term::UInt32From64(_)) {
+            return Some(format!("(int32)({})", self.bitvector(value, depth)?));
+        }
         if let Bitvector32Term::Constant(value) = value {
             return match signed {
                 Some(true) => Some((*value as i32).to_string()),
@@ -247,6 +280,7 @@ impl Printer<'_> {
                     );
                 }
                 crate::kernel::model_fields::model_field_spelling(*variable)
+                    .or_else(|| self.unnamed_variable(*variable))
             }
             Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
                 self.load(memory.as_ref(), pointer, *kind)
@@ -255,10 +289,15 @@ impl Printer<'_> {
             | Bitvector32Term::Subtract(a, b)
             | Bitvector32Term::Multiply(a, b)
             | Bitvector32Term::UInt64Add(a, b)
-            | Bitvector32Term::UInt64Subtract(a, b) => {
+            | Bitvector32Term::UInt64Subtract(a, b)
+            | Bitvector32Term::UInt64Multiply(a, b)
+            | Bitvector32Term::UInt64Divide(a, b)
+            | Bitvector32Term::UInt64Remainder(a, b) => {
                 let op = match value {
                     Bitvector32Term::Add(..) | Bitvector32Term::UInt64Add(..) => "+",
                     Bitvector32Term::Subtract(..) | Bitvector32Term::UInt64Subtract(..) => "-",
+                    Bitvector32Term::UInt64Divide(..) => "/",
+                    Bitvector32Term::UInt64Remainder(..) => "%",
                     _ => "*",
                 };
                 Some(format!(
@@ -266,6 +305,9 @@ impl Printer<'_> {
                     self.bitvector(a, depth)?,
                     self.bitvector(b, depth)?
                 ))
+            }
+            Bitvector32Term::UInt32From64(value) => {
+                Some(format!("(uint32)({})", self.bitvector(value, depth)?))
             }
             _ => None,
         }
@@ -395,9 +437,11 @@ impl Printer<'_> {
     fn algebraic(&mut self, value: &AlgebraicTerm, depth: usize) -> Option<String> {
         self.visit(depth)?;
         match &value.node {
-            AlgebraicTermNode::Variable(variable) => {
-                self.labels.source_name_for(*variable).map(str::to_owned)
-            }
+            AlgebraicTermNode::Variable(variable) => self
+                .labels
+                .source_name_for(*variable)
+                .map(str::to_owned)
+                .or_else(|| self.unnamed_variable(*variable)),
             AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
                 self.call(name, arguments, depth + 1)
             }
@@ -433,7 +477,8 @@ impl Printer<'_> {
                 .labels
                 .source_name_for(*variable)
                 .map(str::to_owned)
-                .or_else(|| crate::kernel::model_fields::model_field_spelling(*variable)),
+                .or_else(|| crate::kernel::model_fields::model_field_spelling(*variable))
+                .or_else(|| self.unnamed_variable(*variable)),
             IntegerTerm::PureFunctionApplication(application) => {
                 self.call(application.name(), application.arguments(), depth)
             }
@@ -488,16 +533,57 @@ mod tests {
     }
 
     #[test]
-    fn unnamed_operands_and_deep_candidates_have_one_bounded_explanation() {
+    fn unnamed_operands_keep_their_context_without_becoming_exact_citations() {
         let mut labels = SnapshotLabels::default();
         for depth in [0, 16, 64, 256] {
             let mut term = Bitvector32Term::Variable(Variable(999));
             for _ in 0..depth {
                 term = Bitvector32Term::Add(Box::new(term), Box::new(Bitvector32Term::Constant(1)));
             }
-            let text = super::super::render_proposition_labeled(&equality(term), &mut labels);
-            assert_eq!(text, "fact has no exact Click spelling at this frontier");
+            let fact = equality(term);
+            assert!(render(&fact, &labels).is_none());
+            let text = super::super::render_proposition_labeled(&fact, &mut labels);
+            if depth < 32 {
+                assert!(text.contains("<unnamed A>"), "{text}");
+                assert!(text.ends_with(" == 0"), "{text}");
+            } else {
+                assert_eq!(text, "fact has no exact Click spelling at this frontier");
+            }
+            assert!(text.len() <= 2048);
         }
+    }
+
+    #[test]
+    fn partial_facts_share_placeholder_identities_within_one_report() {
+        let mut labels = SnapshotLabels::default();
+        let first = equality(Bitvector32Term::Variable(Variable(998)));
+        let second = equality(Bitvector32Term::Variable(Variable(999)));
+        assert_eq!(partial(&first, &mut labels).unwrap(), "<unnamed A> == 0");
+        assert_eq!(partial(&second, &mut labels).unwrap(), "<unnamed B> == 0");
+        assert_eq!(partial(&first, &mut labels).unwrap(), "<unnamed A> == 0");
+        assert!(render(&first, &labels).is_none());
+    }
+
+    #[test]
+    fn narrowed_wide_values_keep_the_signed_comparison_view() {
+        let state = CState::new().with_local(
+            "size",
+            CValue::UInt64(Bitvector32Term::Variable(Variable(94))),
+        );
+        let labels = SnapshotLabels::with_state(&[], &[], &state);
+        let value =
+            Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::Variable(Variable(94))));
+        let fact = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedLessThan(
+                Box::new(value),
+                Box::new(Bitvector32Term::Constant(0)),
+            ),
+            true,
+        );
+        assert_eq!(
+            render(&fact, &labels).unwrap(),
+            "(int32)((uint32)(size)) < 0"
+        );
     }
 
     #[test]

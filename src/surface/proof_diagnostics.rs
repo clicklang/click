@@ -179,6 +179,9 @@ fn render_diagnostic_labeled(
         } else if let Some(source) = render::render_simple_click_fact_labeled(goal, labels) {
             rendered.push_str("\n  goal: ");
             rendered.push_str(&source);
+        } else if let Some(partial) = render::render_partial_click_fact_labeled(goal, labels) {
+            rendered.push_str("\n  goal (partial): ");
+            rendered.push_str(&partial);
         } else if crate::surface::proof_trace::enabled_for(&diagnostic.claim_label) {
             rendered.push_str("\n  internal goal (no exact Click spelling): ");
             rendered.push_str(&render::render_internal_proposition_labeled(goal, labels));
@@ -201,8 +204,12 @@ fn render_diagnostic_labeled(
                     .as_ref()
                     .and_then(|state| state.source_fact(premise))
                     .or_else(|| render::render_simple_click_fact_labeled(premise, labels))
+                    .or_else(|| render::render_partial_click_fact_labeled(premise, labels))
                 {
                     rendered.push_str("\n    ");
+                    if text.contains("<unnamed ") {
+                        rendered.push_str("(partial) ");
+                    }
                     let mut end = text.len().min(2048);
                     while end > 0 && !text.is_char_boundary(end) {
                         end -= 1;

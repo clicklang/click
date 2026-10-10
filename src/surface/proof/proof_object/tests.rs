@@ -16,6 +16,73 @@ fn indexed_fact(index: u32) -> Proposition {
 }
 
 #[test]
+fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
+    // Loop-closure subproofs have a fixed-state context, not an execution
+    // branch. Their failed goals must still name importer-made live locals.
+    let len = Bitvector32Term::Variable(Variable(70));
+    let size = Bitvector32Term::Variable(Variable(94));
+    let state = CState::new()
+        .with_local("len", CValue::UInt64(len.clone()))
+        .with_local("__rust_checked_94", CValue::UInt64(size.clone()));
+    let remainder = Bitvector32Term::uint64_remainder(len, size.clone());
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::Bitvector64Equal(
+            Box::new(remainder.clone()),
+            Box::new(Bitvector32Term::UInt64Constant(0)),
+        ),
+        true,
+    );
+    let facts = [Proposition::ConditionIs(
+        ConditionTerm::Bitvector64Equal(
+            Box::new(size),
+            Box::new(Bitvector32Term::UInt64Constant(22208)),
+        ),
+        true,
+    )];
+    let surface = ClickProposition::Comparison {
+        left: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(remainder))),
+        operator: ComparisonOperator::Equal,
+        right: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(
+            Bitvector32Term::UInt64Constant(0),
+        ))),
+    };
+    let snapshots = RecordedSnapshots::new();
+    let surfaces = SurfacePropositionMap::default();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let root = Proof::for_fixed_state_surface_goal(
+        "remainder",
+        0,
+        &facts,
+        goal,
+        surface,
+        &[],
+        &[],
+        &state,
+        &state,
+        &snapshots,
+        &surfaces,
+        &predicates,
+        &functions,
+        &theorems,
+        &[],
+        &[],
+    );
+    let error = root
+        .try_authoritative_linear_script(&[ProofTactic::Assumption])
+        .err()
+        .expect("the available chunk size does not prove a zero remainder");
+    let text = error.message();
+    assert!(
+        text.contains("goal: (len % __rust_checked_94) == 0u64"),
+        "{text}"
+    );
+    assert!(text.contains("__rust_checked_94 == 22208u64"), "{text}");
+    assert!(!text.contains("no exact Click spelling"), "{text}");
+}
+
+#[test]
 fn return_publication_shares_effect_prefixes_and_suppresses_duplicates() {
     for size in [4, 64, 1024] {
         let memory = CState::new().memory().clone();
