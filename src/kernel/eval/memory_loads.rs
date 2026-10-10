@@ -6182,11 +6182,17 @@ mod tests {
         assert!(!pointers_proven_equal_for_memory_resolution(
             &x, &y, &context
         ));
+        // Warm compound-query dependency misses before producer metadata
+        // appears. New definitions must invalidate those misses as well.
+        for _ in 0..2 {
+            assert!(!context.pointers_known_equal(&x.offset_by_bytes(8), &y.offset_by_bytes(8)));
+        }
         assert_eq!(logical_pointer_read(&memory, &a, &context), x);
         assert_eq!(logical_pointer_read(&memory, &b, &context), y);
         assert!(pointers_proven_equal_for_memory_resolution(
             &x, &y, &context
         ));
+        assert!(context.pointers_known_equal(&x.offset_by_bytes(8), &y.offset_by_bytes(8)));
     }
 
     #[test]

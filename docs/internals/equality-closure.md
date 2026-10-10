@@ -38,6 +38,11 @@ After its prerequisites pass, it admits `value == Read(snapshot, address)`
 through the graph's existing checked-equality input. It does not mutate the
 value's definition or install a global observation. The input is branch-local
 and retained by input checkpoints; rebuilding a context without its evidence drops it.
+Compound pointer queries retain the generation at which their read dependencies
+were registered. Repeated queries reuse that result; a newly registered logical
+read definition changes the generation and invalidates earlier misses. This
+cache retains term dependencies only, never a successful equality judgment.
+
 Ordinary and volatile program reads do not use this resource-index admission
 path. Other producer migrations and removal of older consumer recovery rules
 remain separate work; this first change does not claim universal read adoption.

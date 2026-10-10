@@ -503,6 +503,9 @@ struct EqualityGraphState {
     terms: terms::TermClasses,
     input_history: Option<std::sync::Arc<inputs::History>>,
     logical_values: crate::persistent::PersistentSet<Pointer>,
+    /// Compound query dependencies already registered at this metadata
+    /// generation. Later producer definitions invalidate a miss lazily.
+    logical_query_dependencies: crate::persistent::PersistentMap<Pointer, u64>,
     typed_reads: crate::persistent::PersistentSet<PointerBlock>,
     checked_read_generation: u64,
     /// The exact class-merge delta stream. A consumer with a persistent
@@ -649,6 +652,14 @@ impl EqualityGraph {
                 continue;
             }
             let Some((application, address)) = reads.definitions.get(&value) else {
+                if matches!(value.offset, PointerOffsetTerm::Add(..)) {
+                    if state.logical_query_dependencies.get(&value) == Some(&reads.generation) {
+                        continue;
+                    }
+                    state
+                        .logical_query_dependencies
+                        .insert(value.clone(), reads.generation);
+                }
                 // Register only producer-retained dependencies of the selected
                 // expression. The lookup identifies an original definition;
                 // it does not assert that arbitrary scaled arithmetic is a

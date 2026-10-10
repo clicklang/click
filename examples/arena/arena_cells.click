@@ -3654,7 +3654,10 @@ int32 arena_pipeline(
         simp();
     }
     have first->arena->data == at(w2, first->arena->data) by {
-        simp();
+        rewrite(first->arena->data == second->arena->data);
+        rewrite(second->arena->data == at(w2, second->arena->data));
+        rewrite(at(w2, second->arena->data) == at(w2, first->arena->data));
+        normalize();
     }
     have first->arena->data[first->start + 0] == 11 by {
         transport(
@@ -4278,7 +4281,10 @@ int32 arena_pipeline(
         simp();
     }
     have g2.capacity == arena->capacity by {
-        simp();
+        rewrite(g2.capacity == at(f2, s0.capacity));
+        rewrite(at(f2, s0.capacity) == at(f2, arena->capacity));
+        rewrite(arena->capacity == at(f2, arena->capacity));
+        normalize();
     }
     have r1.end <= g2.capacity by {
         have r1.end == at(f2, r1.end) by {
