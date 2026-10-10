@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 54;
+pub(crate) const EXPORT_SCHEMA: u32 = 55;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -3420,7 +3420,9 @@ impl CppExpression {
                     let (field_type, root_const) = resolve_reference_type(root, place, records)?;
                     require_native_pointer_element(field_type, false, "addressed record field")?;
                     let mut effective_type = field_type.clone();
-                    if let CppType::Integer { is_const, .. } = &mut effective_type {
+                    if let CppType::Integer { is_const, .. }
+                    | CppType::Enumeration { is_const, .. } = &mut effective_type
+                    {
                         *is_const |= root_const;
                     }
                     let CppType::Pointer { pointee } = value_type else {
@@ -3434,7 +3436,7 @@ impl CppExpression {
                 let object_type = validate_place_reference(place, places, logical_source)?;
                 let pointee = match object_type {
                     CppType::LvalueReference { pointee } => pointee.as_ref(),
-                    CppType::Integer { .. } => object_type,
+                    CppType::Integer { .. } | CppType::Enumeration { .. } => object_type,
                     _ => return Err("C++ address-of requires a native scalar object".into()),
                 };
                 require_native_pointer_element(pointee, true, "addressed object type")?;

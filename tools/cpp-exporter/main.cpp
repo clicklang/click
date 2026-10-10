@@ -273,7 +273,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 54;
+    artifact["schema"] = 55;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -662,7 +662,9 @@ private:
     return !type.isVolatileQualified() && !type.isRestrictQualified() &&
         (context_.hasSameType(unqualified, context_.IntTy) ||
          context_.hasSameType(unqualified, context_.UnsignedIntTy) ||
-         context_.hasSameType(unqualified, context_.UnsignedCharTy));
+         context_.hasSameType(unqualified, context_.UnsignedCharTy) ||
+         (supported_byte_enum(type) &&
+          type->getAs<clang::EnumType>()->getDecl()->getQualifiedNameAsString() == "std::byte"));
   }
 
   bool supported_integer_type(clang::QualType type) const {

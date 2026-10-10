@@ -411,8 +411,14 @@ now use native `uint8` contracts while retaining checked nominal identities and 
 spans in the importer. Explicit numeric conversions preserve the underlying
 bits, including all 256 values of empty enums. The actual pinned `std::byte`
 declaration has offline normal, expanded and retained forwarding coverage.
-Artifact schema 54 requires refreshing older locks. Enum pointers and byte
-alias permission are not part of this value slice. Byte alias access must be restricted to the actual pinned `std::byte` declaration;
+Artifact schema 54 requires refreshing older locks. Mutable pointers to the actual pinned `std::byte` declaration now lower to
+native `uint8*` contracts with retained enum identities, one-byte strides and
+ordinary ownership. Offline normal, expanded and retained regressions cover
+stores, automatic enum addresses and modular helper calls. The importer checks
+the declaration span and locked libstdc++ header hash; rehashed artifacts cannot
+substitute another enum or declaration source. Other enum pointers remain
+refused. Artifact schema 55 requires refreshing older locks. Pointer
+reinterpretation and writable byte-span construction remain next. Byte alias access must be restricted to the actual pinned `std::byte` declaration;
 an arbitrary enum with the same underlying type does not gain that privilege.
 Automatic scalar declarations now create explicit ownership of their exact
 byte extent in the shared kernel, independent of initialization. Direct reads

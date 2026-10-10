@@ -1450,13 +1450,12 @@ impl LoweringContext<'_> {
                 {
                     Ok(c_variable(self.variable_name(place)))
                 }
-                (CppType::Integer { .. }, CppType::Pointer { pointee })
-                    if Scalar::pointer_element(pointee, false).is_some() =>
-                {
-                    Ok(CExpression::AddressOf(Box::new(c_variable(
-                        self.variable_name(place),
-                    ))))
-                }
+                (
+                    CppType::Integer { .. } | CppType::Enumeration { .. },
+                    CppType::Pointer { pointee },
+                ) if Scalar::pointer_element(pointee, false).is_some() => Ok(
+                    CExpression::AddressOf(Box::new(c_variable(self.variable_name(place)))),
+                ),
                 _ => Err("C++ address-of is outside integer reference lowering".into()),
             },
             CppExpression::ReferenceBinding { address, .. } => {
