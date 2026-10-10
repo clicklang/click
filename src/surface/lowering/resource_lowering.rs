@@ -54,10 +54,11 @@ pub(in crate::surface) struct ConcreteMemoryRangeSeed {
 // remain preferred canonical address representatives.
 thread_local! {
     static INPUT_SCOPES: std::cell::RefCell<std::collections::HashMap<u64, String>> = Default::default();
+    static INPUT_POINTER_PLACES: std::cell::RefCell<std::collections::HashMap<Variable, (u64, usize, crate::kernel::CPointerValue)>> = Default::default();
     static INPUT_VARIABLES: std::cell::RefCell<std::collections::HashMap<(u64, usize), Variable>> = Default::default();
 }
 
-fn input_scope(name: &str) -> u64 {
+pub(in crate::surface) fn input_scope(name: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     name.hash(&mut hasher);
@@ -93,6 +94,35 @@ fn input_pointer_variable(scope: u64, index: usize) -> Result<Variable, ClickErr
         variables.insert((scope, index), variable);
         Ok(variable)
     })
+}
+
+// Resolve only an exact universal input, including its physical stride and type.
+// This index is populated during lowering, so expansion scopes may be entered
+// before the function is verified. No unrelated function inputs are searched.
+pub(in crate::surface) fn input_pointer_parameter(
+    scope: u64,
+    pointer: &crate::kernel::CPointerValue,
+) -> Option<usize> {
+    let variable = input_pointer_identity(pointer)?;
+    crate::instrumentation::record_deterministic_work(1);
+    INPUT_POINTER_PLACES.with(|places| {
+        let places = places.borrow();
+        let (owner, index, original) = places.get(&variable)?;
+        (*owner == scope && original == pointer).then_some(*index)
+    })
+}
+
+fn input_pointer_identity(pointer: &crate::kernel::CPointerValue) -> Option<Variable> {
+    if pointer.pointer().block != PointerBlock::ExternalArgument {
+        return None;
+    }
+    match &pointer.pointer().offset {
+        PointerOffsetTerm::Int32Scaled { value, .. } => match value.as_ref() {
+            Bitvector32Term::Variable(variable) => Some(*variable),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 pub(in crate::surface) fn initial_call_state(
@@ -535,6 +565,16 @@ pub(in crate::surface) fn initial_call_state(
                 .map_err(ClickError::new)?;
         }
     }
+    INPUT_POINTER_PLACES.with(|places| {
+        let mut places = places.borrow_mut();
+        for (index, argument) in arguments.iter().take(parameters.len()).enumerate() {
+            if let CExpression::Value(CValue::Pointer(pointer)) = argument
+                && let Some(variable) = input_pointer_identity(pointer)
+            {
+                places.insert(variable, (scope, index, pointer.clone()));
+            }
+        }
+    });
     Ok((state, arguments))
 }
 
@@ -3533,6 +3573,64 @@ pub(in crate::surface) fn lower_resource_reference_arguments(
 #[cfg(test)]
 mod input_identity_tests {
     use super::*;
+    #[test]
+    fn input_pointer_places_are_exact_and_do_not_scan_unrelated_functions() {
+        let selected = input_scope("certificate-selected");
+        let variable = input_pointer_variable(selected, 1).unwrap();
+        let pointer = crate::kernel::CPointerValue::new(
+            Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: scale_int32_offset(Bitvector32Term::Variable(variable), 4),
+            },
+            CType::Int32Pointer,
+        );
+        INPUT_POINTER_PLACES.with(|places| {
+            places
+                .borrow_mut()
+                .insert(variable, (selected, 1, pointer.clone()));
+        });
+        for size in [16, 64, 256] {
+            for index in 0..size {
+                let scope = input_scope(&format!("certificate-unrelated-{index}"));
+                let other = input_pointer_variable(scope, 0).unwrap();
+                let mut value = pointer.clone();
+                value.replace_pointer(Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: scale_int32_offset(Bitvector32Term::Variable(other), 4),
+                });
+                INPUT_POINTER_PLACES.with(|places| {
+                    places.borrow_mut().insert(other, (scope, 0, value));
+                });
+            }
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..64 {
+                    assert_eq!(input_pointer_parameter(selected, &pointer), Some(1));
+                }
+            });
+            assert_eq!(work, 64, "unrelated input count: {size}");
+        }
+        assert_eq!(
+            input_pointer_parameter(input_scope("certificate-other"), &pointer),
+            None
+        );
+        assert_eq!(
+            input_pointer_parameter(selected, &pointer.clone().with_type(CType::Int8Pointer)),
+            None
+        );
+        let mut wrong_stride = pointer.clone();
+        wrong_stride.replace_pointer(Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: scale_int32_offset(Bitvector32Term::Variable(variable), 1),
+        });
+        assert_eq!(input_pointer_parameter(selected, &wrong_stride), None);
+        let mut unknown = pointer;
+        unknown.replace_pointer(Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: scale_int32_offset(Bitvector32Term::Variable(Variable(999_999)), 4),
+        });
+        assert_eq!(input_pointer_parameter(selected, &unknown), None);
+    }
+
     #[test]
     fn pointer_input_names_are_stable_and_function_specific() {
         let first = input_scope("input-identity-first");
