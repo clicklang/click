@@ -60,6 +60,8 @@ mod int32_tests;
 mod scaled_int32_tests;
 #[cfg(test)]
 mod storage_tests;
+#[cfg(test)]
+mod uint64_tests;
 pub(in crate::kernel) use inputs::InputKey;
 mod terms;
 
@@ -72,6 +74,9 @@ pub(in crate::kernel) struct MachineAtom(crate::kernel::SharedMachineIntegerTerm
 impl MachineAtom {
     fn new(ty: crate::kernel::MachineIntegerType, value: Bitvector32Term) -> Self {
         Self(crate::kernel::SharedMachineIntegerTerm::intern(ty, value))
+    }
+    pub(in crate::kernel) fn uint64(value: Bitvector32Term) -> Self {
+        Self::new(crate::kernel::MachineIntegerType::UInt64, value)
     }
     pub(in crate::kernel) fn int32(value: Bitvector32Term) -> Self {
         Self::new(crate::kernel::MachineIntegerType::Int32, value)
@@ -1225,6 +1230,66 @@ impl EqualityGraph {
             .expect("equality graph")
             .terms
             .are_int32_equal(left, right)
+    }
+
+    /// Prepare only the addresses used by the selected wide expressions.
+    /// Logical read definitions and affine aliases use the same address classes
+    /// as pointer queries; no history search or ambient-fact scan is needed.
+    fn register_uint64_operands(
+        &self,
+        state: &mut EqualityGraphState,
+        left: &Bitvector32Term,
+        right: &Bitvector32Term,
+    ) {
+        let mut pending = vec![left, right];
+        let mut pointers = Vec::new();
+        while let Some(term) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some((_, a, b)) = terms::uint64_binary(term) {
+                pending.extend([a, b]);
+            } else if let Some((_, pointer)) = terms::uint64_read(term) {
+                pointers.push(pointer);
+            } else if let Bitvector32Term::PointerAddress(pointer) = term {
+                pointers.push(pointer.as_ref().clone());
+            }
+        }
+        self.register_logical_read_values(state, pointers.iter());
+        for pointer in pointers {
+            state.register_pointer_address(&pointer);
+        }
+        state.close(Vec::new());
+    }
+
+    pub(in crate::kernel) fn are_uint64_equal(
+        &self,
+        left: &Bitvector32Term,
+        right: &Bitvector32Term,
+    ) -> bool {
+        if left == right {
+            return true;
+        }
+        let left = crate::kernel::canonical_term(left);
+        let right = crate::kernel::canonical_term(right);
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_uint64_operands(&mut state, &left, &right);
+        state.terms.are_uint64_equal(&left, &right)
+    }
+
+    pub(in crate::kernel) fn add_uint64_equality(
+        &mut self,
+        left: &Bitvector32Term,
+        right: &Bitvector32Term,
+    ) -> bool {
+        let left = crate::kernel::canonical_term(left);
+        let right = crate::kernel::canonical_term(right);
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_uint64_operands(&mut state, &left, &right);
+        let changed = state.terms.add_uint64_equality(&left, &right);
+        state.close(Vec::new());
+        if changed {
+            state.remember_input(inputs::Input::UInt64(left.clone(), right.clone()));
+        }
+        changed
     }
 
     /// Admit an already established int32 equality in this proof context.

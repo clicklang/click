@@ -1178,6 +1178,13 @@ fn bare_condition_is_decided(assumptions: &PureFactContext, proposition: &Propos
     let Proposition::ConditionIs(condition, value) = proposition else {
         return false;
     };
+    if let ConditionTerm::Bitvector64Equal(left, right) = condition
+        && *value
+        && assumptions.uint64_values_known_equal(left, right)
+    {
+        crate::kernel::assumptions::record_implicit_reasoning_provenance(assumptions, proposition);
+        return true;
+    }
     if PureFactContext::decide_intrinsically(condition) == Some(*value) {
         return true;
     }

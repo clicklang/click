@@ -1,7 +1,9 @@
 //! Typed term classes inside the trusted graph: offset addition congruence and
 //! int32 addition and registered same-snapshot int32 loads, connected by int32
 //! scaling. Unsigned division/remainder and bitwise XOR have congruence only;
-//! all other scalar operations stay opaque.
+//! UInt64 arithmetic/bitwise applications, pointer addresses and complete
+//! same-snapshot 64-bit reads share those classes. Other scalar operations
+//! stay opaque; congruence supplies no arithmetic definedness.
 //! Application signatures use operand classes; parent-use indexes propagate late
 //! merges. Equal addresses in one block also equate their byte offsets.
 //! No scalar arithmetic solving, cancellation, or general injectivity runs here.
@@ -20,8 +22,65 @@ enum Int32Binary {
     BitwiseXor,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum UInt64Binary {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+    And,
+    Or,
+    Xor,
+}
+
+pub(super) fn uint64_binary(
+    term: &crate::kernel::Bitvector32Term,
+) -> Option<(
+    UInt64Binary,
+    &crate::kernel::Bitvector32Term,
+    &crate::kernel::Bitvector32Term,
+)> {
+    use crate::kernel::Bitvector32Term as T;
+    let (op, a, b) = match term {
+        T::UInt64Add(a, b) => (UInt64Binary::Add, a, b),
+        T::UInt64Subtract(a, b) => (UInt64Binary::Subtract, a, b),
+        T::UInt64Multiply(a, b) => (UInt64Binary::Multiply, a, b),
+        T::UInt64Divide(a, b) => (UInt64Binary::Divide, a, b),
+        T::UInt64Remainder(a, b) => (UInt64Binary::Remainder, a, b),
+        T::UInt64BitwiseAnd(a, b) => (UInt64Binary::And, a, b),
+        T::UInt64BitwiseOr(a, b) => (UInt64Binary::Or, a, b),
+        T::UInt64BitwiseXor(a, b) => (UInt64Binary::Xor, a, b),
+        _ => return None,
+    };
+    Some((op, a, b))
+}
+
+pub(super) fn uint64_read(
+    term: &crate::kernel::Bitvector32Term,
+) -> Option<(crate::kernel::SharedCMemory, Pointer)> {
+    use crate::kernel::{Bitvector32Term as T, LoadKind};
+    match term {
+        T::MemoryLoad(memory, pointer, LoadKind::Bits64) => {
+            Some((memory.clone(), pointer.as_ref().clone()))
+        }
+        T::Variable(variable)
+            if crate::kernel::registered_load_kind_for_variable(variable)
+                == Some(LoadKind::Bits64)
+                && crate::kernel::registered_load_bytes_for_variable(variable) == Some(8) =>
+        {
+            crate::kernel::registered_load_for_variable(variable)
+        }
+        _ => None,
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Node {
+    UInt64(MachineAtom),
+    UInt64Binary(UInt64Binary, u64, u64),
+    UInt64Address(u64),
+    UInt64Read((u32, u32), u64),
     Address(u64, u64),
     AddressShift(u64, i64),
     PointerRead((u32, u32), u64, crate::kernel::LoadKind),
@@ -40,6 +99,9 @@ enum Node {
 // current class roots. Constructor and width remain part of every signature.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Application {
+    UInt64Binary(UInt64Binary, u64, u64),
+    UInt64Address(u64),
+    UInt64Read((u32, u32), u64),
     Address(u64, u64),
     AddressShift(u64, i64),
     PointerRead((u32, u32), u64, crate::kernel::LoadKind),
@@ -57,10 +119,13 @@ impl Application {
     fn operands(self) -> impl Iterator<Item = u64> {
         match self {
             Self::Add(left, right)
+            | Self::UInt64Binary(_, left, right)
             | Self::Int32Add(left, right)
             | Self::Int32Binary(_, left, right)
             | Self::Footprint(left, right) => [Some(left), Some(right)],
             Self::Address(_, value)
+            | Self::UInt64Address(value)
+            | Self::UInt64Read(_, value)
             | Self::PointerRead(_, value, _)
             | Self::AddressShift(value, _)
             | Self::Int32Scaled(value, _)
@@ -72,6 +137,13 @@ impl Application {
 
     fn signature(self, classes: &TermClasses) -> Self {
         match self {
+            Self::UInt64Binary(op, left, right) => {
+                Self::UInt64Binary(op, classes.root(left), classes.root(right))
+            }
+            Self::UInt64Address(address) => Self::UInt64Address(classes.root(address)),
+            Self::UInt64Read(snapshot, address) => {
+                Self::UInt64Read(snapshot, classes.root(address))
+            }
             Self::Address(block, offset) => Self::Address(block, classes.root(offset)),
             Self::AddressShift(address, bytes) => Self::AddressShift(classes.root(address), bytes),
             Self::PointerRead(snapshot, address, kind) => {
@@ -608,6 +680,13 @@ impl TermClasses {
         }
         let id = self.nodes.len() as u64;
         let application = match &node {
+            Node::UInt64Binary(op, left, right) => {
+                Some(Application::UInt64Binary(*op, *left, *right))
+            }
+            Node::UInt64Address(address) => Some(Application::UInt64Address(*address)),
+            Node::UInt64Read(snapshot, address) => {
+                Some(Application::UInt64Read(*snapshot, *address))
+            }
             Node::Address(block, offset) => {
                 self.address_nodes = self.address_nodes.with_value(id);
                 self.offsets_by_address_block
@@ -690,6 +769,69 @@ impl TermClasses {
                 Application::Int32Load(memory.read_identity(), block, offset),
             );
         }
+    }
+
+    fn intern_uint64(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {
+        use crate::kernel::Bitvector32Term as T;
+        enum Work<'a> {
+            Term(&'a T),
+            Binary(UInt64Binary),
+        }
+        let mut pending = vec![Work::Term(term)];
+        let mut values = Vec::new();
+        while let Some(work) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            let node = match work {
+                Work::Binary(op) => {
+                    let right = values.pop().expect("right uint64 operand");
+                    let left = values.pop().expect("left uint64 operand");
+                    Node::UInt64Binary(op, left, right)
+                }
+                Work::Term(term) => {
+                    if let Some((op, left, right)) = uint64_binary(term) {
+                        pending.push(Work::Binary(op));
+                        pending.push(Work::Term(right));
+                        pending.push(Work::Term(left));
+                        continue;
+                    }
+                    if let Some((memory, pointer)) = uint64_read(term) {
+                        let address = self.address(pointer.block, pointer.offset).0;
+                        Node::UInt64Read(memory.read_identity(), address)
+                    } else if let T::PointerAddress(pointer) = term {
+                        Node::UInt64Address(
+                            self.address(pointer.block.clone(), pointer.offset.clone())
+                                .0,
+                        )
+                    } else {
+                        Node::UInt64(MachineAtom::uint64(term.clone()))
+                    }
+                }
+            };
+            values.push(self.intern_node(node));
+        }
+        values.pop().expect("uint64 term")
+    }
+
+    pub(super) fn are_uint64_equal(
+        &mut self,
+        left: &crate::kernel::Bitvector32Term,
+        right: &crate::kernel::Bitvector32Term,
+    ) -> bool {
+        let left = self.intern_uint64(left);
+        let right = self.intern_uint64(right);
+        self.register_pending_loads();
+        self.root(left) == self.root(right)
+    }
+
+    pub(super) fn add_uint64_equality(
+        &mut self,
+        left: &crate::kernel::Bitvector32Term,
+        right: &crate::kernel::Bitvector32Term,
+    ) -> bool {
+        let left = self.intern_uint64(left);
+        let right = self.intern_uint64(right);
+        self.register_pending_loads();
+        left != right && self.close(vec![(left, right)])
     }
 
     fn intern_int32(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {

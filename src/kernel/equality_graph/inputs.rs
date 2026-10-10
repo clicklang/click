@@ -11,6 +11,7 @@ pub(super) enum Input {
     Pointer(Pointer, Pointer),
     Offset(PointerOffsetTerm, PointerOffsetTerm),
     Int32(Bitvector32Term, Bitvector32Term),
+    UInt64(Bitvector32Term, Bitvector32Term),
     CheckedRead(Pointer, Pointer),
 }
 
@@ -164,6 +165,9 @@ impl EqualityGraph {
                 }
                 Input::Offset(left, right) => {
                     self.add_offset_equality(left, right);
+                }
+                Input::UInt64(left, right) => {
+                    self.add_uint64_equality(left, right);
                 }
                 Input::Int32(left, right) => {
                     self.add_int32_equality(left, right);
