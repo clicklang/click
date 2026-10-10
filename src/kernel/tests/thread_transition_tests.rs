@@ -676,8 +676,22 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
     let CStatementOutcome::Normal(after_join) = &joined[0].outcome else {
         unreachable!()
     };
-    assert_eq!(after_join.resources().facts().len(), 2);
+    // The two caller scalar allocation owners survive alongside the recovered
+    // thread argument and byte owners; no worker token or loan escapes join.
+    assert_eq!(after_join.resources().facts().len(), 4);
     for fact in [
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            CMemory::local_pointer("thread"),
+            0.into(),
+            8.into(),
+            1,
+        )),
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            CMemory::local_pointer("rc"),
+            0.into(),
+            4.into(),
+            1,
+        )),
         CResourceFact::own_memory(CMemoryRange::new_with_element_width(
             pointer(0),
             0.into(),

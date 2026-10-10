@@ -1408,6 +1408,29 @@ impl CLocalEnvironment {
         self.set_typed_with_qualifiers(name, value, c_type, false, false);
     }
 
+    /// Bind model data independently of any same-named automatic object.
+    pub(in crate::kernel) fn bind_logical_typed(
+        &mut self,
+        name: impl Into<String>,
+        value: CValue,
+        c_type: CType,
+    ) {
+        let name = name.into();
+        self.set_typed(name.clone(), value, c_type);
+        let mut binding = self
+            .bindings
+            .get(&name)
+            .expect("new logical binding")
+            .clone();
+        if let CLocalBinding::Object {
+            storage_declared, ..
+        } = &mut binding
+        {
+            *storage_declared = false;
+        }
+        self.insert_binding(name, binding);
+    }
+
     pub(in crate::kernel) fn set_typed_with_qualifiers(
         &mut self,
         name: impl Into<String>,
@@ -1467,9 +1490,21 @@ impl CLocalEnvironment {
         constant: bool,
         pointee_constant: bool,
     ) {
+        let name = name.into();
+        let storage_declared = self.bindings.get(&name).is_some_and(|binding| {
+            binding.slot() == &slot
+                && matches!(
+                    binding,
+                    CLocalBinding::Object {
+                        storage_declared: true,
+                        ..
+                    } | CLocalBinding::UninitializedObject { .. }
+                )
+        });
         self.insert_binding(
-            name.into(),
+            name,
             CLocalBinding::Object {
+                storage_declared,
                 value: value
                     .with_pointer_pointee_volatile(pointee_volatile)
                     .with_pointer_pointee_constant(pointee_constant),
@@ -2488,6 +2523,15 @@ impl CMemory {
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::new(size));
         record_c_memory_derivation(&mut self, CMemoryDerivation::BlockDeclared { base, block });
         self
+    }
+
+    /// Declared automatic scalars use allocation ownership, never the legacy
+    /// implicit local access rule. One block lookup is independent of other cells.
+    pub(in crate::kernel) fn requires_explicit_scalar_ownership(&self, pointer: &Pointer) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        self.blocks
+            .get(&pointer.block)
+            .is_some_and(|block| block.declared_scalar_type.is_some())
     }
 
     /// Declares one complete automatic scalar, retaining its type while its

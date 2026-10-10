@@ -787,6 +787,26 @@ fn local_declaration_allocates_stack_object_for_address_of() {
             .with_declared_scalar_block("local:x".into(), 4, CType::Int32)
             .store(local_pointer, int32(5)),
     );
+    let final_state =
+        final_state.with_resource_context(ResourceContext::new().unchecked_with_fact(
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                CMemory::local_pointer("x"),
+                0.into(),
+                4.into(),
+                1,
+            )),
+        ));
+    let mut final_state = final_state;
+    final_state.locals.set_uninitialized_with_all_qualifiers(
+        "x",
+        CType::Int32,
+        CMemory::local_pointer("x"),
+        false,
+        false,
+        false,
+        false,
+    );
+    final_state.locals.set_typed("x", int32(5), CType::Int32);
     let theorem =
         prove_symbolic_c_execution(state.clone(), statement.clone(), PureFactContext::new())
             .expect("local declaration/address-of should execute");
@@ -1247,6 +1267,26 @@ fn pointer_store_through_local_address_updates_named_lvalue() {
             .with_declared_scalar_block("local:x".into(), 4, CType::Int32)
             .store(local_pointer, int32(5)),
     );
+    let final_state =
+        final_state.with_resource_context(ResourceContext::new().unchecked_with_fact(
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                CMemory::local_pointer("x"),
+                0.into(),
+                4.into(),
+                1,
+            )),
+        ));
+    let mut final_state = final_state;
+    final_state.locals.set_uninitialized_with_all_qualifiers(
+        "x",
+        CType::Int32,
+        CMemory::local_pointer("x"),
+        false,
+        false,
+        false,
+        false,
+    );
+    final_state.locals.set_typed("x", int32(5), CType::Int32);
     let theorem =
         prove_symbolic_c_execution(CState::new(), statement.clone(), PureFactContext::new())
             .expect("pointer store through local address should execute");
@@ -6695,4 +6735,135 @@ fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
             "sibling remains unwritten"
         );
     }
+}
+
+// Allocation grants only its exact byte extent, never initialization; taking
+// that owner away must block both named and pointer-mediated local accesses.
+#[test]
+fn automatic_scalar_ownership_is_exact_and_required_for_all_accesses() {
+    let assumptions = PureFactContext::new();
+    let paths = execute_c_statement_paths(
+        &CState::new(),
+        &c_declare("word", CType::UInt32),
+        &assumptions,
+        &CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        &mut ExecutionBudget::new(),
+    )
+    .unwrap();
+    let CStatementOutcome::Normal(state) = &paths[0].outcome else {
+        panic!("scalar declaration");
+    };
+    let state = state.as_ref().clone();
+    let pointer = CMemory::local_pointer("word");
+    let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        pointer.clone(),
+        0.into(),
+        4.into(),
+        1,
+    ));
+    assert!(state.resources().satisfies_fact(&owner, &assumptions));
+    assert!(!state.memory().has_initialized_bytes_at(&pointer, 4));
+    assert!(!state.resources().satisfies_fact(
+        &CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            pointer.clone(),
+            0.into(),
+            5.into(),
+            1
+        )),
+        &assumptions
+    ));
+    let initialized = state.clone().with_local("word", uint32(7));
+    let empty = initialized.with_resource_context(ResourceContext::new());
+    for expression in [
+        c_variable("word"),
+        c_typed_load(c_addr_of("word"), CType::UInt32),
+    ] {
+        let paths = evaluate_c_expression_paths(
+            &empty,
+            &expression,
+            &assumptions,
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        assert!(matches!(
+            &paths[0].outcome,
+            CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+        ));
+    }
+    for statement in [
+        c_assign("word", c_uint32_literal(9)),
+        c_typed_store(c_addr_of("word"), c_uint32_literal(9), CType::UInt32),
+    ] {
+        let paths = execute_c_statement_paths(
+            &empty,
+            &statement,
+            &assumptions,
+            &CExecutionEnvironment::new(),
+            CExecutionSemantics::EXECUTE_BODIES,
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        assert!(matches!(
+            &paths[0].outcome,
+            CStatementOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+        ));
+    }
+    let retired =
+        crate::kernel::eval::end_scope_automatic_lifetimes(&state, &["word".into()]).unwrap();
+    assert!(!retired.resources().satisfies_fact(&owner, &assumptions));
+    assert!(retired.memory().is_ended_local_address(&pointer));
+}
+
+// Scalar allocation and access must not scan unrelated memory or holdings.
+#[test]
+fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
+    let mut measurements = Vec::new();
+    for count in [0u32, 64, 256, 1024] {
+        let mut memory = CMemory::new();
+        let mut resources = ResourceContext::new();
+        for index in 0..count {
+            let pointer = Pointer {
+                block: format!("global:unrelated:{index}").into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            memory = memory
+                .with_block(pointer.block.clone(), 4)
+                .store(pointer.clone(), uint32(index));
+            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
+                CMemoryRange::new_with_element_width(pointer, 0.into(), 4.into(), 1),
+            ));
+        }
+        let state = CState::new()
+            .with_memory(memory)
+            .with_resource_context(resources);
+        let statement = c_seq(
+            c_declare("word", CType::UInt32),
+            c_seq(
+                c_assign("word", c_uint32_literal(7)),
+                c_return(c_variable("word")),
+            ),
+        );
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            execute_c_statement_paths(
+                &state,
+                &statement,
+                &PureFactContext::new(),
+                &CExecutionEnvironment::new(),
+                CExecutionSemantics::EXECUTE_BODIES,
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap()
+        });
+        assert!(
+            matches!(&paths[0].outcome, CStatementOutcome::Return { value: CValue::UInt32(value), .. } if value.as_const() == Some(7))
+        );
+        measurements.push(work);
+    }
+    assert!(
+        measurements
+            .iter()
+            .all(|work| *work <= measurements[0].max(1) * 4 + 32),
+        "unrelated storage changed scalar allocation/access work: {measurements:?}"
+    );
 }

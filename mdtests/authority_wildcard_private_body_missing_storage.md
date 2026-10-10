@@ -1,6 +1,7 @@
-# A private body requires actual separable memory ownership
+# Scalar allocation supplies separable private-body ownership
 
-Scalar locals alone do not provide owned memory ranges that a slot can package.
+Scalar declarations supply owned memory ranges that members can package.
+Opening a member grants access to its cell; unfolding returns the permission.
 
 ```c filename=wildcard_private_body.c
 int32 lifecycle() {
@@ -31,5 +32,5 @@ int32 lifecycle() { ensures result == 9; } by {
 ```
 
 ```expect
-fail: Requires the private body of slot(p)
+pass
 ```

@@ -17062,30 +17062,43 @@ fn cpp_native_pointer_artifacts_reject_pointee_substitution_offline() {
     }
 }
 
-// Automatic scalar storage has implicit write authority, but a modular
-// owned-memory contract requires a separately supplied resource. This refusal
-// is independent of initialization and records the next shared design boundary.
+// Scalar allocation ownership can enter and return from a modular write.
+// Ownership alone must not let a call read an uninitialized local.
 #[test]
-fn cpp_native_scalar_modular_write_requires_explicit_storage_authority() {
-    for declaration in ["unsigned int obj;", "unsigned int obj = 0;"] {
-        let source = format!(
-            "void fill(unsigned int* p, unsigned int value) noexcept {{ *p = value; }} unsigned int probe(unsigned int value) noexcept {{ {declaration} fill(&obj, value); return obj; }}"
-        );
-        let project = Project::with_fixture("initialize.cpp", "probe", &source);
-        refresh_import(&project.config()).unwrap();
-        fs::remove_file(&project.exporter).unwrap();
-        let import = load_import(&project.config()).unwrap();
-        let proof = "verifying \"initialize.cpp\"; void fill(uint32* p, uint32 value) { owns p[0..1]; ensures p[0] == value; } by { execute(); simp(); } uint32 probe(uint32 value) { ensures result == value; } by { execute(); simp(); }";
-        let path = project.directory.join("initialize.click");
-        fs::write(&path, proof).unwrap();
-        let parsed = read_click_project(&path, proof).unwrap();
-        let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
-        assert!(
-            error
-                .message()
-                .contains("missing resource fact `owns obj[0..1]`"),
-            "{}",
-            error.message()
-        );
-    }
+fn cpp_native_scalar_modular_write_uses_allocation_ownership_offline() {
+    let project = Project::with_fixture(
+        "initialize.cpp",
+        "probe",
+        "void fill(unsigned int* p, unsigned int value) noexcept { *p = value; } unsigned int probe(unsigned int value) noexcept { unsigned int obj = 0; fill(&obj, value); return obj; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = "verifying \"initialize.cpp\"; void fill(uint32* p, uint32 value) { owns p[0..1]; ensures p[0] == value; } by { execute(); simp(); } uint32 probe(uint32 value) { ensures result == value; } by { execute(); simp(); }";
+    check_return_call_sidecar(&project, &import, proof);
+    let stale_claim = proof.replace("result == value", "result == 0");
+    let path = project.directory.join("stale.click");
+    fs::write(&path, &stale_claim).unwrap();
+    let parsed = read_click_project(&path, &stale_claim).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .expect_err("a modular write must invalidate the old scalar value");
+}
+
+#[test]
+fn cpp_native_scalar_modular_ownership_does_not_imply_initialization_offline() {
+    let project = Project::with_fixture(
+        "initialize.cpp",
+        "probe",
+        "void fill(unsigned int* p, unsigned int value) noexcept { *p = value; } unsigned int probe(unsigned int value) noexcept { unsigned int obj; fill(&obj, value); return obj; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = "verifying \"initialize.cpp\"; void fill(uint32* p, uint32 value) { owns p[0..1]; ensures p[0] == value; } by { execute(); simp(); } uint32 probe(uint32 value) { ensures result == value; } by { execute(); simp(); }";
+    let path = project.directory.join("uninitialized.click");
+    fs::write(&path, proof).unwrap();
+    let parsed = read_click_project(&path, proof).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import)
+        .expect_err("ordinary ownership and a value postcondition do not certify initialization");
+    assert!(error.message().contains("uninitialized"), "{error:?}");
 }

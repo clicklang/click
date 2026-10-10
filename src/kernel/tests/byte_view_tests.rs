@@ -34,7 +34,19 @@ fn load_byte(
 }
 
 fn store_byte(memory: CMemory, offset: i64, byte: CValue, byte_order: ByteOrder) -> CMemory {
-    let state = CState::new().with_memory(memory);
+    let state = CState::new().with_memory(memory.clone());
+    let state = if memory.requires_explicit_scalar_ownership(&word(0)) {
+        state.with_resource_context(ResourceContext::new().unchecked_with_fact(
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                word(0),
+                0.into(),
+                memory.block_size(&word(0).block).unwrap().clone(),
+                1,
+            )),
+        ))
+    } else {
+        state
+    };
     let value_type = if matches!(byte, CValue::Int8(_)) {
         CType::Int8
     } else {
