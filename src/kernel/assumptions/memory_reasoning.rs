@@ -2244,7 +2244,7 @@ impl PureFactContext {
             // The proof-aware form of the shallow composition fallback above:
             // the same containment relation the materialized-pair loops use,
             // served by the compact composition's indexed candidates.
-            resources.proves_owned_memory_ranges_separate_by(left, right, |child, parent| {
+            resources.proves_owned_memory_ranges_separate_by(left, right, self, |child, parent| {
                 memory_range_contained_for_memory_resolution(child, parent, self)
             })
         })

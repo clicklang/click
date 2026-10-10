@@ -25001,22 +25001,23 @@ fn resource_context_contains_exact_owned_fact(
         return false;
     }
     if let CResourceFact::Own(CResource::Memory(required_range), _) = required {
+        // The pieces lying inside the required range start inside it, so
+        // the address index's candidates for that range include them all.
         let exact_parts = context
-            .facts()
-            .iter()
+            .owned_memory_candidates_for(required_range, assumptions)
+            .into_iter()
             .filter(|available| {
                 available.memory_own_range().is_some_and(|available_range| {
                     memory_range_covers(required_range, available_range, assumptions)
                 })
             })
-            .cloned()
             .collect::<Vec<_>>();
         let exact_parts =
             ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(exact_parts);
         return exact_parts.validity_error(assumptions).is_none()
             && exact_parts.satisfies_fact(required, assumptions);
     }
-    context.facts().iter().any(|available| {
+    context.direct_match_candidates(required).any(|available| {
         if !available.is_own() || available.family() != required.family() {
             return false;
         }
