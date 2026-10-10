@@ -35301,6 +35301,9 @@ mod retained_aggregate_resource_values_tests {
         };
         let mut work = Vec::new();
         for size in [8, 32, 128, 512] {
+            // Compare cold sessions at every size; retained pointer reads
+            // otherwise reuse observations recorded by the first sample.
+            let _session = crate::kernel::VerificationSession::enter();
             let mut entry = CState::new().with_memory(
                 CMemory::new()
                     .with_block(slot.block.clone(), 8)
