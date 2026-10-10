@@ -49,22 +49,43 @@ lookalike refusals remain.
 and its lock records no system-header dependency. Click's built-in
 `<limits.h>` (item 5) serves programs that need `CHAR_BIT` and friends.
 
-### 4. libstdc++, glibc and Boost headers in the Bitcoin Core integration
+### 4. libstdc++ implementation proofs in the Bitcoin Core integration
 
-`integrations/bitcoin-core-money-range/` builds a Debian Bookworm sysroot
-(`libc6-dev`, `linux-libc-dev`, `libstdc++-12-dev`, `libgcc-12-dev`,
-`libboost1.74-dev`) and runs CMake to produce a compilation database. Its lock
-then binds every header Clang opened. Several of its proofs verify the
+`integrations/bitcoin-core-money-range/` parses Bitcoin Core against a Debian
+Bookworm sysroot (`libc6-dev`, `linux-libc-dev`, `libstdc++-12-dev`,
+`libgcc-12-dev`, `libboost1.74-dev`). Several of its proofs verify the
 implementation of the libstdc++ `std::span<int>` pointer/count constructor,
-`back()`, and `std::to_address` taken from those headers
-(see the C++ section of [`click import`](../docs/reference/cli/import.md)).
+`back()`, and `std::to_address` taken from those headers (see the C++ section
+of [`click import`](../docs/reference/cli/import.md)).
 
-Bitcoin Core's own sources are the program; `std::span` is a library
-interface. Give Click a C++ standard-library interface for the subset these
-proofs use (`<cstdint>`, `std::span`, `std::to_address`), verify Bitcoin
-Core's functions against it, and drop the sysroot and the libstdc++
-implementation proofs. The two `cpp-verification` fixtures that include a
-fixture-owned `<cstdint>` should then use Click's.
+Agreed strategy (2026-10-10): the C++ standard library is an axiomatic
+boundary. Unlike C, the C++ standard library is mostly header code that Clang
+must parse to type-check a program, so Click does not supply replacement
+headers. Instead:
+
+- **Parse the real headers; trust none of their code.** A function declared
+  in a system header is an opaque call: the exporter does not lower its
+  instantiated body, and Click checks the call against its own contract, keyed
+  on the standard name and signature. The cut is by file, not namespace, so a
+  user's own specialization in a project header remains verified user code.
+- **No contract, no proof.** A call into a system header without a Click
+  contract is refused by name, never trusted silently. The catalog grows on
+  demand: `std::span` and `std::to_address` first.
+- **Standard-library independence.** Contracts name the standard interface,
+  so a proof does not depend on whether libstdc++ or libc++ was parsed. The
+  lock still records the parsed headers for parse fidelity only.
+- **Abstract models, not layouts.** A `std::span<T>` is a view of
+  `[data, data + size)`; proofs never depend on a library's private fields.
+- **Trust statement:** proofs assume a C++ standard library implementing
+  Click's contracts, as for C.
+
+Callbacks into user code (`std::sort` comparators, `std::function`) and
+throwing contracts are deferred until an example needs them.
+
+For Bitcoin Core: keep the sysroot as parse-only input, cut at system-header
+functions, give `std::span` and `std::to_address` Click contracts, verify
+Bitcoin Core's own functions against them, and drop the libstdc++
+implementation proofs.
 
 ### 5. Missing built-in C headers (done)
 
