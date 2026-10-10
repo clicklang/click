@@ -1248,8 +1248,15 @@ outer context. All 127 audit sites and three inner-link/parent mutations pass.
 with a nonempty near subtree after the first rotation. A verified parent update
 preserves its color and children; the proof retains the opaque outer far subtree
 and returns the exact balanced, parent-consistent root with unchanged contents.
-All 136 audit sites and two near-child parent/link mutations pass. Rotations
-after deficit propagation remain. Depends on 11.
+All 136 audit sites and two near-child parent/link mutations pass.
+`rbtree_erase_color_flips_outer.click` combines repeated color flips with a
+terminal case-4 rotation in either direction, including a nonempty black focus,
+a near subtree of either color, and arbitrary children of the red far node.
+It retains the red-parent and root exits, checks structural context descent,
+and returns the exact balanced, parent-consistent whole-root model with
+unchanged in-order contents. All 21 proofs, 168 expansion-audit sites, and eight
+cursor/link/color/parent mutation checks pass.
+Inner rotations and red-sibling cases after propagation remain. Depends on 11.
 
 **Chunk 13. `____rb_erase_color`, right-sibling cases, and `rb_erase`.** The
 color-flip propagation proof already covers both orientations, including
@@ -1271,8 +1278,10 @@ cases 1, 3, and 4 with the same exact-root, parent, and in-order guarantees,
 127 passing audit sites, and three inner-link/parent mutations.
 `rbtree_erase_color_red_sibling_outer_nonempty_right.click` covers mirrored
 cases 1 and 4 with a nonempty near subtree, the same exact-root guarantees,
-136 passing audit sites, and two near-child parent/link mutations. Rotations
-after propagation and the complete `rb_erase` wrapper remain. Depends on 12.
+136 passing audit sites, and two near-child parent/link mutations. The combined
+`rbtree_erase_color_flips_outer.click` proof also covers mirrored case 4 after
+repeated propagation. Inner rotations and red-sibling cases after propagation,
+and the complete `rb_erase` wrapper, remain. Depends on 12.
 
 ### Augmented
 

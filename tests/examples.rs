@@ -526,13 +526,13 @@ fn erase_source_refuses_mutation(sidecar: &str, file: &str, before: &str, after:
     erase_source_refuses_replacement(sidecar, file, before, after, 1);
 }
 
-fn erase_source_refuses_replacement(
+fn erase_source_replacement_error(
     sidecar: &str,
     file: &str,
     before: &str,
     after: &str,
     occurrences: usize,
-) {
+) -> String {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let path = root.join("examples/rbtree-erase").join(sidecar);
     let source = fs::read_to_string(&path).expect("the erase sidecar exists");
@@ -549,44 +549,51 @@ fn erase_source_refuses_replacement(
     *c = c.replace(before, after);
     let project = read_click_project_at_root(&path, &source, &root.join("examples"))
         .expect("the erase proof resolves its shared resources and model");
-    let error = limits::spawn(
+    limits::spawn(
         "erase mutation verifier",
         "click-erase-mutation".to_string(),
         move || click::surface::verify_c0_project(&project, &source_refs(&c_sources)),
     )
     .unwrap_or_else(|error| panic!("{error}"))
-    .expect_err("the erase proof must refuse a missing link or parent/color write");
+    .expect_err("the erase proof must refuse a missing link or parent/color write")
+    .message()
+    .to_string()
+}
+
+fn erase_source_refuses_replacement(
+    sidecar: &str,
+    file: &str,
+    before: &str,
+    after: &str,
+    occurrences: usize,
+) {
+    let error = erase_source_replacement_error(sidecar, file, before, after, occurrences);
     assert!(
-        error.message().contains("fold")
+        error.contains("fold")
             || error
-                .message()
                 .contains("is not proven to have the arguments the parent body gives it")
             || error
-                .message()
                 .contains("is not proven equal to the value the proposed parent fields give it")
-            || error.message().contains("contract certification")
-            || (error.message().contains("missing resource fact")
-                && error.message().contains("C operation: parent = rb_parent"))
+            || error.contains("contract certification")
+            || (error.contains("missing resource fact")
+                && error.contains("C operation: parent = rb_parent"))
             || error
-                .message()
                 .contains("(close_erase_spine_link precondition)")
-            || (error.message().contains("have body tactic")
-                && (error.message().contains("could not establish")
-                    || error.message().contains(
+            || (error.contains("have body tactic")
+                && (error.contains("could not establish")
+                    || error.contains(
                         "`normalize using` goal did not normalize to true using the listed conditions",
                     )
-                    || error.message().contains(
+                    || error.contains(
                         "`assumption` requires the current goal as an available semantic fact",
                     )))
             || error
-                .message()
                 .contains("unclosed goal: new->__rb_parent_color == old(old->__rb_parent_color)",)
-            || error.message().contains("unclosed goal: result == 0")
+            || error.contains("unclosed goal: result == 0")
             || error
-                .message()
                 .contains("unclosed goal: result == old(node->rb_right)"),
         "unexpected refusal: {}",
-        error.message()
+        error
     );
 }
 
@@ -1927,6 +1934,106 @@ fn rbtree_erase_color_flips_requires_sibling_recoloring() {
         "rbtree_erase_color_flips.click",
         "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
         "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_BLACK);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated erase rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_outer_requires_cursor_ascent() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_flips_outer.click",
+        "parent = rb_parent(node);",
+        "parent = node;",
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated erase rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_outer_requires_focus_ascent() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_flips_outer.click",
+        "node = parent;",
+        "node = node;",
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated erase rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_outer_requires_parent_blackening() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_flips_outer.click",
+        "rb_set_black(parent);",
+        "parent->__rb_parent_color = parent->__rb_parent_color;",
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated erase rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_outer_requires_sibling_recoloring() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_flips_outer.click",
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_BLACK);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated erase rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_outer_left_requires_parent_child_link() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_outer.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(parent->rb_right, tmp2);",
+        "WRITE_ONCE(parent->rb_right, parent);",
+        2,
+    );
+    assert!(
+        error.contains("`have` failed for `parent->rb_right == tmp2`"),
+        "unexpected refusal: {error}",
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated erase rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_outer_right_requires_parent_child_link() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_outer.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(parent->rb_left, tmp2);",
+        "WRITE_ONCE(parent->rb_left, parent);",
+        2,
+    );
+    assert!(
+        error.contains("`have` failed for `parent->rb_left == tmp2`"),
+        "unexpected refusal: {error}",
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated erase rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_outer_requires_far_child_blackening() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_flips_outer.click",
+        "rb_set_parent_color(tmp1, sibling, RB_BLACK);",
+        "rb_set_parent_color(tmp1, sibling, RB_RED);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated erase rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_outer_requires_near_parent() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_outer.click",
+        "rb_erase_color.c",
+        "rb_set_parent(tmp2, parent);",
+        "rb_set_parent(tmp2, sibling);",
+        2,
+    );
+    assert!(
+        error.contains(
+            "`have` failed for `tmp2->__rb_parent_color == (color_bit(nc) | ((uint64)parent))`"
+        ),
+        "unexpected refusal: {error}",
     );
 }
 
