@@ -506,6 +506,7 @@ struct EqualityGraphState {
     /// Compound query dependencies already registered at this metadata
     /// generation. Later producer definitions invalidate a miss lazily.
     logical_query_dependencies: crate::persistent::PersistentMap<Pointer, u64>,
+    logical_offset_dependencies: crate::persistent::PersistentMap<PointerOffsetTerm, u64>,
     typed_reads: crate::persistent::PersistentSet<PointerBlock>,
     checked_read_generation: u64,
     /// The exact class-merge delta stream. A consumer with a persistent
@@ -636,10 +637,10 @@ impl EqualityGraph {
         }
     }
 
-    fn register_logical_read_values<const N: usize>(
+    fn register_logical_read_values<'a>(
         &self,
         state: &mut EqualityGraphState,
-        values: [&Pointer; N],
+        values: impl IntoIterator<Item = &'a Pointer>,
     ) {
         let reads = self.logical_reads.lock().expect("logical pointer reads");
         if reads.definitions.is_empty() {
@@ -1171,11 +1172,42 @@ impl EqualityGraph {
         {
             return true;
         }
-        self.state
-            .lock()
-            .expect("equality graph")
-            .terms
-            .are_equal(left, right)
+        // Offset goals can be projections of typed pointer reads. Retain
+        // only producer-registered definitions of the selected operands;
+        // equal offsets alone never establish equality of pointer blocks.
+        let mut state = self.state.lock().expect("equality graph");
+        let reads = self.logical_reads.lock().expect("logical pointer reads");
+        let mut pending = Vec::new();
+        for offset in [left, right] {
+            if state.logical_offset_dependencies.get(offset) != Some(&reads.generation) {
+                state
+                    .logical_offset_dependencies
+                    .insert(offset.clone(), reads.generation);
+                pending.push(offset);
+            }
+        }
+        let mut values = Vec::new();
+        while let Some(offset) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match offset {
+                PointerOffsetTerm::Add(left, right) => {
+                    pending.push(left);
+                    pending.push(right);
+                }
+                PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+                    if let Bitvector32Term::Variable(variable) = value.as_ref()
+                        && let Some(Some(value)) =
+                            reads.offset_read_values.get(&(*variable, *byte_width))
+                    {
+                        values.push(value.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        drop(reads);
+        self.register_logical_read_values(&mut state, values.iter());
+        state.terms.are_equal(left, right)
     }
 
     /// Query int32 equality, addition and registered same-snapshot load congruence.
@@ -2562,6 +2594,80 @@ mod tests {
             assert!(branch.are_equal(&left.offset_by_bytes(8), &right.offset_by_bytes(8)));
             assert!(!trunk.are_equal(&left, &right));
         }
+    }
+
+    // A byte-offset goal must discover its typed read dependencies without
+    // needing an earlier full-pointer query. Late metadata invalidates misses.
+    #[test]
+    fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let p = at(symbolic(919_001), 0);
+        let q = at(symbolic(919_002), 0);
+        let variable = |address: &Pointer| {
+            crate::kernel::load_variable_for_cell_with_origin(
+                &memory,
+                address,
+                crate::kernel::LoadKind::Bits32,
+                8,
+                &memory,
+            )
+        };
+        let xv = variable(&p);
+        let yv = variable(&q);
+        let x = Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(xv),
+            8,
+        );
+        let y = Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(yv),
+            8,
+        );
+        let mut graph = EqualityGraph::default();
+        let sibling = graph.clone();
+        graph.add_equality(&p, &q);
+        for _ in 0..2 {
+            assert!(!graph.are_offsets_equal(&x.offset, &y.offset));
+        }
+        graph.register_pointer_read_definition(&x, &memory, &p);
+        graph.register_pointer_read_definition(&y, &memory, &q);
+        assert!(graph.are_offsets_equal(&x.offset, &y.offset));
+        assert!(
+            graph.are_offsets_equal(&x.offset_by_bytes(8).offset, &y.offset_by_bytes(8).offset)
+        );
+        assert!(!sibling.are_offsets_equal(&x.offset, &y.offset));
+        assert!(!graph.are_offsets_equal(
+            &x.offset,
+            &PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(yv), 4)
+        ));
+        // New unrelated definitions invalidate the dependency cache, but
+        // rediscovery must still visit only these two selected operands.
+        for size in [16u64, 64, 256, 1024] {
+            for i in 0..size {
+                let address = at(symbolic(920_000 + i), 0);
+                let value = Pointer::loaded_value(&memory, &address);
+                graph.register_pointer_read_definition(&value, &memory, &address);
+            }
+            let ((equal, work), map_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    graph.are_offsets_equal(
+                        &x.offset_by_bytes(16).offset,
+                        &y.offset_by_bytes(16).offset,
+                    )
+                })
+            });
+            assert!(equal);
+            assert!(work < 200, "size={size}, work={work}");
+            assert!(
+                map_work < 512 * (size.ilog2() as usize + 1),
+                "size={size}, map work={map_work}"
+            );
+        }
+        assert!(!graph.are_equal(
+            &at_offset(symbolic(919_003), x.offset),
+            &at_offset(symbolic(919_004), y.offset)
+        ));
     }
 
     // Whole-offset equality is not an affine block merge. All read consumers

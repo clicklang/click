@@ -38,8 +38,11 @@ After its prerequisites pass, it admits `value == Read(snapshot, address)`
 through the graph's existing checked-equality input. It does not mutate the
 value's definition or install a global observation. The input is branch-local
 and retained by input checkpoints; rebuilding a context without its evidence drops it.
-Compound pointer queries retain the generation at which their read dependencies
-were registered. Repeated queries reuse that result; a newly registered logical
+Offset equality queries register the same producer-retained typed-read
+definitions as full-pointer queries. Registration visits only the selected
+operands; it never infers pointer-block identity from equal offsets.
+Compound pointer and offset queries retain the generation at which their read
+dependencies were registered. Repeated queries reuse that result; a newly registered logical
 read definition changes the generation and invalidates earlier misses. This
 cache retains term dependencies only, never a successful equality judgment.
 
