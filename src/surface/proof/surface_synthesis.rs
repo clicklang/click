@@ -2915,12 +2915,13 @@ fn synthesize_surface_bitvector(
             if let PointerBlock::Concrete(block) = &kernel_pointer.block
                 && let Some(name) = block.strip_prefix("local:")
                 && kernel_pointer.offset == PointerOffsetTerm::Constant(0)
-                && state
-                    .locals()
-                    .scalar_object_type(name)
-                    .is_some_and(|ty| ty.pointee_type().is_none())
+                && state.locals().scalar_object_type(name).is_some_and(|ty| {
+                    ty.pointee_type().is_none()
+                        && crate::kernel::LoadKind::of_type(ty) == Some(*kind)
+                })
             {
-                // A memory-resident scalar local reads as its own name.
+                // A local names only a read of its declared type. A byte
+                // read at the same address must retain its byte meaning.
                 Some(ContractExpression::CFragment(CExpression::Variable(
                     name.to_string(),
                 )))

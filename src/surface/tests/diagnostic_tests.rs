@@ -2207,3 +2207,47 @@ fn fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources() {
         });
     }
 }
+
+#[test]
+fn modular_byte_postcondition_does_not_name_the_whole_scalar() {
+    let c_source = r#"
+        void fill(unsigned char* p) {
+            p[0] = 120;
+            p[1] = 86;
+            p[2] = 52;
+            p[3] = 18;
+        }
+        unsigned int probe(void) {
+            unsigned int obj;
+            unsigned char* bytes = (unsigned char*)(void*)&obj;
+            fill(bytes);
+            return obj;
+        }
+    "#;
+    let click_source = r#"
+        verifying "byte_output.c";
+        void fill(uint8* p) {
+            owns p[0..4];
+            ensures p[0] == 120u8;
+            ensures p[1] == 86u8;
+            ensures p[2] == 52u8;
+            ensures p[3] == 18u8;
+        } by { execute(); simp(); }
+        uint32 probe() {
+            ensures result == 305419896u32;
+        } by { execute(); simp(); }
+    "#;
+    with_proof_trace("probe", || {
+        let error = verify_c0_sources(click_source, &[("byte_output.c", c_source)])
+            .expect_err("ordinary output contracts do not yet convey initialization");
+        assert!(
+            error.message().contains("uninitialized"),
+            "{}",
+            error.message()
+        );
+        let trace = error.trace_context_report().expect("failure trace");
+        assert!(trace.contains("bytes[0] == 120"), "{trace}");
+        assert!(!trace.contains("obj) == 120"), "{trace}");
+        assert!(trace.contains("bytes[3] == 18"), "{trace}");
+    });
+}
