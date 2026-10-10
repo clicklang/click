@@ -2946,6 +2946,7 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
     .unwrap_or_else(|error| panic!("{}", error.message()));
     assert_ne!(expanded, source);
     assert!(!expanded.contains("extern"), "{expanded}");
+    assert!(!expanded.contains("_M_"), "{expanded}");
     verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 
@@ -2960,10 +2961,10 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
         );
     };
     // Without a nonempty view the proof has no predecessor bound, and the
-    // refusal spells the accessor's field path as a sidecar writes it.
+    // refusal spells the size through its accessor, as the sidecar does.
     refuse(
         source.replacen("    requires 1u64 <= std_span_size(span);\n", "", 1),
-        "span._M_extent._M_extent_value",
+        "apply(uint64_predecessor_below(std_span_size(span)))",
     );
     // `first` keeps the data pointer; a moved one is false.
     refuse(

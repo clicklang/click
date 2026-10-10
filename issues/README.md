@@ -90,7 +90,7 @@ Specification and proof:
 
 - [Verify the Linux rbtree example on the recursive structure models](rbtree-example.md)
 
-## P2: after launch (20)
+## P2: after launch (21)
 
 - [Design review of the proof language: open items](design-review.md)
 - [Make `step` simple across a call precondition](simplify-step.md)
@@ -118,6 +118,7 @@ C language coverage:
 Additional languages:
 
 - [Extend C++ support toward Bitcoin Core](cpp-support.md)
+- [Extend the C++ standard-library contract catalog](cpp-standard-library-contracts.md)
 
 Semantics and reasoning:
 
