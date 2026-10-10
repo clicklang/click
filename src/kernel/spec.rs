@@ -227,7 +227,7 @@ pub(crate) fn capture_spec_algebraic_value(
     let [path] = paths.as_slice() else {
         return Err("algebraic initializer must denote one symbolic value".into());
     };
-    if !path.facts.is_empty()
+    if path.facts.has_path_conditions()
         || path
             .obligations
             .iter()
@@ -901,7 +901,7 @@ fn lower_simple_spec_implication_chain_in(
             return Ok(None);
         }
         let path = paths.pop().expect("the path count was checked");
-        if !path.facts.is_empty() || !path.obligations.is_empty() {
+        if path.facts.has_path_conditions() || !path.obligations.is_empty() {
             return Ok(None);
         }
         chain_assumptions = chain_assumptions.assume_proposition(path.proposition.clone());
@@ -920,7 +920,7 @@ fn lower_simple_spec_implication_chain_in(
         return Ok(None);
     }
     let mut path = paths.pop().expect("the path count was checked");
-    if !path.facts.is_empty() || !path.obligations.is_empty() {
+    if path.facts.has_path_conditions() || !path.obligations.is_empty() {
         return Ok(None);
     }
 
@@ -1708,6 +1708,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 proposition_and_all(
                     path.facts
                         .into_iter()
+                        // A cached read equation follows from the selected
+                        // value; it is not a condition for the read to exist.
+                        .filter(|fact| !fact.is_logical_read_equation())
                         .filter_map(|fact| {
                             drop_verified_load_definition_conjuncts(fact.proposition().clone())
                         })
@@ -2020,7 +2023,8 @@ fn evaluate_spec_integer_expression_paths_in(
                         let body_value = match body_paths.as_slice() {
                             [body_path]
                                 if !body_path.facts.iter().any(|fact| {
-                                    !assumptions.proves_exact(fact.proposition())
+                                    !fact.is_logical_read_equation()
+                                        && !assumptions.proves_exact(fact.proposition())
                                         && !is_verified_load_variable_defining_fact(
                                             fact.proposition(),
                                         )
@@ -2075,9 +2079,11 @@ fn evaluate_spec_integer_expression_paths_in(
                         // cannot be exported as ambient facts for the fold
                         // result.  Load-defining facts are represented by the
                         // registered snapshot load itself and may be dropped;
-                        // all other body facts must already be ambient.
+                        // derived read equations also stay local; all other body facts
+                        // must already be ambient.
                         if let Some(unavailable) = body_path.facts.iter().find(|fact| {
-                            !assumptions.proves_exact(fact.proposition())
+                            !fact.is_logical_read_equation()
+                                && !assumptions.proves_exact(fact.proposition())
                                 && !is_verified_load_variable_defining_fact(fact.proposition())
                         }) {
                             budget.record_dropped_fold_body(
@@ -2841,7 +2847,7 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                 return Err(ExecutionLimit::Paths);
             };
             if !body_paths.is_empty()
-                || !body_path.facts.is_empty()
+                || body_path.facts.has_path_conditions()
                 || !body_path.obligations.is_empty()
             {
                 return Err(ExecutionLimit::Paths);
@@ -3505,8 +3511,8 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                     AlgebraicTermNode::Constructor { .. }
                 ) {
                     let mut lowered_arms = Vec::with_capacity(arms.len());
-                    let mut facts = scrutinee_path.facts.clone();
-                    let mut obligations = scrutinee_path.obligations.clone();
+                    let facts = scrutinee_path.facts.clone();
+                    let obligations = scrutinee_path.obligations.clone();
                     for arm in arms {
                         let Some(schema) = scrutinee_path
                             .value
@@ -3554,22 +3560,13 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                         // Arm-local facts and obligations are valid only when this
                         // constructor is selected. A symbolic match must not leak
                         // them into its unconditional enclosing path.
-                        if !body_path.facts.is_empty() || !body_path.obligations.is_empty() {
+                        if body_path.facts.has_path_conditions()
+                            || !body_path.obligations.is_empty()
+                        {
                             return Err(ExecutionLimit::Paths);
                         }
-                        let Some((merged_facts, merged_obligations)) =
-                            merge_execution_pure_facts_and_obligations(
-                                &facts,
-                                &obligations,
-                                &body_path.facts,
-                                &body_path.obligations,
-                                assumptions,
-                            )
-                        else {
-                            return Err(ExecutionLimit::Paths);
-                        };
-                        facts = merged_facts;
-                        obligations = merged_obligations;
+                        // The only remaining body facts are derived read equations.
+                        // They belong to this arm, not to the enclosing match.
                         lowered_arms.push(AlgebraicResultMatchArm {
                             variant: arm.variant.clone(),
                             bindings,
@@ -4694,6 +4691,100 @@ mod algebraic_term_tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer_type = AlgebraicValueType::C(CType::Int64Pointer);
+        let value_type = AlgebraicValueType::Algebraic {
+            name: "PointerBox".into(),
+            arguments: vec![],
+        };
+        let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
+            name: "Box".into(),
+            fields: vec![pointer_type],
+        }]
+        .into();
+        let result_type = AlgebraicType {
+            rigid: false,
+            name: "PointerBox".into(),
+            arguments: vec![],
+            variants: variants.clone(),
+            schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
+                value_type, variants,
+            )]))),
+        };
+        let address = Pointer::symbolic(Variable(71_040));
+        let value = Pointer::symbolic(Variable(71_041));
+        let memory = CMemory::new().store(
+            address.clone(),
+            CValue::typed_pointer(value, CType::Int64Pointer),
+        );
+        let body = SpecAlgebraicExpression {
+            algebraic_type: result_type.clone(),
+            node: SpecAlgebraicExpressionNode::Constructor {
+                variant: "Box".into(),
+                fields: vec![SpecAlgebraicValue::C(SpecExpression::MemoryLoad {
+                    memory: SpecMemory::Fixed(memory),
+                    pointer: Box::new(SpecExpression::Value(CValue::typed_pointer(
+                        address,
+                        CType::Int64PointerPointer,
+                    ))),
+                    value_type: CType::Int64Pointer,
+                })],
+            },
+        };
+        let state = CState::new();
+        let context = PureFactContext::new();
+        let direct = evaluate_spec_algebraic_at_state_in(
+            &state,
+            &body,
+            None,
+            &context,
+            &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+        )
+        .unwrap();
+        assert_eq!(direct[0].facts.len(), 1);
+        assert!(direct[0].facts[0].is_logical_read_equation());
+        assert!(capture_spec_algebraic_value(&state, &body, None, &context).is_ok());
+        let expression = SpecAlgebraicExpression {
+            algebraic_type: result_type,
+            node: SpecAlgebraicExpressionNode::Match {
+                scrutinee: Box::new(SpecAlgebraicExpression {
+                    algebraic_type: maybe_type(),
+                    node: SpecAlgebraicExpressionNode::Variable(Variable(71_042)),
+                }),
+                arms: vec![
+                    SpecAlgebraicResultMatchArm {
+                        variant: "None".into(),
+                        bindings: vec![],
+                        binding_types: vec![],
+                        body: Box::new(body.clone()),
+                    },
+                    SpecAlgebraicResultMatchArm {
+                        variant: "Some".into(),
+                        bindings: vec!["unused".into()],
+                        binding_types: vec![AlgebraicValueType::C(CType::Int32)],
+                        body: Box::new(body),
+                    },
+                ],
+            },
+        };
+        let paths = evaluate_spec_algebraic_at_state_in(
+            &state,
+            &expression,
+            None,
+            &context,
+            &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+        )
+        .unwrap();
+        assert_eq!(paths.len(), 1);
+        assert!(
+            paths[0].facts.is_empty(),
+            "arm-local equations must not become ambient facts"
+        );
+        assert!(paths[0].obligations.is_empty());
     }
 
     #[test]
@@ -6767,8 +6858,8 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 ) {
                     let mut lowered_arms = Vec::with_capacity(arms.len());
                     let mut result_type = None;
-                    let mut facts = scrutinee_path.facts.clone();
-                    let mut obligations = scrutinee_path.obligations.clone();
+                    let facts = scrutinee_path.facts.clone();
+                    let obligations = scrutinee_path.obligations.clone();
                     for arm in arms {
                         let Some(schema) = scrutinee_path
                             .value
@@ -6817,7 +6908,9 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         // These side conditions would need to be guarded by the
                         // arm's constructor test. Reject instead of asserting them
                         // unconditionally beside the symbolic match term.
-                        if !body_path.facts.is_empty() || !body_path.obligations.is_empty() {
+                        if body_path.facts.has_path_conditions()
+                            || !body_path.obligations.is_empty()
+                        {
                             return Err(ExecutionLimit::Paths);
                         }
                         let body_type = body_path.value.c_type();
@@ -6828,19 +6921,8 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         let Some(body) = c_value_bitvector_term(&body_path.value) else {
                             return Err(ExecutionLimit::Paths);
                         };
-                        let Some((merged_facts, merged_obligations)) =
-                            merge_execution_pure_facts_and_obligations(
-                                &facts,
-                                &obligations,
-                                &body_path.facts,
-                                &body_path.obligations,
-                                assumptions,
-                            )
-                        else {
-                            return Err(ExecutionLimit::Paths);
-                        };
-                        facts = merged_facts;
-                        obligations = merged_obligations;
+                        // The only remaining body facts are derived read equations.
+                        // They belong to this arm, not to the enclosing match.
                         lowered_arms.push(AlgebraicBitvectorMatchArm {
                             variant: arm.variant.clone(),
                             bindings,

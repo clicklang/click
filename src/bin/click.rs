@@ -827,13 +827,16 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
             report.contains("tactic@19: let r = step(child("),
             "{report}"
         );
-        // The call's implication ensure and the resource composition of its
-        // frame, which the call records.
+        // Both facts are now printed. Keep the saved read's snapshot visible
+        // in the implication rather than confusing it with the current goal.
         assert!(
-            report
-                .matches("adds (internal, not Click proof syntax):")
-                .count()
-                >= 2,
+            report.contains("adds (internal): validated-composition"),
+            "{report}"
+        );
+        assert!(report.contains("is false ⇒ ∃z:CInt32."), "{report}");
+        assert!(report.contains("read<Bits32>(snapshot#"), "{report}");
+        assert!(
+            !report.contains("checked fact(s) with no exact Click spelling"),
             "{report}"
         );
         assert_eq!(

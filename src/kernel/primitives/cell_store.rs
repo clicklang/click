@@ -134,6 +134,12 @@ impl IndexIntervals {
         self.intervals.iter().copied().collect()
     }
 
+    /// Bounded diagnostic consumers can inspect intervals without allocating
+    /// or enumerating the rest of the run's holes.
+    pub(crate) fn diagnostic_intervals(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
+        self.intervals.iter().copied()
+    }
+
     /// Every index, ascending.
     pub(crate) fn indexes(&self) -> impl Iterator<Item = u32> + '_ {
         self.intervals.iter().flat_map(|(low, high)| *low..*high)

@@ -8101,6 +8101,14 @@ impl ClickError {
         if let Some(diagnostic) = &self.diagnostic
             && let Some(state) = diagnostic.state.as_ref()
         {
+            let requirement = proof_diagnostics::render_failed_requirement(
+                state.as_ref(),
+                &mut proof_diagnostics::render::SnapshotLabels::ambient(),
+                false,
+            );
+            if !requirement.is_empty() && !proof_trace::enabled_for(&diagnostic.claim_label) {
+                context.push(requirement);
+            }
             let source_goal = state.source_goal();
             if let Some(goal) = &source_goal
                 && !certification_obligation

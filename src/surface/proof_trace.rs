@@ -426,7 +426,7 @@ impl ProofDiagnosticState for CertificationTraceState {
             let description = source.unwrap_or_else(|| {
                 format!(
                     "internal fact (no exact Click spelling): {}",
-                    render::render_internal_proposition_labeled(fact, labels)
+                    render::render_trace_fact_labeled(fact, labels)
                 )
             });
             let description = trace_text(&description, 512);
@@ -1170,13 +1170,10 @@ fn append_added_facts(
                 trace_text(&internal, 512)
             ));
         } else {
-            // These are the same checked fact deltas as the source-facing
-            // entries above. Keep their content visible when no exact proof
-            // spelling exists; the bounded renderer shares snapshot labels.
-            let internal = render::render_internal_proposition_labeled(&fact.kernel, labels);
+            let text = render::render_trace_fact_labeled(&fact.kernel, labels);
             output.push_str(&format!(
-                "\n{indent}adds (internal, not Click proof syntax): {}",
-                trace_text(&internal, 2048)
+                "\n{indent}adds (internal): {}",
+                trace_text(&text, 2048)
             ));
         }
     }
@@ -1193,6 +1190,10 @@ pub(super) fn append_legend(trace: &mut String, labels: &mut SnapshotLabels) {
         let mut start = trace.len().saturating_sub(keep);
         while !trace.is_char_boundary(start) {
             start += 1;
+        }
+        // Resume at a whole line rather than showing a severed expression.
+        if let Some(newline) = trace[start..].find('\n') {
+            start += newline + 1;
         }
         *trace = format!("{prefix}{}", &trace[start..]);
     }
@@ -1214,6 +1215,17 @@ fn trace_text(text: &str, max_bytes: usize) -> String {
 mod tests {
     use super::*;
     use crate::kernel::{Bitvector32Term, CMemory, Pointer, PointerBlock, PointerOffsetTerm};
+
+    #[test]
+    fn legend_truncation_resumes_at_a_line_boundary() {
+        let mut labels = SnapshotLabels::default();
+        labels.pointer_value_name(&Pointer::null());
+        let mut text = "é".repeat(MAX_RENDER_BYTES);
+        text.push_str("\nfailed child argument comparison\nrequired: value#1");
+        append_legend(&mut text, &mut labels);
+        assert!(text.starts_with("… earlier trace text omitted to retain label definitions\nfailed child argument comparison\n"));
+        assert!(text.len() <= MAX_RENDER_BYTES);
+    }
 
     #[test]
     fn pointer_facts_group_one_snapshot_and_qualify_mixed_reads() {
@@ -1451,13 +1463,9 @@ mod tests {
             .unwrap();
             assert!(goal.contains("snapshot#1"), "{goal}");
             assert!(
-                trace
-                    .matches("adds (internal, not Click proof syntax): viewable(")
-                    .count()
-                    == 2,
+                trace.matches("adds (internal): viewable(").count() == 2,
                 "{trace}"
             );
-            assert!(trace.contains("snapshot#1"), "{trace}");
             assert!(trace.contains("snapshot#2"), "{trace}");
         });
     }

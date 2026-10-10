@@ -148,9 +148,8 @@ impl Default for TacticWorkLimits {
     ///   `close_invariants` (509,163); every other smart tactic is below
     ///   450,000.
     /// - control: 1,850 tactics, p95 = 4,864, p99 = 17,831, second-largest =
-    ///   208,965, max = 288,302 (simp_frame_failure_through_region_arena_is_prompt's
-    ///   `have`, whose smart and control budgets the mdtest harness pins lower,
-    ///   and the arena `have` at :3591). 2,500,000 gives the maximum 8.7x.
+    ///   208,965, max = 288,302 (the since-removed negative arena frame fixture's
+    ///   `have`, and the arena `have` at :3591). 2,500,000 gives the maximum 8.7x.
     ///
     /// The tactics named above are the corpus's genuinely slow steps, not
     /// headroom to spend. Changing a budget requires a fresh run of the

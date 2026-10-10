@@ -22580,6 +22580,13 @@ pub enum ResourceRewriteRefusal {
         count: usize,
         /// The fact as its declaration spells it, when known.
         spelling: Option<String>,
+        proposition: Box<Proposition>,
+    },
+    BodyFactPrerequisiteNotEstablished {
+        arm: Option<String>,
+        index: usize,
+        count: usize,
+        proposition: Box<Proposition>,
     },
 }
 
@@ -22592,11 +22599,26 @@ impl ResourceRewriteRefusal {
                 "child `{child}` is not proven to have the arguments the parent body gives it: argument {} equality is not established",
                 index + 1
             ),
+            ResourceRewriteRefusal::BodyFactPrerequisiteNotEstablished {
+                arm,
+                index,
+                count,
+                ..
+            } => {
+                let place = arm
+                    .as_ref()
+                    .map_or_else(|| "resource body".to_owned(), |arm| format!("arm `{arm}`"));
+                format!(
+                    "resource body fact {} of {count} in {place} has an unproved prerequisite",
+                    index + 1
+                )
+            }
             ResourceRewriteRefusal::BodyFactNotEstablished {
                 arm,
                 index,
                 count,
                 spelling,
+                ..
             } => {
                 let place = match arm {
                     Some(arm) => format!("of arm `{arm}`"),
@@ -22631,6 +22653,9 @@ impl From<ResourceRewriteRefusal> for &'static str {
             }
             ResourceRewriteRefusal::BodyFactNotEstablished { .. } => {
                 "fold requires the instance body facts for the proposed fields"
+            }
+            ResourceRewriteRefusal::BodyFactPrerequisiteNotEstablished { .. } => {
+                "instance body fact has an unproved prerequisite"
             }
         }
     }
@@ -22761,7 +22786,12 @@ fn lower_selected_resource_body_clauses(
                 retained_conditions.push(fact.proposition().clone());
                 continue;
             }
-            return Err("instance body fact needs an unsupported conditional proof".into());
+            return Err(ResourceRewriteRefusal::BodyFactPrerequisiteNotEstablished {
+                arm: arm.map(str::to_owned),
+                index: ordinal,
+                count: source.len(),
+                proposition: Box::new(fact.proposition().clone()),
+            });
         }
         for goal in &path.obligations {
             if required_obligation_is_exactly_discharged(&context, goal.proposition())
@@ -22776,7 +22806,12 @@ fn lower_selected_resource_body_clauses(
                 retained_conditions.push(goal.proposition().clone());
                 continue;
             }
-            return Err("instance body fact needs an unsupported conditional proof".into());
+            return Err(ResourceRewriteRefusal::BodyFactPrerequisiteNotEstablished {
+                arm: arm.map(str::to_owned),
+                index: ordinal,
+                count: source.len(),
+                proposition: Box::new(goal.proposition().clone()),
+            });
         }
         for condition in &retained_conditions[retained_start..] {
             context = context.assume_proposition(condition.clone());
@@ -22789,6 +22824,7 @@ fn lower_selected_resource_body_clauses(
                 index: ordinal,
                 count: source.len(),
                 spelling: None,
+                proposition: Box::new(path.proposition.clone()),
             });
         }
         let record = ResourceBodyClauseRecord {
@@ -23188,11 +23224,13 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
             index,
             count,
             spelling: None,
+            proposition,
         } if count == definition.facts.len() => ResourceRewriteRefusal::BodyFactNotEstablished {
             arm: None,
             index,
             count,
             spelling: definition.fact_source_spelling(index).map(str::to_owned),
+            proposition,
         },
         refusal => refusal,
     })

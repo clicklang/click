@@ -61,10 +61,32 @@ through a local from another state is qualified separately, as in
 defining snapshots do not by themselves establish unequal values.
 A bounded legend after the trace defines generated address and snapshot labels.
 It shows immutable proof names, pointer-read constructions, byte offsets, and
-recorded memory transitions where available. Referenced labels are expanded
-within the report budget. Unknown origins and omitted definitions are explicit;
-nearby source statements are never guessed as origins. These definitions describe
-constructions, not additional checked equalities or a complete execution history.
+memory constructions with their inputs. An initial empty memory is an explicit
+root. Other snapshots describe a recorded transition or an internal transformation,
+such as projecting a source memory for a particular pointer read, substituting a
+variable, or joining branch memories. Read projections name both their source
+snapshot and their pointer. Seeded cells name their source and stride; call and
+loop effects show their write footprints when those are specified.
+
+Construction records travel with snapshots across threads and are excluded from
+memory equality and proof evidence. A missing record on a noninitial snapshot is
+reported as an internal recording defect, not a normal unknown origin. New memory
+constructors must retain their operation and inputs; snapshots changed without
+updating their record must not inherit an old explanation. Referenced labels are
+expanded within the report budget, with display omissions explicit. Source marks
+and program points are used only for matching snapshots, never guessed from nearby
+statements. These definitions describe constructions, not additional checked
+equalities or a complete execution history.
+
+When an exact source spelling is unavailable, `adds (internal):` prints the
+fact's typed diagnostic form. This includes pointer and scalar equalities,
+viewability with byte extents, model/function equalities, resource containment,
+validated resource-composition entries, and distinct volatile-write events.
+Internal notation is not promised to be valid Click proof input. Read types,
+read snapshots, arithmetic widths, and signedness remain visible. Resource
+compositions list up to eight entries with ownership quantities or view access;
+omitted entries and support details are explicit. A write event records an
+access, not an equality about the current memory contents.
 
 Only the new facts at each checked step are printed, not the accumulated set.
 
@@ -272,13 +294,28 @@ and reports say when additional context was omitted. A memory snapshot is
 labeled `snapshot#1`, `snapshot#2`, and so on, numbered by first appearance
 within one report: equal memory shares one label and memory that differs gets
 another, so "same memory" and "different memory" are visible as such. The
-comparison stops after 32 distinct snapshots in a report, past which a further
-snapshot simply takes the next label. Diagnostic labels are context, not proof
+structural comparison stops after the first 32 distinct snapshots. Expanded
+trace facts retain further snapshot identities with constant-time lookup;
+repeated uses of a retained version share a label. Beyond that comparison
+budget, separately constructed equal memories may receive different labels.
+The legend states this distinction, and the report still has fixed output and
+identity-count budgets. Diagnostic labels are context, not proof
 certificates. Search
 context covers bounded recent representatives from loop, induction,
 refinement, and common postcondition searches; it is not a complete theorem
 reasoning trace. This keeps failures useful for triage without dumping
 persistent proof history or repeated raw memory snapshots.
+
+A refused resource fold reports the instantiated body fact it could not
+establish, not only its ordinal in the resource declaration. If evaluation
+of the fact needs an unproved prerequisite, the error reports that specific
+prerequisite instead. Ordinary errors use source spelling where available,
+or show an explicitly labeled declaration when the instantiated fact cannot
+be rendered in source form. `--trace-proof` also prints the exact checked proposition with typed reads
+and the report's shared snapshot labels. This is the rejected requirement,
+not a guessed comparison with a nearby premise. Reading it alongside accepted
+trace facts can reveal a difference in values or snapshots without instrumenting
+the verifier.
 
 A failing proof step names where it was written:
 

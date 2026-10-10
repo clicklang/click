@@ -2165,3 +2165,45 @@ fn execute_failure_trace_retains_checked_call_facts() {
         });
     }
 }
+
+#[test]
+fn fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources() {
+    let c = "void f(int *p) { *p = 9; }";
+    for (resource, proof) in [
+        (
+            "resource cell(p: int32*) { field value: int32; owns *p; fact *p == value; }",
+            "unfold(c); step(); fold(c);",
+        ),
+        (
+            "spec enum Cell { Value(int32) } resource cell(p: int32*) { field model: Cell; match model { Cell::Value(v) => { owns *p; fact *p == v; }, } }",
+            "match c.model { Cell::Value(v) => { unfold(c); step(); fold(c); }, }",
+        ),
+    ] {
+        let source = format!(
+            "verifying \"f.c\"; {resource} void f(int32* p) {{ owns c: cell(p); }} by {{ {proof} }}"
+        );
+        let ordinary = verify_c0_sources(&source, &[("f.c", c)]).unwrap_err();
+        let report = ordinary.concise_report();
+        assert!(report.contains("required body fact"), "{report}");
+        assert!(
+            report.contains('9') || report.contains("required body fact (declaration):"),
+            "{report}"
+        );
+        assert!(!report.contains("snapshot#"), "{report}");
+        with_proof_trace("f", || {
+            let error = verify_c0_sources(&source, &[("f.c", c)]).unwrap_err();
+            let report = error.trace_context_report().unwrap();
+            assert!(report.contains("required body fact"), "{report}");
+            assert!(
+                report.contains("checked requirement:")
+                    || report.contains("required body fact (checked):"),
+                "{report}"
+            );
+            assert!(report.contains('9'), "{report}");
+            assert!(
+                !report.contains("goal has no exact Click spelling"),
+                "{report}"
+            );
+        });
+    }
+}

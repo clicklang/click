@@ -1485,6 +1485,13 @@ fn abstract_c_state_for_join_across_with_policy(
                 .insert(block, contents.clone());
         }
     }
+    abstract_state.memory.record_diagnostic_transform(
+        "retain sibling havoc markers",
+        std::iter::once(state.memory.clone())
+            .chain(sibling_states.iter().map(|state| state.memory.clone()))
+            .collect(),
+        Vec::new(),
+    );
     abstract_state.next_local_lifetime = sibling_states
         .iter()
         .map(|sibling| sibling.next_local_lifetime)
@@ -2994,10 +3001,11 @@ pub(in crate::kernel) fn exactly_selected_spec_proposition_path<'a>(
     let mut selected = None;
     for path in paths {
         crate::instrumentation::record_deterministic_work(1);
-        if path.facts.is_empty()
+        if !path.facts.has_path_conditions()
             || !path
                 .facts
                 .iter()
+                .filter(|fact| !fact.is_logical_read_equation())
                 .all(|fact| assumptions.states_required_goal(fact.proposition()))
         {
             continue;

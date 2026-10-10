@@ -21,10 +21,6 @@ const RUN_QUARANTINED: &str = "CLICK_RUN_QUARANTINED";
 /// Set by the gate when the pinned C++ exporter is not installed.
 const SKIP_CPP_FRONTEND: &str = "CLICK_SKIP_CPP_FRONTEND";
 const BUBBLE_SORT3_WORK_LIMIT: usize = 100_000;
-/// `simp_frame_failure_through_region_arena_is_prompt.md` fails its `simp`
-/// near 575,000 units; repeating its failed questions per candidate used to
-/// run it into the 2,000,000-unit default.
-const PROMPT_SIMP_FRAME_FAILURE_WORK_LIMIT: usize = 1_000_000;
 /// The explicit frame refusal takes about 175,000 units with scoped failure
 /// reuse, versus 513,000 when its proof routes repeat the same questions.
 const PROMPT_EXPLICIT_FRAME_FAILURE_WORK_LIMIT: usize = 250_000;
@@ -215,22 +211,6 @@ fn run_mdtest_attempt(path: &Path) -> Result<(), String> {
             simple: BUBBLE_SORT3_WORK_LIMIT,
             smart: BUBBLE_SORT3_WORK_LIMIT,
             control: BUBBLE_SORT3_WORK_LIMIT,
-        };
-        return instrumentation::with_tactic_work_limits(limits, || run_mdtest(path));
-    }
-    if !budgets_disabled
-        && path
-            .file_name()
-            .is_some_and(|name| name == "simp_frame_failure_through_region_arena_is_prompt.md")
-    {
-        // A prompt failure, not a budget crossing: pin the smart and
-        // control budgets well below the default so a return of the
-        // repeated failed questions changes the error and fails the
-        // expectation.
-        let limits = instrumentation::TacticWorkLimits {
-            smart: PROMPT_SIMP_FRAME_FAILURE_WORK_LIMIT,
-            control: PROMPT_SIMP_FRAME_FAILURE_WORK_LIMIT,
-            ..instrumentation::TacticWorkLimits::default()
         };
         return instrumentation::with_tactic_work_limits(limits, || run_mdtest(path));
     }

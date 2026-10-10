@@ -1894,6 +1894,11 @@ pub(in crate::kernel) fn c_effect_memories_definitionally_equal(
         std::sync::Arc::make_mut(&mut external.forgotten)
             .ended_local_blocks
             .clear();
+        external.record_diagnostic_transform(
+            "project external effect memory",
+            vec![memory.clone()],
+            Vec::new(),
+        );
         external
     };
     let left = without_locals(left);
@@ -1958,6 +1963,11 @@ pub(in crate::kernel) fn c_effect_memory_advances_over_internal_heap_state(
     std::sync::Arc::make_mut(&mut stripped.heap)
         .zeroed_pending_allocations
         .retain(|pointer| !fresh_blocks.contains(&pointer.block));
+    stripped.record_diagnostic_transform(
+        "remove internal heap bookkeeping",
+        vec![after.clone(), before.clone(), function_entry.clone()],
+        Vec::new(),
+    );
     c_effect_memories_definitionally_equal(before, &stripped, assumptions)
 }
 
@@ -2972,6 +2982,35 @@ mod checked_proposition_index_tests {
         let selected = exactly_selected_spec_proposition_path(&paths, &assumptions)
             .expect("the exact second candidate should be selected");
         assert_eq!(selected.proposition, paths[1].proposition);
+    }
+
+    #[test]
+    fn read_equations_follow_a_selected_route_without_selecting_one() {
+        let route = route(71_030, true);
+        let context = PureFactContext::new().assume_proposition(route.clone());
+        let pointer = Pointer::symbolic(Variable(71_031));
+        let equation = ExecutionPureFact::logical_read_equation(
+            pointer.clone(),
+            Pointer::loaded_value(&intern_c_memory(CMemory::new()), &pointer),
+        );
+        let mut paths = vec![
+            lowering_candidate(false, vec![]),
+            lowering_candidate(true, vec![route]),
+        ];
+        for path in &mut paths {
+            path.facts.push(equation.clone());
+        }
+        assert_eq!(
+            exactly_selected_spec_proposition_path(&paths, &context)
+                .unwrap()
+                .proposition,
+            paths[1].proposition
+        );
+        assert!(exactly_selected_spec_proposition_path(&paths, &PureFactContext::new()).is_none());
+        let mut forged = equation.clone();
+        forged.certified = false;
+        paths[1].facts = vec![forged].into();
+        assert!(exactly_selected_spec_proposition_path(&paths, &context).is_none());
     }
 
     #[test]

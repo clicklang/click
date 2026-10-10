@@ -424,6 +424,11 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
         };
         std::sync::Arc::make_mut(&mut canonical.union_cells).insert((key, *c_type), value);
     }
+    canonical.record_diagnostic_transform(
+        "canonicalize embedded reads",
+        vec![memory.clone()],
+        Vec::new(),
+    );
     canonical
 }
 

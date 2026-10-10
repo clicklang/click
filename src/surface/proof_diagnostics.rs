@@ -20,6 +20,12 @@ pub(crate) trait ProofDiagnosticState: Send + Sync {
     fn source_fact(&self, _fact: &Proposition) -> Option<String> {
         None
     }
+    fn failed_requirement(&self) -> Option<(&str, &Proposition)> {
+        None
+    }
+    fn failed_requirement_declaration(&self) -> Option<&str> {
+        None
+    }
     fn kernel_goal(&self) -> Option<&Proposition>;
     fn premises(&self, limit: usize) -> Vec<&Proposition>;
     fn premise_count(&self) -> usize;
@@ -102,6 +108,37 @@ impl PartialEq for ProofFailureDiagnostic {
 
 impl Eq for ProofFailureDiagnostic {}
 
+/// Render the exact rejected requirement, rather than a guessed nearby fact.
+/// Ordinary errors prefer source spelling; traces always include typed reads.
+pub(crate) fn render_failed_requirement(
+    state: &dyn ProofDiagnosticState,
+    labels: &mut render::SnapshotLabels,
+    tracing: bool,
+) -> String {
+    let Some((label, proposition)) = state.failed_requirement() else {
+        return String::new();
+    };
+    state.register_names(labels);
+    let source = render::render_simple_click_fact_labeled(proposition, labels)
+        .or_else(|| render::render_partial_click_fact_labeled(proposition, labels));
+    if tracing {
+        let checked = render::render_trace_fact_labeled(proposition, labels);
+        return match source {
+            Some(source) => format!("{label}: {source}\n  checked requirement: {checked}"),
+            None => format!("{label} (checked): {checked}"),
+        };
+    }
+    source.map_or_else(
+        || match state.failed_requirement_declaration() {
+            Some(declaration) if label == "required body fact" =>
+                format!("required body fact (declaration): {declaration}"),
+            Some(declaration) => format!("declaration being evaluated: {declaration}\n  trace the proof to inspect its unproved prerequisite"),
+            None => format!("inspect the {label} with --trace-proof"),
+        },
+        |source| format!("{label}: {source}"),
+    )
+}
+
 pub(crate) fn render_terminal_message(
     summary: &str,
     diagnostic: &ProofFailureDiagnostic,
@@ -156,6 +193,13 @@ fn render_diagnostic_labeled(
     // another state entirely — which is the one thing a reader compares these
     // lines to decide.
     let tracing = crate::surface::proof_trace::enabled_for(&diagnostic.claim_label);
+    if let Some(state) = &diagnostic.state {
+        let requirement = render_failed_requirement(state.as_ref(), labels, tracing);
+        if !requirement.is_empty() {
+            rendered.push_str("\n  ");
+            rendered.push_str(&requirement);
+        }
+    }
     let mut internal_goal_shown = false;
     if summary.is_some()
         && let Some(goal) = diagnostic.kernel_goal()
@@ -366,6 +410,41 @@ mod tests {
     }
 
     #[test]
+    fn rejected_read_prerequisite_uses_the_shared_snapshot_legend() {
+        use crate::kernel::{CMemory, CType, Pointer, Variable};
+        struct Rejected(Proposition);
+        impl ProofDiagnosticState for Rejected {
+            fn failed_requirement(&self) -> Option<(&str, &Proposition)> {
+                Some(("unproved prerequisite", &self.0))
+            }
+            fn kernel_goal(&self) -> Option<&Proposition> {
+                None
+            }
+            fn premises(&self, _: usize) -> Vec<&Proposition> {
+                Vec::new()
+            }
+            fn premise_count(&self) -> usize {
+                0
+            }
+        }
+        let state = Rejected(Proposition::CMemoryReadDefined {
+            memory: CMemory::new(),
+            pointer: Pointer::symbolic(Variable(987_001)),
+            value_type: CType::Int32,
+        });
+        let mut labels = render::SnapshotLabels::default();
+        let report = render_failed_requirement(&state, &mut labels, true);
+        assert!(report.contains("unproved prerequisite"), "{report}");
+        assert!(report.contains("snapshot#1"), "{report}");
+        let legend = labels.trace_legend();
+        assert!(legend.contains("snapshot#1 ="), "{legend}");
+        assert!(
+            !report.contains("unsupported conditional proof"),
+            "{report}"
+        );
+    }
+
+    #[test]
     fn rendering_is_the_boundary_that_visits_retained_context() {
         let state = Arc::new(CountingState {
             goal: Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(true), true),
@@ -549,9 +628,7 @@ mod tests {
                 "{report}"
             );
             assert!(
-                report.contains(
-                    "adds (internal, not Click proof syntax): viewable(memory=snapshot#1"
-                ),
+                report.contains("adds (internal): viewable(memory=snapshot#1"),
                 "{report}"
             );
         });

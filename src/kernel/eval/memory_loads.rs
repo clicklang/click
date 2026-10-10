@@ -225,6 +225,11 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
         .filter(|value| value_type.accepts(value))
         .or_else(|| {
             memory.known_value(&pointer).and_then(|stored| {
+                let complete_pointer = matches!(&stored, CValue::Pointer(_))
+                    || matches!(&stored, CValue::Int32(Bitvector32Term::Variable(variable))
+                        if registered_load_kind_for_variable(variable) == Some(LoadKind::Bits32)
+                            && registered_load_bytes_for_variable(variable)
+                                == Some(crate::kernel::C_POINTER_BYTE_WIDTH));
                 canonicalized_pointer_value_from_int_cell(
                     &pointer,
                     &stored,
@@ -238,6 +243,22 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
                 .inspect(|value| {
                     if let CValue::Pointer(value) = value {
                         record_pointer_read_observation(value.pointer(), memory, &pointer);
+                        let current = Pointer::loaded_value(
+                            &crate::kernel::intern_c_memory_ref(memory),
+                            &pointer,
+                        );
+                        if complete_pointer
+                            && !assumptions.pointers_known_equal(value.pointer(), &current)
+                        {
+                            // The cached value was selected under this path's
+                            // premises. Carry its current-cell equation with
+                            // the result, rather than treating a global read
+                            // observation as evidence in another context.
+                            facts.push(ExecutionPureFact::logical_read_equation(
+                                value.pointer().clone(),
+                                current,
+                            ));
+                        }
                     }
                 })
             })
@@ -4425,6 +4446,172 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
 mod tests {
     use super::*;
 
+    #[test]
+    fn logical_cached_pointer_read_carries_its_current_cell_equation() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let empty = PureFactContext::new();
+        let base = CMemory::new();
+        let address = Pointer::symbolic(Variable(955_901));
+        let alias = Pointer::symbolic(Variable(955_902));
+        let model = Pointer::symbolic(Variable(955_903));
+        let cached = logical_pointer_read(&base, &address, &empty);
+        let variable = typed_pointer_read_variable(&cached).unwrap();
+        let mut samples = Vec::new();
+        for size in [16u64, 64, 256, 1024] {
+            let mut memory = base.clone().materialize_named_cell(
+                address.clone(),
+                CValue::Int32(Bitvector32Term::Variable(variable)),
+            );
+            let mut context = empty
+                .clone()
+                .assume_condition(
+                    ConditionTerm::pointer_equal(address.clone(), alias.clone()),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::pointer_equal(cached.clone(), model.clone()),
+                    true,
+                );
+            for i in 0..size {
+                memory = memory.store(Pointer::symbolic(Variable(956_000 + i)), int32(7));
+                context = context.assume_condition(
+                    ConditionTerm::equal(
+                        Bitvector32Term::Variable(Variable(958_000 + i)),
+                        Bitvector32Term::Constant(7),
+                    ),
+                    true,
+                );
+            }
+            let ((paths, work), map_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    evaluate_logical_memory_load_paths(
+                        &memory,
+                        address.clone(),
+                        CType::Int64Pointer,
+                        ExecutionFacts::new(),
+                        Vec::new(),
+                        &context,
+                    )
+                })
+            });
+            samples.push((work, map_work));
+            let [path] = paths.as_slice() else {
+                panic!("one logical read");
+            };
+            assert_eq!(
+                path.outcome,
+                CExpressionOutcome::Value(CValue::typed_pointer(
+                    cached.clone(),
+                    CType::Int64Pointer
+                ))
+            );
+            assert!(path.obligations.is_empty());
+            assert_eq!(path.facts.len(), 1);
+            assert!(!path.facts.has_path_conditions());
+            let required = Pointer::loaded_value(&intern_c_memory_ref(&memory), &alias);
+            let equal = |facts: &PureFactContext| {
+                crate::kernel::resource_arguments_proven_equal(
+                    &AlgebraicValue::C(CValue::typed_pointer(model.clone(), CType::Int64Pointer)),
+                    &AlgebraicValue::C(CValue::typed_pointer(
+                        required.clone(),
+                        CType::Int64Pointer,
+                    )),
+                    facts,
+                )
+            };
+            assert!(
+                !equal(&context),
+                "constructing the result must not mutate caller evidence"
+            );
+            let retained = assumptions_with_path_context(&context, &path.facts, &path.obligations);
+            assert!(equal(&retained));
+            assert!(!equal(&context));
+            assert!(!equal(&retained.restricted_to_facts(&[], &[])));
+            assert!(!ResourceContext::new().permits_memory_read(&alias, 8, &retained));
+            let missing_alias = empty.clone().assume_condition(
+                ConditionTerm::pointer_equal(cached.clone(), model.clone()),
+                true,
+            );
+            assert!(!equal(&assumptions_with_path_context(
+                &missing_alias,
+                &path.facts,
+                &[]
+            )));
+
+            let replacement = Pointer::symbolic(Variable(955_904));
+            let changed = memory.clone().store(
+                address.clone(),
+                CValue::typed_pointer(replacement.clone(), CType::Int64Pointer),
+            );
+            let changed_paths = evaluate_logical_memory_load_paths(
+                &changed,
+                address.clone(),
+                CType::Int64Pointer,
+                ExecutionFacts::new(),
+                Vec::new(),
+                &retained,
+            );
+            let changed_context =
+                assumptions_with_path_context(&retained, &changed_paths[0].facts, &[]);
+            let changed_read = Pointer::loaded_value(&intern_c_memory_ref(&changed), &alias);
+            assert!(changed_context.pointers_known_equal(&changed_read, &replacement));
+            assert!(!changed_context.pointers_known_equal(&changed_read, &cached));
+        }
+        assert!(samples[3].0 <= samples[0].0 * 3 + 128, "{samples:?}");
+        assert!(samples[3].1 <= samples[0].1 * 6 + 512, "{samples:?}");
+    }
+
+    #[test]
+    fn logical_read_equations_are_not_conditions_or_quantifier_guards() {
+        let value = Pointer::symbolic(Variable(959_001));
+        let read = Pointer::loaded_value(&intern_c_memory(CMemory::new()), &value);
+        let fact = ExecutionPureFact::logical_read_equation(value, read);
+        let facts: ExecutionFacts = vec![fact.clone()].into();
+        assert!(!facts.has_path_conditions());
+        let goal = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        assert_eq!(wrap_path_context(goal.clone(), &facts, &[]), goal);
+        assert_eq!(guard_quantified_witness(goal.clone(), &facts), goal);
+        let ordinary: ExecutionFacts =
+            vec![ExecutionPureFact::new(fact.proposition().clone())].into();
+        assert!(ordinary.has_path_conditions());
+        assert_ne!(wrap_path_context(goal.clone(), &ordinary, &[]), goal);
+        let changed: ExecutionFacts = vec![fact.with_proposition(goal)].into();
+        assert!(
+            changed.has_path_conditions(),
+            "rewriting drops exact read-producer metadata"
+        );
+    }
+
+    #[test]
+    fn logical_pointer_read_does_not_export_a_narrow_scalar_as_a_full_cell() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let context = PureFactContext::new();
+        let address = Pointer::symbolic(Variable(959_101));
+        let base = CMemory::new();
+        let mut facts = ExecutionFacts::new();
+        let value = canonicalized_symbolic_load_value_with_identity(
+            &base,
+            &address,
+            CType::Int32,
+            &mut facts,
+            &context,
+            false,
+            None,
+            LoadPurpose::Logical,
+        )
+        .unwrap();
+        let memory = base.materialize_named_cell(address.clone(), value);
+        let paths = evaluate_logical_memory_load_paths(
+            &memory,
+            address,
+            CType::Int64Pointer,
+            ExecutionFacts::new(),
+            Vec::new(),
+            &context,
+        );
+        assert!(paths.iter().all(|path| path.facts.is_empty()));
+    }
+
     // Typed observations must preserve the complete pointer, selected alias
     // premises, snapshot changes, and session boundaries without corpus scans.
     // A cached pointer can still denote an older defining load after a frame
@@ -5419,8 +5606,8 @@ mod tests {
             panic!("one logical read expected");
         };
         assert!(
-            path.facts.is_empty(),
-            "logical read must not add theorem premises"
+            !path.facts.has_path_conditions(),
+            "logical read must not add path conditions"
         );
         assert!(
             path.obligations.is_empty(),
