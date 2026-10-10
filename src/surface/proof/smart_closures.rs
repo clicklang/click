@@ -8371,10 +8371,20 @@ fn source_backed_call_requirement_surface(
         .iter()
         .zip(site.source_arguments.iter())
         .map(|(parameter, argument)| {
-            (
-                parameter.clone(),
-                ContractExpression::CFragment(argument.clone()),
-            )
+            // An identity cast of a caller parameter is that parameter: the
+            // surface names it as the caller's own requirement does.
+            let argument = match caller_parameter_through_identity_cast(
+                argument,
+                context.parsed_function.parameters(),
+            ) {
+                Some(slot) => CExpression::Variable(
+                    context.parsed_function.parameters()[slot]
+                        .name()
+                        .to_string(),
+                ),
+                None => argument.clone(),
+            };
+            (parameter.clone(), ContractExpression::CFragment(argument))
         })
         .collect::<BTreeMap<_, _>>();
     let proposition = substitute_click_proposition(&source_proposition, &substitutions).ok()?;
@@ -8418,14 +8428,10 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
                 .parameters()
                 .iter()
                 .position(|parameter| parameter.name() == callee_name)?;
-            let CExpression::Variable(caller_name) = &resolved.arguments[callee_slot] else {
-                return None;
-            };
-            let caller_slot = context
-                .parsed_function
-                .parameters()
-                .iter()
-                .position(|parameter| parameter.name() == caller_name)?;
+            let caller_slot = caller_parameter_through_identity_cast(
+                &resolved.arguments[callee_slot],
+                context.parsed_function.parameters(),
+            )?;
             Some((predicate_argument_slot, caller_slot))
         })
         .collect::<Vec<_>>();
@@ -8434,11 +8440,16 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
     };
     let ClickProposition::PredicateCall {
         name: predicate_name,
-        arguments: substituted_arguments,
+        arguments: mut substituted_arguments,
     } = resolved.proposition
     else {
         return None;
     };
+    // The caller's requirement names its parameter; an identity cast of it
+    // is the same pointer, so the registry is consulted with the bare name.
+    let caller_parameter = &context.parsed_function.parameters()[*caller_parameter_slot];
+    *substituted_arguments.get_mut(*predicate_argument_slot)? =
+        ContractExpression::CFragment(CExpression::Variable(caller_parameter.name().to_string()));
     let entry_state = context.constants.function_entry_state.as_ref()?;
     let entry_snapshot = crate::kernel::CMemorySnapshotIdentity::of(entry_state.memory());
     // Phase 1 projects entry requirements only across an effect-free prefix.
@@ -8461,6 +8472,38 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
             entry_snapshot,
         )?;
     Some((predicate_name, selection))
+}
+
+/// The caller parameter a call argument names, directly or through a cast
+/// that leaves the pointer unchanged: the same kernel type, such as `char *`
+/// or `unsigned char *` for a `uint8 *` parameter, adding no `volatile`.
+/// Constness is a property of the access path, not of the pointer, and a
+/// read predicate grants no write permission, so a `const` cast is identity
+/// here too.
+fn caller_parameter_through_identity_cast(
+    argument: &CExpression,
+    parameters: &[syntax::C0Parameter],
+) -> Option<usize> {
+    let (name, cast_type) = match argument {
+        CExpression::Variable(name) => (name, None),
+        CExpression::Cast {
+            expression,
+            target_type,
+            pointee_volatile: false,
+            ..
+        } => match expression.as_ref() {
+            CExpression::Variable(name) => (name, Some(*target_type)),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let slot = parameters
+        .iter()
+        .position(|parameter| parameter.name() == name)?;
+    match cast_type {
+        Some(target_type) if target_type != parameters[slot].c_type().to_kernel_type() => None,
+        _ => Some(slot),
+    }
 }
 
 fn requirement_uses_planning_compatibility(

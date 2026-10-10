@@ -1274,7 +1274,7 @@ fn infer_scoped_spec_value_type(
                             )));
                         }
                         if let SpecValueType::Scalar(Some(actual)) = &actual
-                            && !click_types_compatible(*actual, *expected)
+                            && !click_argument_types_compatible(*actual, *expected)
                         {
                             return Err(ClickError::new(format!(
                                 "function `{name}` argument {index} expects {}, got {} in {context}",
@@ -2376,6 +2376,28 @@ pub(in crate::surface) fn describe_click_type(click_type: &ClickType) -> String 
             }
         }
     }
+}
+
+// Plain `char` is unsigned 8-bit on every supported target, so a C string
+// and `uint8` bytes are the same values when passed to a specification. A
+// target with signed plain `char` must make that rule target-dependent.
+const _: () = assert!(!crate::languages::c::target::CTarget::any_plain_char_is_signed());
+
+/// [`click_types_compatible`] for an argument of a predicate or pure
+/// function, which also passes a `char` pointer as `uint8` bytes: a
+/// specification such as `cstr_readable(s)` reads the same values either
+/// way. C signatures keep the two types distinct.
+pub(in crate::surface) fn click_argument_types_compatible(
+    actual: C0Type,
+    expected: C0Type,
+) -> bool {
+    matches!(
+        (actual, expected),
+        (
+            C0Type::CharPointer | C0Type::CharArray(_),
+            C0Type::UInt8Pointer | C0Type::UInt8Array(_),
+        )
+    ) || click_types_compatible(actual, expected)
 }
 
 pub(in crate::surface) fn click_types_compatible(actual: C0Type, expected: C0Type) -> bool {

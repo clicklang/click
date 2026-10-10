@@ -2920,7 +2920,7 @@ value and returns the destination pointer.
 ### `strlen`
 
 ```click
-extern int32 strlen(uint8 bytes[]) {
+extern int32 strlen(const uint8* bytes) {
     requires cstr_readable(bytes);
     ensures 0 <= result;
     ensures viewable(bytes[0..result + 1]);
