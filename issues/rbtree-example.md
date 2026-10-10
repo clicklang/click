@@ -882,9 +882,10 @@ blocks C3; each is a candidate package when it starts to.
 - **Pointer spellings across a write or a fold:** a fold at an arm identity
   after a store to another owned node verifies (chunk 1). The logical form
   now verifies too: `have id->right == p->right` and marked reads through
-  `id` use the admitted footprint's address spelling. The regression
-  `mdtests/arm_identity_read_after_store.md` covers every node field; writes
-  that reach the cell remain refused through both spellings. Loads in fold
+  `id` use the admitted footprint's address spelling, for every node field.
+  Writes that reach the cell remain refused through both spellings
+  (`mdtests/arm_identity_read_node_write_refused_id.md` and its `_p`, alias
+  siblings). Loads in fold
   arguments (`fold(rb_at(x->left), ...)`) are unsupported.
 - **Stale prose:** `mdtests/rb_replace_node.md` says a victim with
   children cannot be contracted, which `rb_replace_node_with_children.md`
@@ -1400,8 +1401,8 @@ loop join in `src/surface/proof/proof_object/execution_statements.rs`.
 | Original requirement | Current evidence and remaining scope |
 | --- | --- |
 | Descend through children without a C counter | `mdtests/rb_first_last.md` and `examples/modeled-binary-tree` carry a subtree measure. |
-| Ascend through a recursive context | `mdtests/loop_ascending_walk_to_root.md`, `rb_ascending_walk_to_root.md`, and `rb_ascending_walk_in_entry_match.md` carry a context measure while rebuilding the focused tree. |
-| Continue after consuming context layers | `mdtests/loop_body_continue_structural_measure.md` checks the explicit `continue` join; `loop_decreases_strict_descendant.md` checks one- and two-layer descent. These are component regressions, not completed rebalancing proofs. |
+| Ascend through a recursive context | `mdtests/rb_ascending_walk_to_root.md` carries a context measure while rebuilding the focused tree. |
+| Continue after consuming context layers | `mdtests/loop_body_continue_back_edge.md` checks the explicit `continue` back edge (with a numeric measure); `loop_decreases_strict_descendant.md` checks one- and two-layer descent. These are component regressions, not completed rebalancing proofs. |
 | Reject staying put | `mdtests/loop_decreases_rejects_same_instance.md` reaches the descent refusal. |
 | Reject an unrelated node | `mdtests/loop_decreases_rejects_unrelated_node.md` rejects the missing owned instance at the rebound cursor; it is an ownership/binder regression, not an isolated test of the ancestry comparison. |
 | Reject recreating a consumed layer | The audit adds `mdtests/loop_decreases_rejects_rebuilt_layer.md`: unfold the recursive layer, refold it under a fresh name with the same model, then close the back edge. Folding succeeds and descent is refused. Removing only the decreases clause verifies the same proof, isolating the ranking failure. |
@@ -1426,8 +1427,8 @@ sequential MVR obligation; see [recursion.md](recursion.md).
 
 Audit validation: all four `loop_decreases` fixtures pass under ordinary and
 candidate stable-loan semantics. Ordinary `click audit` checks all five smart
-sites in `loop_decreases_strict_descendant.md` and all four in
-`loop_body_continue_structural_measure.md`. The rebuilt-layer negative reaches
+sites in `loop_decreases_strict_descendant.md` and all four in the
+`continue` structural-measure fixture. The rebuilt-layer negative reaches
 the descent refusal; its control without the measure verifies. The full unpiped
 `scripts/check.sh` passes, including the existing traversal/ascent fixtures and
 the new negative. This is an evidence audit of the stated milestone, not an

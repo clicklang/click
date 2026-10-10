@@ -5,7 +5,7 @@ with the equation `free.start == prefix`. Folding the parent checks that
 equation against the child it is handed. Here the child was refolded to start
 at the capacity instead, which the parent's `prefix` is not known to equal, so
 the parent fold is refused. The positive fixture is
-[`resource_field_child_equations.md`](resource_field_child_equations.md).
+[`resource_unfold_binds_children_and_fields.md`](resource_unfold_binds_children_and_fields.md).
 
 ```c filename=resource_field_child_equation_rejects_other_start.c
 struct arena {

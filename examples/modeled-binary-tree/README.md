@@ -303,24 +303,15 @@ not a C operation here; the theorems exist to keep the generic ADT path
 covered, and they use the standard library's `Nat`, `nat_add`, and
 `nat_add_commutative`.
 
-## Negative rotation regressions
+## Negative rotation regression
 
-Three focused mdtests keep the model honest against rotations that are wrong in
-a specific way, each with the same resource, contract, and proof script as the
-passing [rotation_model_preserved](../../mdtests/rotation_model_preserved.md):
-
-- [rotation_model_rejects_dropped_subtree](../../mdtests/rotation_model_rejects_dropped_subtree.md)
-  never relinks the middle subtree;
-- [rotation_model_rejects_reused_child](../../mdtests/rotation_model_rejects_reused_child.md)
-  links the old root into both of the pivot's slots; and
-- [rotation_model_rejects_swapped_order](../../mdtests/rotation_model_rejects_swapped_order.md)
-  builds a perfectly well-formed tree that holds the same nodes in a different
-  in-order sequence.
-
-The first two fail at the fold, because linear ownership cannot produce the
-proposed parent from the links the C actually stored. The third folds without
-complaint and fails at the `have` that would state the rotated model, which is
-the case ownership alone cannot catch.
+A focused mdtest keeps the model honest against a rotation that is wrong in a
+specific way, under the same contract as `tree_rotate_left`
+(`ensures rotated.model == heap_rotate_left(old(t.model))`):
+[rotation_model_rejects_swapped_order](../../mdtests/rotation_model_rejects_swapped_order.md)
+builds a perfectly well-formed tree that holds the same nodes in a different
+in-order sequence. It folds without complaint and fails at the `have` that
+would state the rotated model, which is the case ownership alone cannot catch.
 
 ## Remaining
 
@@ -335,9 +326,8 @@ is partial. Three deliberate limits are worth naming:
   [`mdtests/rb_first_last.md`](../../mdtests/rb_first_last.md), whose `rb_first`
   ends with `rb_list_starts_with(rb_inorder(old(t.model)), result) == 1`.
 - This C has only a descending loop, so the descending structural measure is
-  the only one it exercises. The ascending shape is
-  [`mdtests/loop_ascending_walk_to_root.md`](../../mdtests/loop_ascending_walk_to_root.md)
-  and its rbtree form is
+  the only one it exercises. The ascending shape is exercised on the rbtree
+  in
   [`mdtests/rb_ascending_walk_to_root.md`](../../mdtests/rb_ascending_walk_to_root.md);
   the third shape
   [`issues/structural-loop-termination.md`](../../issues/structural-loop-termination.md)
@@ -351,7 +341,6 @@ resource, the context frame, `plug`, the loop binders, the structural
 measure — on C small enough to read in one sitting. The red-black work
 continues on verbatim Linux bodies in the `rb_*` mdtests, with
 [`mdtests/rb_at_link_helpers.md`](../../mdtests/rb_at_link_helpers.md),
-[`mdtests/rb_ctx_change_child.md`](../../mdtests/rb_ctx_change_child.md),
 [`mdtests/rb_first_last.md`](../../mdtests/rb_first_last.md),
 [`mdtests/rb_replace_node.md`](../../mdtests/rb_replace_node.md), and
 [`mdtests/rb_ascending_walk_to_root.md`](../../mdtests/rb_ascending_walk_to_root.md)

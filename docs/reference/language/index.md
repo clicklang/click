@@ -174,7 +174,7 @@ refused like any other unranked loop (`mdtests/loop_inside_a_branch_arm.md`).
 Recursive traversal of an inductive resource may instead use its hidden
 structural rank:
 
-<!-- verified-example: mdtests/c_decreases_resource_recursive.md -->
+<!-- verified-example: mdtests/c_decreases_resource_mutating_nullable.md -->
 ```click
 int32 list_destroy(struct node* node) {
     decreases list(node);
@@ -1066,7 +1066,7 @@ The proof may relate `result` to current or `old` memory and to guarantees
 from other applicable contracts. There is no extra proof step to expose the
 result, and no new result-binding syntax. Existing supported scalar and pointer
 return types retain their C types. See the
-[end-to-end return-valued buffer proof](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_return_buffer.md).
+[end-to-end return-valued buffer proof](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_status.md).
 
 An explicit proof `if` after `step(Contract)` may distinguish success and
 failure using `result`. Conditional postconditions remain conditional until
@@ -1220,7 +1220,7 @@ Requirements are shared by all guarantees for the function.
 
 Supported structural requirements:
 
-<!-- verified-example: mdtests/pointer_range_segment_syntax.md -->
+<!-- verified-example: mdtests/pointer_range.md -->
 ```click
 requires n >= 0;
 requires viewable(p[0..n]);
@@ -1341,8 +1341,9 @@ and `4 <= length - index`
 `views`; an owned window is not yet split out of an owned 64-bit range.
 A window two `size_t` offsets deep, `first_of_four(chunk + index)` with
 `chunk` at `bytes + start`, is at index `start + index` when each offset is
-at most `9223372036854775807`
-(`mdtests/a_window_two_offsets_into_a_64_bit_range.md`). A loop that holds
+at most `9223372036854775807`; a call that leaves fewer than four elements
+after `start + index` is refused
+(`mdtests/a_window_two_offsets_past_the_end_is_refused.md`). A loop that holds
 a chunk of the range, `views chunk[0..16]`, lends a callee any part of that
 chunk without placing it in the whole range
 (`mdtests/a_callee_reads_inside_a_chunk_a_loop_holds.md`).
@@ -1622,11 +1623,10 @@ through the `*region` the region's body owns, in either clause order.
 The same holds for the clauses the contract returns and for the cells its
 postconditions read inside its folded instances
 (`mdtests/contract_returns_field_bearing_sibling.md`,
-`mdtests/contract_postcondition_reads_through_field_bearing_instance.md`).
+`mdtests/borrowed_instance_argument_reads_old_field.md`).
 The cells are views only: writing one still needs an explicit `unfold`, and a
 cell the body does not own stays unreadable
-(`mdtests/contract_owns_through_field_bearing_instance.md`,
-`mdtests/contract_field_bearing_instance_views_grant_no_write.md`,
+(`mdtests/contract_field_bearing_instance_views_grant_no_write.md`,
 `mdtests/contract_field_bearing_instance_views_only_owned_cells.md`).
 
 Unfolding consumes the instance, so its fields have nothing to read afterward:
@@ -1849,7 +1849,7 @@ A child names one declared field-bearing resource: the parent's own definition
 or another one. Its arguments and field equations are checked against that
 definition, so a child of another family carries that family's fields:
 
-<!-- verified-example: mdtests/resource_cross_family_children.md -->
+<!-- verified-example: mdtests/rb_ascending_walk_to_root.md -->
 ```click
 resource ctx_at(node: struct tree_node*) {
     field model: Context;
@@ -1879,7 +1879,7 @@ An arm need not own only cells of the resource's own parameters. The frame
 below is keyed by the focused child and owns the cells of the `parent` the
 constructor carries, including the sibling subtree reached through it:
 
-<!-- verified-example: mdtests/resource_arm_binding_struct_base.md -->
+<!-- verified-example: mdtests/rb_ascending_walk_to_root.md -->
 ```click
 resource ctx_at(child: struct tree_node*) {
     field model: Context;
@@ -1917,7 +1917,7 @@ A body without a `match` may name children too, provided the parent has
 fields and each child is of another family. Its children's fields are then
 equations with the parent's fields:
 
-<!-- verified-example: mdtests/resource_field_child_equations.md -->
+<!-- verified-example: mdtests/resource_unfold_binds_children_and_fields.md -->
 ```click
 resource arena_prefix_state(arena: struct arena*) {
     field prefix: int32;
@@ -2306,9 +2306,9 @@ unknown afterwards. Caller instances the map does not mention frame unchanged.
 An instance the callee `produces` does not exist before the call, so the
 caller introduces it with `let`:
 
-<!-- verified-example: mdtests/c_call_binder_transport_produces.md -->
+<!-- verified-example: mdtests/authority_named_import_cross_pool_transfer.md -->
 ```click
-let { root: node } = step(init(p, left, right, value), { l: a, r: b });
+let { after: after } = step(move(source, destination, cell), { before: before });
 ```
 
 The introduced name is an ordinary owned instance afterwards: it can be folded
@@ -2537,7 +2537,7 @@ snapshot even when the underlying field is subsequently updated.
 A contract may also cast an opaque `void *` parameter of the function under
 contract to a struct pointer and describe the object through the result:
 
-<!-- verified-example: mdtests/fork_join_worker_sequential.md -->
+<!-- verified-example: mdtests/fork_join_worker_direct_contract.md -->
 ```click
 views ((struct range_job *)argument)->begin;
 owns ((struct range_job *)argument)->output[
@@ -2888,7 +2888,7 @@ field viewable for symbolic execution.
 
 Use `*obj` for the complete storage of a struct object:
 
-<!-- verified-example: mdtests/composite_resource_struct_owned_buffer.md -->
+<!-- verified-example: mdtests/composite_resource_owned_buffer_len_cap_data.md -->
 ```click
 consumes *owner;
 fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
@@ -3045,7 +3045,7 @@ width, so `owns bytes[0..1]` on a `uint8` array covers one byte.
 A loop may declare resources of its own beside its invariants, in the same
 `owns` and `views` spellings a contract uses:
 
-<!-- verified-example: mdtests/loop_owns_clause_frames_other_owned_memory.md -->
+<!-- verified-example: mdtests/loop_owns_preserves_symbolic_index.md -->
 ```click
 loop {
     owns p[0..n];

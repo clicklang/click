@@ -1,9 +1,10 @@
 # a change-child that writes the other slot is refused
 
 This is `__rb_change_child` with its two writes exchanged, kept under a
-different name so the real helper stays verbatim. It is contracted exactly like
-the `Left` case of `mdtests/rb_ctx_change_child.md`: consume a `Context::Left`
-frame focused on `old_child` and produce the same frame focused on `new_child`.
+different name so the real helper stays verbatim. It is contracted like the
+helper's `Left` case over the node-keyed context frame `ctx_at(child, root)`:
+consume a `Context::Left` frame focused on `old_child` and produce the same
+frame focused on `new_child`.
 Because it stores into `parent->rb_right`, the cell the `Left` frame's sibling
 subtree is reached through now points at `new_child`, so the sibling it kept is
 no longer a child of the proposed frame and the fold is refused. The focused

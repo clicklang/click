@@ -8,11 +8,6 @@ are proof names for the rest of the function. The refold supplies the fields
 by those names and the children by theirs, and the child `free` is refolded at
 the bound `p`.
 
-This is the let-bound form of
-[`resource_field_child_equations.md`](resource_field_child_equations.md),
-whose proof spells the same values as `old(state.prefix)` and
-`old(state.live)`.
-
 ```c filename=resource_unfold_binds_children_and_fields.c
 struct arena {
     int32* data;

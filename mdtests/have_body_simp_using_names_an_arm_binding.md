@@ -28,9 +28,7 @@ carrying the arm's scope.
 
 A premise must still be an exactly available fact. Naming the binding does
 not make a premise true: `color_bit(color) == color_bit(color)` is refused as
-not available, and a premise that reads memory through the arm's pointer
-binding together with a pure call is a separate lowering gap
-([`have_goal_reads_through_an_arm_binding.md`](have_goal_reads_through_an_arm_binding.md)).
+not available.
 
 ```c filename=simp_using_binding.c
 struct node { unsigned long word; struct node *left; };

@@ -1,7 +1,7 @@
 # Framing a map read through two field hops of a folded state
 
-The two-hop twin of `loop_frame_through_folded_state_field_cells.md`, the
-shape `arena_free` has: the function takes only a region descriptor and
+A loop frame over a map whose fields a folded `state` resource owns,
+reached through two field hops, the shape `arena_free` has: the function takes only a region descriptor and
 reaches the arena as `region->arena`. The state resource is
 `state(region->arena)`, the window is over `region->arena->occupied`, the C
 copies the arena pointer into a local and marks through it, and the frame

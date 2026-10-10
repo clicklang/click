@@ -425,8 +425,10 @@ A `return` is terminal for the whole function. It owes neither the loop's
 invariant and ranking bundle nor a join with the loop's ordinary successor.
 Write a returning C branch as a proof-level `if`: the returning arm stops at
 function exit, while every continuing arm independently reaches the back edge
-and closes the bundle. Omitted preservation uses the same per-path rule
-(`mdtests/return_inside_ranked_loop_body.md`). The returning path is a
+and closes the bundle
+(`mdtests/a_return_inside_an_explicitly_preserved_loop_body_is_a_function_exit.md`).
+Omitted preservation uses the same per-path rule
+(`mdtests/a_summarized_loop_body_return_is_certified_with_its_value.md`). The returning path is a
 function-exit path of the enclosing proof: the loop rule exports it as a
 `return` outcome with the value and state the body returned in, so the
 postcondition and the resource obligations are checked on it exactly as on a
@@ -632,9 +634,9 @@ loop's proof bodies, so a body can restate or instantiate the clause as
 written. The map may be reached through a struct field the loop does not
 write: the field's cell stays with the enclosing frame, the loop head keeps
 its value, and every read of `arena->occupied` names the one pointer loaded
-at entry, so the frame closes at the back edge as it does for a map passed as
-a parameter (`mdtests/loop_frame_through_field_over_folded_binder_cells.md`,
-`mdtests/loop_frame_through_parameter_over_folded_binder_cells.md`). A loop
+at entry, so the frame closes at the back edge
+(`mdtests/loop_frame_field_cells_at_constant_indices.md`, which frames
+individual cells of `arena->occupied`). A loop
 that writes the field loses the frame
 (`mdtests/loop_frame_rejects_rewritten_base_field.md`).
 
@@ -643,9 +645,7 @@ before the loop, as `examples/arena`'s `arena_state` owns `&arena->occupied`.
 Unfolding names each pointer field cell as the word that carries its load,
 and a clause's read of that cell is the load it names, so the field itself
 adds no member to the bundle; only the map cells do, one or two hops away
-(`mdtests/loop_frame_through_folded_state_field_cells.md`,
-`mdtests/loop_frame_through_two_hop_field_of_folded_state.md`,
-`mdtests/loop_frame_rejects_rewritten_field_of_folded_state.md`). `old(...)`
+(`mdtests/loop_frame_through_two_hop_field_of_folded_state.md`). `old(...)`
 in a loop written inside the proof reads the checked function entry even when
 the proof unfolded a resource before its first step. A map that is viewable
 at the function entry only inside a folded resource is framed against the
@@ -658,10 +658,11 @@ A loop that declares a resource havocs what the resource may own, and an
 iterated clause counts every element it could hold, so the footprint can
 cover memory the loop never holds. A cell the function keeps owning outside
 the loop's declarations is kept at the head anyway: the body sees it only as
-a view and cannot store to it. A descriptor the C condition reads, such as
-`span->end` beside a window over a map with iterated ownership, therefore
-reads the same value at every iteration
-(`mdtests/loop_keeps_cells_the_function_keeps_owning.md`).
+a view and cannot store to it
+(`mdtests/loop_body_cannot_write_function_owned_cells.md`). A descriptor the C
+condition reads therefore reads the same value at every iteration, as
+`region->end` does in `examples/arena`'s `arena_free`, whose loop owns a
+clearing window with iterated ownership of `data`.
 
 ## Modeled instances in loops
 
@@ -915,10 +916,11 @@ that omits a constructor is refused exactly as at function entry
 `contradiction` does not have to be an arm's only tactic. It refutes the path
 it stands on wherever on that path it stands, so an arm may first bridge the
 refuting fact into its own spelling — a `have`
-(`mdtests/preserve_arm_contradiction_after_a_have.md`), or the `unfold` that
-exposes the fact at all
-(`mdtests/preserve_arm_contradiction_after_an_unfold.md`) — and close
-afterwards. A refuted path owes no invariant and no measure, contributes
+(`mdtests/function_match_arm_closes_by_contradiction_after_a_have.md`, in a
+`match` at the function's own level), or the `unfold` that exposes the fact at
+all (`mdtests/do_while_returns_rebound_resources.md`, whose loop body's `Empty`
+arm unfolds the binder first) — and close afterwards. A refuted path owes no
+invariant and no measure, contributes
 neither a back edge nor a loop exit, and nothing written after the
 `contradiction` on it is executed or proved. The refutation is still decided
 from the facts standing there: naming a proposition the path does not deny
@@ -959,10 +961,10 @@ Each is finished its own way and nothing is repeated. An arm closed by
 The invariants and the loop condition are the head's premises, so they also
 refute arms. A premise that contradicts an arm's own binding-free fact says
 the binder's model is not that constructor, and the body gets that as an
-ordinary premise: `invariant node != 0` against a list resource's `Nil` arm
-`fact p == 0` publishes `l.model != CellList::Nil`, which is what lets the
-`Nil` arm close by `contradiction` on the model instead of unfolding a cell
-the arm does not own (`mdtests/loop_head_refuted_arm_closes_the_match.md`).
+ordinary premise: the guard `n > 0` against a chain resource's `Nil` arm
+`fact k == 0` publishes `c.model != Chain::Nil`, which is what lets the
+`Nil` arm close by `contradiction` on the model instead of unfolding the
+instance (`mdtests/loop_decreases_strict_descendant.md`).
 The back edge publishes the same way, so a descent that unfolds a child under
 a guard hands the next iteration the model fact that guard established. The
 rule itself is in [resources](resources.md).
@@ -981,7 +983,9 @@ A whole loop may also sit inside one proof `match` arm, which is how a fixup
 that decides its cursor's constructor once at entry is written. The arm's
 constructor equation is a premise of the path, not a different entry state:
 the loop's entry projection, the checked body, and contract certification all
-see the contract's own entry (`mdtests/rb_ascending_walk_in_entry_match.md`).
+see the contract's own entry: `spin` in
+`mdtests/loop_clause_reads_arm_bindings.md` runs its ranked loop inside the
+`Node` arm and still certifies `ensures t.model == old(t.model)`.
 The arm's bindings are in scope in the loop's clauses, as they are in any
 term the arm writes: an invariant, a declared resource's arguments, and a
 `decreases` measure may name the arm's pointer, integer, and model bindings,
@@ -998,14 +1002,13 @@ rather than anything the phase body itself declares.
 An invariant that fixes a pure function's value at the binder's model refutes
 arms too, and it is the invariant a model keyed by its own payload needs: the
 arms speak about their bindings, while the guard speaks about a C local, and
-the predicate is what relates the two. `invariant list_head_is(l.model, node)
-== 1` with `invariant node != 0` refutes the `Nil` arm, because the declared
-body at `CellList::Nil` is `if node == 0 { 1 } else { 0 }` and this path
-decides it to be `0`
-(`mdtests/loop_head_predicate_refutes_an_arm.md`). The same invariant read at
-the exit refutes the arms *with* bindings, using the arm's own facts about
-them, and when one field-free arm is left the exit learns what the model is
-(`mdtests/contract_predicate_refutes_a_framed_arm.md`). A predicate that is
+the predicate is what relates the two. `invariant ctx_node_is(c.model,
+parent) == 1` with the guard `parent != 0` refutes the `Top` frame, because the
+declared body at `Context::Top` is `if parent == 0 { 1 } else { 0 }` and this
+path decides it to be `0`. The same invariant read at the exit refutes the
+arms *with* bindings, using the arm's own facts about them, and when one
+field-free arm is left the exit learns what the model is
+(`mdtests/rb_ascending_walk_to_root.md` does both). A predicate that is
 the same at both constructors decides nothing and the arm stays live
 (`mdtests/loop_head_predicate_does_not_decide_an_arm.md`).
 
@@ -1057,12 +1060,10 @@ boundary is in [the language reference](../reference/language/index.md).
 `old(name.field)` in an invariant is the function-entry instance of the
 function-level binder of that name, whatever the body did to that instance
 before the loop. A proof that unfolds and refolds the binder before the loop
-does not change what `old(...)` means
-(`mdtests/loop_invariant_old_model_after_refold.md`), and neither does opening
-it before the proof's first `step()`, where the C execution starts from a state
-that does not hold the instance at all
-(`mdtests/loop_invariant_old_model_when_the_unfold_precedes_execution.md`,
-`mdtests/loop_invariant_old_field_after_a_refold.md`); an explicit `at(...)`
+does not change what `old(...)` means, even when it opens it before the
+proof's first `step()`, where the C execution starts from a state that does
+not hold the instance at all
+(`mdtests/loop_invariant_old_model_when_the_unfold_precedes_execution.md`); an explicit `at(...)`
 snapshot still names a state, and an instance it does not hold is an error
 there.
 

@@ -1,7 +1,9 @@
 # A field-bearing instance publishes only the cells its body owns
 
-The companion refusal to
-[`contract_owns_through_field_bearing_instance.md`](contract_owns_through_field_bearing_instance.md).
+A companion refusal to
+[`contract_returns_field_bearing_sibling.md`](contract_returns_field_bearing_sibling.md),
+where a folded field-bearing instance's published cells let a sibling clause
+load its argument.
 A folded instance whose body is unconditional and unmatched publishes the
 cells that body owns as read authority for its sibling clauses. Here `left`
 owns `node->left` and not `node->right`, so the sibling clause

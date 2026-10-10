@@ -1,7 +1,9 @@
 # A field-bearing instance's published cells are read authority only
 
-The companion refusal to
-[`contract_owns_through_field_bearing_instance.md`](contract_owns_through_field_bearing_instance.md).
+A companion refusal to
+[`contract_returns_field_bearing_sibling.md`](contract_returns_field_bearing_sibling.md),
+where a folded field-bearing instance's published cells let a sibling clause
+load its argument.
 While a contract's clauses are evaluated, the folded `links: pair(node)`
 publishes the cells its unmatched body owns so a sibling clause can load
 `node->right`. That publication is a view: it makes the cell readable and
