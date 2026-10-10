@@ -7979,6 +7979,25 @@ impl CState {
         &self.memory
     }
 
+    /// The value one scalar local or parameter holds now, by name: a stored
+    /// local's slot cell, or a logical parameter's binding, which no store
+    /// can change. Nothing when a stored slot's cell is not known.
+    pub(crate) fn scalar_local_value(&self, name: &str) -> Option<CValue> {
+        match self.locals.binding(name)? {
+            CLocalBinding::Object {
+                storage_declared: false,
+                value,
+                slot,
+                ..
+            } => self
+                .memory
+                .known_value(slot)
+                .or_else(|| Some(value.clone())),
+            CLocalBinding::Object { slot, .. } => self.memory.known_value(slot),
+            _ => None,
+        }
+    }
+
     /// The values held by memory-resident scalar locals at offset zero.
     /// Resolve names through the local-slot index so framed parameter blocks
     /// are exposed with their source name rather than their internal block id.
