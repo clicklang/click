@@ -2038,6 +2038,134 @@ fn rbtree_erase_color_flips_outer_requires_near_parent() {
 }
 
 #[test]
+#[ignore = "nightly: propagated inner rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_rotations_left_requires_sibling_child_link() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_rotations.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(sibling->rb_left, tmp1);",
+        "WRITE_ONCE(sibling->rb_left, parent);",
+        1,
+    );
+    assert!(
+        error.contains("`have` failed for `sid->rb_left == tmp1"),
+        "unexpected refusal: {error}",
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated inner rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_rotations_right_requires_sibling_child_link() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_rotations.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(sibling->rb_right, tmp1);",
+        "WRITE_ONCE(sibling->rb_right, parent);",
+        1,
+    );
+    assert!(
+        error.contains("`have` failed for `sid->rb_right == tmp1"),
+        "unexpected refusal: {error}",
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated inner rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_rotations_left_requires_inner_child_link() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_rotations.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(tmp2->rb_right, sibling);",
+        "WRITE_ONCE(tmp2->rb_right, parent);",
+        1,
+    );
+    assert!(
+        error.contains("`have` failed for `iid->rb_right == sid"),
+        "unexpected refusal: {error}",
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated inner rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_rotations_right_requires_inner_child_link() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_rotations.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(tmp2->rb_left, sibling);",
+        "WRITE_ONCE(tmp2->rb_left, parent);",
+        1,
+    );
+    assert!(
+        error.contains("`have` failed for `iid->rb_left == sid"),
+        "unexpected refusal: {error}",
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated inner rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_rotations_requires_first_grandchild_parent() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_rotations.click",
+        "rb_erase_color.c",
+        "rb_set_parent_color(tmp1, sibling,\n\t\t\t\t\t\t\t    RB_BLACK);",
+        "rb_set_parent_color(tmp1, parent,\n\t\t\t\t\t\t\t    RB_BLACK);",
+        2,
+    );
+    assert!(
+        error.contains("`have` failed for `tmp1->__rb_parent_color =="),
+        "unexpected refusal: {error}",
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated inner rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_rotations_requires_first_grandchild_blackening() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_rotations.click",
+        "rb_erase_color.c",
+        "rb_set_parent_color(tmp1, sibling,\n\t\t\t\t\t\t\t    RB_BLACK);",
+        "rb_set_parent_color(tmp1, sibling,\n\t\t\t\t\t\t\t    RB_RED);",
+        2,
+    );
+    assert!(
+        error.contains("`have` failed for `tmp1->__rb_parent_color =="),
+        "unexpected refusal: {error}",
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated inner rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_rotations_requires_old_sibling_as_far_child() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_rotations.click",
+        "rb_erase_color.c",
+        "tmp1 = sibling;",
+        "tmp1 = parent;",
+        2,
+    );
+    assert!(
+        error.contains("`have` failed for `tmp1 == sid"),
+        "unexpected refusal: {error}",
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated inner rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_rotations_requires_inner_node_as_sibling() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_rotations.click",
+        "rb_erase_color.c",
+        "sibling = tmp2;",
+        "sibling = parent;",
+        2,
+    );
+    assert!(
+        error.contains("`have` failed for `sibling == iid"),
+        "unexpected refusal: {error}",
+    );
+}
+
+#[test]
 #[ignore = "nightly: rotation-helper verification checks both helper contracts"]
 fn rbtree_rotate_set_parents_requires_the_copied_word() {
     erase_source_refuses_replacement(
