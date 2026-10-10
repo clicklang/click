@@ -57,6 +57,62 @@ impl Suppliers {
     }
 }
 
+/// Constant byte spans relative to a complete address class. Affine block
+/// coordinates alone cannot represent every checked whole-pointer alias.
+#[derive(Clone, Default)]
+struct RelativeIntervals {
+    classes: PersistentMap<u64, ReadIntervals>,
+    entries: PersistentMap<ResourceEntryId, (u64, AddressCoordinate)>,
+}
+impl RelativeIntervals {
+    fn update(
+        &mut self,
+        entry: ResourceEntryId,
+        insert: bool,
+        class: u64,
+        start: AddressCoordinate,
+        end: AddressCoordinate,
+        graph: &EqualityGraph,
+    ) {
+        let (class, start) = if insert {
+            self.entries.insert(entry, (class, start.clone()));
+            (class, start)
+        } else {
+            let Some((class, start)) = self.entries.get(&entry).cloned() else {
+                return;
+            };
+            self.entries.remove(&entry);
+            (graph.address_class_root(class), start)
+        };
+        let mut intervals = self.classes.get(&class).cloned().unwrap_or_default();
+        if insert {
+            intervals.insert(start, end, entry);
+        } else {
+            intervals.remove(start, entry);
+        }
+        if intervals.len() == 0 {
+            self.classes.remove(&class);
+        } else {
+            self.classes.insert(class, intervals);
+        }
+    }
+    fn merge(&mut self, moved: u64, kept: u64) {
+        let Some(mut smaller) = self.classes.get(&moved).cloned() else {
+            return;
+        };
+        let mut larger = self.classes.get(&kept).cloned().unwrap_or_default();
+        self.classes.remove(&moved);
+        if larger.len() < smaller.len() {
+            std::mem::swap(&mut larger, &mut smaller);
+        }
+        for (start, end, entry) in smaller.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            larger.insert(start.clone(), end.clone(), entry);
+        }
+        self.classes.insert(kept, larger);
+    }
+}
+
 /// Structural keys retain exact object evidence before graph publication.
 /// Updates charge one admitted resource delta; a cold lookup never attaches
 /// the input or enumerates facts to discover its object footprint.
@@ -116,6 +172,8 @@ impl ObjectSuppliers {
 
 #[derive(Clone, Default)]
 pub(super) struct RangeSupports {
+    owned_relative: RelativeIntervals,
+    viewed_relative: RelativeIntervals,
     footprints: Suppliers,
     owned_footprints: Suppliers,
     bases: Suppliers,
@@ -126,13 +184,8 @@ pub(super) struct RangeSupports {
     object_classes: PersistentMap<Pointer, u64>,
 }
 impl RangeSupports {
-    fn needs_base(range: &CMemoryRange) -> bool {
-        Self::symbolic(range) || !matches!(range.base().offset, PointerOffsetTerm::Constant(_))
-    }
     pub(super) fn register(range: &CMemoryRange, graph: &EqualityGraph) {
-        if Self::needs_base(range) {
-            graph.address_class(range.base());
-        }
+        graph.address_class(range.base());
         graph.address_class(&range.start_pointer());
         if Self::symbolic(range) {
             graph.footprint_class(range);
@@ -176,10 +229,16 @@ impl RangeSupports {
                 self.symbolic_objects.update(entry, insert, class, graph);
             }
         }
-        if Self::needs_base(range)
-            && let Some(class) = graph.address_class(range.base())
-        {
+        if let Some(class) = graph.address_class(range.base()) {
             self.bases.update(entry, insert, class, graph);
+            if let Some((start, end)) = Self::constant_span(range) {
+                let intervals = if fact.is_own() {
+                    &mut self.owned_relative
+                } else {
+                    &mut self.viewed_relative
+                };
+                intervals.update(entry, insert, class, start, end, graph);
+            }
             if fact.is_own() {
                 self.owned_bases.update(entry, insert, class, graph);
             }
@@ -198,6 +257,45 @@ impl RangeSupports {
                 self.owned_footprints.update(entry, insert, class, graph);
             }
         }
+    }
+    fn constant_span(range: &CMemoryRange) -> Option<(AddressCoordinate, AddressCoordinate)> {
+        let start = i128::from(range.signed_constant_start()?) * i128::from(range.element_width());
+        let end = i128::from(range.signed_constant_end()?) * i128::from(range.element_width());
+        (start < end).then(|| {
+            (
+                AddressCoordinate(AffineOffset::constant(start)),
+                AddressCoordinate(AffineOffset::constant(end)),
+            )
+        })
+    }
+    pub(super) fn relative_entries(
+        &self,
+        range: &CMemoryRange,
+        owned: bool,
+        graph: &EqualityGraph,
+    ) -> Option<Box<dyn Iterator<Item = ResourceEntryId>>> {
+        let (start, end) = Self::constant_span(range)?;
+        self.relative_byte_entries(range.base(), start, end, owned, graph)
+    }
+    pub(super) fn relative_byte_entries(
+        &self,
+        base: &Pointer,
+        start: AddressCoordinate,
+        end: AddressCoordinate,
+        owned: bool,
+        graph: &EqualityGraph,
+    ) -> Option<Box<dyn Iterator<Item = ResourceEntryId>>> {
+        let class = graph.address_class(base)?;
+        let mut streams = Vec::new();
+        if let Some(intervals) = self.owned_relative.classes.get(&class) {
+            streams.push(intervals.covering(&start, &end));
+        }
+        if !owned && let Some(intervals) = self.viewed_relative.classes.get(&class) {
+            streams.push(intervals.covering(&start, &end));
+        }
+        (!streams.is_empty()).then(|| {
+            Box::new(streams.into_iter().flatten()) as Box<dyn Iterator<Item = ResourceEntryId>>
+        })
     }
     pub(super) fn footprint_entries(&self, class: u64, owned: bool) -> Option<ResourceEntryIds> {
         let suppliers = if owned {
@@ -227,6 +325,8 @@ impl RangeSupports {
             .or_else(|| self.symbolic_objects.sole(class))
     }
     pub(super) fn merge(&mut self, moved: u64, kept: u64) {
+        self.owned_relative.merge(moved, kept);
+        self.viewed_relative.merge(moved, kept);
         self.nonempty_objects.merge(moved, kept);
         self.symbolic_objects.merge(moved, kept);
         self.read_starts.merge(moved, kept);

@@ -971,6 +971,17 @@ mode, quantity, width, and the operation's separation policy. Equality supplies
 no resource or loan authority. Candidate delivery is lazy: a direct proof stops
 at its first checked supplier rather than collecting all overlapping views.
 
+Constant spans also have an interval index relative to their complete base
+address class. This retains constant-offset bases as well as symbolic bases:
+a checked pointer alias can select an interior field of a returned range even
+when affine block coordinates cannot express that alias. Read and owned
+intervals retain their original occurrences; late base equalities merge only
+the affected smaller payload. Queries follow their explicit additive prefixes
+and interval-tree paths, without scanning other ranges sharing the base.
+Candidate alignment and ordinary coverage still check bounds, widths, access
+mode, and quantity. Partial consumption removes the original interval and
+publishes its residuals; a view cannot become an owner through base equality.
+
 When the request needs several fragments, the checker composes only its
 selected supplier input and computes residuals there. Symbolic fragment chains
 follow a unique indexed start at each selected endpoint. Ordinary coverage
