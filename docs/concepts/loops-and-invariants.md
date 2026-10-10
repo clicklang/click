@@ -635,7 +635,7 @@ written. The map may be reached through a struct field the loop does not
 write: the field's cell stays with the enclosing frame, the loop head keeps
 its value, and every read of `arena->occupied` names the one pointer loaded
 at entry, so the frame closes at the back edge
-(`mdtests/loop_frame_field_cells_at_constant_indices.md`, which frames
+(`mdtests/loop_frame_keeps_two_header_cells_of_a_field_map.md`, which frames
 individual cells of `arena->occupied`). A loop
 that writes the field loses the frame
 (`mdtests/loop_frame_rejects_rewritten_base_field.md`).
@@ -645,14 +645,16 @@ before the loop, as `examples/arena`'s `arena_state` owns `&arena->occupied`.
 Unfolding names each pointer field cell as the word that carries its load,
 and a clause's read of that cell is the load it names, so the field itself
 adds no member to the bundle; only the map cells do, one or two hops away
-(`mdtests/loop_frame_through_two_hop_field_of_folded_state.md`). `old(...)`
-in a loop written inside the proof reads the checked function entry even when
-the proof unfolded a resource before its first step. A map that is viewable
-at the function entry only inside a folded resource is framed against the
-loop entry instead, `arena->occupied[k] == at(mark.entry,
-arena->occupied[k])`, with its viewability stated just before the loop so the
-loop-entry member has a premise to cite
-(`mdtests/loop_frame_at_loop_entry_through_folded_state.md`).
+(`mdtests/loop_frame_keeps_a_two_hop_map_beside_a_written_array.md` frames a
+map two field hops from its descriptor). `old(...)` in a loop written inside
+the proof reads the checked function entry even when the proof unfolded a
+resource before its first step
+(`mdtests/loop_invariant_old_model_when_the_unfold_precedes_execution.md`).
+A map that is viewable at the function entry only inside a folded resource
+is framed against the loop entry instead, `arena->occupied[k] ==
+at(mark.entry, arena->occupied[k])`, with its viewability stated just before the loop so the
+loop-entry member has a premise to cite (`examples/arena`'s `arena_free`
+frames its `clear_occupied` loop this way).
 
 A loop that declares a resource havocs what the resource may own, and an
 iterated clause counts every element it could hold, so the footprint can
@@ -1162,7 +1164,7 @@ before it that it may rely on: the path facts of its lowering, the read
 obligations raised so far, and each earlier clause as written. An earlier
 clause is a guard in its bare form rather than as the whole earlier member,
 so the bundle gains one guard per earlier declaration instead of doubling
-with each one (`mdtests/loop_frame_field_cells_at_constant_indices.md`).
+with each one (`mdtests/loop_frame_keeps_two_header_cells_of_a_field_map.md`).
 
 A written `close_invariants by { both { ... } and { ... } }` splits the
 bundle as it is. When the whole bundle has no source form, for instance

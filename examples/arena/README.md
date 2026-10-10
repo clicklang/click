@@ -41,8 +41,7 @@ the region functions over one fixed interval. The per-cell model verifies
 each of those functions under a more general contract, so neither is the
 only coverage of anything. The mdtests written against the earlier resources
 (`mdtests/arena_prefix_region_double_free.md`,
-`mdtests/arena_prefix_regions_reject_overlap.md`,
-`mdtests/arena_destroy_beside_region_descriptors.md`) declare them inline and
+`mdtests/arena_prefix_regions_reject_overlap.md`) declare them inline and
 stay.
 
 ## The per-cell model
@@ -100,7 +99,7 @@ Both loops that write the map must own all of it, because the iterated
 fact's guard cells must be owned by the body that declares it, so each loop
 havocs every occupancy cell. What a loop leaves alone is a frame invariant
 against the loop's entry, and the contracts' frames chain those to the
-function entry (`mdtests/loop_frame_at_loop_entry_through_folded_state.md`).
+function entry.
 
 ## The pipeline
 
@@ -111,7 +110,8 @@ the three allocation failures, and success, which returns `33`
 keeps its region descriptors and the other regions' data outside each
 transfer, and the call rule keeps a cell an owned member of the caller's
 residual resources holds
-(`mdtests/call_keeps_region_beside_folded_arena_state.md`).
+(`mdtests/call_keeps_a_field_bearing_region_beside_the_lent_one.md` shows the
+rule for a kept region beside the one a call lends).
 
 The proof carries an occupancy invariant: every cell outside the live regions
 is free, spelled against the snapshots at which the regions were allocated
@@ -125,9 +125,8 @@ endpoints are tracked through the regions' fields
 the state's fields, one `have` per carried fact across each call.
 
 The value written through `first` is carried across the write through
-`second` with an explicit `transport` whose frame evidence is the kept range
-(`mdtests/call_keeps_a_region_cell_read_through_its_descriptor.md`); `simp`
-does not find that step. The combined region's index `3` is in range by its
+`second` with an explicit `transport` whose frame evidence is the kept range;
+`simp` does not find that step. The combined region's index `3` is in range by its
 fields: `r3.end == r3.start + 4` follows from the allocation's postcondition
 once `defined(r3.start + 4)` is proved on the field, and the cell written and
 read back is named through `r3.start`.

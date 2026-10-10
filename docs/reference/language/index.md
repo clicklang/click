@@ -1986,7 +1986,8 @@ after `node->word = (unsigned long)tail;` the witness is `tail`. A word with no
 recorded origin cannot fold, and the diagnostic names the missing body fact.
 
 A resource parameter serves the same purpose when the packed pointer is already
-named by the caller. `rb_at(p, parent)` in `mdtests/rb_at_link_helpers.md` takes
+named by the caller. `rb_at(p, parent)` in
+`mdtests/rb_ascent_parent_link_guard.md` takes
 the parent as its second parameter and states
 `fact p->__rb_parent_color == address(parent) + (p->__rb_parent_color & 1);`,
 so `rb_parent`'s `(struct rb_node *)(r->__rb_parent_color & ~3)` recovers that
@@ -2167,7 +2168,7 @@ bridged (`mdtests/fold_joins_ranges_abutting_by_proved_equality.md`,
 displaced base, such as the `owns (x + i)[0..1]` a call on `x + i` returns, is
 compared in the coordinates of the base it sits an exact number of elements
 from, so it rejoins `x[0..i]` and `x[i + 1..4]`
-(`mdtests/owned_pieces_returned_over_interior_pointers_rejoin.md`,
+(`mdtests/interior_pointer_pieces_rejoin_after_an_external_call.md`,
 `mdtests/owned_pieces_that_may_not_abut_do_not_rejoin.md`). Viewed and owned memory elements also make the covered
 range viewable for symbolic execution, so ordinary external reads and writes
 do not need a separate `viewable(...)` requirement for the same range.
@@ -2258,7 +2259,8 @@ taken out first (`mdtests/iterated_ownership_rejects_store_without_take.md`).
 A loop takes one element per iteration from a fact inside its own resource
 (`mdtests/iterated_ownership_claim_loop.md`,
 `mdtests/iterated_ownership_release_loop.md`), and freed cells are reused by
-a larger run with no merge step (`mdtests/iterated_ownership_coalescing.md`).
+a larger run with no merge step
+(`mdtests/iterated_ownership_released_cells_feed_an_external_claim.md`).
 The design record is in [the resource tracker's internals
 page](../../internals/resource-tracker.md#iterated-guarded-ownership).
 

@@ -1,7 +1,7 @@
 # A rotation callback may not relink the tree it was handed
 
-This is the negative half of `mdtests/augment_rotate_model_callback.md`. With
-the links inside the model, `AugmentRotate(t: tree_at(new))` hands the callback
+This is the negative half of a rotation callback contract over a modeled
+tree. With the links inside the model, `AugmentRotate(t: tree_at(new))` hands the callback
 the rebuilt tree as a proof parameter and takes it back with
 `t.model == old(t.model)`: the two link cells of every node are owned by `t`,
 so a callback has no way to reach them except through the model, and no way to

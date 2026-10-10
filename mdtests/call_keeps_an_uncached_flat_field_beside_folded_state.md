@@ -2,7 +2,7 @@
 
 `keep` owns `b->v` flat beside the folded `cells` it lends to `touch`. The
 call rule keeps a cell an owned member of the caller's residual resources
-holds (`call_keeps_region_beside_folded_arena_state.md`). Here `give(b)` runs
+holds (`call_keeps_a_field_bearing_region_beside_the_lent_one.md`). Here `give(b)` runs
 first and leaves `b->v` uncached: its postcondition relates the value, it
 caches nothing, and its havoc drops the entry cell. The havoc edge of `touch`
 still records the caller's flat member `b->v`, because the kept ranges are

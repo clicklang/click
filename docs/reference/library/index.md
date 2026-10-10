@@ -2840,7 +2840,7 @@ effect is bound to this declaration, not to the name `memcpy`.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
-**Verified use:** [`mdtests/stdlib_external_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_external_contracts.md) checks its postcondition.
+**Verified use:** [`mdtests/byte_representation_scalar_copy.md`](https://github.com/clicklang/click/blob/master/mdtests/byte_representation_scalar_copy.md) checks its typed-copy effect.
 
 ### `memcmp`
 
@@ -2860,7 +2860,7 @@ from unequal prefixes by whether the result is zero.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
-**Verified use:** [`mdtests/stdlib_external_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_external_contracts.md) checks its equality consequence.
+**Verified use:** [`mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md) checks its range and definedness preconditions at a call.
 
 ### `memset`
 
@@ -2882,7 +2882,7 @@ value and returns the destination pointer.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
-**Verified use:** [`mdtests/stdlib_external_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_external_contracts.md) checks its byte-fill consequence.
+**Verified use:** [`mdtests/c_builtin_memset_header_checks_its_contract.md`](https://github.com/clicklang/click/blob/master/mdtests/c_builtin_memset_header_checks_its_contract.md) refuses a call whose fill value is outside its precondition's range.
 
 ### `strlen`
 
@@ -2906,7 +2906,7 @@ the concrete empty-string guarantee.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
-**Verified use:** [`mdtests/stdlib_external_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_external_contracts.md) checks its length consequence.
+**Verified use:** [`mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md) checks its empty-string length consequence.
 
 ## Namespace and extension rules
 
