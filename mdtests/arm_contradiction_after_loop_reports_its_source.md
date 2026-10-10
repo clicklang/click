@@ -40,7 +40,7 @@ int32 peek(struct node* p) {
         initialize by simp;
         preserve by { step(); close_invariants(); }
     }
-    have p == p by { normalize(); }
+    have p == p by normalize();
     match x.model {
         Cell::Missing => {
             execute();

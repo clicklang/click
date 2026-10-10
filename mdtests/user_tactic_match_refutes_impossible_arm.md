@@ -21,7 +21,7 @@ tactic keep(p: int32*) {
         Model::Full => {
             unfold(a);
             let b = fold(cell(p), { model: Model::Full });
-            have b.model == old(a.model) by { simp(); }
+            have b.model == old(a.model);
         },
     }
 }

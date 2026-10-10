@@ -21,7 +21,7 @@ theorem lift(callback: int32 (*)()) executes callback() {
     requires Exact(callback);
     ensures Progress(callback) as { cell: k } by {
         step(Exact(cell));
-        have cell.revision == old(cell.revision) + 1 by { assumption(); }
+        have cell.revision == old(cell.revision) + 1 by assumption();
         apply(int32_increment_strictly_increases(old(cell.revision), 2147483647));
         simp();
     }

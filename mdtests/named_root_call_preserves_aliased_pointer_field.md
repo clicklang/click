@@ -57,32 +57,32 @@ void probe(struct node *p, struct root *root) {
   let {child: near_tree} = unfold(b);
   let {child: far_tree} = unfold(near_tree);
   unfold(far_tree);
-  have p->right == sid by { simp(); }
-  have sid->left == nid by { simp(); }
-  have nid->left == rid by { simp(); }
+  have p->right == sid;
+  have sid->left == nid;
+  have nid->left == rid;
   have rid == p->right->left->left by { normalize() using { p->right == sid; sid->left == nid; nid->left == rid; } }
   have nid == p->right->left by { normalize() using { p->right == sid; sid->left == nid; } }
-  have separate(memory(p->right->left->left->left), memory(p->right->left->left)) by { assumption(); }
+  have separate(memory(p->right->left->left->left), memory(p->right->left->left)) by assumption();
   have separate(memory(rid->left), memory(nid->left)) by { transport(separate(memory(p->right->left->left->left), memory(p->right->left->left)), separate(memory(rid->left), memory(nid->left))) using { separate(memory(p->right->left->left->left), memory(p->right->left->left)); rid == p->right->left->left; nid == p->right->left; }; }
-  have separate(memory(p->right->left->right), memory(p->right->left->left->right)) by { assumption(); }
+  have separate(memory(p->right->left->right), memory(p->right->left->left->right)) by assumption();
   have separate(memory(nid->right), memory(rid->right)) by { transport(separate(memory(p->right->left->right), memory(p->right->left->left->right)), separate(memory(nid->right), memory(rid->right))) using { separate(memory(p->right->left->right), memory(p->right->left->left->right)); nid == p->right->left; rid == p->right->left->left; }; }
   step(); step(); step(); step(); step(); step();
   let { after: c } = step(helper(p, cursor, root), { before: c });
   step();
-  have cursor == nid by { simp(); }
-  have cursor->left == rid by { simp(); }
+  have cursor == nid;
+  have cursor->left == rid;
   step();
-  have near == rid by { simp(); }
-  have rid->left == 0 by { simp(); }
+  have near == rid;
+  have rid->left == 0;
   mark before_detach;
   step();
   have rid->left == 0 by { transport(at(before_detach, rid->left) == 0, rid->left == 0) using { at(before_detach, rid->left) == 0; separate(memory(rid->left), memory(nid->left)); cursor == nid; near == rid; }; }
   have separate(memory(rid->left), memory(near->right)) by { transport(separate(memory(rid->left), memory(rid->right)), separate(memory(rid->left), memory(near->right))) using { separate(memory(rid->left), memory(rid->right)); near == rid; }; }
-  have nid->right == 0 by { simp(); }
+  have nid->right == 0;
   have separate(memory(nid->right), memory(near->right)) by { transport(separate(memory(nid->right), memory(rid->right)), separate(memory(nid->right), memory(near->right))) using { separate(memory(nid->right), memory(rid->right)); near == rid; }; }
   mark before_attach;
   step();
-  have near->right == cursor by { simp(); }
+  have near->right == cursor;
   have rid->right == cursor by { transport(near->right == cursor, rid->right == cursor) using { near->right == cursor; near == rid; }; }
   have rid->left == 0 by { transport(at(before_attach, rid->left) == 0, rid->left == 0) using { at(before_attach, rid->left) == 0; separate(memory(rid->left), memory(near->right)); near == rid; }; }
   have nid->right == 0 by { transport(at(before_attach, nid->right) == 0, nid->right == 0) using { at(before_attach, nid->right) == 0; separate(memory(nid->right), memory(near->right)); near == rid; cursor == nid; }; }

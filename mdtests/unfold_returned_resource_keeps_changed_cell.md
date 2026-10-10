@@ -28,7 +28,7 @@ void call(int32* anchor, int32* other) {
 } by {
     let { b: d } = step(keep(anchor), { a: c });
     unfold(d);
-    have *anchor == old(*anchor) by { simp(); }
+    have *anchor == old(*anchor);
     execute(); simp();
 }
 ```

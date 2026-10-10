@@ -3,7 +3,7 @@
 ```click
 theorem equal_arguments(a: Integer, b: Integer) {
     requires a == b;
-    ensures a == b by { assumption(); }
+    ensures a == b by assumption();
 }
 
 theorem unequal_arguments(a: Integer, b: Integer) {

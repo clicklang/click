@@ -49,12 +49,12 @@ void caller(struct Node* p, struct Node* q, struct Node* t, struct Root* root) {
     produces after: link(q, root);
 } by {
     step(); step(); step(); step(); step(); step();
-    have r->next == 0 by { simp(); }
+    have r->next == 0;
     mark call_entry;
     let {after: after} = step(helper(p, q, root), {before: before});
     step();
-    have r->next == at(call_entry, r->next) by { normalize(); }
-    have r->next == 0 by { simp(); }
+    have r->next == at(call_entry, r->next) by normalize();
+    have r->next == 0;
     execute(); simp();
 }
 ```

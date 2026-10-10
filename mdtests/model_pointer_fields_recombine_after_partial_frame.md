@@ -29,7 +29,7 @@ void recombine(struct node *p) {
 } by {
  match tree.model { Pair::At(pid,qid) => {
  unfold(tree);
- have p->left == qid by { simp(); }
+ have p->left == qid;
  fold(links(qid));
  unfold(links(qid));
  let check = fold(fields(qid), { model: Identity::At(qid) });

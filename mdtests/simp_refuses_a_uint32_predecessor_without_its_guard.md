@@ -6,7 +6,7 @@ leaves the goal open.
 
 ```click
 theorem predecessor_without_a_guard(x: uint32) {
-    ensures x - 1u32 < x by { simp(); }
+    ensures x - 1u32 < x by simp;
 }
 ```
 

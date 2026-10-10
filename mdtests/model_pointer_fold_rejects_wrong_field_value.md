@@ -33,10 +33,10 @@ void recombine(struct node *p) {
 } by {
  match tree.model { Triple::At(pid,qid,rid) => {
  unfold(tree);
- have p->left == qid by { simp(); }
+ have p->left == qid;
  fold(links(qid,rid));
  unfold(links(qid,rid));
- have qid->left == rid by { assumption(); }
+ have qid->left == rid by assumption();
  let check = fold(fields(qid), { model: Triple::At(pid,qid,pid) });
  execute(); normalize();
  }, }

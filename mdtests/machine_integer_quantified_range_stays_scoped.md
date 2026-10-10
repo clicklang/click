@@ -3,7 +3,7 @@
 ```click
 theorem bad(n: int32) {
     requires forall (x: uint8) { x <= 255 };
-    ensures n <= 255 by { simp(); }
+    ensures n <= 255 by simp;
 }
 ```
 

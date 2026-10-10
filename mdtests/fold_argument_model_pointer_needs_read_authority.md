@@ -25,7 +25,7 @@ void put(struct Node* p) {
 } by {
  match n.model { Model::At(id) => {
   unfold(n); step();
-  have p->left == 0 by { simp(); }
+  have p->left == 0;
   let e = fold(empty(id->left), { model: 0 });
   execute(); simp();
  }, }

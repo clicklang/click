@@ -11,7 +11,7 @@ void hold(const uint8* bytes, uint64 length) {
  requires length <= 2147483647u64;
  views bytes[0..length];
 } by {
- have viewable(bytes[0u64..length]) by { assumption(); }
+ have viewable(bytes[0u64..length]) by assumption();
  execute(); simp();
 }
 void window(const uint8* bytes, uint64 lo, uint64 hi) {
@@ -19,7 +19,7 @@ void window(const uint8* bytes, uint64 lo, uint64 hi) {
  requires hi <= 2147483647u64;
  views bytes[lo..hi];
 } by {
- have viewable(bytes[lo..hi]) by { assumption(); }
+ have viewable(bytes[lo..hi]) by assumption();
  execute(); simp();
 }
 ```

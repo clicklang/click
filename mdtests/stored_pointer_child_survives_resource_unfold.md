@@ -36,7 +36,7 @@ tactic pack(p: struct node*, q: struct node*) {
     ensures whole.tag == old(child.tag);
 } by {
     let whole = fold(box(p), { tag: child.tag }, { child: child });
-    have whole.tag == old(child.tag) by { simp(); }
+    have whole.tag == old(child.tag);
 }
 void set(struct node* p, struct node* q, struct node* r) {
     consumes p->next;
@@ -46,7 +46,7 @@ void set(struct node* p, struct node* q, struct node* r) {
     ensures whole.tag == old(child.tag);
 } by {
     execute_until(statement(6));
-    have p->next == tmp by { simp(); }
+    have p->next == tmp;
     let { whole: packaged } = pack(p, tmp, { child: child });
     let { child: returned } = unfold(packaged);
     let whole = fold(box(p), { tag: returned.tag }, { child: returned });

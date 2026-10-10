@@ -331,7 +331,7 @@ void ____rb_erase_color(struct rb_node* parent, struct rb_root* root,
                     apply(ctx_consistent_left_sibling(parent, above, Color::Red,
                         RbTree::Node(sid, sp, Color::Black, RbTree::Empty, RbTree::Empty), um, RbTree::Empty, 0));
                     apply(rb_parent_consistent_node_fixes_parent(sid, sp, Color::Black, RbTree::Empty, RbTree::Empty, parent));
-                    have sp == parent by { simp(); }
+                    have sp == parent;
                     have is_rb(RbTree::Empty) == 1 by { unfold(is_rb(RbTree::Empty)); normalize(); }
                     have rb_root_black(RbTree::Empty) == 1 by { unfold(rb_root_black(RbTree::Empty)); normalize(); }
                     have c.model == Context::Left(parent, above, Color::Red, RbTree::Node(sid, parent, Color::Black, RbTree::Empty, RbTree::Empty), um) by {
@@ -347,10 +347,10 @@ void ____rb_erase_color(struct rb_node* parent, struct rb_root* root,
                     let { sibling: s, up: u } = unfold(c);
                     let { left: sl, right: sr } = unfold(s);
                     unfold(sl); unfold(sr);
-                    have parent->rb_left == 0 by { simp(); }
-                    have parent->rb_right == sid by { simp(); }
-                    have sid->rb_left == 0 by { simp(); }
-                    have sid->rb_right == 0 by { simp(); }
+                    have parent->rb_left == 0;
+                    have parent->rb_right == sid;
+                    have sid->rb_left == 0;
+                    have sid->rb_right == 0;
                     have (sid->__rb_parent_color & 1) == 1 by {
                         rewrite((sid->__rb_parent_color & 1) == color_bit(Color::Black)); unfold(color_bit(Color::Black)); normalize();
                     }
@@ -369,16 +369,16 @@ void ____rb_erase_color(struct rb_node* parent, struct rb_root* root,
                     step(); step(); step(); step(); # Both sibling children are null.
                     step(); # Recolor the sibling red.
                     step(); step(); # Select the red parent and blacken it.
-                    have parent->__rb_parent_color == address(above) + 1 by { simp(); }
+                    have parent->__rb_parent_color == address(above) + 1;
                     have (parent->__rb_parent_color & 1) == 1 by {
                         rewrite(parent->__rb_parent_color == address(above) + 1);
                         arithmetic() using { aligned(above, 8); }
                     }
-                    have (sid->__rb_parent_color & 1) == 0 by { simp(); }
-                    have sid->rb_left == 0 by { simp(); }
-                    have sid->rb_right == 0 by { simp(); }
-                    have parent->rb_left == 0 by { simp(); }
-                    have parent->rb_right == sid by { simp(); }
+                    have (sid->__rb_parent_color & 1) == 0;
+                    have sid->rb_left == 0;
+                    have sid->rb_right == 0;
+                    have parent->rb_left == 0;
+                    have parent->rb_right == sid;
                     let sl = fold(rb_at(sid->rb_left), { model: RbTree::Empty });
                     let sr = fold(rb_at(sid->rb_right), { model: RbTree::Empty });
                     let s = fold(rb_at(sid), { model: RbTree::Node(sid, parent, Color::Red, RbTree::Empty, RbTree::Empty) }, { left: sl, right: sr });

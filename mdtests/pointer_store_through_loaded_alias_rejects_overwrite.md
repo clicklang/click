@@ -29,8 +29,8 @@ void link(struct node* p, struct node* q) {
 } by {
     unfold(x); unfold(y);
     step(); step(); step();
-    have sibling == q by { simp(); }
-    have sibling->left == p by { simp(); }
+    have sibling == q;
+    have sibling->left == p;
     mark stored;
     step();
     have q->left == p by { normalize() using { sibling == q; at(stored, sibling->left) == p; } }

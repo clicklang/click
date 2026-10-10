@@ -58,7 +58,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
                 lo <= hi - 1;
                 hi - 1 < 2147483647;
             }
-            have 0 <= (if v[hi - 1] == 0 { 1 } else { 0 }) by { simp(); }
+            have 0 <= (if v[hi - 1] == 0 { 1 } else { 0 });
             apply(int32_less_equal_to_integer(0, if v[hi - 1] == 0 { 1 } else { 0 })) using {
                 0 <= (if v[hi - 1] == 0 { 1 } else { 0 });
             }

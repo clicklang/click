@@ -41,12 +41,12 @@ void call(struct node* p, struct node* q, int32* anchor) {
     ensures p->left == 0;
 } by {
     unfold(x); unfold(y);
-    have separate(memory(p->left), memory(q->left)) by { assumption(); }
+    have separate(memory(p->left), memory(q->left)) by assumption();
     step(); step();
-    have p->left == 0 by { simp(); }
+    have p->left == 0;
     mark before;
     let { b: c } = step(retarget(p, q, anchor), { a: c });
-    have p->left == 0 by { simp(); }
+    have p->left == 0;
     have p->right == 0 by { normalize() using { at(before, p->right) == 0; } }
     have q->left == p by { normalize() using { } }
     unfold(c);

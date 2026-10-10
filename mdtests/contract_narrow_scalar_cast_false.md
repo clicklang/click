@@ -2,7 +2,7 @@
 
 ```click
 theorem wrong() {
-    ensures (uint16)65521 == (uint16)0 by { simp(); }
+    ensures (uint16)65521 == (uint16)0 by simp;
 }
 ```
 

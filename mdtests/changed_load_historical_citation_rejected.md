@@ -22,7 +22,7 @@ int32 change(int32 p[]) {
     ensures result == 0;
 } by {
     step();
-    have p[0] == 0 by { assumption(); }
+    have p[0] == 0 by assumption();
     step();
     simp();
 }

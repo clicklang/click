@@ -27,7 +27,7 @@ theorem a_cell_from_a_wrapped_hypothesis(v: int32[], n: int32) {
         have 1073741824 < n by { simp() using { 1073741825 <= n; } }
         have viewable(v[0..1073741824]);
         have 1073741824 >= 0;
-        have 1073741824 >= 0 and viewable(v[0..1073741824]) by { assumption(); }
+        have 1073741824 >= 0 and viewable(v[0..1073741824]) by assumption();
         apply(ih(1073741824)) using {
             0 <= 1073741824;
             1073741824 < n;

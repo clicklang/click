@@ -153,7 +153,7 @@ void ____rb_erase_color(struct rb_node* parent, struct rb_root* root,
                     have ctx_consistent(Context::Left(id, 0, Color::Black, RbTree::Node(sid, sp, Color::Black, RbTree::Empty, RbTree::Empty), Context::Top), RbTree::Empty, 0) == 1 by { rewrite(Context::Left(id, 0, Color::Black, RbTree::Node(sid, sp, Color::Black, RbTree::Empty, RbTree::Empty), Context::Top) == c.model); assumption(); }
                     apply(ctx_consistent_left_sibling(id, 0, Color::Black, RbTree::Node(sid, sp, Color::Black, RbTree::Empty, RbTree::Empty), Context::Top, RbTree::Empty, 0));
                     apply(rb_parent_consistent_node_fixes_parent(sid, sp, Color::Black, RbTree::Empty, RbTree::Empty, id));
-                    have sp == id by { assumption(); }
+                    have sp == id by assumption();
                     have c.model == Context::Left(id, 0, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Empty), Context::Top) by { rewrite(c.model == Context::Left(id, 0, Color::Black, RbTree::Node(sid, sp, Color::Black, RbTree::Empty, RbTree::Empty), Context::Top)); rewrite(sp == id); normalize(); }
                     have ctx_rb(Context::Left(id, 0, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Empty), Context::Top), Nat::Succ(black_height(RbTree::Empty)), Color::Black) == 1 by { rewrite(Context::Left(id, 0, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Empty), Context::Top) == c.model); assumption(); }
                     have rb_parent_consistent(plug(Context::Left(id, 0, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Empty), Context::Top), RbTree::Empty), 0) == 1 by { rewrite(Context::Left(id, 0, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Empty), Context::Top) == c.model); assumption(); }
@@ -164,11 +164,11 @@ void ____rb_erase_color(struct rb_node* parent, struct rb_root* root,
                     let { sibling: s, up: u } = unfold(c);
                     let { left: sl, right: sr } = unfold(s);
                     unfold(sl); unfold(sr); unfold(u);
-                    have root->rb_node == id by { simp(); }
-                    have parent->rb_left == 0 by { simp(); }
-                    have parent->rb_right == sid by { simp(); }
-                    have sid->rb_left == 0 by { simp(); }
-                    have sid->rb_right == 0 by { simp(); }
+                    have root->rb_node == id;
+                    have parent->rb_left == 0;
+                    have parent->rb_right == sid;
+                    have sid->rb_left == 0;
+                    have sid->rb_right == 0;
                     have (sid->__rb_parent_color & 1) == 1 by {
                         rewrite((sid->__rb_parent_color & 1) == color_bit(Color::Black)); unfold(color_bit(Color::Black)); normalize();
                     }
@@ -188,12 +188,12 @@ void ____rb_erase_color(struct rb_node* parent, struct rb_root* root,
                     step(); # Recolor the sibling red.
                     step(); # Select the black-parent branch.
                     step(); step(); # Move to the root and decode its null parent.
-                    have parent == 0 by { simp(); }
-                    have node == id by { simp(); }
-                    have id->__rb_parent_color == 1 by { simp(); }
-                    have (sid->__rb_parent_color & 1) == 0 by { simp(); }
-                    have sid->rb_left == 0 by { simp(); }
-                    have sid->rb_right == 0 by { simp(); }
+                    have parent == 0;
+                    have node == id;
+                    have id->__rb_parent_color == 1;
+                    have (sid->__rb_parent_color & 1) == 0;
+                    have sid->rb_left == 0;
+                    have sid->rb_right == 0;
                     let sl = fold(rb_at(sid->rb_left), { model: RbTree::Empty });
                     let sr = fold(rb_at(sid->rb_right), { model: RbTree::Empty });
                     have (sid->__rb_parent_color & 1) == color_bit(Color::Red) by {

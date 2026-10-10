@@ -2,7 +2,7 @@
 
 ```click
 theorem wrong(x: uint32) {
-    ensures 0 >= to_integer(x) by { apply(uint32_to_integer_bounds(x)); }
+    ensures 0 >= to_integer(x) by apply(uint32_to_integer_bounds(x));
 }
 ```
 

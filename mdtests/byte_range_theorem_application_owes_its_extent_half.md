@@ -12,7 +12,7 @@ and is negative as a signed count.
 ```click
 theorem stated_byte_range_extent_is_nonnegative(v: uint8[], lo: int32, hi: int32) {
     views v[lo..hi];
-    ensures 0 <= hi - lo by { assumption(); }
+    ensures 0 <= hi - lo by assumption();
 }
 
 theorem narrowed_byte_range_owes_its_extent(v: uint8[], lo: int32, n: int32, k: int32) {

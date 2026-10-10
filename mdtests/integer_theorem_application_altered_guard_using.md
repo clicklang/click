@@ -6,7 +6,7 @@ kernel proposition's Debug form.
 ```click
 theorem guarded(x: Integer) {
     requires x == 0;
-    ensures x + 1 > x by { simp(); }
+    ensures x + 1 > x by simp;
 }
 
 theorem altered_guard_using(x: Integer) {

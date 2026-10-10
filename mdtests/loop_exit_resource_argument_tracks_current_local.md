@@ -25,7 +25,7 @@ tactic keep(p: int32*, anchor: int32*) {
 } by {
     unfold(a);
     let b = fold(cursor(p, anchor), { tag: old(a.tag) });
-    have b.tag == old(a.tag) by { normalize(); }
+    have b.tag == old(a.tag) by normalize();
 }
 void choose(int32* p, int32* q, int32* anchor, int32 flag) {
     consumes c: cursor(p, anchor);

@@ -24,7 +24,7 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
     ensures zeros(a, 0, n) == old(zeros(a, 0, n));
 } by {
     mark entry;
-    have zeros(at(entry, a), 0, n) == zeros(at(entry, a), 0, n) by { normalize(); }
+    have zeros(at(entry, a), 0, n) == zeros(at(entry, a), 0, n) by normalize();
     step();
     have zeros(at(entry, a), 0, n) == zeros(a, 0, n) by {
         transport(

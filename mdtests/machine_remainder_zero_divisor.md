@@ -2,7 +2,7 @@
 
 ```click
 theorem tail_bounds(n: uint64, size: uint64) {
-    ensures n % size < size by { normalize(); }
+    ensures n % size < size by normalize();
 }
 ```
 

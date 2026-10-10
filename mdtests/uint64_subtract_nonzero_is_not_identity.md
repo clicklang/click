@@ -2,7 +2,7 @@
 
 ```click
 theorem subtract_one(n: uint64) {
-    ensures n - 1u64 == n by { normalize(); }
+    ensures n - 1u64 == n by normalize();
 }
 ```
 

@@ -14,7 +14,7 @@ int32 wide(const uint64* bytes) { const uint64* chunk = bytes; int32 inner = 1; 
 verifying "one-view.c";
 int32 f(const uint8* bytes) { views bytes[0..4]; ensures result == 0; } by {
  execute_until(loop(0));
- have chunk == bytes by { simp(); }
+ have chunk == bytes;
  have viewable(bytes[0..4]) by { transport(at(function.entry,viewable(bytes[0..4])),viewable(bytes[0..4])) using { at(function.entry,viewable(bytes[0..4])); 0 <= 4; } }
  have viewable(chunk[0..4]) by { rewrite(chunk == bytes); assumption(); }
  loop {
@@ -33,7 +33,7 @@ int32 f(const uint8* bytes) { views bytes[0..4]; ensures result == 0; } by {
 
 int32 wide(const uint64* bytes) { views bytes[0..4]; ensures result == 0; } by {
  execute_until(loop(0));
- have chunk == bytes by { simp(); }
+ have chunk == bytes;
  have viewable(bytes[0..4]) by { transport(at(function.entry,viewable(bytes[0..4])),viewable(bytes[0..4])) using { at(function.entry,viewable(bytes[0..4])); 0 <= 4; } }
  have viewable(chunk[0..4]) by { rewrite(chunk == bytes); assumption(); }
  loop {

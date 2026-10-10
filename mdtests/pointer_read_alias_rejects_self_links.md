@@ -14,9 +14,9 @@ void connect(struct node *p, struct node *q) {
  ensures p == q;
 } by {
  step(); step();
- have p->next == p by { simp(); }
- have q->next == q by { simp(); }
- have p == q by { normalize(); }
+ have p->next == p;
+ have q->next == q;
+ have p == q by normalize();
  execute(); simp();
 }
 ```

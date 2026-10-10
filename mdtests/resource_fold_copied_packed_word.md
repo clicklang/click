@@ -75,20 +75,20 @@ void inspect(struct node* parent) {
                     have parent == parent_identity(Parent::At(pid, sm)) by { rewrite(Parent::At(pid, sm) == tree_context.model); assumption(); }
                     have parent == pid by { unfold(parent_identity(Parent::At(pid, sm))); simp(); }
                     let { c: c } = unfold(tree_context);
-                    have parent->tag == address(pid) + (parent->tag & 1) by { simp(); }
-                    have (parent->tag & 1) == 1 by { simp(); }
+                    have parent->tag == address(pid) + (parent->tag & 1);
+                    have (parent->tag & 1) == 1;
                     mark tag_inputs;
             match c.model {
                 Pair::At(model) => {
                     unfold(c);
                     step();
-                    have sibling == model by { simp(); }
-                    have parent->tag == at(tag_inputs, parent->tag) by { simp(); }
+                    have sibling == model;
+                    have parent->tag == at(tag_inputs, parent->tag);
                     have parent->tag == address(pid) + (parent->tag & 1) by { rewrite(parent->tag == at(tag_inputs, parent->tag)); assumption(); }
                     have (parent->tag & 1) == 1 by { rewrite(parent->tag == at(tag_inputs, parent->tag)); assumption(); }
                     mark rotation;
                     step(copy_tag(parent, sibling), {});
-                    have sibling->tag == at(rotation, parent->tag) by { simp(); }
+                    have sibling->tag == at(rotation, parent->tag);
                     have model->tag == sibling->tag by { normalize() using { sibling == model; } }
                     have model->tag == at(rotation, parent->tag) by { rewrite(model->tag == sibling->tag); assumption(); }
                     have model->tag == address(pid) + (model->tag & 1) by { rewrite(model->tag == at(rotation, parent->tag)); assumption(); }

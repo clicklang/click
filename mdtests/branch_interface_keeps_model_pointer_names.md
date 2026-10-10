@@ -41,17 +41,17 @@ void put(struct Node *p, struct Node *q, int32 x, uint64 stamp) {
         unfold(s);
         step(); step(); step(); step();
         step(set_word(child, r, stamp), {});
-        have child == q by { simp(); }
+        have child == q;
         have child->tag == address(id) + stamp by { rewrite(id == r); simp(); }
         branch ensuring { fact child->tag == address(id) + stamp; } then {
             step();
-            have child->tag == address(id) + stamp by { simp(); }
+            have child->tag == address(id) + stamp;
         } else {
             step();
-            have child->tag == address(id) + stamp by { simp(); }
+            have child->tag == address(id) + stamp;
         }
         mark joined;
-        have at(joined, child->tag) - stamp == address(id) by { simp(); }
+        have at(joined, child->tag) - stamp == address(id);
         execute(); simp();
     }, }
 }

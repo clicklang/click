@@ -1750,7 +1750,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                         entry_left, old(c.model)) == ctx.model);
                                 normalize();
                             }
-                            have above == old(c.model) by { extract(above == old(c.model)); }
+                            have above == old(c.model) by extract(above == old(c.model));
                             have plug(above, RbTree::Node(entry_identity, entry_parent,
                                     entry_color, entry_right, entry_left)) == plug(old(c.model),
                                 old(t.model)) by {

@@ -88,14 +88,14 @@ int32 guarded2(int32& first_cell, int32& second_cell, bool should_throw) {
         returned => {
             step();
             step();
-            have second_cell == old(second_cell) by { simp(); }
+            have second_cell == old(second_cell);
             execute();
             simp();
         }
         threw => {
             step();
             step();
-            have second_cell == old(second_cell) by { simp(); }
+            have second_cell == old(second_cell);
             execute();
             simp();
         }

@@ -23,7 +23,7 @@ void mark(int32 *left, int32 *visited, int32 n, int32 m, int32 cur) {
     ensures forall (k: int32) { 0 <= k and k < m implies left[k] == old(left[k]) };
 } by {
     step();
-    have forall (k: int32) { 0 <= k and k < m implies left[k] == old(left[k]) } by { simp(); }
+    have forall (k: int32) { 0 <= k and k < m implies left[k] == old(left[k]) };
     execute();
     simp();
 }

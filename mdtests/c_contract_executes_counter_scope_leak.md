@@ -22,14 +22,14 @@ theorem lift(callback: int32 (*)()) executes callback() {
     requires Exact(callback);
     ensures Progress(callback) as { cell: k } by {
         step(Exact(k));
-        have k.revision == old(k.revision) + 1 by { assumption(); }
+        have k.revision == old(k.revision) + 1 by assumption();
         apply(int32_increment_strictly_increases(old(k.revision), 2147483647));
         simp();
     }
 }
 theorem outside(callback: int32 (*)()) {
     requires Exact(callback);
-    ensures 1 == 1 by { step(Exact(cell)); }
+    ensures 1 == 1 by step(Exact(cell));
 }
 verifying "counter.c";
 int32 invoke(int32 (*callback)()) {
