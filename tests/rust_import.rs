@@ -1138,19 +1138,38 @@ fn charon_slices_preserve_metadata_permissions_and_cleanup() {
     }
 }
 #[test]
-fn charon_slice_failure_does_not_suggest_unsupported_trace() {
+fn charon_slice_failure_has_a_focused_trace() {
+    // Frozen Rust inputs must use the same checked trace and proof selection
+    // as C. Tracing one proof must not execute a failing sibling contract.
     let p = charon_slice_project();
     fs::write(
         p.root.join("borrow.click"),
-        CHARON_SLICE_SIDECAR.replace("ensures result == bytes.len();", "ensures result == 0;"),
-    )
-    .unwrap();
+        "verifying \"slices.rs\";\nfn length(bytes: &[u8]) -> usize { ensures result == 0u64; } by { execute(); simp(); }\ntheorem good(x: int32) { ensures x == x by { normalize(); } }\n",
+    ).unwrap();
     let output = p.cli(&["verify"]);
     assert!(!output.status.success());
     let error = String::from_utf8(output.stderr).unwrap();
     assert!(error.contains("proof error:"), "{error}");
-    assert!(!error.contains("--trace-proof"), "{error}");
+    assert!(error.contains("--trace-proof length"), "{error}");
+    let output = p.cli(&["verify", "--trace-proof", "length", "--trace-to", "2:78"]);
+    assert!(!output.status.success());
+    let trace = String::from_utf8(output.stderr).unwrap();
+    assert!(!trace.contains("typed compiler inputs"), "{trace}");
+    assert!(trace.contains("proof trace"), "{trace}");
+    assert!(trace.contains("tactic@2"), "{trace}");
+    let output = p.cli(&["verify", "--trace-proof", "good"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let trace = String::from_utf8(output.stdout).unwrap();
+    assert!(trace.contains("1 selected proof verified"), "{trace}");
+    let output = p.cli(&["verify", "--trace-proof", "missing"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("is not a selected proof"));
 }
+
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_slice_cli_tools_recheck_expanded_certificates() {

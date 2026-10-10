@@ -1096,7 +1096,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         let wrong = trace(&["missing"]).unwrap_err();
         assert!(
             wrong.contains("`missing` is not a selected proof in ")
-                && wrong.contains("takes the name of a C function or theorem"),
+                && wrong.contains("takes the name of a function or theorem"),
             "{wrong}"
         );
         fs::remove_dir_all(directory).unwrap();

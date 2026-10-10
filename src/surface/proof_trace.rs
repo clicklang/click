@@ -1150,6 +1150,26 @@ fn append_added_facts(
                 "\n{indent}adds (surface view): {}",
                 trace_text(surface, 240)
             ));
+        } else if matches!(
+            &fact.kernel,
+            Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(..)
+                    | ConditionTerm::IntegerNotEqual(..)
+                    | ConditionTerm::IntegerLessThan(..)
+                    | ConditionTerm::IntegerLessEqual(..)
+                    | ConditionTerm::IntegerGreaterThan(..)
+                    | ConditionTerm::IntegerGreaterEqual(..),
+                _
+            )
+        ) {
+            // Numeric observations are often captured theorem arguments,
+            // rather than source expressions at the current frontier.
+            // Show their bounded identity in an explicitly requested trace.
+            let internal = render::render_internal_proposition_labeled(&fact.kernel, labels);
+            output.push_str(&format!(
+                "\n{indent}adds (internal): {}",
+                trace_text(&internal, 512)
+            ));
         } else {
             unspelled += 1;
         }
@@ -1435,6 +1455,32 @@ mod tests {
             );
             assert!(!trace.contains("snapshot#2"), "{trace}");
         });
+    }
+
+    #[test]
+    fn trace_integer_observations_do_not_hide_unspelled_theorem_facts() {
+        use crate::kernel::{IntegerTerm, MachineIntegerType, Variable};
+        let fact = TraceFact {
+            kernel: Proposition::ConditionIs(
+                ConditionTerm::integer_equal(
+                    IntegerTerm::from_machine(
+                        MachineIntegerType::UInt32,
+                        Bitvector32Term::Variable(Variable(981_702)),
+                    )
+                    .unwrap(),
+                    IntegerTerm::constant_i64(17),
+                ),
+                true,
+            ),
+            source: None,
+            surface_view: None,
+            pointer_view: None,
+        };
+        let mut output = String::new();
+        append_added_facts(&mut output, &[fact], &mut SnapshotLabels::default(), "  ");
+        assert!(output.contains("adds (internal):"), "{output}");
+        assert!(!output.contains("no exact Click spelling"), "{output}");
+        assert!(output.len() < 1024, "{output}");
     }
 
     #[test]
