@@ -2384,11 +2384,19 @@ fn read_c_lvalue_paths_without_ranges(
                 if (is_external || require_owned) && !has_read_resource {
                     return Ok(vec![CExpressionPath {
                         outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
-                            resource: Box::new(CResourceFact::view_memory(CMemoryRange::new(
-                                pointer.clone(),
-                                Bitvector32Term::Constant(0),
-                                Bitvector32Term::Constant(1),
-                            ))),
+                            resource: Box::new(CResourceFact::view_memory(
+                                CMemoryRange::new_with_element_width(
+                                    pointer.clone(),
+                                    Bitvector32Term::Constant(0),
+                                    Bitvector32Term::Constant(1),
+                                    // The element the permission check
+                                    // counts: a loaded pointer is one
+                                    // four-byte logical field.
+                                    crate::kernel::assumptions::read_candidate_byte_width(
+                                        lvalue.value_type.byte_width(),
+                                    ),
+                                ),
+                            )),
                         }),
                         facts,
                         obligations,

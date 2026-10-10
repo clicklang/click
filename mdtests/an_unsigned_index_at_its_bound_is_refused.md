@@ -26,5 +26,5 @@ void write_at_bound(int32* values, uint32 x) {
 ```
 
 ```expect
-fail: missing resource fact `owns values[x..(x + 1)]`
+fail: missing resource fact `owns values[x]`
 ```

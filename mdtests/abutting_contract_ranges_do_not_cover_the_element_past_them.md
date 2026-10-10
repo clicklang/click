@@ -25,5 +25,5 @@ int32 read_past(int32 *x, int32 i, int32 j) {
 ```
 
 ```expect
-fail: missing resource fact `views x[(j + 1)..((j + 1) + 1)]`
+fail: missing resource fact `views x[(j + 1)]`
 ```

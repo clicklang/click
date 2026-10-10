@@ -16,5 +16,5 @@ uint8 below(const uint8* bytes, uint64 length) {
 ```
 
 ```expect
-fail: missing resource fact `views bytes[0..
+fail: missing resource fact `views bytes[0]`
 ```

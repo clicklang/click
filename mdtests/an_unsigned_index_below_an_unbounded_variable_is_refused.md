@@ -25,5 +25,5 @@ void store_unbounded(int32* values, uint32 x, uint32 n) {
 ```
 
 ```expect
-fail: missing resource fact `owns values[x..(x + 1)]`
+fail: missing resource fact `owns values[x]`
 ```

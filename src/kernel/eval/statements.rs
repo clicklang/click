@@ -1056,11 +1056,16 @@ fn missing_aggregate_copy_read_resource(
             field.c_type().byte_width(),
             assumptions,
         ) {
-            return Some(CResourceFact::view_memory(CMemoryRange::new(
-                source.offset_by_bytes(field.offset_bytes()),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
-            )));
+            return Some(CResourceFact::view_memory(
+                CMemoryRange::new_with_element_width(
+                    source.offset_by_bytes(field.offset_bytes()),
+                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::Constant(1),
+                    crate::kernel::assumptions::read_candidate_byte_width(
+                        field.c_type().byte_width(),
+                    ),
+                ),
+            ));
         }
     }
     for union in layout.unions() {
@@ -1071,11 +1076,14 @@ fn missing_aggregate_copy_read_resource(
             union.size_bytes(),
             assumptions,
         ) {
-            return Some(CResourceFact::view_memory(CMemoryRange::new(
-                pointer,
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
-            )));
+            return Some(CResourceFact::view_memory(
+                CMemoryRange::new_with_element_width(
+                    pointer,
+                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::Constant(1),
+                    union.size_bytes(),
+                ),
+            ));
         }
     }
     None
