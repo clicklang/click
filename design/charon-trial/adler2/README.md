@@ -226,8 +226,8 @@ four entry bytes, starting from A = 1 and B = 0.
 addition, subtraction, multiplication and remainder, then removes the six
 multiples of 65521 in the original B expression. It preserves the ordered
 weights 4, 3, 2, 1; reversing the middle weights is rejected. The contract still
-covers one four-byte vector; the packed result and induction over larger
-batches remain to be supplied.
+covers one four-byte vector. The shared checksum getter is checked below;
+correctness induction over larger batches remains to be supplied.
 
 A false byte-order contract exposed expensive premise presentation: each
 attempt to name a scalar atom copied every memory-backed local value across
@@ -237,17 +237,14 @@ checked alias, borrowing values and charging every inspected slot. Explicit
 certificate validation skips that search and uses the recorded load and memory
 epoch. The lookup never materializes unrelated heap storage. Scaling
 regressions cover increasing local counts, deep unrelated expressions, and a
-million-element seeded range. Historical premise reconstruction also bounds
-the total work across snapshot candidates, and charges each local alias it
-examines. An unavailable spelling cannot receive a fresh search allowance at
-every historical state. The caller names its stored cursor, chunk size,
+million-element seeded range. The caller names its stored cursor, chunk size,
 and remaining length explicitly at the head, so the four-byte transition uses those few checked facts.
 
 These implications match the adapter's stored remaining-byte state and
 four-byte `next` transition. The single-vector loop establishes and maintains
 its numeric bounds, lane bounds and memory view; the original nested loops
-over arbitrary batches remain unproved.
-Full checksum correctness and whole-loop panic freedom remain unproved.
+over arbitrary batches have the terminating bounds proof described below.
+Their full checksum correctness remains unproved.
 
 Integer equality evidence now works in either orientation for explicit theorem
 applications and fact transport, including observations of native values and
@@ -334,6 +331,29 @@ Missing length/view, wrong extent, and wrong constructor-state premises have
 ordinary rejection checks. Rust source, extraction artifacts, locks, and the
 import profile remain unchanged.
 
+## Original shared checksum getter
+
+[checksum.click](checksum.click) proves the unchanged `Adler32::checksum`
+body for any two `u16` fields. Shared views of A and B suffice; neither field
+changes, and the Integer observation of its returned word is exactly
+`65536 * B + A`. The contract imposes no constructor or canonical-seed condition.
+
+[packing.click](packing.click) checks the narrow-field observations and the
+original `(B << 16) | A` order. Both 16-bit bounds are retained in the kernel
+packing law. Its conditional bridge connects fields satisfying the common A/B
+specification to the common packed checksum. Public entry-point composition and
+general-length implementation correctness remain pending.
+
+The fixture harness combines these contract fragments with the shared
+mathematical specification and the existing locked crate import. The positive
+original-body proof runs in the ordinary gate. False packed results, missing
+shared authority, and verify/profile/audit/expansion agreement run nightly:
+
+```sh
+cargo nextest run --test rust_import --run-ignored all \
+  -E 'test(charon_adler2_checksum)'
+```
+
 ## Reproduce
 
 Build Click and pinned Charon with the normal repository setup. The frozen
@@ -377,11 +397,12 @@ cargo nextest run --test rust_import --run-ignored only \
 
 ## Remaining proof work
 
-Connect the optimized lane recurrences and packed result to the shared
+Connect the optimized lane recurrences to the shared
 mathematical checksum specification in the [checksum assessment](../../rust-checksum-assessment.md).
 The constructor-state contracts for zero through four bytes provide exact
-result and byte-order checks. The general contract supplies induction and
-bounds rather than a checksum postcondition. All helper bodies remain checked
+result and byte-order checks. The shared getter proves exact packing; compose
+it with the constructor and computation at the public entry point. The general contract supplies induction
+and bounds rather than a checksum postcondition. All helper bodies remain checked
 alongside the computation. Then prove incremental processing, the unchanged
 C implementation, and equality under matched input and seed conditions.
 

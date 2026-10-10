@@ -2030,3 +2030,87 @@ fn adler_bounded_native_count_observations_verify() {
         error.message()
     );
 }
+
+const PACKING: &str = include_str!("../../design/charon-trial/adler2/packing.click");
+const CHECKSUM: &str = include_str!("../../design/charon-trial/adler2/checksum.click");
+
+#[test]
+fn charon_adler2_checksum_packs_original_shared_fields() {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    let source = format!("verifying \"src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{CHECKSUM}");
+    C0VerificationSession::new_program_prepared(&source, &prepared).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: original checksum false-result and authority mutations"]
+fn charon_adler2_checksum_rejects_false_packing_and_missing_shared_authority() {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    for (before, after) in [
+        (
+            "65536 * old(to_integer(self->b))",
+            "65535 * old(to_integer(self->b))",
+        ),
+        (
+            "+ old(to_integer(self->a));",
+            "+ old(to_integer(self->a)) + 1;",
+        ),
+        ("views self->a;", ""),
+        ("views self->b;", ""),
+    ] {
+        let contract = CHECKSUM.replacen(before, after, 1);
+        assert_ne!(contract, CHECKSUM, "{before}");
+        let source =
+            format!("verifying \"src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{contract}");
+        let error = C0VerificationSession::new_program_prepared(&source, &prepared)
+            .err()
+            .expect("false packing or missing shared authority must be refused");
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: shared checksum verify/profile/audit/expansion agreement"]
+fn charon_adler2_checksum_tools_recheck_original_contract() {
+    let p = adler2_helpers_project();
+    let source = format!("verifying \"src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{CHECKSUM}");
+    fs::write(p.root.join("borrow.click"), &source).unwrap();
+    for command in ["verify", "profile"] {
+        assert_cli(&p, &[command]);
+    }
+    let offset = source.find("have result == old(((uint32)self->b").unwrap();
+    let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
+    let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
+    let audit = Command::new(env!("CARGO_BIN_EXE_click"))
+        .args(["audit", "--start-at", &cursor, "--max-sites", "1"])
+        .arg(p.root.join("borrow.click"))
+        .output()
+        .unwrap();
+    assert!(
+        audit.status.success(),
+        "{}",
+        String::from_utf8_lossy(&audit.stderr)
+    );
+    for claim in [
+        "adler_u16_observation.ensures_0",
+        "adler_pack_fields.ensures_0",
+        "adler_pack_fields_spec.ensures_0",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+    }
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I8_checksum.contract",
+            "--in-place",
+        ],
+    );
+    assert_cli(&p, &["verify"]);
+}

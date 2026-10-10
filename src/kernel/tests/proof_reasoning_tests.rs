@@ -10641,38 +10641,42 @@ fn unsigned_u16_packing_bridges_match_disjoint_fields_and_retain_both_bounds() {
         };
         for low in [0, 1, 255, 256, 65535, 65536, maximum] {
             for high in [0, 1, 255, 256, 65535, 65536, maximum] {
-                let theorem =
-                    prove_unsigned_pack_u16_to_integer(ty, word(low), word(high)).unwrap();
-                let Proposition::Implies(low_guard, rest) = theorem.proposition() else {
-                    panic!("missing low bound");
-                };
-                let Proposition::Implies(high_guard, conclusion) = rest.as_ref() else {
-                    panic!("missing high bound");
-                };
-                assert_eq!(PureFactContext::new().proves_exact(low_guard), low <= 65535);
-                assert_eq!(
-                    PureFactContext::new().proves_exact(high_guard),
-                    high <= 65535
-                );
-                let Proposition::ConditionIs(ConditionTerm::IntegerEqual(packed, exact), true) =
-                    conclusion.as_ref()
-                else {
-                    panic!("missing observation equality");
-                };
-                let expected = match ty {
-                    MachineIntegerType::UInt32 => {
-                        u64::from((low as u32) | (high as u32).wrapping_shl(16))
+                for theorem in [
+                    prove_unsigned_pack_u16_to_integer(ty, word(low), word(high)).unwrap(),
+                    prove_unsigned_pack_u16_high_first_to_integer(ty, word(low), word(high))
+                        .unwrap(),
+                ] {
+                    let Proposition::Implies(low_guard, rest) = theorem.proposition() else {
+                        panic!("missing low bound");
+                    };
+                    let Proposition::Implies(high_guard, conclusion) = rest.as_ref() else {
+                        panic!("missing high bound");
+                    };
+                    assert_eq!(PureFactContext::new().proves_exact(low_guard), low <= 65535);
+                    assert_eq!(
+                        PureFactContext::new().proves_exact(high_guard),
+                        high <= 65535
+                    );
+                    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(packed, exact), true) =
+                        conclusion.as_ref()
+                    else {
+                        panic!("missing observation equality");
+                    };
+                    let expected = match ty {
+                        MachineIntegerType::UInt32 => {
+                            u64::from((low as u32) | (high as u32).wrapping_shl(16))
+                        }
+                        MachineIntegerType::UInt64 => low | high.wrapping_shl(16),
+                        _ => unreachable!(),
+                    };
+                    assert_eq!(observed(packed), BigInt::from(expected));
+                    assert_eq!(
+                        observed(exact),
+                        BigInt::from(low) + BigInt::from(65536) * BigInt::from(high)
+                    );
+                    if low <= 65535 && high <= 65535 {
+                        assert_eq!(observed(packed), observed(exact));
                     }
-                    MachineIntegerType::UInt64 => low | high.wrapping_shl(16),
-                    _ => unreachable!(),
-                };
-                assert_eq!(observed(packed), BigInt::from(expected));
-                assert_eq!(
-                    observed(exact),
-                    BigInt::from(low) + BigInt::from(65536) * BigInt::from(high)
-                );
-                if low <= 65535 && high <= 65535 {
-                    assert_eq!(observed(packed), observed(exact));
                 }
             }
         }

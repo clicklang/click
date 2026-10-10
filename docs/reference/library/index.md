@@ -1416,6 +1416,20 @@ Two unsigned 16-bit fields have this exact packed Integer value when both native
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint32_pack_u16_high_first_to_integer`
+
+```click
+theorem uint32_pack_u16_high_first_to_integer(low: uint32, high: uint32) {
+    requires low <= 65535u32;
+    requires high <= 65535u32;
+    ensures to_integer((high << 16) | low) == to_integer(low) + 65536 * to_integer(high);
+}
+```
+
+Two unsigned 16-bit fields have this exact packed Integer value with the shifted high field written first. Both native bounds are required.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `uint64_pack_u16_to_integer`
 
 ```click
