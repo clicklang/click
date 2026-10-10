@@ -104,6 +104,140 @@ fn assert_constant_plus_log_growth(what: &str, samples: &[(usize, usize)], slope
 }
 
 #[test]
+fn private_local_copy_ignores_unrelated_resources() {
+    for pointer_copy in [false, true] {
+        for address_backed in [false, true] {
+            let mut samples = Vec::new();
+            for size in SIZES {
+                let _session = crate::kernel::VerificationSession::enter();
+                crate::kernel::set_never_address_taken_locals(
+                    std::iter::once("target".to_string())
+                        .chain((0..size).map(|index| format!("beside_{index}")))
+                        .collect(),
+                );
+                let declare = |state: &CState, name: &str, c_type: CType| {
+                    let mut paths = execute_c_statement_paths(
+                        state,
+                        &c_declare(name, c_type),
+                        &PureFactContext::new(),
+                        &CExecutionEnvironment::new(),
+                        CExecutionSemantics::EXECUTE_BODIES,
+                        &mut ExecutionBudget::default(),
+                    )
+                    .expect("the private local declares");
+                    assert_eq!(paths.len(), 1);
+                    let CStatementOutcome::Normal(next) = paths.remove(0).outcome else {
+                        panic!("declaration did not have a normal outcome");
+                    };
+                    *next
+                };
+                let (c_type, initial, value, expression) = if pointer_copy {
+                    let value = CValue::typed_pointer(heap_base(TARGET_HEAP), CType::UInt8Pointer);
+                    (
+                        CType::UInt8Pointer,
+                        value.clone(),
+                        value.clone(),
+                        CExpression::Value(value),
+                    )
+                } else {
+                    (CType::Int32, int32(0), int32(9), c_int32_literal(9))
+                };
+                let mut state = if address_backed {
+                    declare(&CState::new(), "target", c_type)
+                } else {
+                    CState::new().with_local("target", initial)
+                };
+                for index in 0..size {
+                    state = declare(&state, &format!("beside_{index}"), CType::Int32);
+                }
+                let resources = state.resources().clone();
+                let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    execute_c_statement_paths(
+                        &state,
+                        &c_assign("target", expression.clone()),
+                        &PureFactContext::new(),
+                        &CExecutionEnvironment::new(),
+                        CExecutionSemantics::EXECUTE_BODIES,
+                        &mut ExecutionBudget::default(),
+                    )
+                    .expect("the scalar assignment executes")
+                });
+                assert_eq!(paths.len(), 1);
+                let CStatementOutcome::Normal(next) = &paths[0].outcome else {
+                    panic!("assignment did not have a normal outcome");
+                };
+                assert_eq!(next.locals().get("target"), Some(&value));
+                assert_eq!(next.resources(), &resources, "ownership must be retained");
+                assert_eq!(next.locals().get("beside_0"), None);
+                samples.push((size, work));
+            }
+            assert_constant_plus_log_growth(
+                "private local copy beside automatic storage",
+                &samples,
+                64.0,
+            );
+        }
+    }
+}
+
+#[test]
+fn private_owner_projection_does_not_republish_discarded_pairings() {
+    let mut samples = Vec::new();
+    for size in [16, 32, 64, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        crate::kernel::set_never_address_taken_locals(
+            (0..size).map(|index| format!("hidden_{index}")).collect(),
+        );
+        let mut assumptions = PureFactContext::new();
+        for index in 0..size {
+            assumptions = assumptions.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(93_800 + index as u64)),
+                    Bitvector32Term::Constant(index as u32),
+                ),
+                true,
+            );
+        }
+        let base = ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                heap_base(1),
+                0u32.into(),
+                1u32.into(),
+            )))
+            .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                heap_base(2),
+                0u32.into(),
+                1u32.into(),
+            )));
+        let expected = base.observable_facts_assuming_valid(&assumptions);
+        let mut resources = base;
+        for index in 0..size {
+            resources =
+                resources.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                    CMemory::local_pointer(&format!("hidden_{index}")),
+                    0u32.into(),
+                    1u32.into(),
+                )));
+        }
+        resources.synchronize_memory_equalities(&assumptions);
+        let (observed, work) = crate::instrumentation::measure_deterministic_work(|| {
+            resources.observable_facts_assuming_valid(&assumptions)
+        });
+        assert_eq!(observed, expected);
+        assert_eq!(
+            resources.facts().len(),
+            size + 2,
+            "projection must retain source authority"
+        );
+        samples.push((size, work));
+    }
+    // Filtering charges visits/removals, never equality-input publication.
+    // The prepared old implementation charged 27 units per private owner;
+    // the scratch projection charges 3 at every measured size.
+    assert_at_most_linear_growth("private owner projection", &samples, 8);
+}
+
+#[test]
 fn validity_is_logarithmic_in_unrelated_allocations() {
     let mut samples = Vec::new();
     for size in SIZES {

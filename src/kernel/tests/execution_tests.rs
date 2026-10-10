@@ -5,6 +5,8 @@ use std::sync::Arc;
 #[test]
 // Const construction must initialize once, freeze aliases, and retain declared storage identity.
 fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
+    let _session = crate::kernel::VerificationSession::enter();
+    crate::kernel::set_never_address_taken_locals(BTreeSet::from(["x".to_string()]));
     let execute = |state: &CState, statement: &CStatement| {
         execute_c_statement_paths(
             state,
@@ -170,6 +172,8 @@ fn assert_loan_write_rejected(outcome: &CStatementOutcome) {
 
 #[test]
 fn active_stable_loan_rejects_direct_local_assignment_and_alias_store() {
+    let _session = crate::kernel::VerificationSession::enter();
+    crate::kernel::set_never_address_taken_locals(BTreeSet::from(["x".to_string()]));
     let declared = execute_c_statement_paths(
         &CState::new(),
         &CStatement::Declare {
@@ -242,6 +246,54 @@ fn active_stable_loan_rejects_direct_local_assignment_and_alias_store() {
     )
     .expect("alias store should return a checked refusal");
     assert_loan_write_rejected(&indirect[0].outcome);
+}
+
+#[test]
+fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
+    let _session = crate::kernel::VerificationSession::enter();
+    crate::kernel::set_never_address_taken_locals(BTreeSet::from(["p".to_string()]));
+    let execute = |state: &CState, statement: &CStatement| {
+        execute_c_statement_paths(
+            state,
+            statement,
+            &PureFactContext::new(),
+            &CExecutionEnvironment::new(),
+            CExecutionSemantics::EXECUTE_BODIES,
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap()
+    };
+    let state = normal_state(&execute(
+        &CState::new(),
+        &c_declare("p", CType::UInt8Pointer),
+    ));
+    let value = CValue::typed_pointer(Pointer::symbolic(Variable(93_700)), CType::UInt8Pointer);
+    let copy = c_assign("p", CExpression::Value(value.clone()));
+    assert_eq!(
+        normal_state(&execute(&state, &copy)).locals().get("p"),
+        Some(&value)
+    );
+    let discard_const = c_assign(
+        "p",
+        CExpression::Value(value.clone().with_pointer_pointee_constant(true)),
+    );
+    assert!(matches!(
+        execute(&state, &discard_const)[0].outcome,
+        CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+    ));
+    let unowned = state.clone().with_resource_context(ResourceContext::new());
+    assert!(matches!(
+        execute(&unowned, &copy)[0].outcome,
+        CStatementOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+    ));
+    let protected = CMemoryRange::new_with_element_width(
+        state.locals().slot("p").unwrap().clone(),
+        0u32.into(),
+        1u32.into(),
+        value.byte_width(),
+    );
+    let loaned = state.with_loan_ledger(Some(active_memory_loan(protected)));
+    assert_loan_write_rejected(&execute(&loaned, &copy)[0].outcome);
 }
 
 #[test]
