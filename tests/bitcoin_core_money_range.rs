@@ -1324,8 +1324,24 @@ fn pinned_std_byte_values_verify_with_native_integer_contracts_offline() {
 
 #[test]
 fn pinned_std_span_back_verifies_unchanged_constexpr_assertion_offline() {
+    check_pinned_std_span_back("verify");
+}
+
+#[test]
+#[ignore = "nightly: expansion and retained checks from a 5.6s bundled span-back test"]
+fn pinned_std_span_back_expands_and_retains_offline() {
+    check_pinned_std_span_back("tools");
+}
+
+#[test]
+#[ignore = "nightly: whole-project mutations from a 5.6s bundled span-back test"]
+fn pinned_std_span_back_rejects_missing_views_and_false_claims_offline() {
+    check_pinned_std_span_back("rejections");
+}
+
+fn check_pinned_std_span_back(phase: &str) {
     let (root, import) = pinned_span_fixture(
-        "back",
+        &format!("back-{phase}"),
         "#include <span.h>\nint& probe(std::span<int>& span) { return span.back(); }\n",
     );
     let source = r#"verifying "span-probe.cpp";
@@ -1363,40 +1379,50 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
     let path = root.join("span.click");
     fs::write(&path, source).unwrap();
     let project = read_click_project(&path, source).unwrap();
-    verify_program_prepared_project(&project, &import).unwrap();
-    for claim in [
-        "probe.contract",
-        "span__int__value_unsigned_long_18446744073709551615_back.contract",
-    ] {
-        let expanded =
-            expand_program_prepared_project_claim_source_by_label(&project, &import, claim)
-                .unwrap();
-        let rewritten = project.with_entry_source(expanded.clone());
-        verify_program_prepared_project(&rewritten, &import).unwrap();
-        let (session, _) =
-            C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-        let position =
-            program_prepared_project_tactic_source_position(&rewritten, &import, claim, 0).unwrap();
-        session
-            .verify_at_project(&expanded, position.line, position.column)
-            .unwrap();
+    if phase != "rejections" {
+        verify_program_prepared_project(&project, &import).unwrap();
     }
-    for hostile in [
-        source.replace(" views span._M_ptr[0..1];", ""),
-        source.replace(" views this->_M_ptr[0..1];", ""),
-        source.replace(
-            "requires this->_M_extent._M_extent_value == 1u64;",
-            "requires this->_M_extent._M_extent_value == 0u64;",
-        ),
-        source.replace(
-            "ensures &result == span._M_ptr;",
-            "ensures &result == span._M_ptr + 1;",
-        ),
-    ] {
-        assert!(
-            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+    if phase == "tools" {
+        for claim in [
+            "probe.contract",
+            "span__int__value_unsigned_long_18446744073709551615_back.contract",
+        ] {
+            let expanded =
+                expand_program_prepared_project_claim_source_by_label(&project, &import, claim)
+                    .unwrap();
+            let rewritten = project.with_entry_source(expanded.clone());
+            verify_program_prepared_project(&rewritten, &import).unwrap();
+            let (session, _) =
+                C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+            let position =
+                program_prepared_project_tactic_source_position(&rewritten, &import, claim, 0)
+                    .unwrap();
+            session
+                .verify_at_project(&expanded, position.line, position.column)
+                .unwrap();
+        }
+    }
+    if phase == "rejections" {
+        for hostile in [
+            source.replace(" views span._M_ptr[0..1];", ""),
+            source.replace(" views this->_M_ptr[0..1];", ""),
+            source.replace(
+                "requires this->_M_extent._M_extent_value == 1u64;",
+                "requires this->_M_extent._M_extent_value == 0u64;",
+            ),
+            source.replace(
+                "ensures &result == span._M_ptr;",
+                "ensures &result == span._M_ptr + 1;",
+            ),
+        ] {
+            assert!(
+                verify_program_prepared_project(
+                    &read_click_project(&path, &hostile).unwrap(),
+                    &import
+                )
                 .is_err()
-        );
+            );
+        }
     }
     fs::remove_dir_all(root).unwrap();
 }
