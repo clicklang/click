@@ -96,13 +96,23 @@ pub(super) fn check_function(
     logical_source: &str,
     alias_sources: &BTreeSet<String>,
 ) -> Result<(), String> {
+    check_function_with_types(function, logical_source, alias_sources, &|_| Ok(()))
+}
+
+pub(super) fn check_function_with_types(
+    function: &CppFunction,
+    logical_source: &str,
+    alias_sources: &BTreeSet<String>,
+    type_check: &dyn Fn(&CppType) -> Result<(), String>,
+) -> Result<(), String> {
     let checker = Metadata {
         logical_source,
         alias_sources,
+        type_check,
     };
     identity(&function.declaration_id, &function.name, "function")?;
     function.span.validate(logical_source)?;
-    function.return_type.validate_aliases_in(alias_sources)?;
+    checker.value_type(&function.return_type)?;
     match &function.function_kind {
         CppFunctionKind::Free => {}
         CppFunctionKind::StaticMethod {
@@ -143,13 +153,19 @@ fn identity(id: &str, name: &str, label: &str) -> Result<(), String> {
 struct Metadata<'a> {
     logical_source: &'a str,
     alias_sources: &'a BTreeSet<String>,
+    type_check: &'a dyn Fn(&CppType) -> Result<(), String>,
 }
 
 impl Metadata<'_> {
+    fn value_type(&self, value: &CppType) -> Result<(), String> {
+        value.validate_aliases_in(self.alias_sources)?;
+        (self.type_check)(value)
+    }
+
     fn place(&self, place: &CppPlace) -> Result<(), String> {
         identity(&place.declaration_id, &place.name, "place")?;
         place.span.validate(self.logical_source)?;
-        place.value_type.validate_aliases_in(self.alias_sources)
+        self.value_type(&place.value_type)
     }
 
     fn reference(&self, place: &CppPlaceReference) -> Result<(), String> {
@@ -189,9 +205,7 @@ impl Metadata<'_> {
 
     fn expression(&self, expression: &CppExpression) -> Result<(), String> {
         crate::instrumentation::record_deterministic_work(1);
-        expression
-            .value_type()
-            .validate_aliases_in(self.alias_sources)?;
+        self.value_type(expression.value_type())?;
         let span = match expression {
             CppExpression::ObserverCall {
                 callee,
@@ -270,7 +284,7 @@ impl Metadata<'_> {
                     span,
                 } => {
                     self.callee(callee)?;
-                    value_type.validate_aliases_in(self.alias_sources)?;
+                    self.value_type(value_type)?;
                     span.validate(self.logical_source)?;
                     self.arguments(arguments)?;
                 }
@@ -283,12 +297,8 @@ impl Metadata<'_> {
         for conversion in conversions {
             crate::instrumentation::record_deterministic_work(1);
             conversion.span.validate(self.logical_source)?;
-            conversion
-                .source_type
-                .validate_aliases_in(self.alias_sources)?;
-            conversion
-                .value_type
-                .validate_aliases_in(self.alias_sources)?;
+            self.value_type(&conversion.source_type)?;
+            self.value_type(&conversion.value_type)?;
         }
         Ok(())
     }
@@ -368,7 +378,7 @@ impl Metadata<'_> {
                     self.reference(target)?;
                     self.callee(callee)?;
                     self.arguments(arguments)?;
-                    value_type.validate_aliases_in(self.alias_sources)?;
+                    self.value_type(value_type)?;
                     span
                 }
                 CppStatement::TrivialCopy {
@@ -447,7 +457,7 @@ impl Metadata<'_> {
                 } => {
                     self.callee(callee)?;
                     self.arguments(arguments)?;
-                    value_type.validate_aliases_in(self.alias_sources)?;
+                    self.value_type(value_type)?;
                     self.cleanups(cleanups)?;
                     span
                 }
@@ -458,7 +468,7 @@ impl Metadata<'_> {
                     span,
                 } => {
                     self.reference(source)?;
-                    value_type.validate_aliases_in(self.alias_sources)?;
+                    self.value_type(value_type)?;
                     self.cleanups(cleanups)?;
                     span
                 }
@@ -505,7 +515,7 @@ impl Metadata<'_> {
                 } => {
                     self.callee(callee)?;
                     self.arguments(arguments)?;
-                    value_type.validate_aliases_in(self.alias_sources)?;
+                    self.value_type(value_type)?;
                     self.conversions(conversions)?;
                     self.cleanups(cleanups)?;
                     span
@@ -550,7 +560,7 @@ impl Metadata<'_> {
                         CppCondition::Call { call } => {
                             self.callee(&call.callee)?;
                             self.arguments(&call.arguments)?;
-                            call.value_type.validate_aliases_in(self.alias_sources)?;
+                            self.value_type(&call.value_type)?;
                             call.span.validate(self.logical_source)?;
                         }
                     }
