@@ -21,10 +21,9 @@ points at the result, `rb_at(0)` is `RbTree::Empty`, and `plug(Top, Empty)` is
 payload is this node. That is D2's intent, and it is dischargeable at `fold`
 only because a pure function that reads no memory now anchors its pointer
 arguments to one canonical snapshot rather than the ambient one (package A20;
-see [`docs/concepts/resources.md`](../docs/concepts/resources.md) and
-[`rb_at_link_helpers.md`](rb_at_link_helpers.md)). The descent folds the frame
-and the focused subtree on every iteration, so both facts are re-established
-each time round the loop.
+see [`docs/concepts/resources.md`](../docs/concepts/resources.md)). The
+descent folds the frame and the focused subtree on every iteration, so both
+facts are re-established each time round the loop.
 
 `rb_first` also states its result's *position*: on a non-empty tree the result
 is the head of `rb_inorder`. `exists` cannot quantify a `List`-typed variable,

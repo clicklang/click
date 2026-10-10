@@ -10,8 +10,8 @@ different indices have different products. So `k != i` carries
 `s->p[k]` across the write at `s->p[i]`, with nothing said about how
 large either index is.
 
-`a_frame_across_a_64_bit_write_must_exclude_the_written_cell.md` drops
-`k != i`.
+`a_frame_over_a_64_bit_indexed_write_must_exclude_its_cell.md` is a smaller
+store whose frame drops `k != i` and is refused.
 
 ```c filename=a_frame_holds_across_a_write_at_a_64_bit_index.c
 struct E { unsigned long v; };

@@ -36,11 +36,10 @@ spec enum Context {
 `RbTree::Node` is `(identity, parent, color, left, right)` and
 `Context::Left`/`Context::Right` are
 `(identity, grandparent, color, sibling_model, up_model)`: exactly the shapes
-C1b's fixtures use (`mdtests/rb_first_last.md`,
-`mdtests/rb_at_link_helpers.md`). The model is keyed by node with the parent in
-the payload because `rb_first(root)` and `rb_next(node)` have no C local naming
-the focused node's parent, so a `rb_at(p, parent)` resource could not be named
-in their contracts (gap 35).
+C1b's fixtures use (`mdtests/rb_first_last.md`). The model is keyed by node
+with the parent in the payload because `rb_first(root)` and `rb_next(node)`
+have no C local naming the focused node's parent, so a `rb_at(p, parent)`
+resource could not be named in their contracts (gap 35).
 
 Because the parent is part of the model, every model function that moves a node
 also states what happens to the parent payloads, the way the C rotation writes

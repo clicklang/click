@@ -496,8 +496,9 @@ sequence:
   witness bindings in function contracts.
 - `mdtests/contract_let_type_mismatch.md`: explicit `let` type annotation
   mismatch diagnostic.
-- `mdtests/byte_slice_stdlib.md`: stdlib byte-slice helpers over `uint8[]`,
-  including byte counts, slice equality, range equality, and all-equal facts.
+- `mdtests/byte_count_of_two_merged_branches_matches_the_c_count.md`: the
+  stdlib `byte_count` helper over `uint8[]` matched against a C count after
+  two branches merge.
 - `mdtests/byte_slice_range_predicates.md`: byte contains/all-not-equal
   predicates and `obtain (...)` after explicit predicate unfolding.
 - `mdtests/cstr_stdlib.md`: first C-string predicates over `uint8[]`, including
@@ -656,9 +657,9 @@ a subtree and `ctx_at(child, root)` for the frame above it.
 - `mdtests/rb_parent_family.md`: the packed parent word, with the unchanged
   helper shapes recovering a parent pointer and its provenance from a tagged
   word.
-- `mdtests/rb_at_link_helpers.md`: `rb_link_node`, `rb_set_parent`,
-  `rb_set_parent_color`, `rb_set_black`, and `rb_red_parent` over the modeled
-  subtree, each stating its effect on the model. Its negatives are
+- `mdtests/rb_set_parent_red_ors_a_zero_color.md`: `rb_set_parent_color`
+  with `RB_RED` over a one-node modeled `rb_at`, stating its effect on the
+  model. Its negatives are
   `mdtests/rb_at_rejects_wrong_color_bit.md` and
   `mdtests/rb_at_rejects_wrong_parent_word.md`, which refuse a fold that
   proposes a color or a parent the node's own word does not carry.
@@ -670,10 +671,9 @@ a subtree and `ctx_at(child, root)` for the frame above it.
 - `mdtests/rb_first_last.md`: the unchanged `rb_first` and `rb_last`, the
   descending walk that produces a frame and a focused subtree with
   `plug(ctx.model, sub.model) == old(t.model)` and states the result as the
-  first or last element of `rb_inorder`. Its negatives are
-  `mdtests/rb_first_rejects_unguarded_first.md`, which drops the nonempty
-  guard, and `mdtests/rb_first_rejects_wrong_frame_parent.md`, which folds a
-  descent frame naming the wrong ancestor.
+  first or last element of `rb_inorder`. Its negative is
+  `mdtests/rb_first_rejects_wrong_frame_parent.md`, which folds a descent
+  frame naming the wrong ancestor.
 - `mdtests/rb_replace_node.md`: the unchanged `rb_replace_node` for a childless
   victim, whose model effect is the identity substitution `rb_substitute`, in
   all three frame positions. `mdtests/rb_replace_node_with_children.md` is the
