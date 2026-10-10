@@ -11,9 +11,14 @@ pub(super) fn prepare(
     function: &CFunction,
     reachable: &[CFunction],
     layouts: BTreeMap<String, syntax::C0StructLayout>,
+    library_contracts: String,
 ) -> Result<PreparedExecution, String> {
     let functions = prepare_functions(import, function, reachable, &layouts)?;
-    Ok(PreparedExecution { functions, layouts })
+    Ok(PreparedExecution {
+        functions,
+        layouts,
+        library_contracts,
+    })
 }
 
 /// Materialize checked nominal layouts once for execution and proof metadata.

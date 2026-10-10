@@ -1207,6 +1207,15 @@ fn pinned_span_fixture_with_exact_dependencies(
     harness: &str,
     declaration_dependencies: &[&str],
 ) -> (PathBuf, PreparedCppImport) {
+    pinned_span_fixture_with_standard_library(name, harness, declaration_dependencies, "verified")
+}
+
+fn pinned_span_fixture_with_standard_library(
+    name: &str,
+    harness: &str,
+    declaration_dependencies: &[&str],
+    standard_library: &str,
+) -> (PathBuf, PreparedCppImport) {
     assert_eq!(
         sha256(ARCHIVE),
         "fceeaef86784f820339f6dc3fc24992eb9c6bcf52edccbf6b7869d79296a3c7d"
@@ -1258,7 +1267,8 @@ fn pinned_span_fixture_with_exact_dependencies(
         "compilation_database": "compile_commands.json", "working_directory": ".",
         "source": "span-probe.cpp", "logical_source": "span-probe.cpp",
         "dependencies": [],
-        "function": "probe", "artifact": "span.click-cpp.json"
+        "function": "probe", "artifact": "span.click-cpp.json",
+        "standard_library": standard_library
     });
     let dependencies = config["dependencies"].as_array_mut().unwrap();
     dependencies.extend(declaration_dependencies.iter().map(|path| (*path).into()));
@@ -5063,4 +5073,174 @@ struct span__int__value_unsigned_long_18446744073709551615 probe(const struct sp
         }
     }
     fs::remove_dir_all(root).unwrap();
+}
+
+fn axiomatic_span_fixture(
+    name: &str,
+    harness: &str,
+    dependencies: &[&str],
+) -> (PathBuf, PreparedCppImport) {
+    pinned_span_fixture_with_standard_library(name, harness, dependencies, "axiomatic")
+}
+
+// Bitcoin's unchanged `SpanPopBack` verifies against Click's `std::span`
+// contracts: libstdc++'s `size`, `back` and `first` are axioms with no
+// exported body, and every contract states the span through model accessors.
+#[test]
+fn axiomatic_span_pop_back_verifies_against_catalog_contracts() {
+    let (root, import) = axiomatic_span_fixture(
+        "axiomatic-pop-back",
+        "#include <span.h>\nint& probe(std::span<int>& span) { return SpanPopBack(span); }\n",
+        &[
+            "bitcoin-src/src/span.h",
+            "sysroot/usr/include/c++/12/span",
+            "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
+        ],
+    );
+    let axioms = import
+        .export()
+        .reachable_functions
+        .iter()
+        .filter_map(|function| function.axiom.as_ref())
+        .map(|axiom| axiom.qualified_name.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        axioms,
+        std::collections::BTreeSet::from([
+            "std::span<int>::back",
+            "std::span<int>::first",
+            "std::span<int>::size"
+        ])
+    );
+    let pop_back = import
+        .export()
+        .reachable_functions
+        .iter()
+        .find(|function| function.name.starts_with("SpanPopBack"))
+        .unwrap()
+        .name
+        .clone();
+    let source = format!(
+        r#"verifying "span-probe.cpp";
+theorem uint64_predecessor_below(n: uint64) {{
+    requires 1u64 <= n;
+    ensures n - 1u64 <= n by {{
+        apply(uint64_less_equal_to_integer(1u64, n));
+        apply(uint64_subtract_to_integer(n, 1u64));
+        have to_integer(n - 1u64) <= to_integer(n) by {{
+            arithmetic() using {{ to_integer(n - 1u64) == to_integer(n) - 1; }}
+        }}
+        apply(uint64_less_equal_of_to_integer(n - 1u64, n));
+    }}
+}}
+int32& {pop_back}(struct span__int__value_unsigned_long_18446744073709551615& span) {{
+    owns std_span_data(span);
+    owns std_span_size(span);
+    requires 1u64 <= std_span_size(span);
+    ensures std_span_data(span) == old(std_span_data(span));
+    ensures std_span_size(span) == old(std_span_size(span)) - 1u64;
+    ensures &result == old(std_span_data(span)) + (old(std_span_size(span)) - 1u64);
+}} by {{
+    apply(uint64_predecessor_below(std_span_size(span)));
+    execute_until(statement(2));
+    have size - 1u64 <= std_span_size(span) by {{
+        simp() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
+    }}
+    execute();
+    simp();
+}}
+int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {{
+    owns std_span_data(span);
+    owns std_span_size(span);
+    requires 1u64 <= std_span_size(span);
+    ensures std_span_size(span) == old(std_span_size(span)) - 1u64;
+    ensures &result == old(std_span_data(span)) + (old(std_span_size(span)) - 1u64);
+}} by {{
+    execute();
+    simp();
+}}
+"#
+    );
+    let sidecar = root.join("span.click");
+    fs::write(&sidecar, &source).unwrap();
+    let parsed = read_click_project(&sidecar, &source).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+
+    // Expansion runs against the same contracts, and writes back only the
+    // sidecar: the catalog stays Click's.
+    let expanded = expand_program_prepared_project_claim_source_by_label(
+        &parsed,
+        &import,
+        &format!("{pop_back}.contract"),
+    )
+    .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert_ne!(expanded, source);
+    assert!(!expanded.contains("extern"), "{expanded}");
+    verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+
+    let refuse = |edited: String, expected: &str| {
+        let parsed = read_click_project(&sidecar, &edited).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import)
+            .expect_err("an unsupported claim must not verify");
+        assert!(
+            error.message().contains(expected),
+            "{}\n{edited}",
+            error.message()
+        );
+    };
+    // Without a nonempty view the proof has no predecessor bound, and the
+    // refusal spells the accessor's field path as a sidecar writes it.
+    refuse(
+        source.replacen("    requires 1u64 <= std_span_size(span);\n", "", 1),
+        "span._M_extent._M_extent_value",
+    );
+    // `first` keeps the data pointer; a moved one is false.
+    refuse(
+        source.replacen(
+            "ensures std_span_data(span) == old(std_span_data(span));",
+            "ensures std_span_data(span) == old(std_span_data(span)) + 1u64;",
+            1,
+        ),
+        "ensures",
+    );
+}
+
+// A standard function without a Click contract is refused by name; nothing
+// about it is assumed.
+#[test]
+fn axiomatic_span_refuses_an_uncatalogued_standard_function() {
+    let (root, import) = axiomatic_span_fixture(
+        "axiomatic-size-bytes",
+        "#include <span>\nunsigned long probe(std::span<int>& span) { return span.size_bytes(); }\n",
+        &[
+            "sysroot/usr/include/c++/12/span",
+            "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
+        ],
+    );
+    let axiom = import
+        .export()
+        .reachable_functions
+        .iter()
+        .find(|function| function.axiom.is_some())
+        .unwrap();
+    assert_eq!(
+        axiom.axiom.as_ref().unwrap().qualified_name,
+        "std::span<int>::size_bytes"
+    );
+    let source = r#"verifying "span-probe.cpp";
+uint64 probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
+    views std_span_size(span);
+    ensures result == result;
+} by {
+    execute();
+    simp();
+}
+"#;
+    let sidecar = root.join("span.click");
+    fs::write(&sidecar, source).unwrap();
+    let parsed = read_click_project(&sidecar, source).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(error.message().contains(&axiom.name), "{}", error.message());
 }

@@ -121,11 +121,13 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         .iter()
         .map(|source| lower_function(import, source, &names, &records, &constants, &layouts))
         .collect::<Result<Vec<_>, _>>()?;
+    let library_contracts = super::standard_library::contracts(import.export(), &names)?;
     let execution = std::sync::Arc::new(super::interface::prepare(
         import,
         &function,
         &reachable_functions,
         layouts,
+        library_contracts,
     )?);
     Ok(LoweredCppFunction {
         execution,
