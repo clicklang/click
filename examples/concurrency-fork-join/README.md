@@ -8,7 +8,8 @@ first succeeds, or both children succeed. The output buffer remains owned by
 the caller at return. The C source is unchanged from the frozen selection and
 its SHA-256 is pinned in `tests/examples.rs`.
 
-The runtime assumption covers the selected modeled create/join operations;
-this proof does not validate a native Linux or macOS pthread implementation.
-The [profile record](../../design/concurrency-probes/README.md) documents the
-source, declarations, assumption, and remaining native binding work.
+The runtime assumption covers the selected modeled create/join operations:
+the proof holds for any C library that implements Click's `<pthread.h>`
+specification, and does not verify a pthread implementation. The
+[profile record](../../design/concurrency-probes/README.md) documents the
+source, declarations, and assumption.

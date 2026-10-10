@@ -130,17 +130,6 @@ pub(in crate::surface) struct CSourceContext<'a> {
 }
 
 impl<'a> CSourceContext<'a> {
-    fn modeled_pthread_binding(
-        &self,
-    ) -> crate::languages::c::thread_runtime::ModeledPthreadBinding {
-        match self.prepared_project_identity.as_deref() {
-            Some(identity) => {
-                crate::languages::c::thread_runtime::ModeledPthreadBinding::imported(identity)
-            }
-            None => crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin(),
-        }
-    }
-
     pub(in crate::surface) fn bundle(sources: &[(&'a str, &'a str)]) -> Self {
         let bundle = sources.iter().copied().collect::<BTreeMap<_, _>>();
         let mut parts = Vec::with_capacity(bundle.len() * 2 + 1);
@@ -2531,7 +2520,7 @@ fn verify_c0_sources_in_context(
             .with_modeled_pthread_binding(
                 (selected_thread_runtime
                     == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread)
-                    .then(|| c_sources.modeled_pthread_binding()),
+                    .then(crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin),
             )
             .with_modeled_mutex_definitions(modeled_mutex_definitions)
             .with_byte_order(selected_target.byte_order());
@@ -3929,7 +3918,7 @@ fn verify_c0_sources_in_context(
         // built-in or locked declarations, their types, and every call shape.
         modeled_pthread_binding: (selected_thread_runtime
             == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread)
-            .then(|| c_sources.modeled_pthread_binding()),
+            .then(crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin),
     };
     for theorem in &mut verified {
         theorem.artifact_identity = Some(artifact_identity);
@@ -6043,9 +6032,11 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
                 "modeled-pthread runtime requires target `x86_64-linux-userspace`",
             ));
         }
-        if c_sources.bundle.is_none() && c_sources.prepared_by_source.is_none() {
+        // The runtime's declarations are Click's interface, never a
+        // platform header, so a compiler import cannot supply them.
+        if c_sources.bundle.is_none() {
             return Err(ClickError::new(
-                "modeled-pthread runtime requires Click's built-in `<pthread.h>` or a locked compiler import",
+                "modeled-pthread runtime requires Click's built-in `<pthread.h>`; a compiler import cannot supply its declarations",
             ));
         }
         if file.verifying_sources.is_empty() {
@@ -6099,7 +6090,7 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
     if file.selected_thread_runtime()
         == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
     {
-        validate_modeled_pthread_binding(&units, c_sources)?;
+        validate_modeled_pthread_binding(&units)?;
     }
 
     // Headers may declare libc objects that the verified program never uses.
@@ -6755,7 +6746,6 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
 
 fn validate_modeled_pthread_binding(
     units: &BTreeMap<String, syntax::C0TranslationUnit>,
-    c_sources: &CSourceContext<'_>,
 ) -> Result<(), ClickError> {
     let header_source = BTreeMap::from([(
         "__click_modeled_pthread_reference.c",
@@ -6807,32 +6797,13 @@ fn validate_modeled_pthread_binding(
             let Some(declaration) = unit.function_declarations.get(name) else {
                 continue;
             };
-            let from_builtin = unit.builtin_pthread_declarations.contains(name);
-            let from_locked_header = c_sources
-                .prepared_by_source
-                .as_ref()
-                .and_then(|imports| imports.get(source_path.as_str()).copied())
-                .is_some_and(|import| {
-                    unit.function_declaration_lines
-                        .get(name)
-                        .is_some_and(|lines| {
-                            !lines.is_empty()
-                                && lines
-                                    .iter()
-                                    .all(|line| import.has_locked_pthread_declaration_at(*line))
-                        })
-                });
-            if !from_builtin && !from_locked_header {
+            if !unit.builtin_pthread_declarations.contains(name) {
                 return Err(ClickError::new(format!(
-                    "modeled-pthread binding requires `{name}` from Click's built-in or locked `<pthread.h>` in `{source_path}`"
+                    "modeled-pthread binding requires `{name}` from Click's built-in `<pthread.h>` in `{source_path}`"
                 )));
             }
             let expected = &reference.function_declarations[name];
-            if !(if from_builtin {
-                declaration.compatible_with(expected)
-            } else {
-                declaration.compatible_with_modeled_pthread(expected)
-            }) {
+            if !declaration.compatible_with(expected) {
                 return Err(ClickError::new(format!(
                     "modeled-pthread binding found noncanonical `{name}` declaration in `{source_path}`"
                 )));
@@ -8864,7 +8835,30 @@ mod modeled_pthread_binding_tests {
             parse_binding(CLICK, source)
                 .unwrap_err()
                 .message()
-                .contains("built-in or locked `<pthread.h>")
+                .contains("from Click's built-in `<pthread.h>`")
+        );
+    }
+
+    #[test]
+    fn compiler_imported_pthread_declarations_are_refused() {
+        // Even glibc's own `<pthread.h>`, locked through a compiler import,
+        // does not supply the modeled declarations: they are Click's.
+        let import = crate::languages::c::compiler_import::PreparedCImport::for_test_on(
+            CTarget::X86_64LinuxUserspace,
+            "fork_join.c",
+            "# 1 \"/usr/include/pthread.h\" 1 3 4\ntypedef unsigned long pthread_t;\nint pthread_join(pthread_t thread, void **result);\n",
+        );
+        let imports = [import];
+        let context = CSourceContext::prepared(&imports);
+        let error = parse_c0_click_file_context(CLICK, &context)
+            .and_then(|file| parse_verified_sources_context(&file, &context).map(|_| ()))
+            .unwrap_err();
+        assert!(
+            error.message().contains(
+                "requires Click's built-in `<pthread.h>`; a compiler import cannot supply"
+            ),
+            "{}",
+            error.message()
         );
     }
 

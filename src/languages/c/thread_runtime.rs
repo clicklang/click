@@ -298,16 +298,6 @@ impl ModeledPthreadBinding {
         }
     }
 
-    pub fn imported(import_identity: &str) -> Self {
-        let mut binding = Self::builtin();
-        // A locked import identity covers the compiler, target, source,
-        // artifact, and dependency bytes. Keep it distinct from the built-in
-        // declaration projection while retaining the same trusted runtime
-        // specification and null-only call restrictions.
-        binding.header_digest = Sha256::digest(import_identity.as_bytes()).into();
-        binding
-    }
-
     pub fn identity(&self) -> String {
         let mut hasher = Sha256::new();
         for part in [

@@ -48,8 +48,8 @@ addition to this safety protocol; freshening alone deliberately cannot prove
 it.
 
 The modeled pthread specification is a trusted runtime assumption. These
-rules would validate the C client against that specification, not the native
-pthread implementation. The import lock and native binding remain separate.
+rules validate the C client against that specification, for any C library
+that implements it; Click does not verify the pthread implementation.
 
 ## Implemented safety boundary
 
