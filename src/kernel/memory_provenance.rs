@@ -1027,16 +1027,18 @@ impl CheckedLoadEquality {
                     return false;
                 };
                 let bytes = endpoint.bytes();
-                let Some((pointer, written @ CValue::Int32(_))) = stored_write_reaching(
-                    derivation.as_ref(),
-                    &endpoint.pointer,
-                    bytes,
-                    assumptions,
-                ) else {
+                let Some((pointer, written @ (CValue::Int32(_) | CValue::UInt32(_)))) =
+                    stored_write_reaching(
+                        derivation.as_ref(),
+                        &endpoint.pointer,
+                        bytes,
+                        assumptions,
+                    )
+                else {
                     return false;
                 };
-                let CValue::Int32(stored) = &written else {
-                    unreachable!("matched as an int32 store")
+                let (CValue::Int32(stored) | CValue::UInt32(stored)) = &written else {
+                    unreachable!("matched as a 32-bit word store")
                 };
                 let pointer = &pointer;
                 endpoint.matches_term(load)
@@ -1348,11 +1350,11 @@ pub(crate) fn checked_stored_origin_equality(
             )
         });
         EXPLICIT_DAG_CHECK.with(|flag| flag.set(previous));
-        let Some((pointer, written @ CValue::Int32(_))) = written else {
+        let Some((pointer, written @ (CValue::Int32(_) | CValue::UInt32(_)))) = written else {
             continue;
         };
-        let CValue::Int32(stored) = &written else {
-            unreachable!("matched as an int32 store")
+        let (CValue::Int32(stored) | CValue::UInt32(stored)) = &written else {
+            unreachable!("matched as a 32-bit word store")
         };
         let pointer = &pointer;
         // Exactly the read's kind and as wide as the walk, as
