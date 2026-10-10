@@ -1063,6 +1063,7 @@ struct ProofDiagnosticProofState(
     Arc<ProofNode>,
     Vec<(Variable, String)>,
     Option<SurfacePropositionMap>,
+    Option<CState>,
 );
 
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
@@ -1116,6 +1117,9 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
                 labels.source_name(variable, name.clone());
             }
         }
+        if let Some(state) = &self.4 {
+            labels.register_current_state(state);
+        }
         if let Some(branch) = self.0.state().open_branches().get(self.0.focused_branch())
             && let Some(execution) = branch.state.execution.as_deref()
         {
@@ -1148,7 +1152,10 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         let source = crate::surface::diagnostics::with_refusal_spelling(|| {
             crate::surface::printing::source_click_proposition(surface)
         });
-        (!source.contains("__click_")).then_some(source)
+        // Raw kernel values in an otherwise written surface expression can
+        // be abbreviated as `…`. Let the state-aware printer recover their
+        // local names instead of treating that abbreviation as an exact goal.
+        (!source.contains("__click_") && !source.contains('…')).then_some(source)
     }
 
     fn kernel_goal(&self) -> Option<&Proposition> {
@@ -1534,6 +1541,13 @@ impl Proof<'_> {
             self.node.clone(),
             source_names,
             surface_facts,
+            match self.context.as_ref() {
+                // Fixed-state subproofs have no execution branch, but their
+                // live locals still name the values their goals contain.
+                // CState shares its persistent storage; no environment is copied.
+                ProofContext::FixedState(context) => Some(context.state.clone()),
+                _ => None,
+            },
         )
     }
 }

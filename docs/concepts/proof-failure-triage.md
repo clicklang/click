@@ -29,8 +29,13 @@ adaptation or fix in the contract, proof, language, verifier, or kernel.
 Ordinary failure reports use source names and Click expressions for goals and
 recent facts. A historical read is shown as `at(point, expression)` only when
 that exact recorded state and the read's type can be recovered; it is never
-silently rewritten as a current read. Facts without an exact surface spelling
-are omitted with one bounded explanation per context. Transport failures keep
+silently rewritten as a current read. Values held in live locals retain those
+locals' names inside fixed-state subproofs. When a symbolic operand has no
+source name, a partial diagnostic retains the surrounding expression with a
+placeholder such as `<unnamed A>`. These placeholders share identities
+within one report and are diagnostic text, not Click proof expressions. Facts
+whose structure cannot be rendered within the fixed budget are omitted with
+one bounded explanation per context. Transport failures keep
 the written source and target and name stores that may have changed the cell.
 An explicitly requested `--trace-proof` can additionally show bounded internal
 facts and snapshot identities for debugging.

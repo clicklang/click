@@ -211,6 +211,13 @@ pub(crate) fn render_simple_click_fact_labeled(
     surface::render(proposition, labels)
 }
 
+pub(crate) fn render_partial_click_fact_labeled(
+    proposition: &Proposition,
+    labels: &mut SnapshotLabels,
+) -> Option<String> {
+    surface::partial(proposition, labels)
+}
+
 fn alphabetic_label(mut index: usize) -> String {
     let mut letters = Vec::new();
     loop {
@@ -295,12 +302,14 @@ pub(crate) fn render_resource_fact_labeled(
 }
 
 /// A source-facing fact using one report's names and recorded program points.
-/// An unspellable fact gets a bounded explanation, never kernel notation.
+/// An unspellable operand gets a diagnostic placeholder when its surrounding
+/// fact can be rendered; otherwise give a bounded explanation, never kernel notation.
 pub(crate) fn render_proposition_labeled(
     proposition: &Proposition,
     labels: &mut SnapshotLabels,
 ) -> String {
     render_simple_click_fact_labeled(proposition, labels)
+        .or_else(|| render_partial_click_fact_labeled(proposition, labels))
         .unwrap_or_else(|| "fact has no exact Click spelling at this frontier".to_owned())
 }
 

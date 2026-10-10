@@ -298,5 +298,5 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
 
 ```expect
 fail: `apply(unmarked_point_update(at(iter, visited), visited, 0, n, n, cur))` was refused: `search.contract` proof step tactic 23: required exact fact for theorem `unmarked_point_update` is unavailable: requirement 5 `viewable(a[lo..n])` with a = at(iter, visited), lo = 0, n = n instantiates to `viewable(visited[0..n])`
-  the required `viewable` reads the memory of the current state; the available `viewable` of the same range reads an earlier state no proof mark names
+  the required `viewable` reads the memory of the current state; the available `viewable` of the same range reads `at(statement(0).entry, …)`
 ```

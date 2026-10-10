@@ -252,6 +252,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                                     loop_index,
                                     &preservation,
                                     &pure_facts,
+                                    &context.recorded_snapshots,
                                     body,
                                     environment,
                                 )
@@ -291,6 +292,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                             first_generated_tactic_index,
                             &preservation,
                             &pure_facts,
+                            &context.recorded_snapshots,
                             invariant_checks,
                             ranking_measures,
                             structural_measure.as_deref(),
