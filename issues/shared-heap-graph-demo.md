@@ -26,17 +26,16 @@ Keep both C sources frozen.
 
 ## Remaining work
 
-Population work must not grow with unrelated live graph resources. A retain
-amid `n` unrelated live children currently costs worse than quadratic work,
-because every pointer parameter shares one memory block
-([bug](../bugs/owning-many-pointer-parameters-is-superlinear.md)). Repeated
-retains of one child already scale linearly; the nightly
-`repeated_retains_of_one_child_scale_with_their_number` pins that.
+Population work must not grow faster than linearly with unrelated live graph
+resources. A retain amid unrelated live children now scales near-linearly
+through 16 children (`a_retain_ignores_unrelated_live_children`). Beyond 32
+owned pointer parameters, per-clause function-exit work still grows faster
+than linearly
+([bug](../bugs/owning-many-pointer-parameters-is-superlinear.md)).
 
 ## Regression
 
-`a_retain_ignores_unrelated_live_children`, described in the bug, passes
-`assert_near_linear_scaling` in the normal gate.
+The bug's scaling tests pass `assert_near_linear_scaling` through 64.
 
 ## Acceptance
 
