@@ -115,6 +115,16 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
     IntrinsicNoWrite,
     AllocationOfOtherBlock,
     LocalLifetimeEndedOfOtherBlock,
+    /// The complete retired automatic object and this read occupy separate
+    /// ranges, with the exact authority and memberships retained for checking.
+    LocalLifetimeEndedSeparatedRanges {
+        authority: StoreSeparatedRangesAuthority,
+        left: CMemoryRange,
+        right: CMemoryRange,
+        orientation: StoreSeparatedRangeOrientation,
+        write_membership: AccessInRangeEvidence,
+        load_membership: AccessInRangeEvidence,
+    },
     HeapFreeOfDistinctBlock,
     /// A `ContractAllocationRetired` edge whose retired allocation lies
     /// inside the write set of the call that retired it
@@ -396,14 +406,39 @@ impl MemoryDagHopJustification {
                 orientation,
                 write_membership,
                 load_membership,
+            }
+            | Self::LocalLifetimeEndedSeparatedRanges {
+                authority,
+                left,
+                right,
+                orientation,
+                write_membership,
+                load_membership,
             } => {
-                let CMemoryDerivation::Store {
-                    pointer: write,
-                    value,
-                    ..
-                } = derivation
-                else {
-                    return false;
+                let retired;
+                let (write, write_bytes) = match (self, derivation) {
+                    (
+                        Self::StoreSeparatedRanges { .. },
+                        CMemoryDerivation::Store { pointer, value, .. },
+                    ) => (pointer, value.byte_width()),
+                    (
+                        Self::LocalLifetimeEndedSeparatedRanges { .. },
+                        CMemoryDerivation::LocalLifetimeEnded { base, block },
+                    ) => {
+                        if !block.starts_with("local:") || pointer.block == *block {
+                            return false;
+                        }
+                        let Some(extent) = base.block_size(block).and_then(|size| size.as_const())
+                        else {
+                            return false;
+                        };
+                        retired = Pointer {
+                            block: block.clone(),
+                            offset: PointerOffsetTerm::Constant(0),
+                        };
+                        (&retired, extent)
+                    }
+                    _ => return false,
                 };
                 let authority_checks = match authority {
                     StoreSeparatedRangesAuthority::ExactProposition(proposition) => {
@@ -426,11 +461,11 @@ impl MemoryDagHopJustification {
                     )
                     && match orientation {
                         StoreSeparatedRangeOrientation::WriteLeftLoadRight => {
-                            write_membership.checks(write, value.byte_width(), left, assumptions)
+                            write_membership.checks(write, write_bytes, left, assumptions)
                                 && load_membership.checks(pointer, bytes, right, assumptions)
                         }
                         StoreSeparatedRangeOrientation::WriteRightLoadLeft => {
-                            write_membership.checks(write, value.byte_width(), right, assumptions)
+                            write_membership.checks(write, write_bytes, right, assumptions)
                                 && load_membership.checks(pointer, bytes, left, assumptions)
                         }
                     }
