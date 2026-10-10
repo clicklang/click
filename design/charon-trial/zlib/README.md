@@ -1,7 +1,9 @@
 # Unchanged zlib Adler-32 adapter trial
 
 The unchanged zlib 1.3.1 computation imports and proves its empty-input result
-for the canonical seed 1 and a nonnull buffer. **The arbitrary-length checksum
+and its one-byte checksum against the shared mathematical specification for
+the canonical seed 1 and a nonnull buffer. The one-byte proof also preserves
+the input byte. **The arbitrary-length checksum
 postcondition and C/Rust result equality remain unproved.** This is the C
 adapter baseline for the shared [checksum specification](../../adler32-spec.click).
 
@@ -26,6 +28,8 @@ From the repository root:
 ```sh
 cargo build --bins
 target/debug/click verify design/charon-trial/zlib/empty.click
+target/debug/click verify design/charon-trial/zlib/one-byte.click
+target/debug/click verify design/charon-trial/zlib/reset.click
 ```
 
 To reproduce preparation on a machine with the compiler and include paths in
@@ -41,8 +45,18 @@ working directory, verifies the original contract and its checked expansion,
 rejects a false result, and rejects a changed original header. The adapter
 imports the complete selected bodies, including `len--`, `--n`, `*buf++`, and the
 nested compound statements from `DO16`, even though the empty-input proof
-executes no byte-processing iteration. This baseline does not claim nonempty correctness,
-termination for arbitrary lengths, or matched reset/null-buffer behavior.
+executes no byte-processing iteration. The one-byte proof follows the original early-return path, checks byte promotion,
+prunes both reduction branches with unsigned bounds, and observes the original
+shift/OR result through a bounded packing theorem. Its imported specification
+lemmas have checked bodies. This baseline does not claim correctness for lengths
+above one or termination for arbitrary nonnull input lengths.
+
+`reset.click` checks the original null-buffer reset path for any seed and every
+length except one, returning 1 without byte-read authority. The original
+one-byte fast path precedes its null check, so null with length one is excluded;
+the negative regression rejects a claim covering that read. Connecting this
+reset behavior to the Rust constructor and general incremental processing is
+still pending.
 
 | Original file | SHA-256 |
 | --- | --- |

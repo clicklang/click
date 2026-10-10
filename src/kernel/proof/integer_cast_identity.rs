@@ -61,6 +61,25 @@ pub(super) fn check(
                     | crate::kernel::MachineIntegerType::UInt64
             )
         };
+        // A promoted unsigned byte/short read can retain the same 32-bit
+        // carrier instead of an explicit narrowing node. This direction
+        // still owes bounds on the word observation, checked below against
+        // the narrow destination range. Bounds on the narrow observation
+        // alone cannot justify interpreting an arbitrary carrier as a word.
+        if machine.value() == operand.value()
+            && matches!(
+                operand.ty(),
+                crate::kernel::MachineIntegerType::Int32
+                    | crate::kernel::MachineIntegerType::UInt32
+            )
+            && matches!(
+                machine.ty(),
+                crate::kernel::MachineIntegerType::UInt8
+                    | crate::kernel::MachineIntegerType::UInt16
+            )
+        {
+            return Some(machine.ty().format());
+        }
         // Sub-word byte stores retain an unsigned low-bit mask in their
         // 32-bit carrier. Promoting that canonical carrier to a word keeps
         // its mathematical value. An arbitrary sub-word-tagged variable is
@@ -253,6 +272,46 @@ mod tests {
                 .check(&goal, &premises)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn unsigned_subword_read_observations_require_bounds_on_the_word() {
+        let carrier = Bitvector32Term::Variable(Variable(168_012));
+        for source in [Ty::Int32, Ty::UInt32] {
+            for destination in [Ty::UInt8, Ty::UInt16] {
+                let original = IntegerTerm::from_machine(source, carrier.clone()).unwrap();
+                let observed = IntegerTerm::from_machine(destination, carrier.clone()).unwrap();
+                let goal = Proposition::ConditionIs(
+                    ConditionTerm::integer_equal(observed.clone(), original.clone()),
+                    true,
+                );
+                let (_, maximum) = destination.format().bounds();
+                let bounds = |value: IntegerTerm, upper: BigInt| {
+                    vec![
+                        le(IntegerTerm::constant_i64(0), value.clone()),
+                        le(value, IntegerTerm::constant(upper)),
+                    ]
+                };
+                let cert = certificate(goal.clone(), vec![0, 1]);
+                cert.check(&goal, &bounds(original.clone(), maximum.clone()))
+                    .unwrap();
+                // A bound on the byte observation cannot grant the word's
+                // interpretation, and a word outside the byte range wraps.
+                assert!(
+                    cert.check(&goal, &bounds(observed, maximum.clone()))
+                        .is_err()
+                );
+                assert!(cert.check(&goal, &bounds(original, &maximum + 1)).is_err());
+                for number in [BigInt::from(0), maximum.clone(), &maximum + 1] {
+                    let value =
+                        MachineIntegerConstant::from_integer(source.format(), &number).unwrap();
+                    assert_eq!(
+                        value.convert_modulo(destination.format()).to_integer() == number,
+                        number <= maximum,
+                    );
+                }
+            }
+        }
     }
 
     #[test]

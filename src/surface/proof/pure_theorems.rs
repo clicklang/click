@@ -2435,6 +2435,8 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "int64_add_to_integer"
                 | "int64_subtract_to_integer"
                 | "int64_equal_of_to_integer"
+                | "uint64_pack_u16_to_integer"
+                | "uint32_pack_u16_to_integer"
                 | "uint64_add_to_integer"
                 | "uint64_multiply_to_integer"
                 | "uint64_subtract_to_integer"
@@ -2444,6 +2446,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "uint64_less_equal_of_to_integer"
                 | "uint64_less_than_to_integer"
                 | "uint64_less_than_of_to_integer"
+                | "uint64_not_greater_equal_of_less_than"
                 | "uint64_equal_of_to_integer"
                 | "int32_less_equal_to_integer"
                 | "int32_subtract_to_integer"
@@ -2561,8 +2564,11 @@ fn verify_kernel_standard_theorem_axiom(
         | "uint64_less_equal_of_to_integer"
         | "uint64_less_than_to_integer"
         | "uint64_less_than_of_to_integer"
+        | "uint64_not_greater_equal_of_less_than"
         | "uint64_equal_of_to_integer" => (2, 1),
-        "uint64_divide_to_integer"
+        "uint64_pack_u16_to_integer"
+        | "uint32_pack_u16_to_integer"
+        | "uint64_divide_to_integer"
         | "uint64_remainder_to_integer"
         | "uint32_divide_to_integer"
         | "uint32_remainder_to_integer" => (2, 2),
@@ -2759,6 +2765,12 @@ fn verify_kernel_standard_theorem_axiom(
         };
         let value = uint32_parameter(0)?;
         match theorem.name() {
+            "uint32_pack_u16_to_integer" => crate::kernel::prove_unsigned_pack_u16_to_integer(
+                crate::kernel::MachineIntegerType::UInt32,
+                value,
+                uint32_parameter(1)?,
+            )
+            .expect("registered unsigned packing law"),
             "uint32_widened_add_guard_by_integer_bound" => {
                 crate::kernel::prove_uint32_widened_add_guard_by_integer_bound(
                     value,
@@ -4346,6 +4358,11 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 "to_integer(left) < to_integer(right)",
                 "left < right",
             ),
+            (
+                "uint64_not_greater_equal_of_less_than",
+                "left < right",
+                "not (left >= right)",
+            ),
         ] {
             let source = format!(
                 "theorem {name}(left: uint64, right: uint64) {{ requires {guard}; ensures {goal}; }}"
@@ -4383,6 +4400,28 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 source.replace("right: uint64", "right: uint32"),
                 source.replace(&format!("ensures {goal};"), "ensures true;"),
                 source.replace("; ensures", "; requires left == right; ensures"),
+            ] {
+                assert_ne!(source, invalid);
+                assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
+            }
+        }
+    }
+
+    #[test]
+    fn unsigned_packing_declarations_require_exact_fields_bounds_and_result() {
+        for (ty, suffix) in [("uint32", "u32"), ("uint64", "u64")] {
+            let source = format!(
+                "theorem {ty}_pack_u16_to_integer(low: {ty}, high: {ty}) {{ requires low <= 65535{suffix}; requires high <= 65535{suffix}; ensures to_integer(low | (high << 16)) == to_integer(low) + 65536 * to_integer(high); }}"
+            );
+            verify_standard_declaration(&source).unwrap();
+            for invalid in [
+                source.replace(&format!("requires low <= 65535{suffix};"), ""),
+                source.replace(&format!("requires high <= 65535{suffix};"), ""),
+                source.replace("65535", "65536"),
+                source.replace("high << 16", "high << 15"),
+                source.replace("65536 *", "65535 *"),
+                source.replace(&format!("low: {ty}"), "low: int32"),
+                source.replace("to_integer(low) + 65536", "to_integer(high) + 65536"),
             ] {
                 assert_ne!(source, invalid);
                 assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");

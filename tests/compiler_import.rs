@@ -606,3 +606,92 @@ fn pinned_zlib_empty_contract_verifies_offline_and_relocates() {
     .unwrap();
     assert!(load_imports(&config).is_err());
 }
+
+#[test]
+#[ignore = "nightly: 5s shared specification, expansion, and negative contracts"]
+fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
+    let root = tempfile::tempdir().expect("isolated offline zlib one-byte fixture");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
+    for name in [
+        "adler32.c",
+        "zutil.h",
+        "zlib.h",
+        "zconf.h",
+        "adler32.i",
+        "one-byte.click.import.json",
+        "one-byte.click.import.lock.json",
+    ] {
+        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
+    }
+    let config = root.path().join("one-byte.click.import.json");
+    let imports = load_imports(&config).expect("offline locked unchanged C source");
+    // Imported pure theorem interfaces are backed by their checked bodies in
+    // this verification unit; no library result summary supplies the checksum.
+    let proof = include_str!("../design/charon-trial/zlib/one-byte.click").replace(
+        "import \"../../adler32-spec.click\";",
+        include_str!("../design/adler32-spec.click"),
+    );
+    let verified = verify_c0_prepared_sources(&proof, &imports).expect("shared one-byte checksum");
+    let implementation = verified
+        .iter()
+        .find(|claim| claim.function_block.signature().name() == "adler32_z")
+        .expect("checked original implementation");
+    assert_eq!(
+        implementation.import_identity.as_deref(),
+        Some(imports[0].identity())
+    );
+    let offset = proof.rfind("execute();").unwrap();
+    let line = proof[..offset]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1;
+    let column = offset - proof[..offset].rfind('\n').unwrap();
+    let expanded = expand_c0_prepared_tactic_source_at(&proof, &imports, line, column)
+        .expect("checked original return expansion");
+    verify_c0_prepared_sources(&expanded, &imports).expect("expanded shared checksum proof");
+    for invalid in [
+        proof.replace(
+            "ensures to_integer(result) == adler_spec_checksum(old(buf), 1, 1, 0);",
+            "ensures to_integer(result) == adler_spec_checksum(old(buf), 1, 1, 0) + 1;",
+        ),
+        proof.replace("requires len == 1u64;", "requires len == 0u64;"),
+        proof.replace("views buf[0u64..1u64];", ""),
+    ] {
+        assert_ne!(proof, invalid);
+        assert!(verify_c0_prepared_sources_at(&invalid, &imports, line, column).is_err());
+    }
+}
+
+#[test]
+fn pinned_zlib_null_reset_is_independent_of_seed_and_nonunit_length() {
+    let root = tempfile::tempdir().expect("isolated offline zlib reset fixture");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
+    for name in [
+        "adler32.c",
+        "zutil.h",
+        "zlib.h",
+        "zconf.h",
+        "adler32.i",
+        "reset.click.import.json",
+        "reset.click.import.lock.json",
+    ] {
+        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
+    }
+    let imports = load_imports(&root.path().join("reset.click.import.json")).unwrap();
+    let proof = include_str!("../design/charon-trial/zlib/reset.click");
+    verify_c0_prepared_sources(proof, &imports).expect("unchanged C null reset path");
+    assert!(
+        verify_c0_prepared_sources(&proof.replace("result == 1u64", "result == 2u64"), &imports)
+            .is_err()
+    );
+    // The original source's one-byte fast path precedes its null check.
+    // That path needs byte-read authority and is outside the reset contract.
+    assert!(
+        verify_c0_prepared_sources(
+            &proof.replace("requires len != 1u64;", "requires len == 1u64;"),
+            &imports
+        )
+        .is_err()
+    );
+}
