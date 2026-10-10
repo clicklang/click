@@ -4909,7 +4909,8 @@ void relink(struct node* node) { requires node != 0; owns links: pair(node); own
         error.message.contains("held `owns node->right->augmented`"),
         "{error:?}"
     );
-    assert!(error.message.contains("load(node->right)"), "{error:?}");
+    assert!(error.message.contains("((node->right - "), "{error:?}");
+    assert!(!error.message.contains("load("), "{error:?}");
     assert!(
         error.message.contains("byte offsets from `node`"),
         "{error:?}"

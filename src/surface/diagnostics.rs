@@ -4868,13 +4868,18 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
 
 /// A load at `pointer`, as a sidecar would write the value read. A load at
 /// the address of a reference parameter's referent is the referent: `value`
-/// for a scalar, and the field at its start for a struct, `box.first`. Any
-/// other load keeps the explicit `load(...)` form.
+/// for a scalar, and the field at its start for a struct, `box.first`. A
+/// load at a constant offset from a struct pointer parameter where exactly
+/// one field starts is that field, `s->len`. Any other load keeps the
+/// explicit `load(...)` form.
 fn describe_load_at(
     pointer: &Pointer,
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> String {
+    if let Some(field) = describe_struct_field_load(pointer, parameters, arguments) {
+        return field;
+    }
     let address = describe_pointer(pointer, parameters, arguments);
     let referent = parameters.iter().find_map(|parameter| {
         (parameter.is_reference() && parameter.name() == address)
@@ -4895,6 +4900,43 @@ fn describe_load_at(
         },
         None => format!("load({address})"),
     }
+}
+
+/// The field of a struct pointer parameter a load at `pointer` reads, when
+/// `pointer` is a constant byte offset from the parameter and exactly one
+/// field of its layout starts there. The load carries no width here, so a
+/// nested struct or a union whose members share that offset stays a load.
+fn describe_struct_field_load(
+    pointer: &Pointer,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> Option<String> {
+    for (parameter, argument) in parameters.iter().zip(arguments) {
+        let CExpression::Value(CValue::Pointer(base)) = argument else {
+            continue;
+        };
+        if parameter.is_struct_value() || parameter.is_reference() {
+            continue;
+        }
+        let Some(layout) = parameter
+            .pointee_struct_layout()
+            .or_else(|| parameter.struct_layout())
+        else {
+            continue;
+        };
+        let Some(offset) = diagnostic_pointer_element_index_from_base(pointer, base.pointer(), 1)
+            .and_then(|offset| offset.as_const())
+        else {
+            continue;
+        };
+        let mut fields = layout
+            .leaf_field_offsets()
+            .filter(|(_, field_offset)| *field_offset == offset);
+        if let (Some((field, _)), None) = (fields.next(), fields.next()) {
+            return Some(describe_field_place(parameter.name(), field));
+        }
+    }
+    None
 }
 
 /// The object whose address `rendered` spells, when it is `&name`. Reading
