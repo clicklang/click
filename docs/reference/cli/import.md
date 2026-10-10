@@ -10,6 +10,30 @@ typed C++ artifact described below.
 usage: click import lock <sidecar.click>
 ```
 
+## Interface boundary
+
+Verification runs against interfaces that Click defines; it needs no compiler,
+system headers, or frontend toolchain.
+
+- **Standard library interfaces live in Click.** A header such as
+  `<pthread.h>`, `<stdatomic.h>`, `<limits.h>`, `<string.h>`, or `<stdlib.h>`
+  describes a library the program calls. Click supplies its own declarations
+  and a specification of each call; see the
+  [C0 system headers](../language/c0.md#system-headers). Proofs assume a C
+  library that implements Click's interfaces as specified. Click does not
+  import or verify a platform's library headers or bodies to supply an
+  interface.
+- **Compiler import is for the program's own code.** Use it only when headers
+  carry code that is itself under verification, such as Linux's own headers
+  with their structs, inline helpers, macros, and `CONFIG_*` selection. Calls
+  that code makes to anything outside it still use Click-side contracts.
+- **A language frontend is a separate case.** Click has no C++ or Rust type
+  checker of its own, so the pinned Clang 19 exporter and Charon are accepted
+  frontends. Each runs once at `click import lock`; verification loads the
+  artifact offline.
+- **The default workflow needs none of it.** `click verify` on plain C needs
+  no compiler or system headers.
+
 ## Configure and lock an import
 
 For `main.click`, create `main.click.import.json`. The configuration lists the
@@ -1249,13 +1273,13 @@ invocation identities distinguish locks even when the emitted C is identical.
 Selecting this profile grants no pthread contract or concurrency semantics.
 
 Both profiles require explicit include directories: `-nostdinc` disables
-ambient system include search. Supply the selected toolchain and libc header
-roots with ordered `-isystem` or `-I` arguments; those roots and opened headers
-participate in the preparation inventory and lock identity. For the selected
-Debian GCC 12 environment, these roots are `/usr/lib/gcc/x86_64-linux-gnu/12/include`,
-`/usr/include/x86_64-linux-gnu`, and `/usr/include`. Other installations must
-supply their actual selected roots. Lock preparation may succeed while Click's
-C parser still refuses an unsupported declaration in a real system header.
+ambient system include search. Supply the program's own header roots with
+ordered `-isystem` or `-I` arguments; those roots and opened headers
+participate in the preparation inventory and lock identity. A standard
+library interface is not such a root: it comes from Click, per the
+[interface boundary](#interface-boundary). Lock preparation may succeed while
+Click's C parser still refuses an unsupported declaration in an included
+header.
 
 Configured forced includes and ordered `-D` and `-U` options select additional
 preprocessing inputs. Other compiler options are rejected unless a named option

@@ -364,7 +364,7 @@ impl CThreadRuntime {
         match self {
             Self::None => None,
             Self::ModeledPthread => Some(
-                "modeled-pthread v11: pthread create/join, shared mutex calls, and one-shot atomic publication obey the trusted Click specification; native runtime binding unvalidated",
+                "modeled-pthread v11: pthread create/join, shared mutex calls, and one-shot atomic publication obey the trusted Click specification; proofs assume a C library that implements it",
             ),
         }
     }

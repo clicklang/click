@@ -76,12 +76,15 @@ compiler import. `strlen`'s contract takes a `uint8` array, so `<string.h>`
 does not declare its `const char *` prototype. Add further headers only when an
 example needs them.
 
-### 6. Documentation
+### 6. Documentation (done, except item 4's wording)
 
-Document the rule above in one place in the reference (the C0 and `click
-import` pages), including the trust statement users see: proofs assume a C
-library implementing Click's interfaces as specified. Remove wording that
-presents a locked system-header import as a step toward verifying a library.
+The [`click import`](../docs/reference/cli/import.md#interface-boundary)
+page states the rule, and the C0 reference's
+[system headers](../docs/reference/language/c0.md#system-headers) section
+lists Click's headers with the trust statement users see: proofs assume a C
+library implementing Click's interfaces as specified. The modeled pthread
+runtime's assumption says the same. The `click import` page's descriptions of
+the libstdc++ `std::span` proofs go with item 4.
 
 ## Not departures
 
