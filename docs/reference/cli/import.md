@@ -1555,9 +1555,9 @@ same storage: its data is `(uint8*)std_span_data(input)` and its native uint64
 length is `std_span_size(input) * 4u64`. It copies no backing bytes, requires no
 backing ownership, and establishes no backing initialization or write permission.
 The integer-to-byte pointer cast preserves allocation identity and lifetime.
-The const-reference caller has ordinary, expanded and retained proof coverage.
-The corresponding by-value caller currently encounters a pointer snapshot proof
-gap tracked in [the bug backlog](https://github.com/clicklang/click/blob/master/bugs/byte-span-by-value-pointer-snapshot.md).
+Both const-reference and by-value callers have ordinary, expanded and retained
+proof coverage for the pointer and length relations. The by-value proof preserves
+the result pointer relation when private parameter storage is retired.
 Element accessors require an index inside the view,
 as the standard does, and form an address without reading it. Bitcoin Core's
 unchanged `SpanPopBack` verifies against these contracts

@@ -1218,8 +1218,8 @@ fn pinned_writable_byte_span_reference_preserves_view_offline() {
 // Keep the fixed by-value source and true claim for the documented snapshot
 // proof gap. Restore the positive E/R check when that gap is repaired.
 #[test]
-#[ignore = "nightly: retained reproduction of the by-value pointer snapshot gap"]
-fn pinned_writable_byte_span_by_value_snapshot_gap_is_bounded() {
+#[ignore = "nightly: pinned C++ by-value span certificate round trip"]
+fn pinned_writable_byte_span_by_value_preserves_pointer_snapshot() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
         "writable-byte-span",
         "#include <span.h>\nstd::span<std::byte> probe(std::span<int> span) noexcept { return std::as_writable_bytes(span); }\n",
@@ -1230,44 +1230,8 @@ fn pinned_writable_byte_span_by_value_snapshot_gap_is_bounded() {
         ],
     );
     let source = "verifying \"span-probe.cpp\"; struct span__std_byte__value_unsigned_long_18446744073709551615 probe(struct span__int__value_unsigned_long_18446744073709551615 span) { ensures std_span_data(result) == old((uint8*)std_span_data(span)); ensures std_span_size(result) == old(std_span_size(span)) * 4u64; } by { execute(); simp(); }";
-    fs::write(root.join("byte.click"), source).unwrap();
-    let project = read_click_project(&root.join("byte.click"), source).unwrap();
-    let (error, trace) = click::surface::with_proof_trace("probe", || {
-        let error = verify_program_prepared_project(&project, &import).unwrap_err();
-        let trace = error
-            .trace_context_report()
-            .expect("bounded snapshot trace");
-        (error, trace)
-    });
-    assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
-    assert_eq!(
-        error.proof_source_site(),
-        Some(("probe.contract", &[1][..]))
-    );
-    assert!(!trace.contains("<no checked simple steps"), "{trace}");
-    assert!(
-        trace.contains("adds (internal, not Click proof syntax):"),
-        "{trace}"
-    );
-    assert!(
-        !trace.contains("checked fact(s) with no exact Click spelling"),
-        "{trace}"
-    );
-    assert!(trace.contains("snapshot#"), "{trace}");
-    assert!(trace.contains("bits64 ="), "{trace}");
-    assert!(trace.contains("resource-composition[owns"), "{trace}");
-    assert!(!trace.contains("… = …"), "{trace}");
-    assert!(!trace.contains("condition(<bounded operation>)"), "{trace}");
-    assert!(
-        !trace.contains("bitvector(<bounded opaque operation>)"),
-        "{trace}"
-    );
-    assert!(
-        trace.contains(" *u64 ") && trace.contains("4u64"),
-        "{trace}"
-    );
-    assert!(trace.contains("step("), "{trace}");
-    eprintln!("{trace}");
+    check_pinned_byte_proof(&root, &import, source);
+    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
