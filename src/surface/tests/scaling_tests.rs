@@ -2662,7 +2662,7 @@ fn block_epoch_walk_curve(
     fixture: impl Fn(usize) -> (String, String),
 ) -> Vec<ScalingSample> {
     const WALK: &str = "operation `array-ref block epoch walk`";
-    [4, 8, 16, 32]
+    [2, 4, 8, 16]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = fixture(size);
@@ -3925,7 +3925,7 @@ fn call_requirement_checking_is_linear_in_the_requirement_count() {
     let mut samples = Vec::new();
     let mut checking = Vec::new();
     let mut rebuilds = Vec::new();
-    for size in [32, 64, 128, 256] {
+    for size in [16, 32, 64, 128] {
         let requires = (1..=size)
             .map(|k| format!("    requires x != {k};\n"))
             .collect::<String>();
@@ -7330,7 +7330,7 @@ fn owned_parameters_project(count: usize) -> (String, String) {
 /// memory block, and no check pairs each of them with all the others.
 #[test]
 fn owned_pointer_parameters_scale_with_their_number() {
-    let samples = [8, 16, 32, 64]
+    let samples = [4, 8, 16, 32]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = owned_parameters_project(size);

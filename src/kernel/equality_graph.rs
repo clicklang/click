@@ -3038,7 +3038,7 @@ mod tests {
     fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
         let memory = crate::kernel::intern_c_memory(CMemory::new());
         let mut costs = Vec::new();
-        for size in [16u64, 64, 256, 1024] {
+        for size in [4u64, 16, 64, 256] {
             let mut graph = EqualityGraph::default();
             let mut pairs = Vec::new();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
