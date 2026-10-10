@@ -153,8 +153,9 @@ LP64 eight-byte alignment requirement; other alignment forms remain
 unsupported. Const-qualified static-storage aggregates are read-only, while
 automatic/local const aggregates remain unsupported.
 System header includes other than the modeled `<stdint.h>`, `<inttypes.h>`,
-and `<stdbool.h>` (and, for the user-space target, `<stddef.h>`,
-`<pthread.h>` and the declaration-only `<stdatomic.h>` subset), function-like macros
+`<stdbool.h>`, and `<limits.h>` (and, for the user-space target, `<stddef.h>`,
+the declaration-only `<string.h>` and `<stdlib.h>` subsets, `<pthread.h>`, and
+the declaration-only `<stdatomic.h>` subset), function-like macros
 with more than three parameters, empty arguments, stringification, token pasting,
 macro redefinitions without an intervening `#undef`,
 relational comparisons, arithmetic, ternaries, and other general conditional

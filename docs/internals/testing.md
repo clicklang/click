@@ -97,14 +97,9 @@ On macOS, compiler-independent unit regressions load and verify a relocated C
 artifact with no GCC or target headers installed, and reject changed source,
 artifact, local header, and lock identity bytes. A committed artifact prepared
 on Ubuntu with GCC additionally verifies and expands through the ordinary C
-import path after relocation; its opened Linux system headers and compiler
-backend are absent on macOS.
-The frozen fork/join C source also has a committed Ubuntu GCC import. Its
-Mac regression loads the relocated artifact and verifies the unchanged worker
-and parent proof under the explicit modeled pthread runtime, without
-provisioning Linux on every development host. The checked result includes the
-locked import identity and the runtime assumption; it does not validate a
-native pthread implementation.
+import path after relocation; its compiler backend is absent on macOS. It
+includes only project-local headers: no fixture depends on a platform's
+library headers for a standard interface, which Click supplies itself.
 
 The pinned Linux `lib/rbtree.c` input closure in `integrations/linux-rbtree/`
 is a negative gate fixture, checked by the library tests in

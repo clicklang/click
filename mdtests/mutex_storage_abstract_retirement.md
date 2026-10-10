@@ -1,7 +1,7 @@
 # Abstract guard contracts need lifecycle support before retiring allocations
 
-This C0 fixture uses the allocator builtins directly; the unsupported
-`stdlib.h` include is omitted. The modeled pthread declarations are retained.
+The allocator comes from Click's built-in `<stdlib.h>` and the mutex from its
+built-in `<pthread.h>`.
 
 
 The helper must prove its allocation is separate from the input mutex's
@@ -10,6 +10,7 @@ allocation.
 
 ```c filename=mutex_storage_abstract_retirement.c
 #include <pthread.h>
+#include <stdlib.h>
 struct holder { pthread_mutex_t mu; };
 void release_other(struct holder *holder, int *data) {
     free(data);
