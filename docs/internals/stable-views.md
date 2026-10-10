@@ -125,9 +125,15 @@ facts hold at the call. Coverage starts from the exact owner occurrence
 checked before reservations. If memory splitting assigns a fresh occurrence
 to a residual fragment, the planner accepts it only when the original owner
 uniquely supported the view and the residual is contained in that owner. It
-refuses any other equal-looking replacement. A view of live caller-local
-storage with
-no explicit resource is backed by a checked local-storage loan. Its byte
+refuses any other equal-looking replacement. Declared automatic scalars have
+explicit byte ownership and follow this ordinary owned-occurrence route. A view
+of their allocation remains an execution permission. Owners of scalars whose
+addresses the program never takes are omitted from observable separation
+compositions: structural separation already protects them, and unrelated local
+declarations must not restate the pointer frame. Addressable locals remain in
+those compositions. A view
+of other live caller-local storage with no explicit resource is backed by a
+checked local-storage loan. Its byte
 range must fit inside the live allocation. Checked entry storage includes
 fresh by-value aggregate parameter copies as well as the caller's original
 locals. The loan grants a callee share and a caller close right, but escrows

@@ -1732,6 +1732,9 @@ impl PureFactContext {
         bytes: u32,
         range: &CMemoryRange,
     ) -> bool {
+        if range.wide_bounds().is_some() {
+            return self.pointer_access_in_wide_range(pointer, bytes, range);
+        }
         let width = range.element_width();
         if width == 0 {
             return false;
@@ -2123,13 +2126,21 @@ impl PureFactContext {
                         left,
                         right,
                         |pointer, range| {
-                            self.pointer_in_range_by_shallow_fact_graph_with_width(
-                                pointer,
-                                range.base(),
-                                range.start(),
-                                range.end(),
-                                range.element_width(),
-                            )
+                            if range.wide_bounds().is_some() {
+                                self.pointer_access_in_wide_range(
+                                    pointer,
+                                    range.element_width(),
+                                    range,
+                                )
+                            } else {
+                                self.pointer_in_range_by_shallow_fact_graph_with_width(
+                                    pointer,
+                                    range.base(),
+                                    range.start(),
+                                    range.end(),
+                                    range.element_width(),
+                                )
+                            }
                         },
                     );
                     if proved {

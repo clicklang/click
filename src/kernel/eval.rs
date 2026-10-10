@@ -8,7 +8,7 @@ pub(in crate::kernel) mod pointer_tags;
 mod statements;
 pub(in crate::kernel) use statements::{
     end_scope_automatic_lifetimes, refresh_scalar_local_after_memory_store,
-    return_authority_refusal,
+    refresh_scalar_local_from_memory, retire_automatic_storage_owner, return_authority_refusal,
 };
 
 /// Retain each sequential volatile access as a unique, kernel-certified fact.

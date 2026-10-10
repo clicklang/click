@@ -7058,6 +7058,30 @@ fn execute_verified_function_applications_with_suspension(
 
         let mut return_state = caller_state.clone();
         return_state.set_memory(post_state.memory.clone());
+        // A modular write changes address-backed scalar bindings as well as
+        // memory. Visit only blocks named by this effect or its checked alias
+        // class, never the caller's unrelated local environment.
+        let mut refreshed_blocks = BTreeSet::new();
+        for range in &transfer.memory_effects {
+            for pointer in std::iter::once(range.base().clone()).chain(
+                effective_assumptions
+                    .equality_graph
+                    .pointer_spellings(range.base()),
+            ) {
+                if !refreshed_blocks.insert(pointer.block.clone()) {
+                    continue;
+                }
+                let slot = Pointer {
+                    block: pointer.block,
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                crate::kernel::eval::refresh_scalar_local_from_memory(
+                    &mut return_state,
+                    &slot,
+                    &effective_assumptions,
+                );
+            }
+        }
         return_state.resources = return_resources;
         return_state.loan_ledger = return_ledger;
         return_state.loan_participant = return_participant;
@@ -20234,6 +20258,9 @@ fn prepare_contract_resource_transfer_unexplained(
             let unsupplied_local = |range: &CMemoryRange| {
                 range.base().block.starts_with("local:")
                     && callee_state.memory().has_block(&range.base().block)
+                    && !callee_state
+                        .memory()
+                        .requires_explicit_scalar_ownership(range.base())
                     && caller_state
                         .resources()
                         .directly_supporting_owned_entry(&requirement.fact, assumptions)
@@ -20907,6 +20934,9 @@ fn prepare_contract_resource_transfer_unexplained(
         if let CResourceFact::View(CResource::Memory(range)) = resource
             && range.base().block.starts_with("local:")
             && callee_state.memory().has_block(&range.base().block)
+            && !callee_state
+                .memory()
+                .requires_explicit_scalar_ownership(range.base())
             && local_view_range_within_block(range, callee_state.memory())
         {
             continue;
@@ -24640,7 +24670,7 @@ pub(super) fn instance_body_evaluation(
         if let AlgebraicValue::C(value) = value {
             evaluation
                 .locals
-                .set_typed(name.clone(), value.clone(), value.c_type());
+                .bind_logical_typed(name.clone(), value.clone(), value.c_type());
         }
     }
     for (parameter, value) in definition.parameters.iter().zip(instance.arguments.iter()) {
@@ -24650,7 +24680,7 @@ pub(super) fn instance_body_evaluation(
         if value.c_type() != parameter.c_type() {
             return Err("resource argument type mismatch");
         }
-        evaluation.locals.set_typed(
+        evaluation.locals.bind_logical_typed(
             parameter.name().to_owned(),
             value.clone(),
             parameter.c_type(),
@@ -32039,6 +32069,23 @@ pub(super) fn function_outcome_from_body(
             }
             caller_state = caller_state
                 .with_resource_context(return_resources.cloned().unwrap_or(state.resources));
+            for block in &retired_creation_blocks {
+                let Some(bytes) = state.memory.block_size(block).cloned() else {
+                    continue;
+                };
+                crate::kernel::eval::retire_automatic_storage_owner(
+                    &mut caller_state,
+                    &CMemoryRange::new_with_element_width(
+                        Pointer {
+                            block: block.clone(),
+                            offset: PointerOffsetTerm::Constant(0),
+                        },
+                        0.into(),
+                        bytes,
+                        1,
+                    ),
+                );
+            }
             caller_state.population_access = state.population_access.clone();
             caller_state.observed_population_families = state.observed_population_families;
 
@@ -32103,6 +32150,23 @@ pub(super) fn function_outcome_from_body(
             }
             caller_state = caller_state
                 .with_resource_context(return_resources.cloned().unwrap_or(state.resources));
+            for block in &retired_creation_blocks {
+                let Some(bytes) = state.memory.block_size(block).cloned() else {
+                    continue;
+                };
+                crate::kernel::eval::retire_automatic_storage_owner(
+                    &mut caller_state,
+                    &CMemoryRange::new_with_element_width(
+                        Pointer {
+                            block: block.clone(),
+                            offset: PointerOffsetTerm::Constant(0),
+                        },
+                        0.into(),
+                        bytes,
+                        1,
+                    ),
+                );
+            }
             caller_state.population_access = state.population_access.clone();
             caller_state.observed_population_families = state.observed_population_families;
 

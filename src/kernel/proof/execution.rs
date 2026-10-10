@@ -3167,7 +3167,7 @@ fn resource_composition_is_supported_by(
     // Observing the exact checked context needs no resource consumption.
     // In particular, a retained view and its owner can coexist in that
     // context even though consuming both in sequence would fail.
-    if available.shares_storage_with(required) {
+    if available.shares_storage_with(required) || available.contains_exact_facts_of(required) {
         return true;
     }
     available
@@ -4057,16 +4057,23 @@ fn interface_join_resources(
         parent.reached_state().resources(),
     )
     .ok_or("the interface arm resources do not descend from the branch root")?;
+    // A view already established by the common residual needs no second
+    // occurrence. Match the builder's non-consuming view route so unrelated
+    // allocation owners do not change resource ordering at this interface.
+    let additions = successor_interface_resources
+        .iter()
+        .filter(|fact| {
+            fact.is_own() || !common_resources.satisfies_fact(fact, successor_facts.assumptions())
+        })
+        .cloned()
+        .collect::<Vec<_>>();
     let expected_resources = common_resources
         .try_compose_into_valid_context_delaying_normalization(
-            successor_interface_resources.iter().cloned(),
+            additions.iter().cloned(),
             successor_facts.assumptions(),
         )
         .map_err(|_| "the interface resources do not form a valid successor context")?
-        .normalized_around_facts(
-            &successor_interface_resources,
-            successor_facts.assumptions(),
-        );
+        .normalized_around_facts(&additions, successor_facts.assumptions());
     Ok(InterfaceJoinResources {
         arm_interface_resources,
         successor_interface_resources,
@@ -15212,6 +15219,26 @@ mod population_authority_rewrite_tests {
         assert!(resource_composition_is_supported_by(
             &Proposition::CResourceComposition(context.clone()),
             &context,
+            &assumptions,
+        ));
+        let framed = context
+            .clone()
+            .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                CMemory::local_pointer("framed_scalar"),
+                0.into(),
+                1.into(),
+            )));
+        assert!(resource_composition_is_supported_by(
+            &Proposition::CResourceComposition(context.clone()),
+            &framed,
+            &assumptions,
+        ));
+        let duplicated = context
+            .clone()
+            .unchecked_with_fact(context.facts()[0].clone());
+        assert!(!resource_composition_is_supported_by(
+            &Proposition::CResourceComposition(duplicated),
+            &framed,
             &assumptions,
         ));
         let foreign = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(

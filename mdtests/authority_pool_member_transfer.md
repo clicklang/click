@@ -1,8 +1,7 @@
-# Implicit local scalar access does not supply transferable private ownership
+# Scalar allocation ownership transfers between populations
 
-The recovered prototype retains its original C. Its first member fold is refused:
-implicit local scalar access is not an explicit transferable owned range. This
-is the same storage boundary retained by the field-free stack-object control.
+The declaration supplies ownership of the scalar cell. A member packages that
+ownership, moves between populations, and returns it before scope exit.
 
 ```c filename=authority_pool_member_transfer.c
 void move_slot() {
@@ -45,5 +44,5 @@ void move_slot() { ensures 1 == 1; } by {
 ```
 
 ```expect
-fail: fold requires ownership of the complete instance body
+pass
 ```

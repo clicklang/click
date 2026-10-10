@@ -24,8 +24,10 @@ storage, with ownership supplied separately by their entry contract.
 Caller allocation now has a separate `c_allocate_aggregate_destination`
 operation. It allocates fresh automatic storage and its byte ownership without
 seeding field values. Re-declaration uses the existing retirement and fresh
-generation checks. Ordinary local declarations and the existing Rust constructor placeholder
-protocol retain their behavior. C++ direct local constructors now use raw
+generation checks. Ordinary aggregate/array declarations and the existing Rust
+constructor placeholder protocol retain their behavior. Automatic scalar
+declarations now create exact byte ownership through the shared allocator,
+independently of initialization. C++ direct local constructors now use raw
 destination allocation.
 
 `CAggregateReturnMode::Construction` now binds the hidden result to exact call

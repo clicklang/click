@@ -468,6 +468,13 @@ impl ResourceContextIndex {
                     block.clone(),
                     entry,
                 );
+                if block.starts_with("local:") {
+                    result.owned_automatic_memory_by_block = insert_resource_index_entry(
+                        &result.owned_automatic_memory_by_block,
+                        block.clone(),
+                        entry,
+                    );
+                }
                 if result
                     .owned_memory_by_block
                     .get(&block)
@@ -656,6 +663,13 @@ impl ResourceContextIndex {
                 }
                 result.owned_memory_by_block =
                     remove_resource_index_entry(&result.owned_memory_by_block, &block, entry);
+                if block.starts_with("local:") {
+                    result.owned_automatic_memory_by_block = remove_resource_index_entry(
+                        &result.owned_automatic_memory_by_block,
+                        &block,
+                        entry,
+                    );
+                }
                 if !result
                     .owned_memory_by_block
                     .get(&block)
@@ -5040,12 +5054,26 @@ impl ResourceContext {
         // Two owned members are pairwise separate, and one owned composite
         // expands to several: either way the composition is what a frame
         // check consults for ownership-derived disjointness.
-        let owned = self.iter().filter(|fact| fact.is_own());
-        let owned_composite = self
+        // Unaddressable automatic storage cannot contribute a nonstructural
+        // separation: no program pointer can reach it. Keep its permissions
+        // in the execution context, but leave it out of the observable
+        // composition so unrelated declarations do not restate a memory frame.
+        let mut composition = self.clone();
+        for (block, entries) in self.storage.index.owned_automatic_memory_by_block.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            if crate::kernel::block_is_never_address_taken_local(block) {
+                for entry in entries.iter() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    composition.remove_entry(*entry);
+                }
+            }
+        }
+        let owned = composition.iter().filter(|fact| fact.is_own());
+        let owned_composite = composition
             .iter()
             .any(|fact| fact.is_own() && matches!(fact.resource(), CResource::Composite { .. }));
         if owned.count() >= 2 || owned_composite {
-            propositions.push(Proposition::CResourceComposition(self.clone()));
+            propositions.push(Proposition::CResourceComposition(composition));
         }
         propositions
     }
@@ -5151,6 +5179,19 @@ impl ResourceContext {
             return true;
         }
         false
+    }
+
+    /// Non-consuming observation of an exact subcontext. Multiplicity is
+    /// checked through the retained index, including duplicate owned shares.
+    pub(crate) fn contains_exact_facts_of(&self, required: &Self) -> bool {
+        required.storage.index.exact.iter().all(|(fact, entries)| {
+            crate::instrumentation::record_deterministic_work(1);
+            self.storage
+                .index
+                .exact
+                .get(fact)
+                .is_some_and(|available| available.len() >= entries.len())
+        })
     }
 
     pub fn is_empty(&self) -> bool {

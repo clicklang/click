@@ -3084,6 +3084,11 @@ fn join_loop_exit_paths(
                 .iter()
                 .filter(|proposition| {
                     !shared_propositions.contains(proposition)
+                        // Composition certificates establish a well-formed
+                        // resource context, not an observable exit guard.
+                        // Dropping this conjunct weakens the path disjunction
+                        // and keeps its pure successor facts spellable.
+                        && !matches!(proposition, Proposition::CResourceComposition(_))
                         && !matches!(
                             proposition,
                             Proposition::ConditionIs(ConditionTerm::Constant(actual), expected)
@@ -7725,23 +7730,31 @@ fn loop_body_resource_context(
         Err(failure) => return Ok((top_state.clone(), vec![failure])),
     };
     let mut body_resources = declared.clone();
-    if !resource_specs.iter().any(resource_spec_is_view) {
-        for fact in withheld.facts() {
-            let Some(viewed) = viewed_form_of_resource_fact(fact) else {
-                continue;
-            };
-            if body_resources.satisfies_fact(&viewed, assumptions) {
-                continue;
-            }
-            match body_resources
-                .clone()
-                .try_compose_with_fact(viewed, assumptions)
-            {
-                Ok(composed) => body_resources = composed,
-                // An un-composable remainder is read authority the body
-                // simply does not get; it is not a contract failure.
-                Err(_) => continue,
-            }
+    let allow_frame_views = !resource_specs.iter().any(resource_spec_is_view);
+    for fact in withheld.facts() {
+        let allocation_owner = fact.is_own()
+            && matches!(fact.resource(),
+            CResource::Memory(range) if top_state.memory().requires_explicit_scalar_ownership(range.base()));
+        if !allocation_owner && !allow_frame_views {
+            continue;
+        }
+        let Some(viewed) = viewed_form_of_resource_fact(fact) else {
+            continue;
+        };
+        if body_resources.satisfies_fact(&viewed, assumptions) {
+            continue;
+        }
+        let supplied = if allocation_owner {
+            fact.clone()
+        } else {
+            viewed
+        };
+        match body_resources
+            .clone()
+            .try_compose_with_fact(supplied, assumptions)
+        {
+            Ok(composed) => body_resources = composed,
+            Err(_) => continue,
         }
     }
     body_resources = with_owner_read_authority_rederived(

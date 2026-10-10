@@ -414,16 +414,20 @@ declaration has offline normal, expanded and retained forwarding coverage.
 Artifact schema 54 requires refreshing older locks. Enum pointers and byte
 alias permission are not part of this value slice. Byte alias access must be restricted to the actual pinned `std::byte` declaration;
 an arbitrary enum with the same underlying type does not gain that privilege.
-Before a modular decoder can write through a pointer to an automatic scalar,
-resolve the shared local-authority boundary. A concrete regression now admits
-`unsigned int obj; fill(&obj, value); return obj;`, but verification refuses the
-helper's `owns p[0..1]` requirement: ordinary scalar declarations have implicit
-local access, not an explicit owned memory resource. The same refusal occurs
-with an initialized local, so ownership and initialization are separate issues.
-Choose between explicit memory ownership at automatic scalar allocation
-(consistent with aggregate destinations) and checked scoped mutable loans from
-implicit local authority. Preserve initialization, exact extent and lifetime,
-prevent duplicate ownership, and apply the selected rule across C, C++ and Rust.
+Automatic scalar declarations now create explicit ownership of their exact
+byte extent in the shared kernel, independent of initialization. Direct reads
+and writes require that permission; modular helper calls can borrow and return
+it without caller-side ownership annotations. Scope exit and re-declaration
+retire the allocation owner. Caller scalar bindings are refreshed from memory
+after modular effects, rather than retaining stale pre-call values. The same
+allocation transition serves C, C++ and Rust.
+
+Another decoder prerequisite is initialization across ordinary modular
+output-buffer calls. A regular `owns` contract does not guarantee that an
+initially unwritten object becomes initialized, even when a value postcondition
+names its memory. Concrete checked stores and construction destinations already
+establish initialization separately. Preserve that distinction when selecting
+the ordinary output contract and its body-certified initialization effect.
 
 `ReadCompactSize` additionally brings stream failure and canonical
 encoding rules; do not bundle those decisions into this span slice.

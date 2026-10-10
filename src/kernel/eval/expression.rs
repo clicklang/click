@@ -2260,6 +2260,39 @@ fn read_c_lvalue_paths_without_ranges(
     Ok(match outcome {
         CLValueOutcome::LValue(lvalue) => match &lvalue.storage {
             CLValueStorage::Local { name } => {
+                if matches!(
+                    state.locals.binding(name),
+                    Some(
+                        CLocalBinding::Object {
+                            storage_declared: true,
+                            ..
+                        } | CLocalBinding::UninitializedObject { .. }
+                    )
+                ) && let Some(pointer) = state.locals.slot(name)
+                    && state.memory.requires_explicit_scalar_ownership(pointer)
+                    && !assumptions.should_allow_symbolic_contract_loads()
+                    && !resource_context_has_read(
+                        state.resources(),
+                        pointer,
+                        lvalue.value_type.byte_width(),
+                        assumptions,
+                    )
+                {
+                    return Ok(vec![CExpressionPath {
+                        outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
+                            resource: Box::new(CResourceFact::view_memory(
+                                CMemoryRange::new_with_element_width(
+                                    pointer.clone(),
+                                    0.into(),
+                                    1.into(),
+                                    lvalue.value_type.byte_width(),
+                                ),
+                            )),
+                        }),
+                        facts,
+                        obligations,
+                    }]);
+                }
                 let outcome = match state.locals.get(name) {
                     Some(value) if lvalue.value_type.accepts(value) => CExpressionOutcome::Value(
                         value
@@ -2337,7 +2370,8 @@ fn read_c_lvalue_paths_without_ranges(
                 }
                 let effective_assumptions =
                     assumptions_with_path_context(assumptions, &facts, &obligations);
-                let is_external = is_external_memory_pointer(pointer);
+                let is_external = is_external_memory_pointer(pointer)
+                    || state.memory.requires_explicit_scalar_ownership(pointer);
                 let require_owned = assumptions.should_require_owned_expression_loads();
                 let has_read_resource = (is_external || require_owned)
                     && ((!require_owned && assumptions.should_allow_symbolic_contract_loads())

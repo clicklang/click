@@ -3844,6 +3844,7 @@ fn substitute_bitvector_variable_in_c_state(
             .map(|(name, binding)| {
                 let binding = match binding {
                     CLocalBinding::Object {
+                        storage_declared,
                         value,
                         c_type,
                         slot,
@@ -3852,6 +3853,7 @@ fn substitute_bitvector_variable_in_c_state(
                         constant,
                         pointee_constant,
                     } => CLocalBinding::Object {
+                        storage_declared: *storage_declared,
                         value: substitute_bitvector_variable_in_c_value(value, from, to),
                         c_type: *c_type,
                         slot: slot.clone(),
@@ -6688,6 +6690,7 @@ fn substitute_pointer_variable_in_c_state(state: &CState, from: Variable, to: &P
             .map(|(name, binding)| {
                 let binding = match binding {
                     CLocalBinding::Object {
+                        storage_declared,
                         value,
                         c_type,
                         slot,
@@ -6696,6 +6699,7 @@ fn substitute_pointer_variable_in_c_state(state: &CState, from: Variable, to: &P
                         constant,
                         pointee_constant,
                     } => CLocalBinding::Object {
+                        storage_declared: *storage_declared,
                         value: substitute_pointer_variable_in_c_value(value, from, to),
                         c_type: *c_type,
                         slot: substitute_pointer_variable_in_pointer(slot, from, to),
