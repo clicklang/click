@@ -1531,7 +1531,9 @@ name the data pointer and size of a `std::span`, the view of
 of the library that was parsed (libstdc++'s `_M_ptr` and
 `_M_extent._M_extent_value`), and checks it like a written field access; an
 argument of another type is refused there. An accessor works wherever a field
-does, as in `owns std_span_data(s);`.
+does, as in `owns std_span_data(s);`. Diagnostics and expanded proofs print the
+accessor for its field path, so an expanded proof names no private field
+either.
 
 The catalog covers `std::span<int>`'s `size`, `data`, `front`, `back`,
 `operator[]` and `first`. Element accessors require an index inside the view,

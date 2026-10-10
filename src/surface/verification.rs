@@ -125,6 +125,9 @@ pub(in crate::surface) struct CSourceContext<'a> {
     /// Bundle sources extracted from a larger file, from the Click project.
     /// Their locations are reported as lines of that file.
     c_source_containers: BTreeMap<String, crate::source::SourceContainer>,
+    /// Keeps a prepared program's model accessors bound for printing while
+    /// this context lives.
+    _model_accessors: Option<super::diagnostics::ModelAccessorScope>,
     #[cfg(test)]
     prepared_parse_count: Cell<usize>,
 }
@@ -150,6 +153,7 @@ impl<'a> CSourceContext<'a> {
             prepared_duplicates: false,
             parsed_units: RefCell::new(BTreeMap::new()),
             c_source_containers: BTreeMap::new(),
+            _model_accessors: None,
             #[cfg(test)]
             prepared_parse_count: Cell::new(0),
         }
@@ -213,6 +217,7 @@ impl<'a> CSourceContext<'a> {
             prepared_duplicates: duplicate_logical_source,
             parsed_units: RefCell::new(BTreeMap::new()),
             c_source_containers: BTreeMap::new(),
+            _model_accessors: None,
             #[cfg(test)]
             prepared_parse_count: Cell::new(0),
         }
@@ -243,6 +248,8 @@ impl<'a> CSourceContext<'a> {
     ) -> Result<Self, ClickError> {
         let program = import.prepared_program();
         let program_execution = program.prepare_execution().map_err(ClickError::new)?;
+        let model_accessors =
+            super::diagnostics::ModelAccessorScope::enter(&program_execution.layouts);
         let input_digest = digest_framed_parts([
             b"click-typed-prepared-project-v1".as_slice(),
             program.language().as_bytes(),
@@ -261,6 +268,7 @@ impl<'a> CSourceContext<'a> {
             prepared_duplicates: false,
             parsed_units: RefCell::new(BTreeMap::new()),
             c_source_containers: BTreeMap::new(),
+            _model_accessors: model_accessors,
             #[cfg(test)]
             prepared_parse_count: Cell::new(0),
         })
@@ -5982,6 +5990,7 @@ pub(in crate::surface) fn parse_verified_sources(
         prepared_duplicates: false,
         parsed_units: RefCell::new(BTreeMap::new()),
         c_source_containers: BTreeMap::new(),
+        _model_accessors: None,
         #[cfg(test)]
         prepared_parse_count: Cell::new(0),
     };
