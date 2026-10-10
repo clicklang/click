@@ -1064,6 +1064,7 @@ struct ProofDiagnosticProofState(
     Vec<(Variable, String)>,
     Option<SurfacePropositionMap>,
     Option<CState>,
+    Option<crate::surface::proof_trace::ChildArgumentTrace>,
 );
 
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
@@ -1198,7 +1199,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             return None;
         }
         let lineage = trace_path_lineage(&self.1, self.0.focused_branch());
-        crate::surface::proof_trace::render(
+        let mut trace = crate::surface::proof_trace::render(
             claim,
             &lineage,
             labels,
@@ -1206,7 +1207,11 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             branch_arm,
             have_body_contains,
             target,
-        )
+        )?;
+        if let Some(comparison) = &self.5 {
+            comparison.append_to(&mut trace, labels);
+        }
+        Some(trace)
     }
 }
 
@@ -1548,6 +1553,7 @@ impl Proof<'_> {
                 ProofContext::FixedState(context) => Some(context.state.clone()),
                 _ => None,
             },
+            None,
         )
     }
 }
@@ -2519,7 +2525,17 @@ impl<'a> Proof<'a> {
     /// lineage of the current block instead. The proof-tree depth is never
     /// reported as if it were a step number.
     pub(in crate::surface::proof) fn step_error(&self, message: impl Into<String>) -> ClickError {
+        self.step_error_with_comparison(message, None)
+    }
+
+    fn step_error_with_comparison(
+        &self,
+        message: impl Into<String>,
+        comparison: Option<crate::surface::proof_trace::ChildArgumentTrace>,
+    ) -> ClickError {
         let reason = message.into();
+        let mut diagnostic_state = self.diagnostic_state();
+        diagnostic_state.5 = comparison;
         let location = self
             .site
             .path()
@@ -2538,7 +2554,7 @@ impl<'a> Proof<'a> {
             },
             claim_label: self.context.claim_label().to_owned(),
             reason,
-            state: Some(Arc::new(self.diagnostic_state())),
+            state: Some(Arc::new(diagnostic_state)),
         };
         ClickError::with_diagnostic(summary, diagnostic)
     }

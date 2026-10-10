@@ -1959,6 +1959,17 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    #[ignore = "nightly: original chunk-iterator whole-sidecar proof measured at 16.9 s"]
+    fn charon_chunks_original_sidecar_verifies() {
+        let export = decode(
+            include_bytes!("../../../design/charon-trial/chunks/chunks.ullbc"),
+            "chunks.rs",
+            include_bytes!("../../../design/charon-trial/chunks/chunks.rs"),
+        )
+        .unwrap();
         let prepared = super::super::import::prepared_for_test(export).unwrap();
         C0VerificationSession::new_program_prepared(
             include_str!("../../../design/charon-trial/chunks/chunks.click"),

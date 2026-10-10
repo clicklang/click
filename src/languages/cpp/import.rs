@@ -579,6 +579,9 @@ fn validate_standard_byte_declarations(
         )?;
     }
     for record in &export.records {
+        for argument in &record.byte_template_arguments {
+            check_type(&argument.value_type)?;
+        }
         for field in &record.fields {
             check_type(&field.value_type)?;
         }

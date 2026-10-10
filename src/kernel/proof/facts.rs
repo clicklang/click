@@ -281,7 +281,54 @@ impl ProofFacts {
                         | (
                             ConditionTerm::Bitvector32Equal(a, b),
                             ConditionTerm::Bitvector32Equal(c, d),
-                        ) => [(a, c), (b, d)],
+                        ) => vec![(a.as_ref(), c.as_ref()), (b.as_ref(), d.as_ref())],
+                        (ConditionTerm::IntegerEqual(a, b), ConditionTerm::IntegerEqual(c, d))
+                        | (
+                            ConditionTerm::IntegerNotEqual(a, b),
+                            ConditionTerm::IntegerNotEqual(c, d),
+                        )
+                        | (
+                            ConditionTerm::IntegerLessThan(a, b),
+                            ConditionTerm::IntegerLessThan(c, d),
+                        )
+                        | (
+                            ConditionTerm::IntegerLessEqual(a, b),
+                            ConditionTerm::IntegerLessEqual(c, d),
+                        )
+                        | (
+                            ConditionTerm::IntegerGreaterThan(a, b),
+                            ConditionTerm::IntegerGreaterThan(c, d),
+                        )
+                        | (
+                            ConditionTerm::IntegerGreaterEqual(a, b),
+                            ConditionTerm::IntegerGreaterEqual(c, d),
+                        ) => {
+                            // Retain checked native load evidence when spelling
+                            // the same word observation at another snapshot.
+                            // Its numeric format and all other Integer structure
+                            // remain exact; this is not arithmetic transport.
+                            let mut pairs = Vec::new();
+                            for (left, right) in [(a, c), (b, d)] {
+                                if left == right {
+                                    continue;
+                                }
+                                let (IntegerTerm::Machine(left), IntegerTerm::Machine(right)) =
+                                    (left.as_ref(), right.as_ref())
+                                else {
+                                    return None;
+                                };
+                                if left.ty() != right.ty()
+                                    || !matches!(
+                                        left.ty(),
+                                        MachineIntegerType::Int32 | MachineIntegerType::UInt32
+                                    )
+                                {
+                                    return None;
+                                }
+                                pairs.push((left.value(), right.value()));
+                            }
+                            pairs
+                        }
                         _ if a == b => continue,
                         _ => return None,
                     };
@@ -293,7 +340,7 @@ impl ProofFacts {
                         // Do not use ambient premises to identify a bound
                         // value, or a load with an explicitly bound address.
                         if !bound_variables.is_empty()
-                            && [a, b].iter().any(|term| match term.as_ref() {
+                            && [a, b].iter().any(|term| match *term {
                                 Bitvector32Term::Variable(variable) => {
                                     bound_variables.contains(variable)
                                 }
@@ -304,7 +351,7 @@ impl ProofFacts {
                             return None;
                         }
                         let selected = Proposition::ConditionIs(
-                            ConditionTerm::equal(a.as_ref().clone(), b.as_ref().clone()),
+                            ConditionTerm::equal(a.clone(), b.clone()),
                             true,
                         );
                         if !self
@@ -316,7 +363,7 @@ impl ProofFacts {
                             return None;
                         }
                         equalities.push(Proposition::ConditionIs(
-                            ConditionTerm::equal(a.as_ref().clone(), b.as_ref().clone()),
+                            ConditionTerm::equal(a.clone(), b.clone()),
                             true,
                         ));
                     }

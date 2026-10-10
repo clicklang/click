@@ -40,6 +40,82 @@ the written source and target and name stores that may have changed the cell.
 An explicitly requested `--trace-proof` can additionally show bounded internal
 facts and snapshot identities for debugging.
 
+For pointer equalities involving retained read definitions, the trace adds
+stable report-local `value#N` labels alongside the source expression and names
+the defining read's snapshot and address. Equal source spellings can therefore
+be distinguished when they denote different internal values. Different labels
+identify different terms, not necessarily unequal values; a defining snapshot
+describes the original read, not a claim that its value is stale.
+
+A failed pointer-valued resource child argument comparison reports the exact
+supplied and required values and the argument position. Up to four explicit
+equalities sharing the supplied value may be shown as potentially relevant
+evidence. That selection is diagnostic guidance, not a claim about the cause
+of failure or a prescription for the missing proof. The comparison uses the
+same value and snapshot labels as the preceding trace facts. These details
+are diagnostic only and do not add equalities or change proof checking.
+
+## Three strikes during example development
+
+When developing an example and Click together, repeated difficulty writing a
+proof is feedback about the tool, even if every rejection is sound. Use three
+substantive failed attempts at the same proof obligation as a trigger to stop
+local proof tweaking and investigate the verifier or proof interface.
+
+1. On the first failure, check the claim, assumptions, and attempted step.
+2. After the second failure, run a focused trace with `click verify
+   --trace-proof <PROOF>`, using `--trace-to <LINE[:COLUMN]>` when useful.
+   Before another attempt, state what the failed step was expected to establish,
+   what the trace shows, and how that information guides the next step. If the
+   trace already explains a missing premise or incorrect step, use it to repair
+   the proof; an informative trace is a successful use of the existing tool.
+3. On the third, pause the example at that obligation and investigate using
+   the trace. Reduce the failure and ask what would make the intended reasoning
+   straightforward to express and check. Do not proceed directly to a fourth
+   spelling or tactic variation. Normally bring the evidence and proposed
+   response to the user at this point, rather than independently redesigning
+   the tooling.
+
+Do not conclude that repeated rejection indicates a verifier defect before
+trying tracing. If the trace cannot explain the relevant comparison or why an
+expected fact is unavailable, identify that missing information explicitly;
+improving the trace may be the right next change. Distinguish evidence visible
+in the trace from hypotheses based on source inspection or instrumentation.
+A clear defect such as a crash or invalid certificate still warrants immediate
+investigation; tracing is not a prerequisite for recognizing independent evidence.
+
+Count attempts to solve the same underlying obligation, not identical command
+reruns or unrelated errors elsewhere in the proof. Moving the step, renaming
+values, or changing tactics does not reset the count. This is a working
+heuristic, not a quota: investigate sooner when the failure already exposes a
+clear defect.
+
+The pause is mandatory; changing the verifier is not. Use the triage order
+below to distinguish a mistaken claim or missing premise from poor diagnostics,
+an awkward proof interface, missing functionality, or an integration bug. An
+explicit proof that eventually works can still expose avoidable usability
+costs. Look for a general pattern, rather than a special case for the example.
+
+Tooling improvements require discussion and user approval before implementation.
+This includes choosing new diagnostic content, trace presentation, or a proof
+workflow. Reproduced bugs in existing behavior may be fixed autonomously; that
+permission does not extend to unapproved tooling design changes merely because
+they arose during debugging. Investigate and prepare a concrete proposal first.
+If the user has already approved the specific improvement, proceed within that
+scope without asking again.
+
+Before resuming, record the obligation, attempted approaches, what the trace and
+reduced case show, and the chosen response. That response may be a justified proof
+correction, clearer diagnostics or documentation, a reusable lemma or tactic,
+or a verifier fix with regression coverage. If the tooling problem remains
+unresolved, preserve the reproduction and report the blocker under the existing
+bug and issue policy. Do not weaken the claim, change otherwise-correct C,
+raise budgets, or add consumer-specific recovery rules merely to get past it.
+
+This rule applies to joint example and verifier development. It does not promise
+complete automation or require ordinary users to debug the verifier. Its purpose
+is to turn repeated proof-writing friction into deliberate tool improvement.
+
 ## Explain the program requirement first
 
 Tactic source excerpts retain their location and show at most ten source lines,

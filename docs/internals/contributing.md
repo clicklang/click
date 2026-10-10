@@ -17,11 +17,11 @@ branch. It keeps at most one such branch per task thread, deletes it when the
 pull request merges or closes, and removes any branch it left behind before
 starting new work. Local agents and humans keep using forks.
 
-For follow-on work on the same effort, keep adding coherent, green increments
-to the existing open pull request and branch. Do not open a duplicate pull
-request for that effort. Once the pull request merges, start later work from
-current upstream `master` on a new branch and pull request. Keep independent
-efforts in separate pull requests.
+Each task thread has at most one open pull request. Add all further coherent,
+green increments to that PR, including unrelated fixes found along the way;
+do not stack PRs. Once it merges or closes, start later work from current
+upstream `master` on a new branch. Independent task threads may have separate
+PRs.
 
 For a new checkout, create a personal fork on GitHub, then run these commands.
 Replace `YOUR_GITHUB_LOGIN` with the fork owner's login:
@@ -93,9 +93,26 @@ Other contributors should use the normal PR and review process above.
    must be enabled; it is enabled on `clicklang/click`.
 5. Once GitHub confirms the request, continue with the next work without
    waiting for checks or the merge to finish.
-6. On the next update, inspect the PR state. Update the same open PR and run
-   `gh pr merge <PR> --auto` again if needed. If the PR merged, create a new
-   one.
+6. On the next update, inspect the PR again. If it merged, open a new PR. If
+   it is open and not in the merge queue, push the new work to it and run
+   `gh pr merge <PR> --auto` again. Pushing to a PR that is already in the
+   queue does not remove it: the queue merges the head it was enqueued with,
+   and later commits are left behind on the branch. So first check the
+   queue entry:
+
+   ```sh
+   gh api graphql -f query='{repository(owner:"clicklang",name:"click"){pullRequest(number:<PR>){id mergeQueueEntry{id state}}}}'
+   ```
+
+   If its state is `QUEUED`, its final build has not started and nothing is
+   wasted by resetting it: remove it from the queue (the `dequeuePullRequest`
+   mutation with the pull request `id`, not the queue-entry `id`), push the
+   new work, update the PR
+   description, run `gh pr merge <PR> --auto` again, and confirm the queued
+   head is the new one. If its build has started (`AWAITING_CHECKS` or
+   later), or the new work is a large change on its own, leave the PR alone
+   and deliver the new work in a new PR after it merges. After any PR merges,
+   check that every commit pushed to it reached `master`.
 7. If checks fail, a conflict appears, or GitHub removes the PR from the
    queue, resolve the problem, update the PR, and register the merge request
    again. Then continue with the next work.
@@ -112,6 +129,23 @@ require a maintainer to approve an outside contributor's workflow run. Release
 publishing uses version-tag pushes, so opening a pull request does not publish
 a release.
 
+## Worktree and integration procedure
+
+Use a dedicated task branch and worktree for edits, experiments, tests, and
+commits. Keep incomplete prototypes there and restore a coherent, tested
+checkpoint before committing. Never copy uncommitted files into the primary
+checkout or overwrite unrelated work.
+
+After a PR merges, confirm every pushed commit is an ancestor of upstream
+`master`. Update a clean primary checkout only by fast-forwarding with Git.
+If unrelated changes or conflicts prevent that, stop and coordinate. When
+upstream moves during development, update the task branch and rerun affected
+checks. Choose local validation by scope as described above; PR CI and the
+merge queue supply the full gate before upstream integration.
+
+Run operations that move `HEAD`, such as `git bisect`, in a separate throwaway
+worktree so they cannot disrupt an in-progress change or its saved patches.
+
 ## Implementing a change
 
 Most Click changes should start from a proof need, not from an isolated syntax
@@ -125,7 +159,8 @@ The default workflow is:
 4. Implement the smallest parser, lowering, kernel, or prover change.
 5. Add unit tests if the change is below the mdtest level.
 6. Update the relevant reference entry and public-surface inventory.
-7. Run focused tests, then run `scripts/check.sh` unpiped.
+7. Run focused tests and report them; PR CI and the merge queue run the full
+   `scripts/check.sh` gate for code changes.
 
 The feature playbook is the detailed checklist.
 
@@ -186,4 +221,5 @@ explicit authorization.
   `memory_load_equality_does_not_ignore_loop_havoc_identity` guards it.
 - Reproduce stale timing claims before acting on them; slow-but-passing
   is a reportable finding, not a resting state.
-- Known bugs and pending decisions live in `issues/`, one file each.
+- Reproduced defects live in `bugs/`; user-approved roadmap work lives in
+  `issues/`. Follow their READMEs when filing.
