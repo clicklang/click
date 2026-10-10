@@ -103,10 +103,12 @@ Pin the selected configuration and revision of
 its unchanged optimized path against the same specification, and derive C/Rust
 result equality. Match seed/reset and null-buffer behavior explicitly.
 
-The pinned zlib source closure now reaches the selected computation body.
-Complete the adapter's expression-update support for its loop conditions and
-pointer reads (`len--`, `--n`, and `*buf++`). Preserve evaluation order,
-exit-side updates, and unsigned wrap; keep the implementation unchanged.
+The [unchanged pinned zlib trial](../design/charon-trial/zlib/README.md) imports
+all selected bodies and proves the canonical empty-input case offline.
+Expression updates preserve consumed values, loop exit-side effects, native
+unsigned wrap, and checked pointer strides; nested `DO16` blocks also import.
+Connect the original nonempty computation to the common specification, then
+prove compatible seed/reset/null-buffer behavior and incremental processing.
 
 Acceptance:
 

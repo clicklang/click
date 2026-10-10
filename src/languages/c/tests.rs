@@ -13817,3 +13817,143 @@ fn c0_long_double_prototypes_are_unusable_and_keep_type_positions() {
         assert!(parse_import_with(source, Accept).is_err(), "{source}");
     }
 }
+
+// Returned values and zero-condition exits must use the same checked native
+// updates as statements, including full-width unsigned wrap.
+#[test]
+fn c0_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
+    use crate::kernel::{Bitvector32Term, CFunctionOutcome, CState, Proposition};
+    for (source, expected) in [
+        (
+            "int32 run() { int32 n = 5; return n++; }",
+            crate::kernel::int32(5),
+        ),
+        (
+            "int32 run() { int32 n = 5; return ++n; }",
+            crate::kernel::int32(6),
+        ),
+        (
+            "int32 run() { int32 n = 5; int32 before = n--; return before * 10 + n; }",
+            crate::kernel::int32(54),
+        ),
+        (
+            "uint64 run() { uint64 n = 0; uint64 before = n--; return n; }",
+            crate::kernel::uint64(Bitvector32Term::UInt64Constant(u64::MAX)),
+        ),
+        (
+            "uint64 run() { uint64 n = 0; while (n--) { } return n; }",
+            crate::kernel::uint64(Bitvector32Term::UInt64Constant(u64::MAX)),
+        ),
+        (
+            "int32 run() { uint64 n = 2; int32 count = 0; while (n--) { count++; } return count; }",
+            crate::kernel::int32(2),
+        ),
+        (
+            "int32 run() { int32 n = 3; int32 count = 0; do { count++; } while (--n); return count; }",
+            crate::kernel::int32(3),
+        ),
+        (
+            "int32 run() { int32 n = 3; int32 count = 0; do { count++; continue; } while (--n); return count; }",
+            crate::kernel::int32(3),
+        ),
+        (
+            "int32 run() { int32 n = 3; int32 sum = 0; do { { sum += 2; } continue; } while (--n); return sum; }",
+            crate::kernel::int32(6),
+        ),
+    ] {
+        let function = syntax::parse_function(source)
+            .expect(source)
+            .to_kernel_function();
+        let theorem = crate::kernel::prove_symbolic_c_function_execution(
+            CState::new(),
+            function,
+            Vec::new(),
+            Default::default(),
+        )
+        .expect(source);
+        assert!(
+            matches!(theorem.proposition(), Proposition::CFunctionExecutes {
+            outcome: CFunctionOutcome::Return { value, .. }, ..
+        } if value == &expected),
+            "{source}: {:?}",
+            theorem.proposition()
+        );
+    }
+}
+
+// Post-incremented byte pointers are consumed by unchanged checksum idioms.
+#[test]
+fn c0_scalar_updates_keep_const_pointer_reads_and_nominal_stride() {
+    for source in [
+        "int32 run() { uint8 bytes[2]; bytes[0] = 255; bytes[1] = 7; const uint8* p = bytes; int32 sum = 0; sum += *p++; sum += *p++; return sum; }",
+        "struct pair { int32 first; int32 second; }; int32 run() { struct pair values[2]; values[0].first = 3; values[1].first = 262; struct pair* p = values; struct pair* before = p++; return p->first; }",
+        "struct pair { int32 first; int32 second; }; int32 run() { struct pair values[2]; values[0].first = 3; values[1].first = 262; const struct pair* p = values; const struct pair* before = p++; return p->first; }",
+    ] {
+        let function = syntax::parse_function(source)
+            .expect(source)
+            .to_kernel_function();
+        let theorem = crate::kernel::prove_symbolic_c_function_execution(
+            crate::kernel::CState::new(),
+            function,
+            Vec::new(),
+            Default::default(),
+        )
+        .expect(source);
+        assert!(
+            matches!(theorem.proposition(), crate::kernel::Proposition::CFunctionExecutes {
+            outcome: crate::kernel::CFunctionOutcome::Return { value, .. }, ..
+        } if value == &crate::kernel::int32(262)),
+            "{source}: {:?}",
+            theorem.proposition()
+        );
+    }
+}
+
+#[test]
+fn c0_scalar_updates_reject_unsequenced_aliases_and_non_lvalues() {
+    for source in [
+        "int32 run(int32 n) { return n++ + n; }",
+        "int32 run(int32 n) { return n++ + n++; }",
+        "int32 f(int32 a, int32 b); int32 run(int32 n) { return f(n++, n); }",
+        "uint8 run() { uint8* p; p = (uint8*)&p; return *p++; }",
+        "const int32 n = 0; int32 run() { return n++; }",
+        "int32 run() { int32 n = 0; int32* p = &n++; return 0; }",
+        "struct pair { int32 first; }; int32 run() { struct pair value; value++; return 0; }",
+    ] {
+        assert!(syntax::parse_function(source).is_err(), "{source}");
+    }
+}
+
+#[test]
+fn c0_scalar_updates_preserve_signed_overflow_undefined_behavior() {
+    for source in [
+        "int32 run() { int32 n = 2147483647; return n++; }",
+        "int32 run() { int32 n = 2147483647; return ++n; }",
+        "int32 run() { int32 n = -2147483647 - 1; return n--; }",
+        "int32 run() { int32 n = -2147483647 - 1; return --n; }",
+    ] {
+        let function = syntax::parse_function(source)
+            .expect(source)
+            .to_kernel_function();
+        let theorem = crate::kernel::prove_symbolic_c_function_execution(
+            crate::kernel::CState::new(),
+            function,
+            Vec::new(),
+            Default::default(),
+        )
+        .expect(source);
+        assert!(
+            matches!(
+                theorem.proposition(),
+                crate::kernel::Proposition::CFunctionExecutes {
+                    outcome: crate::kernel::CFunctionOutcome::UndefinedBehavior(
+                        crate::kernel::CUndefinedBehavior::SignedOverflow
+                    ),
+                    ..
+                }
+            ),
+            "{source}: {:?}",
+            theorem.proposition()
+        );
+    }
+}
