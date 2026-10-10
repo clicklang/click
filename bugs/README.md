@@ -1,12 +1,28 @@
 # Verifier bugs
 
-One `.md` file per reproduced soundness, proof-tooling, or diagnostic bug,
-parallel to `issues/`: these are defects filed for a fixer rather than
-roadmap milestones. Humans and agents file bugs here without asking; only the
-user approves new entries in `issues/`. `AGENTS.md` defines what counts as a
-bug, which includes inaccurate and wall-of-text diagnostics. Each file states
-the violated invariant, a small intended regression, and acceptance criteria.
-Delete a bug file when its fix, regression coverage, and documentation land.
+A bug is a reproduced defect in behavior Click already claims to support.
+Humans and agents file bugs here without asking; only an explicit user request
+authorizes new roadmap entries in `issues/`.
 
-The bug files in this directory are the current backlog. Run `ls bugs/` or
-browse the directory to find them; this README does not maintain a bug list.
+Examples include accepting a false claim, rejecting a documented valid proof
+operation, crashes or hangs, violated work budgets, disagreement between proof
+tools, and inaccurate, misleading, or unbounded diagnostics. Use the
+[proof-failure triage guide](../docs/concepts/proof-failure-triage.md) to classify
+the failure. Missing features and new design directions belong to the roadmap,
+not here; report ambiguous cases to the user rather than bypassing issue policy.
+
+Reproduce the defect before filing. A one-off observation or a suspicion from
+reading code should be reported to the user as such. File one kebab-case `.md`
+per independent bug, stating:
+
+- the violated invariant;
+- a small reproduction and intended regression that preserve the relevant
+  original source pattern; and
+- concrete acceptance criteria.
+
+Write enough for a fresh contributor to act without the originating chat.
+Tell the user what was filed. Delete the file when its fix, regression coverage,
+and relevant documentation land.
+
+The files in this directory are the backlog. This README does not maintain a
+separate bug list.
