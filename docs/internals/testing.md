@@ -21,26 +21,45 @@ bounded failure, a smart success cannot expand into verifiable source,
 `click-expand` fails or emits an unverifiable rewrite, the performance tools disagree, or a normal
 diagnostic dumps enormous internal state, stop feature work. Reduce and fix the
 tooling defect first. If it cannot be fixed in the same chunk, record a focused
-issue with a regression plan and return the branch to a green checkpoint before
-continuing.
+bug with a regression plan and return the branch to a green checkpoint before
+continuing. New roadmap issues require an explicit user request.
 
 Do not compensate by increasing a time limit, accepting eventual success,
 rewriting the example into unnatural C, or adding irrelevant proof facts. Those
 actions hide a foundation problem and make the next feature harder to debug.
-The repository-level version of this rule is in `AGENTS.md`; issue-writing
-requirements are in `issues/README.md`.
+The repository-level version of this rule is in `AGENTS.md`; filing procedures
+are in `bugs/README.md` and `issues/README.md`.
 
 A smart tactic that promptly reports that it did not find a proof is not one of
 these tooling failures. Smart search is heuristic and incomplete. Continue
-with a smaller search or explicit relevant simple tactics. Reduce the engine
-only if search misses its budget, produces an unusable diagnostic, reports
-success without verifiable expansion, behaves unstably, or exposes a missing
-simple proof operation.
+with a smaller search or explicit relevant simple tactics. During joint example
+and verifier development, repeated misses still trigger the
+[three-strikes investigation](../concepts/proof-failure-triage.md#three-strikes-during-example-development).
+Investigate sooner if search misses its budget, produces an unusable diagnostic,
+reports success without verifiable expansion, behaves unstably, or exposes a
+missing simple proof operation.
 
 Ordinary verifier errors are capped at 16 KiB of UTF-8 text. Fact and resource
 lists show at most twelve entries and report how many were omitted. Engine
 debugging that genuinely needs complete internal terms can opt in with
 `CLICK_FULL_DIAGNOSTICS=1`; do not enable it in normal tests or user workflows.
+
+CLI subcommands and fixture gates must call the shared bounded verification
+engine directly. Do not implement them through recursive Click subprocesses,
+hidden child modes, test-binary wrappers, stderr scraping, or shell redirect/move
+recipes. OS process isolation is reserved for a narrow, owned crash-containment
+boundary.
+
+After a timeout or interrupted bounded run, confirm its verifier process tree
+has exited before measuring another run. Profile a non-verifying target only
+when diagnosing unexpected slowness or a timeout, and label it as an incomplete
+diagnostic run. Establish correctness before optimizing; never expand a tactic
+from an incomplete run.
+
+Judge tests from the tested command's exit status, not the last line of its
+output. When piping output, use `pipefail` or capture the command's status
+explicitly; a successful `tail` is not a passing test. `cargo test --lib` omits
+proof-fixture suites and cannot establish a green tree.
 
 Run the full suite with:
 
