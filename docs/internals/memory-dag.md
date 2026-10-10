@@ -297,6 +297,34 @@ it is an abstract-state optimization, not the soundness source for post-loop
 load transport. If a footprint cannot be evaluated, the edge retains the
 unconditional barrier semantics.
 
+## Range index domains
+
+`CMemoryRange` retains either signed `Int32` or unsigned `UInt64` bounds.
+Its legacy `start()`, `end()` and `byte_footprint()` methods deliberately
+reject native ranges. Numeric consumers must dispatch on `int32_bounds()` /
+`wide_bounds()`: reading a native bound as a signed residue can frame a
+write that actually overlaps a read. Structural traversal uses `bound_terms()`;
+rewrites, base alignment and containment keys retain the range's kind.
+A narrow equality cannot substitute the whole value of a native bound; native
+bound substitution requires a full-width equality.
+
+`pointer_access_in_memory_range` selects the existing access rule for the
+range's domain. Native access still requires one whole element, proved
+membership and a nonwrapping byte extent. Cross-width or signed-only reasoning
+that cannot establish these conditions returns unknown or refuses the proof.
+It grants no permission by truncating a bound or weakening the kernel assertion.
+Loop effect frames and resource-body readable-memory facts keep native extents. Signed
+fold framing, iterated-element selection, allocation coverage and indexed
+certificates explicitly decline unsupported native inputs.
+
+The remaining private signed helpers are reached only after their callers'
+native dispatch: byte normalization in coverage/splitting/overlap, range-length
+and count arithmetic in containment, and the signed ranges constructed by
+iterated ownership and C program-entry storage. Their source comments record
+those boundaries. `wide_range_reader_tests` cover native bounds above 2³²,
+alias alignment, resource unfolding and projection, loop frames, certificates,
+missing-resource diagnostics and mixed domains/element widths.
+
 ## Source and tests
 
 The representation and edge producers live in

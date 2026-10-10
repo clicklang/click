@@ -1209,3 +1209,29 @@ fn truncating_integer_terms_require_native_guards_before_fold_admission() {
         }
     }
 }
+
+// Native write sets and separation ranges must not enter signed fold arithmetic.
+#[test]
+fn wide_ranges_refuse_signed_fold_framing_rules() {
+    let base = Pointer::symbolic(Variable(984_100));
+    let wide = CMemoryRange::new_wide(
+        base.clone(),
+        Bitvector32Term::UInt64Constant(0),
+        Bitvector32Term::UInt64Constant(1 << 33),
+        4,
+    );
+    let narrow = CMemoryRange::new(base.clone(), 0u32.into(), 1u32.into());
+    let interval = FoldReadInterval {
+        memory: CMemory::new(),
+        base: base.clone(),
+        start: 0u32.into(),
+        end: 1u32.into(),
+        element_width: 4,
+    };
+    let facts = PureFactContext::new();
+    assert!(!range_misses_interval(&wide, &interval, &facts));
+    assert!(!range_contains_interval(&wide, &interval, &facts));
+    assert!(!range_contains_access(&wide, &base, 4, &facts));
+    assert!(!range_contains_range(&wide, &narrow, &facts));
+    assert!(!range_contains_range(&narrow, &wide, &facts));
+}

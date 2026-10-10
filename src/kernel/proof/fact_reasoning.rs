@@ -2381,37 +2381,42 @@ fn separations_equal_modulo_proven_snapshots(
         return false;
     };
     let ranges_equal = |left: &CMemoryRange, right: &CMemoryRange| {
-        left.base().block == right.base().block
-            && assumptions.conditions_equal_modulo_proven_snapshots(
-                &ConditionTerm::PointerOffsetEqual(
-                    Box::new(expand_offset_load_variables_shallow(&left.base().offset)),
-                    Box::new(PointerOffsetTerm::Constant(0)),
-                ),
-                &ConditionTerm::PointerOffsetEqual(
-                    Box::new(expand_offset_load_variables_shallow(&right.base().offset)),
-                    Box::new(PointerOffsetTerm::Constant(0)),
-                ),
-            )
-            && assumptions.conditions_equal_modulo_proven_snapshots(
-                &ConditionTerm::Bitvector32Equal(
-                    Box::new(expand_load_variables_shallow(left.start())),
-                    Box::new(Bitvector32Term::Constant(0)),
-                ),
-                &ConditionTerm::Bitvector32Equal(
-                    Box::new(expand_load_variables_shallow(right.start())),
-                    Box::new(Bitvector32Term::Constant(0)),
-                ),
-            )
-            && assumptions.conditions_equal_modulo_proven_snapshots(
-                &ConditionTerm::Bitvector32Equal(
-                    Box::new(expand_load_variables_shallow(left.end())),
-                    Box::new(Bitvector32Term::Constant(0)),
-                ),
-                &ConditionTerm::Bitvector32Equal(
-                    Box::new(expand_load_variables_shallow(right.end())),
-                    Box::new(Bitvector32Term::Constant(0)),
-                ),
-            )
+        // The snapshot transport below proves signed 32-bit equalities only.
+        left == right
+            || (left.int32_bounds().is_some()
+                && right.int32_bounds().is_some()
+                && left.element_width() == right.element_width()
+                && left.base().block == right.base().block
+                && assumptions.conditions_equal_modulo_proven_snapshots(
+                    &ConditionTerm::PointerOffsetEqual(
+                        Box::new(expand_offset_load_variables_shallow(&left.base().offset)),
+                        Box::new(PointerOffsetTerm::Constant(0)),
+                    ),
+                    &ConditionTerm::PointerOffsetEqual(
+                        Box::new(expand_offset_load_variables_shallow(&right.base().offset)),
+                        Box::new(PointerOffsetTerm::Constant(0)),
+                    ),
+                )
+                && assumptions.conditions_equal_modulo_proven_snapshots(
+                    &ConditionTerm::Bitvector32Equal(
+                        Box::new(expand_load_variables_shallow(left.start())),
+                        Box::new(Bitvector32Term::Constant(0)),
+                    ),
+                    &ConditionTerm::Bitvector32Equal(
+                        Box::new(expand_load_variables_shallow(right.start())),
+                        Box::new(Bitvector32Term::Constant(0)),
+                    ),
+                )
+                && assumptions.conditions_equal_modulo_proven_snapshots(
+                    &ConditionTerm::Bitvector32Equal(
+                        Box::new(expand_load_variables_shallow(left.end())),
+                        Box::new(Bitvector32Term::Constant(0)),
+                    ),
+                    &ConditionTerm::Bitvector32Equal(
+                        Box::new(expand_load_variables_shallow(right.end())),
+                        Box::new(Bitvector32Term::Constant(0)),
+                    ),
+                ))
     };
     ranges_equal(left_a, right_a) && ranges_equal(left_b, right_b)
         || ranges_equal(left_a, right_b) && ranges_equal(left_b, right_a)
@@ -3052,5 +3057,70 @@ mod uint64_loop_tests {
         for selection in [&premises[..1], &premises[1..], &premises[..0]] {
             assert!(normalize_using_conditions(&goal, selection, &facts).is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod wide_range_reader_tests {
+    use super::*;
+    // Snapshot equality cannot reinterpret unequal native bounds as signed bits.
+    #[test]
+    fn wide_separations_compare_structurally_without_signed_snapshot_transport() {
+        let base = Pointer::symbolic(Variable(984_800));
+        let wide = CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(1 << 33),
+            4,
+        );
+        let other = CMemoryRange::new_wide(
+            base,
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(2 << 33),
+            4,
+        );
+        let separation = |range| Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(range)),
+            right: Box::new(CResource::Memory(wide.clone())),
+        };
+        let facts = PureFactContext::new();
+        assert!(separations_equal_modulo_proven_snapshots(
+            &separation(wide.clone()),
+            &separation(wide.clone()),
+            &facts
+        ));
+        assert!(!separations_equal_modulo_proven_snapshots(
+            &separation(wide.clone()),
+            &separation(other),
+            &facts
+        ));
+    }
+}
+
+#[cfg(test)]
+mod range_width_snapshot_tests {
+    use super::*;
+    // One byte misses offset two, while one four-byte word overlaps it.
+    #[test]
+    fn separation_snapshot_transport_keeps_element_widths() {
+        let base = Pointer::symbolic(Variable(985_800));
+        let range = |width| {
+            CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 1u32.into(), width)
+        };
+        let right = CMemoryRange::new_with_element_width(
+            base.offset_by_bytes(2),
+            0u32.into(),
+            1u32.into(),
+            1,
+        );
+        let separation = |width| Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(range(width))),
+            right: Box::new(CResource::Memory(right.clone())),
+        };
+        assert!(!separations_equal_modulo_proven_snapshots(
+            &separation(1),
+            &separation(4),
+            &PureFactContext::new()
+        ));
     }
 }

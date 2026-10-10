@@ -421,12 +421,7 @@ impl ResourceContext {
         });
         let required = element_required.as_ref().unwrap_or(required);
         let aligned = if paired.graph.are_equal(required.base(), available.base()) {
-            CMemoryRange::new_with_element_width(
-                available.base().clone(),
-                required.start().clone(),
-                required.end().clone(),
-                required.element_width(),
-            )
+            required.with_base(available.base().clone())
         } else {
             let Some(base) = paired
                 .graph
@@ -434,12 +429,7 @@ impl ResourceContext {
             else {
                 return Some(false);
             };
-            CMemoryRange::new_with_element_width(
-                base,
-                required.start().clone(),
-                required.end().clone(),
-                required.element_width(),
-            )
+            required.with_base(base)
         };
         Some(memory_range_covers(&available, &aligned, assumptions))
     }
@@ -807,6 +797,35 @@ mod tests {
         assert_eq!(
             resources.symbolic_range_read_supported(&required, &facts, None),
             None
+        );
+    }
+}
+
+#[cfg(test)]
+mod wide_range_reader_tests {
+    use super::*;
+    // Aligning an alias to its supplier must preserve native endpoints.
+    #[test]
+    fn wide_symbolic_supplier_alignment_keeps_native_bounds() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer::symbolic(Variable(985_200));
+        let alias = Pointer::symbolic(Variable(985_201));
+        let wide = CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::Variable(Variable(985_202)),
+            1,
+        );
+        let facts = PureFactContext::new()
+            .assume_condition(ConditionTerm::pointer_equal(base, alias.clone()), true);
+        let held = CResourceFact::view_memory(wide.clone());
+        let resources = ResourceContext::new().unchecked_with_fact(held.clone());
+        // Register the resource input at publication, before bounded queries.
+        resources.pair_memory_equalities(&facts, true, None);
+        let supplier = resources.occurrences_for_fact(&held)[0];
+        assert_eq!(
+            resources.symbolic_range_read_supported(&wide.with_base(alias), &facts, Some(supplier)),
+            Some(true)
         );
     }
 }

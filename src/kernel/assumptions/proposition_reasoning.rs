@@ -4108,16 +4108,20 @@ impl PureFactContext {
         guards.iter().any(|(left, right)| {
             self.resource_compositions.iter().any(|resources| {
                 resources.refutes_offset_alias(left, right, |pointer, range| {
-                    self.pointer_in_range_by_shallow_fact_graph_with_width(
-                        pointer,
-                        range.base(),
-                        range.start(),
-                        range.end(),
-                        range.element_width(),
-                    )
+                    range.int32_bounds().is_some()
+                        && self.pointer_in_range_by_shallow_fact_graph_with_width(
+                            pointer,
+                            range.base(),
+                            range.start(),
+                            range.end(),
+                            range.element_width(),
+                        )
                 })
             }) || separated.iter().any(|(first, second)| {
                 let holds = |range: &CMemoryRange, offset: &PointerOffsetTerm| {
+                    if range.int32_bounds().is_none() {
+                        return false;
+                    }
                     let pointer = Pointer {
                         block: range.base().block.clone(),
                         offset: offset.clone(),
@@ -4139,5 +4143,46 @@ impl PureFactContext {
                     || holds(first, right) && holds(second, left)
             })
         })
+    }
+}
+
+#[cfg(test)]
+mod wide_range_reader_tests {
+    use super::*;
+    // Shallow alias-contradiction search may encounter native separations.
+    #[test]
+    fn wide_separations_do_not_enter_signed_alias_contradiction_rules() {
+        let first = PointerOffsetTerm::Int32Scaled {
+            value: Box::new(Bitvector32Term::Variable(Variable(985_300))),
+            byte_width: 4,
+        };
+        let second = PointerOffsetTerm::Int32Scaled {
+            value: Box::new(Bitvector32Term::Variable(Variable(985_301))),
+            byte_width: 4,
+        };
+        let range = |offset| {
+            CMemoryRange::new_wide(
+                Pointer {
+                    block: PointerBlock::Symbolic(Variable(985_302)),
+                    offset,
+                },
+                Bitvector32Term::UInt64Constant(0),
+                Bitvector32Term::Variable(Variable(985_303)),
+                4,
+            )
+        };
+        let facts = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::PointerOffsetEqual(
+                    Box::new(first.clone()),
+                    Box::new(second.clone()),
+                ),
+                true,
+            )
+            .assume_proposition(Proposition::CResourceSeparate {
+                left: Box::new(CResource::Memory(range(first))),
+                right: Box::new(CResource::Memory(range(second))),
+            });
+        assert!(!facts.alias_guard_refuted_by_separation());
     }
 }

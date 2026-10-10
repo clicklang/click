@@ -847,7 +847,7 @@ fn with_canonical_borrowed_pointer_memory(
                 {
                     continue;
                 }
-                (variable, canonical.byte_footprint().0)
+                (variable, canonical.start_pointer())
             }
             (
                 CResource::Composite {
@@ -1291,6 +1291,10 @@ fn candidate_memory_ranges_proven_separate(
     right: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
+    // This arithmetic rule uses signed 32-bit indices; wide ranges are undecided.
+    if left.wide_bounds().is_some() || right.wide_bounds().is_some() {
+        return false;
+    }
     if left.element_width() != right.element_width() {
         return false;
     }
@@ -1449,6 +1453,10 @@ fn candidate_memory_ranges_relation_by_bounds(
         } else {
             CandidateMemoryRangeRelation::Overlap
         };
+    }
+    // Wide intervals cannot be normalized to a signed 32-bit byte count.
+    if left.wide_bounds().is_some() || right.wide_bounds().is_some() {
+        return CandidateMemoryRangeRelation::SeparationUnproved;
     }
     // Different bases. `byte_footprint` puts each range's first element in
     // the block's own coordinates through `offset_by_elements`, which
@@ -10990,18 +10998,7 @@ fn unmatched_instance_body_ownership(
             continue;
         };
         body_facts.extend(crate::kernel::memory_range_extent_guard_spellings(range));
-        let width = range.element_width();
-        body_facts.push(Proposition::CMemoryLoadable {
-            memory: state.memory.clone(),
-            base: range
-                .base()
-                .offset_by_elements(range.start().clone(), width),
-            bytes: Bitvector32Term::multiply(
-                Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
-                Bitvector32Term::Constant(width),
-            ),
-            wide: false,
-        });
+        body_facts.push(range.loadable_fact(&state.memory));
     }
     body_facts.push(Proposition::CResourceComposition(body_resources.clone()));
     let fact_assumptions = body_facts
@@ -23613,18 +23610,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             continue;
         };
         facts.extend(crate::kernel::memory_range_extent_guard_spellings(range));
-        let width = range.element_width();
-        facts.push(Proposition::CMemoryLoadable {
-            memory: state.memory.clone(),
-            base: range
-                .base()
-                .offset_by_elements(range.start().clone(), width),
-            bytes: Bitvector32Term::multiply(
-                Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
-                Bitvector32Term::Constant(width),
-            ),
-            wide: false,
-        });
+        facts.push(range.loadable_fact(&state.memory));
     }
     // What a fold consumes is what holding the folded instance lets C read.
     let folded_cells = if unfold {
@@ -23935,18 +23921,7 @@ fn matched_resource_instance_case_read_projection(
             continue;
         };
         supporting_facts.extend(crate::kernel::memory_range_extent_guard_spellings(range));
-        let width = range.element_width();
-        supporting_facts.push(Proposition::CMemoryLoadable {
-            memory: state.memory.clone(),
-            base: range
-                .base()
-                .offset_by_elements(range.start().clone(), width),
-            bytes: Bitvector32Term::multiply(
-                Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
-                Bitvector32Term::Constant(width),
-            ),
-            wide: false,
-        });
+        supporting_facts.push(range.loadable_fact(&state.memory));
     }
     supporting_facts.push(Proposition::CResourceComposition(body_resources));
     let mut body_assumptions = assumptions
@@ -26082,19 +26057,11 @@ pub(super) fn evaluate_composite_resource_loadable_propositions(
             Err(_) => return None,
         };
         let range = evaluated.memory_range()?;
-        let element_width = segment.element_width();
+        if range.element_width() != segment.element_width() {
+            return None;
+        }
         propositions.extend(crate::kernel::memory_range_extent_guard_spellings(range));
-        propositions.push(Proposition::CMemoryLoadable {
-            memory: memory.clone(),
-            base: range
-                .base()
-                .offset_by_elements(range.start().clone(), element_width),
-            bytes: Bitvector32Term::multiply(
-                Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
-                Bitvector32Term::Constant(element_width),
-            ),
-            wide: false,
-        });
+        propositions.push(range.loadable_fact(memory));
     }
     Some(propositions)
 }
@@ -35739,5 +35706,222 @@ mod composite_pointer_body_fact_tests {
                 "unrelated aliases increased fold work: {work:?}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod wide_range_reader_tests {
+    use super::*;
+    // Both symbolic bases and native extents reach call-framing readers.
+    #[test]
+    fn wide_call_ranges_are_undecided_and_canonical_pointers_keep_their_width() {
+        let base = Pointer::symbolic(Variable(984_000));
+        let wide = CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(3),
+            Bitvector32Term::UInt64Constant(1 << 33),
+            1,
+        );
+        let other = wide.with_base(base.offset_by_bytes(1));
+        let facts = PureFactContext::new();
+        assert_eq!(
+            candidate_memory_ranges_relation_by_bounds(&wide, &other, &facts),
+            CandidateMemoryRangeRelation::SeparationUnproved
+        );
+        assert!(!candidate_memory_ranges_proven_separate(
+            &wide, &other, &facts
+        ));
+        let checked_base = Pointer::symbolic(Variable(984_001));
+        let checked =
+            CMemoryRange::new_with_element_width(checked_base.clone(), 0u32.into(), 1u32.into(), 1);
+        let slot = Pointer {
+            block: "wide_canonical_pointer_slot".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let state = CState::new().with_memory(
+            CMemory::new()
+                .with_block(slot.block.clone(), 8)
+                .store(slot.clone(), CValue::pointer(checked_base)),
+        );
+        let canonical = with_canonical_borrowed_pointer_memory(
+            &state,
+            &[(
+                CResourceFact::own_memory(checked),
+                CResourceFact::own_memory(wide.clone()),
+            )],
+        );
+        assert_eq!(
+            canonical.memory().known_value(&slot),
+            Some(CValue::pointer(wide.start_pointer()))
+        );
+    }
+    // Wide resource bodies are opened, folded and queried without constructing
+    // signed loadability facts in the instance and ordinary-composite paths.
+    #[test]
+    fn wide_resource_body_loadability_preserves_native_extent() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer::symbolic(Variable(984_010));
+        let segment = CMemorySegment::new(
+            CExpression::Value(CValue::pointer(base.clone())),
+            c_uint64_literal(0),
+            c_uint64_literal(1 << 33),
+        )
+        .with_element_width(1);
+        let schema =
+            ResourceFieldSchema::new(vec![("length".into(), ResourceFieldType::C(CType::UInt64))])
+                .unwrap();
+        let definition = CCompositeResourceDefinition::new(
+            "wide",
+            vec![],
+            None,
+            false,
+            vec![CResourceSpec::owned_memory(segment)],
+            vec![],
+        )
+        .with_instance_schema(Some(schema.clone()));
+        let instance = ResourceInstance::new(
+            Variable(984_011),
+            "wide".into(),
+            vec![].into(),
+            schema,
+            vec![AlgebraicValue::C(CValue::UInt64(
+                Bitvector32Term::UInt64Constant(1 << 33),
+            ))]
+            .into(),
+        )
+        .unwrap();
+        let held = CResourceFact::own(CResource::Instance(instance.clone()));
+        let state = CState::new()
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(held.clone()));
+        let facts = PureFactContext::new();
+        let definitions = [definition.clone()];
+        let (ranges, _) =
+            unmatched_instance_body_ownership(&held, &definitions, &state, &facts).unwrap();
+        assert_eq!(ranges.len(), 1);
+        assert!(ranges[0].wide_bounds().is_some());
+        let opened = rewrite_resource_instance_selecting_children_unspelled(
+            &state,
+            &instance,
+            &definition,
+            &definitions,
+            &facts,
+            true,
+            None,
+        )
+        .unwrap();
+        assert!(opened.state.resources().facts().iter().any(|fact| {
+            fact.memory_range()
+                .is_some_and(|range| range.wide_bounds().is_some())
+        }));
+        let composite = CResourceFact::own(CResource::Composite {
+            name: "wide".into(),
+            arguments: vec![].into(),
+        });
+        let loadable = evaluate_composite_resource_loadable_propositions(
+            &composite,
+            &definitions,
+            state.memory(),
+            &facts,
+        )
+        .unwrap();
+        assert!(
+            loadable
+                .iter()
+                .any(|fact| matches!(fact, Proposition::CMemoryLoadable { wide: true, .. }))
+        );
+    }
+}
+
+#[cfg(test)]
+mod wide_matched_range_reader_tests {
+    use super::*;
+    // A selected matched arm publishes native liveness for its actual range.
+    #[test]
+    fn wide_matched_instance_projection_keeps_native_loadability() {
+        let base = Pointer::symbolic(Variable(985_700));
+        let variants: Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
+            name: "Held".into(),
+            fields: vec![],
+        }]
+        .into();
+        let ty = AlgebraicType {
+            rigid: false,
+            name: "WideModel".into(),
+            arguments: vec![],
+            variants: variants.clone(),
+            schemas: Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
+                AlgebraicValueType::Algebraic {
+                    name: "WideModel".into(),
+                    arguments: vec![],
+                },
+                variants,
+            )]))),
+        };
+        let model = AlgebraicTerm {
+            algebraic_type: ty.clone(),
+            node: AlgebraicTermNode::Constructor {
+                variant: "Held".into(),
+                fields: vec![],
+            },
+        };
+        let schema = ResourceFieldSchema::new(vec![(
+            "model".into(),
+            ResourceFieldType::Algebraic(ty.clone()),
+        )])
+        .unwrap();
+        let instance = ResourceInstance::new(
+            Variable(985_701),
+            "matched_wide".into(),
+            vec![].into(),
+            schema.clone(),
+            vec![AlgebraicValue::Algebraic(model.clone())].into(),
+        )
+        .unwrap();
+        let segment = CMemorySegment::new(
+            CExpression::Value(CValue::pointer(base)),
+            c_uint64_literal(0),
+            c_uint64_literal(1 << 33),
+        )
+        .with_element_width(1);
+        let mut definition =
+            CCompositeResourceDefinition::new("matched_wide", vec![], None, false, vec![], vec![])
+                .with_instance_schema(Some(schema));
+        definition.matched = Some(CResourceMatchBody {
+            field_index: 0,
+            algebraic_type: ty,
+            arms: vec![CResourceMatchArm {
+                variant: "Held".into(),
+                bindings: vec![],
+                binding_types: vec![],
+                binding_variables: vec![],
+                contains: vec![CResourceSpec::owned_memory(segment)],
+                facts: vec![],
+                children: vec![],
+            }],
+        });
+        let state =
+            CState::new()
+                .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                    CResourceFact::own(CResource::Instance(instance.clone())),
+                ));
+        let projection = ResourceFieldProjection {
+            identity: instance.identity(),
+            children: vec![],
+            field_index: 0,
+            at_entry: false,
+        };
+        let (_, facts) = matched_resource_instance_case_read_projection(
+            &state,
+            &projection,
+            &model,
+            &model,
+            &[definition],
+            &PureFactContext::new(),
+        );
+        assert!(
+            facts
+                .iter()
+                .any(|fact| matches!(fact, Proposition::CMemoryLoadable { wide: true, .. }))
+        );
     }
 }

@@ -218,6 +218,7 @@ pub(crate) fn iterated_separate_from_range(
     let Some(covering) = iterated.covering_range().or_else(|| {
         // Gapped elements are covered by the range from the first element's
         // start to the last element's end.
+        // CIteratedMemory::element_range always constructs signed int32 bounds.
         let first = iterated.element_range(iterated.lower());
         let last = iterated.element_range(&Bitvector32Term::subtract(
             iterated.upper().clone(),
@@ -285,8 +286,11 @@ fn element_index(
     iterated: &CIteratedMemory,
     element: &CMemoryRange,
 ) -> Result<Bitvector32Term, String> {
+    let Some((start, _)) = element.int32_bounds() else {
+        return Err("iterated ownership requires a signed 32-bit element range".into());
+    };
     let scaled = Bitvector32Term::subtract(
-        element.start().clone(),
+        start.clone(),
         Bitvector32Term::Constant(iterated.start_offset as u32),
     );
     if iterated.stride == 1 {
@@ -314,6 +318,9 @@ fn check_element_at(
     index: &Bitvector32Term,
     assumptions: &PureFactContext,
 ) -> Result<(), String> {
+    if element.int32_bounds().is_none() {
+        return Err("iterated ownership requires a signed 32-bit element range".into());
+    }
     let expected = iterated.element_range(index);
     if terms_equal(assumptions, element.start(), expected.start())
         && terms_equal(assumptions, element.end(), expected.end())
@@ -757,4 +764,48 @@ pub(crate) fn plan_iterated_guard_store(
         replacements.push((fact.clone(), during, after));
     }
     Ok(IteratedStorePlan { replacements })
+}
+
+#[cfg(test)]
+mod wide_range_reader_tests {
+    use super::*;
+    // Native requested elements are refused by both signed iterated rules.
+    #[test]
+    fn wide_elements_do_not_enter_iterated_index_arithmetic() {
+        let base = Pointer::symbolic(Variable(984_900));
+        let iterated = CIteratedMemory::new(
+            "items",
+            base.clone(),
+            4,
+            1,
+            0,
+            1,
+            0u32.into(),
+            4u32.into(),
+            CIteratedGuard {
+                base: base.clone(),
+                cell_type: CType::Int32,
+                cell_width: 4,
+                holds_when_equal: true,
+                value: 1u32.into(),
+            },
+        )
+        .unwrap();
+        let wide = CMemoryRange::new_wide(
+            base,
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(1 << 33),
+            4,
+        );
+        assert!(
+            element_index(&iterated, &wide)
+                .unwrap_err()
+                .contains("signed 32-bit")
+        );
+        assert!(
+            check_element_at(&iterated, &wide, &0u32.into(), &PureFactContext::new())
+                .unwrap_err()
+                .contains("signed 32-bit")
+        );
+    }
 }

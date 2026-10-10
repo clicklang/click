@@ -1230,6 +1230,10 @@ fn range_misses_interval(
     if written.base().blocks_proven_distinct(&interval.base) {
         return true;
     }
+    // Same-block arithmetic uses signed indices; native extents are undecided.
+    if written.wide_bounds().is_some() {
+        return false;
+    }
     if written.element_width() == interval.element_width
         && let Some((Bitvector32Term::Constant(0), 0)) =
             scaled_index_from(written.base(), &interval.base, interval.element_width)
@@ -1285,6 +1289,10 @@ fn range_contains_interval(
     interval: &FoldReadInterval,
     assumptions: &PureFactContext,
 ) -> bool {
+    // This arithmetic rule uses signed 32-bit indices; wide ranges are undecided.
+    if range.wide_bounds().is_some() {
+        return false;
+    }
     range.element_width() == interval.element_width
         && matches!(
             scaled_index_from(&interval.base, range.base(), interval.element_width),
@@ -1301,6 +1309,10 @@ fn range_contains_access(
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> bool {
+    // This arithmetic rule uses signed 32-bit indices; wide ranges are undecided.
+    if range.wide_bounds().is_some() {
+        return false;
+    }
     let width = range.element_width();
     let Some((index, constant)) = scaled_index_from(pointer, range.base(), width) else {
         return false;
@@ -1318,6 +1330,10 @@ fn range_contains_range(
     inner: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
+    // This arithmetic rule uses signed 32-bit indices; wide ranges are undecided.
+    if outer.wide_bounds().is_some() || inner.wide_bounds().is_some() {
+        return false;
+    }
     outer.element_width() == inner.element_width()
         && matches!(
             scaled_index_from(inner.base(), outer.base(), inner.element_width()),

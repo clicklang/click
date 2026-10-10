@@ -427,7 +427,7 @@ fn ledger_storage_write_refusal(
     assumptions: &PureFactContext,
     include_consumed: bool,
 ) -> Option<super::CRuntimeError> {
-    if !ledger.has_any_mutex() || write.start() == write.end() {
+    if !ledger.has_any_mutex() || write.bound_terms().0 == write.bound_terms().1 {
         return None;
     }
     let block = &write.base().block;
@@ -5778,5 +5778,33 @@ mod tests {
                 .satisfies_fact(&fact, &assumptions)
         );
         assert!(destroyed.state().mutex_ledger.is_none());
+    }
+}
+
+#[cfg(test)]
+mod wide_range_reader_tests {
+    use super::*;
+    use crate::kernel::*;
+    // A real reserved mutex makes the emptiness reader inspect a native write.
+    #[test]
+    fn wide_writes_to_reserved_mutex_storage_are_refused_without_panicking() {
+        let base = Pointer::symbolic(Variable(985_000));
+        let ledger = MutexLedger::new().with_inserted(
+            base.clone(),
+            MutexEntry::Unlocked {
+                initialization: MutexInitialization::fresh(40).unwrap(),
+                invariant: None,
+                interface: None,
+            },
+        );
+        let wide = CMemoryRange::new_wide(
+            base,
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(1 << 33),
+            1,
+        );
+        assert!(
+            ledger_storage_write_refusal(&ledger, &wide, &PureFactContext::new(), false).is_some()
+        );
     }
 }

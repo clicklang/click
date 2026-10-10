@@ -971,8 +971,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         block: range.base().block.clone(),
                         offset: rewrite_offset(&range.base().offset, left, right),
                     },
-                    rewrite_term_offset(range.start(), left, right),
-                    rewrite_term_offset(range.end(), left, right),
+                    rewrite_term_offset(range.bound_terms().0, left, right),
+                    rewrite_term_offset(range.bound_terms().1, left, right),
                 )),
                 CResource::Composite { .. }
                 | CResource::Token { .. }
@@ -1873,14 +1873,27 @@ fn rewrite_atomic_proposition_by_exact_equality(
         }
     }
 
+    let full_width_equality = matches!(
+        equality,
+        Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(_, _), true)
+    );
+    let rewrite_range_bound = |range: &CMemoryRange, bound: &Bitvector32Term| {
+        // A narrow equality cannot replace the complete value of a native
+        // bound, even when both are represented by the same term variant.
+        if range.wide_bounds().is_some() && !full_width_equality {
+            bound.clone()
+        } else {
+            rewrite_term(bound, left, right)
+        }
+    };
     let rewrite_resource_term = |resource: &CResource| match resource {
         CResource::Memory(range) => CResource::Memory(range.with_bounds(
             Pointer {
                 block: range.base().block.clone(),
                 offset: rewrite_offset_term(&range.base().offset, left, right),
             },
-            rewrite_term(range.start(), left, right),
-            rewrite_term(range.end(), left, right),
+            rewrite_range_bound(range, range.bound_terms().0),
+            rewrite_range_bound(range, range.bound_terms().1),
         )),
         CResource::Composite { .. }
         | CResource::Token { .. }
@@ -3589,5 +3602,87 @@ mod tests {
                 .check_equality_rewrite(&goal, &false_equality)
                 .is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod wide_range_reader_tests {
+    use super::*;
+    // Both offset and scalar observation rewrites traverse native bounds
+    // without changing their domain or replacing their high bits.
+    #[test]
+    fn wide_resource_bounds_survive_offset_and_scalar_rewriting() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let offset = PointerOffsetTerm::Int32Scaled {
+            value: Box::new(Bitvector32Term::Variable(Variable(984_700))),
+            byte_width: 4,
+        };
+        let base = Pointer {
+            block: crate::kernel::PointerBlock::Symbolic(Variable(984_701)),
+            offset: offset.clone(),
+        };
+        let wide = CMemoryRange::new_wide(
+            base,
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(1 << 33),
+            4,
+        );
+        let goal = Proposition::CResourceContains {
+            parent: Box::new(CResource::Memory(wide.clone())),
+            child: Box::new(CResource::Memory(wide.clone())),
+        };
+        let equality = Proposition::ConditionIs(
+            ConditionTerm::PointerOffsetEqual(
+                Box::new(offset),
+                Box::new(PointerOffsetTerm::Constant(0)),
+            ),
+            true,
+        );
+        let rewritten = rewrite_atomic_proposition_by_exact_equality(&goal, &equality).unwrap();
+        let (_, range) = rewritten.memory_containment().unwrap();
+        assert_eq!(range.kind(), crate::kernel::RangeIndexKind::UInt64);
+        assert_eq!(range.bound_terms(), wide.bound_terms());
+        let scalar_eq = Proposition::ConditionIs(
+            ConditionTerm::equal(Bitvector32Term::Variable(Variable(984_700)), 0u32.into()),
+            true,
+        );
+        let rewritten = rewrite_atomic_proposition_by_exact_equality(&goal, &scalar_eq).unwrap();
+        let (_, range) = rewritten.memory_containment().unwrap();
+        assert_eq!(range.kind(), wide.kind());
+        assert_eq!(range.bound_terms(), wide.bound_terms());
+        assert_eq!(range.base().offset.as_const(), Some(0));
+    }
+}
+
+#[cfg(test)]
+mod wide_bound_equality_reader_tests {
+    use super::*;
+
+    #[test]
+    fn wide_range_bound_substitution_requires_full_width_equality() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let end = Bitvector32Term::Variable(Variable(985_900));
+        let wide = CMemoryRange::new_wide(
+            Pointer::symbolic(Variable(985_901)),
+            Bitvector32Term::UInt64Constant(0),
+            end.clone(),
+            1,
+        );
+        let goal = Proposition::CResourceContains {
+            parent: Box::new(CResource::Memory(wide.clone())),
+            child: Box::new(CResource::Memory(wide.clone())),
+        };
+        // Equality of a low word cannot turn a full native endpoint into zero.
+        let narrow = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(Box::new(end.clone()), Box::new(0u32.into())),
+            true,
+        );
+        assert!(rewrite_atomic_proposition_by_exact_equality(&goal, &narrow).is_err());
+        let high = Bitvector32Term::UInt64Constant(1 << 33);
+        let full = Proposition::ConditionIs(ConditionTerm::uint64_equal(end, high.clone()), true);
+        let rewritten = rewrite_atomic_proposition_by_exact_equality(&goal, &full).unwrap();
+        let (_, range) = rewritten.memory_containment().unwrap();
+        assert_eq!(range.kind(), wide.kind());
+        assert_eq!(range.bound_terms().1, &high);
     }
 }

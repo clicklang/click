@@ -104,33 +104,50 @@ pub(crate) fn c_resources_directly_match(
     match (left, right) {
         (CResource::Memory(left), CResource::Memory(right)) => {
             left == right
-                || (crate::instrumentation::measure_operation(
-                    "kernel",
-                    "resource context equality",
-                    "resource memory match: width",
-                    || left.element_width() == right.element_width(),
-                ) && crate::instrumentation::measure_operation(
-                    "kernel",
-                    "resource context equality",
-                    "resource memory match: start",
-                    || {
-                        bitvectors_match_for_resource_check(
-                            left.start(),
-                            right.start(),
-                            assumptions,
-                        )
-                    },
-                ) && crate::instrumentation::measure_operation(
-                    "kernel",
-                    "resource context equality",
-                    "resource memory match: end",
-                    || bitvectors_match_for_resource_check(left.end(), right.end(), assumptions),
-                ) && crate::instrumentation::measure_operation(
-                    "kernel",
-                    "resource context equality",
-                    "resource memory match: base",
-                    || pointers_match_for_resource_check(left.base(), right.base(), assumptions),
-                ))
+                || (left.int32_bounds().is_some()
+                    && right.int32_bounds().is_some()
+                    && crate::instrumentation::measure_operation(
+                        "kernel",
+                        "resource context equality",
+                        "resource memory match: width",
+                        || left.element_width() == right.element_width(),
+                    )
+                    && crate::instrumentation::measure_operation(
+                        "kernel",
+                        "resource context equality",
+                        "resource memory match: start",
+                        || {
+                            bitvectors_match_for_resource_check(
+                                left.start(),
+                                right.start(),
+                                assumptions,
+                            )
+                        },
+                    )
+                    && crate::instrumentation::measure_operation(
+                        "kernel",
+                        "resource context equality",
+                        "resource memory match: end",
+                        || {
+                            bitvectors_match_for_resource_check(
+                                left.end(),
+                                right.end(),
+                                assumptions,
+                            )
+                        },
+                    )
+                    && crate::instrumentation::measure_operation(
+                        "kernel",
+                        "resource context equality",
+                        "resource memory match: base",
+                        || {
+                            pointers_match_for_resource_check(
+                                left.base(),
+                                right.base(),
+                                assumptions,
+                            )
+                        },
+                    ))
         }
         (CResource::Instance(left), CResource::Instance(right)) => {
             left.identity() == right.identity()
@@ -7431,5 +7448,41 @@ mod pointer_store_endpoint_tests {
             }
         }
         assert!(samples[3] <= samples[0] * 4 + 64, "{samples:?}");
+    }
+}
+
+#[cfg(test)]
+mod wide_range_reader_tests {
+    use super::*;
+    // Resource comparison may see two unequal native endpoints or mixed kinds.
+    #[test]
+    fn wide_resource_matching_refuses_signed_endpoint_comparison() {
+        let base = Pointer::symbolic(Variable(984_200));
+        let wide = CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(1 << 33),
+            4,
+        );
+        let other = CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(2 << 33),
+            4,
+        );
+        let narrow = CMemoryRange::new(base, 0u32.into(), 1u32.into());
+        let facts = PureFactContext::new();
+        assert!(c_resources_directly_match(
+            &CResource::Memory(wide.clone()),
+            &CResource::Memory(wide.clone()),
+            &facts
+        ));
+        for right in [other, narrow] {
+            assert!(!c_resources_directly_match(
+                &CResource::Memory(wide.clone()),
+                &CResource::Memory(right),
+                &facts
+            ));
+        }
     }
 }

@@ -641,7 +641,8 @@ impl RangeDisjointFromPointerEvidence {
                     })
             }
             Self::ForwardOffset { offset, positive } => {
-                bytes <= range.element_width()
+                range.int32_bounds().is_some()
+                    && bytes <= range.element_width()
                     && forward_range_offset_from_pointer(range, pointer) == Some(offset.clone())
                     && positive.checks(
                         &Bitvector32Term::add(offset.clone(), range.start().clone()),
@@ -1006,6 +1007,10 @@ impl PointerInRangeEvidence {
                 assumptions,
             );
         };
+        // Signed indexed evidence cannot check a wide range.
+        if range.int32_bounds().is_none() {
+            return false;
+        }
         let Some(index) =
             pointer.element_index_from_base_with_width(range.base(), range.element_width())
         else {
@@ -1114,6 +1119,10 @@ fn range_structurally_covers_allocation(
     allocation_base: &Pointer,
     bytes: &Bitvector32Term,
 ) -> bool {
+    // This arithmetic rule uses signed 32-bit indices; wide ranges are undecided.
+    if range.wide_bounds().is_some() {
+        return false;
+    }
     if range.base() != allocation_base || range.start() != &Bitvector32Term::Constant(0) {
         return false;
     }
@@ -1343,5 +1352,39 @@ fn memory_dag_cell_source_walk(
             justification,
         });
         current = derivation.base().clone();
+    }
+}
+
+#[cfg(test)]
+mod wide_range_reader_tests {
+    use super::*;
+    // A signed certificate is not reusable against a native range, even when
+    // its base and the low words of its bounds agree.
+    #[test]
+    fn wide_ranges_refuse_signed_allocation_and_index_certificates() {
+        let base = Pointer::symbolic(Variable(984_300));
+        let wide = CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(1 << 33),
+            4,
+        );
+        let facts = PureFactContext::new();
+        assert!(!range_structurally_covers_allocation(
+            &wide,
+            &base,
+            &Bitvector32Term::Constant(4)
+        ));
+        let indexed = PointerInRangeEvidence::Indexed {
+            index: 0u32.into(),
+            lower: RangeBoundEvidence::Intrinsic,
+            upper: RangeBoundEvidence::Intrinsic,
+        };
+        assert!(!indexed.checks(&base, &wide, &facts));
+        let forward = RangeDisjointFromPointerEvidence::ForwardOffset {
+            offset: 1u32.into(),
+            positive: PositiveTermEvidence::Constant,
+        };
+        assert!(!forward.checks(&wide, &base, 4, &facts));
     }
 }

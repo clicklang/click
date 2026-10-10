@@ -8191,6 +8191,7 @@ fn pointer_offsets_equal_with_load_bridging(
 /// length, and `protected_range_proven_overlapping` in the loan oracle asks
 /// its question in exactly these terms; this helper keeps the memory family's
 /// relations on that one normalization rather than inventing a second.
+// Coverage, splitting and overlap all dispatch wide ranges before normalization.
 fn byte_normalized_memory_range(range: &CMemoryRange) -> CMemoryRange {
     let (base, bytes) = range.byte_footprint();
     CMemoryRange::new_with_element_width(base, Bitvector32Term::Constant(0), bytes, 1)

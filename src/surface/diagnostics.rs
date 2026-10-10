@@ -1785,6 +1785,7 @@ pub(in crate::surface) fn describe_iterated_memory(
     arguments: &[CExpression],
 ) -> String {
     let index = Bitvector32Term::Variable(crate::kernel::Variable(u64::MAX - 7));
+    // Iterated ownership's element_range constructs signed int32 bounds.
     let element = iterated.element_range(&index);
     let spelled_index = describe_bitvector_with_context(&index, parameters, arguments);
     let element = format!(
@@ -2348,6 +2349,10 @@ pub(super) fn describe_missing_range_end_note(
     });
     // Endpoints of the held range and of the required one, on one scale.
     let comparable = |held: &CMemoryRange| {
+        // This repair describes signed arithmetic; native bounds need their own rule.
+        if held.int32_bounds().is_none() || required.int32_bounds().is_none() {
+            return None;
+        }
         let held_index = if held.base() == required.base() {
             match &required_parameter {
                 Some(_) => parameter_relative_base(held, parameters, arguments)?.1,
@@ -3827,16 +3832,16 @@ fn describe_source_range(
         }
     }
     if range.base().offset != PointerOffsetTerm::Constant(0)
-        || !bitvector_is_source_spelled(range.start(), parameters, arguments)
-        || !bitvector_is_source_spelled(range.end(), parameters, arguments)
+        || !bitvector_is_source_spelled(range.bound_terms().0, parameters, arguments)
+        || !bitvector_is_source_spelled(range.bound_terms().1, parameters, arguments)
     {
         return None;
     }
     let declared = describe_memory_block(&range.base().block, parameters, arguments)?;
     Some(format!(
         "{declared}[{}..{}]",
-        describe_bitvector_with_context(range.start(), parameters, arguments),
-        describe_bitvector_with_context(range.end(), parameters, arguments)
+        describe_bitvector_with_context(range.bound_terms().0, parameters, arguments),
+        describe_bitvector_with_context(range.bound_terms().1, parameters, arguments)
     ))
 }
 
@@ -6645,4 +6650,26 @@ fn format_population_description(
         result.push(')');
     }
     result
+}
+
+#[cfg(test)]
+mod wide_range_reader_tests {
+    use super::*;
+    // Native missing resources can reach both source-spelling and repair hints.
+    #[test]
+    fn wide_missing_ranges_are_rendered_or_omitted_without_signed_readers() {
+        let base = Pointer::symbolic(Variable(985_400));
+        let wide = CMemoryRange::new_wide(
+            base,
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(1 << 33),
+            1,
+        );
+        assert!(describe_source_range(&wide, &[], &[]).is_none());
+        let resource = CResourceFact::view_memory(wide);
+        let error = crate::kernel::CRuntimeError::MissingResource {
+            resource: Box::new(resource.clone()),
+        };
+        assert!(describe_missing_range_end_note(&error, &[resource], &[], &[]).is_empty());
+    }
 }
