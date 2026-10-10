@@ -2789,3 +2789,61 @@ fn rbtree_erase_color_red_sibling_outer_nonempty_right_requires_near_link() {
         "WRITE_ONCE(parent->rb_left, NULL);",
     );
 }
+
+#[test]
+#[ignore = "nightly: propagated red-sibling outer rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_red_outer_left_requires_parent_link() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_red_outer.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(parent->rb_right, tmp2);",
+        "WRITE_ONCE(parent->rb_right, parent);",
+        2,
+    );
+    assert!(
+        error.contains("`have` failed for `parent->rb_right == iid`"),
+        "unexpected refusal: {error}"
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated red-sibling outer rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_red_outer_right_requires_parent_link() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_red_outer.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(parent->rb_left, tmp2);",
+        "WRITE_ONCE(parent->rb_left, parent);",
+        2,
+    );
+    assert!(
+        error.contains("`have` failed for `parent->rb_left == iid`"),
+        "unexpected refusal: {error}"
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated red-sibling outer rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_red_outer_requires_far_blackening() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_flips_red_outer.click",
+        "rb_set_parent_color(tmp1, sibling, RB_BLACK);",
+        "rb_set_parent_color(tmp1, sibling, RB_RED);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated red-sibling outer rotation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_red_outer_requires_near_parent() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_red_outer.click",
+        "rb_erase_color.c",
+        "rb_set_parent(tmp2, parent);",
+        "rb_set_parent(tmp2, sibling);",
+        2,
+    );
+    assert!(
+        error.contains("`have` failed for `tmp2->__rb_parent_color =="),
+        "unexpected refusal: {error}"
+    );
+}
