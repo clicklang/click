@@ -144,6 +144,12 @@ Range folds express computations over ranges:
 })
 ```
 
+C-valued folds currently require `int32` bounds and an `int32` accumulator.
+Other C carriers are rejected with a specific diagnostic. Folds with a mathematical
+`Integer` accumulator support `int32`, `uint64`, or `Integer` bounds; their
+item binder has the bounds' type. In particular, `uint64` bounds do not imply
+a `uint64` accumulator.
+
 The kernel has selected reasoning support for the current standard-library
 folds, especially `count` and `permutation`. It is not yet a general induction
 engine for arbitrary folds.

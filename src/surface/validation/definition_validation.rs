@@ -314,6 +314,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             &click_functions,
             &format!("function `{}`", definition.name()),
         )?;
+        validate_c_valued_function_folds(definition, &click_function_types)?;
         let mut calls = BTreeSet::new();
         collect_click_function_calls(definition.body(), &mut calls);
         function_calls.insert(definition.name().to_string(), calls);
