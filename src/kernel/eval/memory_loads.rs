@@ -3866,7 +3866,7 @@ pub(in crate::kernel) fn known_pointer_read_variable_for_term(
 }
 
 // Keep the actual producer expression, including its live snapshot and
-// pointer. Canonical names can recur in disconnected model arms; their first
+// pointer. Load identities can recur in disconnected model arms; their first
 // registered origin is not necessarily in the current arm's memory history.
 fn record_wide_load_observation(term: &Bitvector32Term, variable: Variable) {
     let Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Bits64) = term else {

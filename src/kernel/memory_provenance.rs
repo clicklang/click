@@ -4073,7 +4073,7 @@ pub(crate) fn wide_read_has_recorded_value(
     };
     let left_origin = origin(left);
     let right_origin = origin(right);
-    // A canonical name can occur in several model arms. A producer records
+    // A load identity can occur in several model arms. A producer records
     // the complete load expression it just named, independently of the name's
     // first live origin. Check those selected observations, then retain the
     // original route for facts whose earlier origin is the useful one.

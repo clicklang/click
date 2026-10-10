@@ -164,15 +164,15 @@ produce premise-path evidence. Those are distinct operations, not a second
 Boolean equality checker. This chunk does not migrate the 64-bit adjacency
 index, mathematical-integer equality, or constant discovery.
 
-Wide-read alias checks also retain the latest producer observation of each
-canonical load name in the current function epoch. Naming a load, including a
-naming-cache hit, records its complete live snapshot and address. Two model
-match arms can reuse one canonical name while their live histories are
+Wide-read alias checks retain the latest producer observation for each load
+identity in the current function epoch. Assigning a load identity, including a
+cache hit, records its complete live snapshot and address. Two model match arms
+can reuse one identity while their live histories are
 unconnected; the selected check tries these observations before its original
 origin-based rule. Both routes retain the eight-byte kind and check pointer
 aliases and intervening effects. The observation creates no read authority and
-never changes the name's defining equation. Lookup touches only the selected
-names, with one retained observation per name and epoch. Session capture and
+never changes the identity's defining equation. Lookup touches only the selected
+identities, with one retained observation per identity and epoch. Session capture and
 restore share its persistent map root; scope, changed-word, width, cache-hit, and
 16/64/256/1024 unrelated-observation regressions cover it.
 
