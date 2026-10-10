@@ -2633,24 +2633,29 @@ fn synthesize_surface_bitvector(
             CValue::Int32(term.clone()),
         )));
     }
-    if let Some((name, _)) = state.locals().object_values().find(|(_, value)| {
-        if matches!(value, CValue::Bool(_)) {
-            crate::instrumentation::record_deterministic_work(1);
-        }
-        matches!(
-            value,
-            CValue::Bool(local) | CValue::Int8(local) | CValue::Int16(local)
-                | CValue::Int32(local)
-                | CValue::UInt8(local)
-                | CValue::UInt16(local)
-                | CValue::UInt32(local)
-                | CValue::Int64(local)
-                | CValue::UInt64(local)
-                | CValue::Int128(local)
-                | CValue::UInt128(local)
-                if local == term
-        )
-    }) {
+    if let Some((name, _)) = state
+        .locals()
+        .object_values()
+        .take_while(|_| {
+            consume_surface_synthesis_work("local-value")
+                && !crate::instrumentation::deadline_exceeded()
+        })
+        .find(|(_, value)| {
+            matches!(
+                value,
+                CValue::Bool(local) | CValue::Int8(local) | CValue::Int16(local)
+                    | CValue::Int32(local)
+                    | CValue::UInt8(local)
+                    | CValue::UInt16(local)
+                    | CValue::UInt32(local)
+                    | CValue::Int64(local)
+                    | CValue::UInt64(local)
+                    | CValue::Int128(local)
+                    | CValue::UInt128(local)
+                    if local == term
+            )
+        })
+    {
         return Some(if name == crate::kernel::C_CONTRACT_RESULT_NAME {
             ContractExpression::CFragment(CExpression::Variable("result".to_string()))
         } else if name == "result" {

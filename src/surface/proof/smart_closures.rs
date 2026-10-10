@@ -8680,26 +8680,35 @@ pub(super) fn synthesize_surface_at_recorded_snapshots<'a>(
         .take(MAX_SNAPSHOT_CANDIDATES);
     let mut points = Vec::new();
     let mut finished = false;
+    // Each snapshot probe has a local synthesis allowance. Also cap the whole
+    // speculative search: a missing spelling must not receive that allowance
+    // again at every historical state. One final probe can consume its local
+    // allowance before this counter stops iteration.
+    const MAX_SEARCH_WORK: usize = 16_384;
+    let mut remaining_work = MAX_SEARCH_WORK;
     std::iter::from_fn(move || {
         if finished || crate::instrumentation::deadline_exceeded() {
             finished = true;
             return None;
         }
         for (point, state) in entries.by_ref() {
-            if crate::instrumentation::deadline_exceeded() {
+            if remaining_work == 0 || crate::instrumentation::deadline_exceeded() {
                 finished = true;
                 return None;
             }
             points.push((point.clone(), state));
-            if let Some(surface) =
+            let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
                 synthesize_surface_proposition(kernel, parameters, arguments, state)
+            });
+            remaining_work = remaining_work.saturating_sub(work);
+            if let Some(surface) = surface
                 && let Ok(surface) = surface_at_snapshot(&surface, point)
             {
                 return Some(surface);
             }
         }
         finished = true;
-        if crate::instrumentation::deadline_exceeded() {
+        if remaining_work == 0 || crate::instrumentation::deadline_exceeded() {
             return None;
         }
         synthesize_surface_equality_across_points(kernel, parameters, arguments, &points)

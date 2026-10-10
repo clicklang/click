@@ -11,6 +11,7 @@ const THREE_BYTE_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/three-byte-compute.click");
 const FOUR_BYTE_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/four-byte-compute.click");
+const FOUR_BYTE_SPEC: &str = include_str!("../../design/charon-trial/adler2/four-byte-spec.click");
 const SMALL_PARTITION: &str = include_str!("../../design/charon-trial/adler2/partition.click");
 const TAIL_BOUNDS: &str = include_str!("../../design/charon-trial/adler2/tail-bounds.click");
 const BOUNDED_COUNT: &str = include_str!("../../design/charon-trial/adler2/bounded-count.click");
@@ -62,13 +63,20 @@ fn compute_proof(contract: &str) -> String {
     } else {
         ""
     };
-    let common_spec = if contract.contains("adler_spec_one(") {
+    let common_spec = if contract.contains("adler_spec_one(")
+        || contract.contains("adler_four_byte_result_spec(")
+    {
         COMMON_ADLER_SPEC
     } else {
         ""
     };
+    let four_byte_spec = if contract.contains("adler_four_byte_result_spec(") {
+        FOUR_BYTE_SPEC
+    } else {
+        ""
+    };
     format!(
-        "{}\n{common_spec}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{count_bridge}\n{bounded_count}\n{contract}\n{getters}",
+        "{}\n{common_spec}\n{four_byte_spec}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{count_bridge}\n{bounded_count}\n{contract}\n{getters}",
         helper_library()
     )
 }
@@ -1291,6 +1299,16 @@ fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_output
             &format!("ensures to_integer(self->{field}) == to_integer("),
             &format!("ensures to_integer(self->{field}) == 1 + to_integer("),
         );
+        let specification = if field == "a" {
+            "adler_spec_a(bytes, 4, 1)"
+        } else {
+            "adler_spec_b(bytes, 4, 1, 0)"
+        };
+        reject_compute(
+            FOUR_BYTE_COMPUTE,
+            &format!("ensures to_integer(self->{field}) == old({specification});"),
+            &format!("ensures to_integer(self->{field}) == old({specification}) + 1;"),
+        );
     }
     reject_compute(
         FOUR_BYTE_COMPUTE,
@@ -1570,6 +1588,76 @@ fn adler_common_spec_recurrences_and_bounds_verify() {
 }
 
 #[test]
+fn adler_four_byte_recombination_matches_the_common_spec() {
+    let source = format!("{COMMON_ADLER_SPEC}\n{FOUR_BYTE_SPEC}");
+    for theorem in [
+        "adler_four_byte_native_result",
+        "adler_four_byte_result_spec",
+    ] {
+        let offset = source.find(&format!("theorem {theorem}(")).unwrap();
+        let body = offset + source[offset..].find(" by {\n").unwrap() + " by {\n".len();
+        let line = source[..body].bytes().filter(|&b| b == b'\n').count() + 1;
+        click::surface::verify_c0_sources_at(&source, &[], line, 2).unwrap();
+    }
+}
+
+#[test]
+fn adler_four_byte_recombination_rejects_reversed_byte_weights() {
+    let source = format!("{COMMON_ADLER_SPEC}\n{FOUR_BYTE_SPEC}");
+    let statement = FOUR_BYTE_SPEC
+        .lines()
+        .find(|line| line.starts_with("     and to_integer("))
+        .unwrap();
+    let incorrect = statement
+        .replace("3 * to_integer((int32)x1)", "2 * to_integer((int32)x1)")
+        .replace("2 * to_integer((int32)x2)", "3 * to_integer((int32)x2)");
+    assert_ne!(incorrect, statement);
+    let source = source.replacen(statement, &incorrect, 1);
+    let offset = source
+        .find("theorem adler_four_byte_native_result(")
+        .unwrap();
+    let body = offset + source[offset..].find(" by {\n").unwrap() + " by {\n".len();
+    let line = source[..body].bytes().filter(|&b| b == b'\n').count() + 1;
+    let error = click::surface::verify_c0_sources_at(&source, &[], line, 2)
+        .expect_err("reversed middle-byte weights were accepted");
+    assert!(
+        !error.message().contains("budget exhausted"),
+        "{}",
+        error.message()
+    );
+}
+
+#[test]
+fn adler_four_byte_recombination_rejects_off_by_one_residues() {
+    for prefix in [" ensures to_integer(", "     and to_integer("] {
+        let statement = FOUR_BYTE_SPEC
+            .lines()
+            .find(|line| line.starts_with(prefix))
+            .unwrap();
+        let incorrect = statement.replacen(
+            " == truncating_remainder(",
+            " == 1 + truncating_remainder(",
+            1,
+        );
+        assert_ne!(incorrect, statement);
+        let source =
+            format!("{COMMON_ADLER_SPEC}\n{FOUR_BYTE_SPEC}").replacen(statement, &incorrect, 1);
+        let offset = source
+            .find("theorem adler_four_byte_native_result(")
+            .unwrap();
+        let body = offset + source[offset..].find(" by {\n").unwrap() + " by {\n".len();
+        let line = source[..body].bytes().filter(|&b| b == b'\n').count() + 1;
+        let error = click::surface::verify_c0_sources_at(&source, &[], line, 2)
+            .expect_err("an off-by-one native residue was accepted");
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
 #[ignore = "nightly: common checksum specification expansion and mutation checks"]
 fn adler_common_spec_expands_and_rejects_false_results() {
     for claim in [
@@ -1590,6 +1678,8 @@ fn adler_common_spec_expands_and_rejects_false_results() {
         "adler_spec_empty.ensures_1",
         "adler_spec_one.ensures_0",
         "adler_spec_one.ensures_1",
+        "adler_spec_four.ensures_0",
+        "adler_spec_four.ensures_1",
         "adler_byte_offset_association.ensures_0",
         "adler_sum_concat.ensures_0",
         "adler_weighted_concat.ensures_0",
