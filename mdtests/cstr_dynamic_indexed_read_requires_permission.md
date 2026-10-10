@@ -5,7 +5,7 @@ the resource-sensitive permission needed by an actual C array read.
 
 ```c filename=cstr_dynamic_indexed_read_requires_permission.c
 int32 read_terminator_without_permission(uint8 bytes[]) {
-    int32 length;
+    uint64 length;
     length = strlen(bytes);
     return bytes[length];
 }

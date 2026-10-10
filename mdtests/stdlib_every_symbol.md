@@ -1017,11 +1017,11 @@ predicate docs_use_bytes_all_not_eq(bytes: uint8[], lo: int32, hi: int32, value:
     bytes_all_not_eq(bytes, lo, hi, value)
 }
 
-predicate docs_use_cstr_prefix(bytes: uint8[], len: int32) {
+predicate docs_use_cstr_prefix(bytes: uint8[], len: uint64) {
     cstr_prefix(bytes, len)
 }
 
-predicate docs_use_cstr_len(bytes: uint8[], len: int32) {
+predicate docs_use_cstr_len(bytes: uint8[], len: uint64) {
     cstr_len(bytes, len)
 }
 
@@ -1029,19 +1029,17 @@ predicate docs_use_cstr(bytes: uint8[]) {
     cstr(bytes)
 }
 
-predicate docs_use_cstr_readable_len(bytes: uint8[], len: int32) {
+predicate docs_use_cstr_readable_len(bytes: uint8[], len: uint64) {
     cstr_readable_len(bytes, len)
 }
 
-theorem docs_use_cstr_readable_len_unique(bytes: uint8[], left: int32, right: int32) {
-    requires 0 <= left;
-    requires forall (k: int32) {
-        0 <= k and k < left implies bytes[k] != '\0'
+theorem docs_use_cstr_readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
+    requires forall (k: uint64) {
+        k < left implies bytes[k] != '\0'
     };
     requires bytes[left] == '\0';
-    requires 0 <= right;
-    requires forall (k: int32) {
-        0 <= k and k < right implies bytes[k] != '\0'
+    requires forall (k: uint64) {
+        k < right implies bytes[k] != '\0'
     };
     requires bytes[right] == '\0';
 
@@ -1054,19 +1052,11 @@ predicate docs_use_cstr_readable(bytes: uint8[]) {
     cstr_readable(bytes)
 }
 
-predicate docs_use_cstr_bounded(bytes: uint8[], max: int32) {
+predicate docs_use_cstr_bounded(bytes: uint8[], max: uint64) {
     cstr_bounded(bytes, max)
 }
 
-theorem docs_use_cstr_len_nonnegative(bytes: uint8[], len: int32) {
-    requires cstr_len(bytes, len);
-
-    ensures 0 <= len by {
-        apply(cstr_len_nonnegative(bytes, len));
-    }
-}
-
-theorem docs_use_cstr_len_has_prefix(bytes: uint8[], len: int32) {
+theorem docs_use_cstr_len_has_prefix(bytes: uint8[], len: uint64) {
     requires cstr_len(bytes, len);
 
     ensures cstr_prefix(bytes, len) by {
@@ -1074,18 +1064,18 @@ theorem docs_use_cstr_len_has_prefix(bytes: uint8[], len: int32) {
     }
 }
 
-theorem docs_use_cstr_len_has_terminator(bytes: uint8[], len: int32) {
+theorem docs_use_cstr_len_has_terminator(bytes: uint8[], len: uint64) {
     requires cstr_len(bytes, len);
 
-    ensures bytes_contains(bytes, len, len + 1, '\0') by {
+    ensures bytes[len] == '\0' by {
         apply(cstr_len_has_terminator(bytes, len));
     }
 }
 
-theorem docs_use_cstr_len_is_viewable(bytes: uint8[], len: int32) {
+theorem docs_use_cstr_len_is_viewable(bytes: uint8[], len: uint64) {
     requires cstr_len(bytes, len);
 
-    ensures viewable(bytes[0..len + 1]) by {
+    ensures viewable(bytes[0..len + 1u64]) by {
         apply(cstr_len_is_viewable(bytes, len));
     }
 }

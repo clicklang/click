@@ -364,6 +364,14 @@ impl PureFactContext {
         if bytes.uint64_as_const() == Some(0) {
             return true;
         }
+        // A constant count names the same bytes as the 32-bit range of that
+        // many bytes, which the narrow prover carries through snapshots.
+        if let Some(count) = bytes.uint64_as_const()
+            && let Ok(count) = u32::try_from(count)
+            && self.proves_memory_loadable(memory, base, &Bitvector32Term::Constant(count))
+        {
+            return true;
+        }
         self.memory_loadable_exact_candidates_for_base(base)
             .any(|fact| {
                 let Proposition::CMemoryLoadable {
@@ -3374,13 +3382,37 @@ impl PureFactContext {
                     end.clone(),
                 ))
         };
+        // `i < x + c` for a constant `c >= 1` whose sum does not wrap: an
+        // index below `c`, at most `x`, or equal to `x` is below the end. A C string's
+        // `[0..len + 1]` footprint has this end.
+        let below_unwrapped_successor = |index: &Bitvector32Term| {
+            let Bitvector32Term::UInt64Add(whole, added) = end else {
+                return false;
+            };
+            let Some(added) = added.uint64_as_const().filter(|added| *added >= 1) else {
+                return false;
+            };
+            holds(ConditionTerm::uint64_less_equal(
+                whole.as_ref().clone(),
+                Bitvector32Term::UInt64Constant(u64::MAX - added),
+            )) && (index.uint64_as_const().is_some_and(|value| value < added)
+                || holds(ConditionTerm::uint64_less_equal(
+                    index.clone(),
+                    whole.as_ref().clone(),
+                ))
+                || holds(ConditionTerm::uint64_equal(
+                    index.clone(),
+                    whole.as_ref().clone(),
+                )))
+        };
         (start.uint64_as_const() == Some(0)
             || holds(ConditionTerm::uint64_less_equal(
                 start.clone(),
                 index.clone(),
             )))
             && (holds(ConditionTerm::uint64_less_than(index.clone(), end.clone()))
-                || below_equal_spelling(&index))
+                || below_equal_spelling(&index)
+                || below_unwrapped_successor(&index))
             && holds(ConditionTerm::uint64_less_equal(
                 end.clone(),
                 Bitvector32Term::UInt64Constant(limit),

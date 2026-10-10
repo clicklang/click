@@ -10,12 +10,12 @@ strlen(p);`, although each passes the same pointer with no intervening store.
 ## Reproduction
 
 ```c
-int32 g(uint8 bytes[]) { return strlen(bytes); }
-int32 h(uint8 bytes[]) { uint8* p; p = bytes; return strlen(p); }
+uint64 g(uint8 bytes[]) { return strlen(bytes); }
+uint64 h(uint8 bytes[]) { uint8* p; p = bytes; return strlen(p); }
 ```
 
 ```click
-int32 g(uint8 bytes[]) {
+uint64 g(uint8 bytes[]) {
     requires cstr_readable(bytes);
     ensures bytes[result] == '\0';
 } by { execute(); simp(); }
@@ -38,8 +38,8 @@ parameter, directly or through an identity cast:
 
 ## Intended regression
 
-An mdtest with `g` and `h` above, plus `size_t n = strlen(s); return n;` for a
-`const char *s` caller, verifying with `execute(); simp();`. A version without
+An mdtest with `g` and `h` above, plus `return strlen(s);` for a
+`const char *s` caller returning `size_t`, verifying with `execute(); simp();`. A version without
 the caller requirement must still be refused for the missing precondition.
 
 ## Acceptance criteria

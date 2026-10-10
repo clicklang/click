@@ -3840,6 +3840,35 @@ fn synthesize_owned_pointer_field(pointer: &Pointer, state: &CState) -> Option<C
     })
 }
 
+/// The element index `pointer` is at from `base`, as the term a source index
+/// expression lowers to. A 64-bit index (`bytes[k]` for a `uint64` `k`) is
+/// its own 64-bit value: spelled back, it lowers to the same displacement,
+/// and every synthesized candidate is re-lowered and compared before use.
+fn synthesis_element_index(
+    pointer: &Pointer,
+    base: &Pointer,
+    element_width: u32,
+) -> Option<Bitvector32Term> {
+    if let Some(index) = pointer.element_index_from_base_with_width(base, element_width) {
+        return Some(index);
+    }
+    if pointer.block != base.block {
+        return None;
+    }
+    let displacement = match &pointer.offset {
+        offset if base.offset == PointerOffsetTerm::Constant(0) => offset,
+        PointerOffsetTerm::Add(left, right) if left.as_ref() == &base.offset => right.as_ref(),
+        PointerOffsetTerm::Add(left, right) if right.as_ref() == &base.offset => left.as_ref(),
+        _ => return None,
+    };
+    match displacement {
+        PointerOffsetTerm::Int64Scaled {
+            value, byte_width, ..
+        } if *byte_width == i64::from(element_width) => Some(value.as_ref().clone()),
+        _ => None,
+    }
+}
+
 fn synthesize_surface_pointer(
     pointer: &Pointer,
     parameters: &[syntax::C0Parameter],
@@ -3863,7 +3892,7 @@ fn synthesize_surface_pointer(
                 .pointee_type()?
                 .to_kernel_type()
                 .byte_width();
-            let index = pointer.element_index_from_base_with_width(base, element_width)?;
+            let index = synthesis_element_index(pointer, base, element_width)?;
             let base = CExpression::Variable(parameter.name().to_string());
             if index == Bitvector32Term::Constant(0) {
                 return Some(base);
@@ -3888,7 +3917,7 @@ fn synthesize_surface_pointer(
             return None;
         };
         let element_width = base.c_type().pointee_type()?.byte_width();
-        let index = pointer.element_index_from_base_with_width(base, element_width)?;
+        let index = synthesis_element_index(pointer, base, element_width)?;
         let base = CExpression::Variable(surface_local_name(name).to_string());
         if index == Bitvector32Term::Constant(0) {
             return Some(base);

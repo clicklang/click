@@ -54,6 +54,12 @@ pub(crate) struct ProofFacts {
     /// the exact structural authority for `extract`; top-level facts are not
     /// included merely because they are independently available.
     proper_conjuncts: PersistentSet<Arc<Proposition>>,
+    /// The quantified atomic conjuncts of available conjunctions, keyed by
+    /// their alpha form: quantifier binders are numbered per lowering, so a
+    /// citation of the second universal of a conjunction lowers with other
+    /// binder numbers than the conjunct it names.
+    quantified_proper_conjuncts:
+        PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<Arc<Proposition>>>,
     /// Atomic exact facts after the same direct-load normalization used by
     /// condition check. This lets a branch reject its opposite path with an
     /// indexed lookup instead of scanning every unrelated fact.
@@ -363,6 +369,7 @@ impl ProofFacts {
         let mut top_level_exact = PersistentSet::default();
         let mut exact = PersistentSet::default();
         let mut proper_conjuncts = PersistentSet::default();
+        let mut quantified_proper_conjuncts = PersistentMap::default();
         let mut by_snapshot_blind = PersistentMap::default();
         let mut by_integer_condition_alpha = PersistentMap::default();
         let mut bitvector_equalities_by_atom = PersistentMap::default();
@@ -404,6 +411,8 @@ impl ProofFacts {
                 collect_owned_atomic_conjuncts(fact, &mut conjuncts);
                 for conjunct in conjuncts {
                     let conjunct = Arc::new(conjunct);
+                    quantified_proper_conjuncts =
+                        index_quantified_fact(quantified_proper_conjuncts, &conjunct);
                     by_snapshot_blind = index_snapshot_fact(by_snapshot_blind, &conjunct);
                     by_integer_condition_alpha =
                         index_integer_condition_fact(by_integer_condition_alpha, conjunct.as_ref());
@@ -438,6 +447,7 @@ impl ProofFacts {
             top_level_exact,
             exact,
             proper_conjuncts,
+            quantified_proper_conjuncts,
             by_snapshot_blind,
             by_integer_condition_alpha,
             bitvector_equalities_by_atom,
@@ -492,6 +502,7 @@ impl ProofFacts {
         let fact = Arc::new(fact);
         let mut exact = self.exact.clone();
         let mut proper_conjuncts = self.proper_conjuncts.clone();
+        let mut quantified_proper_conjuncts = self.quantified_proper_conjuncts.clone();
         let mut by_snapshot_blind = self.by_snapshot_blind.clone();
         let mut by_integer_condition_alpha = self.by_integer_condition_alpha.clone();
         let mut bitvector_equalities_by_atom = self.bitvector_equalities_by_atom.clone();
@@ -511,6 +522,8 @@ impl ProofFacts {
             collect_owned_atomic_conjuncts(&fact, &mut conjuncts);
             for conjunct in conjuncts {
                 let conjunct = Arc::new(conjunct);
+                quantified_proper_conjuncts =
+                    index_quantified_fact(quantified_proper_conjuncts, &conjunct);
                 by_snapshot_blind = index_snapshot_fact(by_snapshot_blind, &conjunct);
                 by_integer_condition_alpha =
                     index_integer_condition_fact(by_integer_condition_alpha, conjunct.as_ref());
@@ -552,6 +565,7 @@ impl ProofFacts {
             top_level_exact: self.top_level_exact.with_value(Arc::clone(&fact)),
             exact,
             proper_conjuncts,
+            quantified_proper_conjuncts,
             by_snapshot_blind,
             by_integer_condition_alpha,
             bitvector_equalities_by_atom,
@@ -884,6 +898,21 @@ impl ProofFacts {
             || condition_polarity_forms(required)
                 .iter()
                 .any(|form| self.proper_conjuncts.contains(form))
+    }
+
+    /// The available proper conjunct that `required` names up to the
+    /// renaming of its quantifier binders, selected by its alpha bucket.
+    pub(crate) fn alpha_equivalent_proper_conjunct(
+        &self,
+        required: &Proposition,
+    ) -> Option<Proposition> {
+        let key = quantified_equivalence_index_key(required)?;
+        self.quantified_proper_conjuncts
+            .get(&key)?
+            .iter()
+            .map(Arc::as_ref)
+            .find(|candidate| quantified_binder_equivalent(required, candidate))
+            .cloned()
     }
 
     /// Exact or direct-load-materialization-equivalent availability used by
