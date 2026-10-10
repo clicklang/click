@@ -341,8 +341,8 @@ changes, and the Integer observation of its returned word is exactly
 [packing.click](packing.click) checks the narrow-field observations and the
 original `(B << 16) | A` order. Both 16-bit bounds are retained in the kernel
 packing law. Its conditional bridge connects fields satisfying the common A/B
-specification to the common packed checksum. Public entry-point composition and
-general-length implementation correctness remain pending.
+specification to the common packed checksum. The one-byte public entry point
+is checked below; general-length implementation correctness remains pending.
 
 The fixture harness combines these contract fragments with the shared
 mathematical specification and the existing locked crate import. The positive
@@ -352,6 +352,28 @@ shared authority, and verify/profile/audit/expansion agreement run nightly:
 ```sh
 cargo nextest run --test rust_import --run-ignored all \
   -E 'test(charon_adler2_checksum)'
+```
+
+## Original one-byte public entry point
+
+[public-one-byte.click](public-one-byte.click) composes the unchanged
+`Default::default`, `Adler32::new`, `Adler32::write_slice`, and `Adler32::checksum`
+bodies at `adler32_slice`. For one arbitrary input byte, the returned word's
+Integer observation equals `adler_spec_checksum` on the entry byte snapshot,
+with initial A = 1 and B = 0. The shared input byte is preserved. Constructor
+fields, the mutable computation call, the shared getter, and local storage
+cleanup all use the original locked Charon selection.
+
+The harness assembles this fragment with the existing one-byte computation,
+helper bodies, packing lemmas, and common specification; no callee interface
+is assumed in the complete proof. The ordinary gate checks the four newly
+composed bodies. Nightly checks verify the complete assembly, reject wrong
+results, seeds, length, missing input views, and false byte preservation, and
+recheck verify/profile/audit plus expansion of all four contracts:
+
+```sh
+cargo nextest run --test rust_import --run-ignored all \
+  -E 'test(charon_adler2_public_checksum)'
 ```
 
 ## Reproduce
@@ -400,9 +422,11 @@ cargo nextest run --test rust_import --run-ignored only \
 Connect the optimized lane recurrences to the shared
 mathematical checksum specification in the [checksum assessment](../../rust-checksum-assessment.md).
 The constructor-state contracts for zero through four bytes provide exact
-result and byte-order checks. The shared getter proves exact packing; compose
-it with the constructor and computation at the public entry point. The general contract supplies induction
-and bounds rather than a checksum postcondition. All helper bodies remain checked
+result and byte-order checks. The shared getter proves exact packing, and the
+one-byte public entry point composes it with the constructor and computation.
+Extend that composition to the other checked boundaries and the general loop.
+The general contract supplies induction and bounds rather than a checksum
+postcondition. All helper bodies remain checked
 alongside the computation. Then prove incremental processing, the unchanged
 C implementation, and equality under matched input and seed conditions.
 
