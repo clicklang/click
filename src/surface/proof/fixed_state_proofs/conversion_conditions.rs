@@ -67,8 +67,10 @@ impl StatedForm<'_> {
 pub(in crate::surface::proof) struct StatedSite<'a> {
     form: StatedForm<'a>,
     state: &'a CState,
-    parameters: Vec<syntax::C0Parameter>,
-    arguments: Vec<CExpression>,
+    values: &'a BTreeMap<String, CValue>,
+    // Built only when a message is spelled: most lowerings raise nothing,
+    // and one per resource clause must not cost every value in scope.
+    naming: std::cell::OnceCell<(Vec<syntax::C0Parameter>, Vec<CExpression>)>,
 }
 
 impl<'a> StatedSite<'a> {
@@ -76,27 +78,33 @@ impl<'a> StatedSite<'a> {
     pub(in crate::surface::proof) fn new(
         form: StatedForm<'a>,
         state: &'a CState,
-        values: &BTreeMap<String, CValue>,
+        values: &'a BTreeMap<String, CValue>,
     ) -> Self {
-        let (parameters, arguments) = crate::surface::diagnostics::value_naming_tables(values);
         Self {
             form,
             state,
-            parameters,
-            arguments,
+            values,
+            naming: std::cell::OnceCell::new(),
         }
+    }
+
+    fn naming(&self) -> &(Vec<syntax::C0Parameter>, Vec<CExpression>) {
+        self.naming
+            .get_or_init(|| crate::surface::diagnostics::value_naming_tables(self.values))
     }
 
     /// One kernel machine term in the user's spelling.
     fn spell_term(&self, term: &Bitvector32Term) -> Option<String> {
-        synthesize_surface_machine_expression(term, &self.parameters, &self.arguments, self.state)
+        let (parameters, arguments) = self.naming();
+        synthesize_surface_machine_expression(term, parameters, arguments, self.state)
             .map(|expression| spelled_alone(&expression))
     }
 
     /// One kernel proposition as the user would write it, when reconstruction
     /// can name every value it mentions.
     fn spell_proposition(&self, proposition: &Proposition) -> Option<ClickProposition> {
-        synthesize_surface_proposition(proposition, &self.parameters, &self.arguments, self.state)
+        let (parameters, arguments) = self.naming();
+        synthesize_surface_proposition(proposition, parameters, arguments, self.state)
     }
 }
 

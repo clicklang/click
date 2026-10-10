@@ -509,6 +509,11 @@ impl ResourceContextIndex {
                 (fact.family(), name.clone(), arguments.len()),
                 entry,
             );
+            result.exact_shapes_by_root = insert_resource_index_entry(
+                &result.exact_shapes_by_root,
+                shape_root_key(fact.family(), name, arguments),
+                entry,
+            );
         }
         result
     }
@@ -705,6 +710,11 @@ impl ResourceContextIndex {
             result.exact_shapes = remove_resource_index_entry(
                 &result.exact_shapes,
                 &(fact.family(), name.clone(), arguments.len()),
+                entry,
+            );
+            result.exact_shapes_by_root = remove_resource_index_entry(
+                &result.exact_shapes_by_root,
+                &shape_root_key(fact.family(), name, arguments),
                 entry,
             );
         }
@@ -2554,8 +2564,50 @@ impl ResourceContext {
                 resource_fact_entails(available, &aligned, assumptions).then_some(available)
             });
         }
-        self.direct_match_candidates(required)
+        self.direct_match_candidates_for(required, assumptions)
+            .into_iter()
             .find(|available| resource_fact_entails(available, required, assumptions))
+    }
+
+    /// [`Self::direct_match_candidates`], narrowed for a token or composite
+    /// whose first argument is a pointer to the facts of its shape whose
+    /// first argument is related to that pointer, as normalization relates
+    /// them (its root, the roots its recorded equalities select, and its
+    /// exact aliases), plus those whose first argument is not a pointer.
+    /// Two such facts with unrelated first pointers have no fact that could
+    /// prove those pointers equal, so neither entails the other.
+    pub(in crate::kernel) fn direct_match_candidates_for(
+        &self,
+        fact: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Vec<&CResourceFact> {
+        let (CResource::Composite { name, arguments } | CResource::Token { name, arguments }) =
+            fact.resource()
+        else {
+            return self.direct_match_candidates(fact).collect();
+        };
+        let Some(pointer) = normalization_root_pointer(arguments) else {
+            return self.direct_match_candidates(fact).collect();
+        };
+        let shape = (fact.family(), name.clone(), arguments.len());
+        let mut entries = BTreeSet::new();
+        let roots = std::iter::once(None).chain(
+            related_pointer_roots(pointer, assumptions)
+                .into_iter()
+                .map(Some),
+        );
+        for root in roots {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(found) = self.storage.index.exact_shapes_by_root.get(&(
+                shape.0,
+                shape.1.clone(),
+                shape.2,
+                root,
+            )) {
+                entries.extend(found.iter().copied());
+            }
+        }
+        entries.into_iter().map(|entry| self.fact(entry)).collect()
     }
 
     /// The owned memory facts the address index selects for `range`: those
@@ -6115,6 +6167,14 @@ enum ResourceNormalizationKey {
     /// Every anchored token or composite of one shape, for the unanchored
     /// facts that may still name the same block.
     ExactShapeAnchoredAll(ResourceFamily, String, usize),
+    /// A token or composite whose first argument is a pointer into any other
+    /// block, keyed by that pointer's [`memory_base_root`]. Every parameter
+    /// shares the one argument block, so keying by block alone would pair
+    /// each parameter's facts with every other parameter's.
+    ExactShapeRooted(ResourceFamily, String, usize, MemoryBaseRoot),
+    /// Every rooted token or composite of one shape, for the facts whose
+    /// first argument is not such a pointer.
+    ExactShapeRootedAll(ResourceFamily, String, usize),
     MemoryStart(MemoryBaseRoot, bool, Bitvector32Term),
     MemoryEnd(MemoryBaseRoot, bool, Bitvector32Term),
     // Native adjacency retains the exact base, width and full endpoint.
@@ -6276,9 +6336,22 @@ impl ResourceNormalizationIndex {
                             shape.0, shape.1, shape.2,
                         ));
                     }
-                    None => keys.push(ResourceNormalizationKey::ExactShape(
-                        shape.0, shape.1, shape.2,
-                    )),
+                    None => match normalization_root_pointer(arguments) {
+                        Some(pointer) => {
+                            keys.push(ResourceNormalizationKey::ExactShapeRooted(
+                                shape.0,
+                                shape.1.clone(),
+                                shape.2,
+                                memory_base_root(pointer),
+                            ));
+                            keys.push(ResourceNormalizationKey::ExactShapeRootedAll(
+                                shape.0, shape.1, shape.2,
+                            ));
+                        }
+                        None => keys.push(ResourceNormalizationKey::ExactShape(
+                            shape.0, shape.1, shape.2,
+                        )),
+                    },
                 }
             }
         }
@@ -6344,13 +6417,7 @@ impl ResourceNormalizationIndex {
                 ));
             }
             CResource::Memory(range) => {
-                let mut roots = related_memory_base_roots(range.base(), assumptions);
-                for alias in assumptions.exact_pointer_aliases(range.base()) {
-                    roots.extend(related_memory_base_roots(alias, assumptions));
-                }
-                for alias in assumptions.exact_pointer_offset_aliases(range.base()) {
-                    roots.extend(related_memory_base_roots(&alias, assumptions));
-                }
+                let roots = related_pointer_roots(range.base(), assumptions);
                 let owned = fact.is_own();
                 for start in std::iter::once(range.start().clone())
                     .chain(assumptions.bitvector_equality_class(range.start()))
@@ -6400,8 +6467,10 @@ impl ResourceNormalizationIndex {
                 // proven equal, and a pointer is never proven equal to one in
                 // a block proven distinct from its own. So an anchored fact
                 // meets the facts anchored in its own block and the
-                // unanchored ones; an unanchored fact meets every fact of its
-                // shape.
+                // unanchored ones. A fact rooted at another pointer meets the
+                // facts rooted where its pointer is related, as memory
+                // ranges do, plus the anchored and pointerless ones. A
+                // pointerless fact meets every fact of its shape.
                 let shape = (fact.family(), name.clone(), arguments.len());
                 keys.push(ResourceNormalizationKey::ExactShape(
                     shape.0,
@@ -6409,15 +6478,39 @@ impl ResourceNormalizationIndex {
                     shape.2,
                 ));
                 match normalization_anchor(arguments) {
-                    Some(block) => keys.push(ResourceNormalizationKey::ExactShapeAnchored(
-                        shape.0,
-                        shape.1,
-                        shape.2,
-                        block.clone(),
-                    )),
-                    None => keys.push(ResourceNormalizationKey::ExactShapeAnchoredAll(
-                        shape.0, shape.1, shape.2,
-                    )),
+                    Some(block) => {
+                        keys.push(ResourceNormalizationKey::ExactShapeAnchored(
+                            shape.0,
+                            shape.1.clone(),
+                            shape.2,
+                            block.clone(),
+                        ));
+                        keys.push(ResourceNormalizationKey::ExactShapeRootedAll(
+                            shape.0, shape.1, shape.2,
+                        ));
+                    }
+                    None => {
+                        keys.push(ResourceNormalizationKey::ExactShapeAnchoredAll(
+                            shape.0,
+                            shape.1.clone(),
+                            shape.2,
+                        ));
+                        match normalization_root_pointer(arguments) {
+                            Some(pointer) => {
+                                for root in related_pointer_roots(pointer, assumptions) {
+                                    keys.push(ResourceNormalizationKey::ExactShapeRooted(
+                                        shape.0,
+                                        shape.1.clone(),
+                                        shape.2,
+                                        root,
+                                    ));
+                                }
+                            }
+                            None => keys.push(ResourceNormalizationKey::ExactShapeRootedAll(
+                                shape.0, shape.1, shape.2,
+                            )),
+                        }
+                    }
                 }
             }
         }
@@ -6460,6 +6553,44 @@ fn normalization_anchor(arguments: &[AlgebraicValue]) -> Option<&PointerBlock> {
         }
         _ => None,
     }
+}
+
+/// The `exact_shapes_by_root` key of a token or composite.
+fn shape_root_key(
+    family: ResourceFamily,
+    name: &str,
+    arguments: &[AlgebraicValue],
+) -> super::ShapeRootKey {
+    (
+        family,
+        name.to_string(),
+        arguments.len(),
+        normalization_root_pointer(arguments).map(memory_base_root),
+    )
+}
+
+/// The first argument of a token or composite when it is a pointer.
+fn normalization_root_pointer(arguments: &[AlgebraicValue]) -> Option<&Pointer> {
+    match arguments.first() {
+        Some(AlgebraicValue::C(CValue::Pointer(pointer))) => Some(pointer.pointer()),
+        _ => None,
+    }
+}
+
+/// The roots a normalization lookup visits for a pointer: its related roots
+/// and those of its recorded exact aliases.
+fn related_pointer_roots(
+    pointer: &Pointer,
+    assumptions: &PureFactContext,
+) -> BTreeSet<MemoryBaseRoot> {
+    let mut roots = related_memory_base_roots(pointer, assumptions);
+    for alias in assumptions.exact_pointer_aliases(pointer) {
+        roots.extend(related_memory_base_roots(alias, assumptions));
+    }
+    for alias in assumptions.exact_pointer_offset_aliases(pointer) {
+        roots.extend(related_memory_base_roots(&alias, assumptions));
+    }
+    roots
 }
 
 fn resource_family_algebra(family: ResourceFamily) -> &'static dyn ResourceFamilyAlgebra {

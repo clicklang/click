@@ -7278,7 +7278,7 @@ fn retain_amid_unrelated_children_project(count: usize) -> (String, String) {
 /// that block instead of the queried object's own facts grows with them.
 #[test]
 fn a_retain_ignores_unrelated_live_children() {
-    let samples = [2, 4, 8, 16]
+    let samples = [8, 16, 32, 64]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = retain_amid_unrelated_children_project(size);
@@ -7320,7 +7320,7 @@ fn owned_parameters_project(count: usize) -> (String, String) {
 /// memory block, and no check pairs each of them with all the others.
 #[test]
 fn owned_pointer_parameters_scale_with_their_number() {
-    let samples = [3, 6, 12, 24]
+    let samples = [8, 16, 32, 64]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = owned_parameters_project(size);
