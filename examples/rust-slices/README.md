@@ -10,10 +10,9 @@ A Rust parameter `bytes: &[u8]` lowers to `const uint8* bytes, uint64 bytes_len`
 64-bit unsigned value. The generated `<parameter>_len` name must not collide
 with another parameter. Slice metadata is copied and passed together.
 
-`read` and `write` have variable-length contracts. Their memory ranges use
-`(int32)bytes_len`, so they require `bytes_len <= 2147483647u64`. This is the
-current Click memory-range boundary; lengths and bounds checks are still
-64-bit, and an index with a nonzero high word cannot alias a small byte range.
+`read` and `write` have variable-length contracts. Their memory ranges keep
+the 64-bit `bytes.len()` bound, so they state no limit on the length; lengths,
+indices and bounds checks are all 64-bit.
 `length` and `empty` inspect metadata without requiring a byte resource.
 
 Build `scripts/build-charon.sh --install-toolchain`, then run:

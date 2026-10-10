@@ -152,9 +152,10 @@ as its sign extension. No signed kind was needed. A negative bound reads as
 at least 2^63, past every range's end, so the range's own guards rule it
 out; a signed access index is read the same way, and an unsigned order
 between sign extensions of values known nonnegative is decided by the
-signed order. Not built: the deletion of the 32-bit conversion for the last
-shape that reaches it, a 64-bit constant beside an `int32` bound (step 9).
-What was learned along the way:
+signed order. Step 9 is done the same day: a range with any 64-bit bound,
+a constant included, is wide, and the 32-bit conversion of a bound is gone;
+only a cast the contract writes, `bytes[0..(int32)length]`, makes a 64-bit
+bound a 32-bit one. What was learned along the way:
 
 - A callee is given its ranges' guards on entry, `start <= end` among them,
   and the call did not prove that one: the planner places a range by its

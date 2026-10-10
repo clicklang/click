@@ -2678,11 +2678,9 @@ fn lower_resource_segment_with_values(
         )));
     };
     let base = base.into_pointer();
-    // A bound keeps its own integer type in the contract. A place takes a
-    // 32-bit index today, so a 64-bit bound is converted here exactly as the
-    // cast `(int32)bound` converts it; function setup refuses a contract
-    // whose requirements do not show the bound fits
-    // (`design/typed-indices.md`, stage 1).
+    // A bound keeps its own integer type in the contract: a range with a
+    // 64-bit bound is wide, and one with two `int32` bounds is not
+    // (`design/typed-indices.md`, stage 2).
     let start_value = evaluate(&segment.start, surface_start).map_err(|message| {
         ClickError::new(format!(
             "could not lower `{resource_name}` resource: {message}"
@@ -2693,33 +2691,21 @@ fn lower_resource_segment_with_values(
             "could not lower `{resource_name}` resource: {message}"
         ))
     })?;
-    let bound = |expression: &CExpression, value: CValue, which: &str| {
-        let value = match value {
-            CValue::Int64(_) | CValue::UInt64(_) => evaluate(
-                &crate::kernel::place_index_from_wide(expression.clone()),
-                None,
-            )
-            .map_err(|message| {
-                ClickError::new(format!(
-                    "could not lower `{resource_name}` resource: {message}"
-                ))
-            })?,
-            value => value,
-        };
-        match value {
-            CValue::Int32(term) => Ok(term),
-            _ => Err(ClickError::new(format!(
-                "could not lower `{resource_name}` resource: segment {which} did not evaluate to an integer index"
-            ))),
+    let bound = |value: CValue, which: &str| match value {
+        CValue::Int32(term) => Ok(term),
+        value if crate::kernel::narrow_range_constant(&value).is_some() => {
+            Ok(crate::kernel::narrow_range_constant(&value).expect("checked above"))
         }
+        _ => Err(ClickError::new(format!(
+            "could not lower `{resource_name}` resource: segment {which} did not evaluate to an integer index"
+        ))),
     };
-    // A range with an unsigned 64-bit bound keeps that bound's type, here as
-    // in the kernel's resource and proposition lowering.
+    // The same rule as the kernel's resource and proposition lowering.
     if let Some((start, end)) = crate::kernel::wide_range_bounds(&start_value, &end_value) {
         return Ok(CMemoryRange::new_wide(base, start, end, element_width));
     }
-    let start = bound(&segment.start, start_value, "start")?;
-    let end = bound(&segment.end, end_value, "end")?;
+    let start = bound(start_value, "start")?;
+    let end = bound(end_value, "end")?;
     if let (Bitvector32Term::Constant(start), Bitvector32Term::Constant(end)) = (&start, &end)
         && end < start
     {
