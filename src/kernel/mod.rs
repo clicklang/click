@@ -109,6 +109,7 @@ pub(crate) use assumptions::{
     collect_reasoning_provenance, finite_forall_goal_instances,
     record_implicit_reasoning_provenance, with_search_attempt_rollback,
 };
+pub(crate) use equality_graph::logical_pointer_read_term;
 pub(crate) use eval::canonical_condition_fact;
 pub(crate) use eval::canonical_form_of_load;
 pub(crate) use eval::canonical_term;
@@ -142,6 +143,7 @@ pub(crate) use eval::{
 };
 pub(crate) use functions::ResourceModelArmDecision;
 pub(crate) use functions::ResourceModelArmSelection;
+pub(crate) use functions::ResourceRewriteRefusal;
 pub(crate) use functions::c_type_spelling;
 pub(crate) use functions::checked_composite_projection_evidence;
 pub(crate) use functions::decide_resource_model_arm;

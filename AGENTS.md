@@ -69,6 +69,12 @@ after the second failure at the same obligation, run a focused proof trace and
 explain what it reveals before another attempt. If it explains the failure,
 use that information to correct the proof; tracing can be a sufficient remedy.
 After the third failure, pause local variations and investigate using the trace.
+Normally this pause should trigger a conversation with the user: explain the
+evidence and proposed response before changing tooling. Tooling design changes,
+including what diagnostics or traces show, require user approval. Reproduced
+bugs in existing behavior may be fixed without approval; do not treat a proposed
+presentation or workflow improvement as an automatic bug fix. Existing approval
+for a specific improvement carries forward and need not be requested again.
 Do not infer a verifier problem from repeated rejection before trying tracing.
 A trace that leaves the necessary comparison unexplained may itself need
 improvement. Investigation is required; a verifier change is not.

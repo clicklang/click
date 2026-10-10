@@ -402,7 +402,7 @@ pub(in crate::kernel) fn clear_logical_pointer_reads() {
 
 /// The defining load of a producer-retained typed pointer value. The
 /// definition is term metadata, not a hypothesis about the loaded address.
-pub(in crate::kernel) fn logical_pointer_read_term(value: &Pointer) -> Option<Bitvector32Term> {
+pub(crate) fn logical_pointer_read_term(value: &Pointer) -> Option<Bitvector32Term> {
     let application = LOGICAL_POINTER_READS.with(|reads| {
         reads
             .borrow()
