@@ -474,9 +474,30 @@ pub(super) fn pure_induction_hypothesis(
     else {
         return Err(ClickError::new("invalid int32 induction parameter"));
     };
+    // Lower the hypothesis in its own requirement scope. These premises
+    // are retained below as implications, so definedness is never granted
+    // to an application that does not establish the smaller argument's guards.
+    let mut assumptions = PureFactContext::new();
+    let mut opaque_requirements = Vec::new();
+    for requirement in &setup.surface_requires {
+        let lowered = lower_pure_theorem_proposition_opaque(
+            &setup.hypothesis,
+            requirement,
+            &assumptions,
+            &context.values,
+            &context.array_refs,
+            &context.memory,
+            predicate_environment,
+            click_function_environment,
+        )
+        .map_err(ClickError::new)?;
+        assumptions = assumptions.assume_proposition(lowered.clone());
+        opaque_requirements.push(lowered);
+    }
     let opaque_goal = lower_pure_theorem_proposition_opaque(
         &setup.hypothesis,
         &setup.surface_goal,
+        &assumptions,
         &context.values,
         &context.array_refs,
         &context.memory,
@@ -484,22 +505,6 @@ pub(super) fn pure_induction_hypothesis(
         click_function_environment,
     )
     .map_err(ClickError::new)?;
-    let opaque_requirements = setup
-        .surface_requires
-        .iter()
-        .map(|requirement| {
-            lower_pure_theorem_proposition_opaque(
-                &setup.hypothesis,
-                requirement,
-                &context.values,
-                &context.array_refs,
-                &context.memory,
-                predicate_environment,
-                click_function_environment,
-            )
-            .map_err(ClickError::new)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
     let mut propositions = opaque_requirements.clone();
     propositions.push(opaque_goal.clone());
     let variable = fresh_int32_variable_for_propositions(&propositions);
@@ -3463,9 +3468,11 @@ fn lower_pure_theorem_proposition_with_opaque_calls(
     .map_err(|error| format!("pure theorem `{theorem_name}`: {error}"))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lower_pure_theorem_proposition_opaque(
     theorem_name: &str,
     proposition: &ClickProposition,
+    assumptions: &PureFactContext,
     values: &BTreeMap<String, CValue>,
     array_refs: &ClickArrayRefs,
     memory: &CMemory,
@@ -3477,16 +3484,21 @@ fn lower_pure_theorem_proposition_opaque(
         .keys()
         .cloned()
         .collect::<BTreeSet<_>>();
-    lower_pure_theorem_proposition_with_opaque_calls(
-        theorem_name,
+    let state = CState::new().with_memory(memory.clone());
+    lower_fixed_state_proposition_through_kernel_with_opaque_calls(
         proposition,
+        assumptions,
         values,
         array_refs,
-        memory,
+        &state,
+        &state,
+        None,
+        &RecordedSnapshots::new(),
         predicate_environment,
         click_function_environment,
         &opaque,
     )
+    .map_err(|error| format!("pure theorem `{theorem_name}`: {error}"))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3589,6 +3601,34 @@ mod tests {
                 crate::surface::expand_c0_claim_source_by_label(&expanded, &[], &label).unwrap()
             );
         }
+    }
+
+    #[test]
+    fn numeric_induction_retains_partial_expression_requirements() {
+        // A guarded addition in the conclusion must lower in the theorem's
+        // requirement scope, including when building and applying its IH.
+        let source = include_str!("../../../mdtests/pure_induction_guarded_offset.md")
+            .split_once("```click\n")
+            .unwrap()
+            .1
+            .split_once("\n```")
+            .unwrap()
+            .0;
+        crate::surface::verify_c0_sources(source, &[]).unwrap();
+        let expanded =
+            crate::surface::expand_c0_claim_source_by_label(source, &[], "guarded_count.ensures_0")
+                .unwrap();
+        crate::surface::verify_c0_sources(&expanded, &[]).unwrap();
+        let missing_evidence = source.replace(
+            "apply(ih(n - 1));",
+            "apply(ih(n - 1)) using { 0 <= n - 1; n - 1 < n; }",
+        );
+        assert!(crate::surface::verify_c0_sources(&missing_evidence, &[]).is_err());
+        let false_claim = source.replace(
+            "ensures guarded_countdown(n) == 0 and",
+            "ensures guarded_countdown(n) == 1 and",
+        );
+        assert!(crate::surface::verify_c0_sources(&false_claim, &[]).is_err());
     }
 
     #[test]
