@@ -105,6 +105,117 @@ pub(super) struct TraceFact {
     pub surface_view: Option<String>,
 }
 
+/// Diagnostic-only payload for the exact rejected pair. Related equalities
+/// are bounded explicit aliases, not a proof-search result or proposed fix.
+pub(super) struct ChildArgumentTrace {
+    child: String,
+    index: usize,
+    actual: Pointer,
+    required: Pointer,
+    related: Vec<Pointer>,
+}
+
+impl ChildArgumentTrace {
+    pub(super) fn from_refusal(
+        refusal: &crate::kernel::ResourceRewriteRefusal,
+        assumptions: &crate::kernel::PureFactContext,
+    ) -> Option<Self> {
+        let crate::kernel::ResourceRewriteRefusal::ChildArgumentNotEstablished {
+            child,
+            index,
+            actual,
+            required,
+        } = refusal
+        else {
+            return None;
+        };
+        let (
+            Some(crate::kernel::CValue::Pointer(actual)),
+            Some(crate::kernel::CValue::Pointer(required)),
+        ) = (actual.as_c_value(), required.as_c_value())
+        else {
+            return None;
+        };
+        Some(Self {
+            child: child.clone(),
+            index: *index,
+            actual: actual.pointer().clone(),
+            required: required.pointer().clone(),
+            related: assumptions
+                .exact_pointer_aliases(actual.pointer())
+                .take(4)
+                .cloned()
+                .collect(),
+        })
+    }
+
+    pub(super) fn append_to(&self, trace: &mut String, labels: &mut SnapshotLabels) {
+        let comparison = self.render(labels);
+        if trace.len() + comparison.len() > MAX_RENDER_BYTES {
+            *trace = trace_text(trace, MAX_RENDER_BYTES.saturating_sub(comparison.len()));
+        }
+        trace.push_str(&comparison);
+    }
+
+    pub(super) fn render(&self, labels: &mut SnapshotLabels) -> String {
+        let actual = labels.pointer_value_name(&self.actual);
+        let required = labels.pointer_value_name(&self.required);
+        let mut output = format!(
+            "\n\n  failed child argument comparison (checked):\n    child `{}`, argument {}\n    supplied: {actual}\n    required: {required}\n    equality was not established",
+            trace_text(&self.child, 128),
+            self.index + 1
+        );
+        for pointer in [&self.actual, &self.required] {
+            append_pointer_definition(&mut output, pointer, labels);
+        }
+        if !self.related.is_empty() {
+            output.push_str(
+                "\n    potentially relevant known equalities (selected by shared supplied value):",
+            );
+            for pointer in &self.related {
+                let name = labels.pointer_value_name(pointer);
+                output.push_str(&format!("\n      {actual} == {name}"));
+                append_pointer_definition(&mut output, pointer, labels);
+            }
+            output.push_str(
+                "\n    selection is diagnostic guidance, not an explanation of why equality failed",
+            );
+        }
+        output.push_str("\n    defining snapshots identify original reads; different snapshots alone do not establish unequal values");
+        output
+    }
+}
+
+fn pointer_definition(pointer: &Pointer) -> Option<Bitvector32Term> {
+    crate::kernel::logical_pointer_read_term(pointer).or_else(|| {
+        let read = pointer.as_loaded_value()?;
+        (read.displacement == crate::kernel::PointerOffsetTerm::Constant(0)).then(|| {
+            Bitvector32Term::MemoryLoad(
+                read.defining_memory,
+                Box::new(read.defining_address),
+                crate::kernel::LoadKind::Bits32,
+            )
+        })
+    })
+}
+
+fn append_pointer_definition(output: &mut String, pointer: &Pointer, labels: &mut SnapshotLabels) {
+    if pointer == &Pointer::null() {
+        output.push_str(&format!(
+            "\n      {}: null pointer (0)",
+            labels.pointer_value_name(pointer)
+        ));
+    }
+    if let Some(Bitvector32Term::MemoryLoad(memory, address, _)) = pointer_definition(pointer) {
+        let name = labels.pointer_value_name(pointer);
+        let snapshot = labels.snapshot_name(memory.memory());
+        let address = labels.pointer_value_name(&address);
+        output.push_str(&format!(
+            "\n      {name}: defining pointer read at {snapshot}, address {address}"
+        ));
+    }
+}
+
 /// The generated equation connecting a canonical load value to its raw
 /// memory read is checker bookkeeping, not an additional surface premise.
 /// The surface condition that caused the read is reported separately.
@@ -923,6 +1034,18 @@ fn append_added_facts(
         });
         if let Some(source) = source {
             output.push_str(&format!("\n{indent}adds: {}", trace_text(&source, 240)));
+            if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) =
+                &fact.kernel
+                && (pointer_definition(left).is_some() || pointer_definition(right).is_some())
+            {
+                let left_name = labels.pointer_value_name(left);
+                let right_name = labels.pointer_value_name(right);
+                output.push_str(&format!(
+                    "\n{indent}  checked values: {left_name} == {right_name}"
+                ));
+                append_pointer_definition(output, left, labels);
+                append_pointer_definition(output, right, labels);
+            }
         } else if let Some(surface) = &fact.surface_view {
             output.push_str(&format!(
                 "\n{indent}adds (surface view): {}",
@@ -954,6 +1077,68 @@ fn trace_text(text: &str, max_bytes: usize) -> String {
 mod tests {
     use super::*;
     use crate::kernel::{Bitvector32Term, CMemory, Pointer, PointerBlock, PointerOffsetTerm};
+
+    // Identical source spellings must not hide distinct reads, and the
+    // refusal must reuse the same value labels as the preceding facts.
+    #[test]
+    fn child_comparison_keeps_read_values_distinct_from_source_spelling() {
+        let address = Pointer::symbolic(crate::kernel::Variable(700_001));
+        let first = crate::kernel::intern_c_memory(CMemory::new());
+        let second = crate::kernel::intern_c_memory(CMemory::new().store(
+            address.clone(),
+            crate::kernel::CValue::Int32(Bitvector32Term::Constant(1)),
+        ));
+        let a = Pointer::loaded_value(&first, &address);
+        let b = Pointer::loaded_value(&second, &address);
+        let rid = Pointer::symbolic(crate::kernel::Variable(700_002));
+        let facts = [a.clone(), b.clone()].map(|value| TraceFact {
+            kernel: Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(value, rid.clone()),
+                true,
+            ),
+            source: Some("p->left == rid".into()),
+            surface_view: None,
+        });
+        let mut labels = SnapshotLabels::default();
+        let mut report = String::new();
+        append_added_facts(&mut report, &facts, &mut labels, "  ");
+        assert!(
+            report.contains("checked values: value#1 == value#2"),
+            "{report}"
+        );
+        assert!(
+            report.contains("checked values: value#4 == value#2"),
+            "{report}"
+        );
+        assert!(report.contains("snapshot#1"), "{report}");
+        assert!(report.contains("snapshot#2"), "{report}");
+        let comparison = ChildArgumentTrace {
+            child: "sibling".into(),
+            index: 0,
+            actual: rid,
+            required: b,
+            related: vec![a],
+        }
+        .render(&mut labels);
+        assert!(comparison.contains("supplied: value#2"), "{comparison}");
+        assert!(comparison.contains("required: value#4"), "{comparison}");
+        assert!(comparison.contains("value#2 == value#1"), "{comparison}");
+        assert!(comparison.contains("potentially relevant"));
+        assert!(comparison.contains("different snapshots alone do not establish unequal values"));
+        assert!(!comparison.contains("Missing:"));
+        let comparison = ChildArgumentTrace {
+            child: "λ".repeat(MAX_RENDER_BYTES),
+            index: 0,
+            actual: Pointer::null(),
+            required: Pointer::null(),
+            related: vec![],
+        };
+        let mut long = "λ".repeat(MAX_RENDER_BYTES);
+        comparison.append_to(&mut long, &mut labels);
+        assert!(long.len() <= MAX_RENDER_BYTES);
+        assert!(long.contains("failed child argument comparison"));
+        assert!(long.contains("null pointer (0)"));
+    }
 
     #[test]
     fn trace_header_uses_resolved_source_tactic_location() {

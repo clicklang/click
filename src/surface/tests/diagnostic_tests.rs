@@ -2049,3 +2049,61 @@ fn implicit_theorem_search_is_timed_without_a_written_tactic_path() {
         VerificationEvent::ProofClaimFinished { claim, .. } if claim == "implicit.ensures_0"
     )));
 }
+
+/// A real child overwrite must report the exact rejected slot and null
+/// argument without suggesting that a missing equality is a verifier bug.
+#[test]
+fn child_argument_trace_reports_the_rejected_pair() {
+    let c = "struct node { struct node *left; struct node *right; }; void f(struct node *p) { p->right = 0; }";
+    let source = r#"
+verifying "f.c";
+spec enum Tree { Empty, Node(struct node*, Tree, Tree) }
+resource tree(p: struct node*) {
+    field model: Tree;
+    match model {
+        Tree::Empty => { fact p == 0; },
+        Tree::Node(id, lm, rm) => {
+            owns p->left; owns p->right;
+            owns left: tree(p->left); owns right: tree(p->right);
+            fact p != 0; fact p == id;
+            fact left.model == lm; fact right.model == rm;
+        },
+    }
+}
+void f(struct node* p) {
+    owns t: tree(p);
+    requires t.model != Tree::Empty;
+    ensures t.model == old(t.model);
+} by {
+    match t.model {
+        Tree::Empty => { contradiction(t.model == Tree::Empty); },
+        Tree::Node(id, lm, rm) => {
+            let { left: l, right: r } = unfold(t);
+            step();
+            let t = fold(tree(id), { model: Tree::Node(id, lm, rm) }, { left: l, right: r });
+            execute(); simp();
+        },
+    }
+}
+"#;
+    let ordinary = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+    assert!(
+        ordinary
+            .message()
+            .contains("argument 1 equality is not established")
+    );
+    assert!(!ordinary.message().contains("value#"));
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+        let report = error.trace_context_report().unwrap();
+        assert!(report.contains("child `right`, argument 1"), "{report}");
+        assert!(report.contains("supplied: value#"), "{report}");
+        assert!(report.contains("required: value#"), "{report}");
+        assert!(report.contains("null pointer (0)"), "{report}");
+        assert!(
+            report.contains("defining pointer read at snapshot#"),
+            "{report}"
+        );
+        assert!(!report.contains("Missing:"), "{report}");
+    });
+}

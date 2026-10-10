@@ -22374,6 +22374,12 @@ fn witness_origin_word<'a>(fact: &'a SpecProposition, witness: &str) -> Option<&
 pub enum ResourceRewriteRefusal {
     Message(&'static str),
     OwnedMessage(String),
+    ChildArgumentNotEstablished {
+        child: String,
+        index: usize,
+        actual: Box<AlgebraicValue>,
+        required: Box<AlgebraicValue>,
+    },
     /// `fold` could not establish body fact `index` (zero-based, in
     /// declaration order) of the `count` facts in `arm`, or of the
     /// definition's own facts when `arm` is `None`.
@@ -22391,6 +22397,10 @@ impl ResourceRewriteRefusal {
         match self {
             ResourceRewriteRefusal::Message(message) => (*message).to_string(),
             ResourceRewriteRefusal::OwnedMessage(message) => message.clone(),
+            ResourceRewriteRefusal::ChildArgumentNotEstablished { child, index, .. } => format!(
+                "child `{child}` is not proven to have the arguments the parent body gives it: argument {} equality is not established",
+                index + 1
+            ),
             ResourceRewriteRefusal::BodyFactNotEstablished {
                 arm,
                 index,
@@ -22425,6 +22435,9 @@ impl From<ResourceRewriteRefusal> for &'static str {
         match refusal {
             ResourceRewriteRefusal::Message(message) => message,
             ResourceRewriteRefusal::OwnedMessage(_) => "resource rewrite refused",
+            ResourceRewriteRefusal::ChildArgumentNotEstablished { .. } => {
+                "resource child argument equality is not established"
+            }
             ResourceRewriteRefusal::BodyFactNotEstablished { .. } => {
                 "fold requires the instance body facts for the proposed fields"
             }
@@ -23514,17 +23527,24 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                     child.name, child_instance.name, actual.name
                 )));
             }
-            if actual.arguments.len() != child_instance.arguments.len()
-                || !actual
-                    .arguments
-                    .iter()
-                    .zip(child_instance.arguments.iter())
-                    .all(|(a, b)| crate::kernel::resource_arguments_proven_equal(a, b, assumptions))
+            if actual.arguments.len() != child_instance.arguments.len() {
+                return Err("resource child argument count mismatch".into());
+            }
+            if let Some((index, (a, b))) = actual
+                .arguments
+                .iter()
+                .zip(child_instance.arguments.iter())
+                .enumerate()
+                .find(|(_, (a, b))| {
+                    !crate::kernel::resource_arguments_proven_equal(a, b, assumptions)
+                })
             {
-                return Err(ResourceRewriteRefusal::OwnedMessage(format!(
-                    "child `{}` is not proven to have the arguments the parent body gives it",
-                    child.name
-                )));
+                return Err(ResourceRewriteRefusal::ChildArgumentNotEstablished {
+                    child: child.name.clone(),
+                    index,
+                    actual: Box::new(a.clone()),
+                    required: Box::new(b.clone()),
+                });
             }
             if let Some(((field, _), _)) = actual
                 .schema

@@ -40,6 +40,7 @@ const MAX_SNAPSHOT_LABELS: usize = 32;
 #[derive(Default)]
 pub(crate) struct SnapshotLabels {
     memories: Vec<CMemory>,
+    pointer_values: HashMap<Pointer, usize>,
     source_memories: Vec<(CMemory, String, std::rc::Rc<NamingTables>)>,
     source_names: HashMap<Variable, String>,
     source_types: HashMap<Variable, crate::kernel::CType>,
@@ -50,6 +51,19 @@ pub(crate) struct SnapshotLabels {
 }
 
 impl SnapshotLabels {
+    /// Stable report-local identities, distinct from source spellings.
+    pub(crate) fn pointer_value_name(&mut self, pointer: &Pointer) -> String {
+        if let Some(index) = self.pointer_values.get(pointer) {
+            return format!("value#{index}");
+        }
+        if self.pointer_values.len() >= 128 {
+            return "<value identity omitted: report limit>".into();
+        }
+        let index = self.pointer_values.len() + 1;
+        self.pointer_values.insert(pointer.clone(), index);
+        format!("value#{index}")
+    }
+
     /// Labels that read a scalar the tables name as that name, and an
     /// address inside an object the tables name as its source spelling.
     pub(crate) fn naming(

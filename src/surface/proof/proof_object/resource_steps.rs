@@ -576,7 +576,17 @@ impl<'a> Proof<'a> {
             unfold,
             selected_children.as_deref(),
         )
-        .map_err(|refusal| self.step_error(refusal.describe()))?;
+        .map_err(|refusal| {
+            let comparison = if crate::surface::proof_trace::enabled_for(self.claim_label()) {
+                crate::surface::proof_trace::ChildArgumentTrace::from_refusal(
+                    &refusal,
+                    self.facts().assumptions(),
+                )
+            } else {
+                None
+            };
+            self.step_error_with_comparison(refusal.describe(), comparison)
+        })?;
         crate::kernel::model_fields::register_instance_spelling(instance.identity(), &binding.name);
         let clause_presentations = if unfold {
             let source_bindings = rewrite.body_clauses.first().and_then(|clause| {

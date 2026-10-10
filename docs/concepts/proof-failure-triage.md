@@ -40,6 +40,21 @@ the written source and target and name stores that may have changed the cell.
 An explicitly requested `--trace-proof` can additionally show bounded internal
 facts and snapshot identities for debugging.
 
+For pointer equalities involving retained read definitions, the trace adds
+stable report-local `value#N` labels alongside the source expression and names
+the defining read's snapshot and address. Equal source spellings can therefore
+be distinguished when they denote different internal values. Different labels
+identify different terms, not necessarily unequal values; a defining snapshot
+describes the original read, not a claim that its value is stale.
+
+A failed pointer-valued resource child argument comparison reports the exact
+supplied and required values and the argument position. Up to four explicit
+equalities sharing the supplied value may be shown as potentially relevant
+evidence. That selection is diagnostic guidance, not a claim about the cause
+of failure or a prescription for the missing proof. The comparison uses the
+same value and snapshot labels as the preceding trace facts. These details
+are diagnostic only and do not add equalities or change proof checking.
+
 ## Three strikes during example development
 
 When developing an example and Click together, repeated difficulty writing a
@@ -57,7 +72,9 @@ local proof tweaking and investigate the verifier or proof interface.
 3. On the third, pause the example at that obligation and investigate using
    the trace. Reduce the failure and ask what would make the intended reasoning
    straightforward to express and check. Do not proceed directly to a fourth
-   spelling or tactic variation.
+   spelling or tactic variation. Normally bring the evidence and proposed
+   response to the user at this point, rather than independently redesigning
+   the tooling.
 
 Do not conclude that repeated rejection indicates a verifier defect before
 trying tracing. If the trace cannot explain the relevant comparison or why an
@@ -78,6 +95,14 @@ below to distinguish a mistaken claim or missing premise from poor diagnostics,
 an awkward proof interface, missing functionality, or an integration bug. An
 explicit proof that eventually works can still expose avoidable usability
 costs. Look for a general pattern, rather than a special case for the example.
+
+Tooling improvements require discussion and user approval before implementation.
+This includes choosing new diagnostic content, trace presentation, or a proof
+workflow. Reproduced bugs in existing behavior may be fixed autonomously; that
+permission does not extend to unapproved tooling design changes merely because
+they arose during debugging. Investigate and prepare a concrete proposal first.
+If the user has already approved the specific improvement, proceed within that
+scope without asking again.
 
 Before resuming, record the obligation, attempted approaches, what the trace and
 reduced case show, and the chosen response. That response may be a justified proof
