@@ -619,12 +619,17 @@ reinterpretation remain refused. Concrete byte stores use the shared byte
 representation rules; on the selected target, four checked stores can initialize
 an unwritten declared uint32, while partial stores cannot. Native contract
 casts such as `result == (uint8*)p` express pointer identity across access
-types without granting authority. Writable-span construction remains next;
-supported `const` and `constexpr` native integer locals now use shared scalar
+types without granting authority. Dynamic-extent `std::span<std::byte>` now
+retains authenticated standard-byte template arguments, including their
+positions and locked declaration metadata even when fields do not mention
+the enum. Other enum template arguments remain refused. The catalog contract
+for `std::as_writable_bytes(std::span<int>)` preserves the backing address and
+returns four times the native element count, without granting backing authority.
+Supported `const` and `constexpr` native integer locals now use shared scalar
 construction: allocate, initialize once, and freeze the object while retaining
 its address and lifetime. Ordinary assignment and alias writes cannot mutate
 read-only storage. Helper-result initializers use checked mutable captures and
-then initialize the distinct source object. Schema 58 requires refreshing older
+then initialize the distinct source object. Schema 59 requires refreshing older
 locks. Const aggregate/array locals and general constant evaluation remain
 outside this bounded slice.
 
@@ -1544,7 +1549,16 @@ accessor for its field path, so an expanded proof names no private field
 either.
 
 The catalog covers `std::span<int>`'s `size`, `data`, `front`, `back`,
-`operator[]` and `first`. Element accessors require an index inside the view,
+`operator[]` and `first`, plus dynamic-extent
+`std::as_writable_bytes(std::span<int>)`. The latter returns a byte view of the
+same storage: its data is `(uint8*)std_span_data(input)` and its native uint64
+length is `std_span_size(input) * 4u64`. It copies no backing bytes, requires no
+backing ownership, and establishes no backing initialization or write permission.
+The integer-to-byte pointer cast preserves allocation identity and lifetime.
+The const-reference caller has ordinary, expanded and retained proof coverage.
+The corresponding by-value caller currently encounters a pointer snapshot proof
+gap tracked in [the bug backlog](https://github.com/clicklang/click/blob/master/bugs/byte-span-by-value-pointer-snapshot.md).
+Element accessors require an index inside the view,
 as the standard does, and form an address without reading it. Bitcoin Core's
 unchanged `SpanPopBack` verifies against these contracts
 (`tests/bitcoin_core_money_range.rs`). Proofs assume a C++ standard library

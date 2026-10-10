@@ -220,10 +220,12 @@ authorities.
   parameter retains the ABI stride for indexed field loads and stores.
 - `mdtests/struct_by_value_embedded_copy.md`: by-value structs recursively copy
   fields from an embedded struct into fresh address-backed storage.
-- `mdtests/struct_by_value_embedded_array_copy.md`: by-value structs flatten
-  one-dimensional embedded-struct arrays into typed leaf-field copies.
-- `mdtests/struct_by_value_embedded_array_multidim_copy.md`: by-value structs
-  flatten multidimensional embedded-struct arrays row-major with ABI strides.
+- `mdtests/struct_by_value_embedded_array_copy.md` and
+  `mdtests/struct_by_value_embedded_array_multidim_copy.md`: partial embedded
+  arrays cannot acquire initialized fields through by-value argument binding.
+- `mdtests/struct_by_value_embedded_array_initialized_copy.md`: fully initialized
+  one- and two-dimensional embedded arrays retain ABI stride and independent
+  copied values.
 - `mdtests/struct_field_address.md`: addresses of direct and nested scalar
   struct fields preserve ABI offsets and update the selected leaf through the
   resulting pointer.

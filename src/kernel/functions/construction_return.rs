@@ -243,7 +243,8 @@ pub(super) fn summary_result(
     ))
 }
 
-/// Only a body-certified construction rule justifies these initialized fields.
+/// A certified construction rule, or an explicit external construction-return
+/// assumption, justifies these initialized fields. Ordinary owns clauses do not.
 /// The call's existing effect transition forgets their old values first.
 pub(super) fn initialize_summary(state: &mut CState, entry: &CState) {
     let selected = entry
