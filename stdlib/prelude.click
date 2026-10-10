@@ -997,7 +997,7 @@ extern uint8* memset(uint8 destination[], int32 value, int32 bytes) {
     });
 }
 
-extern int32 strlen(uint8 bytes[]) {
+extern int32 strlen(const uint8* bytes) {
     requires cstr_readable(bytes);
     ensures 0 <= result;
     ensures viewable(bytes[0..result + 1]);

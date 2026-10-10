@@ -67,6 +67,18 @@ impl CTarget {
         }
     }
 
+    /// Whether some supported target gives plain `char` signed semantics.
+    pub const fn any_plain_char_is_signed() -> bool {
+        let mut index = 0;
+        while index < Self::ALL.len() {
+            if Self::ALL[index].plain_char_is_signed() {
+                return true;
+            }
+            index += 1;
+        }
+        false
+    }
+
     pub const fn plain_char_is_signed(self) -> bool {
         match self {
             Self::X86_64LinuxKernel | Self::X86_64LinuxUserspace => false,

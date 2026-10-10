@@ -1443,7 +1443,7 @@ fn validate_algebraic_proposition_one(
                         )));
                     }
                     (ClickType::C(expected), Some(ClickType::C(actual)))
-                        if !click_types_compatible(actual, *expected) =>
+                        if !click_argument_types_compatible(actual, *expected) =>
                     {
                         return Err(ClickError::new(format!(
                             "predicate `{name}` argument {index} expects {}, got {} in {context}",
