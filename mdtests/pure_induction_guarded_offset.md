@@ -1,7 +1,7 @@
 # Numeric induction preserves guarded index expressions
 
 The hypothesis keeps every requirement at its smaller argument. Its guarded
-addition uses those premises during lowering and expanded proof replay.
+addition uses those premises during lowering and expanded proof reverification.
 
 ```click
 function guarded_countdown(n: int32) -> int32
