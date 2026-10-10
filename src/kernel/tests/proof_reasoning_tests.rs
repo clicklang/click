@@ -10022,6 +10022,9 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
             ConditionTerm::Bitvector64UnsignedLessThan(a, b) => {
                 a.uint64_as_const() < b.uint64_as_const()
             }
+            ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b) => {
+                a.uint64_as_const() >= b.uint64_as_const()
+            }
             _ => panic!("unexpected guard or equality"),
         };
         actual == *expected
@@ -10033,6 +10036,7 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
         "uint64_divide_to_integer",
         "uint64_remainder_to_integer",
         "uint64_less_than_to_integer",
+        "uint64_not_greater_equal_of_less_than",
         "uint64_less_equal_to_integer",
         "uint64_less_equal_of_to_integer",
     ] {
@@ -10070,7 +10074,9 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
                     "uint64_subtract_to_integer" => a.checked_sub(b).is_some(),
                     "uint64_multiply_to_integer" => a.checked_mul(b).is_some(),
                     "uint64_divide_to_integer" | "uint64_remainder_to_integer" => b != 0,
-                    "uint64_less_than_to_integer" => a < b,
+                    "uint64_less_than_to_integer" | "uint64_not_greater_equal_of_less_than" => {
+                        a < b
+                    }
                     _ => a <= b,
                 };
                 assert_eq!(truth(guard), allowed, "{name}/{a}/{b}");
@@ -10589,4 +10595,97 @@ fn native_loadability_queries_do_not_visit_unrelated_addresses() {
             expected = Some(work);
         }
     }
+}
+
+#[test]
+fn unsigned_u16_packing_bridges_match_disjoint_fields_and_retain_both_bounds() {
+    use num_bigint::BigInt;
+    fn word(term: &Bitvector32Term) -> u64 {
+        match term {
+            Bitvector32Term::Constant(value) => u64::from(*value),
+            Bitvector32Term::UInt64Constant(value) => *value,
+            Bitvector32Term::Int64Constant(value) => *value as u64,
+            Bitvector32Term::BitwiseOr(a, b) | Bitvector32Term::UInt64BitwiseOr(a, b) => {
+                word(a) | word(b)
+            }
+            Bitvector32Term::ShiftLeft(a, b) => {
+                u64::from((word(a) as u32).wrapping_shl(word(b) as u32))
+            }
+            Bitvector32Term::UInt64ShiftLeft(a, b) => word(a).wrapping_shl(word(b) as u32),
+            _ => panic!("unexpected native packing term"),
+        }
+    }
+    fn observed(term: &IntegerTerm) -> BigInt {
+        match term {
+            IntegerTerm::Constant(value) => value.clone(),
+            IntegerTerm::Machine(value) => BigInt::from(match value.ty() {
+                MachineIntegerType::UInt32 => word(value.value()),
+                MachineIntegerType::UInt64 => word(value.value()),
+                _ => panic!("unexpected observation"),
+            }),
+            IntegerTerm::Add(a, b) => observed(a) + observed(b),
+            IntegerTerm::Multiply(a, b) => observed(a) * observed(b),
+            _ => panic!("unexpected packing term"),
+        }
+    }
+    for ty in [MachineIntegerType::UInt32, MachineIntegerType::UInt64] {
+        let word = |value| match ty {
+            MachineIntegerType::UInt32 => Bitvector32Term::Constant(value as u32),
+            MachineIntegerType::UInt64 => Bitvector32Term::UInt64Constant(value),
+            _ => unreachable!(),
+        };
+        let maximum = if ty == MachineIntegerType::UInt32 {
+            u32::MAX as u64
+        } else {
+            u64::MAX
+        };
+        for low in [0, 1, 255, 256, 65535, 65536, maximum] {
+            for high in [0, 1, 255, 256, 65535, 65536, maximum] {
+                let theorem =
+                    prove_unsigned_pack_u16_to_integer(ty, word(low), word(high)).unwrap();
+                let Proposition::Implies(low_guard, rest) = theorem.proposition() else {
+                    panic!("missing low bound");
+                };
+                let Proposition::Implies(high_guard, conclusion) = rest.as_ref() else {
+                    panic!("missing high bound");
+                };
+                assert_eq!(PureFactContext::new().proves_exact(low_guard), low <= 65535);
+                assert_eq!(
+                    PureFactContext::new().proves_exact(high_guard),
+                    high <= 65535
+                );
+                let Proposition::ConditionIs(ConditionTerm::IntegerEqual(packed, exact), true) =
+                    conclusion.as_ref()
+                else {
+                    panic!("missing observation equality");
+                };
+                let expected = match ty {
+                    MachineIntegerType::UInt32 => {
+                        u64::from((low as u32) | (high as u32).wrapping_shl(16))
+                    }
+                    MachineIntegerType::UInt64 => low | high.wrapping_shl(16),
+                    _ => unreachable!(),
+                };
+                assert_eq!(observed(packed), BigInt::from(expected));
+                assert_eq!(
+                    observed(exact),
+                    BigInt::from(low) + BigInt::from(65536) * BigInt::from(high)
+                );
+                if low <= 65535 && high <= 65535 {
+                    assert_eq!(observed(packed), observed(exact));
+                }
+            }
+        }
+    }
+    assert!(
+        prove_unsigned_pack_u16_to_integer(
+            MachineIntegerType::Int32,
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(0)
+        )
+        .is_none()
+    );
+    // Overlapping fields and a wrapping high field disprove the unguarded rule.
+    assert_ne!(65536u32 | (1u32 << 16), 65536u32 + 65536u32);
+    assert_ne!(u64::from(65536u32.wrapping_shl(16)), 65536u64 * 65536);
 }

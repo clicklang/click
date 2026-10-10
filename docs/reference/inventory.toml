@@ -3489,3 +3489,15 @@ path = "reference/library/index.md#uint32_divide_to_integer"
 [[item]]
 id = "stdlib.theorem.uint32_remainder_to_integer"
 path = "reference/library/index.md#uint32_remainder_to_integer"
+
+[[item]]
+id = "stdlib.theorem.uint32_pack_u16_to_integer"
+path = "reference/library/index.md#uint32_pack_u16_to_integer"
+
+[[item]]
+id = "stdlib.theorem.uint64_pack_u16_to_integer"
+path = "reference/library/index.md#uint64_pack_u16_to_integer"
+
+[[item]]
+id = "stdlib.theorem.uint64_not_greater_equal_of_less_than"
+path = "reference/library/index.md#uint64_not_greater_equal_of_less_than"

@@ -68,7 +68,10 @@ checks the ordered weighted update under explicit index and nonnegative
 representative bounds. Connecting those relations to the arbitrary-length
 computation’s nested loops remains incomplete.
 The unchanged Rust one-byte computation proves both fields equal the shared
-specification on the entry byte snapshot. The specification is not yet connected
+specification on the entry byte snapshot.
+The independently locked, unchanged zlib one-byte path proves its packed result
+equal the same specification and preserves its input byte; its empty path also
+verifies. General-length C correctness and C/Rust result equality remain pending. The specification is not yet connected
 to either implementation’s general computation.
 
 Composition regressions cover record and scalar-array storage starts, shared
@@ -109,7 +112,9 @@ its unchanged optimized path against the same specification, and derive C/Rust
 result equality. Match seed/reset and null-buffer behavior explicitly.
 
 The [unchanged pinned zlib trial](../design/charon-trial/zlib/README.md) imports
-all selected bodies and proves the canonical empty-input case offline.
+all selected bodies and proves the canonical empty-input and one-byte cases
+offline; the one-byte result satisfies the shared specification and preserves
+the byte. Its null reset path verifies for any seed and nonunit length.
 Expression updates preserve consumed values, loop exit-side effects, native
 unsigned wrap, and checked pointer strides; nested `DO16` blocks also import.
 Connect the original nonempty computation to the common specification, then

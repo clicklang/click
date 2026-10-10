@@ -1402,6 +1402,47 @@ Strict order of the exact Integer observations implies native uint64 strict orde
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint32_pack_u16_to_integer`
+
+```click
+theorem uint32_pack_u16_to_integer(low: uint32, high: uint32) {
+    requires low <= 65535u32;
+    requires high <= 65535u32;
+    ensures to_integer(low | (high << 16)) == to_integer(low) + 65536 * to_integer(high);
+}
+```
+
+Two unsigned 16-bit fields have this exact packed Integer value when both native bounds hold.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_pack_u16_to_integer`
+
+```click
+theorem uint64_pack_u16_to_integer(low: uint64, high: uint64) {
+    requires low <= 65535u64;
+    requires high <= 65535u64;
+    ensures to_integer(low | (high << 16)) == to_integer(low) + 65536 * to_integer(high);
+}
+```
+
+Two unsigned 16-bit fields have this exact packed Integer value when both native bounds hold.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_not_greater_equal_of_less_than`
+
+```click
+theorem uint64_not_greater_equal_of_less_than(left: uint64, right: uint64) {
+    requires left < right;
+    ensures not (left >= right);
+}
+```
+
+A strict unsigned order excludes the opposite greater-or-equal branch.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `uint64_equal_of_to_integer`
 
 ```click

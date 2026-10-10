@@ -9146,6 +9146,61 @@ pub fn prove_int32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term)
 /// remainder exclude zero in both evaluation domains, but impose no bound on
 /// the dividend. These laws
 /// describe unsigned machine arithmetic, not signed overflow definedness.
+/// Exact mathematical observation of two unsigned 16-bit fields packed
+/// into a 32- or 64-bit word. Both bounds are necessary: the fields must be
+/// disjoint, and the high shift must preserve all bits.
+pub fn prove_unsigned_pack_u16_to_integer(
+    ty: MachineIntegerType,
+    low: Bitvector32Term,
+    high: Bitvector32Term,
+) -> Option<Theorem> {
+    let (packed, low_bound, high_bound) = match ty {
+        MachineIntegerType::UInt32 => (
+            Bitvector32Term::BitwiseOr(
+                low.clone().into(),
+                Bitvector32Term::ShiftLeft(
+                    high.clone().into(),
+                    Bitvector32Term::Constant(16).into(),
+                )
+                .into(),
+            ),
+            ConditionTerm::unsigned_less_equal(low.clone(), Bitvector32Term::Constant(65535)),
+            ConditionTerm::unsigned_less_equal(high.clone(), Bitvector32Term::Constant(65535)),
+        ),
+        MachineIntegerType::UInt64 => (
+            Bitvector32Term::uint64_bitwise_or(
+                low.clone(),
+                Bitvector32Term::uint64_shift_left(
+                    high.clone(),
+                    Bitvector32Term::Int64Constant(16),
+                ),
+            ),
+            ConditionTerm::uint64_less_equal(low.clone(), Bitvector32Term::UInt64Constant(65535)),
+            ConditionTerm::uint64_less_equal(high.clone(), Bitvector32Term::UInt64Constant(65535)),
+        ),
+        _ => return None,
+    };
+    let observe = |value| IntegerTerm::from_machine(ty, value);
+    let exact = IntegerTerm::Add(
+        observe(low)?.into(),
+        IntegerTerm::Multiply(
+            IntegerTerm::constant_i64(65536).into(),
+            observe(high)?.into(),
+        )
+        .into(),
+    );
+    Some(Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(low_bound, true)),
+        Box::new(Proposition::Implies(
+            Box::new(Proposition::ConditionIs(high_bound, true)),
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::integer_equal(observe(packed)?, exact),
+                true,
+            )),
+        )),
+    )))
+}
+
 pub fn prove_uint64_integer_bridge(
     name: &str,
     left: Bitvector32Term,
@@ -9171,6 +9226,9 @@ pub fn prove_uint64_integer_bridge(
             right,
         ));
     }
+    if name == "uint64_pack_u16_to_integer" {
+        return prove_unsigned_pack_u16_to_integer(MachineIntegerType::UInt64, left, right);
+    }
     let observe = |value| {
         IntegerTerm::from_machine(MachineIntegerType::UInt64, value)
             .expect("every uint64 bit pattern has an unsigned Integer interpretation")
@@ -9194,6 +9252,20 @@ pub fn prove_uint64_integer_bridge(
         return Some(Theorem::new(Proposition::Implies(
             Box::new(premise),
             Box::new(conclusion),
+        )));
+    }
+    // Unsigned total order: strict less and greater-or-equal are
+    // complementary evaluations of the same two 64-bit patterns.
+    if name == "uint64_not_greater_equal_of_less_than" {
+        return Some(Theorem::new(Proposition::Implies(
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::uint64_less_than(left.clone(), right.clone()),
+                true,
+            )),
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::Bitvector64UnsignedGreaterEqual(left.into(), right.into()),
+                false,
+            )),
         )));
     }
     let maximum = IntegerTerm::constant(num_bigint::BigInt::from(u64::MAX));
