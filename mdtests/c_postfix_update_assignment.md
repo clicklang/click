@@ -1,8 +1,7 @@
-# C update expressions are rejected
+# Postfix update assignment consumes the original value
 
-This documents the update-sugar boundary. C0 accepts `i++` and compound
-assignment as standalone statements, but does not model full C expression
-side effects such as using the old value of `i++` inside another assignment.
+The unchanged C example now verifies that assigning `i++` captures the old
+value while the update still occurs.
 
 ```c filename=statement_update_rejects_expression.c
 int32 statement_update_rejects_expression() {
@@ -23,5 +22,5 @@ int32 statement_update_rejects_expression() {
 ```
 
 ```expect
-fail: expected `;`, got `++`
+pass
 ```

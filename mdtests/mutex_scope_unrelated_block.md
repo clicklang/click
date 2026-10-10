@@ -1,8 +1,9 @@
-# Mutex scope unrelated: standalone block limitation
+# A standalone block preserves an unrelated mutex
 
-This unchanged synthetic C example records a frontend limitation: standalone
-compound statements are not yet supported. It does not demonstrate the mutex
-lifetime check; the kernel scope-exit tests cover that boundary.
+The unchanged C example now parses its standalone compound statement and
+verifies that constructing and destroying the inner mutex preserves the
+outer mutex for its later destruction.
+Kernel scope-exit tests independently cover lifetime rejection.
 
 ```c filename=mutex_scope_unrelated.c
 #include <pthread.h>
@@ -29,5 +30,5 @@ int32 run() { ensures result == 0; } by { execute(); simp(); }
 ```
 
 ```expect
-fail: expected statement, got `{`
+pass
 ```
