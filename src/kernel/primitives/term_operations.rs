@@ -125,6 +125,42 @@ pub(in crate::kernel) fn int64_subtract_interval_fits(
     )
 }
 
+/// Decides a signed `int64` order from its operands' root ranges alone, when
+/// every pair of values in those ranges gives the same answer: `cast64(x) >
+/// 9223372036854775807` is false for an `int` `x`, as is `t > INT64_MAX` for
+/// any `t`. A root without a narrower range has the whole `int64` range.
+fn int64_signed_order_by_width(
+    left: &Bitvector32Term,
+    right: &Bitvector32Term,
+    holds: impl Fn(i64, i64) -> bool,
+) -> Option<bool> {
+    let whole = (i64::MIN, i64::MAX);
+    let (left_lower, left_upper) = left.int64_width_interval().unwrap_or(whole);
+    let (right_lower, right_upper) = right.int64_width_interval().unwrap_or(whole);
+    // The order is monotone in each operand, so it holds for every pair iff
+    // it holds at the corner least favourable to it, and fails for every
+    // pair iff it fails at the most favourable one. For `<` and `<=` the
+    // least favourable corner is the left maximum against the right minimum.
+    let (worst, best) = if holds(i64::MIN, i64::MAX) {
+        (
+            holds(left_upper, right_lower),
+            holds(left_lower, right_upper),
+        )
+    } else {
+        (
+            holds(left_lower, right_upper),
+            holds(left_upper, right_lower),
+        )
+    };
+    if worst {
+        Some(true)
+    } else if !best {
+        Some(false)
+    } else {
+        None
+    }
+}
+
 fn int64_interval_fits(lower: i128, upper: i128) -> bool {
     lower >= i128::from(i64::MIN) && upper <= i128::from(i64::MAX)
 }
@@ -2072,23 +2108,23 @@ impl ConditionTerm {
     }
 
     pub(crate) fn int64_signed_less_than(left: Bitvector32Term, right: Bitvector32Term) -> Self {
-        match (left.int64_as_const(), right.int64_as_const()) {
-            (Some(left), Some(right)) => Self::Constant(left < right),
-            _ => Self::Bitvector64SignedLessThan(Box::new(left), Box::new(right)),
+        match int64_signed_order_by_width(&left, &right, |left, right| left < right) {
+            Some(value) => Self::Constant(value),
+            None => Self::Bitvector64SignedLessThan(Box::new(left), Box::new(right)),
         }
     }
 
     pub(crate) fn int64_signed_less_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
-        match (left.int64_as_const(), right.int64_as_const()) {
-            (Some(left), Some(right)) => Self::Constant(left <= right),
-            _ => Self::Bitvector64SignedLessEqual(Box::new(left), Box::new(right)),
+        match int64_signed_order_by_width(&left, &right, |left, right| left <= right) {
+            Some(value) => Self::Constant(value),
+            None => Self::Bitvector64SignedLessEqual(Box::new(left), Box::new(right)),
         }
     }
 
     pub(crate) fn int64_signed_greater_than(left: Bitvector32Term, right: Bitvector32Term) -> Self {
-        match (left.int64_as_const(), right.int64_as_const()) {
-            (Some(left), Some(right)) => Self::Constant(left > right),
-            _ => Self::Bitvector64SignedGreaterThan(Box::new(left), Box::new(right)),
+        match int64_signed_order_by_width(&left, &right, |left, right| left > right) {
+            Some(value) => Self::Constant(value),
+            None => Self::Bitvector64SignedGreaterThan(Box::new(left), Box::new(right)),
         }
     }
 
@@ -2096,9 +2132,9 @@ impl ConditionTerm {
         left: Bitvector32Term,
         right: Bitvector32Term,
     ) -> Self {
-        match (left.int64_as_const(), right.int64_as_const()) {
-            (Some(left), Some(right)) => Self::Constant(left >= right),
-            _ => Self::Bitvector64SignedGreaterEqual(Box::new(left), Box::new(right)),
+        match int64_signed_order_by_width(&left, &right, |left, right| left >= right) {
+            Some(value) => Self::Constant(value),
+            None => Self::Bitvector64SignedGreaterEqual(Box::new(left), Box::new(right)),
         }
     }
 
