@@ -1,6 +1,73 @@
 use super::*;
 
 #[test]
+// Byte views must retain allocation identity and scale subsequent offsets in bytes.
+fn native_contract_byte_casts_preserve_pointer_identity_and_offsets() {
+    let source = "uint32* probe(uint32* p) { return p + 1; }";
+    let proof = r#"verifying "bytes.c";
+        uint32* probe(uint32* p) {
+            ensures (uint8*)result == old((uint8*)(p + 1));
+            ensures (uint8*)result == (uint8*)p + 4;
+        } by { execute(); simp(); }"#;
+    verify_c0_sources(proof, &[("bytes.c", source)]).unwrap();
+    let expanded = expand_c0_claim_source(
+        proof,
+        &[("bytes.c", source)],
+        "probe",
+        CProofClaim::Ensure(1),
+    )
+    .unwrap();
+    verify_c0_sources(&expanded, &[("bytes.c", source)]).unwrap();
+}
+
+#[test]
+// Reject scalar origins, pointer-slot views, reverse casts, and incompatible comparisons locally.
+fn native_contract_byte_casts_check_their_type_boundary() {
+    for (parameter, expression, diagnostic) in [
+        (
+            "uint32 p",
+            "(uint8*)p == (uint8*)p",
+            "scalar object pointer",
+        ),
+        (
+            "uint32** p",
+            "(uint8*)p == (uint8*)p",
+            "scalar object pointer",
+        ),
+        ("uint8* p", "(uint32*)p == (uint32*)p", "byte-view target"),
+        (
+            "uint32* p",
+            "(uint8*)old(p) == (uint8*)p",
+            "around the whole cast",
+        ),
+        (
+            "uint32* p, uint8* q",
+            "p == q",
+            "incompatible pointer comparison",
+        ),
+    ] {
+        let proof =
+            format!("verifying \"bytes.c\"; int32 probe({parameter}) {{ ensures {expression}; }}");
+        let source = format!("int32 probe({parameter}) {{ return 0; }}");
+        let error = verify_c0_sources(&proof, &[("bytes.c", &source)]).unwrap_err();
+        assert!(error.message().contains(diagnostic), "{}", error.message());
+    }
+}
+
+#[test]
+// Retagging a pointer does not grant reads of bytes outside its initialized view.
+fn native_contract_byte_casts_do_not_grant_memory_access() {
+    let source = "uint8 probe(uint8* p) { return *p; }";
+    let proof = r#"verifying "bytes.c"; uint8 probe(uint8* p) {
+        views p[0..1]; ensures result == *((uint8*)p);
+    } by { execute(); simp(); }"#;
+    verify_c0_sources(proof, &[("bytes.c", source)]).unwrap();
+    assert!(
+        verify_c0_sources(&proof.replace("views p[0..1];", ""), &[("bytes.c", source)]).is_err()
+    );
+}
+
+#[test]
 fn unsigned_word_array_field_contracts_decay_to_typed_addresses() {
     let source = "struct packet { uint32 values[4]; }; uint32 read(struct packet* p, int32 k) { return p->values[k]; }";
     let proof = r#"verifying "fields.c";

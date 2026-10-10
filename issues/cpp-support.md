@@ -417,8 +417,21 @@ ordinary ownership. Offline normal, expanded and retained regressions cover
 stores, automatic enum addresses and modular helper calls. The importer checks
 the declaration span and locked libstdc++ header hash; rehashed artifacts cannot
 substitute another enum or declaration source. Other enum pointers remain
-refused. Artifact schema 55 requires refreshing older locks. Pointer
-reinterpretation and writable byte-span construction remain next. Byte alias access must be restricted to the actual pinned `std::byte` declaration;
+refused. Artifact schema 55 requires refreshing older locks. Explicit one-way `reinterpret_cast` from mutable supported native object
+pointers to the authenticated `std::byte*` now preserves allocation identity
+and uses the shared byte-access rules. Initialized native pointer locals and
+same-type assignment use ordinary scalar allocation. Four concrete byte writes
+complete an unwritten declared uint32 representation; partial writes and writes
+without ownership remain refused. Call-result casts retain their explicit typed
+conversion chain. Artifact schema 56 requires refreshing older locks.
+
+Checked native contract byte-view casts now express cross-pointee identity as
+`result == (uint8*)p`, preserving allocation identity, byte offset, and source
+qualification. Access authority and initialization remain separate. The pinned
+`std::byte*` call-result regression verifies this relation normally and with
+expanded and retained certificates. Incompatible pointer comparisons receive
+a direct type diagnostic instead of an empty-path kernel error.
+Writable byte-span construction remains next. Byte alias access must be restricted to the actual pinned `std::byte` declaration;
 an arbitrary enum with the same underlying type does not gain that privilege.
 Automatic scalar declarations now create explicit ownership of their exact
 byte extent in the shared kernel, independent of initialization. Direct reads

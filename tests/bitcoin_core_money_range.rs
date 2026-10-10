@@ -1324,8 +1324,24 @@ fn pinned_std_byte_values_verify_with_native_integer_contracts_offline() {
 
 #[test]
 fn pinned_std_span_back_verifies_unchanged_constexpr_assertion_offline() {
+    check_pinned_std_span_back("verify");
+}
+
+#[test]
+#[ignore = "nightly: expansion and retained checks from a 5.6s bundled span-back test"]
+fn pinned_std_span_back_expands_and_retains_offline() {
+    check_pinned_std_span_back("tools");
+}
+
+#[test]
+#[ignore = "nightly: whole-project mutations from a 5.6s bundled span-back test"]
+fn pinned_std_span_back_rejects_missing_views_and_false_claims_offline() {
+    check_pinned_std_span_back("rejections");
+}
+
+fn check_pinned_std_span_back(phase: &str) {
     let (root, import) = pinned_span_fixture(
-        "back",
+        &format!("back-{phase}"),
         "#include <span.h>\nint& probe(std::span<int>& span) { return span.back(); }\n",
     );
     let source = r#"verifying "span-probe.cpp";
@@ -1363,40 +1379,50 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
     let path = root.join("span.click");
     fs::write(&path, source).unwrap();
     let project = read_click_project(&path, source).unwrap();
-    verify_program_prepared_project(&project, &import).unwrap();
-    for claim in [
-        "probe.contract",
-        "span__int__value_unsigned_long_18446744073709551615_back.contract",
-    ] {
-        let expanded =
-            expand_program_prepared_project_claim_source_by_label(&project, &import, claim)
-                .unwrap();
-        let rewritten = project.with_entry_source(expanded.clone());
-        verify_program_prepared_project(&rewritten, &import).unwrap();
-        let (session, _) =
-            C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-        let position =
-            program_prepared_project_tactic_source_position(&rewritten, &import, claim, 0).unwrap();
-        session
-            .verify_at_project(&expanded, position.line, position.column)
-            .unwrap();
+    if phase != "rejections" {
+        verify_program_prepared_project(&project, &import).unwrap();
     }
-    for hostile in [
-        source.replace(" views span._M_ptr[0..1];", ""),
-        source.replace(" views this->_M_ptr[0..1];", ""),
-        source.replace(
-            "requires this->_M_extent._M_extent_value == 1u64;",
-            "requires this->_M_extent._M_extent_value == 0u64;",
-        ),
-        source.replace(
-            "ensures &result == span._M_ptr;",
-            "ensures &result == span._M_ptr + 1;",
-        ),
-    ] {
-        assert!(
-            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+    if phase == "tools" {
+        for claim in [
+            "probe.contract",
+            "span__int__value_unsigned_long_18446744073709551615_back.contract",
+        ] {
+            let expanded =
+                expand_program_prepared_project_claim_source_by_label(&project, &import, claim)
+                    .unwrap();
+            let rewritten = project.with_entry_source(expanded.clone());
+            verify_program_prepared_project(&rewritten, &import).unwrap();
+            let (session, _) =
+                C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+            let position =
+                program_prepared_project_tactic_source_position(&rewritten, &import, claim, 0)
+                    .unwrap();
+            session
+                .verify_at_project(&expanded, position.line, position.column)
+                .unwrap();
+        }
+    }
+    if phase == "rejections" {
+        for hostile in [
+            source.replace(" views span._M_ptr[0..1];", ""),
+            source.replace(" views this->_M_ptr[0..1];", ""),
+            source.replace(
+                "requires this->_M_extent._M_extent_value == 1u64;",
+                "requires this->_M_extent._M_extent_value == 0u64;",
+            ),
+            source.replace(
+                "ensures &result == span._M_ptr;",
+                "ensures &result == span._M_ptr + 1;",
+            ),
+        ] {
+            assert!(
+                verify_program_prepared_project(
+                    &read_click_project(&path, &hostile).unwrap(),
+                    &import
+                )
                 .is_err()
-        );
+            );
+        }
     }
     fs::remove_dir_all(root).unwrap();
 }
@@ -5236,5 +5262,114 @@ fn pinned_std_byte_modular_pointer_call_verifies_offline() {
         &import,
         "verifying \"span-probe.cpp\"; void fill(uint8* p, uint8 value) { owns p[0..1]; ensures p[0] == value; } by { execute(); simp(); } uint8 probe(uint8 value) { ensures result == value; } by { execute(); simp(); }",
     );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+// Pointer reinterpretation supplies no initialization. Four concrete byte
+// stores complete the shared uint32 representation on the selected LE target.
+fn pinned_std_byte_reinterpretation_initializes_uint32_offline() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "byte-cast-word",
+        "#include <span.h>\nunsigned int probe() noexcept { unsigned int obj; std::byte* p = reinterpret_cast<std::byte*>(&obj); *p = static_cast<std::byte>(120); *(p + 1) = static_cast<std::byte>(86); *(p + 2) = static_cast<std::byte>(52); *(p + 3) = static_cast<std::byte>(18); return obj; }\n",
+        &["sysroot/usr/include/c++/12/cstddef"],
+    );
+    check_pinned_byte_proof(
+        &root,
+        &import,
+        "verifying \"span-probe.cpp\"; uint32 probe() { ensures result == 305419896u32; } by { execute(); simp(); }",
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn pinned_std_byte_reinterpreted_call_result_preserves_pointer_identity_offline() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "byte-cast-call",
+        "#include <span.h>\nunsigned int* echo(unsigned int* p) noexcept { return p; } std::byte* probe(unsigned int* p) noexcept { return reinterpret_cast<std::byte*>(echo(p)); }\n",
+        &["sysroot/usr/include/c++/12/cstddef"],
+    );
+    check_pinned_byte_proof(
+        &root,
+        &import,
+        "verifying \"span-probe.cpp\"; uint32* echo(uint32* p) { ensures result == p; } by { execute(); simp(); } uint8* probe(uint32* p) { ensures result == (uint8*)p; } by { execute(); simp(); }",
+    );
+    let artifact_path = root.join("span.click-cpp.json");
+    let lock_path = root.join("span.click.import.json.lock");
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(&artifact_path).unwrap()).unwrap();
+    let lock: serde_json::Value = serde_json::from_slice(&fs::read(&lock_path).unwrap()).unwrap();
+    for change in 0..4 {
+        let mut forged = artifact.clone();
+        let conversion = &mut forged["function"]["body"][0]["conversions"][0];
+        match change {
+            0 => conversion["cast_kind"] = "no_op".into(),
+            1 => conversion["explicit"] = false.into(),
+            2 => conversion["source_type"]["pointee"]["bits"] = 64.into(),
+            3 => {
+                conversion["value_type"]["pointee"]["name"] = "Other".into();
+                conversion["value_type"]["pointee"]["declaration_id"] = "c:@E@Other".into();
+            }
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = sha256(&bytes).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(&artifact_path, bytes).unwrap();
+        fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
+        assert!(
+            load_import(&root.join("span.click.import.json")).is_err(),
+            "mutation {change}"
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn pinned_std_byte_reinterpretation_does_not_initialize_partial_storage() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "byte-cast-partial",
+        "#include <span.h>\nunsigned int probe() noexcept { unsigned int obj; std::byte* p = reinterpret_cast<std::byte*>(&obj); *p = static_cast<std::byte>(120); return obj; }\n",
+        &["sysroot/usr/include/c++/12/cstddef"],
+    );
+    let source = "verifying \"span-probe.cpp\"; uint32 probe() { ensures result == 120u32; } by { execute(); simp(); }";
+    fs::write(root.join("bad.click"), source).unwrap();
+    let error = verify_program_prepared_project(
+        &read_click_project(&root.join("bad.click"), source).unwrap(),
+        &import,
+    )
+    .unwrap_err();
+    assert!(
+        error.message().contains("uninitialized"),
+        "{}",
+        error.message()
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+// Changing the access type cannot mint write permission over the original word.
+fn pinned_std_byte_reinterpretation_requires_original_storage_ownership() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "byte-cast-authority",
+        "#include <span.h>\nunsigned char probe(unsigned int* p) noexcept { std::byte* bytes = reinterpret_cast<std::byte*>(p); *bytes = static_cast<std::byte>(7); return static_cast<unsigned char>(*bytes); }\n",
+        &["sysroot/usr/include/c++/12/cstddef"],
+    );
+    let source = "verifying \"span-probe.cpp\"; uint8 probe(uint32* p) { owns p[0..1]; ensures result == 7u8; } by { execute(); simp(); }";
+    check_pinned_byte_proof(&root, &import, source);
+    for bad in [
+        source.replace("owns p[0..1];", "views p[0..1];"),
+        source.replace("owns p[0..1];", ""),
+    ] {
+        fs::write(root.join("bad.click"), &bad).unwrap();
+        assert!(
+            verify_program_prepared_project(
+                &read_click_project(&root.join("bad.click"), &bad).unwrap(),
+                &import
+            )
+            .is_err()
+        );
+    }
     fs::remove_dir_all(root).unwrap();
 }

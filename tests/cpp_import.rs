@@ -1408,7 +1408,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 55);
+    assert_eq!(prepared.export().schema, 56);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -2645,7 +2645,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 55);
+    assert_eq!(import.export().schema, 56);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -2762,7 +2762,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 55);
+    assert_eq!(import.export().schema, 56);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -2873,7 +2873,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 55);
+    assert_eq!(import.export().schema, 56);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -2934,7 +2934,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 55);
+    assert_eq!(import.export().schema, 56);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -2980,7 +2980,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 55);
+    assert_eq!(import.export().schema, 56);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -3613,7 +3613,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 55);
+    assert_eq!(import.export().schema, 56);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -3691,7 +3691,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 55);
+    assert_eq!(import.export().schema, 56);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -3809,7 +3809,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 55);
+    assert_eq!(import.export().schema, 56);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -3947,7 +3947,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 55);
+    assert_eq!(import.export().schema, 56);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -4049,7 +4049,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 55);
+    assert_eq!(import.export().schema, 56);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -4149,7 +4149,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 55);
+    assert_eq!(import.export().schema, 56);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -4296,7 +4296,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 55);
+    assert_eq!(import.export().schema, 56);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -4447,7 +4447,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 55);
+    assert_eq!(import.export().schema, 56);
     let destructor = import
         .export()
         .reachable_functions
@@ -4635,7 +4635,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 55);
+    assert_eq!(import.export().schema, 56);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -4739,7 +4739,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 55);
+    assert_eq!(import.export().schema, 56);
     let destructor = import
         .export()
         .reachable_functions
@@ -5544,7 +5544,7 @@ fn cpp_pointer_offsets_reject_unmodelled_wide_subtraction_and_wider_indices() {
 }
 
 #[test]
-fn cpp_pointer_slice_rejects_differences_multilevel_and_pointer_locals() {
+fn cpp_pointer_slice_rejects_differences_and_multilevel_pointers() {
     let project = Project::pointer();
 
     fs::write(
@@ -5555,19 +5555,6 @@ fn cpp_pointer_slice_rejects_differences_multilevel_and_pointer_locals() {
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(error.contains("bump_reference.cpp:2"), "{error}");
     assert!(error.contains("pointer arithmetic"), "{error}");
-    assert!(!project.artifact().exists());
-
-    fs::write(
-        project.source(),
-        "int bump_reference(int& value) noexcept {\n    int* pointer = &value;\n    return *pointer;\n}\n",
-    )
-    .unwrap();
-    let error = refresh_import(&project.config()).unwrap_err();
-    assert!(error.contains("bump_reference.cpp:2"), "{error}");
-    assert!(
-        error.contains("must resolve to mutable signed/unsigned 32/64/128-bit integer"),
-        "{error}"
-    );
     assert!(!project.artifact().exists());
 
     fs::write(
@@ -10691,7 +10678,7 @@ fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        assert_eq!(import.export().schema, 55);
+        assert_eq!(import.export().schema, 56);
         let source = format!(
             "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures to_integer(result) == {helper}(to_integer(a), to_integer(b)); }} by {{ execute(); simp(); }}"
         );
@@ -10875,7 +10862,7 @@ fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
             refresh_import(&project.config()).unwrap();
             fs::remove_file(&project.exporter).unwrap();
             let import = load_import(&project.config()).unwrap();
-            assert_eq!(import.export().schema, 55);
+            assert_eq!(import.export().schema, 56);
             let relation = format!("to_integer(a) {op} to_integer(b)");
             let proof = format!(
                 "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ ensures result == 1 implies ({relation}); ensures result == 0 implies not ({relation}); }} by {{ execute(); simp(); }}"
@@ -17115,4 +17102,56 @@ fn cpp_standard_byte_pointer_requires_the_pinned_declaration() {
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(error.contains("std::byte"), "{error}");
     assert!(!project.artifact().exists());
+}
+
+#[test]
+// Native pointer locals use ordinary scalar allocation and assignment; keeping
+// their pointee types avoids treating the local's storage as its referent.
+fn cpp_initialized_native_pointer_locals_reassign_offline() {
+    let project = Project::with_fixture(
+        "pointer-local.cpp",
+        "probe",
+        "unsigned char* probe(unsigned char* p, unsigned char* q) noexcept { unsigned char* local = p; local = q; return local; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        "verifying \"pointer-local.cpp\"; uint8* probe(uint8* p, uint8* q) { ensures result == q; } by { execute(); simp(); }",
+    );
+}
+
+#[test]
+fn cpp_byte_reinterpretation_profile_refuses_nonbyte_and_reverse_casts() {
+    for source in [
+        "enum class Other : unsigned char {}; Other* probe(unsigned int* p) noexcept { return reinterpret_cast<Other*>(p); }",
+        "unsigned int* probe(unsigned char* p) noexcept { return reinterpret_cast<unsigned int*>(p); }",
+        "unsigned char* probe(unsigned int* p) noexcept { return reinterpret_cast<unsigned char*>(p); }",
+        "unsigned char* probe(unsigned char* p) noexcept { unsigned char* q; q = p; return q; }",
+    ] {
+        let project = Project::with_fixture("cast.cpp", "probe", source);
+        assert!(refresh_import(&project.config()).is_err());
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+// Preserve the former refusal's original C++ source: its native pointer local
+// now borrows the reference without acquiring write authority.
+fn cpp_native_pointer_local_from_reference_verifies_offline() {
+    let project = Project::with_fixture(
+        "bump_reference.cpp",
+        "bump_reference",
+        "int bump_reference(int& value) noexcept {\n    int* pointer = &value;\n    return *pointer;\n}\n",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        "verifying \"bump_reference.cpp\"; int32 bump_reference(int32& value) { views value; ensures result == value; ensures value == old(value); } by { execute(); simp(); }",
+    );
 }

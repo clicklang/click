@@ -248,7 +248,8 @@ impl Eligibility<'_, '_> {
             }
             CppExpression::LogicalNot { value, .. }
             | CppExpression::IntegralCast { value, .. }
-            | CppExpression::EnumCast { value, .. } => self.value(value, values)?,
+            | CppExpression::EnumCast { value, .. }
+            | CppExpression::BytePointerCast { value, .. } => self.value(value, values)?,
             CppExpression::Binary { left, right, .. } => {
                 self.value(left, values)? && self.value(right, values)?
             }
