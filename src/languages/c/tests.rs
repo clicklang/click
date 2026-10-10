@@ -12997,21 +12997,21 @@ fn c0_deprecated_function_attributes_preserve_ordinary_prototypes() {
 #[test]
 fn c0_nothrow_leaf_const_and_nonnull_attributes_do_not_hide_unsupported_attributes_or_linkage() {
     for source in [
-        "int f(void) __attribute__((leaf, cold));",
+        "int f(void) __attribute__((leaf, unsupported));",
         "int f(void) __attribute__((leaf)) __attribute__((aligned(8)));",
         "int f(void) __attribute__((leaf, always_inline));",
         "int f(void) __attribute__((always_inline, leaf));",
         "int f(void) __attribute__((leaf(1)));",
         "int f(void) __attribute__((leaf,));",
         "int f(void) __attribute__((leaf);",
-        "int f(void) __attribute__((nothrow, cold));",
+        "int f(void) __attribute__((nothrow, unsupported));",
         "int f(void) __attribute__((nothrow)) __attribute__((aligned(8)));",
         "int f(void) __attribute__((nothrow, always_inline));",
         "int f(void) __attribute__((always_inline, nothrow));",
         "int f(void) __attribute__((nothrow(1)));",
         "int f(void) __attribute__((nothrow,));",
         "int f(void) __attribute__((nothrow);",
-        "int f(void) __attribute__((__const__, cold));",
+        "int f(void) __attribute__((__const__, unsupported));",
         "int f(void) __attribute__((__const__(1)));",
         "int f(void) __attribute__((nonnull(0)));",
         "int f(void) __attribute__((nonnull(x)));",
@@ -13296,16 +13296,10 @@ fn optimizing_imports_keep_the_compiletime_assert_declaration() {
 fn optimizer_promise_classification_without_a_profile_switch() {
     use syntax::PromiseAttributes::{Accept, Refuse};
     for source in [
-        "extern int32 f(void) __attribute__((pure));\n",
         "extern int32 *f(void) __attribute__((returns_nonnull));\n",
-        "extern void *f(void) __attribute__((malloc));\n",
-        "extern void *f(uint64 n) __attribute__((alloc_size(1)));\n",
-        "extern void *f(uint64 n) __attribute__((alloc_align(1)));\n",
         "extern void *f(void) __attribute__((assume_aligned(16)));\n",
-        "extern void f(void) __attribute__((cold));\n",
         "extern void f(void) __attribute__((hot));\n",
         "extern void f(void) __attribute__((noinline));\n",
-        "extern int32 f(void) __attribute__((warn_unused_result));\n",
         "struct s { uint8 name[4] __attribute__((nonstring)); };\n",
         "int32 f(int32 x) { if (x == 0) __builtin_unreachable(); return x; }\n",
         "int32 f(int32 x) { __builtin_assume(x > 0); return x; }\n",
@@ -13319,6 +13313,8 @@ fn optimizer_promise_classification_without_a_profile_switch() {
         }
     }
     for source in [
+        "extern void f(void) __attribute__((cold));\n",
+        "extern int32 f(void) __attribute__((warn_unused_result));\n",
         "static inline __attribute__((always_inline)) int32 f(int32 x) { return x; }\n",
         "static inline __attribute__((gnu_inline)) int32 f(int32 x) { return x; }\n",
         "extern int32 f(void) __attribute__((nothrow, deprecated, unused, no_instrument_function));\n",
@@ -13545,5 +13541,279 @@ fn c0_explicit_and_implicit_function_addresses_share_declaration_checks() {
             &source::ExpandedLineMap::empty(),
         )
         .unwrap();
+    }
+}
+
+#[test]
+fn c0_callback_typedefs_keep_signatures_through_aliases_locals_and_fields() {
+    let functions = syntax::parse_functions(
+        r#"
+        typedef int32 (*callback_t)(int32);
+        typedef callback_t callback_alias_t;
+        struct holder { callback_alias_t callback; };
+        int32 identity(int32 value) { return value; }
+        int32 apply(callback_alias_t callback, int32 value) {
+            callback_alias_t local = callback;
+            return local(value);
+        }
+        int32 run(struct holder* holder, int32 value) {
+            callback_alias_t local = &identity;
+            holder->callback = local;
+            return holder->callback(value);
+        }
+    "#,
+    )
+    .expect("callback aliases retain callable ABI metadata");
+    let apply = functions
+        .iter()
+        .find(|function| function.name() == "apply")
+        .unwrap();
+    assert!(apply.parameters()[0].function_pointer_signature().is_some());
+    let run = functions
+        .iter()
+        .find(|function| function.name() == "run")
+        .unwrap();
+    let field = &run.parameters()[0].struct_layout().unwrap().fields()["callback"];
+    assert!(field.function_pointer_signature().is_some());
+}
+
+#[test]
+fn c0_callback_typedefs_reject_wrong_nominal_targets_in_each_position() {
+    let prefix = r#"
+        struct left { int32 value; };
+        struct right { int32 value; };
+        typedef struct left* (*callback_t)(struct left*);
+        typedef callback_t callback_alias_t;
+        struct holder { callback_alias_t callback; };
+        struct right* wrong(struct right* node) { return node; }
+        int32 apply(callback_alias_t callback, struct left* node) {
+            struct left* result;
+            result = callback(node);
+            return result->value;
+        }
+    "#;
+    for body in [
+        "int32 run() { callback_alias_t callback = &wrong; return 0; }",
+        "int32 run(struct holder* holder) { holder->callback = &wrong; return 0; }",
+        "int32 run(struct left* node) { return apply(&wrong, node); }",
+        "int32 run() { for (callback_alias_t callback = &wrong; 0; ) { } return 0; }",
+    ] {
+        let error = syntax::parse_functions(&format!("{prefix}\n{body}"))
+            .expect_err("an alias cannot erase callback nominal tags");
+        assert!(
+            error.message().contains("callback signature mismatch"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn c0_callback_typedefs_keep_return_and_parameter_pointee_qualifiers() {
+    let source = r#"
+        struct item { int32 value; };
+        typedef const struct item* (*callback_t)(const struct item*);
+        const struct item* identity(const struct item* node) { return node; }
+        int32 run(const struct item* node) {
+            callback_t callback = &identity;
+            const struct item* result;
+            result = callback(node);
+            return result->value;
+        }
+    "#;
+    syntax::parse_functions(source).expect("callback return tags belong to its signature");
+    let wrong = source.replace(
+        "const struct item* identity(const struct item* node)",
+        "struct item* identity(struct item* node)",
+    );
+    let error = syntax::parse_functions(&wrong).expect_err("callback qualifiers must match");
+    assert!(
+        error.message().contains("callback signature mismatch"),
+        "{error}"
+    );
+}
+
+#[test]
+fn c0_callback_typedefs_reject_signature_erasure_in_unmodeled_positions() {
+    for source in [
+        "typedef int32 (*callback_t)(int32); callback_t global; int32 run() { return 0; }",
+        "typedef int32 (*callback_t)(int32); int32 run() { static callback_t local; return 0; }",
+        "typedef int32 (*callback_t)(int32); typedef int32 (*nested_t)(callback_t); int32 run() { return 0; }",
+        "typedef int32 (*callback_t)(int32); callback_t run() { return 0; }",
+        "typedef int32 (*callback_t)(int32); union holder { callback_t callback; }; int32 run() { return 0; }",
+        "typedef int32 (*callback_t)(int32, ...); int32 run() { return 0; }",
+        "typedef int32 (*callback_t)(int32); int32 run(callback_t* callback) { return 0; }",
+        "typedef int32 (*callback_t)(int32); typedef callback_t callbacks_t[2]; int32 run() { return 0; }",
+        "typedef int32 (*callback_t)(int32); struct holder { callback_t callback[2]; }; int32 run() { return 0; }",
+        "typedef int32 (*callback_t)(int32); int32 run(callback_t callback[2]) { return 0; }",
+        "typedef int32 (*callback_t)(int32); int32 run() { callback_t callback[2]; return 0; }",
+        "union item { int32 value; }; typedef union item* (*callback_t)(void); int32 run() { return 0; }",
+        "enum item { FIRST }; typedef int32 (*callback_t)(enum item); int32 run() { return 0; }",
+        "typedef volatile int32* (*callback_t)(void); int32 run() { return 0; }",
+        "typedef long double (*callback_t)(void); struct holder { callback_t callback; }; int32 run() { return 0; }",
+        "typedef __builtin_va_list (*callback_t)(void); int32 run() { return 0; }",
+    ] {
+        assert!(syntax::parse_functions(source).is_err(), "{source}");
+    }
+}
+
+#[test]
+fn c0_opaque_pointer_typedef_returns_retain_identity_without_a_layout() {
+    let functions = syntax::parse_functions(
+        r#"
+        typedef struct opaque* opaque_t;
+        opaque_t factory(void);
+        int32 same(opaque_t value) { return value == value; }
+    "#,
+    )
+    .expect("opaque pointer prototypes require identity, not layout");
+    let parameter = &functions[0].parameters()[0];
+    assert_eq!(parameter.struct_name(), Some("opaque"));
+    assert!(parameter.struct_layout().is_none());
+    for expression in ["value->field", "sizeof(struct opaque)"] {
+        let source = format!(
+            "typedef struct opaque* opaque_t; opaque_t factory(void); int32 bad(opaque_t value) {{ return {expression}; }}"
+        );
+        assert!(syntax::parse_functions(&source).is_err(), "{expression}");
+    }
+    let completed = r#"
+        typedef struct node* node_t;
+        node_t identity(node_t node);
+        struct node { int32 value; };
+        node_t identity(node_t node) { return node; }
+        int32 read(node_t node) {
+            node_t result;
+            result = identity(node);
+            return result->value;
+        }
+    "#;
+    syntax::parse_functions(completed).expect("the later definition supplies the layout");
+}
+
+#[test]
+fn c0_unmodeled_allocation_and_purity_attributes_are_declaration_only() {
+    use syntax::PromiseAttributes::{Accept, Refuse};
+    for attribute in [
+        "pure",
+        "__pure__",
+        "malloc",
+        "__malloc__",
+        "alloc_size(1)",
+        "__alloc_size__(1, 2)",
+        "alloc_align(1)",
+    ] {
+        for promises in [Accept, Refuse] {
+            let prototype =
+                format!("extern void *f(uint64 n, uint64 m) __attribute__(({attribute}));\n");
+            parse_import_with(&prototype, promises).expect("unused opaque prototypes are retained");
+            for use_source in [
+                "void *run() { return f(1, 2); }",
+                "int32 run() { void *(*callback)(uint64, uint64) = &f; return 0; }",
+                "void *f(uint64 n, uint64 m) { return 0; }",
+            ] {
+                let error = parse_import_with(&format!("{prototype}{use_source}"), promises)
+                    .expect_err("opaque attributes cannot disappear through a use");
+                assert!(
+                    error.contains("declaration-only compiler attributes")
+                        || error.contains("conflicting declarations"),
+                    "{attribute}: {use_source}: {error}"
+                );
+            }
+            let prefix = format!(
+                "extern __attribute__(({attribute})) void *f(uint64 n, uint64 m); int32 run() {{ f(1, 2); return 0; }}"
+            );
+            assert!(
+                parse_import_with(&prefix, promises).is_err(),
+                "prefix {attribute}"
+            );
+            let local = format!(
+                "int32 run() {{ extern void *f(uint64 n, uint64 m) __attribute__(({attribute})); f(1, 2); return 0; }}"
+            );
+            assert!(
+                parse_import_with(&local, promises).is_err(),
+                "local {attribute}"
+            );
+        }
+    }
+    // The adapter's special allocator spelling cannot bypass the declaration.
+    for promises in [Accept, Refuse] {
+        for use_source in [
+            "void *run() { return malloc(8); }",
+            "int32 run() { void *(*callback)(uint64) = &malloc; return 0; }",
+        ] {
+            let source =
+                format!("extern void *malloc(uint64 n) __attribute__((malloc)); {use_source}");
+            let error = parse_import_with(&source, promises)
+                .expect_err("allocator uses still require modeled semantics");
+            assert!(
+                error.contains("declaration-only compiler attributes"),
+                "{error}"
+            );
+        }
+    }
+    for attribute in [
+        "alloc_size(0)",
+        "alloc_size(1, 2, 3)",
+        "alloc_size(n)",
+        "alloc_size",
+        "alloc_align(1, 2)",
+        "malloc(free, 1)",
+        "pure(1)",
+    ] {
+        let prototype = format!("extern void *f(uint64 n) __attribute__(({attribute}));");
+        assert!(
+            parse_import_with(&prototype, Accept).is_err(),
+            "{attribute}"
+        );
+    }
+}
+
+// A diagnostic-suppression marker must neither change layout nor admit an
+// otherwise unsupported GNU declaration.
+#[test]
+fn c0_extension_declarations_keep_ordinary_semantic_checks() {
+    parse_import_with(
+        "__extension__ typedef struct { long long int quot; long long int rem; } quotient_t; quotient_t identity(quotient_t value) { return value; }",
+        syntax::PromiseAttributes::Accept,
+    )
+    .expect("GNU diagnostic suppression does not change an ordinary declaration");
+    assert!(
+        parse_import_with(
+            "__extension__ typedef __int128 unsupported;",
+            syntax::PromiseAttributes::Accept,
+        )
+        .is_err()
+    );
+}
+
+// Unused libc conversion prototypes cannot grant an extended-precision ABI.
+#[test]
+fn c0_long_double_prototypes_are_unusable_and_keep_type_positions() {
+    use syntax::PromiseAttributes::{Accept, Refuse};
+    for promises in [Accept, Refuse] {
+        for declaration in [
+            "extern long double convert(const char* text);",
+            "extern int32 convert(long double value);",
+            "extern int32 convert(long double* value);",
+        ] {
+            parse_import_with(declaration, promises).expect("unused opaque prototype");
+            for body in [
+                "int32 run() { convert(0); return 0; }",
+                "int32 run() { void* address = convert; return 0; }",
+            ] {
+                let error = parse_import_with(&format!("{declaration}{body}"), promises)
+                    .expect_err("no call or address ABI is modeled");
+                assert!(error.contains("declaration-only signature"), "{error}");
+            }
+        }
+    }
+    for source in [
+        "long double convert(int32 value) { return value; }",
+        "int32 convert(long double value) { return 0; }",
+        "extern int32 convert(long double a, int32 b); extern int32 convert(int32 a, long double b);",
+        "extern int32 convert(long double* value); extern int32 convert(uint8* value);",
+        "extern int32 convert(long double value); extern int32 convert(uint8 value[16]);",
+        "int32 run() { long double value; return 0; }",
+    ] {
+        assert!(parse_import_with(source, Accept).is_err(), "{source}");
     }
 }

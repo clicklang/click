@@ -1944,6 +1944,8 @@ struct ParsedType {
     /// Declaration-only compiler type. No layout, value or call ABI is granted.
     /// Kept only in typedef aliases and signatures of unusable prototypes.
     opaque_builtin: bool,
+    /// Full callback ABI, including nominal pointee tags, retained by aliases.
+    function_pointer_signature: Option<C0FunctionPointerSignature>,
     struct_name: Option<String>,
     enum_name: Option<String>,
     union_name: Option<String>,
@@ -7154,6 +7156,7 @@ struct Parser {
     typedefs: BTreeMap<String, ParsedType>,
     parsing_function_header: bool,
     opaque_function_signature: bool,
+    opaque_signature_types: Vec<(bool, bool)>,
     variable_structs: BTreeMap<String, String>,
     /// The struct name of each automatic struct-pointer local declared in the
     /// function currently being parsed, keyed by its C spelling. `None` marks
@@ -7292,6 +7295,10 @@ pub(crate) struct C0FunctionHeader {
     has_unnamed_parameter: bool,
     /// No callable ABI exists for a retained declaration-only builtin type.
     opaque_signature: bool,
+    /// Per-position builtin/extended-precision identities, including the return.
+    opaque_signature_types: Vec<(bool, bool)>,
+    /// Unmodeled compiler promises: prototype only, never callable/addressable.
+    opaque_attributes: bool,
     /// Declared with GNU `error`: the compiler rejects the program unless
     /// it removes every call, so a call must be unreachable.
     compile_time_error: bool,
@@ -7328,6 +7335,8 @@ fn function_headers_compatible(left: &C0FunctionHeader, right: &C0FunctionHeader
         && left.returns_twice == right.returns_twice
         && left.variadic == right.variadic
         && left.opaque_signature == right.opaque_signature
+        && (!left.opaque_signature || left.opaque_signature_types == right.opaque_signature_types)
+        && left.opaque_attributes == right.opaque_attributes
         && left.compile_time_error == right.compile_time_error
         && left.name == right.name
         && left.parameters.len() == right.parameters.len()
@@ -7433,6 +7442,7 @@ impl Parser {
             typedefs: BTreeMap::new(),
             parsing_function_header: false,
             opaque_function_signature: false,
+            opaque_signature_types: Vec::new(),
             variable_structs: BTreeMap::new(),
             local_struct_pointers: BTreeMap::new(),
             local_struct_values: BTreeMap::new(),
@@ -8111,10 +8121,17 @@ impl Parser {
         if self
             .function_declarations
             .get(source_name)
+            .is_some_and(|header| header.opaque_attributes)
+        {
+            return Err(self.error_here(format!("function `{source_name}` uses declaration-only compiler attributes; function-address uses require modeled semantics")));
+        }
+        if self
+            .function_declarations
+            .get(source_name)
             .is_some_and(|header| header.opaque_signature)
         {
             return Err(self.error_here(format!(
-                "function `{source_name}` uses declaration-only __builtin_va_list; function-address uses require a modeled ABI"
+                "function `{source_name}` uses declaration-only signature (__builtin_va_list or long double); function-address uses require a modeled ABI"
             )));
         }
         if self
@@ -8493,7 +8510,7 @@ impl Parser {
             } else {
                 false
             };
-            let (has_always_inline_attribute, prefix_weak, prefix_returns_twice) =
+            let (has_always_inline_attribute, prefix_weak, prefix_returns_twice, prefix_opaque) =
                 self.consume_function_attributes()?;
             if is_inline && !is_static {
                 return Err(self.error_here(
@@ -8518,10 +8535,15 @@ impl Parser {
             // also `inline`; the two differ only in an optimization hint.
             let mut header = self.parse_function_header(is_static)?;
             self.consume_function_asm_label(&mut header)?;
-            let (has_trailing_always_inline_attribute, suffix_weak, suffix_returns_twice) =
-                self.consume_function_attributes()?;
+            let (
+                has_trailing_always_inline_attribute,
+                suffix_weak,
+                suffix_returns_twice,
+                suffix_opaque,
+            ) = self.consume_function_attributes()?;
             header.weak_linkage = prefix_weak || suffix_weak;
             header.returns_twice = prefix_returns_twice || suffix_returns_twice;
+            header.opaque_attributes = prefix_opaque || suffix_opaque;
             if (has_always_inline_attribute || has_trailing_always_inline_attribute)
                 && !(is_static && is_inline)
             {
@@ -8599,7 +8621,7 @@ impl Parser {
             } else {
                 false
             };
-            let (has_always_inline_attribute, prefix_weak, prefix_returns_twice) =
+            let (has_always_inline_attribute, prefix_weak, prefix_returns_twice, prefix_opaque) =
                 self.consume_function_attributes()?;
             if is_inline && !is_static {
                 return Err(self.error_here(
@@ -8622,10 +8644,15 @@ impl Parser {
             }
             let mut header = self.parse_function_header(is_static && is_inline)?;
             self.consume_function_asm_label(&mut header)?;
-            let (has_trailing_always_inline_attribute, suffix_weak, suffix_returns_twice) =
-                self.consume_function_attributes()?;
+            let (
+                has_trailing_always_inline_attribute,
+                suffix_weak,
+                suffix_returns_twice,
+                suffix_opaque,
+            ) = self.consume_function_attributes()?;
             header.weak_linkage = prefix_weak || suffix_weak;
             header.returns_twice = prefix_returns_twice || suffix_returns_twice;
+            header.opaque_attributes = prefix_opaque || suffix_opaque;
             if (has_always_inline_attribute || has_trailing_always_inline_attribute) && !is_static {
                 return Err(self.error_here(format!(
                     "the GNU {} attribute requires `static inline` or `static __always_inline`",
@@ -8670,14 +8697,15 @@ impl Parser {
         &mut self,
         internal_linkage: bool,
     ) -> Result<C0Function, C0SyntaxError> {
-        let (prefix_inline, prefix_weak, prefix_returns_twice) =
+        let (prefix_inline, prefix_weak, prefix_returns_twice, prefix_opaque) =
             self.consume_function_attributes()?;
         let mut header = self.parse_function_header(internal_linkage)?;
         self.consume_function_asm_label(&mut header)?;
-        let (suffix_inline, suffix_weak, suffix_returns_twice) =
+        let (suffix_inline, suffix_weak, suffix_returns_twice, suffix_opaque) =
             self.consume_function_attributes()?;
         header.weak_linkage = prefix_weak || suffix_weak;
         header.returns_twice = prefix_returns_twice || suffix_returns_twice;
+        header.opaque_attributes = prefix_opaque || suffix_opaque;
         self.reject_variadic_definition(&header)?;
         if header.weak_linkage || header.returns_twice {
             return Err(self.error_here(
@@ -8799,9 +8827,15 @@ impl Parser {
     /// A variadic body would read its variable arguments through `va_arg`,
     /// which has no model. Only the body-less prototype is retained.
     fn reject_variadic_definition(&self, header: &C0FunctionHeader) -> Result<(), C0SyntaxError> {
+        if header.opaque_attributes {
+            return Err(self.error_here(format!(
+                "function definition `{}` uses declaration-only compiler attributes",
+                header.source_name
+            )));
+        }
         if header.opaque_signature {
             return Err(self.error_here(format!(
-                "function definition `{}` uses declaration-only __builtin_va_list; its call ABI and value operations are not modeled",
+                "function definition `{}` uses declaration-only signature (__builtin_va_list or long double); its call ABI and value operations are not modeled",
                 header.source_name
             )));
         }
@@ -8827,7 +8861,13 @@ impl Parser {
         let declaration_line = self.positions[self.position].line;
         self.parsing_function_header = true;
         self.opaque_function_signature = false;
+        self.opaque_signature_types.clear();
         let parsed_return_type = self.parse_signature_type()?;
+        if parsed_return_type.function_pointer_signature.is_some() {
+            return Err(
+                self.error_here("function-pointer return values need nested callback ABI metadata")
+            );
+        }
         if parsed_return_type.is_constant {
             return Err(self.error_here(
                 "const-qualified function return types are not supported in this slice",
@@ -8861,11 +8901,9 @@ impl Parser {
             .as_ref()
             .filter(|_| parsed_return_type.c_type.is_pointer())
             .cloned();
-        if let Some(struct_name) = &return_pointer_struct_name
-            && !self.structs.contains_key(struct_name)
-        {
-            return Err(self.error_here(format!("unknown struct declaration `{struct_name}`")));
-        }
+        // A pointer return retains its nominal tag without requiring the
+        // pointee's layout. Field access, sizeof, and by-value operations still
+        // require a complete definition through their ordinary layout checks.
         let return_type = if let Some(name) = &return_struct_name {
             struct_value_type(
                 self.structs
@@ -8896,9 +8934,17 @@ impl Parser {
         };
         self.parsing_function_header = false;
         let opaque_signature = std::mem::take(&mut self.opaque_function_signature);
+        // Ordinary trailing types carry their own checked ABI. Keep only the
+        // positions needed to distinguish opaque types, so f() and f(void)
+        // retain the parser's ordinary compatibility behavior.
+        while self.opaque_signature_types.last() == Some(&(false, false)) {
+            self.opaque_signature_types.pop();
+        }
         Ok(C0FunctionHeader {
             declaration_line,
             opaque_signature,
+            opaque_signature_types: std::mem::take(&mut self.opaque_signature_types),
+            opaque_attributes: false,
             return_type,
             return_pointee_constant: parsed_return_type.pointee_constant,
             return_struct_name,
@@ -8916,13 +8962,15 @@ impl Parser {
     }
 
     /// Consume the explicitly supported declaration annotations, returning
-    /// whether the existing always-inline linkage restriction applies.
+    /// linkage restrictions, returns-twice behavior, and declaration opacity.
     /// `nothrow` adds no proof facts: C0 has no exception semantics, and the
     /// annotation says nothing about termination, memory effects, or safety.
     /// `leaf`, `const`, `nonnull`, `noreturn`, and `deprecated` are also accepted without using their
     /// restrictions as proof assumptions. Calls retain their ordinary checked
-    /// contracts, including their ordinary argument obligations.
-    fn consume_function_attributes(&mut self) -> Result<(bool, bool, bool), C0SyntaxError> {
+    /// contracts, including their ordinary argument obligations. Unmodeled
+    /// purity/allocation attributes retain prototypes but prohibit uses.
+    fn consume_function_attributes(&mut self) -> Result<(bool, bool, bool, bool), C0SyntaxError> {
+        let mut opaque_attributes = false;
         let mut always_inline = false;
         let mut weak = false;
         let mut returns_twice = false;
@@ -8959,6 +9007,29 @@ impl Parser {
                     "gnu_inline" | "__gnu_inline__" => {
                         always_inline = true;
                         self.static_inline_attribute = "gnu-inline";
+                    }
+                    // Keep these prototypes for source/type closure, but no
+                    // body, call or function address may use their promises.
+                    "pure" | "__pure__" | "malloc" | "__malloc__" => {
+                        opaque_attributes = true;
+                    }
+                    "alloc_size" | "__alloc_size__" | "alloc_align" | "__alloc_align__" => {
+                        let maximum = if matches!(attribute.as_str(), "alloc_size" | "__alloc_size__") { 2 } else { 1 };
+                        self.expect(Token::LParen)?;
+                        for index in 0..maximum {
+                            let Some(Token::Number(value)) = self.next() else {
+                                return Err(self.error_here("allocation attribute requires positive parameter indices"));
+                            };
+                            if value.parse::<u32>().ok().filter(|value| *value > 0).is_none() {
+                                return Err(self.error_at_previous("allocation attribute requires positive parameter indices"));
+                            }
+                            if index + 1 == maximum || self.peek() != Some(&Token::Comma) {
+                                break;
+                            }
+                            self.position += 1;
+                        }
+                        self.expect(Token::RParen)?;
+                        opaque_attributes = true;
                     }
                     "weak" | "__weak__" => weak = true,
                     "returns_twice" | "__returns_twice__" => returns_twice = true,
@@ -9000,7 +9071,8 @@ impl Parser {
                     "nothrow" | "__nothrow__" | "leaf" | "__leaf__" | "const"
                     | "__const__" | "noreturn" | "__noreturn__" | "deprecated"
                     | "__deprecated__" | "unused" | "__unused__"
-                    | "no_instrument_function" | "__no_instrument_function__" => {},
+                    | "no_instrument_function" | "__no_instrument_function__"
+                    | "cold" | "__cold__" | "warn_unused_result" | "__warn_unused_result__" => {},
                     "error" | "__error__" if self.error_attribute.is_some() => {
                         self.expect(Token::LParen)?;
                         let Some(Token::StringLiteral(_)) = self.next() else {
@@ -9034,7 +9106,7 @@ impl Parser {
                         }
                     }
                     _ => return Err(self.error_at_previous(format!(
-                        "unsupported GNU function attribute `{attribute}`; only `always_inline`, `gnu_inline`, `nothrow`, `leaf`, `const`, `nonnull`, `noreturn`, `deprecated`, `unused`, `no_instrument_function`, `weak`, `returns_twice`, and `access` are supported in this slice"
+                        "unsupported GNU function attribute `{attribute}`; only `always_inline`, `gnu_inline`, `nothrow`, `leaf`, `const`, `nonnull`, `noreturn`, `deprecated`, `unused`, `no_instrument_function`, `weak`, `returns_twice`, `access`, `cold`, `warn_unused_result`, and declaration-only `pure`, `malloc`, `alloc_size`, `alloc_align` are supported in this slice"
                     ))),
                 }
                 if self.peek() != Some(&Token::Comma) {
@@ -9045,7 +9117,7 @@ impl Parser {
             self.expect(Token::RParen)?;
             self.expect(Token::RParen)?;
         }
-        Ok((always_inline, weak, returns_twice))
+        Ok((always_inline, weak, returns_twice, opaque_attributes))
     }
 
     /// A declaration's GNU asm label changes the linked symbol, not its C
@@ -9242,6 +9314,12 @@ impl Parser {
     fn parse_declarations(&mut self) -> Result<(), C0SyntaxError> {
         while self.peek().is_some() {
             self.checkpoint()?;
+            // This GNU spelling only suppresses a compiler diagnostic. The
+            // following declaration still passes all ordinary semantic checks.
+            if self.peek_ident() == Some("__extension__") {
+                self.position += 1;
+                continue;
+            }
             if (self.peek_ident() == Some("static")
                 && self.peek_n(1).is_some_and(Self::is_inline_specifier))
                 || self.peek_inline_specifier()
@@ -9290,7 +9368,10 @@ impl Parser {
             self.position = saved_position;
             return Ok(false);
         }
-        self.parse_type()?;
+        // Lookahead must recognize declaration-only return types without
+        // granting their value semantics. The actual object/header parser
+        // still decides whether that type is permitted at the chosen site.
+        self.parse_type_with_anonymous_struct(false, true, true)?;
         let is_global =
             matches!(self.peek(), Some(Token::Ident(_))) && self.peek_n(1) != Some(&Token::LParen);
         self.position = saved_position;
@@ -9316,6 +9397,9 @@ impl Parser {
             ));
         }
         let parsed_type = self.parse_type()?;
+        if parsed_type.function_pointer_signature.is_some() {
+            return Err(self.error_here("global function-pointer objects are not supported"));
+        }
         let struct_pointer_name = parsed_type
             .struct_name
             .as_ref()
@@ -10406,7 +10490,25 @@ impl Parser {
     fn parse_typedef_declaration(&mut self) -> Result<(), C0SyntaxError> {
         self.expect_ident_spelling("typedef")?;
         let mut parsed_type = self.parse_type_with_anonymous_struct(true, true, true)?;
-        let alias = self.expect_ident("typedef name")?;
+        let alias = if let Some((alias, c_type, signature)) =
+            self.parse_function_pointer_declarator(parsed_type.clone())?
+        {
+            // The callback's return qualifiers and nominal tags belong to its
+            // signature, not to the function-pointer object named by this alias.
+            parsed_type.c_type = c_type;
+            parsed_type.function_pointer_signature = Some(signature);
+            parsed_type.struct_name = None;
+            parsed_type.enum_name = None;
+            parsed_type.union_name = None;
+            parsed_type.is_constant = false;
+            parsed_type.pointee_constant = false;
+            parsed_type.is_volatile = false;
+            parsed_type.volatile_levels = 0;
+            parsed_type.pointer_depth = 0;
+            alias
+        } else {
+            self.expect_ident("typedef name")?
+        };
         if self.peek() == Some(&Token::LBracket) {
             self.position += 1;
             let length = self.parse_struct_array_length()?;
@@ -10599,6 +10701,11 @@ impl Parser {
                 self.position += 1;
             }
             let field_type = self.parse_type_with_anonymous_struct(true, true, false)?;
+            if field_type.function_pointer_signature.is_some() {
+                return Err(
+                    self.error_here("union callback fields need nominal signature metadata")
+                );
+            }
             loop {
                 let field_name = self.expect_ident("union field name")?;
                 let (
@@ -10753,7 +10860,9 @@ impl Parser {
                             union_name: (c_type == field_type.c_type)
                                 .then(|| field_type.union_name.clone())
                                 .flatten(),
-                            function_pointer_signature: None,
+                            function_pointer_signature: field_type
+                                .function_pointer_signature
+                                .clone(),
                             array_element_width,
                             array_shape,
                             offset_bytes,
@@ -11217,6 +11326,10 @@ impl Parser {
             let pointee_constant =
                 parsed_type.pointee_constant || (parsed_type.is_constant && array_parameter);
             self.variable_types.insert(kernel_name.clone(), c_type);
+            if let Some(signature) = &parsed_type.function_pointer_signature {
+                self.variable_function_pointers
+                    .insert(kernel_name.clone(), signature.clone());
+            }
             if object_constant {
                 self.variable_constants.insert(kernel_name.clone());
             }
@@ -11314,7 +11427,7 @@ impl Parser {
                     .and_then(|name| self.structs.get(name))
                     .cloned(),
                 pointee_struct_layout: None,
-                function_pointer_signature: None,
+                function_pointer_signature: parsed_type.function_pointer_signature,
                 struct_name,
                 union_name: parsed_type.union_name,
                 array_element_width: None,
@@ -11331,8 +11444,10 @@ impl Parser {
         if !self.parsing_function_header {
             return self.parse_type();
         }
-        let ty = self.parse_type_with_anonymous_struct(false, false, true)?;
-        self.opaque_function_signature |= ty.opaque_builtin;
+        let ty = self.parse_type_with_anonymous_struct(false, true, true)?;
+        self.opaque_function_signature |= ty.opaque_builtin || ty.long_double;
+        self.opaque_signature_types
+            .push((ty.opaque_builtin, ty.long_double));
         Ok(ty)
     }
 
@@ -11371,6 +11486,7 @@ impl Parser {
                 long_double: false,
                 aligned_typedef: false,
                 opaque_builtin: false,
+                function_pointer_signature: None,
                 struct_name: Some(
                     if allow_anonymous_struct && self.peek() == Some(&Token::LBrace) {
                         // Anonymous types have nominal identity per declaration,
@@ -11408,6 +11524,7 @@ impl Parser {
                 long_double: false,
                 aligned_typedef: false,
                 opaque_builtin: false,
+                function_pointer_signature: None,
                 struct_name: None,
                 enum_name: None,
                 union_name: {
@@ -11444,6 +11561,7 @@ impl Parser {
                 long_double: false,
                 aligned_typedef: false,
                 opaque_builtin: false,
+                function_pointer_signature: None,
                 struct_name: None,
                 union_name: None,
                 enum_name: {
@@ -11538,6 +11656,11 @@ impl Parser {
                 C0Type::Float64Pointer => C0Type::Float64PointerPointer,
                 C0Type::Void => C0Type::VoidPointer,
                 C0Type::VoidPointer => C0Type::VoidPointerPointer,
+                // An opaque prototype may retain this nominal pointee, but
+                // cannot use the placeholder's byte-array layout as an ABI.
+                C0Type::UInt8Array(16) if parsed.long_double && allow_opaque_declaration => {
+                    C0Type::VoidPointer
+                }
                 C0Type::Int8PointerPointer => {
                     return Err(
                         self.error_at_previous("pointer depth beyond `**` is not supported")
@@ -11641,6 +11764,7 @@ impl Parser {
             long_double: parsed.long_double,
             aligned_typedef: false,
             opaque_builtin: parsed.opaque_builtin,
+            function_pointer_signature: parsed.function_pointer_signature,
             struct_name: parsed.struct_name,
             enum_name: parsed.enum_name,
             union_name: parsed.union_name,
@@ -11708,6 +11832,7 @@ impl Parser {
             long_double: false,
             aligned_typedef: false,
             opaque_builtin: false,
+            function_pointer_signature: self.function_pointer_signature(&expression),
             struct_name,
             enum_name: None,
             union_name: None,
@@ -11728,6 +11853,19 @@ impl Parser {
     ) -> Result<Option<(String, C0Type, C0FunctionPointerSignature)>, C0SyntaxError> {
         if self.peek() != Some(&Token::LParen) {
             return Ok(None);
+        }
+        if return_type.function_pointer_signature.is_some() {
+            return Err(self.error_here("nested function-pointer signatures are not supported"));
+        }
+        if return_type.union_name.is_some()
+            || return_type.enum_name.is_some()
+            || return_type.is_volatile
+            || return_type.long_double
+            || return_type.opaque_builtin
+        {
+            return Err(
+                self.error_here("callback return type needs unsupported signature metadata")
+            );
         }
         if return_type.struct_name.is_some() && !return_type.c_type.is_pointer() {
             return Err(self.error_here(
@@ -11753,6 +11891,16 @@ impl Parser {
                     ));
                 }
                 let parsed_type = self.parse_type()?;
+                if parsed_type.function_pointer_signature.is_some() {
+                    return Err(
+                        self.error_here("nested function-pointer signatures are not supported")
+                    );
+                }
+                if parsed_type.union_name.is_some() || parsed_type.enum_name.is_some() {
+                    return Err(self.error_here(
+                        "callback parameter type needs unsupported signature metadata",
+                    ));
+                }
                 if parsed_type.is_volatile {
                     return Err(self.error_here(
                         "volatile function-pointer parameters are not supported by the small model",
@@ -11849,6 +11997,7 @@ impl Parser {
                 long_double: true,
                 aligned_typedef: false,
                 opaque_builtin: false,
+                function_pointer_signature: None,
                 struct_name: None,
                 enum_name: None,
                 union_name: None,
@@ -11909,6 +12058,7 @@ impl Parser {
             long_double: false,
             aligned_typedef: false,
             opaque_builtin: name == "__builtin_va_list",
+            function_pointer_signature: None,
             struct_name: None,
             enum_name: None,
             union_name: None,
@@ -12429,7 +12579,7 @@ impl Parser {
     }
 
     fn parse_block_scope_function_header(&mut self) -> Result<C0FunctionHeader, C0SyntaxError> {
-        let (prefix_inline, prefix_weak, prefix_returns_twice) =
+        let (prefix_inline, prefix_weak, prefix_returns_twice, prefix_opaque) =
             self.consume_function_attributes()?;
         if self.peek_ident() != Some("extern") {
             return Err(self.error_here(
@@ -12442,10 +12592,11 @@ impl Parser {
                 self.error_here("expected a function declaration after block-scope `extern`")
             );
         }
-        let header = self.parse_function_header(false)?;
+        let mut header = self.parse_function_header(false)?;
         self.pop_scope();
-        let (suffix_inline, suffix_weak, suffix_returns_twice) =
+        let (suffix_inline, suffix_weak, suffix_returns_twice, suffix_opaque) =
             self.consume_function_attributes()?;
+        header.opaque_attributes = prefix_opaque || suffix_opaque;
         if prefix_inline
             || suffix_inline
             || prefix_weak
@@ -14235,6 +14386,10 @@ impl Parser {
                 c_type = C0Type::UInt8Pointer;
             }
             self.variable_types.insert(name.clone(), c_type);
+            if let Some(signature) = &parsed_type.function_pointer_signature {
+                self.variable_function_pointers
+                    .insert(name.clone(), signature.clone());
+            }
             let object_volatile = parsed_type.object_is_volatile();
             let pointee_volatile = parsed_type.pointee_is_volatile();
             let object_constant = parsed_type.is_constant;
@@ -14372,6 +14527,9 @@ impl Parser {
                     } else {
                         self.position = call_start;
                         let expression = self.parse_expression()?;
+                        if let Some(signature) = self.variable_function_pointers.get(&name) {
+                            self.validate_function_pointer_value(signature, &expression)?;
+                        }
                         self.validate_struct_pointer_assignment(
                             self.variable_structs.get(&name),
                             Some(c_type),
@@ -14389,6 +14547,9 @@ impl Parser {
                     }
                 } else {
                     let expression = self.parse_expression()?;
+                    if let Some(signature) = self.variable_function_pointers.get(&name) {
+                        self.validate_function_pointer_value(signature, &expression)?;
+                    }
                     self.validate_struct_pointer_assignment(
                         self.variable_structs.get(&name),
                         Some(c_type),
@@ -14420,6 +14581,9 @@ impl Parser {
     fn parse_static_local_declaration(&mut self) -> Result<C0Statement, C0SyntaxError> {
         self.expect_ident_spelling("static")?;
         let parsed_type = self.parse_type()?;
+        if parsed_type.function_pointer_signature.is_some() {
+            return Err(self.error_here("static function-pointer objects are not supported"));
+        }
         self.validate_volatile_type(&parsed_type)?;
         let aggregate_struct = if is_plain_struct_type(&parsed_type) {
             if parsed_type.is_volatile {
@@ -14894,6 +15058,10 @@ impl Parser {
             let source_name = self.expect_ident("for-loop local name")?;
             let name = self.declare_name(&source_name)?;
             self.variable_types.insert(name.clone(), parsed_type.c_type);
+            if let Some(signature) = &parsed_type.function_pointer_signature {
+                self.variable_function_pointers
+                    .insert(name.clone(), signature.clone());
+            }
             let object_volatile = parsed_type.object_is_volatile();
             let pointee_volatile = parsed_type.pointee_is_volatile();
             let object_constant = parsed_type.is_constant;
@@ -14909,6 +15077,9 @@ impl Parser {
             }
             self.position += 1;
             let expression = self.parse_expression()?;
+            if let Some(signature) = &parsed_type.function_pointer_signature {
+                self.validate_function_pointer_value(signature, &expression)?;
+            }
             self.reject_discarded_const_pointer(parsed_type.c_type, pointee_constant, &expression)?;
             initializers.push(C0Statement::Seq(
                 Box::new(C0Statement::Declare {
@@ -17643,9 +17814,12 @@ impl Parser {
                 .contains_key(&self.resolve_name(source_name))
             && let Some(header) = self.function_declarations.get(source_name)
         {
+            if header.opaque_attributes {
+                return Err(self.error_at_previous(format!("function `{source_name}` uses declaration-only compiler attributes; calls require modeled semantics")));
+            }
             if header.opaque_signature {
                 return Err(self.error_at_previous(format!(
-                    "function `{source_name}` uses declaration-only __builtin_va_list; calls require a modeled ABI"
+                    "function `{source_name}` uses declaration-only signature (__builtin_va_list or long double); calls require a modeled ABI"
                 )));
             }
             if header.weak_linkage {

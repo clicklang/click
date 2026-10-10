@@ -103,6 +103,11 @@ Pin the selected configuration and revision of
 its unchanged optimized path against the same specification, and derive C/Rust
 result equality. Match seed/reset and null-buffer behavior explicitly.
 
+The pinned zlib source closure now reaches the selected computation body.
+Complete the adapter's expression-update support for its loop conditions and
+pointer reads (`len--`, `--n`, and `*buf++`). Preserve evaluation order,
+exit-side updates, and unsigned wrap; keep the implementation unchanged.
+
 Acceptance:
 
 - Both implementations independently satisfy the shared specification for
