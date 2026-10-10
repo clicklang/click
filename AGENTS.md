@@ -65,10 +65,13 @@ a simplified example is not evidence that the original pattern is supported.
 
 When developing an example and the verifier together, apply the
 [three-strikes rule](docs/concepts/proof-failure-triage.md#three-strikes-during-example-development):
-after three substantive failed attempts at the same obligation, pause local
-proof variations and investigate. Repeated friction is a usability signal even
-when the checker is correct. Investigation is required; a verifier change is
-not. Resume with an explained proof correction or a general tool improvement.
+after the second failure at the same obligation, run a focused proof trace and
+explain what it reveals before another attempt. If it explains the failure,
+use that information to correct the proof; tracing can be a sufficient remedy.
+After the third failure, pause local variations and investigate using the trace.
+Do not infer a verifier problem from repeated rejection before trying tracing.
+A trace that leaves the necessary comparison unexplained may itself need
+improvement. Investigation is required; a verifier change is not.
 
 Stop affected feature work immediately for tooling defects: unexpected
 slowness without a prompt local failure, unverifiable smart certificates or
