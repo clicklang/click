@@ -39,6 +39,7 @@ impl CStatementSiteScope {
             carriers.borrow_mut().push(PlaceScope {
                 carriers: reference_carriers(function),
                 structs: BTreeMap::new(),
+                ..PlaceScope::default()
             })
         });
         Self(())
@@ -72,6 +73,10 @@ enum PointeeShape {
 /// What one scope lets the printer name.
 #[derive(Default)]
 struct PlaceScope {
+    // The selected function's input identity, independent of the order in
+    // which other functions were verified.
+    input_scope: Option<u64>,
+    struct_pointer_parameters: Vec<Option<String>>,
     /// The parameters whose reads are printed as places, by the name each
     /// has in a kernel term.
     carriers: BTreeMap<String, PointeeShape>,
@@ -146,12 +151,33 @@ impl ParameterPlaceScope {
         }
         REFERENCE_CARRIERS.with(|scopes| {
             scopes.borrow_mut().push(PlaceScope {
+                input_scope: Some(lowering::input_scope(block.signature().name())),
+                struct_pointer_parameters: parameters.iter().map(|parameter| {
+                    (parameter.struct_name().is_some()
+                        && !parameter.is_reference()
+                        && matches!(parameter.click_type(), ClickType::C(c_type) if c_type.is_pointer()))
+                        .then(|| parameter.name().to_string())
+                }).collect(),
                 carriers: shapes,
                 structs: block.pointee_field_places().clone(),
             })
         });
         Self(())
     }
+}
+
+fn input_struct_pointer_place(base: &ContractExpression) -> Option<String> {
+    let ContractExpression::CFragment(CExpression::Value(CValue::Pointer(pointer))) = base else {
+        return None;
+    };
+    REFERENCE_CARRIERS.with(|scopes| {
+        let scopes = scopes.borrow();
+        let scope = scopes.last()?;
+        let index = lowering::input_pointer_parameter(scope.input_scope?, pointer)?;
+        let name = scope.struct_pointer_parameters.get(index)?.as_ref()?;
+        // This is the universal input, even if the parameter was reassigned.
+        Some(format!("at(function.entry, {name})"))
+    })
 }
 
 impl Drop for ParameterPlaceScope {
@@ -5414,7 +5440,11 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             {
                 format!("{}.{field}", describe_contract_expression(base))
             }
-            _ => describe_field_place(&describe_contract_expression(base), field),
+            _ => describe_field_place(
+                &input_struct_pointer_place(base)
+                    .unwrap_or_else(|| describe_contract_expression(base)),
+                field,
+            ),
         },
         ContractExpression::CBinding(name) => format!("c({name})"),
         ContractExpression::ResourceWildcard => "_".to_string(),
