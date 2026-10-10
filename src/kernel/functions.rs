@@ -22545,6 +22545,46 @@ fn resource_body_fact_is_established(
     if required_obligation_is_exactly_discharged(established, proposition) {
         return true;
     }
+    // A copied wide word can have a fresh read name that recurs inside its
+    // packed-word equation. Query only exact 64-bit neighbors of the stated
+    // endpoints and captured variables, using checked equality substitution. A
+    // candidate must still be established by the original context.
+    if let Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(left, right), true) =
+        proposition
+    {
+        let mut variables = std::collections::BTreeSet::new();
+        crate::kernel::reasoning::variable_collection::collect_proposition_capture_variables(
+            proposition,
+            &mut variables,
+        );
+        let endpoints = [left.as_ref().clone(), right.as_ref().clone()]
+            .into_iter()
+            .chain(variables.into_iter().map(Bitvector32Term::Variable));
+        for endpoint in endpoints {
+            for (alias, evidence) in established.exact_uint64_equalities(&endpoint) {
+                crate::instrumentation::record_deterministic_work(1);
+                let equality = Proposition::ConditionIs(
+                    ConditionTerm::Bitvector64Equal(
+                        Box::new(endpoint.clone()),
+                        Box::new(alias.clone()),
+                    ),
+                    true,
+                );
+                let evidence = Proposition::ConditionIs(evidence.clone(), true);
+                if let Ok(candidate) =
+                    crate::kernel::proof::equality_rewrite::rewrite_proposition_by_exact_equality(
+                        proposition,
+                        &equality,
+                        std::slice::from_ref(&evidence),
+                    )
+                    && candidate != *proposition
+                    && required_obligation_is_exactly_discharged(established, &candidate)
+                {
+                    return true;
+                }
+            }
+        }
+    }
     if matches!(
         proposition,
         Proposition::ConditionIs(
@@ -35386,6 +35426,89 @@ mod inline_loop_boundary_tests {
 #[cfg(test)]
 mod composite_pointer_body_fact_tests {
     use super::*;
+
+    // A fold's packed-word equation can use a new name for a checked copy.
+    // Rewriting that name must remain scoped, full-width, and independent
+    // of unrelated facts. No memory observation or ownership is invented.
+    #[test]
+    fn fold_copied_wide_word_preserves_scope_width_and_scales() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let word = Bitvector32Term::Variable(Variable(710_000));
+        let copied = Bitvector32Term::Variable(Variable(710_001));
+        let changed = Bitvector32Term::Variable(Variable(710_002));
+        let address =
+            Bitvector32Term::PointerAddress(Box::new(Pointer::symbolic(Variable(710_003))));
+        let packed = |word: &Bitvector32Term| {
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector64Equal(
+                    Box::new(word.clone()),
+                    Box::new(Bitvector32Term::UInt64Add(
+                        Box::new(address.clone()),
+                        Box::new(Bitvector32Term::UInt64BitwiseAnd(
+                            Box::new(word.clone()),
+                            Box::new(Bitvector32Term::UInt64Constant(1)),
+                        )),
+                    )),
+                ),
+                true,
+            )
+        };
+        let alias = Proposition::ConditionIs(
+            ConditionTerm::Bitvector64Equal(Box::new(copied.clone()), Box::new(word.clone())),
+            true,
+        );
+        // Force the selected-alias route rather than general condition reasoning.
+        let parent = PureFactContext::new()
+            .defer_non_exact_condition_reasoning()
+            .assume_proposition(packed(&word));
+        let context = parent.clone().assume_proposition(alias.clone());
+        assert!(resource_body_fact_is_established(
+            &context,
+            &packed(&copied)
+        ));
+        assert!(!resource_body_fact_is_established(
+            &parent,
+            &packed(&copied)
+        ));
+        assert!(!resource_body_fact_is_established(
+            &context,
+            &packed(&changed)
+        ));
+        assert!(!resource_body_fact_is_established(
+            &PureFactContext::new().assume_proposition(alias),
+            &packed(&copied),
+        ));
+        let narrow = parent.clone().assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(Box::new(copied.clone()), Box::new(word.clone())),
+            true,
+        ));
+        assert!(!resource_body_fact_is_established(
+            &narrow,
+            &packed(&copied)
+        ));
+        let mut previous = None;
+        for count in [16_u64, 64, 256, 1024] {
+            let mut padded = context.clone();
+            for index in 0..count {
+                padded = padded.assume_proposition(Proposition::ConditionIs(
+                    ConditionTerm::Bitvector64Equal(
+                        Box::new(Bitvector32Term::Variable(Variable(720_000 + index))),
+                        Box::new(Bitvector32Term::UInt64Constant(index)),
+                    ),
+                    true,
+                ));
+            }
+            padded.build_stated_proposition_index();
+            let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                resource_body_fact_is_established(&padded, &packed(&copied))
+            });
+            assert!(proved);
+            if let Some(previous) = previous {
+                assert!(work <= previous + 64, "{count}: {work} after {previous}");
+            }
+            previous = Some(work);
+        }
+    }
 
     fn pointer_fact(left: &Pointer, right: &Pointer, equal: bool) -> Proposition {
         Proposition::ConditionIs(

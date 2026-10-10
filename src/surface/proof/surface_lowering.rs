@@ -891,6 +891,64 @@ impl<'a> Proof<'a> {
         })
     }
 
+    /// Ordinary proof resource operands name the current C locals after lexical
+    /// proof bindings have been resolved. Capture only referenced names; the
+    /// existing resource lowering still checks reads and ownership.
+    pub(super) fn resolve_proof_resource_arguments(
+        &self,
+        resource: &ResourceClause,
+    ) -> Result<ResourceClause, ClickError> {
+        let mut resource = self.substitute_fixed_state_locals_in_resource_arguments(resource)?;
+        let Some(view) = self
+            .outcome_fixed_state_view()
+            .or_else(|| self.execution_fixed_state_view())
+        else {
+            return Ok(resource);
+        };
+        fn resolve(resource: &mut ResourceClause, state: &CState) -> Result<(), String> {
+            if let ResourceClause::Declared {
+                arguments,
+                resource_type_arguments,
+                ..
+            } = resource
+            {
+                for nested in resource_type_arguments {
+                    resolve(nested, state)?;
+                }
+                for argument in arguments {
+                    let substitutions = contract_expression_referenced_names(argument)
+                        .into_iter()
+                        .filter_map(|name| {
+                            state.locals().get(&name).map(|value| {
+                                (
+                                    name,
+                                    ContractExpression::CFragment(CExpression::Value(
+                                        value.clone(),
+                                    )),
+                                )
+                            })
+                        })
+                        .collect::<BTreeMap<_, _>>();
+                    if !substitutions.is_empty() {
+                        *argument = substitute_contract_expression(
+                            argument,
+                            crate::surface::lowering::ContractSubstitutions::for_current_c_values(
+                                &substitutions,
+                            ),
+                        )?;
+                    }
+                }
+            }
+            Ok(())
+        }
+        resolve(&mut resource, view.state).map_err(|message| {
+            self.step_error(format!(
+                "could not resolve current resource arguments: {message}"
+            ))
+        })?;
+        Ok(resource)
+    }
+
     /// The declared resource with proof locals substituted into each of its
     /// arguments; any other clause is returned unchanged.
     pub(super) fn substitute_fixed_state_locals_in_resource_arguments(
