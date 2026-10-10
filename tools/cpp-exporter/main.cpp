@@ -68,6 +68,7 @@ struct Options {
   std::string compilation_database;
   std::string exception_behavior = "normal_only";
   std::map<std::string, llvm::json::Value> library_assertions;
+  bool axiomatic_system_headers = false;
   std::string compilation_directory;
   std::string compilation_file;
   std::vector<std::string> compilation_command;
@@ -119,6 +120,12 @@ std::optional<Options> parse_options(int argc, const char **argv) {
           return std::nullopt;
         }
       }
+    } else if (option == "--axiomatic-system-headers") {
+      if (value != "true" && value != "false") {
+        llvm::errs() << "error: --axiomatic-system-headers takes true or false\n";
+        return std::nullopt;
+      }
+      result.axiomatic_system_headers = value == "true";
     } else if (option == "--exception-behavior") {
       if (value != "normal_only" && value != "scalar_int32") {
         llvm::errs() << "error: unsupported exception behavior `" << value << "`\n";
@@ -168,6 +175,7 @@ public:
                    std::vector<std::string> compilation_command,
                    std::string exception_behavior,
                    const std::map<std::string, llvm::json::Value> &library_assertions,
+                   bool axiomatic_system_headers,
                    ExportState &state)
       : compiler_(compiler), context_(compiler.getASTContext()),
         source_manager_(context_.getSourceManager()),
@@ -179,7 +187,8 @@ public:
         compilation_file_(std::move(compilation_file)),
         compilation_command_(std::move(compilation_command)),
         exception_behavior_(std::move(exception_behavior)),
-        library_assertions_(library_assertions), state_(state) {}
+        library_assertions_(library_assertions),
+        axiomatic_system_headers_(axiomatic_system_headers), state_(state) {}
 
   bool VisitFunctionDecl(clang::FunctionDecl *declaration) {
     if (declaration->isThisDeclarationADefinition() &&
@@ -330,6 +339,8 @@ private:
   }
 
   std::optional<Json> lower_function(const clang::FunctionDecl *declaration) {
+    if (is_axiom(declaration))
+      return lower_axiom(declaration);
     auto source = executable_source(declaration->getLocation());
     if (!source) {
       fail(declaration->getLocation(), "reachable C++ definitions require a selected or dependency source");
@@ -2299,6 +2310,8 @@ private:
       }
     }
     const clang::FunctionDecl *definition = callee->getDefinition();
+    if (definition == nullptr && is_axiom(callee))
+      definition = callee;
     if (definition == nullptr) {
       fail(call->getExprLoc(),
            "direct C++ call has no reachable function definition");
@@ -2306,7 +2319,7 @@ private:
     }
     const clang::SourceLocation definition_location =
         source_manager_.getSpellingLoc(definition->getLocation());
-    if (!executable_source(definition_location)) {
+    if (!is_axiom(definition) && !executable_source(definition_location)) {
       fail(call->getExprLoc(),
            "the supported C++ call graph requires definitions in selected or dependency sources");
       return std::nullopt;
@@ -3888,7 +3901,133 @@ private:
   }
 
   Json span(clang::SourceRange range) {
+    if (system_spans_) {
+      llvm::json::Object result;
+      result["file"] = "<system>";
+      result["start_line"] = 0;
+      result["start_column"] = 0;
+      result["end_line"] = 0;
+      result["end_column"] = 0;
+      return Json(std::move(result));
+    }
     return source_span(range, function_source_.empty() ? logical_source_ : function_source_);
+  }
+
+  bool is_axiom(const clang::FunctionDecl *function) const {
+    return axiomatic_system_headers_ &&
+           source_manager_.isInSystemHeader(
+               source_manager_.getExpansionLoc(function->getLocation()));
+  }
+
+  // The interface of a system-header function: its kind, receiver,
+  // parameters and return type, but no body. The standard name and
+  // canonical signature key the contract Click supplies for it.
+  std::optional<Json> lower_axiom(const clang::FunctionDecl *declaration) {
+    llvm::SaveAndRestore<bool> spans(system_spans_, true);
+    const auto *constructor =
+        llvm::dyn_cast<clang::CXXConstructorDecl>(declaration);
+    const auto *destructor =
+        llvm::dyn_cast<clang::CXXDestructorDecl>(declaration);
+    const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(declaration);
+    const bool ordinary_method =
+        method != nullptr && constructor == nullptr && destructor == nullptr;
+    const auto *prototype =
+        declaration->getType()->getAs<clang::FunctionProtoType>();
+    if (declaration->isDependentContext() || prototype == nullptr ||
+        declaration->isVariadic() ||
+        (method != nullptr && (method->isVirtual() || method->isVolatile() ||
+                               method->getRefQualifier() != clang::RQ_None))) {
+      fail(declaration->getLocation(),
+           "standard-library function `" +
+               declaration->getQualifiedNameAsString() +
+               "` has an interface outside the supported axiomatic slice");
+      return std::nullopt;
+    }
+    if (!prototype->isNothrow()) {
+      fail(declaration->getLocation(),
+           "standard-library function `" +
+               declaration->getQualifiedNameAsString() +
+               "` must be noexcept; throwing contracts are not modeled");
+      return std::nullopt;
+    }
+    std::optional<Json> return_type;
+    llvm::json::Object function_kind;
+    const clang::CXXRecordDecl *record =
+        method == nullptr ? nullptr : method->getParent()->getDefinition();
+    if (method != nullptr && (record == nullptr || !remember_record(record)))
+      return std::nullopt;
+    if (constructor != nullptr || destructor != nullptr) {
+      llvm::json::Object void_type;
+      void_type["kind"] = "void";
+      return_type.emplace(std::move(void_type));
+      function_kind["kind"] =
+          constructor != nullptr ? "constructor" : "destructor";
+      function_kind["record_declaration_id"] = declaration_id(record);
+      function_kind["record_name"] = record_name(record);
+    } else {
+      return_type = lower_type(declaration->getReturnType(),
+                               declaration->getLocation());
+      if (!return_type)
+        return std::nullopt;
+      function_kind["kind"] =
+          ordinary_method ? (method->isStatic() ? "static_method" : "method")
+                          : "free";
+      if (ordinary_method) {
+        function_kind["record_declaration_id"] = declaration_id(record);
+        function_kind["record_name"] = record_name(record);
+        if (!method->isStatic())
+          function_kind["is_const"] = method->isConst();
+      }
+    }
+    llvm::json::Array parameters;
+    if (method != nullptr && !method->isStatic()) {
+      llvm::json::Object record_type;
+      record_type["kind"] = "record";
+      record_type["declaration_id"] = declaration_id(record);
+      record_type["name"] = record_name(record);
+      record_type["is_const"] = method->isConst();
+      llvm::json::Object reference_type;
+      reference_type["kind"] = "lvalue_reference";
+      reference_type["pointee"] = std::move(record_type);
+      llvm::json::Object self;
+      self["declaration_id"] = object_self_id(method);
+      self["name"] = "self";
+      self["value_type"] = std::move(reference_type);
+      self["span"] = span(method->getNameInfo().getSourceRange());
+      parameters.push_back(std::move(self));
+    }
+    for (const clang::ParmVarDecl *parameter : declaration->parameters()) {
+      if (parameter->hasDefaultArg() && constructor != nullptr) {
+        fail(parameter->getLocation(),
+             "default arguments of standard-library constructors are not modeled");
+        return std::nullopt;
+      }
+      auto lowered = lower_parameter(parameter);
+      if (!lowered)
+        return std::nullopt;
+      parameters.push_back(std::move(*lowered));
+    }
+    llvm::json::Object axiom;
+    axiom["qualified_name"] = declaration->getQualifiedNameAsString();
+    axiom["signature"] =
+        declaration->getType().getCanonicalType().getAsString();
+    llvm::json::Object result;
+    result["declaration_id"] = declaration_id(declaration);
+    result["name"] = ordinary_method ? method_name(method)
+                     : constructor == nullptr
+                         ? (destructor == nullptr ? function_name(declaration)
+                                                  : destructor_name(destructor))
+                         : constructor_name(constructor);
+    result["function_kind"] = std::move(function_kind);
+    result["return_type"] = std::move(*return_type);
+    result["parameters"] = std::move(parameters);
+    result["declared_noexcept"] = true;
+    result["span"] = span(declaration->getSourceRange());
+    result["body"] = llvm::json::Array();
+    result["axiom"] = std::move(axiom);
+    if (!state_.error.empty())
+      return std::nullopt;
+    return Json(std::move(result));
   }
 
   Json source_span(clang::SourceRange range, const std::string &source) {
@@ -4041,6 +4180,10 @@ private:
   std::vector<std::string> compilation_command_;
   std::string exception_behavior_;
   const std::map<std::string, llvm::json::Value> &library_assertions_;
+  // A function declared in a system header is an axiom: its signature is
+  // exported, its body never is, and Click supplies its contract.
+  const bool axiomatic_system_headers_;
+  bool system_spans_ = false;
   std::unordered_map<const clang::FunctionDecl *, unsigned> local_declaration_counts_;
   const clang::VarDecl *active_catch_binding_ = nullptr;
   ExportState &state_;
@@ -4072,7 +4215,8 @@ public:
                   options.function, options.dependency_root,
                   options.compilation_directory, options.compilation_file,
                   options.compilation_command, options.exception_behavior,
-                  options.library_assertions, state) {}
+                  options.library_assertions,
+                  options.axiomatic_system_headers, state) {}
 
   void HandleTranslationUnit(clang::ASTContext &context) override {
     exporter_.TraverseDecl(context.getTranslationUnitDecl());

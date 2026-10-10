@@ -352,6 +352,19 @@ pub struct CppFunction {
     pub declared_noexcept: bool,
     pub span: CppSpan,
     pub body: Vec<CppStatement>,
+    /// Present for a function declared in a system header under the
+    /// axiomatic standard-library boundary: the body is not exported, and
+    /// Click supplies the contract the call is checked against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub axiom: Option<CppAxiom>,
+}
+
+/// The standard interface an axiomatic function is keyed on.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CppAxiom {
+    pub qualified_name: String,
+    pub signature: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1169,10 +1182,26 @@ impl CppExport {
             dependencies: constant_dependencies,
         } = validate_constant_inventory(&self.constants, logical_source, &declaration_sources)?;
 
+        if self.function.axiom.is_some() {
+            return Err("the selected C++ function cannot be a standard-library axiom".into());
+        }
         self.function.span.validate(logical_source)?;
         let mut functions = BTreeMap::new();
         let mut referenced_constants = BTreeSet::new();
         for source in std::iter::once(&self.function).chain(&self.reachable_functions) {
+            if source.axiom.is_some() {
+                source.validate_axiom(&records)?;
+                if functions
+                    .insert(source.declaration_id.clone(), source)
+                    .is_some()
+                {
+                    return Err(format!(
+                        "duplicate C++ function declaration identity `{}`",
+                        source.declaration_id
+                    ));
+                }
+                continue;
+            }
             source.span.validate_in(&declaration_sources)?;
             if source.span.file != logical_source
                 && matches!(source.function_kind, CppFunctionKind::Destructor { .. })
@@ -1728,6 +1757,29 @@ impl CppRecord {
 }
 
 impl CppFunction {
+    /// An axiom has an interface and no body; its record references must
+    /// still name checked records.
+    fn validate_axiom(&self, records: &RecordIndex<'_>) -> Result<(), String> {
+        if !self.body.is_empty() || !self.declared_noexcept {
+            return Err(format!(
+                "C++ standard-library axiom `{}` must be a noexcept interface without a body",
+                self.name
+            ));
+        }
+        match &self.function_kind {
+            CppFunctionKind::Constructor {
+                record_declaration_id,
+                record_name,
+            }
+            | CppFunctionKind::Destructor {
+                record_declaration_id,
+                record_name,
+            } => validate_record_reference(records, record_declaration_id, record_name).map(|_| ()),
+            _ if self.return_type == CppType::Void => Ok(()),
+            _ => require_function_return_type(&self.return_type, records, "function return type"),
+        }
+    }
+
     // Executable spans are local to this body; alias origins are checked once
     // by metadata validity against the shared locked declaration inventory.
     fn validate(
@@ -5574,6 +5626,7 @@ mod tests {
             span: span.clone(),
         };
         let mut function = CppFunction {
+            axiom: None,
             declaration_id: "root".into(),
             name: "root".into(),
             function_kind: CppFunctionKind::Free,
@@ -5729,6 +5782,7 @@ mod tests {
     #[test]
     fn static_helper_artifacts_require_class_identity_and_scalar_signature() {
         let mut function = CppFunction {
+            axiom: None,
             declaration_id: "static_function".into(),
             name: "Math_echo".into(),
             function_kind: CppFunctionKind::StaticMethod {
@@ -6042,6 +6096,7 @@ mod tests {
                 .is_err()
         );
         let function = |name: &str, body, parameters| CppFunction {
+            axiom: None,
             declaration_id: name.into(),
             name: name.into(),
             function_kind: CppFunctionKind::Free,
@@ -6114,6 +6169,7 @@ mod tests {
             span: cleanup_span(),
         };
         let function = |name: &str, body, parameters| CppFunction {
+            axiom: None,
             declaration_id: name.into(),
             name: name.into(),
             function_kind: CppFunctionKind::Free,
@@ -6221,6 +6277,7 @@ mod tests {
     #[test]
     fn return_call_graphs_check_callee_identity_destination_arguments_and_cycles() {
         let function = |name: &str, body| CppFunction {
+            axiom: None,
             declaration_id: name.into(),
             name: name.into(),
             function_kind: CppFunctionKind::Free,
@@ -6364,6 +6421,7 @@ mod tests {
             span: cleanup_span(),
         };
         let mut function = CppFunction {
+            axiom: None,
             declaration_id: "method".into(),
             name: "State_update".into(),
             function_kind: CppFunctionKind::Method {
@@ -6495,6 +6553,7 @@ mod tests {
     fn wide_artifact_function_boundaries_require_matching_types() {
         let sources = BTreeSet::from(["fixture.cpp".into()]);
         let mut function = CppFunction {
+            axiom: None,
             declaration_id: "root".into(),
             name: "root".into(),
             function_kind: CppFunctionKind::Free,
@@ -6939,6 +6998,7 @@ mod tests {
                 span: cleanup_span(),
             };
             let mut caller = CppFunction {
+                axiom: None,
                 declaration_id: "caller".into(),
                 name: "caller".into(),
                 function_kind: CppFunctionKind::Free,
@@ -6980,6 +7040,7 @@ mod tests {
                 });
             }
             let callee = CppFunction {
+                axiom: None,
                 declaration_id: "read".into(),
                 name: "read".into(),
                 function_kind: CppFunctionKind::Free,
@@ -7039,6 +7100,7 @@ mod tests {
             span: cleanup_span(),
         };
         let mut function = CppFunction {
+            axiom: None,
             declaration_id: "root".into(),
             name: "root".into(),
             function_kind: CppFunctionKind::Free,
@@ -7117,6 +7179,7 @@ mod tests {
             };
             let mut functions = (0..size)
                 .map(|index| CppFunction {
+                    axiom: None,
                     declaration_id: format!("f{index}"),
                     name: format!("f{index}"),
                     function_kind: CppFunctionKind::Free,
@@ -7255,6 +7318,7 @@ mod tests {
                 .contains("outside the selected")
         );
         let function = CppFunction {
+            axiom: None,
             declaration_id: "function".into(),
             name: "read".into(),
             function_kind: CppFunctionKind::Free,
@@ -7616,6 +7680,7 @@ mod tests {
             ..cleanup_span()
         };
         let function = |name: String, source: String, body| CppFunction {
+            axiom: None,
             declaration_id: name.clone(),
             name,
             function_kind: CppFunctionKind::Free,

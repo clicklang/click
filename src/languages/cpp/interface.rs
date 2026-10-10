@@ -312,8 +312,11 @@ fn function_interface(
     let mut interface =
         syntax::C0Function::external(return_type, lowered.name().to_owned(), parameters)
             .with_return_reference(return_reference)
-            .with_return_pointee_constant(return_constant)
-            .with_prelowered_kernel_function(lowered.clone());
+            .with_return_pointee_constant(return_constant);
+    // An axiom keeps no body: its calls are checked against a contract.
+    if source.axiom.is_none() {
+        interface = interface.with_prelowered_kernel_function(lowered.clone());
+    }
     if let CppType::Record { name, .. } = &source.return_type {
         let layout = layouts
             .get(name)

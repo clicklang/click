@@ -17102,3 +17102,69 @@ fn cpp_native_scalar_modular_ownership_does_not_imply_initialization_offline() {
         .expect_err("ordinary ownership and a value postcondition do not certify initialization");
     assert!(error.message().contains("uninitialized"), "{error:?}");
 }
+
+fn axiomatic_project(standard_library: &str) -> Project {
+    let project = Project::with_fixture(
+        "driver.cpp",
+        "forward",
+        "#include \"mini_std.h\"\nint* forward(int* p) noexcept { return ministd::identity(p); }\n",
+    );
+    fs::write(
+        project.directory.join("mini_std.h"),
+        "#pragma clang system_header\nnamespace ministd {\ninline int* identity(int* p) noexcept { return p; }\n}\n",
+    )
+    .unwrap();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.config()).unwrap()).unwrap();
+    config["standard_library"] = standard_library.into();
+    if standard_library == "verified" {
+        config["dependencies"] = serde_json::json!(["mini_std.h"]);
+    }
+    fs::write(
+        project.config(),
+        serde_json::to_vec_pretty(&config).unwrap(),
+    )
+    .unwrap();
+    project
+}
+
+// Under the axiomatic boundary a system-header function is exported as an
+// interface with no body, and its call is checked against the contract Click
+// is given for it; without one, the caller does not verify.
+#[test]
+fn axiomatic_system_header_calls_export_interfaces_only() {
+    let project = axiomatic_project("axiomatic");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let [axiom] = import.export().reachable_functions.as_slice() else {
+        panic!("one reachable axiom")
+    };
+    let identity = axiom.axiom.as_ref().expect("an axiom");
+    assert_eq!(identity.qualified_name, "ministd::identity");
+    assert!(axiom.body.is_empty());
+    assert!(import.export().dependencies.is_empty());
+    let sidecar = project.directory.join("forward.click");
+    let assumed = format!(
+        "verifying \"driver.cpp\";\nextern int32* {}(int32* p) {{ ensures result == p; }}\nint32* forward(int32* p) {{ ensures result == p; }} by {{ execute(); simp(); }}\n",
+        axiom.name
+    );
+    fs::write(&sidecar, &assumed).unwrap();
+    let parsed = read_click_project(&sidecar, &assumed).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    let unassumed = "verifying \"driver.cpp\";\nint32* forward(int32* p) { ensures result == p; } by { execute(); simp(); }\n";
+    fs::write(&sidecar, unassumed).unwrap();
+    let parsed = read_click_project(&sidecar, unassumed).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(error.message().contains(&axiom.name), "{}", error.message());
+
+    // The transitional default still exports and verifies the body.
+    let project = axiomatic_project("verified");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let [verified] = import.export().reachable_functions.as_slice() else {
+        panic!("one reachable definition")
+    };
+    assert!(verified.axiom.is_none());
+    assert!(!verified.body.is_empty());
+}
