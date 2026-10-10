@@ -799,6 +799,7 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
     loop_index: usize,
     preservation: &crate::kernel::CLoopPreservationContext,
     pure_facts: &PureFactList,
+    enclosing_snapshots: &RecordedSnapshots,
     body: &CStatement,
     environment: &ExecutionProofEnvironment<'_>,
 ) -> Result<AutomaticLoopBody, ClickError> {
@@ -827,7 +828,9 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
         next_statement_index: loop_body_statement_index,
         ..ExecutionFrontier::default()
     };
-    let mut recorded_snapshots = RecordedSnapshots::new();
+    // A preservation proof is nested in the enclosing execution proof.
+    // Its marks still name fixed states; share their persistent map prefix.
+    let mut recorded_snapshots = enclosing_snapshots.clone();
     let constants = ExecutionProofConstants {
         proof_site: environment
             .frontier_loop_source
@@ -1004,6 +1007,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     first_generated_tactic_index: usize,
     preservation: &crate::kernel::CLoopPreservationContext,
     pure_facts: &PureFactList,
+    enclosing_snapshots: &RecordedSnapshots,
     invariant_checks: &[CLoopInvariantCheck],
     ranking_measures: &[crate::kernel::CRankingComponent],
     structural_measure: Option<&str>,
@@ -1087,7 +1091,8 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         next_statement_index: loop_body_statement_index,
         ..ExecutionFrontier::default()
     };
-    let mut recorded_snapshots = RecordedSnapshots::new();
+    // Inner marks remain local to this proof's persistent-map version.
+    let mut recorded_snapshots = enclosing_snapshots.clone();
     let nested_tactic_capture = expansion_capture
         .as_deref()
         .and_then(|capture| capture.nested_for_site(Some(&preserve_site)));

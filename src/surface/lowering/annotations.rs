@@ -6115,6 +6115,14 @@ impl AnnotationLowerer<'_> {
         if let Some(snapshot) = self.snapshot_environment(selector, environment)? {
             return self.lower_contract_expression_to_spec(expression, &snapshot);
         }
+        if self.snapshots.is_none()
+            && let SnapshotSelector::Mark(name) = selector
+            && let Some(loop_index) = environment.current_loop_entry
+        {
+            return Err(format!(
+                "proof-local mark `{name}` cannot be used in a loop invariant; use `at(loop({loop_index}).entry, ...)` for that loop's entry state"
+            ));
+        }
         match self.resolve_visit_selector(selector)? {
             ResolvedProgramPoint::Current => {
                 self.lower_contract_expression_to_spec(expression, environment)
