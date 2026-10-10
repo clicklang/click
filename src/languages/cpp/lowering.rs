@@ -176,14 +176,14 @@ fn lower_function(
             if is_receiver(index, parameter) {
                 let mut receiver = parameter.clone();
                 receiver.name = RECEIVER_NAME.to_string();
-                return lower_parameter(&receiver);
+                return lower_parameter(&receiver, layouts);
             }
             if !is_reference_parameter(index, parameter) {
-                return lower_parameter(parameter);
+                return lower_parameter(parameter, layouts);
             }
             let mut carrier = parameter.clone();
             carrier.name = reference_carrier_name(&parameter.name);
-            lower_parameter(&carrier)
+            lower_parameter(&carrier, layouts)
         })
         .collect::<Result<Vec<_>, String>>()?;
     let mut context = LoweringContext {
@@ -270,8 +270,25 @@ pub(super) fn is_reference_parameter(index: usize, parameter: &CppPlace) -> bool
         && !is_receiver(index, parameter)
 }
 
-fn lower_parameter(parameter: &CppPlace) -> Result<crate::kernel::CParameter, String> {
+fn lower_parameter(
+    parameter: &CppPlace,
+    layouts: &BTreeMap<String, crate::languages::c::syntax::C0StructLayout>,
+) -> Result<crate::kernel::CParameter, String> {
     match &parameter.value_type {
+        CppType::Record {
+            name,
+            is_const: false,
+            ..
+        } => {
+            let layout = layouts
+                .get(name)
+                .ok_or("C++ record parameter has no checked layout")?;
+            Ok(crate::kernel::c_parameter_with_aggregate_layout(
+                parameter.name.clone(),
+                CType::UInt8Pointer,
+                layout.to_kernel_aggregate_layout(),
+            ))
+        }
         CppType::Integer { .. } | CppType::Enumeration { .. } => Ok(c_parameter(
             parameter.name.clone(),
             cpp_scalar_kernel_type(&parameter.value_type)?,
@@ -311,7 +328,7 @@ fn lower_parameter(parameter: &CppPlace) -> Result<crate::kernel::CParameter, St
             ))
         }
         _ => Err(format!(
-            "C++ parameter `{}` is outside direct by-value `bool`, `int&`, `const int&`, `int*`, and record-reference lowering",
+            "C++ parameter `{}` is outside native scalar/reference/pointer and trivial record-value lowering",
             parameter.name
         )),
     }
@@ -1293,6 +1310,9 @@ impl LoweringContext<'_> {
 
     fn lower_call_argument(&mut self, argument: &CppCallArgument) -> Result<CExpression, String> {
         match argument {
+            CppCallArgument::RecordCopy { place, .. } => {
+                Ok(c_cast(self.lower_place(place)?, CType::UInt8Pointer))
+            }
             CppCallArgument::Value { value } => self.lower_expression(value),
             CppCallArgument::Reference { place } => {
                 let address = self.lower_place(place)?;

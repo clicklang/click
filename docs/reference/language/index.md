@@ -2910,6 +2910,11 @@ not have a recoverable C source place:
 - `load_int32_pointer(pointer)`, `load_uint8_pointer(pointer)`, and `load_uint16_pointer(pointer)`
 - `byte_offset(pointer, bytes)`
 
+Typed loads select memory from the surrounding clause independently of the
+pointer value's snapshot. `load_int32(old(p))` reads current memory through
+the entry-state pointer, while `old(load_int32(p))` reads entry-state memory.
+Both require the corresponding read permission and initialized storage.
+
 `address(pointer)` is the `uint64` integer representation of an object pointer
 under the LP64 profile. It is the spec spelling of the C cast
 `(unsigned long) pointer` and denotes the same kernel term: the address keeps

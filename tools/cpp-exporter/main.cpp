@@ -273,7 +273,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 56;
+    artifact["schema"] = 57;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -612,17 +612,26 @@ private:
         context_.hasSameType(parameter->getType().getUnqualifiedType(),
                              context_.BoolTy) &&
         !parameter->getType().isConstQualified();
+    const auto *by_value_record = parameter->getType()->getAsCXXRecordDecl();
+    const bool trivial_record_value = by_value_record != nullptr &&
+        !parameter->getType().hasQualifiers() &&
+        by_value_record->isTriviallyCopyable() &&
+        by_value_record->hasTrivialCopyConstructor() &&
+        by_value_record->hasTrivialDestructor();
     if (!int_reference && record_reference == nullptr && !mutable_int_pointer &&
-        !by_value_bool && !by_value_integer) {
+        !by_value_bool && !by_value_integer && !trivial_record_value) {
       fail(parameter->getLocation(),
            "the supported C++ parameter must be a by-value bool or "
            "signed/unsigned "
            "32/64/128-bit integer or unsigned char, int&, const "
            "int&, const signed-64 reference, or mutable int* parameter, mutable unsigned int*/unsigned char* parameter, or a "
-           "mutable or const simple-record reference parameter");
+           "mutable or const simple-record reference parameter, or a trivially copied simple-record value");
       return std::nullopt;
     }
     if (record_reference != nullptr && !remember_record(record_reference)) {
+      return std::nullopt;
+    }
+    if (trivial_record_value && !remember_record(by_value_record)) {
       return std::nullopt;
     }
     const clang::TypedefNameDecl *source_alias =
@@ -2497,6 +2506,27 @@ private:
                       const clang::ParmVarDecl *parameter,
                       const clang::FunctionDecl *caller) {
     llvm::json::Object result;
+    if (parameter->getType()->getAsCXXRecordDecl() != nullptr) {
+      const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(argument->IgnoreParenImpCasts());
+      const auto *constructor = construction == nullptr ? nullptr : construction->getConstructor();
+      const auto *record = parameter->getType()->getAsCXXRecordDecl();
+      if (constructor == nullptr || !constructor->isCopyConstructor() ||
+          !constructor->isTrivial() || constructor->isDeleted() ||
+          construction->getNumArgs() != 1 || !construction->getArg(0)->isLValue() ||
+          !context_.hasSameUnqualifiedType(construction->getType(), parameter->getType()) ||
+          !record->isTriviallyCopyable() || !record->hasTrivialDestructor()) {
+        fail(argument->getExprLoc(), "C++ by-value record arguments require a resolved trivial copy from a live lvalue");
+        return std::nullopt;
+      }
+      auto place = lower_place_reference(construction->getArg(0)->IgnoreParenImpCasts(), caller);
+      auto value_type = lower_type(parameter->getType(), parameter->getLocation());
+      if (!place || !value_type) return std::nullopt;
+      result["kind"] = "record_copy";
+      result["place"] = std::move(*place);
+      result["value_type"] = std::move(*value_type);
+      result["span"] = span(argument->getSourceRange());
+      return Json(std::move(result));
+    }
     if (parameter->getType()->getAs<clang::LValueReferenceType>() != nullptr) {
       auto place = lower_place_reference(argument, caller);
       if (!place) {

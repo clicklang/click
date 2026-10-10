@@ -246,6 +246,11 @@ fn function_interface(
                 return Ok(syntax::C0Parameter::new(kind.proof_type(), carried_name.clone(), None));
             }
             match &parameter.value_type {
+            CppType::Record { name, is_const: false, .. } => {
+                let layout = layouts.get(name).ok_or("C++ record parameter has no checked layout")?;
+                Ok(syntax::C0Parameter::new(C0Type::UInt8Pointer, carried_name.clone(), None)
+                    .with_struct_value(name.clone(), layout.clone()))
+            }
             CppType::LvalueReference { pointee }
                 if Scalar::of(pointee).is_some_and(|scalar| scalar.kind == ScalarKind::Int32) =>
             {

@@ -1,6 +1,49 @@
 use super::*;
 
 #[test]
+// A historical pointer value and the memory snapshot of a load are independent.
+fn typed_load_through_entry_pointer_reads_current_memory() {
+    let source = "void probe(int32* p, int32* q) { *p = 7; p = q; }";
+    let proof = r#"verifying "snapshot.c"; void probe(int32* p, int32* q) {
+        owns p[0..1]; ensures load_int32(old(p)) == 7;
+    } by { execute(); simp(); }"#;
+    verify_c0_sources(proof, &[("snapshot.c", source)]).unwrap();
+    let expanded = expand_c0_claim_source(
+        proof,
+        &[("snapshot.c", source)],
+        "probe",
+        CProofClaim::Ensure(0),
+    )
+    .unwrap();
+    verify_c0_sources(&expanded, &[("snapshot.c", source)]).unwrap();
+    assert!(
+        verify_c0_sources(
+            &proof.replace("load_int32(old(p))", "old(load_int32(p))"),
+            &[("snapshot.c", source)]
+        )
+        .is_err()
+    );
+}
+
+#[test]
+// Pointer-valued historical loads must also keep their operand and print parseable certificates.
+fn typed_pointer_load_through_entry_pointer_expands() {
+    let source = "void probe(int32** p, int32* q, int32** r) { *p = q; p = r; }";
+    let proof = r#"verifying "snapshot.c"; void probe(int32** p, int32* q, int32** r) {
+        owns p[0..1]; ensures load_int32_pointer(old(p)) == q;
+    } by { execute(); simp(); }"#;
+    verify_c0_sources(proof, &[("snapshot.c", source)]).unwrap();
+    let expanded = expand_c0_claim_source(
+        proof,
+        &[("snapshot.c", source)],
+        "probe",
+        CProofClaim::Ensure(0),
+    )
+    .unwrap();
+    verify_c0_sources(&expanded, &[("snapshot.c", source)]).unwrap();
+}
+
+#[test]
 // Byte views must retain allocation identity and scale subsequent offsets in bytes.
 fn native_contract_byte_casts_preserve_pointer_identity_and_offsets() {
     let source = "uint32* probe(uint32* p) { return p + 1; }";

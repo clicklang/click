@@ -1404,7 +1404,13 @@ fn rewrite_contract_expression_exact(
             let (operand, changed) = unary(operand);
             let fragment = match contract_expression_as_c_fragment(&operand) {
                 Some(fragment) => fragment,
-                None if matches!(lowered, CExpression::Cast { .. }) => CExpression::Value(int32(0)),
+                None if matches!(
+                    lowered,
+                    CExpression::Cast { .. } | CExpression::TypedLoad { .. }
+                ) =>
+                {
+                    CExpression::Value(int32(0))
+                }
                 None => return (expression.clone(), false),
             };
             (
@@ -3008,7 +3014,13 @@ pub(in crate::surface) fn substitute_contract_expression_in(
             let operand = substitute_contract_expression_in(operand, substitutions)?;
             let fragment = match contract_expression_as_c_fragment(&operand) {
                 Some(fragment) => fragment,
-                None if matches!(lowered, CExpression::Cast { .. }) => CExpression::Value(int32(0)),
+                None if matches!(
+                    lowered,
+                    CExpression::Cast { .. } | CExpression::TypedLoad { .. }
+                ) =>
+                {
+                    CExpression::Value(int32(0))
+                }
                 None => return Err("C unary operand is not a C expression".to_string()),
             };
             Ok(ContractExpression::CUnary {
