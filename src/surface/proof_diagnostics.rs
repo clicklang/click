@@ -157,7 +157,7 @@ fn render_diagnostic_labeled(
     // lines to decide.
     let tracing = crate::surface::proof_trace::enabled_for(&diagnostic.claim_label);
     let mut internal_goal_shown = false;
-    if (summary.is_some() || tracing)
+    if summary.is_some()
         && let Some(goal) = diagnostic.kernel_goal()
     {
         if let Some(source) = diagnostic
