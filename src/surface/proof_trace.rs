@@ -1872,6 +1872,21 @@ mod tests {
                 1,
                 TraceStep {
                     source_tactic_path: Some(vec![0]),
+                    facts: vec![TraceFact {
+                        kernel: Proposition::ConditionIs(
+                            ConditionTerm::pointer_equal(
+                                Pointer::loaded_value(
+                                    &crate::kernel::intern_c_memory(CMemory::new()),
+                                    &Pointer::null(),
+                                ),
+                                Pointer::null(),
+                            ),
+                            true,
+                        ),
+                        source: None,
+                        surface_view: None,
+                        pointer_view: None,
+                    }],
                     ..step("source tactic 0: accepted".into())
                 },
             );
@@ -1899,8 +1914,7 @@ mod tests {
                 ],
                 Box::new(()),
             );
-            let report = render_accepted(
-                &mut SnapshotLabels::default(),
+            let report = crate::surface::accepted_proof_trace(
                 &|_, _| None,
                 &|_, _, _| None,
                 &|_, _, _| false,
@@ -1908,6 +1922,10 @@ mod tests {
             )
             .unwrap();
             assert!(report.contains("accepted"), "{report}");
+            assert!(report.contains("label definitions"), "{report}");
+            assert!(report.contains("value#1 ="), "{report}");
+            assert!(report.contains("snapshot#1 ="), "{report}");
+            assert!(report.contains("initial empty memory"), "{report}");
             assert!(!report.contains("abandoned candidate"), "{report}");
             assert!(!report.contains(": mark"), "{report}");
             let targeted = render(
