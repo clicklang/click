@@ -15,5 +15,6 @@ pub(crate) fn prepare_execution(
     Ok(std::sync::Arc::new(crate::languages::PreparedExecution {
         functions,
         layouts,
+        library_contracts: String::new(),
     }))
 }

@@ -1057,151 +1057,6 @@ fn pinned_upstream_fee_frac_subtractself_reexports_and_verifies() {
     );
 }
 
-#[test]
-#[ignore = "nightly: 7s in the parallel gate"]
-fn pinned_std_span_size_preserves_full_width_extent_offline() {
-    let (root, import) = pinned_span_fixture(
-        "size",
-        "#include <span.h>\nunsigned long probe(std::span<int>& span) { return span.size(); }\n",
-    );
-    assert_eq!(import.export().reachable_functions.len(), 2);
-    assert!(
-        import
-            .export()
-            .reachable_functions
-            .iter()
-            .all(|function| function.span.file == "sysroot/usr/include/c++/12/span")
-    );
-    let source = r#"verifying "span-probe.cpp";
-uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent_value;
- ensures result == this->_M_extent_value;
- ensures this->_M_extent_value == old(this->_M_extent_value);
-} by { execute(); simp(); }
-uint64 span__int__value_unsigned_long_18446744073709551615_size(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent._M_extent_value;
- ensures result == this->_M_extent._M_extent_value;
- ensures this->_M_extent._M_extent_value == old(this->_M_extent._M_extent_value);
-} by { execute(); simp(); }
-uint64 probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
- views span._M_extent._M_extent_value;
- requires span._M_extent._M_extent_value == 18446744073709551615u64;
- ensures result == 18446744073709551615u64;
- ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value);
-} by { execute(); simp(); }
-"#;
-    let path = root.join("span.click");
-    fs::write(&path, source).unwrap();
-    let project = read_click_project(&path, source).unwrap();
-    verify_program_prepared_project(&project, &import).unwrap();
-    let expanded =
-        expand_program_prepared_project_claim_source_by_label(&project, &import, "probe.contract")
-            .unwrap();
-    let rewritten = project.with_entry_source(expanded.clone());
-    verify_program_prepared_project(&rewritten, &import).unwrap();
-    let (session, _) =
-        C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-    let position =
-        program_prepared_project_tactic_source_position(&rewritten, &import, "probe.contract", 0)
-            .unwrap();
-    session
-        .verify_at_project(&expanded, position.line, position.column)
-        .unwrap();
-    let hostile = source.replace(" views span._M_extent._M_extent_value;", "");
-    let rejected = read_click_project(&path, &hostile).unwrap();
-    assert!(verify_program_prepared_project(&rejected, &import).is_err());
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn pinned_std_span_size_bytes_preserves_native_unsigned_product_offline() {
-    let (root, import) = pinned_span_fixture(
-        "size-bytes",
-        "#include <span.h>\nunsigned long probe(std::span<int>& span) { return span.size_bytes(); }\n",
-    );
-    let source = r#"verifying "span-probe.cpp";
-uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent_value;
- ensures result == this->_M_extent_value;
-} by { execute(); simp(); }
-uint64 span__int__value_unsigned_long_18446744073709551615_size_bytes(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent._M_extent_value;
- ensures result == this->_M_extent._M_extent_value * 4u64;
-} by { execute(); simp(); }
-uint64 probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
- views span._M_extent._M_extent_value;
- ensures result == span._M_extent._M_extent_value * 4u64;
-} by { execute(); simp(); }
-"#;
-    let path = root.join("span.click");
-    fs::write(&path, source).unwrap();
-    let project = read_click_project(&path, source).unwrap();
-    verify_program_prepared_project(&project, &import).unwrap();
-    for claim in [
-        "span__int__value_unsigned_long_18446744073709551615_size_bytes.contract",
-        "probe.contract",
-    ] {
-        let expanded =
-            expand_program_prepared_project_claim_source_by_label(&project, &import, claim)
-                .unwrap();
-        let rewritten = project.with_entry_source(expanded.clone());
-        verify_program_prepared_project(&rewritten, &import).unwrap();
-        let (session, _) =
-            C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-        let position =
-            program_prepared_project_tactic_source_position(&rewritten, &import, claim, 0).unwrap();
-        session
-            .verify_at_project(&expanded, position.line, position.column)
-            .unwrap();
-    }
-    // Size observation needs descriptor authority, but no backing-storage view.
-    // Keep the native modulo-2^64 product, including empty and wrapping extents.
-    for (extent, bytes) in [
-        (0u64, 0u64),
-        (1073741823, 4294967292),
-        (u64::MAX, u64::MAX - 3),
-    ] {
-        let concrete = source.replace(
-            " ensures result == span._M_extent._M_extent_value * 4u64;",
-            &format!(" requires span._M_extent._M_extent_value == {extent}u64;\n ensures result == {bytes}u64;"),
-        );
-        verify_program_prepared_project(&read_click_project(&path, &concrete).unwrap(), &import)
-            .unwrap();
-    }
-    for hostile in [
-        source.replace(" views span._M_extent._M_extent_value;", ""),
-        source.replace(" views this->_M_extent_value;", ""),
-        source.replace(" views this->_M_extent._M_extent_value;", ""),
-        source.replace(
-            " ensures result == span._M_extent._M_extent_value * 4u64;",
-            " ensures result == span._M_extent._M_extent_value * 8u64;",
-        ),
-    ] {
-        assert!(
-            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
-                .is_err()
-        );
-    }
-    fs::remove_dir_all(root).unwrap();
-}
-
-fn pinned_span_fixture(name: &str, harness: &str) -> (PathBuf, PreparedCppImport) {
-    pinned_span_fixture_with_dependencies(name, harness, &[])
-}
-
-fn pinned_span_fixture_with_dependencies(
-    name: &str,
-    harness: &str,
-    additional_dependencies: &[&str],
-) -> (PathBuf, PreparedCppImport) {
-    let mut dependencies = vec![
-        "sysroot/usr/include/c++/12/span",
-        "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
-    ];
-    dependencies.extend_from_slice(additional_dependencies);
-    pinned_span_fixture_with_exact_dependencies(name, harness, &dependencies)
-}
-
 fn pinned_span_fixture_with_exact_dependencies(
     name: &str,
     harness: &str,
@@ -1319,835 +1174,6 @@ fn pinned_std_byte_values_verify_with_native_integer_contracts_offline() {
     session
         .verify_at_project(&expanded, position.line, position.column)
         .unwrap();
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn pinned_std_span_back_verifies_unchanged_constexpr_assertion_offline() {
-    check_pinned_std_span_back("verify");
-}
-
-#[test]
-#[ignore = "nightly: expansion and retained checks from a 5.6s bundled span-back test"]
-fn pinned_std_span_back_expands_and_retains_offline() {
-    check_pinned_std_span_back("tools");
-}
-
-#[test]
-#[ignore = "nightly: whole-project mutations from a 5.6s bundled span-back test"]
-fn pinned_std_span_back_rejects_missing_views_and_false_claims_offline() {
-    check_pinned_std_span_back("rejections");
-}
-
-fn check_pinned_std_span_back(phase: &str) {
-    let (root, import) = pinned_span_fixture(
-        &format!("back-{phase}"),
-        "#include <span.h>\nint& probe(std::span<int>& span) { return span.back(); }\n",
-    );
-    let source = r#"verifying "span-probe.cpp";
-bool std___is_constant_evaluated() { ensures result == 0; } by { execute(); simp(); }
-uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent_value;
- ensures result == this->_M_extent_value;
-} by { execute(); simp(); }
-uint64 span__int__value_unsigned_long_18446744073709551615_size(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent._M_extent_value;
- ensures result == this->_M_extent._M_extent_value;
-} by { execute(); simp(); }
-bool span__int__value_unsigned_long_18446744073709551615_empty(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent._M_extent_value;
- ensures this->_M_extent._M_extent_value == 0u64 implies result == 1;
- ensures this->_M_extent._M_extent_value != 0u64 implies result == 0;
-} by { execute(); simp(); }
-int32& span__int__value_unsigned_long_18446744073709551615_back(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_ptr;
- views this->_M_extent._M_extent_value;
- views this->_M_ptr[0..1];
- requires this->_M_extent._M_extent_value == 1u64;
- ensures &result == this->_M_ptr;
- ensures result == old(this->_M_ptr[0]);
-} by { execute(); simp(); }
-int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
- views span._M_ptr;
- views span._M_extent._M_extent_value;
- views span._M_ptr[0..1];
- requires span._M_extent._M_extent_value == 1u64;
- ensures &result == span._M_ptr;
- ensures result == old(span._M_ptr[0]);
-} by { execute(); simp(); }
-"#;
-    let path = root.join("span.click");
-    fs::write(&path, source).unwrap();
-    let project = read_click_project(&path, source).unwrap();
-    if phase != "rejections" {
-        verify_program_prepared_project(&project, &import).unwrap();
-    }
-    if phase == "tools" {
-        for claim in [
-            "probe.contract",
-            "span__int__value_unsigned_long_18446744073709551615_back.contract",
-        ] {
-            let expanded =
-                expand_program_prepared_project_claim_source_by_label(&project, &import, claim)
-                    .unwrap();
-            let rewritten = project.with_entry_source(expanded.clone());
-            verify_program_prepared_project(&rewritten, &import).unwrap();
-            let (session, _) =
-                C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-            let position =
-                program_prepared_project_tactic_source_position(&rewritten, &import, claim, 0)
-                    .unwrap();
-            session
-                .verify_at_project(&expanded, position.line, position.column)
-                .unwrap();
-        }
-    }
-    if phase == "rejections" {
-        for hostile in [
-            source.replace(" views span._M_ptr[0..1];", ""),
-            source.replace(" views this->_M_ptr[0..1];", ""),
-            source.replace(
-                "requires this->_M_extent._M_extent_value == 1u64;",
-                "requires this->_M_extent._M_extent_value == 0u64;",
-            ),
-            source.replace(
-                "ensures &result == span._M_ptr;",
-                "ensures &result == span._M_ptr + 1;",
-            ),
-        ] {
-            assert!(
-                verify_program_prepared_project(
-                    &read_click_project(&path, &hostile).unwrap(),
-                    &import
-                )
-                .is_err()
-            );
-        }
-    }
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[derive(Clone, Copy)]
-enum SpanFrontPhase {
-    VerifyAndExpand,
-    WriteCaller,
-    RejectBounds,
-    RejectAuthorityAndClaims,
-}
-
-fn check_pinned_std_span_front(phase: SpanFrontPhase) {
-    let harness = match phase {
-        SpanFrontPhase::WriteCaller => {
-            "#include <span.h>\nint probe(std::span<int>& span, int input) { int& element = span.front(); element = input; return element; }\n"
-        }
-        _ => "#include <span.h>\nint& probe(std::span<int>& span) { return span.front(); }\n",
-    };
-    let (root, import) = pinned_span_fixture("symbolic-front", harness);
-    // The extent is the code's `unsigned long`, uncast. Nothing bounds it
-    // from above: the held range states its own extent limit.
-    let prelude = r#"verifying "span-probe.cpp";
-bool std___is_constant_evaluated() { ensures result == 0; } by { execute(); simp(); }
-uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent_value;
- ensures result == this->_M_extent_value;
-} by { execute(); simp(); }
-uint64 span__int__value_unsigned_long_18446744073709551615_size(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent._M_extent_value;
- ensures result == this->_M_extent._M_extent_value;
-} by { execute(); simp(); }
-bool span__int__value_unsigned_long_18446744073709551615_empty(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent._M_extent_value;
- ensures this->_M_extent._M_extent_value == 0u64 implies result == 1;
- ensures this->_M_extent._M_extent_value != 0u64 implies result == 0;
-} by { execute(); simp(); }
-int32& span__int__value_unsigned_long_18446744073709551615_front(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_ptr;
- views this->_M_extent._M_extent_value;
- views this->_M_ptr[0..this->_M_extent._M_extent_value];
- requires 1u64 <= this->_M_extent._M_extent_value;
- ensures &result == this->_M_ptr;
- ensures result == old(this->_M_ptr[0]);
-} by { execute(); simp(); }
-"#;
-    let caller = if matches!(phase, SpanFrontPhase::WriteCaller) {
-        r#"int32 probe(struct span__int__value_unsigned_long_18446744073709551615& span, int32 input) {
- views span._M_ptr;
- views span._M_extent._M_extent_value;
- owns span._M_ptr[0..span._M_extent._M_extent_value];
- requires 1u64 <= span._M_extent._M_extent_value;
- ensures result == input;
- ensures span._M_ptr[0] == input;
- ensures span._M_ptr == old(span._M_ptr);
- ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value);
- ensures forall (k: uint64) { k < span._M_extent._M_extent_value and k != 0u64 implies span._M_ptr[k] == old(span._M_ptr[k]) };
-} by {
- execute();
- have span._M_ptr == old(span._M_ptr) by simp();
- have span._M_extent._M_extent_value == old(span._M_extent._M_extent_value) by simp();
- transport(
-  forall (k: uint64) { k < span._M_extent._M_extent_value and k != 0u64 implies old(span._M_ptr[k]) == old(span._M_ptr[k]) },
-  forall (k: uint64) { k < span._M_extent._M_extent_value and k != 0u64 implies span._M_ptr[k] == old(span._M_ptr[k]) }
- );
- simp(); }
-
-"#
-    } else {
-        r#"int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
- views span._M_ptr;
- views span._M_extent._M_extent_value;
- views span._M_ptr[0..span._M_extent._M_extent_value];
- requires 1u64 <= span._M_extent._M_extent_value;
- ensures &result == span._M_ptr;
- ensures result == old(span._M_ptr[0]);
-} by { execute(); simp(); }
-"#
-    };
-    let source = format!("{prelude}{caller}");
-    let source = source.as_str();
-    let path = root.join("span.click");
-    fs::write(&path, source).unwrap();
-    let project = read_click_project(&path, source).unwrap();
-    match phase {
-        SpanFrontPhase::VerifyAndExpand | SpanFrontPhase::WriteCaller => {
-            verify_program_prepared_project(&project, &import).unwrap();
-            for claim in [
-                "span__int__value_unsigned_long_18446744073709551615_front.contract",
-                "probe.contract",
-            ] {
-                let expanded =
-                    expand_program_prepared_project_claim_source_by_label(&project, &import, claim)
-                        .unwrap();
-                let rewritten = project.with_entry_source(expanded.clone());
-                verify_program_prepared_project(&rewritten, &import).unwrap();
-                let (session, _) =
-                    C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-                let position =
-                    program_prepared_project_tactic_source_position(&rewritten, &import, claim, 0)
-                        .unwrap();
-                session
-                    .verify_at_project(&expanded, position.line, position.column)
-                    .unwrap();
-            }
-            if matches!(phase, SpanFrontPhase::WriteCaller) {
-                for hostile in [
-                    source.replace(
-                        " owns span._M_ptr[0..span._M_extent._M_extent_value];",
-                        " views span._M_ptr[0..span._M_extent._M_extent_value];",
-                    ),
-                    source.replace(
-                        " ensures span._M_ptr[0] == input;",
-                        " ensures span._M_ptr[0] == old(span._M_ptr[0]);",
-                    ),
-                ] {
-                    assert_ne!(hostile, source);
-                    assert!(
-                        verify_program_prepared_project(
-                            &read_click_project(&path, &hostile).unwrap(),
-                            &import
-                        )
-                        .is_err()
-                    );
-                }
-            }
-        }
-        SpanFrontPhase::RejectBounds | SpanFrontPhase::RejectAuthorityAndClaims => {
-            let hostile = match phase {
-                SpanFrontPhase::RejectBounds => vec![
-                    source.replace(" requires 1u64 <= this->_M_extent._M_extent_value;", ""),
-                    source.replace(" requires 1u64 <= span._M_extent._M_extent_value;", ""),
-                    source.replace(
-                        " requires 1u64 <= span._M_extent._M_extent_value;",
-                        " requires span._M_extent._M_extent_value == 0u64;",
-                    ),
-                ],
-                _ => vec![
-                    source.replace(
-                        " views this->_M_ptr[0..this->_M_extent._M_extent_value];",
-                        "",
-                    ),
-                    source.replace(" views span._M_ptr[0..span._M_extent._M_extent_value];", ""),
-                    source.replace(" views this->_M_ptr;", ""),
-                    source.replace(" views this->_M_extent._M_extent_value;", ""),
-                    source.replace(
-                        " ensures &result == span._M_ptr;",
-                        " ensures &result == span._M_ptr + 1;",
-                    ),
-                    source.replace(
-                        " ensures result == old(span._M_ptr[0]);",
-                        " ensures result == old(span._M_ptr[0]) + 1;",
-                    ),
-                ],
-            };
-            for bad in hostile {
-                assert_ne!(bad, source);
-                assert!(
-                    verify_program_prepared_project(
-                        &read_click_project(&path, &bad).unwrap(),
-                        &import
-                    )
-                    .is_err()
-                );
-            }
-        }
-    }
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn pinned_std_span_front_bounded_reference_expands_and_retains_offline() {
-    check_pinned_std_span_front(SpanFrontPhase::VerifyAndExpand);
-}
-#[test]
-fn pinned_std_span_front_refuses_missing_bounds_and_empty_callers_offline() {
-    check_pinned_std_span_front(SpanFrontPhase::RejectBounds);
-}
-#[test]
-fn pinned_std_span_front_refuses_missing_views_and_false_reference_claims_offline() {
-    check_pinned_std_span_front(SpanFrontPhase::RejectAuthorityAndClaims);
-}
-
-#[test]
-fn pinned_std_span_front_reference_writes_require_backing_ownership_offline() {
-    check_pinned_std_span_front(SpanFrontPhase::WriteCaller);
-}
-
-#[derive(Clone, Copy)]
-enum SpanIndexPhase {
-    VerifyAndExpand,
-    WriteCaller,
-    ExpandWriteCaller,
-    RetainWriteCaller,
-    RejectWriteCaller,
-    RejectBounds,
-    RejectAuthorityAndClaims,
-}
-
-fn check_pinned_std_span_index(phase: SpanIndexPhase) {
-    let writes = matches!(
-        phase,
-        SpanIndexPhase::WriteCaller
-            | SpanIndexPhase::ExpandWriteCaller
-            | SpanIndexPhase::RetainWriteCaller
-            | SpanIndexPhase::RejectWriteCaller
-    );
-    let harness = if writes {
-        "#include <span.h>\nint probe(std::span<int>& span, unsigned long index, int input) { int& element = span[index]; element = input; return element; }\n"
-    } else {
-        "#include <span.h>\nint& probe(std::span<int>& span, unsigned long index) { return span[index]; }\n"
-    };
-    let (root, import) = pinned_span_fixture("symbolic-index", harness);
-    // The extent and the index are the code's `unsigned long`, uncast.
-    // Nothing bounds the extent from above: the held range states its own
-    // extent limit.
-    let prelude = r#"verifying "span-probe.cpp";
-bool std___is_constant_evaluated() { ensures result == 0; } by { execute(); simp(); }
-uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent_value;
- ensures result == this->_M_extent_value;
-} by { execute(); simp(); }
-uint64 span__int__value_unsigned_long_18446744073709551615_size(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent._M_extent_value;
- ensures result == this->_M_extent._M_extent_value;
-} by { execute(); simp(); }
-int32& span__int__value_unsigned_long_18446744073709551615_operator_index(const struct span__int__value_unsigned_long_18446744073709551615* this, uint64 __idx) {
- views this->_M_ptr;
- views this->_M_extent._M_extent_value;
- views this->_M_ptr[0..this->_M_extent._M_extent_value];
- requires __idx < this->_M_extent._M_extent_value;
- ensures &result == this->_M_ptr + __idx;
- ensures result == old(this->_M_ptr[__idx]);
-} by { execute(); simp(); }
-"#;
-    let caller = if writes {
-        r#"int32 probe(struct span__int__value_unsigned_long_18446744073709551615& span, uint64 index, int32 input) {
- views span._M_ptr;
- views span._M_extent._M_extent_value;
- owns span._M_ptr[0..span._M_extent._M_extent_value];
- requires index < span._M_extent._M_extent_value;
- ensures result == input;
- ensures span._M_ptr[index] == input;
- ensures span._M_ptr == old(span._M_ptr);
- ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value);
- ensures forall (k: uint64) { k < span._M_extent._M_extent_value and k != index implies span._M_ptr[k] == old(span._M_ptr[k]) };
-} by {
- execute();
- have span._M_ptr == old(span._M_ptr) by simp();
- have span._M_extent._M_extent_value == old(span._M_extent._M_extent_value) by simp();
- transport(
-  forall (k: uint64) { k < span._M_extent._M_extent_value and k != index implies old(span._M_ptr[k]) == old(span._M_ptr[k]) },
-  forall (k: uint64) { k < span._M_extent._M_extent_value and k != index implies span._M_ptr[k] == old(span._M_ptr[k]) }
- );
- simp();
-}
-"#
-    } else {
-        r#"int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span, uint64 index) {
- views span._M_ptr;
- views span._M_extent._M_extent_value;
- views span._M_ptr[0..span._M_extent._M_extent_value];
- requires index < span._M_extent._M_extent_value;
- ensures &result == span._M_ptr + index;
- ensures result == old(span._M_ptr[index]);
-} by { execute(); simp(); }
-"#
-    };
-    let source = format!("{prelude}{caller}");
-    let source = source.as_str();
-    let path = root.join("span.click");
-    fs::write(&path, source).unwrap();
-    let project = read_click_project(&path, source).unwrap();
-    match phase {
-        SpanIndexPhase::WriteCaller => {
-            verify_program_prepared_project(&project, &import).unwrap();
-        }
-        SpanIndexPhase::ExpandWriteCaller => {
-            let expanded = expand_program_prepared_project_claim_source_by_label(
-                &project,
-                &import,
-                "probe.contract",
-            )
-            .unwrap();
-            verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
-        }
-        SpanIndexPhase::RetainWriteCaller => {
-            let (session, _) =
-                C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-            let position = program_prepared_project_tactic_source_position(
-                &project,
-                &import,
-                "probe.contract",
-                0,
-            )
-            .unwrap();
-            session
-                .verify_at_project(source, position.line, position.column)
-                .unwrap();
-        }
-        SpanIndexPhase::RejectWriteCaller => {
-            for bad in [
-                source.replace(
-                    " owns span._M_ptr[0..span._M_extent._M_extent_value];",
-                    " views span._M_ptr[0..span._M_extent._M_extent_value];",
-                ),
-                source.replace(
-                    " ensures span._M_ptr[index] == input;",
-                    " ensures span._M_ptr[index] == old(span._M_ptr[index]);",
-                ),
-                source.replace(" and k != index implies", " implies"),
-            ] {
-                assert_ne!(bad, source);
-                assert!(
-                    verify_program_prepared_project(
-                        &read_click_project(&path, &bad).unwrap(),
-                        &import
-                    )
-                    .is_err()
-                );
-            }
-        }
-        SpanIndexPhase::VerifyAndExpand => {
-            verify_program_prepared_project(&project, &import).unwrap();
-            for claim in [
-                "span__int__value_unsigned_long_18446744073709551615_operator_index.contract",
-                "probe.contract",
-            ] {
-                let expanded =
-                    expand_program_prepared_project_claim_source_by_label(&project, &import, claim)
-                        .unwrap();
-                let rewritten = project.with_entry_source(expanded.clone());
-                verify_program_prepared_project(&rewritten, &import).unwrap();
-                let (session, _) =
-                    C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-                let position =
-                    program_prepared_project_tactic_source_position(&rewritten, &import, claim, 0)
-                        .unwrap();
-                session
-                    .verify_at_project(&expanded, position.line, position.column)
-                    .unwrap();
-            }
-        }
-        SpanIndexPhase::RejectBounds | SpanIndexPhase::RejectAuthorityAndClaims => {
-            let hostile = match phase {
-                SpanIndexPhase::RejectBounds => vec![
-                    source.replace(" requires __idx < this->_M_extent._M_extent_value;", ""),
-                    source.replace(
-                        " requires __idx < this->_M_extent._M_extent_value;",
-                        " requires __idx <= this->_M_extent._M_extent_value;",
-                    ),
-                    source.replace(
-                        " requires index < span._M_extent._M_extent_value;",
-                        " requires index == span._M_extent._M_extent_value;",
-                    ),
-                ],
-                _ => vec![
-                    source.replace(
-                        " views this->_M_ptr[0..this->_M_extent._M_extent_value];",
-                        "",
-                    ),
-                    source.replace(" views span._M_ptr[0..span._M_extent._M_extent_value];", ""),
-                    source.replace(" views this->_M_ptr;", ""),
-                    source.replace(" views this->_M_extent._M_extent_value;", ""),
-                    source.replace(
-                        " ensures &result == span._M_ptr + index;",
-                        " ensures &result == span._M_ptr + index + 1;",
-                    ),
-                    source.replace(
-                        " ensures result == old(span._M_ptr[index]);",
-                        " ensures result == old(span._M_ptr[index]) + 1;",
-                    ),
-                ],
-            };
-            for bad in hostile {
-                assert_ne!(bad, source);
-                assert!(
-                    verify_program_prepared_project(
-                        &read_click_project(&path, &bad).unwrap(),
-                        &import
-                    )
-                    .is_err()
-                );
-            }
-        }
-    }
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn pinned_std_span_index_bounded_reference_expands_and_retains_offline() {
-    check_pinned_std_span_index(SpanIndexPhase::VerifyAndExpand);
-}
-#[test]
-fn pinned_std_span_index_refuses_missing_bounds_and_out_of_range_callers_offline() {
-    check_pinned_std_span_index(SpanIndexPhase::RejectBounds);
-}
-#[test]
-fn pinned_std_span_index_refuses_missing_views_and_false_reference_claims_offline() {
-    check_pinned_std_span_index(SpanIndexPhase::RejectAuthorityAndClaims);
-}
-
-#[test]
-fn pinned_std_span_index_owned_write_preserves_siblings_offline() {
-    check_pinned_std_span_index(SpanIndexPhase::WriteCaller);
-}
-#[test]
-fn pinned_std_span_index_owned_write_expands_offline() {
-    check_pinned_std_span_index(SpanIndexPhase::ExpandWriteCaller);
-}
-#[test]
-fn pinned_std_span_index_owned_write_retains_offline() {
-    check_pinned_std_span_index(SpanIndexPhase::RetainWriteCaller);
-}
-#[test]
-fn pinned_std_span_index_owned_write_refuses_views_and_false_frames_offline() {
-    check_pinned_std_span_index(SpanIndexPhase::RejectWriteCaller);
-}
-
-#[derive(Clone, Copy)]
-enum SpanBackPhase {
-    Ordinary,
-    WriteCaller,
-    ExpandWriteCaller,
-    RetainWriteCaller,
-    RejectWriteCaller,
-    ExpandBack,
-    ExpandCaller,
-    RejectBounds,
-    RejectAuthority,
-    RejectValue,
-}
-
-fn check_pinned_std_span_back_symbolic_bounded_range(phase: SpanBackPhase) {
-    let harness = match phase {
-        SpanBackPhase::WriteCaller
-        | SpanBackPhase::ExpandWriteCaller
-        | SpanBackPhase::RetainWriteCaller
-        | SpanBackPhase::RejectWriteCaller => {
-            "#include <span.h>\nint probe(std::span<int>& span, int input) { int& element = span.back(); element = input; return element; }\n"
-        }
-        _ => "#include <span.h>\nint& probe(std::span<int>& span) { return span.back(); }\n",
-    };
-    let (root, import) = pinned_span_fixture("symbolic-back", harness);
-    // The extent is the code's `unsigned long`, uncast, and the last element
-    // is at `extent - 1` in that type. Nothing bounds the extent from above:
-    // the held range states its own extent limit.
-    let prelude = r#"verifying "span-probe.cpp";
-bool std___is_constant_evaluated() { ensures result == 0; } by { execute(); simp(); }
-uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent_value;
- ensures result == this->_M_extent_value;
-} by { execute(); simp(); }
-uint64 span__int__value_unsigned_long_18446744073709551615_size(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent._M_extent_value;
- ensures result == this->_M_extent._M_extent_value;
-} by { execute(); simp(); }
-bool span__int__value_unsigned_long_18446744073709551615_empty(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent._M_extent_value;
- ensures this->_M_extent._M_extent_value == 0u64 implies result == 1;
- ensures this->_M_extent._M_extent_value != 0u64 implies result == 0;
-} by { execute(); simp(); }
-int32& span__int__value_unsigned_long_18446744073709551615_back(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_ptr;
- views this->_M_extent._M_extent_value;
- views this->_M_ptr[0..this->_M_extent._M_extent_value];
- requires 1u64 <= this->_M_extent._M_extent_value;
- ensures &result == this->_M_ptr + (this->_M_extent._M_extent_value - 1u64);
- ensures result == old(this->_M_ptr[this->_M_extent._M_extent_value - 1u64]);
-} by { execute(); simp(); }
-"#;
-    let caller = if matches!(
-        phase,
-        SpanBackPhase::WriteCaller
-            | SpanBackPhase::ExpandWriteCaller
-            | SpanBackPhase::RetainWriteCaller
-            | SpanBackPhase::RejectWriteCaller
-    ) {
-        r#"int32 probe(struct span__int__value_unsigned_long_18446744073709551615& span, int32 input) {
- views span._M_ptr;
- views span._M_extent._M_extent_value;
- owns span._M_ptr[0..span._M_extent._M_extent_value];
- requires 1u64 <= span._M_extent._M_extent_value;
- ensures result == input;
- ensures span._M_ptr[span._M_extent._M_extent_value - 1u64] == input;
- ensures span._M_ptr == old(span._M_ptr);
- ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value);
- ensures forall (k: uint64) { k < span._M_extent._M_extent_value and k != span._M_extent._M_extent_value - 1u64 implies span._M_ptr[k] == old(span._M_ptr[k]) };
-} by {
- execute();
- have span._M_ptr == old(span._M_ptr) by simp();
- have span._M_extent._M_extent_value == old(span._M_extent._M_extent_value) by simp();
- transport(
-  forall (k: uint64) { k < span._M_extent._M_extent_value and k != span._M_extent._M_extent_value - 1u64 implies old(span._M_ptr[k]) == old(span._M_ptr[k]) },
-  forall (k: uint64) { k < span._M_extent._M_extent_value and k != span._M_extent._M_extent_value - 1u64 implies span._M_ptr[k] == old(span._M_ptr[k]) }
- );
- simp();
-}
-"#
-    } else {
-        r#"int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
- views span._M_ptr;
- views span._M_extent._M_extent_value;
- views span._M_ptr[0..span._M_extent._M_extent_value];
- requires 1u64 <= span._M_extent._M_extent_value;
- ensures &result == span._M_ptr + (span._M_extent._M_extent_value - 1u64);
- ensures result == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]);
-} by { execute(); simp(); }
-"#
-    };
-    let source = format!("{prelude}{caller}");
-    let source = source.as_str();
-    let path = root.join("span.click");
-    fs::write(&path, source).unwrap();
-    let project = read_click_project(&path, source).unwrap();
-    match phase {
-        SpanBackPhase::WriteCaller => { verify_program_prepared_project(&project, &import).unwrap(); }
-        SpanBackPhase::ExpandWriteCaller => {
-            let expanded = expand_program_prepared_project_claim_source_by_label(&project, &import, "probe.contract").unwrap();
-            verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
-        }
-        SpanBackPhase::RetainWriteCaller => {
-            let (session, _) = C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-            let position = program_prepared_project_tactic_source_position(&project, &import, "probe.contract", 0).unwrap();
-            session.verify_at_project(source, position.line, position.column).unwrap();
-        }
-        SpanBackPhase::RejectWriteCaller => {
-            for bad in [
-                source.replace(" owns span._M_ptr[0..span._M_extent._M_extent_value];", " views span._M_ptr[0..span._M_extent._M_extent_value];"),
-                source.replace(" ensures span._M_ptr[span._M_extent._M_extent_value - 1u64] == input;", " ensures span._M_ptr[span._M_extent._M_extent_value - 1u64] == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]);"),
-            ] {
-                assert_ne!(bad, source);
-                assert!(verify_program_prepared_project(&read_click_project(&path, &bad).unwrap(), &import).is_err());
-            }
-        }
-        SpanBackPhase::Ordinary => {
-            verify_program_prepared_project(&project, &import).unwrap();
-        }
-        SpanBackPhase::ExpandBack | SpanBackPhase::ExpandCaller => {
-            verify_program_prepared_project(&project, &import).unwrap();
-            let claim = match phase {
-                SpanBackPhase::ExpandBack => {
-                    "span__int__value_unsigned_long_18446744073709551615_back.contract"
-                }
-                _ => "probe.contract",
-            };
-            let expanded =
-                expand_program_prepared_project_claim_source_by_label(&project, &import, claim)
-                    .unwrap();
-            let rewritten = project.with_entry_source(expanded.clone());
-            verify_program_prepared_project(&rewritten, &import).unwrap();
-            let (session, _) =
-                C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-            let position =
-                program_prepared_project_tactic_source_position(&rewritten, &import, claim, 0)
-                    .unwrap();
-            session
-                .verify_at_project(&expanded, position.line, position.column)
-                .unwrap();
-        }
-        SpanBackPhase::RejectBounds
-        | SpanBackPhase::RejectAuthority
-        | SpanBackPhase::RejectValue => {
-            let hostile = match phase {
-                SpanBackPhase::RejectBounds => vec![
-                    source.replace(" requires 1u64 <= this->_M_extent._M_extent_value;", ""),
-                    source.replace("requires 1u64 <= this->_M_extent._M_extent_value;", "requires this->_M_extent._M_extent_value == 0u64;"),
-                    source.replace(" requires 1u64 <= span._M_extent._M_extent_value;", ""),
-                ],
-                SpanBackPhase::RejectAuthority => vec![
-                    source.replace(" views this->_M_ptr[0..this->_M_extent._M_extent_value];", ""),
-                    source.replace(" views span._M_ptr[0..span._M_extent._M_extent_value];", ""),
-                    source.replace(" views this->_M_extent._M_extent_value;", ""),
-                ],
-                _ => vec![
-                    source.replace("ensures &result == span._M_ptr + (span._M_extent._M_extent_value - 1u64);", "ensures &result == span._M_ptr + span._M_extent._M_extent_value;"),
-                    source.replace("ensures result == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]);", "ensures result == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]) + 1;"),
-                ],
-            };
-            for bad in hostile {
-                assert_ne!(bad, source);
-                assert!(
-                    verify_program_prepared_project(
-                        &read_click_project(&path, &bad).unwrap(),
-                        &import
-                    )
-                    .is_err()
-                );
-            }
-        }
-    }
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn pinned_std_span_back_symbolic_bounded_range_offline() {
-    check_pinned_std_span_back_symbolic_bounded_range(SpanBackPhase::Ordinary);
-}
-#[test]
-fn pinned_std_span_back_symbolic_expansion_and_retained_verification_offline() {
-    check_pinned_std_span_back_symbolic_bounded_range(SpanBackPhase::ExpandBack);
-}
-#[test]
-fn pinned_std_span_back_symbolic_caller_expansion_and_retained_verification_offline() {
-    check_pinned_std_span_back_symbolic_bounded_range(SpanBackPhase::ExpandCaller);
-}
-#[test]
-fn pinned_std_span_back_symbolic_refuses_missing_bounds_and_empty_ranges_offline() {
-    check_pinned_std_span_back_symbolic_bounded_range(SpanBackPhase::RejectBounds);
-}
-#[test]
-fn pinned_std_span_back_symbolic_refuses_missing_descriptor_and_backing_views_offline() {
-    check_pinned_std_span_back_symbolic_bounded_range(SpanBackPhase::RejectAuthority);
-}
-#[test]
-fn pinned_std_span_back_symbolic_refuses_false_alias_value_and_extent_claims_offline() {
-    check_pinned_std_span_back_symbolic_bounded_range(SpanBackPhase::RejectValue);
-}
-
-#[test]
-#[ignore = "nightly: 8s in the parallel gate"]
-fn pinned_std_span_data_preserves_pointer_identity_without_backing_authority_offline() {
-    let (root, import) = pinned_span_fixture(
-        "data",
-        "#include <span.h>\nint* probe(std::span<int>& span) { return span.data(); }\n",
-    );
-    assert_eq!(import.export().reachable_functions.len(), 1);
-    assert_eq!(
-        import.export().reachable_functions[0].span.file,
-        "sysroot/usr/include/c++/12/span"
-    );
-    let source = r#"verifying "span-probe.cpp";
-int32* span__int__value_unsigned_long_18446744073709551615_data(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_ptr;
- ensures result == this->_M_ptr;
- ensures this->_M_ptr == old(this->_M_ptr);
-} by { execute(); simp(); }
-int32* probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
- views span._M_ptr;
- ensures result == span._M_ptr;
- ensures span._M_ptr == old(span._M_ptr);
-} by { execute(); simp(); }
-"#;
-    let path = root.join("span.click");
-    fs::write(&path, source).unwrap();
-    let project = read_click_project(&path, source).unwrap();
-    verify_program_prepared_project(&project, &import).unwrap();
-    let expanded =
-        expand_program_prepared_project_claim_source_by_label(&project, &import, "probe.contract")
-            .unwrap();
-    let rewritten = project.with_entry_source(expanded.clone());
-    verify_program_prepared_project(&rewritten, &import).unwrap();
-    let (session, _) =
-        C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-    let position =
-        program_prepared_project_tactic_source_position(&rewritten, &import, "probe.contract", 0)
-            .unwrap();
-    session
-        .verify_at_project(&expanded, position.line, position.column)
-        .unwrap();
-    let hostile = source.replace(" views span._M_ptr;", "");
-    assert!(
-        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
-            .is_err()
-    );
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-#[ignore = "nightly: 8s in the parallel gate"]
-fn pinned_std_span_trivial_assignment_copies_nested_descriptor_offline() {
-    let (root, import) = pinned_span_fixture(
-        "copy-assignment",
-        "#include <span.h>\nint probe(std::span<int>& target, const std::span<int>& source) { target = source; return 0; }\n",
-    );
-    assert!(import.export().reachable_functions.is_empty());
-    let source = r#"verifying "span-probe.cpp";
-int32 probe(struct span__int__value_unsigned_long_18446744073709551615& target, const struct span__int__value_unsigned_long_18446744073709551615& source) {
- owns target._M_ptr;
- owns target._M_extent._M_extent_value;
- views source._M_ptr;
- views source._M_extent._M_extent_value;
- ensures result == 0;
- ensures target._M_ptr == source._M_ptr;
- ensures target._M_extent._M_extent_value == source._M_extent._M_extent_value;
- ensures source._M_ptr == old(source._M_ptr);
- ensures source._M_extent._M_extent_value == old(source._M_extent._M_extent_value);
-} by { execute(); simp(); }
-"#;
-    let path = root.join("span.click");
-    fs::write(&path, source).unwrap();
-    let project = read_click_project(&path, source).unwrap();
-    verify_program_prepared_project(&project, &import).unwrap();
-    let expanded =
-        expand_program_prepared_project_claim_source_by_label(&project, &import, "probe.contract")
-            .unwrap();
-    let rewritten = project.with_entry_source(expanded.clone());
-    verify_program_prepared_project(&rewritten, &import).unwrap();
-    let (session, _) =
-        C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-    let position =
-        program_prepared_project_tactic_source_position(&rewritten, &import, "probe.contract", 0)
-            .unwrap();
-    session
-        .verify_at_project(&expanded, position.line, position.column)
-        .unwrap();
-    for hostile in [
-        source.replace(" views source._M_ptr;", ""),
-        source.replace(" owns target._M_extent._M_extent_value;", ""),
-        source.replace(" owns target._M_ptr;", " views target._M_ptr;"),
-        source.replace("ensures result == 0;", "ensures result == 1;"),
-        source.replace(
-            "ensures target._M_ptr == source._M_ptr;",
-            "ensures target._M_ptr != source._M_ptr;",
-        ),
-        source.replace(
-            "ensures target._M_extent._M_extent_value == source._M_extent._M_extent_value;",
-            "ensures target._M_extent._M_extent_value != source._M_extent._M_extent_value;",
-        ),
-    ] {
-        assert!(
-            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
-                .is_err()
-        );
-    }
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -3818,575 +2844,188 @@ fn upstream_getfee_per_k_modular_callers_cover_signed_and_oversize_rates() {
     );
 }
 
-#[test]
-fn pinned_std_span_back_reference_writes_require_backing_ownership_offline() {
-    check_pinned_std_span_back_symbolic_bounded_range(SpanBackPhase::WriteCaller);
+fn axiomatic_span_fixture(
+    name: &str,
+    harness: &str,
+    dependencies: &[&str],
+) -> (PathBuf, PreparedCppImport) {
+    pinned_span_fixture_with_exact_dependencies(name, harness, dependencies)
 }
 
+// Bitcoin's unchanged `SpanPopBack` verifies against Click's `std::span`
+// contracts: libstdc++'s `size`, `back` and `first` are axioms with no
+// exported body, and every contract states the span through model accessors.
 #[test]
-fn pinned_std_span_back_reference_write_expansion_offline() {
-    check_pinned_std_span_back_symbolic_bounded_range(SpanBackPhase::ExpandWriteCaller);
-}
-#[test]
-fn pinned_std_span_back_reference_write_retained_offline() {
-    check_pinned_std_span_back_symbolic_bounded_range(SpanBackPhase::RetainWriteCaller);
-}
-#[test]
-fn pinned_std_span_back_reference_write_refuses_missing_ownership_and_unchanged_claim_offline() {
-    check_pinned_std_span_back_symbolic_bounded_range(SpanBackPhase::RejectWriteCaller);
-}
-
-// The unchanged pinned library constructs both descriptor fields through
-// checked calls; backing range authority remains a caller-owned view.
-#[test]
-fn pinned_std_span_local_constructor_verifies_native_extent_offline() {
-    check_pinned_std_span_local_constructor(SpanConstructionPhase::VerifyAndExpand);
-}
-
-#[test]
-fn pinned_std_span_local_constructor_retained_offline() {
-    check_pinned_std_span_local_constructor(SpanConstructionPhase::Retain);
-}
-
-#[test]
-fn pinned_std_span_local_constructor_requires_backing_view_offline() {
-    check_pinned_std_span_local_constructor(SpanConstructionPhase::RejectBacking);
-}
-
-enum SpanConstructionPhase {
-    VerifyAndExpand,
-    Retain,
-    RejectBacking,
-}
-
-fn check_pinned_std_span_local_constructor(phase: SpanConstructionPhase) {
-    let (root, import) = pinned_span_fixture_with_dependencies(
-        "local-constructor",
-        "#include <span.h>\nunsigned long probe(int* backing, unsigned long count) { std::span<int> span(backing, count); return span.size(); }\n",
-        &["sysroot/usr/include/c++/12/bits/ptr_traits.h"],
+fn axiomatic_span_pop_back_verifies_against_catalog_contracts() {
+    let (root, import) = axiomatic_span_fixture(
+        "axiomatic-pop-back",
+        "#include <span.h>\nint& probe(std::span<int>& span) { return SpanPopBack(span); }\n",
+        &[
+            "bitcoin-src/src/span.h",
+            "sysroot/usr/include/c++/12/span",
+            "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
+        ],
     );
-    let names = import
+    let axioms = import
         .export()
         .reachable_functions
         .iter()
-        .map(|function| function.name.as_str())
-        .collect::<Vec<_>>();
-    let address = names
-        .iter()
-        .find(|name| name.starts_with("std_to_address"))
-        .unwrap();
-    let inner_address = names
-        .iter()
-        .find(|name| name.starts_with("std___to_address"))
-        .unwrap();
-    let source = r#"verifying "span-probe.cpp";
-int32* TO_ADDRESS(int32* __ptr) { ensures result == __ptr; } by { execute(); simp(); }
-int32* INNER_ADDRESS(int32* __ptr) { ensures result == __ptr; } by { execute(); simp(); }
-void __extent_storage__value_unsigned_long_18446744073709551615_constructor(struct __extent_storage__value_unsigned_long_18446744073709551615* this, uint64 __extent) {
- owns this->_M_extent_value;
- ensures this->_M_extent_value == __extent;
-} by { execute(); simp(); }
-void span__int__value_unsigned_long_18446744073709551615_constructor(struct span__int__value_unsigned_long_18446744073709551615* this, int32* __first, uint64 __count) {
- owns this->_M_ptr;
- owns this->_M_extent._M_extent_value;
- views __first[0..(int32)__count];
- requires 0u64 <= __count;
- requires __count <= 1073741823u64;
- ensures this->_M_ptr == __first;
- ensures this->_M_extent._M_extent_value == __count;
-} by { execute(); simp(); }
-uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent_value;
- ensures result == this->_M_extent_value;
-} by { execute(); simp(); }
-uint64 span__int__value_unsigned_long_18446744073709551615_size(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent._M_extent_value;
- ensures result == this->_M_extent._M_extent_value;
-} by { execute(); simp(); }
-uint64 probe(int32* backing, uint64 count) {
- views backing[0..(int32)count];
- requires 1u64 <= count;
- requires count <= 1073741823u64;
- ensures result == count;
-} by { execute(); simp(); }
-"#.replace("TO_ADDRESS", address).replace("INNER_ADDRESS", inner_address);
-    let path = root.join("span.click");
-    fs::write(&path, &source).unwrap();
-    let project = read_click_project(&path, &source).unwrap();
-    match phase {
-        SpanConstructionPhase::VerifyAndExpand => {
-            verify_program_prepared_project(&project, &import).unwrap();
-            let expanded = expand_program_prepared_project_claim_source_by_label(
-                &project,
-                &import,
-                "probe.contract",
-            )
-            .unwrap();
-            verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
-        }
-        SpanConstructionPhase::Retain => {
-            let (session, _) =
-                C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-            let position = program_prepared_project_tactic_source_position(
-                &project,
-                &import,
-                "probe.contract",
-                0,
-            )
-            .unwrap();
-            session
-                .verify_at_project(&source, position.line, position.column)
-                .unwrap();
-        }
-        SpanConstructionPhase::RejectBacking => {
-            let missing = source.replace(" views backing[0..(int32)count];", "");
-            assert!(
-                verify_program_prepared_project(
-                    &read_click_project(&path, &missing).unwrap(),
-                    &import
-                )
-                .is_err()
-            );
-        }
-    }
-    fs::remove_dir_all(root).unwrap();
-}
-
-// The original pinned first() returns a descriptor with any bounded prefix,
-// including zero; no source adaptation or user-managed return slot is used.
-#[test]
-fn pinned_std_span_first_constructs_zero_or_nonzero_extent_offline() {
-    check_pinned_std_span_first(false, false);
-}
-
-#[test]
-fn pinned_std_span_first_zero_needs_no_backing_authority_offline() {
-    check_pinned_std_span_first(true, false);
-}
-
-#[test]
-#[ignore = "nightly: 3.9s pinned returned first expansion and retained verification"]
-fn pinned_std_span_first_expands_and_retains_offline() {
-    check_pinned_std_span_first(false, true);
-}
-
-fn pinned_span_construction_contracts(import: &PreparedCppImport) -> String {
-    let names = import
+        .filter_map(|function| function.axiom.as_ref())
+        .map(|axiom| axiom.qualified_name.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        axioms,
+        std::collections::BTreeSet::from([
+            "std::span<int>::back",
+            "std::span<int>::first",
+            "std::span<int>::size"
+        ])
+    );
+    let pop_back = import
         .export()
         .reachable_functions
         .iter()
-        .map(|function| function.name.as_str())
-        .collect::<Vec<_>>();
-    let address = names
-        .iter()
-        .find(|name| name.starts_with("std_to_address"))
-        .unwrap();
-    let inner_address = names
-        .iter()
-        .find(|name| name.starts_with("std___to_address"))
-        .unwrap();
-    r#"verifying "span-probe.cpp";
-bool std___is_constant_evaluated() { ensures result == 0; } by { execute(); simp(); }
-int32* TO_ADDRESS(int32* __ptr) { ensures result == __ptr; } by { execute(); simp(); }
-int32* INNER_ADDRESS(int32* __ptr) { ensures result == __ptr; } by { execute(); simp(); }
-void __extent_storage__value_unsigned_long_18446744073709551615_constructor(struct __extent_storage__value_unsigned_long_18446744073709551615* this, uint64 __extent) {
- owns this->_M_extent_value;
- ensures this->_M_extent_value == __extent;
-} by { execute(); simp(); }
-void span__int__value_unsigned_long_18446744073709551615_constructor(struct span__int__value_unsigned_long_18446744073709551615* this, int32* __first, uint64 __count) {
- owns this->_M_ptr;
- owns this->_M_extent._M_extent_value;
- views __first[0..(int32)__count];
- requires 0u64 <= __count;
- requires __count <= 1073741823u64;
- ensures this->_M_ptr == __first;
- ensures this->_M_extent._M_extent_value == __count;
-} by { execute(); simp(); }
-uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent_value;
- ensures result == this->_M_extent_value;
-} by { execute(); simp(); }
-uint64 span__int__value_unsigned_long_18446744073709551615_size(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent._M_extent_value;
- ensures result == this->_M_extent._M_extent_value;
-} by { execute(); simp(); }
-int32* span__int__value_unsigned_long_18446744073709551615_data(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_ptr;
- ensures result == this->_M_ptr;
-} by { execute(); simp(); }
-struct span__int__value_unsigned_long_18446744073709551615 span__int__value_unsigned_long_18446744073709551615_first(const struct span__int__value_unsigned_long_18446744073709551615* this, uint64 __count) {
- views this->_M_ptr;
- views this->_M_extent._M_extent_value;
- views this->_M_ptr[0..(int32)__count];
- requires __count <= this->_M_extent._M_extent_value;
- requires this->_M_extent._M_extent_value <= 1073741823u64;
- ensures result._M_ptr == old(this->_M_ptr);
- ensures result._M_extent._M_extent_value == __count;
- ensures this->_M_ptr == old(this->_M_ptr);
- ensures this->_M_extent._M_extent_value == old(this->_M_extent._M_extent_value);
-} by { execute(); simp(); }
-"#.replace("TO_ADDRESS", address).replace("INNER_ADDRESS", inner_address)
-}
-
-fn check_pinned_std_span_first(empty: bool, expand_and_retain: bool) {
-    let harness = if empty {
-        "#include <span.h>\nstd::span<int> probe(const std::span<int>& span) noexcept { return span.first(0); }\n"
-    } else {
-        "#include <span.h>\nstd::span<int> probe(const std::span<int>& span, unsigned long count) noexcept { return span.first(count); }\n"
-    };
-    let (root, import) = pinned_span_fixture_with_dependencies(
-        "returned-first",
-        harness,
-        &["sysroot/usr/include/c++/12/bits/ptr_traits.h"],
-    );
-    let mut source = format!(
-        "{}{}",
-        pinned_span_construction_contracts(&import),
-        r#"struct span__int__value_unsigned_long_18446744073709551615 probe(const struct span__int__value_unsigned_long_18446744073709551615& span, uint64 count) {
- views span._M_ptr;
- views span._M_extent._M_extent_value;
- views span._M_ptr[0..(int32)span._M_extent._M_extent_value];
- requires count <= span._M_extent._M_extent_value;
- requires span._M_extent._M_extent_value <= 1073741823u64;
- ensures result._M_ptr == old(span._M_ptr);
- ensures result._M_extent._M_extent_value == count;
-} by { execute(); simp(); }
+        .find(|function| function.name.starts_with("SpanPopBack"))
+        .unwrap()
+        .name
+        .clone();
+    let source = format!(
+        r#"verifying "span-probe.cpp";
+theorem uint64_predecessor_below(n: uint64) {{
+    requires 1u64 <= n;
+    ensures n - 1u64 <= n by {{
+        apply(uint64_less_equal_to_integer(1u64, n));
+        apply(uint64_subtract_to_integer(n, 1u64));
+        have to_integer(n - 1u64) <= to_integer(n) by {{
+            arithmetic() using {{ to_integer(n - 1u64) == to_integer(n) - 1; }}
+        }}
+        apply(uint64_less_equal_of_to_integer(n - 1u64, n));
+    }}
+}}
+int32& {pop_back}(struct span__int__value_unsigned_long_18446744073709551615& span) {{
+    owns std_span_data(span);
+    owns std_span_size(span);
+    requires 1u64 <= std_span_size(span);
+    ensures std_span_data(span) == old(std_span_data(span));
+    ensures std_span_size(span) == old(std_span_size(span)) - 1u64;
+    ensures &result == old(std_span_data(span)) + (old(std_span_size(span)) - 1u64);
+}} by {{
+    apply(uint64_predecessor_below(std_span_size(span)));
+    execute_until(statement(2));
+    have size - 1u64 <= std_span_size(span) by {{
+        simp() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
+    }}
+    execute();
+    simp();
+}}
+int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {{
+    owns std_span_data(span);
+    owns std_span_size(span);
+    requires 1u64 <= std_span_size(span);
+    ensures std_span_size(span) == old(std_span_size(span)) - 1u64;
+    ensures &result == old(std_span_data(span)) + (old(std_span_size(span)) - 1u64);
+}} by {{
+    execute();
+    simp();
+}}
 "#
     );
-    if empty {
-        let start = source
-            .find("struct span__int__value_unsigned_long_18446744073709551615 probe(")
-            .unwrap();
-        source.truncate(start);
-        source.push_str(r#"struct span__int__value_unsigned_long_18446744073709551615 probe(const struct span__int__value_unsigned_long_18446744073709551615& span) {
- views span._M_ptr;
- views span._M_extent._M_extent_value;
- requires span._M_extent._M_extent_value <= 1073741823u64;
- ensures result._M_ptr == old(span._M_ptr);
- ensures result._M_extent._M_extent_value == 0u64;
-} by { execute(); simp(); }
-"#);
-    }
-    let path = root.join("span.click");
-    fs::write(&path, &source).unwrap();
-    let project = read_click_project(&path, &source).unwrap();
-    verify_program_prepared_project(&project, &import).unwrap();
-    if expand_and_retain {
-        let expanded = expand_program_prepared_project_claim_source_by_label(
-            &project,
-            &import,
-            "probe.contract",
-        )
-        .unwrap();
-        verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
-        let (session, _) =
-            C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-        let position = program_prepared_project_tactic_source_position(
-            &project,
-            &import,
-            "probe.ensures_0",
-            0,
-        )
-        .unwrap();
-        session
-            .verify_at_project(&source, position.line, position.column)
-            .unwrap();
-    }
-    if expand_and_retain {
-        let missing = source.replace(
-            " views span._M_ptr[0..(int32)span._M_extent._M_extent_value];",
-            "",
-        );
+    let sidecar = root.join("span.click");
+    fs::write(&sidecar, &source).unwrap();
+    let parsed = read_click_project(&sidecar, &source).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+
+    // Expansion runs against the same contracts, and writes back only the
+    // sidecar: the catalog stays Click's.
+    let expanded = expand_program_prepared_project_claim_source_by_label(
+        &parsed,
+        &import,
+        &format!("{pop_back}.contract"),
+    )
+    .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert_ne!(expanded, source);
+    assert!(!expanded.contains("extern"), "{expanded}");
+    verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+
+    let refuse = |edited: String, expected: &str| {
+        let parsed = read_click_project(&sidecar, &edited).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import)
+            .expect_err("an unsupported claim must not verify");
         assert!(
-            verify_program_prepared_project(&read_click_project(&path, &missing).unwrap(), &import)
-                .is_err()
-        );
-    }
-    if expand_and_retain {
-        let beyond = source.replace(
-            " requires count <= span._M_extent._M_extent_value;",
-            " requires span._M_extent._M_extent_value < count;",
-        );
-        let error =
-            verify_program_prepared_project(&read_click_project(&path, &beyond).unwrap(), &import)
-                .unwrap_err();
-        assert!(
-            error.message().contains("probe.contract"),
-            "{}",
+            error.message().contains(expected),
+            "{}\n{edited}",
             error.message()
         );
-    }
-    fs::remove_dir_all(root).unwrap();
-}
-
-fn pinned_span_last_index_contracts() -> &'static str {
-    r#"theorem bounded_span_back_address(pointer: int32*, index: uint64) {
- requires index <= 1073741822u64;
- ensures pointer + (int32)index == pointer + index by { simp() using { index <= 1073741822u64; } }
-}
-theorem bounded_span_last_index(n: uint64) {
- requires 1u64 <= n;
- requires n <= 1073741823u64;
- ensures 1 <= (int32)n and (int32)n <= 1073741823 and 0 <= (int32)n - 1 and (int32)n - 1 < (int32)n and 0 <= (int32)(n - 1u64) and (int32)(n - 1u64) < (int32)n and n - 1u64 <= 1073741822u64 and (int32)(n - 1u64) == (int32)n - 1 by {
- apply(uint64_less_equal_to_integer(1u64, n));
- apply(uint64_less_equal_to_integer(n, 1073741823u64));
- apply(uint64_subtract_to_integer(n, 1u64));
- have 0 <= to_integer((n - 1u64)) by {
-     arithmetic() using {
-         1 <= to_integer(n);
-         to_integer(n) <= 1073741823;
-         to_integer((n - 1u64)) == to_integer(n) - 1;
-     }
- }
- have to_integer((n - 1u64)) <= 1073741822 by {
-     arithmetic() using {
-         1 <= to_integer(n);
-         to_integer(n) <= 1073741823;
-         to_integer((n - 1u64)) == to_integer(n) - 1;
-         0 <= to_integer((n - 1u64));
-     }
- }
- have n - 1u64 <= 1073741822u64 by apply(uint64_less_equal_of_to_integer((n - 1u64), 1073741822u64));
- have to_integer((int32)n) == to_integer(n) by {
- arithmetic_certificate special {
- premise 0: 1 <= to_integer(n) => 1 <= to_integer(n);
- premise 1: to_integer(n) <= 1073741823 => to_integer(n) <= 1073741823;
- integer_cast_identity bounds [0, 1] => to_integer((int32)n) == to_integer(n); conclusion 0;
- }
- }
- have 1 <= to_integer((int32)n) by {
-     arithmetic() using {
-         1 <= to_integer(n);
-         to_integer((int32)n) == to_integer(n);
-     }
- }
- apply(int32_less_equal_of_to_integer(1, (int32)n));
- have to_integer((int32)n) <= 1073741823 by {
- arithmetic() using {
-  to_integer((int32)n) == to_integer(n);
-  to_integer(n) <= 1073741823;
- }
- }
- apply(int32_less_equal_of_to_integer((int32)n, 1073741823));
- have 0 <= (int32)n - 1 by {
-     arithmetic() using {
-         1 <= (int32)n;
-         (int32)n <= 1073741823;
-     }
- }
- have (int32)n - 1 < (int32)n by {
-     arithmetic() using {
-         1 <= (int32)n;
-         (int32)n <= 1073741823;
-     }
- }
- have to_integer((int32)(n - 1u64)) == to_integer(n - 1u64) by {
- arithmetic_certificate special {
- premise 0: 0 <= to_integer(n - 1u64) => 0 <= to_integer(n - 1u64);
- premise 1: to_integer(n - 1u64) <= 1073741822 => to_integer(n - 1u64) <= 1073741822;
- integer_cast_identity bounds [0, 1] => to_integer((int32)(n - 1u64)) == to_integer(n - 1u64); conclusion 0;
- }
- }
- have to_integer((int32)n) - to_integer(1) >= -2147483648 by {
- arithmetic() using { 1 <= to_integer((int32)n); }
- }
- have to_integer((int32)n) - to_integer(1) <= 2147483647 by {
- arithmetic() using { to_integer((int32)n) <= 1073741823; }
- }
- have to_integer(n) <= 2147483647 by { arithmetic() using { to_integer(n) <= 1073741823; } }
- have n <= 2147483647u64 by apply(uint64_less_equal_of_to_integer(n, 2147483647u64));
- have defined((int32)n - 1) by {
- apply(int32_subtract_defined_by_integer_bounds((int32)n, 1));
- simp();
- }
- apply(int32_subtract_to_integer((int32)n, 1)) using { defined((int32)n - 1); }
- have to_integer((int32)(n - 1u64)) == to_integer((int32)n - 1) by {
- arithmetic() using {
-  to_integer((int32)(n - 1u64)) == to_integer(n - 1u64);
-  to_integer(n - 1u64) == to_integer(n) - 1;
-  to_integer((int32)n) == to_integer(n);
-  to_integer((int32)n - 1) == to_integer((int32)n) - to_integer(1);
- }
- }
- apply(int32_equal_of_to_integer((int32)(n - 1u64), (int32)n - 1));
- have 0 <= (int32)(n - 1u64) by { rewrite((int32)(n - 1u64) == (int32)n - 1); assumption(); }
- have (int32)(n - 1u64) < (int32)n by { rewrite((int32)(n - 1u64) == (int32)n - 1); assumption(); }
- simp();
- }
-}
-theorem bounded_span_last_address(pointer: int32*, n: uint64) {
- requires 1u64 <= n;
- requires n <= 1073741823u64;
- requires n - 1u64 <= 1073741822u64;
- ensures pointer + ((int32)n - 1) == pointer + (n - 1u64) by {
-  apply(bounded_span_last_index(n));
-  have (int32)n - 1 == (int32)(n - 1u64) by { simp() using { (int32)(n - 1u64) == (int32)n - 1; } }
-  rewrite((int32)n - 1 == (int32)(n - 1u64));
-  simp() using { n - 1u64 <= 1073741822u64; }
- }
-}
-"#
-}
-
-fn pinned_span_back_signed_address_contracts() -> &'static str {
-    r#"int32& span__int__value_unsigned_long_18446744073709551615_back(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_ptr;
- views this->_M_extent._M_extent_value;
- views this->_M_ptr[0..((int32)this->_M_extent._M_extent_value)];
- requires 1u64 <= this->_M_extent._M_extent_value;
- requires this->_M_extent._M_extent_value <= 1073741823u64;
- ensures &result == this->_M_ptr + ((int32)this->_M_extent._M_extent_value - 1);
- ensures &result == this->_M_ptr + (this->_M_extent._M_extent_value - 1u64);
- ensures result == old(this->_M_ptr[this->_M_extent._M_extent_value - 1u64]);
-} by {
- apply(uint64_less_equal_to_integer(1u64, this->_M_extent._M_extent_value));
- apply(uint64_less_equal_to_integer(this->_M_extent._M_extent_value, 1073741823u64));
- apply(uint64_subtract_to_integer(this->_M_extent._M_extent_value, 1u64));
- have 0 <= to_integer((this->_M_extent._M_extent_value - 1u64)) by {
-     arithmetic() using {
-         1 <= to_integer(this->_M_extent._M_extent_value);
-         to_integer(this->_M_extent._M_extent_value) <= 1073741823;
-         to_integer((this->_M_extent._M_extent_value - 1u64)) == to_integer(this->_M_extent._M_extent_value) - 1;
-     }
- }
- have to_integer((this->_M_extent._M_extent_value - 1u64)) <= 1073741822 by {
-     arithmetic() using {
-         1 <= to_integer(this->_M_extent._M_extent_value);
-         to_integer(this->_M_extent._M_extent_value) <= 1073741823;
-         to_integer((this->_M_extent._M_extent_value - 1u64)) == to_integer(this->_M_extent._M_extent_value) - 1;
-         0 <= to_integer((this->_M_extent._M_extent_value - 1u64));
-     }
- }
- have this->_M_extent._M_extent_value - 1u64 <= 1073741822u64 by apply(uint64_less_equal_of_to_integer((this->_M_extent._M_extent_value - 1u64), 1073741822u64));
- have to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value) by {
- arithmetic_certificate special {
- premise 0: 1 <= to_integer(this->_M_extent._M_extent_value) => 1 <= to_integer(this->_M_extent._M_extent_value);
- premise 1: to_integer(this->_M_extent._M_extent_value) <= 1073741823 => to_integer(this->_M_extent._M_extent_value) <= 1073741823;
- integer_cast_identity bounds [0, 1] => to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value); conclusion 0;
- }
- }
- have 1 <= to_integer((int32)this->_M_extent._M_extent_value) by {
-     arithmetic() using {
-         1 <= to_integer(this->_M_extent._M_extent_value);
-         to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value);
-     }
- }
- apply(int32_less_equal_of_to_integer(1, (int32)this->_M_extent._M_extent_value));
- have 0 <= (int32)this->_M_extent._M_extent_value - 1 by {
-     arithmetic() using {
-         1 <= (int32)this->_M_extent._M_extent_value;
-         (int32)this->_M_extent._M_extent_value <= 1073741823;
-     }
- }
- have (int32)this->_M_extent._M_extent_value - 1 < (int32)this->_M_extent._M_extent_value by {
-     arithmetic() using {
-         1 <= (int32)this->_M_extent._M_extent_value;
-         (int32)this->_M_extent._M_extent_value <= 1073741823;
-     }
- }
- apply(bounded_span_last_index(this->_M_extent._M_extent_value));
- execute();
- apply(bounded_span_last_address(this->_M_ptr, this->_M_extent._M_extent_value));
- rewrite(this->_M_ptr + ((int32)this->_M_extent._M_extent_value - 1) == this->_M_ptr + (this->_M_extent._M_extent_value - 1u64));
- simp();
-}
-"#
-}
-
-// The original Bitcoin helper preserves a saved reference and the complete
-// incoming backing frame while retiring only its constructed RHS descriptor.
-#[test]
-#[ignore = "nightly: 20s parallel pinned symbolic SpanPopBack and full backing frame"]
-fn pinned_span_pop_back_constructs_shorter_descriptor_offline() {
-    check_pinned_span_pop_back(SpanPopBackPhase::Reference);
-}
-
-#[test]
-#[ignore = "nightly: 131s parallel pinned SpanPopBack expansion and retained verification"]
-fn pinned_span_pop_back_expands_and_retains_offline() {
-    check_pinned_span_pop_back(SpanPopBackPhase::ProofTools);
-}
-
-#[test]
-#[ignore = "nightly: 22s parallel pinned SpanPopBack read caller"]
-fn pinned_span_pop_back_read_caller_offline() {
-    check_pinned_span_pop_back(SpanPopBackPhase::Read);
-}
-
-#[test]
-#[ignore = "nightly: 53s parallel pinned SpanPopBack owned write caller"]
-fn pinned_span_pop_back_write_caller_offline() {
-    check_pinned_span_pop_back(SpanPopBackPhase::Write);
-}
-
-#[test]
-#[ignore = "nightly: 55s parallel pinned singleton SpanPopBack after empty RHS descriptor retirement"]
-fn pinned_span_pop_back_singleton_read_offline() {
-    check_pinned_span_pop_back(SpanPopBackPhase::SingletonRead);
-}
-
-#[test]
-#[ignore = "nightly: 53s parallel pinned singleton SpanPopBack write after empty RHS descriptor retirement"]
-fn pinned_span_pop_back_singleton_write_offline() {
-    check_pinned_span_pop_back(SpanPopBackPhase::SingletonWrite);
-}
-
-#[test]
-#[ignore = "nightly: 41s parallel pinned three-element SpanPopBack"]
-fn pinned_span_pop_back_several_elements_offline() {
-    check_pinned_span_pop_back(SpanPopBackPhase::Several);
-}
-
-#[test]
-#[ignore = "nightly: 154s parallel pinned SpanPopBack read expansion and retained verification"]
-fn pinned_span_pop_back_read_expands_and_retains_offline() {
-    check_pinned_span_pop_back(SpanPopBackPhase::ReadTools);
-}
-
-#[test]
-#[ignore = "nightly: 254s parallel pinned SpanPopBack write expansion and retained verification"]
-fn pinned_span_pop_back_write_expands_and_retains_offline() {
-    check_pinned_span_pop_back(SpanPopBackPhase::WriteTools);
-}
-
-#[test]
-#[ignore = "nightly: 186s parallel pinned SpanPopBack authority and bounds refusals"]
-fn pinned_span_pop_back_requires_authority_bounds_and_separation_offline() {
-    check_pinned_span_pop_back(SpanPopBackPhase::Refusals);
-}
-
-#[derive(Clone, Copy)]
-enum SpanPopBackPhase {
-    Reference,
-    ProofTools,
-    Read,
-    Write,
-    SingletonRead,
-    SingletonWrite,
-    Several,
-    ReadTools,
-    WriteTools,
-    Refusals,
-}
-
-fn check_pinned_span_pop_back(phase: SpanPopBackPhase) {
-    let harness = match phase {
-        SpanPopBackPhase::SingletonRead | SpanPopBackPhase::Read | SpanPopBackPhase::ReadTools => {
-            "#include <span.h>\nint probe(std::span<int>& span) { int& back = SpanPopBack(span); return back; }\n"
-        }
-        SpanPopBackPhase::SingletonWrite
-        | SpanPopBackPhase::Write
-        | SpanPopBackPhase::WriteTools => {
-            "#include <span.h>\nint probe(std::span<int>& span, int input) { int& back = SpanPopBack(span); back = input; return back; }\n"
-        }
-        _ => "#include <span.h>\nint& probe(std::span<int>& span) { return SpanPopBack(span); }\n",
     };
-    let (root, import) = pinned_span_fixture_with_dependencies(
-        "pop-back",
-        harness,
+    // Without a nonempty view the proof has no predecessor bound, and the
+    // refusal spells the accessor's field path as a sidecar writes it.
+    refuse(
+        source.replacen("    requires 1u64 <= std_span_size(span);\n", "", 1),
+        "span._M_extent._M_extent_value",
+    );
+    // `first` keeps the data pointer; a moved one is false.
+    refuse(
+        source.replacen(
+            "ensures std_span_data(span) == old(std_span_data(span));",
+            "ensures std_span_data(span) == old(std_span_data(span)) + 1u64;",
+            1,
+        ),
+        "ensures",
+    );
+}
+
+// A standard function without a Click contract is refused by name; nothing
+// about it is assumed.
+#[test]
+fn axiomatic_span_refuses_an_uncatalogued_standard_function() {
+    let (root, import) = axiomatic_span_fixture(
+        "axiomatic-size-bytes",
+        "#include <span>\nunsigned long probe(std::span<int>& span) { return span.size_bytes(); }\n",
         &[
-            "sysroot/usr/include/c++/12/bits/ptr_traits.h",
+            "sysroot/usr/include/c++/12/span",
+            "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
+        ],
+    );
+    let axiom = import
+        .export()
+        .reachable_functions
+        .iter()
+        .find(|function| function.axiom.is_some())
+        .unwrap();
+    assert_eq!(
+        axiom.axiom.as_ref().unwrap().qualified_name,
+        "std::span<int>::size_bytes"
+    );
+    let source = r#"verifying "span-probe.cpp";
+uint64 probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
+    views std_span_size(span);
+    ensures result == result;
+} by {
+    execute();
+    simp();
+}
+"#;
+    let sidecar = root.join("span.click");
+    fs::write(&sidecar, source).unwrap();
+    let parsed = read_click_project(&sidecar, source).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(error.message().contains(&axiom.name), "{}", error.message());
+}
+
+// A caller writes through the reference `SpanPopBack` returns. The write
+// needs ownership of that backing cell, which the span's contracts neither
+// grant nor need; the descriptor itself is all `back` and `first` read.
+#[test]
+fn axiomatic_span_pop_back_write_needs_backing_ownership() {
+    let (root, import) = axiomatic_span_fixture(
+        "axiomatic-pop-back-write",
+        "#include <span.h>\nint probe(std::span<int>& span, int input) { int& back = SpanPopBack(span); back = input; return back; }\n",
+        &[
             "bitcoin-src/src/span.h",
+            "sysroot/usr/include/c++/12/span",
+            "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
     let pop_back = import
@@ -4397,698 +3036,62 @@ fn check_pinned_span_pop_back(phase: SpanPopBackPhase) {
         .unwrap()
         .name
         .clone();
-    let mut source = format!(
-        "{}{}{}{}",
-        pinned_span_construction_contracts(&import),
-        pinned_span_last_index_contracts(),
-        pinned_span_back_signed_address_contracts(),
-        r#"
-bool span__int__value_unsigned_long_18446744073709551615_empty(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent._M_extent_value;
- ensures this->_M_extent._M_extent_value == 0u64 implies result == 1;
- ensures this->_M_extent._M_extent_value != 0u64 implies result == 0;
-} by { execute(); simp(); }
-theorem last_span_cells_separate(span: struct span__int__value_unsigned_long_18446744073709551615*, n: uint64) {
- requires 1u64 <= n;
- requires n <= 1073741823u64;
- requires separate(memory(span->_M_ptr), memory(span->_M_ptr[0..(int32)n]));
- requires separate(memory(span->_M_extent._M_extent_value), memory(span->_M_ptr[0..(int32)n]));
- ensures separate(memory(span->_M_ptr), memory(span->_M_ptr[n - 1u64])) and separate(memory(span->_M_extent._M_extent_value), memory(span->_M_ptr[n - 1u64])) by {
-  apply(bounded_span_last_index(n));
-  apply(bounded_span_last_address(span->_M_ptr, n));
-  have separate(memory(span->_M_ptr), memory(span->_M_ptr[(int32)n - 1])) by { assumption(); }
-  have separate(memory(span->_M_extent._M_extent_value), memory(span->_M_ptr[(int32)n - 1])) by { assumption(); }
-  have span->_M_ptr + (n - 1u64) == span->_M_ptr + ((int32)n - 1) by { simp() using { span->_M_ptr + ((int32)n - 1) == span->_M_ptr + (n - 1u64); } }
-  rewrite(span->_M_ptr + (n - 1u64) == span->_M_ptr + ((int32)n - 1));
-  assumption();
- }
-}
-theorem bounded_span_prefix(n: uint64) {
- requires 1u64 <= n;
- requires n <= 1073741823u64;
- ensures n - 1u64 <= n and n - 1u64 <= 1073741822u64 and 0 <= (int32)(n - 1u64) and (int32)(n - 1u64) <= (int32)n by {
-  apply(uint64_less_equal_to_integer(1u64, n));
-  apply(uint64_less_equal_to_integer(n, 1073741823u64));
-  apply(uint64_subtract_to_integer(n, 1u64));
-  have 0 <= to_integer(n - 1u64) by {
-   arithmetic() using { 1 <= to_integer(n); to_integer(n - 1u64) == to_integer(n) - 1; }
-  }
-  have to_integer(n - 1u64) <= to_integer(n) by {
-   arithmetic() using { to_integer(n - 1u64) == to_integer(n) - 1; }
-  }
-  have to_integer(n - 1u64) <= 1073741822 by {
-   arithmetic() using { to_integer(n) <= 1073741823; to_integer(n - 1u64) == to_integer(n) - 1; }
-  }
-  apply(uint64_less_equal_of_to_integer(n - 1u64, 1073741822u64));
-  have to_integer((int32)n) == to_integer(n) by {
-   arithmetic_certificate special {
-    premise 0: 1 <= to_integer(n) => 1 <= to_integer(n);
-    premise 1: to_integer(n) <= 1073741823 => to_integer(n) <= 1073741823;
-    integer_cast_identity bounds [0, 1] => to_integer((int32)n) == to_integer(n); conclusion 0;
-   }
-  }
-  have to_integer((int32)(n - 1u64)) == to_integer(n - 1u64) by {
-   arithmetic_certificate special {
-    premise 0: 0 <= to_integer(n - 1u64) => 0 <= to_integer(n - 1u64);
-    premise 1: to_integer(n - 1u64) <= 1073741822 => to_integer(n - 1u64) <= 1073741822;
-    integer_cast_identity bounds [0, 1] => to_integer((int32)(n - 1u64)) == to_integer(n - 1u64); conclusion 0;
-   }
-  }
-  have 0 <= to_integer((int32)(n - 1u64)) by {
-   arithmetic() using { 0 <= to_integer(n - 1u64); to_integer((int32)(n - 1u64)) == to_integer(n - 1u64); }
-  }
-  have to_integer((int32)(n - 1u64)) <= to_integer((int32)n) by {
-   arithmetic() using { to_integer(n - 1u64) <= to_integer(n); to_integer((int32)(n - 1u64)) == to_integer(n - 1u64); to_integer((int32)n) == to_integer(n); }
-  }
-  apply(int32_less_equal_of_to_integer(0, (int32)(n - 1u64)));
-  apply(int32_less_equal_of_to_integer((int32)(n - 1u64), (int32)n));
-  apply(uint64_less_equal_of_to_integer(n - 1u64, n));
-  simp();
- }
-}
-int32& POP_BACK(struct span__int__value_unsigned_long_18446744073709551615& span) {
- owns span._M_ptr;
- owns span._M_extent._M_extent_value;
- views span._M_ptr[0..(int32)span._M_extent._M_extent_value];
- requires separate(memory(span._M_ptr), memory(span._M_ptr[0..(int32)span._M_extent._M_extent_value]));
- requires separate(memory(span._M_extent._M_extent_value), memory(span._M_ptr[0..(int32)span._M_extent._M_extent_value]));
-
- requires separate(memory(span._M_extent._M_extent_value), memory(span._M_ptr[span._M_extent._M_extent_value - 1u64]));
- requires separate(memory(span._M_ptr), memory(span._M_ptr[span._M_extent._M_extent_value - 1u64]));
- requires 1u64 <= span._M_extent._M_extent_value;
- requires span._M_extent._M_extent_value <= 1073741823u64;
- ensures span._M_ptr == old(span._M_ptr);
- ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value) - 1u64;
- ensures &result == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64);
- ensures result == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]);
- ensures forall (k: int32) { 0 <= k and k < old((int32)span._M_extent._M_extent_value) implies span._M_ptr[k] == old(span._M_ptr[k]) };
-} by {
- apply(bounded_span_last_index(span._M_extent._M_extent_value));
- apply(bounded_span_prefix(span._M_extent._M_extent_value));
- apply(bounded_span_last_address(span._M_ptr, span._M_extent._M_extent_value));
- have span._M_ptr + (span._M_extent._M_extent_value - 1u64) == span._M_ptr + ((int32)span._M_extent._M_extent_value - 1) by { simp() using { span._M_ptr + ((int32)span._M_extent._M_extent_value - 1) == span._M_ptr + (span._M_extent._M_extent_value - 1u64); } }
- step(); step(); step(); step();
- have back == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]) by simp;
- have &back == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64) by simp;
- have size == span._M_extent._M_extent_value by simp;
- have 1u64 <= size by simp;
- have size <= 1073741823u64 by simp;
- apply(bounded_span_last_index(size));
- apply(bounded_span_prefix(size));
- have (int32)size == (int32)span._M_extent._M_extent_value by simp;
-
- have 0 <= (int32)(size - 1u64) by simp;
- have (int32)(size - 1u64) <= (int32)span._M_extent._M_extent_value by simp;
- have size - 1u64 <= span._M_extent._M_extent_value by { simp() using { size == span._M_extent._M_extent_value; size - 1u64 <= size; } }
- step(); step(); step();
- have back == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]) by simp;
- step();
- have back == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]) by simp;
- execute();
- have span._M_ptr == old(span._M_ptr) by simp;
- have forall (k: int32) { 0 <= k and k < old((int32)span._M_extent._M_extent_value) implies span._M_ptr[k] == old(span._M_ptr[k]) } by {
-  intro() as k; intro();
-  simp();
- }
- have span._M_ptr == old(span._M_ptr) by simp;
- have &result == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64) by simp;
- rewrite(&result == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64));
- simp(); }
-int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
- owns span._M_ptr;
- owns span._M_extent._M_extent_value;
- views span._M_ptr[0..(int32)span._M_extent._M_extent_value];
- requires separate(memory(span._M_ptr), memory(span._M_ptr[0..(int32)span._M_extent._M_extent_value]));
- requires separate(memory(span._M_extent._M_extent_value), memory(span._M_ptr[0..(int32)span._M_extent._M_extent_value]));
-
- requires 1u64 <= span._M_extent._M_extent_value;
- requires span._M_extent._M_extent_value <= 1073741823u64;
- ensures span._M_ptr == old(span._M_ptr);
- ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value) - 1u64;
- ensures &result == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64);
- ensures result == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]);
- ensures forall (k: int32) { 0 <= k and k < old((int32)span._M_extent._M_extent_value) implies span._M_ptr[k] == old(span._M_ptr[k]) };
-} by { apply(last_span_cells_separate(&span, span._M_extent._M_extent_value)); execute(); simp(); }
-"#
-    )
-    .replace("POP_BACK", &pop_back);
-    if matches!(
-        phase,
-        SpanPopBackPhase::Read
-            | SpanPopBackPhase::Write
-            | SpanPopBackPhase::SingletonRead
-            | SpanPopBackPhase::SingletonWrite
-            | SpanPopBackPhase::ReadTools
-            | SpanPopBackPhase::WriteTools
-    ) {
-        let start = source.rfind("int32& probe(").unwrap();
-        let mut caller = source[start..].replace("int32& probe(", "int32 probe(");
-        if matches!(
-            phase,
-            SpanPopBackPhase::Write
-                | SpanPopBackPhase::SingletonWrite
-                | SpanPopBackPhase::WriteTools
-        ) {
-            caller = caller.replace("& span) {", "& span, int32 input) {");
-            caller = caller.replace(" views span._M_ptr[", " owns span._M_ptr[");
-            caller = caller.replace(" ensures &result == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64);", "");
-            caller = caller.replace(" ensures result == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]);", " ensures result == input;\n ensures span._M_ptr[old(span._M_extent._M_extent_value) - 1u64] == input;");
-            caller = caller.replace(
-                "implies span._M_ptr[k]",
-                "and k != old((int32)span._M_extent._M_extent_value) - 1 implies span._M_ptr[k]",
-            );
-            caller = caller.replace(" execute(); simp();", r#"
- apply(bounded_span_last_index(span._M_extent._M_extent_value));
- apply(bounded_span_last_address(span._M_ptr, span._M_extent._M_extent_value));
- step(); step();
- have &back == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64) by simp;
- apply(bounded_span_last_index(old(span._M_extent._M_extent_value)));
- apply(bounded_span_last_address(old(span._M_ptr), old(span._M_extent._M_extent_value)));
- have &back == old(span._M_ptr) + (old((int32)span._M_extent._M_extent_value) - 1) by { simp() using { &back == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64); old(span._M_ptr) + (old((int32)span._M_extent._M_extent_value) - 1) == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64); } }
- execute();
- have span._M_ptr == old(span._M_ptr) by simp;
- have forall (k: int32) { 0 <= k and k < old((int32)span._M_extent._M_extent_value) and k != old((int32)span._M_extent._M_extent_value) - 1 implies span._M_ptr[k] == old(span._M_ptr[k]) } by {
-  intro() as k; intro(); simp();
- }
- have old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64) == old(span._M_ptr) + (old((int32)span._M_extent._M_extent_value) - 1) by { simp() using { old(span._M_ptr) + (old((int32)span._M_extent._M_extent_value) - 1) == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64); } }
- have result == input by simp;
- have span._M_ptr[old(span._M_extent._M_extent_value) - 1u64] == input by {
-  simp() using { span._M_ptr == old(span._M_ptr); old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64) == old(span._M_ptr) + (old((int32)span._M_extent._M_extent_value) - 1); result == input; }
- }
- simp();"#);
-        } else {
-            caller = caller.replace(" ensures &result == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64);", "");
-            caller = caller.replace(" execute(); simp();", r#"
- step(); step();
- apply(bounded_span_last_index(old(span._M_extent._M_extent_value)));
- apply(bounded_span_last_address(old(span._M_ptr), old(span._M_extent._M_extent_value)));
- have &back == old(span._M_ptr) + (old((int32)span._M_extent._M_extent_value) - 1) by { simp() using { &back == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64); old(span._M_ptr) + (old((int32)span._M_extent._M_extent_value) - 1) == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64); } }
- execute(); simp();"#);
-        }
-        source.truncate(start);
-        source.push_str(&caller);
-    }
-    if matches!(
-        phase,
-        SpanPopBackPhase::SingletonRead | SpanPopBackPhase::SingletonWrite
-    ) {
-        let start = source.rfind("int32 probe(").unwrap();
-        let caller = source[start..].replace(" requires 1u64 <= span._M_extent._M_extent_value;", " requires span._M_extent._M_extent_value == 1u64;\n requires 1u64 <= span._M_extent._M_extent_value;")
-            .replace(" ensures span._M_ptr == old(span._M_ptr);", " ensures span._M_extent._M_extent_value == 0u64;\n ensures span._M_ptr == old(span._M_ptr);");
-        let mut caller = caller;
-        let finish = caller.rfind("simp();").unwrap();
-        caller.insert_str(finish, r#"
- have old(span._M_extent._M_extent_value) == 1u64 by { assumption(); }
- have span._M_extent._M_extent_value == old(span._M_extent._M_extent_value) - 1u64 by simp;
- have span._M_extent._M_extent_value == 0u64 by { simp() using { old(span._M_extent._M_extent_value) == 1u64; span._M_extent._M_extent_value == old(span._M_extent._M_extent_value) - 1u64; } }
-"#);
-        source.truncate(start);
-        source.push_str(&caller);
-    }
-    if matches!(phase, SpanPopBackPhase::Several) {
-        let start = source.rfind("int32& probe(").unwrap();
-        let caller = source[start..].replace(" requires 1u64 <= span._M_extent._M_extent_value;", " requires span._M_extent._M_extent_value == 3u64;\n requires 1u64 <= span._M_extent._M_extent_value;");
-        source.truncate(start);
-        source.push_str(&caller);
-    }
-    let path = root.join("span.click");
-    fs::write(&path, &source).unwrap();
-    let project = read_click_project(&path, &source).unwrap();
-    verify_program_prepared_project(&project, &import).unwrap();
-    if matches!(phase, SpanPopBackPhase::Refusals) {
-        let start = source.rfind("int32& probe(").unwrap();
-        let prefix = &source[..start];
-        let caller = &source[start..];
-        for (name, original, replacement) in [
-            (
-                "descriptor authority",
-                " owns span._M_ptr;",
-                " views span._M_ptr;",
-            ),
-            (
-                "backing authority",
-                " views span._M_ptr[0..(int32)span._M_extent._M_extent_value];",
-                "",
-            ),
-            (
-                "nonempty input",
-                " requires 1u64 <= span._M_extent._M_extent_value;",
-                " requires span._M_extent._M_extent_value == 0u64;",
-            ),
-            (
-                "extent bound",
-                " requires span._M_extent._M_extent_value <= 1073741823u64;",
-                "",
-            ),
-            (
-                "descriptor/backing separation",
-                " requires separate(memory(span._M_ptr), memory(span._M_ptr[0..(int32)span._M_extent._M_extent_value]));",
-                "",
-            ),
-        ] {
-            assert!(
-                caller.contains(original),
-                "missing refusal mutation: {name}"
-            );
-            let missing = format!("{prefix}{}", caller.replace(original, replacement));
-            let error = verify_program_prepared_project(
-                &read_click_project(&path, &missing).unwrap(),
-                &import,
-            )
-            .unwrap_err();
-            assert!(
-                error.message().contains("probe.contract"),
-                "{name}: {}",
-                error.message()
-            );
-        }
-    }
-    if matches!(phase, SpanPopBackPhase::WriteTools) {
-        let start = source.rfind("int32 probe(").unwrap();
-        let missing = format!(
-            "{}{}",
-            &source[..start],
-            source[start..].replace(" owns span._M_ptr[", " views span._M_ptr[")
-        );
-        let error =
-            verify_program_prepared_project(&read_click_project(&path, &missing).unwrap(), &import)
-                .unwrap_err();
-        assert!(
-            error.message().contains("probe.contract"),
-            "{}",
-            error.message()
-        );
-    }
-    if matches!(
-        phase,
-        SpanPopBackPhase::ProofTools | SpanPopBackPhase::ReadTools | SpanPopBackPhase::WriteTools
-    ) {
-        for claim in [format!("{pop_back}.contract"), "probe.contract".to_owned()] {
-            let expanded =
-                expand_program_prepared_project_claim_source_by_label(&project, &import, &claim)
-                    .unwrap();
-            let rewritten = project.with_entry_source(expanded.clone());
-            verify_program_prepared_project(&rewritten, &import).unwrap();
-            let (session, _) =
-                C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-            let position =
-                program_prepared_project_tactic_source_position(&rewritten, &import, &claim, 0)
-                    .unwrap();
-            session
-                .verify_at_project(&expanded, position.line, position.column)
-                .unwrap();
-        }
-    }
-    fs::remove_dir_all(root).unwrap();
-}
-
-// The unchanged runtime suffix operation constructs into the caller's result
-// destination, preserving the receiver and all of its backing view.
-#[test]
-#[ignore = "nightly: 3.7s parallel pinned runtime last returns bounded suffix"]
-fn pinned_std_span_last_returns_bounded_suffix_offline() {
-    check_pinned_std_span_last("symbolic");
-}
-
-#[test]
-#[ignore = "nightly: 6.5s parallel pinned runtime last empty suffix"]
-fn pinned_std_span_last_empty_suffix_offline() {
-    check_pinned_std_span_last("empty");
-}
-#[test]
-#[ignore = "nightly: 6.1s parallel pinned runtime last full suffix"]
-fn pinned_std_span_last_full_suffix_offline() {
-    check_pinned_std_span_last("full");
-}
-#[test]
-#[ignore = "nightly: 4.3s parallel pinned runtime last empty input"]
-fn pinned_std_span_last_empty_input_offline() {
-    check_pinned_std_span_last("empty-input");
-}
-#[test]
-#[ignore = "nightly: 8.8s parallel pinned runtime last method expands"]
-fn pinned_std_span_last_method_expands_offline() {
-    check_pinned_std_span_last("expand-method");
-}
-#[test]
-#[ignore = "nightly: 10.8s parallel pinned runtime last caller expands"]
-fn pinned_std_span_last_caller_expands_offline() {
-    check_pinned_std_span_last("expand-caller");
-}
-#[test]
-#[ignore = "nightly: 8.8s parallel pinned runtime last retains"]
-fn pinned_std_span_last_retains_offline() {
-    check_pinned_std_span_last("retain");
-}
-#[test]
-#[ignore = "nightly: 5.7s parallel pinned runtime last refuses missing views"]
-fn pinned_std_span_last_refuses_missing_views_offline() {
-    check_pinned_std_span_last("refuse-views");
-}
-#[test]
-#[ignore = "nightly: 7.3s parallel pinned runtime last refuses missing bounds"]
-fn pinned_std_span_last_refuses_missing_bounds_offline() {
-    check_pinned_std_span_last("refuse-bounds");
-}
-#[test]
-#[ignore = "nightly: 7.8s parallel pinned runtime last refuses false results"]
-fn pinned_std_span_last_refuses_false_results_offline() {
-    check_pinned_std_span_last("refuse-results");
-}
-
-fn check_pinned_std_span_last(case: &str) {
-    let harness = "#include <span.h>\nstd::span<int> probe(const std::span<int>& span, unsigned long count) noexcept { return span.last(count); }\n";
-    let (root, import) = pinned_span_fixture_with_dependencies(
-        &format!("returned-last-{case}"),
-        harness,
-        &["sysroot/usr/include/c++/12/bits/ptr_traits.h"],
-    );
-    let common = pinned_span_construction_contracts(&import);
-    let start = common.find("struct span__int__value_unsigned_long_18446744073709551615 span__int__value_unsigned_long_18446744073709551615_first(").unwrap();
-    let common = common[..start].replace("(int32)__count", "__count");
     let source = format!(
-        "{}{}",
-        common,
-        r#"struct span__int__value_unsigned_long_18446744073709551615 span__int__value_unsigned_long_18446744073709551615_last(const struct span__int__value_unsigned_long_18446744073709551615* this, uint64 __count) {
- views this->_M_ptr;
- views this->_M_extent._M_extent_value;
- views this->_M_ptr[0..this->_M_extent._M_extent_value];
- requires __count <= this->_M_extent._M_extent_value;
- requires this->_M_extent._M_extent_value <= 1073741823u64;
- ensures result._M_ptr == old(this->_M_ptr) + (old(this->_M_extent._M_extent_value) - __count);
- ensures result._M_extent._M_extent_value == __count;
- ensures this->_M_ptr == old(this->_M_ptr);
- ensures this->_M_extent._M_extent_value == old(this->_M_extent._M_extent_value);
-} by { execute(); simp(); }
-struct span__int__value_unsigned_long_18446744073709551615 probe(const struct span__int__value_unsigned_long_18446744073709551615& span, uint64 count) {
- views span._M_ptr;
- views span._M_extent._M_extent_value;
- views span._M_ptr[0..span._M_extent._M_extent_value];
- requires count <= span._M_extent._M_extent_value;
- requires span._M_extent._M_extent_value <= 1073741823u64;
- ensures result._M_ptr == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - count);
- ensures result._M_extent._M_extent_value == count;
- ensures span._M_ptr == old(span._M_ptr);
- ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value);
- ensures forall (index: uint64) { index < old(span._M_extent._M_extent_value) implies span._M_ptr[index] == old(span._M_ptr[index]) };
-} by { execute(); simp(); }
+        r#"verifying "span-probe.cpp";
+theorem uint64_predecessor_below(n: uint64) {{
+    requires 1u64 <= n;
+    ensures n - 1u64 <= n by {{
+        apply(uint64_less_equal_to_integer(1u64, n));
+        apply(uint64_subtract_to_integer(n, 1u64));
+        have to_integer(n - 1u64) <= to_integer(n) by {{
+            arithmetic() using {{ to_integer(n - 1u64) == to_integer(n) - 1; }}
+        }}
+        apply(uint64_less_equal_of_to_integer(n - 1u64, n));
+    }}
+}}
+int32& {pop_back}(struct span__int__value_unsigned_long_18446744073709551615& span) {{
+    owns std_span_data(span);
+    owns std_span_size(span);
+    requires 1u64 <= std_span_size(span);
+    ensures std_span_data(span) == old(std_span_data(span));
+    ensures std_span_size(span) == old(std_span_size(span)) - 1u64;
+    ensures &result == old(std_span_data(span)) + (old(std_span_size(span)) - 1u64);
+}} by {{
+    apply(uint64_predecessor_below(std_span_size(span)));
+    execute_until(statement(2));
+    have size - 1u64 <= std_span_size(span) by {{
+        simp() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
+    }}
+    execute();
+    simp();
+}}
+int32 probe(struct span__int__value_unsigned_long_18446744073709551615& span, int32 input) {{
+    owns std_span_data(span);
+    owns std_span_size(span);
+    owns std_span_data(span)[std_span_size(span) - 1u64];
+    requires 1u64 <= std_span_size(span);
+    requires separate(memory(std_span_data(span)), memory(std_span_data(span)[std_span_size(span) - 1u64]));
+    requires separate(memory(std_span_size(span)), memory(std_span_data(span)[std_span_size(span) - 1u64]));
+    ensures result == input;
+}} by {{
+    execute();
+    simp();
+}}
 "#
     );
-    let source = match case {
-        "empty" => source.replace(
-            " requires count <= span._M_extent._M_extent_value;",
-            " requires count == 0u64;",
-        ),
-        "full" => source.replace(
-            " requires count <= span._M_extent._M_extent_value;",
-            " requires count == span._M_extent._M_extent_value;",
-        ),
-        "empty-input" => source.replace(
-            " requires count <= span._M_extent._M_extent_value;",
-            " requires count == 0u64; requires span._M_extent._M_extent_value == 0u64;",
-        ),
-        _ => source,
-    };
-    let path = root.join("span.click");
-    fs::write(&path, &source).unwrap();
-    let project = read_click_project(&path, &source).unwrap();
-    verify_program_prepared_project(&project, &import).unwrap();
-    if case.starts_with("expand-") {
-        let label = if case == "expand-method" {
-            "span__int__value_unsigned_long_18446744073709551615_last.contract"
-        } else {
-            "probe.contract"
-        };
-        let expanded =
-            expand_program_prepared_project_claim_source_by_label(&project, &import, label)
-                .unwrap();
-        verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
-    }
-    if case == "retain" {
-        let (session, _) =
-            C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-        let position = program_prepared_project_tactic_source_position(
-            &project,
-            &import,
-            "probe.ensures_0",
-            0,
-        )
-        .unwrap();
-        session
-            .verify_at_project(&source, position.line, position.column)
-            .unwrap();
-    }
-    if case.starts_with("refuse-") {
-        let hostile_sources = [
-            source.replace(" views span._M_ptr[0..span._M_extent._M_extent_value];", ""),
-            source.replace(" requires count <= span._M_extent._M_extent_value;", ""),
-            source.replace(" requires span._M_extent._M_extent_value <= 1073741823u64;", ""),
-            source.replace(" ensures result._M_extent._M_extent_value == count;", " ensures result._M_extent._M_extent_value != count;"),
-            source.replace(" ensures result._M_ptr == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - count);", " ensures result._M_ptr == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - count + 1u64);"),
-        ];
-        let cases = match case {
-            "refuse-views" => 0..1,
-            "refuse-bounds" => 1..3,
-            _ => 3..5,
-        };
-        for hostile in &hostile_sources[cases] {
-            let error = verify_program_prepared_project(
-                &read_click_project(&path, hostile).unwrap(),
-                &import,
-            )
-            .unwrap_err();
-            assert!(error.message().contains("probe"), "{}", error.message());
-        }
-    }
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
-fn pinned_std_span_subspan_bounded_window_offline() {
-    check_pinned_std_span_subspan("finite");
-}
-
-#[test]
-#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
-fn pinned_std_span_subspan_empty_window_offline() {
-    check_pinned_std_span_subspan("empty");
-}
-
-#[test]
-#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
-fn pinned_std_span_subspan_empty_at_end_offline() {
-    check_pinned_std_span_subspan("end");
-}
-
-#[test]
-#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
-fn pinned_std_span_subspan_full_window_offline() {
-    check_pinned_std_span_subspan("full");
-}
-
-#[test]
-#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
-fn pinned_std_span_subspan_empty_input_offline() {
-    check_pinned_std_span_subspan("empty-input");
-}
-
-#[test]
-#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
-fn pinned_std_span_subspan_method_expands_offline() {
-    check_pinned_std_span_subspan("expand-method");
-}
-
-#[test]
-#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
-fn pinned_std_span_subspan_caller_expands_offline() {
-    check_pinned_std_span_subspan("expand-caller");
-}
-
-#[test]
-#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
-fn pinned_std_span_subspan_retains_offline() {
-    check_pinned_std_span_subspan("retain");
-}
-
-#[test]
-#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
-fn pinned_std_span_subspan_refuses_missing_views_offline() {
-    check_pinned_std_span_subspan("refuse-views");
-}
-
-#[test]
-#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
-fn pinned_std_span_subspan_refuses_missing_bounds_offline() {
-    check_pinned_std_span_subspan("refuse-bounds");
-}
-
-#[test]
-#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
-fn pinned_std_span_subspan_refuses_false_results_offline() {
-    check_pinned_std_span_subspan("refuse-results");
-}
-
-#[test]
-#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
-fn pinned_std_span_subspan_explicit_dynamic_extent_offline() {
-    check_pinned_std_span_subspan("sentinel");
-}
-
-// The original runtime subspan branch and returned constructor must verify
-// without replacing the header with a specialized finite-count implementation.
-fn check_pinned_std_span_subspan(case: &str) {
-    let harness = "#include <span.h>\nstd::span<int> probe(const std::span<int>& span, unsigned long offset, unsigned long count) noexcept { return span.subspan(offset, count); }\n";
-    let (root, import) = pinned_span_fixture_with_dependencies(
-        &format!("returned-subspan-{case}"),
-        harness,
-        &["sysroot/usr/include/c++/12/bits/ptr_traits.h"],
+    let sidecar = root.join("span.click");
+    fs::write(&sidecar, &source).unwrap();
+    let parsed = read_click_project(&sidecar, &source).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+    let unowned = source.replacen(
+        "    owns std_span_data(span)[std_span_size(span) - 1u64];\n",
+        "",
+        1,
     );
-    let common = pinned_span_construction_contracts(&import);
-    let start = common.find("struct span__int__value_unsigned_long_18446744073709551615 span__int__value_unsigned_long_18446744073709551615_first(").unwrap();
-    let common = common[..start].replace("(int32)__count", "__count");
-    let source = format!(
-        "{}{}",
-        common,
-        r#"
-theorem bounded_subspan_count(n: uint64, offset: uint64, count: uint64) {
- requires offset <= n;
- requires count <= n - offset;
- requires n <= 1073741823u64;
- ensures count <= 1073741823u64 and count != 18446744073709551615u64 by {
-  apply(uint64_less_equal_to_integer(offset, n));
-  apply(uint64_subtract_to_integer(n, offset));
-  apply(uint64_less_equal_to_integer(count, n - offset));
-  apply(uint64_less_equal_to_integer(n, 1073741823u64));
-  apply(uint64_to_integer_bounds(offset));
-  have to_integer(n - offset) <= to_integer(n) by { arithmetic() using { to_integer(n - offset) == to_integer(n) - to_integer(offset); 0 <= to_integer(offset); } }
-  have to_integer(count) <= to_integer(n) by { arithmetic() using { to_integer(count) <= to_integer(n - offset); to_integer(n - offset) <= to_integer(n); } }
-  have to_integer(count) <= 1073741823 by { arithmetic() using { to_integer(count) <= to_integer(n); to_integer(n) <= 1073741823; } }
-  have count <= 1073741823u64 by apply(uint64_less_equal_of_to_integer(count, 1073741823u64));
-  have to_integer(count) < 18446744073709551615 by { arithmetic() using { to_integer(count) <= 1073741823; } }
-  have count < 18446744073709551615u64 by apply(uint64_less_than_of_to_integer(count, 18446744073709551615u64));
-  if count == 18446744073709551615u64 {
-   have not (count < 18446744073709551615u64) by { rewrite(count == 18446744073709551615u64); normalize(); }
-   contradiction(count < 18446744073709551615u64);
-  } else { both { assumption(); } and { assumption(); } }
- }
-}
-struct span__int__value_unsigned_long_18446744073709551615 span__int__value_unsigned_long_18446744073709551615_subspan(const struct span__int__value_unsigned_long_18446744073709551615* this, uint64 __offset, uint64 __count) {
- views this->_M_ptr;
- views this->_M_extent._M_extent_value;
- views this->_M_ptr[0..this->_M_extent._M_extent_value];
- requires __offset <= this->_M_extent._M_extent_value;
- requires __count <= this->_M_extent._M_extent_value - __offset;
- requires this->_M_extent._M_extent_value <= 1073741823u64;
- ensures result._M_ptr == old(this->_M_ptr) + __offset;
- ensures result._M_extent._M_extent_value == old(__count);
- ensures this->_M_ptr == old(this->_M_ptr);
- ensures this->_M_extent._M_extent_value == old(this->_M_extent._M_extent_value);
-} by { apply(bounded_subspan_count(this->_M_extent._M_extent_value, __offset, __count)); execute(); simp(); }
-struct span__int__value_unsigned_long_18446744073709551615 probe(const struct span__int__value_unsigned_long_18446744073709551615& span, uint64 offset, uint64 count) {
- views span._M_ptr;
- views span._M_extent._M_extent_value;
- views span._M_ptr[0..span._M_extent._M_extent_value];
- requires offset <= span._M_extent._M_extent_value;
- requires count <= span._M_extent._M_extent_value - offset;
- requires span._M_extent._M_extent_value <= 1073741823u64;
- ensures result._M_ptr == old(span._M_ptr) + offset;
- ensures result._M_extent._M_extent_value == count;
- ensures span._M_ptr == old(span._M_ptr);
- ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value);
- ensures forall (index: uint64) { index < old(span._M_extent._M_extent_value) implies span._M_ptr[index] == old(span._M_ptr[index]) };
-} by { apply(bounded_subspan_count(span._M_extent._M_extent_value, offset, count)); execute(); simp(); }
-"#
-    );
-    let source = match case {
-        "empty" => source.replace(" requires count <= span._M_extent._M_extent_value - offset;", " requires count <= span._M_extent._M_extent_value - offset;\n requires count == 0u64;"),
-        "end" => source.replace(" requires count <= span._M_extent._M_extent_value - offset;", " requires count <= span._M_extent._M_extent_value - offset;\n requires count == 0u64; requires offset == span._M_extent._M_extent_value;"),
-        "full" => source.replace(" requires count <= span._M_extent._M_extent_value - offset;", " requires count <= span._M_extent._M_extent_value - offset;\n requires offset == 0u64; requires count == span._M_extent._M_extent_value;"),
-        "empty-input" => source.replace(" requires count <= span._M_extent._M_extent_value - offset;", " requires count <= span._M_extent._M_extent_value - offset;\n requires count == 0u64; requires offset == 0u64; requires span._M_extent._M_extent_value == 0u64;"),
-        "sentinel" => source
-          .replace(" requires __count <= this->_M_extent._M_extent_value - __offset;", " requires __count == 18446744073709551615u64;")
-          .replace(" requires count <= span._M_extent._M_extent_value - offset;", " requires count == 18446744073709551615u64;")
-          .replace("result._M_extent._M_extent_value == old(__count)", "result._M_extent._M_extent_value == old(this->_M_extent._M_extent_value) - __offset")
-          .replace("result._M_extent._M_extent_value == count", "result._M_extent._M_extent_value == old(span._M_extent._M_extent_value) - offset")
-          .replace("this->_M_extent._M_extent_value, __offset, __count)", "this->_M_extent._M_extent_value, __offset, this->_M_extent._M_extent_value - __offset)")
-          .replace("span._M_extent._M_extent_value, offset, count)", "span._M_extent._M_extent_value, offset, span._M_extent._M_extent_value - offset)")
-          .replace("apply(bounded_subspan_count(this->_M_extent._M_extent_value, __offset, this->_M_extent._M_extent_value - __offset)); execute(); simp();", r#"
- step(); step(); step(); step(); step(); step(); step(); step(); step(); step();
- let observed = step(span__int__value_unsigned_long_18446744073709551615_size(this), {});
- have observed == this->_M_extent._M_extent_value by simp;
- have __offset <= observed by { rewrite(observed == this->_M_extent._M_extent_value); assumption(); }
- have observed <= 1073741823u64 by { rewrite(observed == this->_M_extent._M_extent_value); assumption(); }
- apply(bounded_subspan_count(observed, __offset, observed - __offset));
- execute(); simp();
-"#),
-        _ => source,
-    };
-    let path = root.join("span.click");
-    fs::write(&path, &source).unwrap();
-    let project = read_click_project(&path, &source).unwrap();
-    verify_program_prepared_project(&project, &import).unwrap();
-    if case.starts_with("expand-") {
-        let label = if case == "expand-method" {
-            "span__int__value_unsigned_long_18446744073709551615_subspan.contract"
-        } else {
-            "probe.contract"
-        };
-        let expanded =
-            expand_program_prepared_project_claim_source_by_label(&project, &import, label)
-                .unwrap();
-        verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
-    }
-    if case == "retain" {
-        let (session, _) =
-            C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-        let position = program_prepared_project_tactic_source_position(
-            &project,
-            &import,
-            "probe.ensures_0",
-            0,
-        )
-        .unwrap();
-        session
-            .verify_at_project(&source, position.line, position.column)
-            .unwrap();
-    }
-    if case.starts_with("refuse-") {
-        let mutations = [
-            source.replace(" views span._M_ptr[0..span._M_extent._M_extent_value];", ""),
-            source.replace(" requires offset <= span._M_extent._M_extent_value;", ""),
-            source.replace(
-                " requires count <= span._M_extent._M_extent_value - offset;",
-                "",
-            ),
-            source.replace(
-                " requires span._M_extent._M_extent_value <= 1073741823u64;",
-                "",
-            ),
-            source.replace(
-                "result._M_extent._M_extent_value == count;",
-                "result._M_extent._M_extent_value != count;",
-            ),
-            source.replace(
-                "old(span._M_ptr) + offset;",
-                "old(span._M_ptr) + offset + 1u64;",
-            ),
-        ];
-        let range = match case {
-            "refuse-views" => 0..1,
-            "refuse-bounds" => 1..4,
-            _ => 4..6,
-        };
-        for hostile in &mutations[range] {
-            assert!(
-                verify_program_prepared_project(
-                    &read_click_project(&path, hostile).unwrap(),
-                    &import
-                )
-                .is_err()
-            );
-        }
-    }
-    fs::remove_dir_all(root).unwrap();
+    let parsed = read_click_project(&sidecar, &unowned).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .expect_err("a write through the returned reference needs its cell");
 }
 
 // Actual std::byte pointers retain native one-byte strides, checked nominal

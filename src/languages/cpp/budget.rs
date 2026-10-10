@@ -124,6 +124,7 @@ mod tests {
     fn fixture(body: Vec<super::super::schema::CppStatement>) -> super::super::schema::CppFunction {
         use super::super::schema::*;
         CppFunction {
+            axiom: None,
             declaration_id: "root".into(),
             name: "root".into(),
             function_kind: CppFunctionKind::Free,

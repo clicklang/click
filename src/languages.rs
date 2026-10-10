@@ -116,4 +116,7 @@ impl PreparedProgramSource for rust::PreparedRustImport {
 pub(crate) struct PreparedExecution {
     pub functions: Vec<c::syntax::C0Function>,
     pub layouts: std::collections::BTreeMap<String, c::syntax::C0StructLayout>,
+    /// Click `extern` contracts the frontend supplies for library functions
+    /// the program calls but does not define, parsed with the sidecar.
+    pub library_contracts: String,
 }

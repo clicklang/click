@@ -5172,9 +5172,17 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             }
         }
         ContractExpression::CFragment(expression) => describe_c_expression(expression),
-        ContractExpression::Field { base, field, .. } => {
-            describe_field_place(&describe_contract_expression(base), field)
-        }
+        ContractExpression::Field { base, field, .. } => match base.as_ref() {
+            // A member of an embedded struct member is reached with `.`:
+            // the inner member is an object, which lowers to its address
+            // rather than to a load of a pointer.
+            ContractExpression::Field { lowered, .. }
+                if !matches!(lowered, CExpression::TypedLoad { .. }) =>
+            {
+                format!("{}.{field}", describe_contract_expression(base))
+            }
+            _ => describe_field_place(&describe_contract_expression(base), field),
+        },
         ContractExpression::CBinding(name) => format!("c({name})"),
         ContractExpression::ResourceWildcard => "_".to_string(),
         ContractExpression::ResourceCount(resource) => {

@@ -13,6 +13,7 @@ mod lowering;
 mod names;
 mod scalar;
 mod schema;
+pub(crate) mod standard_library;
 mod validity;
 
 pub use import::{PreparedCppImport, load_import, refresh_import};

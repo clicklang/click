@@ -562,6 +562,15 @@ fn validate_standard_byte_declarations(
         std::iter::once(config.logical_source.clone()).chain(config.dependencies.iter().cloned()),
     );
     for function in std::iter::once(&export.function).chain(&export.reachable_functions) {
+        // An axiom has an interface and no source of its own: its types are
+        // checked, and its synthetic spans name no file to check.
+        if function.axiom.is_some() {
+            for parameter in &function.parameters {
+                check_type(&parameter.value_type)?;
+            }
+            check_type(&function.return_type)?;
+            continue;
+        }
         super::validity::check_function_with_types(
             function,
             &function.span.file,

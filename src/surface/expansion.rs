@@ -4824,7 +4824,7 @@ fn parse_source_with_c_layouts_context(
         local_struct_pointers,
     ) = parse_c_layouts(click_source, sources)?;
     parser::parse_with_layouts_and_aggregate_objects(
-        click_source,
+        &sources.with_library_contracts(click_source),
         struct_layouts,
         union_layouts,
         aggregate_objects,

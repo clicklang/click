@@ -47,6 +47,10 @@ The generated `compile_commands.json` must contain one
 `-std=c++20`, and no verifier-specific exception or RTTI overrides. The
 toolchain file supplies the Linux sysroot, standard-library include paths, and
 Clang resource directory needed by both the compiler driver and LibTooling.
+The sysroot is parse-only input: Clang needs it to type-check Bitcoin Core,
+but a function declared in its headers is never exported or verified. Calls
+into it are checked against Click's standard-library contracts; see
+[the C++ standard library](../../docs/reference/cli/import.md#c-standard-library).
 Some CMake link probes warn because this header-only setup does not install a
 Linux runtime; successful configuration and the selected compile command, not
 a binary build, are the setup requirements.

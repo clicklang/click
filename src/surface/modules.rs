@@ -31,6 +31,7 @@ pub fn resolve_click_project(
     )?;
     resolve_click_project_with_layouts(
         project,
+        "",
         struct_layouts,
         union_layouts,
         aggregate_objects,
@@ -44,6 +45,7 @@ pub fn resolve_click_project(
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn resolve_click_project_with_layouts(
     project: &ClickProject,
+    library_contracts: &str,
     struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
     union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
     aggregate_objects: BTreeMap<String, BTreeMap<String, String>>,
@@ -94,8 +96,17 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             .filter_map(|imported| locals.get(imported))
             .flat_map(|file| file.algebraic_type_definitions().iter().cloned())
             .collect::<Vec<_>>();
+        // The entry module is parsed with the frontend's library contracts
+        // after its own text, so its positions are unchanged.
+        let entry_source;
+        let source = if identity == project.entry() && !library_contracts.is_empty() {
+            entry_source = format!("{}\n{library_contracts}", module.source());
+            entry_source.as_str()
+        } else {
+            module.source()
+        };
         let mut local = parser::parse_file_items_for_module(
-            module.source(),
+            source,
             identity,
             module.line_offset(),
             &imported_algebraic_types,

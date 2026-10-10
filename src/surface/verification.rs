@@ -218,6 +218,26 @@ impl<'a> CSourceContext<'a> {
         }
     }
 
+    /// The contracts the prepared frontend supplies for library functions the
+    /// program calls, parsed after the sidecar's own declarations.
+    pub(in crate::surface) fn library_contracts(&self) -> &str {
+        self.program_execution
+            .as_ref()
+            .map_or("", |execution| execution.library_contracts.as_str())
+    }
+
+    /// `click_source` followed by [`Self::library_contracts`]. Appending
+    /// keeps every position in the sidecar unchanged.
+    pub(in crate::surface) fn with_library_contracts<'s>(
+        &self,
+        click_source: &'s str,
+    ) -> std::borrow::Cow<'s, str> {
+        match self.library_contracts() {
+            "" => std::borrow::Cow::Borrowed(click_source),
+            contracts => std::borrow::Cow::Owned(format!("{click_source}\n{contracts}")),
+        }
+    }
+
     pub(in crate::surface) fn program(
         import: &impl PreparedProgramSource,
     ) -> Result<Self, ClickError> {
@@ -648,7 +668,7 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
     ) = parse_c_layouts(click_source, sources)?;
     let resource_struct_layouts = struct_layouts.clone();
     let file = parser::parse_with_layouts_and_aggregate_objects(
-        click_source,
+        &sources.with_library_contracts(click_source),
         struct_layouts,
         union_layouts,
         aggregate_objects,
@@ -867,7 +887,7 @@ fn parse_c0_click_file_context(
         local_struct_pointers,
     ) = parse_c_layouts(click_source, sources)?;
     parser::parse_with_layouts_and_aggregate_objects(
-        click_source,
+        &sources.with_library_contracts(click_source),
         struct_layouts,
         union_layouts,
         aggregate_objects,
@@ -1069,6 +1089,7 @@ pub(in crate::surface) fn resolve_click_project_context(
     check_verification_deadline()?;
     modules::resolve_click_project_with_layouts(
         project,
+        sources.library_contracts(),
         struct_layouts,
         union_layouts,
         aggregate_objects,
@@ -2329,7 +2350,7 @@ fn verify_c0_sources_in_context(
         let file = match resolved_file {
             Some(file) => file,
             None => parser::parse_with_layouts_and_aggregate_objects(
-                click_source,
+                &c_sources.with_library_contracts(click_source),
                 struct_layouts,
                 union_layouts,
                 aggregate_objects,
@@ -4261,7 +4282,7 @@ fn c0_external_dependencies_context(
         local_struct_pointers,
     ) = parse_c_layouts(click_source, sources)?;
     let file = parser::parse_with_layouts_and_aggregate_objects(
-        click_source,
+        &sources.with_library_contracts(click_source),
         struct_layouts,
         union_layouts,
         aggregate_objects,
@@ -7118,6 +7139,13 @@ pub(in crate::surface) fn build_function_environment(
     for (_, parsed) in parsed_sources.values() {
         referenced.extend(c0_statement_calls(parsed).into_iter().flatten());
     }
+    // A prepared frontend's bodiless library function keeps its prepared
+    // interface, which can return a constructed record by value; the
+    // block's own signature only names the types a C declaration can.
+    let prepared_interfaces = parsed_sources
+        .values()
+        .map(|(_, function)| (function.source_name(), function))
+        .collect::<BTreeMap<_, _>>();
     for function_block in function_blocks
         .iter()
         .filter(|function| function.is_external())
@@ -7128,7 +7156,10 @@ pub(in crate::surface) fn build_function_environment(
         {
             continue;
         }
-        let parsed_function = external_c0_function(function_block);
+        let parsed_function = match prepared_interfaces.get(name) {
+            Some(prepared) => (*prepared).clone(),
+            None => external_c0_function(function_block),
+        };
         let InitialClaimContext {
             state, arguments, ..
         } = initial_claim_context_with_caller_owner(
