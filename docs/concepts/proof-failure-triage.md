@@ -55,6 +55,13 @@ explicit `at(snapshot#N, pointer_read(address value#M))` fallback. An address
 through a local from another state is qualified separately, as in
 `at(snapshot#N, at(before_rotation, sibling)->left)`. Different terms or
 defining snapshots do not by themselves establish unequal values.
+A bounded legend after the trace defines generated address and snapshot labels.
+It shows immutable proof names, pointer-read constructions, byte offsets, and
+recorded memory transitions where available. Referenced labels are expanded
+within the report budget. Unknown origins and omitted definitions are explicit;
+nearby source statements are never guessed as origins. These definitions describe
+constructions, not additional checked equalities or a complete execution history.
+
 Only the new facts at each checked step are printed, not the accumulated set.
 
 A failed pointer-valued resource child argument comparison reports the exact

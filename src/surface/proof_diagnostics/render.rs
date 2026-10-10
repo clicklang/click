@@ -16,6 +16,7 @@ use crate::kernel::{
 use std::collections::HashMap;
 use std::fmt::Write;
 
+mod legend;
 mod surface;
 
 const MAX_BYTES: usize = 32 * 1024;
@@ -41,6 +42,7 @@ const MAX_SNAPSHOT_LABELS: usize = 32;
 pub(crate) struct SnapshotLabels {
     memories: Vec<CMemory>,
     pointer_values: HashMap<Pointer, usize>,
+    pointer_sources: HashMap<Pointer, String>,
     source_memories: Vec<(CMemory, String, std::rc::Rc<NamingTables>)>,
     source_names: HashMap<Variable, String>,
     source_types: HashMap<Variable, crate::kernel::CType>,

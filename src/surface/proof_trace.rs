@@ -440,6 +440,7 @@ impl ProofDiagnosticState for CertificationTraceState {
         if shown < self.available_count {
             output.push_str("\n    … <other available facts omitted>");
         }
+        append_legend(&mut output, labels);
         Some(output)
     }
 }
@@ -1158,6 +1159,23 @@ fn append_added_facts(
             "\n{indent}adds: {unspelled} checked fact(s) with no exact Click spelling"
         ));
     }
+}
+
+pub(super) fn append_legend(trace: &mut String, labels: &mut SnapshotLabels) {
+    let legend = labels.trace_legend();
+    if legend.is_empty() {
+        return;
+    }
+    let prefix = "… earlier trace text omitted to retain label definitions\n";
+    if trace.len() + legend.len() > MAX_RENDER_BYTES {
+        let keep = MAX_RENDER_BYTES.saturating_sub(legend.len() + prefix.len());
+        let mut start = trace.len().saturating_sub(keep);
+        while !trace.is_char_boundary(start) {
+            start += 1;
+        }
+        *trace = format!("{prefix}{}", &trace[start..]);
+    }
+    trace.push_str(&legend);
 }
 
 fn trace_text(text: &str, max_bytes: usize) -> String {
