@@ -737,10 +737,11 @@ fn describe_unreachable_fact_transport(
     );
     if transition_facts.is_empty() {
         rendered.push_str(
-            "\n  no effect fact at this frontier relates the two states, so `transport` has no \
-             frame step to take: if the two sides read the same memory, the target is not a \
-             transport but an ordinary goal — prove it with the rule that decides it, such as \
-             `simp()` or a theorem application",
+            "\n  no effect fact at this frontier relates the two states, so the target must \
+             follow from the source and the listed premises alone, and it does not: check that \
+             they cover the target (for a range, that its index is inside the range); if the two \
+             sides read the same memory, the target is not a transport but an ordinary goal — \
+             prove it with the rule that decides it, such as `simp()` or a theorem application",
         );
         return rendered;
     }

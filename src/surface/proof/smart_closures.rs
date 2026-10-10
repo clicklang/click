@@ -7849,12 +7849,19 @@ impl<'a> Proof<'a> {
         };
         let mut proof = witnessed;
         for source in &source_leaves {
+            // At the entry snapshot the leaves already close the goal.
+            if proof.focused_discharged() {
+                return Ok(Some(proof));
+            }
             let Some(extracted) =
                 attempt::candidate_outcome(proof.apply_step(ProofStep::Extract(source.clone())))?
             else {
                 return Ok(None);
             };
             proof = extracted;
+        }
+        if proof.focused_discharged() {
+            return Ok(Some(proof));
         }
         if let Some(closed) = proof.try_simp_closure_with_surfaces(&source_leaves)? {
             return Ok(Some(closed));
@@ -8472,6 +8479,7 @@ fn source_backed_call_requirement_surface(
             let argument = match caller_parameter_through_identity_cast(
                 argument,
                 context.parsed_function.parameters(),
+                &execution.core.state,
             ) {
                 Some(slot) => CExpression::Variable(
                     context.parsed_function.parameters()[slot]
@@ -8527,6 +8535,7 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
             let caller_slot = caller_parameter_through_identity_cast(
                 &resolved.arguments[callee_slot],
                 context.parsed_function.parameters(),
+                &execution.core.state,
             )?;
             Some((predicate_argument_slot, caller_slot))
         })
@@ -8579,6 +8588,7 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
 fn caller_parameter_through_identity_cast(
     argument: &CExpression,
     parameters: &[syntax::C0Parameter],
+    state: &crate::kernel::CState,
 ) -> Option<usize> {
     let (name, cast_type) = match argument {
         CExpression::Variable(name) => (name, None),
@@ -8593,9 +8603,22 @@ fn caller_parameter_through_identity_cast(
         },
         _ => return None,
     };
+    // A local holding a parameter's own pointer value, as `p = bytes;`
+    // leaves it, names the same storage; the caller has already required
+    // that no effect separates entry from this call.
     let slot = parameters
         .iter()
-        .position(|parameter| parameter.name() == name)?;
+        .position(|parameter| parameter.name() == name)
+        .or_else(|| {
+            let held = state.scalar_local_value(name)?;
+            let mut matching = parameters.iter().enumerate().filter(|(_, parameter)| {
+                state.scalar_local_value(parameter.name()).as_ref() == Some(&held)
+            });
+            match (matching.next(), matching.next()) {
+                (Some((slot, _)), None) => Some(slot),
+                _ => None,
+            }
+        })?;
     match cast_type {
         Some(target_type) if target_type != parameters[slot].c_type().to_kernel_type() => None,
         _ => Some(slot),
