@@ -192,6 +192,9 @@ impl SnapshotLabels {
         }
         let mut output =
             String::from("\n\n  label definitions (recorded constructions, not additional facts):");
+        if self.memories.len() > MAX_SNAPSHOT_LABELS {
+            output.push_str("\n    Beyond the first 32 snapshots, labels reuse retained identities only; separately constructed equal memories may have different labels.");
+        }
         let (mut pointer_index, mut memory_index) = (1, 0);
         for _ in 0..MAX_ROUNDS {
             let mut added = false;

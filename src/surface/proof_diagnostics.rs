@@ -472,7 +472,7 @@ mod tests {
                 "{report}"
             );
             assert!(
-                report.contains("adds: 1 checked fact(s) with no exact Click spelling"),
+                report.contains("adds (internal): viewable(memory=snapshot#1"),
                 "{report}"
             );
         });

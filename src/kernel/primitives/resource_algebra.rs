@@ -1713,6 +1713,14 @@ impl ResourceContext {
         self.storage.facts.iter().map(|(_, fact)| fact)
     }
 
+    /// A bounded diagnostic view; never a source of checked resource authority.
+    pub(crate) fn diagnostic_facts(
+        &self,
+        limit: usize,
+    ) -> (usize, impl Iterator<Item = &CResourceFact>) {
+        (self.storage.facts.len(), self.iter().take(limit))
+    }
+
     fn fact(&self, entry: ResourceEntryId) -> &CResourceFact {
         self.storage
             .facts

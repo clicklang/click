@@ -5,7 +5,6 @@
 //! shared DAG, include whole memory snapshots, and grow without relation to
 //! the useful part of a diagnostic.
 
-#[cfg(test)]
 use crate::kernel::CResourceFact;
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, Bitvector32Term,
@@ -18,14 +17,15 @@ use std::fmt::Write;
 
 mod legend;
 mod surface;
+mod trace_facts;
 
 const MAX_BYTES: usize = 32 * 1024;
 const MAX_NODES: usize = 4096;
 const MAX_DEPTH: usize = 96;
 /// How many distinct snapshots one report labels before it stops comparing.
-/// A message names a handful of states; the cap keeps the comparison below
-/// bounded; a snapshot past it is explicitly untracked rather than falsely
-/// sharing a label with a different memory.
+/// Structural equality is bounded independently of identity retention. Trace
+/// facts may name more states through constant-time retained-root identities;
+/// ordinary diagnostic callers still stop labeling at this comparison cap.
 const MAX_SNAPSHOT_LABELS: usize = 32;
 
 /// Report-local labels for memory snapshots and symbolic values.
@@ -41,6 +41,8 @@ const MAX_SNAPSHOT_LABELS: usize = 32;
 #[derive(Default)]
 pub(crate) struct SnapshotLabels {
     memories: Vec<CMemory>,
+    memory_identities: HashMap<(usize, usize, usize, usize, usize), usize>,
+    trace_labels: bool,
     pointer_values: HashMap<Pointer, usize>,
     pointer_sources: HashMap<Pointer, String>,
     source_memories: Vec<(CMemory, String, std::rc::Rc<NamingTables>)>,
@@ -195,17 +197,29 @@ impl SnapshotLabels {
     /// The label of this memory: an existing ordinal when an equal memory has
     /// already been labeled, otherwise the next one.
     fn label(&mut self, memory: &CMemory) -> Option<usize> {
+        if let Some(index) = self.memory_identities.get(&memory.diagnostic_identity()) {
+            return Some(*index);
+        }
         if let Some(index) = self
             .memories
             .iter()
+            .take(MAX_SNAPSHOT_LABELS)
             .position(|labeled| labeled.same_storage_roots(memory) || labeled == memory)
         {
             return Some(index + 1);
         }
-        if self.memories.len() >= MAX_SNAPSHOT_LABELS {
+        let limit = if self.trace_labels {
+            MAX_NODES
+        } else {
+            MAX_SNAPSHOT_LABELS
+        };
+        if self.memories.len() >= limit {
             return None;
         }
+        // Retaining the roots prevents identity reuse during this report.
         self.memories.push(memory.clone());
+        self.memory_identities
+            .insert(memory.diagnostic_identity(), self.memories.len());
         Some(self.memories.len())
     }
 
@@ -298,6 +312,7 @@ pub(crate) fn render_resource_fact_labeled(
         truncated: false,
         labels,
         bound_names: Vec::new(),
+        trace_facts: false,
     };
     match fact {
         CResourceFact::Own(resource, quantity) => {
@@ -334,6 +349,23 @@ pub(crate) fn render_internal_proposition_labeled(
     proposition: &Proposition,
     labels: &mut SnapshotLabels,
 ) -> String {
+    render_kernel_fact(proposition, labels, false)
+}
+
+/// Complete fact kinds with explicit diagnostic notation when source recovery fails.
+pub(crate) fn render_trace_fact_labeled(
+    proposition: &Proposition,
+    labels: &mut SnapshotLabels,
+) -> String {
+    labels.trace_labels = true;
+    render_kernel_fact(proposition, labels, true)
+}
+
+fn render_kernel_fact(
+    proposition: &Proposition,
+    labels: &mut SnapshotLabels,
+    trace_facts: bool,
+) -> String {
     let mut renderer = Renderer {
         output: String::with_capacity(1024),
         nodes: 0,
@@ -341,6 +373,7 @@ pub(crate) fn render_internal_proposition_labeled(
         truncated: false,
         labels,
         bound_names: Vec::new(),
+        trace_facts,
     };
     renderer.proposition(proposition);
     if renderer.truncated {
@@ -397,6 +430,7 @@ pub(crate) fn render_sort(sort: &Sort) -> String {
         truncated: false,
         labels: &mut labels,
         bound_names: Vec::new(),
+        trace_facts: false,
     };
     renderer.sort(sort);
     if renderer.truncated {
@@ -435,6 +469,7 @@ struct Renderer<'a> {
     truncated: bool,
     labels: &'a mut SnapshotLabels,
     bound_names: Vec<(Variable, String)>,
+    trace_facts: bool,
 }
 
 impl Renderer<'_> {
@@ -503,8 +538,13 @@ impl Renderer<'_> {
                 self.push(if *value { " is true" } else { " is false" });
             }
             Proposition::Predicate { name, arguments } => {
-                self.push("predicate ");
-                self.push(name);
+                if let Some(event) = name.strip_prefix("__click_volatile_write_") {
+                    self.push("volatile-write-event#");
+                    self.push(event);
+                } else {
+                    self.push("predicate ");
+                    self.push(name);
+                }
                 self.push("(");
                 self.terms(arguments);
                 self.push(")");
@@ -548,13 +588,17 @@ impl Renderer<'_> {
                 memory,
                 base,
                 bytes,
-                wide: _,
+                wide,
             } => {
                 self.push("viewable(memory=");
                 self.memory(memory);
                 self.push(", base=");
                 self.pointer(base);
-                self.push(", bytes=");
+                self.push(if *wide {
+                    ", bytes:uint64="
+                } else {
+                    ", bytes:uint32="
+                });
                 self.bitvector(bytes);
                 self.push(")");
             }
@@ -601,9 +645,7 @@ impl Renderer<'_> {
                 self.push(" contains ");
                 self.resource(child);
             }
-            Proposition::CResourceComposition(_) => {
-                self.push("resource-composition(<validated resource context>)")
-            }
+            Proposition::CResourceComposition(context) => self.resource_composition(context),
             Proposition::CMemoryMutatesOnly {
                 before,
                 after,
@@ -919,9 +961,18 @@ impl Renderer<'_> {
             // rendered `count(a) < count(a)`: a reader could not tell the two
             // sides apart, and a true goal read as a false one.
             PureFunctionArgument::ArrayRef {
-                memory, pointer, ..
+                memory,
+                pointer,
+                element_type,
             } => {
-                self.push("array-ref(");
+                if self.trace_facts {
+                    self.fmt(format_args!(
+                        "array-ref<{}>(",
+                        crate::kernel::c_type_spelling(*element_type)
+                    ));
+                } else {
+                    self.push("array-ref(");
+                }
                 self.memory(memory);
                 self.push(", ");
                 self.cvalue(pointer);
@@ -969,6 +1020,31 @@ impl Renderer<'_> {
                 self.binary_condition_bv(a, b, "int32 >=")
             }
             ConditionTerm::Bitvector32Equal(a, b) => self.binary_condition_bv(a, b, "int32 ="),
+            ConditionTerm::Bitvector64Equal(a, b) => self.binary_condition_bv(a, b, "bits64 ="),
+            ConditionTerm::Bitvector64SignedLessThan(a, b) => {
+                self.binary_condition_bv(a, b, "int64 <")
+            }
+            ConditionTerm::Bitvector64SignedLessEqual(a, b) => {
+                self.binary_condition_bv(a, b, "int64 <=")
+            }
+            ConditionTerm::Bitvector64SignedGreaterThan(a, b) => {
+                self.binary_condition_bv(a, b, "int64 >")
+            }
+            ConditionTerm::Bitvector64SignedGreaterEqual(a, b) => {
+                self.binary_condition_bv(a, b, "int64 >=")
+            }
+            ConditionTerm::Bitvector64UnsignedLessThan(a, b) => {
+                self.binary_condition_bv(a, b, "uint64 <")
+            }
+            ConditionTerm::Bitvector64UnsignedLessEqual(a, b) => {
+                self.binary_condition_bv(a, b, "uint64 <=")
+            }
+            ConditionTerm::Bitvector64UnsignedGreaterThan(a, b) => {
+                self.binary_condition_bv(a, b, "uint64 >")
+            }
+            ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b) => {
+                self.binary_condition_bv(a, b, "uint64 >=")
+            }
             ConditionTerm::AlgebraicEqual(a, b) => {
                 self.algebraic(a);
                 self.push(" = ");
@@ -1206,9 +1282,13 @@ impl Renderer<'_> {
             return;
         }
         self.depth += 1;
-        if let Bitvector32Term::MemoryLoad(snapshot, pointer, _) = v {
+        if let Bitvector32Term::MemoryLoad(snapshot, pointer, kind) = v {
             // `memory` prints its own `snapshot=` prefix.
-            self.push("load(");
+            if self.trace_facts {
+                self.fmt(format_args!("read<{kind:?}>("));
+            } else {
+                self.push("load(");
+            }
             self.memory(snapshot.as_ref());
             self.push(", pointer=");
             self.pointer(pointer);
@@ -1227,7 +1307,14 @@ impl Renderer<'_> {
             && let Some((snapshot, pointer)) = crate::kernel::registered_load_for_variable(variable)
         {
             let name = self.variable_name(*variable, "load");
-            self.fmt(format_args!("{name}=load("));
+            if self.trace_facts {
+                let kind = crate::kernel::registered_load_kind_for_variable(variable)
+                    .map(|kind| format!("{kind:?}"))
+                    .unwrap_or_else(|| "unrecorded type".into());
+                self.fmt(format_args!("{name}=read<{kind}>("));
+            } else {
+                self.fmt(format_args!("{name}=load("));
+            }
             self.memory(snapshot.memory());
             self.push(", pointer=");
             self.pointer(&pointer);
@@ -1256,6 +1343,7 @@ impl Renderer<'_> {
             Bitvector32Term::Add(a, b) => self.binary_bv("+", a, b),
             Bitvector32Term::Subtract(a, b) => self.binary_bv("-", a, b),
             Bitvector32Term::Multiply(a, b) => self.binary_bv("*", a, b),
+            _ if self.machine_operation(v) => {}
             Bitvector32Term::RangeFold {
                 start,
                 end,
@@ -1351,16 +1439,34 @@ impl Renderer<'_> {
                 self.push(")");
                 self.depth -= 1;
             }
-            PointerOffsetTerm::Int32Scaled { value, byte_width }
-            | PointerOffsetTerm::Int64Scaled {
-                value, byte_width, ..
-            } => {
+            PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+                self.push("int32(");
                 self.bitvector(value);
-                self.fmt(format_args!("*{byte_width}"));
+                self.fmt(format_args!(")*{byte_width} bytes"));
+            }
+            PointerOffsetTerm::Int64Scaled {
+                value,
+                byte_width,
+                unsigned,
+            } => {
+                self.push(if *unsigned { "uint64(" } else { "int64(" });
+                self.bitvector(value);
+                self.fmt(format_args!(")*{byte_width} bytes"));
             }
         }
     }
     fn pointer(&mut self, p: &Pointer) {
+        if self.trace_facts {
+            let name = if p == &Pointer::null() {
+                "0".into()
+            } else if let Some(name) = self.labels.pointer_sources.get(p) {
+                name.clone()
+            } else {
+                self.labels.pointer_value_name(p)
+            };
+            self.push(&name);
+            return;
+        }
         // An address inside an object the caller's tables name reads as its
         // source spelling, not as a block and an offset.
         if let Some(tables) = self.labels.naming.clone() {
@@ -1435,24 +1541,34 @@ impl Renderer<'_> {
                 self.push("))");
             }
             CResource::Memory(range) => {
-                self.push("memory-resource(");
+                self.push("memory(");
                 self.pointer(range.base());
-                self.push("[");
+                self.fmt(format_args!("[{:?}:", range.kind()));
                 self.bitvector(range.bound_terms().0);
                 self.push("..");
                 self.bitvector(range.bound_terms().1);
-                self.push("])");
+                self.fmt(format_args!("], stride={})", range.element_width()));
             }
-            CResource::Composite { name, arguments } => self.fmt(format_args!(
-                "composite-resource({name}, {} args)",
-                arguments.len()
-            )),
-            CResource::Token { name, arguments } => self.fmt(format_args!(
-                "token-resource({name}, {} args)",
-                arguments.len()
-            )),
+            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+                self.push(name);
+                self.resource_arguments(arguments);
+            }
             CResource::Instance(instance) => {
-                self.fmt(format_args!("resource-instance({})", instance.name()))
+                self.push("{");
+                let identity = self.variable_name(instance.identity(), "instance");
+                self.push(&identity);
+                self.push(": ");
+                self.push(instance.name());
+                self.resource_arguments(instance.arguments());
+                self.push(", fields=");
+                self.resource_arguments(instance.fields());
+                if !instance.resource_arguments().is_empty() {
+                    self.fmt(format_args!(
+                        ", {} resource references omitted",
+                        instance.resource_arguments().len()
+                    ));
+                }
+                self.push("}");
             }
             CResource::Iterated(iterated) => {
                 self.push("iterated-resource(");
@@ -1597,7 +1713,18 @@ impl Renderer<'_> {
                 self.bitvector(v);
                 self.push(")");
             }
-            crate::kernel::CValue::Pointer(p) => self.pointer(p),
+            crate::kernel::CValue::Pointer(p) => {
+                if self.trace_facts {
+                    self.fmt(format_args!(
+                        "ptr<{}>(",
+                        crate::kernel::c_type_spelling(p.c_type())
+                    ));
+                    self.pointer(p);
+                    self.push(")");
+                } else {
+                    self.pointer(p);
+                }
+            }
         }
     }
     fn outcome(&mut self, outcome: &CExpressionOutcome) {

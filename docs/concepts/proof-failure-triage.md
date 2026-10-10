@@ -62,6 +62,16 @@ within the report budget. Unknown origins and omitted definitions are explicit;
 nearby source statements are never guessed as origins. These definitions describe
 constructions, not additional checked equalities or a complete execution history.
 
+When an exact source spelling is unavailable, `adds (internal):` prints the
+fact's typed diagnostic form. This includes pointer and scalar equalities,
+viewability with byte extents, model/function equalities, resource containment,
+validated resource-composition entries, and distinct volatile-write events.
+Internal notation is not promised to be valid Click proof input. Read types,
+read snapshots, arithmetic widths, and signedness remain visible. Resource
+compositions list up to eight entries with ownership quantities or view access;
+omitted entries and support details are explicit. A write event records an
+access, not an equality about the current memory contents.
+
 Only the new facts at each checked step are printed, not the accumulated set.
 
 A failed pointer-valued resource child argument comparison reports the exact
@@ -268,8 +278,12 @@ and reports say when additional context was omitted. A memory snapshot is
 labeled `snapshot#1`, `snapshot#2`, and so on, numbered by first appearance
 within one report: equal memory shares one label and memory that differs gets
 another, so "same memory" and "different memory" are visible as such. The
-comparison stops after 32 distinct snapshots in a report, past which a further
-snapshot simply takes the next label. Diagnostic labels are context, not proof
+structural comparison stops after the first 32 distinct snapshots. Expanded
+trace facts retain further snapshot identities with constant-time lookup;
+repeated uses of a retained version share a label. Beyond that comparison
+budget, separately constructed equal memories may receive different labels.
+The legend states this distinction, and the report still has fixed output and
+identity-count budgets. Diagnostic labels are context, not proof
 certificates. Search
 context covers bounded recent representatives from loop, induction,
 refinement, and common postcondition searches; it is not a complete theorem

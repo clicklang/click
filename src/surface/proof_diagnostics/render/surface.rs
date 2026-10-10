@@ -105,6 +105,34 @@ impl Printer<'_> {
         let depth = depth + 1;
         let (left, right, positive, negative) = match condition {
             ConditionTerm::Constant(value) => return Some((value == &polarity).to_string()),
+            ConditionTerm::PointerEqual(left, right) => {
+                // Without retained pointee types, do not claim two different
+                // named pointers form a well-typed source comparison.
+                if left != right && **left != Pointer::null() && **right != Pointer::null() {
+                    return None;
+                }
+                let pointer = |p: &Pointer| {
+                    if p == &Pointer::null() {
+                        Some("0".to_owned())
+                    } else {
+                        self.labels.pointer_sources.get(p).cloned()
+                    }
+                };
+                return Some(format!(
+                    "{} {} {}",
+                    pointer(left)?,
+                    if polarity { "==" } else { "!=" },
+                    pointer(right)?
+                ));
+            }
+            ConditionTerm::AlgebraicEqual(left, right) => {
+                return Some(format!(
+                    "{} {} {}",
+                    self.algebraic(left, depth)?,
+                    if polarity { "==" } else { "!=" },
+                    self.algebraic(right, depth)?
+                ));
+            }
             ConditionTerm::Bitvector32Equal(a, b) | ConditionTerm::Bitvector64Equal(a, b) => {
                 (a, b, "==", "!=")
             }
