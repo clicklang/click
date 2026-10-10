@@ -12143,6 +12143,7 @@ fn generated_load_source_event_fixture(
                 crate::kernel::LoadKind::Bits32,
             ),
             typed_pointer_value: None,
+            observed_pointer_read: None,
         },
     )
     .expect("the fixture carries an exact generated-load binding")

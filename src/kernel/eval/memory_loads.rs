@@ -73,7 +73,9 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
         }];
     }
     let mut alias_cache = MemoryLoadAliasCache::default();
-    evaluate_c_memory_load_paths_with_alias_cache(
+    let observed = (!volatile && assumptions.should_require_owned_expression_loads())
+        .then(|| (crate::kernel::intern_c_memory_ref(memory), pointer.clone()));
+    let mut paths = evaluate_c_memory_load_paths_with_alias_cache(
         memory,
         pointer,
         value_type,
@@ -89,7 +91,40 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
         &mut alias_cache,
         source,
         byte_order,
-    )
+    );
+    if let Some(observed) = observed {
+        for path in &mut paths {
+            let CExpressionOutcome::Value(CValue::Pointer(value)) = &path.outcome else {
+                continue;
+            };
+            let mut read_facts = ExecutionFacts::new();
+            if let Some(variable) = typed_pointer_read_variable(value.pointer())
+                && let Some(load) =
+                    crate::kernel::equality_graph::logical_pointer_read_term(value.pointer())
+            {
+                // Build the selected evidence in a fresh stream, without
+                // searching or rewriting unrelated incoming path facts.
+                record_load_variable_defining_fact_with_source_and_pointer(
+                    variable,
+                    load,
+                    &mut read_facts,
+                    source,
+                    Some(value.pointer()),
+                );
+            }
+            for mut fact in read_facts {
+                if let Some(GeneratedLoadBinding::Exact {
+                    observed_pointer_read,
+                    ..
+                }) = fact.generated_load_binding.as_deref_mut()
+                {
+                    *observed_pointer_read = Some(observed.clone());
+                }
+                path.facts.push(fact);
+            }
+        }
+    }
+    paths
 }
 
 /// The paths of one *specification* load: a read written in a contract, an
@@ -4139,6 +4174,7 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
         pointer: pointer.as_ref().clone(),
         load: defining_load,
         typed_pointer_value: typed_pointer_value.cloned(),
+        observed_pointer_read: None,
     };
     let event =
         source.and_then(|source| GeneratedLoadSourceEvent::new(source.clone(), binding.clone()));
@@ -4391,6 +4427,125 @@ mod tests {
 
     // Typed observations must preserve the complete pointer, selected alias
     // premises, snapshot changes, and session boundaries without corpus scans.
+    // A cached pointer can still denote an older defining load after a frame
+    // materializes its named scalar cell. A checked index must retain where
+    // that value was read now, without publishing evidence to another context.
+    #[test]
+    fn checked_resource_index_retains_its_current_pointer_cell() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let empty = PureFactContext::new();
+        let base = CMemory::new();
+        let source = Pointer::symbolic(Variable(955_001));
+        let cached = logical_pointer_read(&base, &source, &empty);
+        let variable = typed_pointer_read_variable(&cached).expect("typed cached load");
+        let address = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(955_002)), 4),
+        };
+        let alias = Pointer::symbolic(Variable(955_003));
+        let current = base.materialize_named_cell(
+            address.clone(),
+            CValue::Int32(Bitvector32Term::Variable(variable)),
+        );
+        let logical = logical_pointer_read(&current, &alias, &empty);
+        let model = Pointer::symbolic(Variable(955_004));
+        let base_context = empty
+            .clone()
+            .assume_condition(
+                ConditionTerm::pointer_equal(alias.clone(), address.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::pointer_equal(model.clone(), logical.clone()),
+                true,
+            );
+        let context = base_context.clone().require_owned_expression_loads();
+        let isolated = context.clone();
+        let paths = evaluate_c_memory_load_paths(
+            &current,
+            address.clone(),
+            CType::Int64Pointer,
+            ExecutionFacts::new(),
+            Vec::new(),
+            &context,
+            true,
+            false,
+            None,
+            None,
+        );
+        let [path] = paths.as_slice() else {
+            panic!("one checked read");
+        };
+        let CExpressionOutcome::Value(CValue::Pointer(value)) = &path.outcome else {
+            panic!("a pointer-valued read");
+        };
+        let arguments_equal = |facts: &PureFactContext| {
+            crate::kernel::resource_arguments_proven_equal(
+                &AlgebraicValue::C(CValue::typed_pointer(model.clone(), CType::Int64Pointer)),
+                &AlgebraicValue::C(CValue::Pointer(value.clone())),
+                facts,
+            )
+        };
+        assert!(
+            !arguments_equal(&context),
+            "the older definition is not the current observation"
+        );
+        for fact in &path.facts {
+            fact.retain_pointer_read_definition(&context);
+        }
+        assert!(arguments_equal(&context));
+        assert!(
+            !arguments_equal(&isolated),
+            "checked evidence must stay in its context"
+        );
+        assert!(context.pointers_known_equal(&model, value.pointer()));
+        let mut checkpoint = context.equality_graph.input_root();
+        assert!(checkpoint.append_inputs_from(&context.equality_graph));
+        assert!(checkpoint.are_equal(&model, value.pointer()));
+        let restricted = context.restricted_to_facts(&[], &[]);
+        assert!(!restricted.pointers_known_equal(&model, value.pointer()));
+        let missing_alias = empty.clone().assume_condition(
+            ConditionTerm::pointer_equal(model.clone(), logical.clone()),
+            true,
+        );
+        for fact in &path.facts {
+            fact.retain_pointer_read_definition(&missing_alias);
+        }
+        assert!(!arguments_equal(&missing_alias));
+        for (ordinary, volatile) in [(true, false), (false, true)] {
+            let control = if ordinary {
+                base_context.clone()
+            } else {
+                isolated.clone()
+            };
+            let paths = evaluate_c_memory_load_paths(
+                &current,
+                address.clone(),
+                CType::Int64Pointer,
+                ExecutionFacts::new(),
+                Vec::new(),
+                &control,
+                true,
+                volatile,
+                None,
+                None,
+            );
+            for path in paths {
+                for fact in &path.facts {
+                    fact.retain_pointer_read_definition(&control);
+                }
+            }
+            assert!(!arguments_equal(&control));
+        }
+        let forged_context = isolated.clone();
+        for fact in &path.facts {
+            let mut forged = fact.clone();
+            forged.certified = false;
+            forged.retain_pointer_read_definition(&forged_context);
+        }
+        assert!(!arguments_equal(&forged_context));
+    }
+
     #[test]
     fn pointer_read_observations_check_frames_scope_and_scaling() {
         let _session = crate::kernel::VerificationSession::enter();

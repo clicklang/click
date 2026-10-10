@@ -2398,3 +2398,31 @@ fn captured_interior_address_selects_its_base_beside_same_block_owners() {
         "captured base lookup scanned unrelated owners: {samples:?}"
     );
 }
+
+// A read congruence learned through whole offsets must reach ownership's
+// incremental class index, not just return true from an equality query.
+#[test]
+fn typed_read_congruence_publishes_late_ownership_class_updates() {
+    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let p = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(998_001)),
+    };
+    let q = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(998_002)),
+    };
+    let x = Pointer::loaded_value(&memory, &p);
+    let y = Pointer::loaded_value(&memory, &q);
+    let empty = PureFactContext::new();
+    let resources =
+        ResourceContext::new_with_equalities(&empty).unchecked_with_fact(view(&x, 0, 32));
+    assert!(!resources.permits_memory_read(&y.offset_by_bytes(8), 4, &empty));
+    let joined = empty.clone().assume_condition(
+        ConditionTerm::pointer_offset_equal(p.offset, q.offset),
+        true,
+    );
+    assert!(resources.permits_memory_read(&y.offset_by_bytes(8), 4, &joined));
+    assert!(!resources.permits_memory_read(&y.offset_by_bytes(30), 4, &joined));
+    assert!(!resources.permits_memory_read(&y.offset_by_bytes(8), 4, &empty));
+}

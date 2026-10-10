@@ -24,6 +24,7 @@ enum Int32Binary {
 enum Node {
     Address(u64, u64),
     AddressShift(u64, i64),
+    PointerRead((u32, u32), u64, crate::kernel::LoadKind),
     Footprint(u64, u64),
     Int32(MachineAtom),
     Int32Add(u64, u64),
@@ -41,6 +42,7 @@ enum Node {
 enum Application {
     Address(u64, u64),
     AddressShift(u64, i64),
+    PointerRead((u32, u32), u64, crate::kernel::LoadKind),
     Footprint(u64, u64),
     Add(u64, u64),
     Int32Add(u64, u64),
@@ -59,6 +61,7 @@ impl Application {
             | Self::Int32Binary(_, left, right)
             | Self::Footprint(left, right) => [Some(left), Some(right)],
             Self::Address(_, value)
+            | Self::PointerRead(_, value, _)
             | Self::AddressShift(value, _)
             | Self::Int32Scaled(value, _)
             | Self::Int32Load(_, _, value) => [Some(value), None],
@@ -71,6 +74,9 @@ impl Application {
         match self {
             Self::Address(block, offset) => Self::Address(block, classes.root(offset)),
             Self::AddressShift(address, bytes) => Self::AddressShift(classes.root(address), bytes),
+            Self::PointerRead(snapshot, address, kind) => {
+                Self::PointerRead(snapshot, classes.root(address), kind)
+            }
             Self::Footprint(start, end) => Self::Footprint(classes.root(start), classes.root(end)),
             Self::Add(left, right) => Self::Add(classes.root(left), classes.root(right)),
             Self::Int32Add(left, right) => Self::Int32Add(classes.root(left), classes.root(right)),
@@ -139,6 +145,10 @@ pub(super) struct TermClasses {
     // class members or searching the caller's resource frame.
     additive_addresses: PersistentMap<u64, (bool, Arc<Pointer>)>,
     alignment_witnesses: PersistentMap<u64, (u64, Pointer)>,
+    // One zero-offset typed-read value per class. Congruence emits only
+    // newly identified pairs for the legacy affine/index projection.
+    read_witnesses: PersistentMap<u64, PointerBlock>,
+    read_merges: imbl::Vector<(PointerBlock, PointerBlock)>,
     nodes: PersistentMap<Node, u64>,
     load_blocks: PersistentMap<PointerBlock, u64>,
     registered_int32_loads: PersistentSet<u64>,
@@ -227,6 +237,36 @@ impl TermClasses {
                 .with_value((address, raw_offset));
         }
         (address, new)
+    }
+
+    /// A typed pointer read is an application of the complete address, not
+    /// its affine block representative. Existing parent uses propagate late
+    /// address merges without enumerating aliases or unrelated reads.
+    pub(super) fn pointer_read(
+        &mut self,
+        snapshot: (u32, u32),
+        address: u64,
+        kind: crate::kernel::LoadKind,
+        value: u64,
+        block: PointerBlock,
+    ) {
+        let read = self.intern_node(Node::PointerRead(snapshot, address, kind));
+        self.close_with_affine_definition(vec![(value, read)], true);
+        self.retain_read_witness(self.root(value), block);
+    }
+
+    fn retain_read_witness(&mut self, root: u64, block: PointerBlock) {
+        if let Some(other) = self.read_witnesses.get(&root) {
+            if other != &block {
+                self.read_merges.push_back((other.clone(), block));
+            }
+        } else {
+            self.read_witnesses.insert(root, block);
+        }
+    }
+
+    pub(super) fn take_read_merges(&mut self) -> imbl::Vector<(PointerBlock, PointerBlock)> {
+        std::mem::take(&mut self.read_merges)
     }
 
     fn address_without_shift(
@@ -577,6 +617,9 @@ impl TermClasses {
             Node::AddressShift(address, bytes) => {
                 self.address_nodes = self.address_nodes.with_value(id);
                 Some(Application::AddressShift(*address, *bytes))
+            }
+            Node::PointerRead(snapshot, address, kind) => {
+                Some(Application::PointerRead(*snapshot, *address, *kind))
             }
             Node::Footprint(start, end) => Some(Application::Footprint(*start, *end)),
             Node::Add(left, right) => Some(Application::Add(*left, *right)),
@@ -932,6 +975,10 @@ impl TermClasses {
             if non_affine {
                 self.mark_non_affine(kept);
                 self.mark_non_affine(moved);
+            }
+            if let Some(witness) = self.read_witnesses.get(&moved).cloned() {
+                self.read_witnesses.remove(&moved);
+                self.retain_read_witness(kept, witness);
             }
             self.merge_affine_applications(moved, kept);
             let weight = self.weight(kept) + self.weight(moved);
