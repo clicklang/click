@@ -1244,6 +1244,9 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  have 65521u32 - a_vec._0[2] <= 4294967295u32 / 2u32 by { arithmetic() using { 65521u32 - a_vec._0[2] <= 65521u32; } }
  apply(adler_recombine_difference(a_vec._0[3])) using { a_vec._0[3] < 65521u32; }
  have 65521u32 - a_vec._0[3] <= 4294967295u32 / 3u32 by { arithmetic() using { 65521u32 - a_vec._0[3] <= 65521u32; } }
+ # Recombine each weighted lane before constructing the sum iterator.
+ execute_until(assignment(__rust_mir_95, 0));
+ execute_until(assignment(__rust_mir_106, 0));
  execute_until(loop(3));
  have a <= 65520u32 by { assumption(); }
  apply(uint32_less_equal_to_integer(a, 65520u32)) using { a <= 65520u32; }
@@ -1468,6 +1471,7 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
   invariant __rust_mir_138_cursor == bytes + (bytes_len - __rust_mir_138_remaining);
   invariant 0 <= to_integer(a) and to_integer(a) <= adler_tail_a_ceiling(adler_tail_consumed((int32)(uint32)remainder_len, ((int32)(uint32)__rust_mir_138_remaining)));
   invariant 0 <= to_integer(b) and to_integer(b) <= adler_tail_b_ceiling(adler_tail_consumed((int32)(uint32)remainder_len, ((int32)(uint32)__rust_mir_138_remaining)));
+  initialize by { simp(); }
   preserve by {
    have 0u64 < __rust_mir_138_remaining by { simp(); }
    have 1u64 <= __rust_mir_138_remaining by { arithmetic() using { 0u64 < __rust_mir_138_remaining; } }

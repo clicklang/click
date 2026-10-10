@@ -5669,18 +5669,13 @@ fn cpp_native_pointer_offsets_preserve_index_width_and_range_authority() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let rewrite = if matches!(click_type, "int64" | "uint64") {
-            format!("rewrite(index == {index});")
-        } else {
-            String::new()
-        };
         let sidecar = format!(
             r#"verifying "offset.cpp";
 int32 read(int32* data, {click_type} index) {{
  owns data[0..3]; requires index == {index};
  ensures result == old(data[{expected}]);
  ensures data[0] == old(data[0]); ensures data[2] == old(data[2]);
-}} by {{ execute(); {rewrite} simp(); }}
+}} by {{ execute(); simp(); }}
 "#
         );
         check_arithmetic_sidecar(&project, &import, &sidecar);
@@ -15416,11 +15411,6 @@ fn check_converted_wide_call_results(initializer: bool) {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let declarations = if initializer {
-            "step(); step();"
-        } else {
-            "step();"
-        };
         let cert = cast_identity_certificate("to_integer(captured)", lo, hi);
         let proof = format!(
             r#"verifying "wide.cpp";
@@ -15429,7 +15419,7 @@ fn check_converted_wide_call_results(initializer: bool) {
  requires {lo} <= to_integer(value); requires to_integer(value) <= {hi};
  ensures to_integer(result) == to_integer(value);
 }} by {{
- {declarations}
+ step();
  let captured = step(echo(value), {{}});
  have {lo} <= to_integer(captured) by {{ arithmetic() using {{ {lo} <= to_integer(value); to_integer(captured) == to_integer(value); }} }}
  have to_integer(captured) <= {hi} by {{ arithmetic() using {{ to_integer(value) <= {hi}; to_integer(captured) == to_integer(value); }} }}
