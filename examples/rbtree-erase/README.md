@@ -140,9 +140,18 @@ whole-tree result and unchanged in-order contents. All 31 proofs and 300
 expansion-audit sites pass. Eight
 additional mutation checks reject broken inner links, the first grandchild's
 parent/color write, and the two cursor assignments between rotations.
-Red-sibling handling after propagation remains.
 
-The combined sidecar has 1,091 lines, against the pinned function's 182 lines
+`rbtree_erase_color_flips_red_exit.click` adds red-sibling cases 1 and 2 after
+propagation, in either direction. The deficit focus, the old sibling's opaque
+far subtree, and both children of its near node may be nonempty. The first
+rotation reparents the near node and retains the far subtree; the subsequent
+color flip blackens the red parent and completes the repair. The exact result
+remains balanced and parent-consistent with unchanged in-order contents, and
+every continuing iteration decreases the context. All 33 proofs and eight
+rotation-link, parent/color, and cursor mutation checks pass. Red-sibling cases
+1/4 and 1/3/4 after propagation remain.
+
+The color-flip-only sidecar has 1,091 lines, against the pinned function's 182 lines
 including its remaining rotations. On this development build it profiles at
 about 25 seconds (43 sidecar lines/second), down from 33 seconds after avoiding
 redundant constructor refutations. No simple-step tail exceeds 500 ms; about
