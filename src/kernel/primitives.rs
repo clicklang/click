@@ -9517,6 +9517,13 @@ pub struct PureFactContext {
         Variable,
         crate::persistent::PersistentMap<((u32, u32), Pointer), (Pointer, SharedCMemory)>,
     >,
+    pub(super) uint64_graph_equalities: crate::persistent::PersistentMap<
+        (
+            super::equality_graph::MachineAtom,
+            super::equality_graph::MachineAtom,
+        ),
+        usize,
+    >,
     /// Counts exact int32 premises supporting each canonical oriented edge.
     /// Several spellings can support one edge; withdrawal removes one support.
     pub(super) int32_graph_equalities: crate::persistent::PersistentMap<

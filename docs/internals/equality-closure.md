@@ -2,7 +2,7 @@
 
 Status: bounded resource lookup migration complete, 2026-10-02. The trusted persistent graph
 maintains affine pointer classes, offset and int32 congruence, and registered
-same-snapshot pointer and four-byte scalar loads. Selected normalization,
+same-snapshot pointer, four-byte scalar, and complete eight-byte scalar loads. Selected normalization,
 transport, memory, resource-value, and range consumers query it. Ordinary C
 pointer loads still have a storage-relative representation; equality-aware
 resource indexing is implemented for selected consumers. Other theories
@@ -65,6 +65,31 @@ Ordinary and volatile program reads do not use this resource-index admission
 path. Other producer migrations and removal of older consumer recovery rules
 remain separate work; this first change does not claim universal read adoption.
 
+## Shared 64-bit expression congruence
+
+`add_uint64_equality` admits checked 64-bit equalities into the same persistent
+term classes; `are_uint64_equal` queries their closure. UInt64 addition,
+subtraction, multiplication, division, remainder, and bitwise AND/OR/XOR are
+congruence applications, with distinct operator tags. Pointer-to-word address
+expressions use the complete pointer address class. No cancellation,
+injectivity, arithmetic definedness, or memory access permission follows.
+Unsupported constructors remain opaque.
+
+A `Bits64` read uses its registered defining snapshot and complete address,
+with an eight-byte producer-width check for named scalar reads. It is a
+separate application sort from pointer reads and int32 values. Equal addresses
+at that snapshot therefore produce equal words, and the ordinary parent-use
+index propagates that equality through surrounding expressions. Different
+snapshots are not unified by this registration; existing checked frame or
+copy evidence must establish any cross-snapshot equality.
+
+Exact wide premises are retained as counted, typed edges for withdrawal and
+context rebuilding. Derived resource indexes receive them through the same
+persistent input history. Ordinary condition and required-obligation checking
+query this closure, including contexts that defer broader search. In
+particular a fold needs no special rule to combine a read-address alias with
+another pointer alias nested in a packed parent/color equation.
+
 ## Current interface and trust boundary
 
 `kernel::equality_graph::EqualityGraph` is part of the **trusted kernel**.
@@ -77,8 +102,8 @@ Pointer operations keep pointer-typed operands; `add_offset_equality` and
 `are_offsets_equal` accept whole pointer-offset terms. Supported pointer-load
 applications and offset terms register on demand during insertion and queries.
 `add_int32_equality` and `are_int32_equal` admit and query explicit int32
-equalities, addition congruence, and registered same-snapshot int32 load congruence. Further sorts and consumers will be
-added in separate changes. `pointer_is_classed` and `pointer_spellings` are explicitly
+equalities, addition congruence, and registered same-snapshot int32 load congruence. The uint64 interface above extends the same closure to wide reads and selected
+wide expressions. Further sorts and consumers remain separate work. `pointer_is_classed` and `pointer_spellings` are explicitly
 pointer-specific compatibility helpers for legacy consumers.
 
 Kernel consumers use `PureFactContext::pointers_known_equal(left, right)`

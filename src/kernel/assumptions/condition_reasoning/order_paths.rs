@@ -136,6 +136,9 @@ impl PureFactContext {
                 }
             }
             ConditionTerm::Bitvector64Equal(left, right) => {
+                if self.uint64_values_known_equal(left, right) {
+                    return Some(true);
+                }
                 if let Some(pointer_condition) =
                     ConditionTerm::address_equality_as_pointer_equality(left, right)
                 {

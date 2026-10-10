@@ -40,6 +40,9 @@ impl PureFactContext {
                 self.decide_pointer_alignment(pointer, alignment)
             }
             ConditionTerm::Bitvector64Equal(left, right) => {
+                if self.uint64_values_known_equal(left, right) {
+                    return Some(true);
+                }
                 match (
                     self.wide_constant_from_equalities(left),
                     self.wide_constant_from_equalities(right),
