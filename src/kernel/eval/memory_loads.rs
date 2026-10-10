@@ -1744,6 +1744,12 @@ struct RegisteredLoad {
 }
 
 thread_local! {
+    // Latest producer observation of each canonical wide value. One entry per
+    // value and function epoch; observations never change the defining name.
+    // Persistent roots keep session capture/restore from copying the table.
+    static WIDE_LOAD_OBSERVATIONS: std::cell::RefCell<
+        imbl::HashMap<(u64, Variable), (SharedCMemory, Pointer)>,
+    > = std::cell::RefCell::new(imbl::HashMap::new());
     /// Separate pointer-valued load names. The defining key is one canonical
     /// snapshot and address at the fixed eight-byte pointer interpretation;
     /// neither a scalar load variable nor its mutable maximum access width
@@ -1799,11 +1805,12 @@ pub(crate) fn clear_load_canonicalization_caches() {
 }
 
 /// Everything `clear_load_variable_registry` clears, as one value: the load
-/// names, their origins and widths, the pointer-load names, and the logical
+/// names, their origins, observations and widths, the pointer-load names, and the logical
 /// pointer reads. A reusable session captures it once and restores it before
 /// each check.
 #[derive(Clone)]
 pub(crate) struct LoadRegistryState {
+    wide_observations: imbl::HashMap<(u64, Variable), (SharedCMemory, Pointer)>,
     variables: std::collections::HashMap<Variable, RegisteredLoad>,
     pointers: std::collections::HashMap<PointerLoadId, (SharedCMemory, Pointer)>,
     widths: std::collections::HashMap<(SharedCMemory, Pointer), u32>,
@@ -1822,6 +1829,7 @@ pub(crate) fn load_registry_entry_count() -> usize {
 
 pub(crate) fn capture_load_variable_registry() -> LoadRegistryState {
     LoadRegistryState {
+        wide_observations: WIDE_LOAD_OBSERVATIONS.with(|registry| registry.borrow().clone()),
         variables: LOAD_VARIABLE_REGISTRY.with(|registry| registry.borrow().clone()),
         pointers: POINTER_LOAD_REGISTRY.with(|registry| registry.borrow().clone()),
         widths: LOAD_ACCESS_WIDTH.with(|widths| widths.borrow().clone()),
@@ -1833,6 +1841,8 @@ pub(crate) fn capture_load_variable_registry() -> LoadRegistryState {
 }
 
 pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
+    WIDE_LOAD_OBSERVATIONS
+        .with(|registry| *registry.borrow_mut() = state.wide_observations.clone());
     crate::kernel::equality_graph::restore_logical_pointer_reads(&state.logical_pointer_reads);
     LOAD_VARIABLE_REGISTRY.with(|registry| *registry.borrow_mut() = state.variables.clone());
     POINTER_LOAD_REGISTRY.with(|registry| *registry.borrow_mut() = state.pointers.clone());
@@ -1844,6 +1854,7 @@ pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
 }
 
 pub(crate) fn clear_load_variable_registry() {
+    WIDE_LOAD_OBSERVATIONS.with(|registry| registry.borrow_mut().clear());
     crate::kernel::equality_graph::clear_logical_pointer_reads();
     LOAD_VARIABLE_REGISTRY.with(|registry| registry.borrow_mut().clear());
     POINTER_LOAD_REGISTRY.with(|registry| registry.borrow_mut().clear());
@@ -3854,6 +3865,51 @@ pub(in crate::kernel) fn known_pointer_read_variable_for_term(
     .then_some(variable)
 }
 
+// Keep the actual producer expression, including its live snapshot and
+// pointer. Load identities can recur in disconnected model arms; their first
+// registered origin is not necessarily in the current arm's memory history.
+fn record_wide_load_observation(term: &Bitvector32Term, variable: Variable) {
+    let Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Bits64) = term else {
+        return;
+    };
+    if registered_load_kind_for_variable(&variable) != Some(LoadKind::Bits64) {
+        return;
+    }
+    let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
+    crate::instrumentation::record_deterministic_work(1);
+    WIDE_LOAD_OBSERVATIONS.with(|registry| {
+        let mut registry = registry.borrow_mut();
+        let key = (epoch, variable);
+        if registry
+            .get(&key)
+            .is_some_and(|(known_memory, known_pointer)| {
+                known_memory == memory && known_pointer == pointer.as_ref()
+            })
+        {
+            return;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        registry.insert(key, (memory.clone(), pointer.as_ref().clone()));
+    });
+}
+
+pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<Bitvector32Term> {
+    let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
+    crate::instrumentation::record_deterministic_work(1);
+    WIDE_LOAD_OBSERVATIONS.with(|registry| {
+        registry
+            .borrow()
+            .get(&(epoch, *variable))
+            .map(|(memory, pointer)| {
+                Bitvector32Term::MemoryLoad(
+                    memory.clone(),
+                    Box::new(pointer.clone()),
+                    LoadKind::Bits64,
+                )
+            })
+    })
+}
+
 /// Returns the load variable for a load term's provenance-stable form.
 /// The term is first canonicalized without assumptions, resolving cached
 /// cells and snapshot representation differences. The same cell loaded at
@@ -3871,10 +3927,12 @@ pub(crate) fn load_variable_for_term(
     // are not free, so cache by term. Term hashing is cheap: embedded
     // snapshots hash by interned identity.
     if let Some(hit) = LOAD_VARIABLE_CACHE.with(|cache| cache.borrow().get(bits).cloned()) {
+        record_wide_load_observation(bits, hit.0);
         return Some(hit);
     }
     crate::instrumentation::record_deterministic_work(1);
     let computed = load_variable_for_term_uncached(bits)?;
+    record_wide_load_observation(bits, computed.0);
     LOAD_VARIABLE_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
         if cache.len() >= 100_000 {
@@ -4288,6 +4346,102 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Model arms can share a canonical word but have different live DAGs.
+    // Refresh only its producer observation, including on a naming-cache hit.
+    #[test]
+    fn wide_observations_preserve_width_scope_and_selected_query_scaling() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(940_000));
+        let other = Pointer::symbolic(Variable(940_001));
+        let base = intern_c_memory(CMemory::new());
+        let load = |memory: &SharedCMemory, pointer: &Pointer, kind| {
+            Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone()), kind)
+        };
+        let first = load(&base, &pointer, LoadKind::Bits64);
+        let (word, _) = load_variable_for_term(&first).unwrap();
+        let word_term = Bitvector32Term::Variable(word);
+        let second_memory = intern_c_memory(base.memory().clone().store(
+            Pointer {
+                block: "observation:unrelated".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            CValue::UInt64(Bitvector32Term::UInt64Constant(7)),
+        ));
+        // Materialize the same named value in an independent live snapshot.
+        let second_memory = intern_c_memory(
+            second_memory
+                .memory()
+                .clone()
+                .store(pointer.clone(), CValue::UInt64(word_term.clone())),
+        );
+        let second = load(&second_memory, &pointer, LoadKind::Bits64);
+        assert_eq!(load_variable_for_term(&second).unwrap().0, word);
+        assert_eq!(latest_wide_load_observation(&word), Some(second.clone()));
+        assert_eq!(load_variable_for_term(&first).unwrap().0, word);
+        assert_eq!(latest_wide_load_observation(&word), Some(first.clone()));
+        load_variable_for_term(&second).unwrap();
+        let facts = PureFactContext::new();
+        assert!(
+            crate::kernel::memory_provenance::wide_read_has_recorded_value(
+                &word_term, &second, &facts,
+            )
+        );
+        assert!(
+            !crate::kernel::memory_provenance::wide_read_has_recorded_value(
+                &word_term,
+                &load(&second_memory, &other, LoadKind::Bits64),
+                &facts,
+            )
+        );
+        let changed = intern_c_memory(second_memory.memory().clone().store(
+            pointer.clone(),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(9)),
+        ));
+        assert!(
+            !crate::kernel::memory_provenance::wide_read_has_recorded_value(
+                &word_term,
+                &load(&changed, &pointer, LoadKind::Bits64),
+                &facts,
+            )
+        );
+        let narrow = load(&base, &pointer, LoadKind::Bits32);
+        let (narrow_word, _) = load_variable_for_term(&narrow).unwrap();
+        assert!(latest_wide_load_observation(&narrow_word).is_none());
+        assert!(
+            !crate::kernel::memory_provenance::wide_read_has_recorded_value(
+                &word_term,
+                &Bitvector32Term::Variable(narrow_word),
+                &facts,
+            )
+        );
+        let mut previous = None;
+        for count in [16_u64, 64, 256, 1024] {
+            for index in 0..count {
+                let unrelated = Pointer::symbolic(Variable(950_000 + index));
+                load_variable_for_term(&load(&base, &unrelated, LoadKind::Bits64)).unwrap();
+            }
+            let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::memory_provenance::wide_read_has_recorded_value(
+                    &word_term, &second, &facts,
+                )
+            });
+            assert!(proved);
+            if let Some(previous) = previous {
+                assert!(work <= previous + 16, "{count}: {work} after {previous}");
+            }
+            previous = Some(work);
+        }
+        let saved = capture_load_variable_registry();
+        load_variable_for_term(&first).unwrap();
+        assert_eq!(latest_wide_load_observation(&word), Some(first));
+        restore_load_variable_registry(&saved);
+        assert_eq!(latest_wide_load_observation(&word), Some(second.clone()));
+        begin_load_origin_epoch();
+        assert!(latest_wide_load_observation(&word).is_none());
+        restore_load_variable_registry(&saved);
+        assert_eq!(latest_wide_load_observation(&word), Some(second));
+    }
 
     #[test]
     fn a_loaded_pointer_cannot_reach_a_local_declared_after_the_read() {
