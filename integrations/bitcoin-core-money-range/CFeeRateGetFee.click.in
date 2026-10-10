@@ -35,7 +35,7 @@ int64 CFeeRate_GetFee(const struct CFeeRate* this, int32 virtual_bytes) {
     have to_integer(this->m_feerate.base.fee) <= 9223372036854775807;
     have -9223372036854775809 * to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes);
     have to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) <= 9223372036854775807 * to_integer(this->m_feerate.base.size);
-    step(); step();
+    step();
     let rounded = step(FeeFrac_EvaluateFeeUp(&this->m_feerate.base, virtual_bytes), { });
     if rounded == 0i64 {
         have to_integer(rounded) == 0 by { rewrite(rounded == 0i64); normalize(); }
