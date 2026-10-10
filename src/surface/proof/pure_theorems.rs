@@ -2437,6 +2437,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "int64_equal_of_to_integer"
                 | "uint64_pack_u16_to_integer"
                 | "uint32_pack_u16_to_integer"
+                | "uint32_pack_u16_high_first_to_integer"
                 | "uint64_add_to_integer"
                 | "uint64_multiply_to_integer"
                 | "uint64_subtract_to_integer"
@@ -2568,6 +2569,7 @@ fn verify_kernel_standard_theorem_axiom(
         | "uint64_equal_of_to_integer" => (2, 1),
         "uint64_pack_u16_to_integer"
         | "uint32_pack_u16_to_integer"
+        | "uint32_pack_u16_high_first_to_integer"
         | "uint64_divide_to_integer"
         | "uint64_remainder_to_integer"
         | "uint32_divide_to_integer"
@@ -2765,6 +2767,14 @@ fn verify_kernel_standard_theorem_axiom(
         };
         let value = uint32_parameter(0)?;
         match theorem.name() {
+            "uint32_pack_u16_high_first_to_integer" => {
+                crate::kernel::prove_unsigned_pack_u16_high_first_to_integer(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    value,
+                    uint32_parameter(1)?,
+                )
+                .expect("registered unsigned packing law")
+            }
             "uint32_pack_u16_to_integer" => crate::kernel::prove_unsigned_pack_u16_to_integer(
                 crate::kernel::MachineIntegerType::UInt32,
                 value,
@@ -4409,9 +4419,18 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
 
     #[test]
     fn unsigned_packing_declarations_require_exact_fields_bounds_and_result() {
-        for (ty, suffix) in [("uint32", "u32"), ("uint64", "u64")] {
+        for (ty, suffix, order) in [
+            ("uint32", "u32", ""),
+            ("uint32", "u32", "high_first_"),
+            ("uint64", "u64", ""),
+        ] {
+            let packed = if order.is_empty() {
+                "low | (high << 16)"
+            } else {
+                "(high << 16) | low"
+            };
             let source = format!(
-                "theorem {ty}_pack_u16_to_integer(low: {ty}, high: {ty}) {{ requires low <= 65535{suffix}; requires high <= 65535{suffix}; ensures to_integer(low | (high << 16)) == to_integer(low) + 65536 * to_integer(high); }}"
+                "theorem {ty}_pack_u16_{order}to_integer(low: {ty}, high: {ty}) {{ requires low <= 65535{suffix}; requires high <= 65535{suffix}; ensures to_integer({packed}) == to_integer(low) + 65536 * to_integer(high); }}"
             );
             verify_standard_declaration(&source).unwrap();
             for invalid in [

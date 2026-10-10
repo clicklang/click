@@ -1058,6 +1058,12 @@ theorem uint32_pack_u16_to_integer(low: uint32, high: uint32) {
     ensures to_integer(low | (high << 16)) == to_integer(low) + 65536 * to_integer(high);
 }
 
+theorem uint32_pack_u16_high_first_to_integer(low: uint32, high: uint32) {
+    requires low <= 65535u32;
+    requires high <= 65535u32;
+    ensures to_integer((high << 16) | low) == to_integer(low) + 65536 * to_integer(high);
+}
+
 theorem uint64_pack_u16_to_integer(low: uint64, high: uint64) {
     requires low <= 65535u64;
     requires high <= 65535u64;

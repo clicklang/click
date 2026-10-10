@@ -9187,6 +9187,24 @@ pub fn prove_unsigned_pack_u16_to_integer(
     low: Bitvector32Term,
     high: Bitvector32Term,
 ) -> Option<Theorem> {
+    prove_unsigned_pack_u16_in_order_to_integer(ty, low, high, false)
+}
+
+/// The same disjoint-field packing law for `(high << 16) | low`.
+pub fn prove_unsigned_pack_u16_high_first_to_integer(
+    ty: MachineIntegerType,
+    low: Bitvector32Term,
+    high: Bitvector32Term,
+) -> Option<Theorem> {
+    prove_unsigned_pack_u16_in_order_to_integer(ty, low, high, true)
+}
+
+fn prove_unsigned_pack_u16_in_order_to_integer(
+    ty: MachineIntegerType,
+    low: Bitvector32Term,
+    high: Bitvector32Term,
+    high_first: bool,
+) -> Option<Theorem> {
     let (packed, low_bound, high_bound) = match ty {
         MachineIntegerType::UInt32 => (
             Bitvector32Term::BitwiseOr(
@@ -9212,6 +9230,28 @@ pub fn prove_unsigned_pack_u16_to_integer(
             ConditionTerm::uint64_less_equal(high.clone(), Bitvector32Term::UInt64Constant(65535)),
         ),
         _ => return None,
+    };
+    let packed = if high_first {
+        match ty {
+            MachineIntegerType::UInt32 => Bitvector32Term::BitwiseOr(
+                Bitvector32Term::ShiftLeft(
+                    high.clone().into(),
+                    Bitvector32Term::Constant(16).into(),
+                )
+                .into(),
+                low.clone().into(),
+            ),
+            MachineIntegerType::UInt64 => Bitvector32Term::uint64_bitwise_or(
+                Bitvector32Term::uint64_shift_left(
+                    high.clone(),
+                    Bitvector32Term::Int64Constant(16),
+                ),
+                low.clone(),
+            ),
+            _ => unreachable!("packing accepts unsigned word types"),
+        }
+    } else {
+        packed
     };
     let observe = |value| IntegerTerm::from_machine(ty, value);
     let exact = IntegerTerm::Add(

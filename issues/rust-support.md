@@ -70,8 +70,11 @@ computation’s nested loops remains incomplete.
 The unchanged Rust one-byte and four-byte computations prove both fields equal
 the shared specification on the entry byte snapshot, starting from A = 1 and
 B = 0. The four-byte bridge checks the native unsigned recombination and its
-ordered B weights. Packed-result and general-length Rust correctness remain
-pending.
+ordered B weights. The unchanged shared checksum getter proves the exact packed
+value for any two u16 fields, preserves both fields under shared views, and has a checked
+conditional bridge from the field specification to the packed specification.
+General-length correctness, public-entry-point composition, and implementation
+incremental correctness remain pending.
 The independently locked, unchanged zlib one-byte path proves its packed result
 equal the same specification and preserves its input byte; its empty path also
 verifies. General-length C correctness and C/Rust result equality remain pending. The specification is not yet connected
@@ -94,7 +97,9 @@ current roadmap: replace status when work lands rather than append checkpoints.
 
 Use the [shared Adler-32 specification](../design/adler32-spec.click), following
 [the checksum assessment](../design/rust-checksum-assessment.md). Relate the
-original optimized lane state, reductions, and packed result to that definition.
+original optimized lane state and reductions to that definition, then compose
+the checked constructor, computation, and checksum getter at the public
+entry point.
 Prove arbitrary finite input correctness under the explicit supported memory
 range and API preconditions, including compatible initial states.
 
