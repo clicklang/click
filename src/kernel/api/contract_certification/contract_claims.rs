@@ -537,22 +537,27 @@ fn memory_range_lists_definitionally_equal(
 ) -> bool {
     left.len() == right.len()
         && left.iter().zip(right).all(|(left, right)| {
-            left.element_width() == right.element_width()
-                && pointers_proven_equal_for_memory_resolution(
-                    left.base(),
-                    right.base(),
-                    assumptions,
-                )
-                && int32_values_proven_equal_for_memory_resolution(
-                    left.start(),
-                    right.start(),
-                    assumptions,
-                )
-                && int32_values_proven_equal_for_memory_resolution(
-                    left.end(),
-                    right.end(),
-                    assumptions,
-                )
+            // Wide endpoints currently require exact structural equality;
+            // the residual equality oracle below has signed 32-bit semantics.
+            left == right
+                || (left.int32_bounds().is_some()
+                    && right.int32_bounds().is_some()
+                    && left.element_width() == right.element_width()
+                    && pointers_proven_equal_for_memory_resolution(
+                        left.base(),
+                        right.base(),
+                        assumptions,
+                    )
+                    && int32_values_proven_equal_for_memory_resolution(
+                        left.start(),
+                        right.start(),
+                        assumptions,
+                    )
+                    && int32_values_proven_equal_for_memory_resolution(
+                        left.end(),
+                        right.end(),
+                        assumptions,
+                    ))
         })
 }
 
@@ -1771,14 +1776,8 @@ fn function_claim_holds_on_prepared_path(
                             covers_everything
                                 || is_function_fresh_heap_pointer(pointer, before)
                                 || mutable_ranges.iter().any(|range| {
-                                    assumptions.pointer_access_in_range(
-                                        pointer,
-                                        *bytes,
-                                        range.base(),
-                                        range.start(),
-                                        range.end(),
-                                        range.element_width(),
-                                    )
+                                    assumptions
+                                        .pointer_access_in_memory_range(pointer, *bytes, range)
                                 })
                         })
                 }
@@ -3186,5 +3185,33 @@ mod unproved_path_obligation_message_tests {
         let message = unproved_path_obligation_message(&without_context);
         assert!(!message.contains("ConditionIs"), "{message}");
         assert!(!message.contains("Variable"), "{message}");
+    }
+}
+
+#[cfg(test)]
+mod wide_range_reader_tests {
+    use super::*;
+    // Claim framing compares the declared domain as well as endpoint bits.
+    #[test]
+    fn wide_claim_range_lists_do_not_use_signed_equalities() {
+        let base = Pointer::symbolic(Variable(984_400));
+        let wide = CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(1 << 33),
+            1,
+        );
+        let narrow = CMemoryRange::new_with_element_width(base, 0u32.into(), 1u32.into(), 1);
+        let facts = PureFactContext::new();
+        assert!(memory_range_lists_definitionally_equal(
+            std::slice::from_ref(&wide),
+            std::slice::from_ref(&wide),
+            &facts
+        ));
+        assert!(!memory_range_lists_definitionally_equal(
+            &[wide],
+            &[narrow],
+            &facts
+        ));
     }
 }

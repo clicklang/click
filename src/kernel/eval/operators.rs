@@ -1689,10 +1689,10 @@ fn pointer_has_object_provenance_evidence(
         };
         (!fact.is_own() || fact.has_proven_positive_quantity(assumptions))
             && decide(pointer_object_identity_condition(pointer, range.base()))
-            && decide(ConditionTerm::signed_less_than(
-                range.start().clone(),
-                range.end().clone(),
-            ))
+            && decide(match range.wide_bounds() {
+                Some((start, end)) => ConditionTerm::uint64_less_than(start.clone(), end.clone()),
+                None => ConditionTerm::signed_less_than(range.start().clone(), range.end().clone()),
+            })
     };
     state
         .resources()
@@ -5354,4 +5354,29 @@ pub(in crate::kernel) fn pointer_equality_condition(
 
 pub(in crate::kernel) fn pointer_is_null_condition(pointer: Pointer) -> ConditionTerm {
     pointer_equality_condition(pointer, Pointer::null())
+}
+
+#[cfg(test)]
+mod wide_range_reader_tests {
+    use super::*;
+    // Object provenance uses native nonemptiness, never the range's low word.
+    #[test]
+    fn wide_nonempty_owned_range_supplies_object_provenance() {
+        let base = Pointer::symbolic(Variable(985_100));
+        let wide = CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(1 << 33),
+            4,
+        );
+        let state = CState::new().with_resource_context(
+            ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(wide)),
+        );
+        assert!(pointer_has_object_provenance_evidence(
+            &state,
+            &base,
+            &PureFactContext::new(),
+            &ExecutionFacts::new()
+        ));
+    }
 }

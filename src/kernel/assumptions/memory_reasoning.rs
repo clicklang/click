@@ -3387,6 +3387,26 @@ impl PureFactContext {
             ))
     }
 
+    /// Check an access in the range's declared index domain.
+    pub(in crate::kernel) fn pointer_access_in_memory_range(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        range: &CMemoryRange,
+    ) -> bool {
+        match range.int32_bounds() {
+            Some((start, end)) => self.pointer_access_in_range(
+                pointer,
+                bytes,
+                range.base(),
+                start,
+                end,
+                range.element_width(),
+            ),
+            None => self.pointer_access_in_wide_range(pointer, bytes, range),
+        }
+    }
+
     pub(in crate::kernel) fn pointer_access_in_range(
         &self,
         pointer: &Pointer,

@@ -6166,6 +6166,7 @@ fn range_intervals_cover_target(target: &CMemoryRange, mut intervals: Vec<(i64, 
     false
 }
 
+// Called only by memory_ranges_proven_equal after its wide-range branch.
 fn memory_range_length_term(range: &CMemoryRange) -> Bitvector32Term {
     match range.end() {
         Bitvector32Term::Add(base, length) if base.as_ref() == range.start() => {
@@ -7318,6 +7319,7 @@ pub(in crate::kernel) fn exact_affine_index_difference(
 /// A reach of zero needs nothing at all: the two ranges then start at one
 /// address and end at one address, so their counts are residues of the same
 /// value and are equal.
+// Exact-arithmetic containment handles wide ranges before calling this helper.
 fn range_count_is_nonnegative(range: &CMemoryRange, assumptions: Option<&PureFactContext>) -> bool {
     if affine_range_element_count(range.start(), range.end()).is_some() {
         return true;

@@ -5039,8 +5039,9 @@ fn materialize_composite_resource_cells_from_snapshot(
     }) else {
         return memory;
     };
-    let (Bitvector32Term::Constant(start), Bitvector32Term::Constant(end)) =
-        (range.start(), range.end())
+    // Only signed constant spans have the bounded cell-materialization rule.
+    let Some((Bitvector32Term::Constant(start), Bitvector32Term::Constant(end))) =
+        range.int32_bounds()
     else {
         return memory;
     };
@@ -5508,5 +5509,64 @@ void child_release(struct child* obj) {
             .is_err(),
             "an opaque current-load carrier must fail closed"
         );
+    }
+}
+
+#[cfg(test)]
+mod wide_range_reader_tests {
+    use super::*;
+    // A wide composite span must not be enumerated as signed constant cells.
+    #[test]
+    fn wide_composite_materialization_keeps_the_snapshot_without_enumerating_cells() {
+        let base = Pointer::symbolic(Variable(985_600));
+        let wide = CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(1 << 33),
+            4,
+        );
+        let literal = || ContractExpression::IntegerLiteral("0".into());
+        let segment = ContractSegment {
+            state: ContractSegmentState::Current,
+            base: CExpression::Value(CValue::pointer(base.clone())),
+            start: crate::kernel::c_uint64_literal(0),
+            end: crate::kernel::c_uint64_literal(1 << 33),
+            surface: ContractSegmentSurface::Range {
+                base: literal(),
+                start: literal(),
+                end: literal(),
+            },
+        };
+        let memory = CMemory::new();
+        let result = materialize_composite_resource_cells_from_snapshot(
+            memory.clone(),
+            &memory,
+            &ResourceClause::OwnMemory(segment),
+            &CResourceFact::own_memory(wide),
+            &[],
+        );
+        assert_eq!(result.diagnostic_identity(), memory.diagnostic_identity());
+        // The range kind also matters when the shared term representation has
+        // legacy constant nodes: they must not trigger signed enumeration.
+        let tagged = CMemoryRange::new_wide(base, 0u32.into(), 8u32.into(), 4);
+        let clause = ResourceClause::OwnMemory(ContractSegment {
+            state: ContractSegmentState::Current,
+            base: crate::kernel::c_int32_literal(0),
+            start: crate::kernel::c_uint64_literal(0),
+            end: crate::kernel::c_uint64_literal(8),
+            surface: ContractSegmentSurface::Range {
+                base: literal(),
+                start: literal(),
+                end: literal(),
+            },
+        });
+        let result = materialize_composite_resource_cells_from_snapshot(
+            memory.clone(),
+            &memory,
+            &clause,
+            &CResourceFact::own_memory(tagged),
+            &[],
+        );
+        assert_eq!(result.diagnostic_identity(), memory.diagnostic_identity());
     }
 }

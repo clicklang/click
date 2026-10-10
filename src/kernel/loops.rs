@@ -8499,10 +8499,10 @@ pub(super) fn collect_loop_effect_check_obligations(
                         .iter()
                         .map(|range| EvaluatedMemorySegment {
                             base: range.base.clone(),
-                            start: range.start().clone(),
-                            end: range.end().clone(),
+                            start: range.bound_terms().0.clone(),
+                            end: range.bound_terms().1.clone(),
                             element_width: range.element_width,
-                            kind: RangeIndexKind::Int32,
+                            kind: range.kind(),
                         })
                         .collect()
                 } else if matches!(
@@ -8585,8 +8585,8 @@ pub(super) fn collect_loop_effect_check_obligations(
                         format!(
                             "a call in the loop body may write {} outside the loop's mutable footprint ({})",
                             describe_loop_footprint_range(
-                                range.start(),
-                                range.end(),
+                                range.bound_terms().0,
+                                range.bound_terms().1,
                                 range.element_width
                             ),
                             describe_loop_footprint_segments(&segments)
@@ -8990,14 +8990,7 @@ pub(super) fn loop_effect_segment_contains_pointer(
     if crate::kernel::primitives::is_unnamed_footprint_base(&segment.base) {
         return true;
     }
-    assumptions.pointer_access_in_range(
-        pointer,
-        bytes,
-        &segment.base,
-        &segment.start,
-        &segment.end,
-        segment.element_width,
-    )
+    assumptions.pointer_access_in_memory_range(pointer, bytes, &segment.clone().into_range())
 }
 
 pub(super) fn loop_effect_segment_contains_range(
@@ -9007,6 +9000,13 @@ pub(super) fn loop_effect_segment_contains_range(
 ) -> bool {
     if crate::kernel::primitives::is_unnamed_footprint_base(&segment.base) {
         return true;
+    }
+    if range.wide_bounds().is_some() || segment.kind == RangeIndexKind::UInt64 {
+        return crate::kernel::primitives::wide_memory_range_covers(
+            &segment.clone().into_range(),
+            range,
+            assumptions,
+        );
     }
     if range.element_width() != segment.element_width {
         return false;
@@ -9913,8 +9913,11 @@ fn run_slots_clear_of_loop_summaries(
             {
                 return None;
             }
-            let (start_low, _) = assumptions.signed_interval(range.start())?;
-            let (_, end_high) = assumptions.signed_interval(range.end())?;
+            // This run optimization uses signed intervals. A native summary
+            // falls back to forgetting the run rather than reading its low word.
+            let (start, end) = range.int32_bounds()?;
+            let (start_low, _) = assumptions.signed_interval(start)?;
+            let (_, end_high) = assumptions.signed_interval(end)?;
             let clamp = |value: i64| value.clamp(0, i64::from(count)) as u32;
             let mut missed = IndexIntervals::default();
             missed.insert_range(0, clamp(start_low));
@@ -10176,5 +10179,74 @@ pub(super) fn collect_variable_names(expression: &CExpression, names: &mut BTree
         CExpression::BitwiseNot(expression) => {
             collect_variable_names(expression, names);
         }
+    }
+}
+
+#[cfg(test)]
+mod wide_range_reader_tests {
+    use super::*;
+    // Validated loop frames and call summaries retain native bounds; the
+    // signed run optimization must fall back when it sees one.
+    #[test]
+    fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
+        let base = Pointer::symbolic(Variable(984_500));
+        let wide = CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(1 << 33),
+            4,
+        );
+        let segment = EvaluatedMemorySegment {
+            base: base.clone(),
+            start: wide.bound_terms().0.clone(),
+            end: wide.bound_terms().1.clone(),
+            element_width: 4,
+            kind: RangeIndexKind::UInt64,
+        };
+        let facts = PureFactContext::new();
+        assert!(loop_effect_segment_contains_range(&segment, &wide, &facts));
+        assert!(loop_effect_segment_contains_pointer(
+            &segment, &base, 4, &facts
+        ));
+        let bytes = CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(1 << 33),
+            1,
+        );
+        assert!(!loop_effect_segment_contains_range(
+            &segment, &bytes, &facts
+        ));
+        let check = CLoopEffectCheck::new(CLoopEffect::Mutable(vec![]), None)
+            .with_validated_ranges(vec![wide.clone()]);
+        let state = CState::new();
+        let mut budget = ExecutionBudget::beside_live_state();
+        assert!(
+            collect_loop_effect_check_obligations(
+                &state,
+                &state,
+                &[check],
+                &ExecutionFacts::new(),
+                &[],
+                &facts,
+                &mut budget
+            )
+            .unwrap()
+            .is_empty()
+        );
+        let summary = Proposition::CMemoryEffectSummary {
+            before: state.memory().clone(),
+            after: state.memory().clone(),
+            mutable_ranges: vec![wide],
+        };
+        let run = crate::kernel::primitives::CellRun::new(
+            base,
+            4,
+            CType::Int32,
+            4,
+            state.memory().clone().into(),
+            crate::kernel::primitives::IndexIntervals::default(),
+        );
+        assert!(run_slots_clear_of_loop_summaries(&run, &[summary], &facts).is_none());
     }
 }

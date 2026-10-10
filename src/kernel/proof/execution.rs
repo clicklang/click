@@ -2615,15 +2615,22 @@ fn resource_delta_pointer_equality(
         })
 }
 
-type ResourceContainmentKey = (CResource, Bitvector32Term, Bitvector32Term, u32);
+type ResourceContainmentKey = (
+    CResource,
+    Bitvector32Term,
+    Bitvector32Term,
+    u32,
+    crate::kernel::RangeIndexKind,
+);
 
 fn resource_containment_key(proposition: &Proposition) -> Option<ResourceContainmentKey> {
     let (parent, range) = proposition.memory_containment()?;
     Some((
         parent.clone(),
-        range.start().clone(),
-        range.end().clone(),
+        range.bound_terms().0.clone(),
+        range.bound_terms().1.clone(),
         range.element_width(),
+        range.kind(),
     ))
 }
 
@@ -4806,16 +4813,13 @@ fn memory_diff_is_covered_by_ranges(
                 return false;
             }
             mutable_ranges.iter().any(|range| {
-                assumptions.pointer_access_in_range(
+                assumptions.pointer_access_in_memory_range(
                     &diff_pointer,
                     after.known_value(&diff_pointer).map_or_else(
                         crate::kernel::resource_tracker::widest_scalar_access_bytes,
                         |value| value.byte_width(),
                     ),
-                    range.base(),
-                    range.start(),
-                    range.end(),
-                    range.element_width(),
+                    range,
                 )
             })
         })
@@ -5227,18 +5231,7 @@ fn interface_resource_intrinsic_fact(
 ) -> Option<Proposition> {
     let segment = spec.memory_segment()?;
     let range = resource.memory_range()?;
-    let element_width = segment.element_width();
-    Some(Proposition::CMemoryLoadable {
-        memory: state.memory().clone(),
-        base: range
-            .base()
-            .offset_by_elements(range.start().clone(), element_width),
-        bytes: crate::kernel::Bitvector32Term::multiply(
-            crate::kernel::Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
-            crate::kernel::Bitvector32Term::Constant(element_width),
-        ),
-        wide: false,
-    })
+    (segment.element_width() == range.element_width()).then(|| range.loadable_fact(state.memory()))
 }
 
 /// The selected kernel lowering and the precise context in which it passed
@@ -16578,5 +16571,49 @@ mod authority_transfer_wrapper_scaling_tests {
             .is_err(),
             "a named memory exchange cannot alter creation or population evidence"
         );
+    }
+}
+
+#[cfg(test)]
+mod wide_range_reader_tests {
+    use super::*;
+    use crate::kernel::{CMemorySegment, c_uint64_literal};
+    // Containment keys keep the domain, interface liveness stays wide, and
+    // changed-cell framing dispatches to the native access rule.
+    #[test]
+    fn wide_interface_and_memory_effect_readers_preserve_the_range_kind() {
+        let base = Pointer::symbolic(Variable(984_600));
+        let wide = CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(1 << 33),
+            4,
+        );
+        let resource = CResourceFact::own_memory(wide.clone());
+        let segment = CMemorySegment::new(
+            CExpression::Value(CValue::pointer(base.clone())),
+            c_uint64_literal(0),
+            c_uint64_literal(1 << 33),
+        );
+        let spec = CResourceSpec::owned_memory(segment);
+        let before = CMemory::new().with_block(base.block.clone(), 4);
+        let state = CState::new().with_memory(before.clone());
+        assert!(matches!(
+            interface_resource_intrinsic_fact(&spec, &resource, &state),
+            Some(Proposition::CMemoryLoadable { wide: true, .. })
+        ));
+        let containment = Proposition::CResourceContains {
+            parent: Box::new(CResource::Memory(wide.clone())),
+            child: Box::new(CResource::Memory(wide.clone())),
+        };
+        let key = resource_containment_key(&containment).unwrap();
+        assert_eq!(key.4, crate::kernel::RangeIndexKind::UInt64);
+        let after = before.clone().store(base, CValue::Int32(7u32.into()));
+        assert!(memory_diff_is_covered_by_ranges(
+            &before,
+            &after,
+            &[wide],
+            &PureFactContext::new()
+        ));
     }
 }

@@ -1422,9 +1422,9 @@ impl Renderer<'_> {
                 self.push("memory-resource(");
                 self.pointer(range.base());
                 self.push("[");
-                self.bitvector(range.start());
+                self.bitvector(range.bound_terms().0);
                 self.push("..");
-                self.bitvector(range.end());
+                self.bitvector(range.bound_terms().1);
                 self.push("])");
             }
             CResource::Composite { name, arguments } => self.fmt(format_args!(
@@ -1905,5 +1905,27 @@ mod tests {
             ))]),
         });
         assert_eq!(render_resource_fact(&resource), "views child_ref(int32(7))");
+    }
+}
+
+#[cfg(test)]
+mod wide_range_reader_tests {
+    use super::*;
+    use crate::kernel::CMemoryRange;
+    // Even fallback rendering may receive native memory resources.
+    #[test]
+    fn wide_resource_diagnostics_keep_the_high_bits_of_bounds() {
+        let wide = CMemoryRange::new_wide(
+            Pointer::symbolic(Variable(985_500)),
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(1 << 33),
+            4,
+        );
+        let fact = Proposition::CResourceContains {
+            parent: Box::new(CResource::Memory(wide.clone())),
+            child: Box::new(CResource::Memory(wide)),
+        };
+        let text = render_internal_proposition_labeled(&fact, &mut SnapshotLabels::default());
+        assert!(text.contains("8589934592"), "{text}");
     }
 }

@@ -1909,6 +1909,8 @@ pub(in crate::surface) fn function_contract_summary(
     {
         if let Some(startup) = &parsed_function.program_entry_state {
             mutable.extend(startup.resources().facts().iter().filter_map(|fact| {
+                // Program-entry resources are concrete C globals, built with
+                // signed int32 bounds by the program-entry initializer.
                 let range = fact.memory_own_range()?;
                 Some(
                     CMemorySegment::new(
