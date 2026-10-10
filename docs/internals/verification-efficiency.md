@@ -535,9 +535,8 @@ explicit:
   lookups in progress, and a repeat fails without being recomputed. Failures
   that met a cycle cut or a limit are not remembered and nothing outlives the
   attempt, so the memo changes a failing search's cost, never its outcome
-  (`mdtests/simp_frame_failure_through_region_arena_is_prompt.md`, pinned
-  below the default budget by the mdtest harness). An explicit `transport`
-  also opens this scope: its bridge, reachability, and quantified-frame routes
+  (tested directly by `closure_failure_memo_answers_a_repeated_failure_once`).
+  An explicit `transport` also opens this scope: its bridge, reachability, and quantified-frame routes
   can repeat the same failed memory question even without smart search. Nested
   checks share the enclosing scope; standalone checks discard it on return.
   `explicit_transport_failure_is_prompt.md` pins the local refusal below the
