@@ -6,8 +6,8 @@ on that word observation before connecting it to the narrow byte observation.
 ```click
 theorem byte_word_observation(value: uint8) {
     ensures to_integer(value) == to_integer((int32)value) by {
-        have 0 <= (int32)value by { simp(); }
-        have (int32)value <= 255 by { simp(); }
+        have 0 <= (int32)value;
+        have (int32)value <= 255;
         apply(int32_less_equal_to_integer(0, (int32)value));
         apply(int32_less_equal_to_integer((int32)value, 255));
         arithmetic_certificate special {

@@ -2,7 +2,7 @@
 
 ```click
 theorem invalid<T>() {
-    ensures 0 == 1 by { normalize(); }
+    ensures 0 == 1 by normalize();
 }
 ```
 

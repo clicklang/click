@@ -24,9 +24,9 @@ struct node *read_right(struct node *p) {
 } by {
  match tree.model { Pair::At(pid,qid) => {
  unfold(tree);
- have p->left == qid by { simp(); }
+ have p->left == qid;
  step(); step();
- have q == qid by { simp(); }
+ have q == qid;
  execute(); normalize();
  }, }
 }

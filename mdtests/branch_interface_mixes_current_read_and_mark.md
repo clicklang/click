@@ -27,10 +27,10 @@ void put(struct pair *p, struct pair *q, int32 x) {
         fact child->tag == at(before, child->tag);
     } then {
         step();
-        have child->tag == at(before, child->tag) by { simp(); }
+        have child->tag == at(before, child->tag);
     } else {
         step();
-        have child->tag == at(before, child->tag) by { simp(); }
+        have child->tag == at(before, child->tag);
     }
     execute(); simp();
 }

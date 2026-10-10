@@ -2,7 +2,7 @@
 
 ```click
 theorem invalid(n: Nat) {
-    ensures Nat::Zero == Nat::Succ(n) by { simp(); }
+    ensures Nat::Zero == Nat::Succ(n) by simp;
 }
 ```
 

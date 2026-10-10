@@ -2,7 +2,7 @@
 
 ```click
 theorem reflexive(n: Integer) {
-    ensures n == n by { simp(); }
+    ensures n == n by simp;
 }
 
 theorem undefined_argument(a: int32) {

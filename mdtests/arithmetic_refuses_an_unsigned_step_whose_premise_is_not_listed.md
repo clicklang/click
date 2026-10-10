@@ -7,7 +7,7 @@ stays open, where `simp` would close it from the available fact.
 ```click
 theorem unlisted(x: uint32) {
     requires x > 0u32;
-    ensures x - 1u32 < x by { arithmetic(); }
+    ensures x - 1u32 < x by arithmetic();
 }
 ```
 

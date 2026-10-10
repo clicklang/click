@@ -10,7 +10,7 @@ void hold(const uint8* bytes, uint64 length) {
  requires length < 2147483647u64;
  views bytes[0..length];
 } by {
- have viewable(bytes[0u64..length + 1u64]) by { simp(); }
+ have viewable(bytes[0u64..length + 1u64]);
  execute(); simp();
 }
 ```

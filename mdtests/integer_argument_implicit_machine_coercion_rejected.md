@@ -2,7 +2,7 @@
 
 ```click
 theorem identity(n: Integer) {
-    ensures n == n by { simp(); }
+    ensures n == n by simp;
 }
 
 theorem implicit_machine_argument(a: uint32) {

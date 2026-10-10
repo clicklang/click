@@ -51,7 +51,7 @@ void inspect(struct node* root) {
                         Identity::At(sid) => {
                             unfold(sub);
                             step();
-                            have child == sid by { simp(); }
+                            have child == sid;
                             let sub = fold(cell(root->left), { model: Identity::At(sid) });
                             let tree = fold(parent_at(root), { model: Parent::At(pid, Identity::At(sid)) }, { child: sub });
                             step(); step();

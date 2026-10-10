@@ -10,7 +10,7 @@ void hold(const uint32* values, uint64 length) {
  requires viewable(values[0u64..length]);
  ensures 1 == 1;
 } by {
- have length <= 2305843009213693951u64 by { assumption(); }
+ have length <= 2305843009213693951u64 by assumption();
  execute(); simp();
 }
 ```

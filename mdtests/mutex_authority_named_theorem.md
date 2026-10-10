@@ -3,7 +3,7 @@
 ```click
 theorem keep(mu: void*) {
     consumes guard: mutex_guard(mu);
-    ensures 0 == 0 by { simp(); }
+    ensures 0 == 0 by simp;
 }
 ```
 

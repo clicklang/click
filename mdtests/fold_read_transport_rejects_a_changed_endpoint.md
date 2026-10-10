@@ -24,7 +24,7 @@ void set_end(int32 *v, int32 i, int32 n) {
     ensures zeros(v, 0, i + 1) == old(zeros(v, 0, i));
 } by {
     mark entry;
-    have zeros(at(entry, v), 0, i) == zeros(at(entry, v), 0, i) by { normalize(); }
+    have zeros(at(entry, v), 0, i) == zeros(at(entry, v), 0, i) by normalize();
     step();
     have zeros(at(entry, v), 0, i) == zeros(v, 0, i + 1) by {
         transport(

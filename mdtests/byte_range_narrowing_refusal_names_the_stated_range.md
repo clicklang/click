@@ -11,7 +11,7 @@ width, and the refusal claimed no range over `v` was stated anywhere.
 theorem prefix_of_a_viewed_byte_range(v: uint8[], n: int32, k: int32) {
     views v[0..n];
     requires 0 <= k;
-    ensures viewable(v[0..k]) by { simp(); }
+    ensures viewable(v[0..k]) by simp;
 }
 ```
 

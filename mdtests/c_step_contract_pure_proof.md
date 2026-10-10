@@ -3,7 +3,7 @@
 ```click
 contract int32 Identity(int32 x) { ensures result == x; }
 theorem reflexive(x: int32) {
-    ensures x == x by { step(Identity); }
+    ensures x == x by step(Identity);
 }
 ```
 

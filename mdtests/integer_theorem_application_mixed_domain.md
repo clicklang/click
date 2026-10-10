@@ -3,7 +3,7 @@
 ```click
 theorem mixed(integer_value: Integer, machine_value: int32) {
     requires integer_value == integer_value;
-    ensures integer_value + 1 > integer_value by { simp(); }
+    ensures integer_value + 1 > integer_value by simp;
 }
 
 theorem mixed_domain(x: Integer, y: int32) {

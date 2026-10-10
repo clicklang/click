@@ -45,10 +45,10 @@ void probe(struct node *p) {
             let joined = fold(frame(), {model: Tag::At(id, color)}, {kid: original_kid});
             match joined.model {
                 Tag::At(other, other_color) => {
-                    have joined.model == Tag::At(other, other_color) by { simp(); }
+                    have joined.model == Tag::At(other, other_color);
                     let {kid: kid} = unfold(joined);
                     step();
-                    have (other->tag & 1) == 1 by { simp(); }
+                    have (other->tag & 1) == 1;
                     let b = fold(frame(), {model: Tag::At(id, color)}, {kid: kid});
                     execute(); simp();
                 },

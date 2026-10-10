@@ -27,7 +27,7 @@ void set_end(int32 *v, int32 i, int32 n) {
     ensures through(v, 0, i) == old(through(v, 0, i));
 } by {
     mark entry;
-    have through(at(entry, v), 0, i) == through(at(entry, v), 0, i) by { normalize(); }
+    have through(at(entry, v), 0, i) == through(at(entry, v), 0, i) by normalize();
     step();
     have through(at(entry, v), 0, i) == through(v, 0, i) by {
         transport(

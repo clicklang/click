@@ -2,7 +2,7 @@
 
 ```click
 theorem subtract_distinct(n: uint64, m: uint64) {
-    ensures n - m == 0u64 by { normalize(); }
+    ensures n - m == 0u64 by normalize();
 }
 ```
 

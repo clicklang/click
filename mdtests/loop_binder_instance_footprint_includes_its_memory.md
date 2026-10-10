@@ -191,7 +191,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
         rewrite(n == end);
         assumption();
     }
-    have start <= start by { normalize(); }
+    have start <= start by normalize();
     have occupied[start] == 1 by {
         instantiate(forall (j: int32) {
             start <= j and j < n implies occupied[j] == 1

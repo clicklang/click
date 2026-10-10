@@ -37,7 +37,7 @@ void walk(int32 *left, int32 *visited, int32 n, int32 cur) {
 } by {
     step();
     step();
-    have forall (k: int32) { 0 <= k and k < n implies left[k] == old(left[k]) } by { simp(); }
+    have forall (k: int32) { 0 <= k and k < n implies left[k] == old(left[k]) };
     execute();
     simp();
 }

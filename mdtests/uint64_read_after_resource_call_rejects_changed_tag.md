@@ -38,12 +38,12 @@ void caller(struct Node* p, struct Node* q, struct Root* root) {
     ensures (q->tag & 1) == 1;
 } by {
     step();
-    have (q->tag & 1) == 1 by { simp(); }
+    have (q->tag & 1) == 1;
     mark call_entry;
     let {after: after} = step(helper(p, q, root), {before: before});
     step();
-    have q->tag == at(call_entry, q->tag) by { normalize(); }
-    have (q->tag & 1) == 1 by { simp(); }
+    have q->tag == at(call_entry, q->tag) by normalize();
+    have (q->tag & 1) == 1;
     execute(); simp();
 }
 ```

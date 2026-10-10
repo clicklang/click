@@ -2,7 +2,7 @@
 
 ```click
 theorem invalid(a: Nat, b: Nat) {
-    ensures a == b by { normalize(); }
+    ensures a == b by normalize();
 }
 ```
 

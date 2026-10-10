@@ -29,10 +29,10 @@ void probe(struct node *p, struct node *q, struct node *value) {
     match a.model {
         Tag::At(id) => {
             unfold(a);
-            have p == id by { simp(); }
-            have &p->next == &id->next by { simp(); }
-            have p->next == id->next by { simp(); }
-            have id->next == value by { simp(); }
+            have p == id;
+            have &p->next == &id->next;
+            have p->next == id->next;
+            have id->next == value;
             let b = fold(alias(p), { model: Tag::At(id) });
             execute(); simp();
         },

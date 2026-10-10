@@ -88,37 +88,37 @@ void inspect(struct node* parent) {
                         fact nf.model == at(split, f.model);
                     } {
                         Focus::Empty => {
-                            have at(split, f.model) == Focus::Empty by { simp(); }
+                            have at(split, f.model) == Focus::Empty;
                             unfold(f);
                             let nf = fold(focus_at(parent->right), { model: Focus::Empty });
-                            have nf.model == at(split, f.model) by { simp(); }
+                            have nf.model == at(split, f.model);
                         },
                         Focus::Live(identity) => {
-                            have at(split, f.model) == Focus::Live(identity) by { simp(); }
+                            have at(split, f.model) == Focus::Live(identity);
                             unfold(f);
                             let nf = fold(focus_at(parent->right), { model: Focus::Live(identity) });
-                            have nf.model == at(split, f.model) by { simp(); }
+                            have nf.model == at(split, f.model);
                         },
                     }
                     step();
                     match lm {
                         Identity::At(leaf) => {
                             unfold(l);
-                            have sibling == model by { simp(); }
-                            have child == leaf by { simp(); }
-                            have sibling->left == child by { simp(); }
+                            have sibling == model;
+                            have child == leaf;
+                            have sibling->left == child;
                             have model->left == leaf by {
                                 rewrite(model == sibling); rewrite(leaf == child); normalize() using { sibling->left == child; }
                             }
                             step();
-                            have sibling->right == parent by { simp(); }
+                            have sibling->right == parent;
                             have model->right == parent by {
                                 rewrite(model == sibling);
                                 normalize() using { sibling->right == parent; }
                             }
                             let l = fold(leaf_at(parent->left->left), { model: Identity::At(leaf) });
                             let c = fold(cell(parent->left), { model: Pair::At(model, Identity::At(leaf)) }, { l: l });
-                            have nf.model == fm by { simp(); }
+                            have nf.model == fm;
                             let tree_context = fold(parent_at(root), { model: Parent::At(pid, Pair::At(model, Identity::At(leaf)), fm) }, { c: c, f: nf });
                             step(); step();
                         },

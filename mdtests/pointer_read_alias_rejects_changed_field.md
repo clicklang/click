@@ -43,13 +43,13 @@ void inspect(struct node *p) {
  let { child: c } = unfold(t);
  match c.model {
   Pair::At(identity) => {
-   have Pair::At(identity) == cm by { simp(); }
+   have Pair::At(identity) == cm;
    unfold(c);
    step();
-   have q == identity by { simp(); }
+   have q == identity;
    mark rotation;
    step(copy_tag(p,q), {});
-   have q->tag == at(rotation,p->tag) by { simp(); }
+   have q->tag == at(rotation,p->tag);
    have identity->tag == q->tag by { normalize() using { q == identity; } }
    have identity->tag == at(rotation,p->tag) by { rewrite(identity->tag == q->tag); assumption(); }
    have identity->right == at(rotation, q->right) by { normalize() using { q == identity; } }

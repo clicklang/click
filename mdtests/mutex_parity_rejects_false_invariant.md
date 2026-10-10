@@ -60,7 +60,7 @@ theorem odd_successor(i: int32) {
     ensures (i + 1) % 2 == 0 by {
         have 0 <= i % 2 by { arithmetic() using { 0 <= i; } }
         have i % 2 < 2 by { arithmetic() using { 0 <= i; } }
-        have 1 <= i % 2 by { apply(nonzero_nonnegative(i % 2)); }
+        have 1 <= i % 2 by apply(nonzero_nonnegative(i % 2));
         have i % 2 <= 1 by { arithmetic() using { 0 <= i; i % 2 < 2; } }
         arithmetic() using { 0 <= i; i < 2147483647; 1 <= i % 2; i % 2 <= 1; }
     }
@@ -104,7 +104,7 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
             preserve by {
                 have i < 2147483647 by { arithmetic() using { i < n; } }
                 if i % 2 == 0 {
-                    have (i + 1) % 2 == 1 by { apply(even_successor(i)); }
+                    have (i + 1) % 2 == 1 by apply(even_successor(i));
                     have guard.parity == 0 by simp;
                     unfold(guard);
                     step();
@@ -113,11 +113,11 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
                     let guard = fold(loop_guard(object), { parity: 1 });
                     close_invariants();
                 } else {
-                    have (i + 1) % 2 == 0 by { apply(odd_successor(i)); }
+                    have (i + 1) % 2 == 0 by apply(odd_successor(i));
                     have 0 <= i % 2 by { arithmetic() using { 0 <= i; } }
-                    have 1 <= i % 2 by { apply(nonzero_nonnegative(i % 2)); }
+                    have 1 <= i % 2 by apply(nonzero_nonnegative(i % 2));
                     have i % 2 <= 1 by { arithmetic() using { 0 <= i; } }
-                    have i % 2 == 1 by { apply(bounded_one(i % 2)); }
+                    have i % 2 == 1 by apply(bounded_one(i % 2));
                     have guard.parity == 1 by simp;
                     unfold(guard);
                     step();
@@ -135,9 +135,9 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
             simp();
         } else {
             have 0 <= i % 2 by { arithmetic() using { 0 <= i; } }
-            have 1 <= i % 2 by { apply(nonzero_nonnegative(i % 2)); }
+            have 1 <= i % 2 by apply(nonzero_nonnegative(i % 2));
             have i % 2 <= 1 by { arithmetic() using { 0 <= i; } }
-            have i % 2 == 1 by { apply(bounded_one(i % 2)); }
+            have i % 2 == 1 by apply(bounded_one(i % 2));
             have guard.parity == 1 by simp;
             unfold(guard);
             execute();

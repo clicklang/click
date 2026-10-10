@@ -20,7 +20,7 @@ theorem indicator_is_at_most_one(x: int32) {
 
 theorem indicator_integer_is_nonnegative(x: int32) {
     ensures 0 <= to_integer(if x == 0 { 1 } else { 0 }) by {
-        have 0 <= if x == 0 { 1 } else { 0 } by { simp(); }
+        have 0 <= if x == 0 { 1 } else { 0 };
         apply(int32_less_equal_to_integer(0, if x == 0 { 1 } else { 0 })) using {
             0 <= if x == 0 { 1 } else { 0 };
         }
@@ -30,7 +30,7 @@ theorem indicator_integer_is_nonnegative(x: int32) {
 
 theorem indicator_integer_is_at_most_one(x: int32) {
     ensures to_integer(if x == 0 { 1 } else { 0 }) <= 1 by {
-        have if x == 0 { 1 } else { 0 } <= 1 by { simp(); }
+        have if x == 0 { 1 } else { 0 } <= 1;
         apply(int32_less_equal_to_integer(if x == 0 { 1 } else { 0 }, 1)) using {
             if x == 0 { 1 } else { 0 } <= 1;
         }

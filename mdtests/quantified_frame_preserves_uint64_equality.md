@@ -21,7 +21,7 @@ void mark(uint64 *values, int32 *visited, int32 n, int32 cur, uint64 stamp) {
     ensures forall (k: int32) { 0 <= k and k < n implies values[k] == stamp };
 } by {
     mark before;
-    have at(before, forall (k: int32) { 0 <= k and k < n implies values[k] == stamp }) by { assumption(); }
+    have at(before, forall (k: int32) { 0 <= k and k < n implies values[k] == stamp }) by assumption();
     step();
     transport(
         at(before, forall (k: int32) { 0 <= k and k < n implies values[k] == stamp }),

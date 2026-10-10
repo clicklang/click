@@ -27,10 +27,10 @@ void caller(struct Node *p, struct Node *q) {
     ensures q->tag == 7;
 } by {
     step(); step(); step();
-    have r->tag == 7 by { simp(); }
-    have r == q by { simp(); }
+    have r->tag == 7;
+    have r == q;
     let {after: after} = step(helper(p), {before: before});
-    have r == q by { simp(); }
+    have r == q;
     have r->tag == 7 by { normalize() using { r == q; }; }
     execute(); simp();
 }

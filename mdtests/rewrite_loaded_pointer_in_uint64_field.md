@@ -16,7 +16,7 @@ void check(struct Node* p, struct Node* q) {
     requires (q->tag & 1) == 1;
 } by {
     step(); step();
-    have r == q by { simp(); }
+    have r == q;
     have (r->tag & 1) == 1 by { rewrite(r == q); assumption(); }
     execute(); simp();
 }

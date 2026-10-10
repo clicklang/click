@@ -25,7 +25,7 @@ void put(struct Holder* h, int32 x, uint64 stamp) {
     ensures 1 == 1;
 } by {
     step(); step(); step(); step(); step();
-    have *q == address(p) + stamp by { simp(); }
+    have *q == address(p) + stamp;
     branch ensuring { fact *q == address(p) + stamp; } then {
         step(); have *q == address(p) + stamp by { simp(); }
     } else {

@@ -7,7 +7,7 @@ theorem incomplete(n: Integer, d: Integer, q: Integer, r: Integer, value: Intege
     requires r <= d - 1;
     requires r < 0 implies value == q + -1;
     requires 0 <= r implies value == q;
-    ensures value * d <= n by { apply(integer_floor_from_remainder(n, d, q, r, value)); }
+    ensures value * d <= n by apply(integer_floor_from_remainder(n, d, q, r, value));
 }
 ```
 

@@ -3,7 +3,7 @@
 ```click
 theorem nonnegative_equal(x: int32, y: int32) {
     requires x >= 0;
-    ensures y == x implies y >= 0 by { simp(); }
+    ensures y == x implies y >= 0 by simp;
 }
 
 contract int32 Source(int32 x) {

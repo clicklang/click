@@ -5,7 +5,7 @@ spec enum Tree { Empty, Node(int32), }
 
 theorem nonempty(child: Tree) {
     requires not(child == Tree::Empty);
-    ensures not(child == Tree::Empty) by { assumption(); }
+    ensures not(child == Tree::Empty) by assumption();
 }
 
 theorem empty_is_not_nonempty() {

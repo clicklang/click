@@ -29,7 +29,7 @@ void call(int32* p, int32* q, int32* anchor) {
     produces *anchor;
 } by {
     let { b: c } = step(retarget(p, q, anchor), { a: c });
-    have c.tag == old(c.tag) by { simp(); }
+    have c.tag == old(c.tag);
     unfold(c);
     execute(); simp();
 }

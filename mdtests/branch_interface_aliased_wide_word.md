@@ -100,22 +100,22 @@ void inspect(struct node* parent) {
                         fact nf.model == at(split, f.model);
                     } {
                         Focus::Empty => {
-                            have at(split, f.model) == Focus::Empty by { simp(); }
+                            have at(split, f.model) == Focus::Empty;
                             unfold(f);
                             let nf = fold(focus_at(parent->right), { model: Focus::Empty });
-                            have nf.model == at(split, f.model) by { simp(); }
+                            have nf.model == at(split, f.model);
                         },
                         Focus::Live(identity) => {
-                            have at(split, f.model) == Focus::Live(identity) by { simp(); }
+                            have at(split, f.model) == Focus::Live(identity);
                             unfold(f);
                             let nf = fold(focus_at(parent->right), { model: Focus::Live(identity) });
-                            have nf.model == at(split, f.model) by { simp(); }
+                            have nf.model == at(split, f.model);
                         },
                     }
                     step(); step(); step(); step(); step();
-                    have sibling == model by { simp(); }
-                    have far == far_identity by { simp(); }
-                    have far->tag == (address(sibling) | 1) by { simp(); }
+                    have sibling == model;
+                    have far == far_identity;
+                    have far->tag == (address(sibling) | 1);
                     have far_identity->tag == (address(model) | 1) by { simp() using { far->tag == (address(sibling) | 1); far == far_identity; sibling == model; } }
                     mark before_update;
                     match lm ensuring {
@@ -124,23 +124,23 @@ void inspect(struct node* parent) {
                         fact far_identity->tag == (address(model) | 1);
                     } {
                         Identity::Empty => {
-                            have l.model == Identity::Empty by { simp(); }
+                            have l.model == Identity::Empty;
                             unfold(l);
-                            have child == 0 by { simp(); }
+                            have child == 0;
                             step(); step();
                             let after = fold(leaf_at(child), {model: Identity::Empty});
-                            have after.model == lm by { simp(); }
+                            have after.model == lm;
                             have far_identity->tag == (address(model) | 1) by { normalize() using { at(before_update, far_identity->tag == (address(model) | 1)); far == far_identity; sibling == model; } }
                         },
                         Identity::At(leaf) => {
-                            have l.model == Identity::At(leaf) by { simp(); }
+                            have l.model == Identity::At(leaf);
                             unfold(l);
-                            have child == leaf by { simp(); }
-                            have child != 0 by { simp(); }
+                            have child == leaf;
+                            have child != 0;
                             step();
                             step(set_tag(child), {});
                             let after = fold(leaf_at(child), {model: Identity::At(leaf)});
-                            have after.model == lm by { simp(); }
+                            have after.model == lm;
                             have far_identity->tag == (address(model) | 1) by { normalize() using { at(before_update, far_identity->tag == (address(model) | 1)); far == far_identity; sibling == model; child == leaf; } }
                         },
                     }

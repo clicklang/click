@@ -50,14 +50,14 @@ void probe(struct node *p, struct node *q, struct node *value) {
         Tag::Top => {
             unfold(a);
             let b = fold(frame(p), {model: Tag::Top});
-            have parent->next == successor by { simp(); }
+            have parent->next == successor;
         },
         Tag::At(id) => {
             unfold(a);
-            have parent->next == id->next by { simp(); }
-            have parent->next == successor by { simp(); }
+            have parent->next == id->next;
+            have parent->next == successor;
             let b = fold(frame(p), {model: Tag::At(id)});
-            have parent->next == successor by { simp(); }
+            have parent->next == successor;
         },
     }
     execute(); simp();

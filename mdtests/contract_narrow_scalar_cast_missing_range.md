@@ -2,7 +2,7 @@
 
 ```click
 theorem wrong(x: int32) {
-    ensures defined((uint16)x) by { simp(); }
+    ensures defined((uint16)x) by simp;
 }
 ```
 

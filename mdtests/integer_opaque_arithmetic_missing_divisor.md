@@ -2,7 +2,7 @@
 
 ```click
 theorem unguarded(n: Integer, d: Integer) {
-    ensures truncating_quotient(n, d) - truncating_quotient(n, d) == 0 by { arithmetic(); }
+    ensures truncating_quotient(n, d) - truncating_quotient(n, d) == 0 by arithmetic();
 }
 ```
 

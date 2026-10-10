@@ -22,7 +22,7 @@ void clear(int32 *v, int32 *w, int32 n, int32 i) {
     requires forall (k: int32) { 0 <= k and k < n and v[k] == 0 implies w[k] == 1 };
     ensures forall (k: int32) { 0 <= k and k < n and v[k] == 0 implies w[k] == 1 };
 } by {
-    have forall (k: int32) { 0 <= k and k < n and old(v[k]) == 0 implies old(w[k]) == 1 } by { assumption(); }
+    have forall (k: int32) { 0 <= k and k < n and old(v[k]) == 0 implies old(w[k]) == 1 } by assumption();
     step();
     transport(
         forall (k: int32) { 0 <= k and k < n and old(v[k]) == 0 implies old(w[k]) == 1 },

@@ -60,16 +60,16 @@ void probe(struct node *p, struct root *root) {
   let {child: near_tree} = unfold(b);
   let {child: far_tree} = unfold(near_tree);
   unfold(far_tree);
-  have p->right == sid by { simp(); }
-  have sid->left == nid by { simp(); }
-  have nid->right == rid by { simp(); }
+  have p->right == sid;
+  have sid->left == nid;
+  have nid->right == rid;
   step(); step(); step(); step(); step(); step();
   let { after: c } = step(helper(p, cursor, root), { before: c });
   step();
-  have cursor == nid by { simp(); }
-  have cursor->right == rid by { simp(); }
+  have cursor == nid;
+  have cursor->right == rid;
   step();
-  have near == rid by { simp(); }
+  have near == rid;
   mark before_write;
   step();
   have near->tag == rid->tag by { normalize() using { near == rid; } }
