@@ -5157,9 +5157,19 @@ impl ResourceContext {
         // in the execution context, but leave it out of the observable
         // composition so unrelated declarations do not restate a memory frame.
         let mut composition = self.clone();
+        let mut detached_pairings = false;
         for (block, entries) in self.storage.index.owned_automatic_memory_by_block.iter() {
             crate::instrumentation::record_deterministic_work(1);
             if crate::kernel::block_is_never_address_taken_local(block) {
+                if !detached_pairings {
+                    // This is a scratch projection, not a published execution
+                    // resource delta. Do not advance the source's prepared
+                    // equality inputs once per discarded private owner: those
+                    // intermediate compositions will never answer a query.
+                    // Pair only the final retained composition when it is used.
+                    composition.memory_equalities = Default::default();
+                    detached_pairings = true;
+                }
                 for entry in entries.iter() {
                     crate::instrumentation::record_deterministic_work(1);
                     composition.remove_entry(*entry);

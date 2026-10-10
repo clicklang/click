@@ -451,14 +451,25 @@ fn write_c_lvalue_paths_for_initialization(
     // separation even when callers retain only surface-synthesizable pure facts.
     // Attach its compact carrier directly while executing a write instead of
     // depending on eagerly materialized pair propositions.
-    let resource_facts = state
-        .resources()
-        .observable_facts_assuming_valid(&effective_assumptions);
-    let effective_assumptions = resource_facts
-        .into_iter()
-        .fold(effective_assumptions, |assumptions, fact| {
-            assumptions.assume_proposition(fact)
-        });
+    // A same-type value copy to a local whose address is never taken
+    // cannot use separation evidence from other owned resources. Its backing
+    // cell, if any, is private. Copying a pointer does not access its pointee;
+    // all qualifier, ownership, and loan checks below still run.
+    let direct_local_copy = value.c_type() == lvalue.value_type
+        && matches!(&lvalue.storage, CLValueStorage::Local { name }
+            if state.locals.slot(name).is_none_or(|pointer|
+                crate::kernel::block_is_never_address_taken_local(&pointer.block)));
+    let effective_assumptions = if direct_local_copy {
+        effective_assumptions
+    } else {
+        state
+            .resources()
+            .observable_facts_assuming_valid(&effective_assumptions)
+            .into_iter()
+            .fold(effective_assumptions, |assumptions, fact| {
+                assumptions.assume_proposition(fact)
+            })
+    };
     let mut facts = facts;
     let constant = lvalue.is_constant();
     let is_volatile = lvalue.is_volatile();
