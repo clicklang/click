@@ -2166,6 +2166,131 @@ fn rbtree_erase_color_flips_rotations_requires_inner_node_as_sibling() {
 }
 
 #[test]
+#[ignore = "nightly: propagated red-sibling repair verifies a whole sidecar"]
+fn rbtree_erase_color_flips_red_exit_left_requires_parent_link() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_red_exit.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(parent->rb_right, tmp1);",
+        "WRITE_ONCE(parent->rb_right, NULL);",
+        1,
+    );
+    assert!(
+        error.contains("`have` failed for `parent->rb_right == zid"),
+        "unexpected refusal: {error}"
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated red-sibling repair verifies a whole sidecar"]
+fn rbtree_erase_color_flips_red_exit_left_requires_sibling_link() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_red_exit.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(sibling->rb_left, parent);\n\t\t\t\trb_set_parent_color(tmp1, parent, RB_BLACK);",
+        "WRITE_ONCE(sibling->rb_left, NULL);\n\t\t\t\trb_set_parent_color(tmp1, parent, RB_BLACK);",
+        1,
+    );
+    assert!(
+        error.contains("`have` failed for `sid->rb_left == parent"),
+        "unexpected refusal: {error}"
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated red-sibling repair verifies a whole sidecar"]
+fn rbtree_erase_color_flips_red_exit_right_requires_parent_link() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_red_exit.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(parent->rb_left, tmp1);",
+        "WRITE_ONCE(parent->rb_left, NULL);",
+        1,
+    );
+    assert!(
+        error.contains("`have` failed for `parent->rb_left == zid"),
+        "unexpected refusal: {error}"
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated red-sibling repair verifies a whole sidecar"]
+fn rbtree_erase_color_flips_red_exit_right_requires_sibling_link() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_red_exit.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(sibling->rb_right, parent);\n\t\t\t\trb_set_parent_color(tmp1, parent, RB_BLACK);",
+        "WRITE_ONCE(sibling->rb_right, NULL);\n\t\t\t\trb_set_parent_color(tmp1, parent, RB_BLACK);",
+        1,
+    );
+    assert!(
+        error.contains("`have` failed for `sid->rb_right == parent"),
+        "unexpected refusal: {error}"
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated red-sibling repair verifies a whole sidecar"]
+fn rbtree_erase_color_flips_red_exit_requires_near_parent() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_red_exit.click",
+        "rb_erase_color.c",
+        "rb_set_parent_color(tmp1, parent, RB_BLACK);",
+        "rb_set_parent_color(tmp1, sibling, RB_BLACK);",
+        2,
+    );
+    assert!(
+        error.contains("`have` failed for `tmp1->__rb_parent_color =="),
+        "unexpected refusal: {error}"
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated red-sibling repair verifies a whole sidecar"]
+fn rbtree_erase_color_flips_red_exit_requires_near_blackening() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_red_exit.click",
+        "rb_erase_color.c",
+        "rb_set_parent_color(tmp1, parent, RB_BLACK);",
+        "rb_set_parent_color(tmp1, parent, RB_RED);",
+        2,
+    );
+    assert!(
+        error.contains("`have` failed for `tmp1->__rb_parent_color =="),
+        "unexpected refusal: {error}"
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated red-sibling repair verifies a whole sidecar"]
+fn rbtree_erase_color_flips_red_exit_requires_red_parent() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_red_exit.click",
+        "rb_erase_color.c",
+        "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\t\tRB_RED);",
+        "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\t\tRB_BLACK);",
+        2,
+    );
+    assert!(error.contains("step"), "unexpected refusal: {error}");
+}
+
+#[test]
+#[ignore = "nightly: propagated red-sibling repair verifies a whole sidecar"]
+fn rbtree_erase_color_flips_red_exit_requires_near_sibling_cursor() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_red_exit.click",
+        "rb_erase_color.c",
+        "sibling = tmp1;",
+        "sibling = parent;",
+        2,
+    );
+    assert!(
+        error.contains("`have` failed for `sibling == zid"),
+        "unexpected refusal: {error}"
+    );
+}
+
+#[test]
 #[ignore = "nightly: rotation-helper verification checks both helper contracts"]
 fn rbtree_rotate_set_parents_requires_the_copied_word() {
     erase_source_refuses_replacement(
