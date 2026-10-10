@@ -48,6 +48,11 @@ and decreasing actual outer-iterator remaining counts, without truncating usize
 metadata. Full outer-batch induction, lane reduction/reset, and the final vector and scalar
 remainders are checked in the whole-body proof. Checksum correctness remains
 incomplete.
+The shared mathematical specification proves byte-sum and weighted-sum
+concatenation and incremental equality for A, B, and the packed checksum under
+explicit signed-range split bounds and canonical A seeds. These are independent
+mathematical proofs; implementation-level incremental correctness still depends
+on the general computation proofs.
 The shared mathematical specification has checked one- and four-byte append
 recurrences, including the ordered weights 4, 3, 2, 1 for a vector step,
 weight shifts, nonnegative sums, residue addition, output and packing bounds,

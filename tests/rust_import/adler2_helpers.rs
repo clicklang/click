@@ -1587,6 +1587,19 @@ fn adler_common_spec_expands_and_rejects_false_results() {
         "adler_spec_empty.ensures_1",
         "adler_spec_one.ensures_0",
         "adler_spec_one.ensures_1",
+        "adler_byte_offset_association.ensures_0",
+        "adler_sum_concat.ensures_0",
+        "adler_weighted_concat.ensures_0",
+        "adler_residue_add_left.ensures_0",
+        "adler_spec_a_concat.ensures_0",
+        "adler_sum_upper.ensures_0",
+        "adler_seed_polynomial.ensures_0",
+        "adler_residue_seed_update.ensures_0",
+        "adler_concat_index_partition.ensures_0",
+        "adler_weighted_prefix_concat.ensures_0",
+        "adler_join_seed_polynomial.ensures_0",
+        "adler_spec_b_concat.ensures_0",
+        "adler_spec_checksum_concat.ensures_0",
     ] {
         let expanded =
             click::surface::expand_c0_claim_source_by_label(COMMON_ADLER_SPEC, &[], claim)
@@ -1608,6 +1621,18 @@ fn adler_common_spec_expands_and_rejects_false_results() {
         ),
         ("requires n <= 2147483643;", "requires n <= 2147483644;"),
         ("<= 4293984240 by", "<= 4293984239 by"),
+        (
+            "ensures adler_byte_sum(bytes, prefix + suffix) == adler_byte_sum(bytes, prefix) + adler_byte_sum(bytes + prefix, suffix) by",
+            "ensures adler_byte_sum(bytes, prefix + suffix) == adler_byte_sum(bytes, prefix) + adler_byte_sum(bytes + prefix, suffix) + 1 by",
+        ),
+        (
+            "ensures adler_spec_b(bytes, prefix + suffix, a0, b0) == adler_spec_b(bytes + prefix, suffix, adler_spec_a(bytes, prefix, a0), adler_spec_b(bytes, prefix, a0, b0)) by",
+            "ensures adler_spec_b(bytes, prefix + suffix, a0, b0) == adler_spec_b(bytes + prefix, suffix, adler_spec_a(bytes, prefix, a0), adler_spec_b(bytes, prefix, a0, b0) + 1) by",
+        ),
+        (
+            "ensures adler_spec_checksum(bytes, prefix + suffix, a0, b0) == adler_spec_checksum(bytes + prefix, suffix, adler_spec_a(bytes, prefix, a0), adler_spec_b(bytes, prefix, a0, b0)) by",
+            "ensures adler_spec_checksum(bytes, prefix + suffix, a0, b0) == adler_spec_checksum(bytes + prefix, suffix, adler_spec_a(bytes, prefix, a0), adler_spec_b(bytes, prefix, a0, b0)) + 1 by",
+        ),
         (
             "adler_spec_a(bytes, 0, a0) == a0 by",
             "adler_spec_a(bytes, 0, a0) == a0 + 1 by",
