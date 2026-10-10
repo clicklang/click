@@ -7251,3 +7251,87 @@ fn repeated_retains_of_one_child_scale_with_their_number() {
         .collect::<Vec<_>>();
     assert_near_linear_scaling("repeated retains of one child", &samples);
 }
+
+/// One retain of a child while `count` other children, each with its own
+/// reference population and control, stay live and untouched.
+fn retain_amid_unrelated_children_project(count: usize) -> (String, String) {
+    let (declarations, retain) = shared_parent_retain_declarations();
+    let parameters = (0..count)
+        .map(|index| format!(", struct child* other{index}"))
+        .collect::<String>();
+    let c_source = format!(
+        "struct child {{\n    int32 refs;\n    int32 payload;\n}};\n\nvoid child_retain(struct child* obj) {{\n    obj->refs = obj->refs + 1;\n}}\n\nvoid retain_one(struct child* obj{parameters}) {{\n    child_retain(obj);\n}}\n"
+    );
+    let unrelated = (0..count)
+        .map(|index| {
+            format!("    owns child_control(other{index});\n    owns child_ref(other{index});\n")
+        })
+        .collect::<String>();
+    let click_source = format!(
+        "{declarations}verifying \"retain.c\";\n\n{retain}void retain_one(struct child* obj{parameters}) {{\n    requires count(child_ref(obj)) < 2147483647;\n    owns child_control(obj);\n    owns child_ref(obj);\n    produces child_ref(obj);\n{unrelated}}} by {{\n    step(child_retain(obj), {{}});\n    step();\n    simp();\n}}\n"
+    );
+    (c_source, click_source)
+}
+
+/// A retain does not pay for the unrelated shared children that are live:
+/// every pointer parameter shares one memory block, so a lookup that walks
+/// that block instead of the queried object's own facts grows with them.
+#[test]
+fn a_retain_ignores_unrelated_live_children() {
+    let samples = [2, 4, 8, 16]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = retain_amid_unrelated_children_project(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("retain.c", c_source.as_str())])
+            });
+            verified.unwrap_or_else(|error| {
+                panic!("{size}-unrelated fixture failed: {}", error.message())
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+    assert_near_linear_scaling("a retain amid unrelated live children", &samples);
+}
+
+/// A function owning `count` heap objects through its pointer parameters
+/// and writing one cell of another.
+fn owned_parameters_project(count: usize) -> (String, String) {
+    let parameters = (0..count)
+        .map(|index| format!(", struct child* other{index}"))
+        .collect::<String>();
+    let c_source = format!(
+        "struct child {{\n    int32 refs;\n    int32 payload;\n}};\n\nvoid touch(struct child* obj{parameters}) {{\n    obj->refs = 1;\n}}\n"
+    );
+    let owned = (0..count)
+        .map(|index| {
+            format!(
+                "    owns allocation(other{index}, sizeof(struct child));\n    owns *other{index};\n"
+            )
+        })
+        .collect::<String>();
+    let click_source = format!(
+        "verifying \"touch.c\";\n\nvoid touch(struct child* obj{parameters}) {{\n    owns obj->refs;\n{owned}}} by {{\n    step();\n    step();\n    simp();\n}}\n"
+    );
+    (c_source, click_source)
+}
+
+/// Owning more pointer parameters costs near-linear work: they share one
+/// memory block, and no check pairs each of them with all the others.
+#[test]
+fn owned_pointer_parameters_scale_with_their_number() {
+    let samples = [3, 6, 12, 24]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = owned_parameters_project(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("touch.c", c_source.as_str())])
+            });
+            verified.unwrap_or_else(|error| {
+                panic!("{size}-parameter fixture failed: {}", error.message())
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+    assert_near_linear_scaling("owned pointer parameters", &samples);
+}

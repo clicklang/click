@@ -2544,6 +2544,24 @@ impl ResourceContext {
             .find(|available| resource_fact_entails(available, required, assumptions))
     }
 
+    /// The owned memory facts the address index selects for `range`: those
+    /// at its footprint, covering its start, or starting inside it. Distinct
+    /// pointer parameters are distinct address classes here, so this never
+    /// visits every range in a shared block. Callers still check coverage.
+    pub(in crate::kernel) fn owned_memory_candidates_for(
+        &self,
+        range: &CMemoryRange,
+        assumptions: &PureFactContext,
+    ) -> Vec<CResourceFact> {
+        let candidates = self.memory_fact_candidates(range, true, assumptions);
+        candidates
+            .entries
+            .iter()
+            .map(|entry| self.fact(entry).clone())
+            .filter(CResourceFact::is_own)
+            .collect()
+    }
+
     /// Select a deterministic owned candidate from the pointer index. Multiple
     /// returned sibling shares are legitimate. This lookup grants no authority:
     /// callers must still check the selected loan, initialization, and type.
@@ -3894,6 +3912,7 @@ impl ResourceContext {
         &self,
         left: &CMemoryRange,
         right: &CMemoryRange,
+        assumptions: &PureFactContext,
         contains: impl Fn(&CMemoryRange, &CMemoryRange) -> bool,
     ) -> bool {
         let Some(_guard) = ResourceCompositionQueryGuard::enter(CompositionQuery::RangesSeparate(
@@ -3908,11 +3927,38 @@ impl ResourceContext {
         let Some(positions) = self.storage.index.memory_by_block.get(&left.base().block) else {
             return false;
         };
+        let holds = |child: &CMemoryRange, entry: ResourceEntryId| {
+            self.fact(entry)
+                .memory_own_range()
+                .is_some_and(|available| contains(child, available))
+        };
+        // A member can contain the range only if the facts relate their
+        // bases: the same spelled root, a root an equality of index terms
+        // selects, or an exact pointer alias's root. Those buckets are the
+        // candidates. Every pointer parameter shares one block, so scanning
+        // the block instead would prove containment against each of them,
+        // for every cell a call havoc examines. A member outside them is
+        // not found, which only leaves the pair unproven, as before.
         let containing = |child: &CMemoryRange| {
-            positions.iter().copied().find(|entry| {
-                self.fact(*entry)
-                    .memory_own_range()
-                    .is_some_and(|available| contains(child, available))
+            let mut roots = related_memory_base_roots(child.base(), assumptions);
+            for alias in assumptions.exact_pointer_aliases(child.base()) {
+                crate::instrumentation::record_deterministic_work(1);
+                roots.extend(related_memory_base_roots(alias, assumptions));
+            }
+            if roots.iter().any(|(_, atom)| atom.is_none()) {
+                // A wholly constant base has no root to key on; its block
+                // bucket is the candidate set.
+                return positions.iter().copied().find(|entry| holds(child, *entry));
+            }
+            roots.iter().find_map(|root| {
+                crate::instrumentation::record_deterministic_work(1);
+                self.storage
+                    .index
+                    .owned_memory_by_root
+                    .get(root)?
+                    .iter()
+                    .copied()
+                    .find(|entry| holds(child, *entry))
             })
         };
         containing(left)
