@@ -25,6 +25,64 @@ use super::*;
 /// many bytes minus one below the accessed byte.
 const WIDEST_INTEGER_CELL_BYTES: i64 = 8;
 
+/// Completes an automatic uint32 object's representation when this character
+/// store supplies its last missing byte. Its declaration, not the requested
+/// load type or the allocation's size, selects the object being initialized.
+/// Four exact initialized character cells suffice; partial representations,
+/// untyped storage, other scalar kinds and other byte orders do not.
+///
+/// This is the same checked store normalization as updating a byte of an
+/// existing integer cell: the resulting typed cell replaces the byte cells,
+/// and the ordinary store transition invalidates overlapping cached values.
+pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
+    memory: &CMemory,
+    pointer: &Pointer,
+    stored: &CValue,
+    byte_order: Option<ByteOrder>,
+) -> Option<(Pointer, CValue)> {
+    if byte_order != Some(ByteOrder::Little) {
+        return None;
+    }
+    let offset = pointer.offset.as_const()?;
+    if !(0..4).contains(&offset) {
+        return None;
+    }
+    crate::instrumentation::record_deterministic_work(1);
+    let declaration = memory.blocks.get(&pointer.block)?;
+    if declaration.declared_scalar_type != Some(CType::UInt32)
+        || declaration.size.as_const() != Some(4)
+        || memory.is_ended_local_address(pointer)
+    {
+        return None;
+    }
+    let as_byte = |value: &CValue| match value {
+        CValue::UInt8(bits) | CValue::Int8(bits) => Some(Bitvector32Term::bitwise_and(
+            bits.clone(),
+            Bitvector32Term::Constant(0xFF),
+        )),
+        _ => None,
+    };
+    let incoming = as_byte(stored)?;
+    let start = Pointer {
+        block: pointer.block.clone(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let mut assembled = Bitvector32Term::Constant(0);
+    for byte in 0..4 {
+        crate::instrumentation::record_deterministic_work(1);
+        let bits = if byte == offset {
+            incoming.clone()
+        } else {
+            as_byte(&memory.cells.get(&start.offset_by_bytes(byte as u32))?)?
+        };
+        assembled = Bitvector32Term::bitwise_or(
+            assembled,
+            Bitvector32Term::unsigned_shift_left(bits, Bitvector32Term::Constant(8 * byte as u32)),
+        );
+    }
+    Some((start, CValue::UInt32(assembled)))
+}
+
 /// An integer cell that contains a one-byte access without starting at it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) struct ContainingIntegerCell {

@@ -8,6 +8,7 @@ use crate::languages::c::syntax::C0Type;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ScalarKind {
     Bool,
+    UInt8,
     Int32,
     Int64,
     UInt32,
@@ -25,6 +26,24 @@ pub(super) struct Scalar {
 impl Scalar {
     pub fn of(value: &CppType) -> Option<Self> {
         let (kind, is_const) = match value {
+            CppType::Enumeration {
+                is_scoped: true,
+                is_fixed: true,
+                underlying_type,
+                is_const,
+                ..
+            } if matches!(
+                underlying_type.as_ref(),
+                CppType::Integer {
+                    bits: 8,
+                    signed: false,
+                    is_const: false,
+                    ..
+                }
+            ) =>
+            {
+                (ScalarKind::UInt8, *is_const)
+            }
             CppType::Boolean { bits: 8, is_const } => (ScalarKind::Bool, *is_const),
             CppType::Integer {
                 bits,
@@ -33,6 +52,7 @@ impl Scalar {
                 ..
             } => (
                 match (*bits, *signed) {
+                    (8, false) => ScalarKind::UInt8,
                     (32, true) => ScalarKind::Int32,
                     (64, true) => ScalarKind::Int64,
                     (32, false) => ScalarKind::UInt32,
@@ -57,6 +77,21 @@ impl Scalar {
     pub fn is(value: &CppType, kind: ScalarKind, is_const: bool) -> bool {
         Self::of(value) == Some(Self { kind, is_const })
     }
+
+    /// The bounded native object-pointer profile. Enum values share uint8
+    /// contracts, but that alone cannot grant character alias access.
+    pub fn pointer_element(value: &CppType, allow_const: bool) -> Option<Self> {
+        if !matches!(value, CppType::Integer { .. }) {
+            return None;
+        }
+        Self::of(value).filter(|scalar| {
+            (allow_const || !scalar.is_const)
+                && matches!(
+                    scalar.kind,
+                    ScalarKind::Int32 | ScalarKind::UInt32 | ScalarKind::UInt8
+                )
+        })
+    }
 }
 
 impl ScalarKind {
@@ -71,6 +106,7 @@ impl ScalarKind {
     pub fn kernel_type(self) -> CType {
         match self {
             Self::Bool => CType::Bool,
+            Self::UInt8 => CType::UInt8,
             Self::Int32 => CType::Int32,
             Self::Int64 => CType::Int64,
             Self::UInt32 => CType::UInt32,
@@ -83,12 +119,31 @@ impl ScalarKind {
     pub fn proof_type(self) -> C0Type {
         match self {
             Self::Bool => C0Type::Bool,
+            Self::UInt8 => C0Type::UInt8,
             Self::Int32 => C0Type::Int32,
             Self::Int64 => C0Type::Int64,
             Self::UInt32 => C0Type::UInt32,
             Self::UInt64 => C0Type::UInt64,
             Self::Int128 => C0Type::Int128,
             Self::UInt128 => C0Type::UInt128,
+        }
+    }
+
+    pub fn pointer_kernel_type(self) -> Option<CType> {
+        match self {
+            Self::Int32 => Some(CType::Int32Pointer),
+            Self::UInt32 => Some(CType::UInt32Pointer),
+            Self::UInt8 => Some(CType::UInt8Pointer),
+            _ => None,
+        }
+    }
+
+    pub fn pointer_proof_type(self) -> Option<C0Type> {
+        match self {
+            Self::Int32 => Some(C0Type::Int32Pointer),
+            Self::UInt32 => Some(C0Type::UInt32Pointer),
+            Self::UInt8 => Some(C0Type::UInt8Pointer),
+            _ => None,
         }
     }
 
@@ -194,11 +249,9 @@ mod tests {
                         source_aliases: vec![],
                     };
                     let scalar = Scalar::of(&ty);
-                    assert_eq!(scalar.is_some(), matches!(bits, 32 | 64 | 128));
-                    assert_eq!(
-                        Scalar::mutable_kind(&ty).is_some(),
-                        matches!(bits, 32 | 64 | 128) && !is_const
-                    );
+                    let supported = matches!(bits, 32 | 64 | 128) || (bits == 8 && !signed);
+                    assert_eq!(scalar.is_some(), supported);
+                    assert_eq!(Scalar::mutable_kind(&ty).is_some(), supported && !is_const);
                     if let Some(scalar) = scalar {
                         assert_eq!(scalar.is_const, is_const);
                         // Qualifiers are preserved independently of value kind.
@@ -234,6 +287,11 @@ mod tests {
     #[test]
     fn integer_literals_use_one_checked_interpretation_at_both_boundaries() {
         for (kind, accepted, rejected) in [
+            (
+                ScalarKind::UInt8,
+                vec!["0", "128", "255"],
+                vec!["-1", "256"],
+            ),
             (
                 ScalarKind::Int32,
                 vec!["-2147483648", "2147483647", "0"],

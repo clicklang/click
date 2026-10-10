@@ -3189,6 +3189,20 @@ impl PureFactContext {
                     Bitvector32Term::UInt64Constant(elements),
                 ));
             }
+            // Two symbolic indices, `base[i]` then `[j]` from there: a chunk
+            // of a chunk. The access is at index `i + j` when the sum does
+            // not wrap, decided here as both being at most `i64::MAX`.
+            if let (Some(outer), Some(inner)) = (symbolic_index(&first), symbolic_index(&second)) {
+                let small = |index: &Bitvector32Term| {
+                    self.decide(&ConditionTerm::uint64_less_equal(
+                        index.clone(),
+                        Bitvector32Term::UInt64Constant(i64::MAX as u64),
+                    )) == Some(true)
+                };
+                if small(&outer) && small(&inner) {
+                    return Some(Bitvector32Term::uint64_add(outer, inner));
+                }
+            }
         }
         let PointerOffsetTerm::Int32Scaled { value, byte_width } =
             pointer.offset_from_base(base)?

@@ -272,9 +272,9 @@ reads through an aliased `const int&`, using one explicit `owns` resource.
 C++ `const` restricts access through that reference; it does not create a Click
 `views` resource or imply that aliases cannot write. Supported parameters are
 currently by-value `bool` or signed/unsigned 32/64/128-bit integers, `int&`, `const int&`,
-mutable `int*`, one `const` signed-64 reference, and mutable or const references
+mutable `int*`, `unsigned int*` or `unsigned char*`, one `const` signed-64 reference, and mutable or const references
 to supported simple record types with distinct proof-facing names. Selected functions return `int`,
-signed/unsigned 64/128-bit integers, `unsigned int`, `bool`, mutable `int*`,
+signed/unsigned 64/128-bit integers, `unsigned int`, `unsigned char`, `bool`, mutable `int*`, `unsigned int*` or `unsigned char*`,
 `int&`, `const int&`, or `void`.
 
 The `int64-predicate` fixture is the first narrow bridge toward Bitcoin Core's
@@ -440,12 +440,32 @@ arguments still need support.
 
 The `scalar-local` and `signed-arithmetic` fixtures add mutable automatic signed/unsigned
 32/64-bit integer locals declared directly
-in the function body. Each local requires an initializer, which may be an
-already-supported integer expression or a supported direct call. Local
+in the function body. An integer local may omit its initializer: declaration
+creates uninitialized storage, and a read is refused until execution establishes
+initialization. Explicit initialization may use an already-supported integer
+expression or a supported direct call. Reference and record locals retain their
+initialization requirements. Local
 declaration identity comes from Clang; direct-call initialization lowers to the
 kernel's ordinary `Declare` and `CallAssign` statements, while later reads and
 assignments use the existing scalar rules. This makes call results usable
 without treating a compiler-resolved C++ expression as C source text.
+
+Native `unsigned char` values use `uint8` contracts, preserving Clang's
+resolved promotions and modulo narrowing conversions. Parameters, returns,
+call captures, automatic locals and byte fields share the existing scalar
+lowering. Byte fields retain their one-byte layout and independent authority.
+Signed/plain character types and `char8_t` remain outside this admission.
+
+Scoped enums with fixed unsigned-char backing also use `uint8` contracts.
+Their artifact types retain declaration identity, qualified name, backing type,
+scoped/fixed properties and a locked declaration span. Source loads, assignments
+and calls require the same nominal type; explicit enum numeric casts preserve
+Clang's conversion and use the ordinary native scalar model. An empty fixed
+enum still permits all 256 backing values. The actual pinned `std::byte`
+declaration has ordinary, expanded and retained offline coverage. Other enum
+backings, unscoped enums, named-enumerator references and enum pointers remain
+outside this profile. Enum values grant no character alias access; that privilege
+is a separate boundary for checked byte pointers.
 
 The `pointer` fixture distinguishes a mutable `int*` parameter from an `int&`
 in the Clang artifact. A caller may take the address of its mutable reference
@@ -454,6 +474,15 @@ conversion, `*pointer` reads, and `*pointer = value` writes lower to the
 kernel's existing address, typed-load, and typed-store operations, so the
 sidecar must provide ordinary memory authority. Removing that authority or
 claiming the wrong pointer-mediated memory effect fails verification.
+
+The bounded native object-pointer profile also admits mutable `unsigned int*`
+and `unsigned char*`, using `uint32*` and `uint8*` contracts. Loads, stores,
+resolved calls and pointer fields retain their exact pointee type; pointer
+arithmetic uses its native element stride. Addresses of automatic `int`,
+`unsigned int` and `unsigned char` objects can be formed before initialization,
+but reads still require an initialized object. Arbitrary enum pointers do not
+acquire character byte-alias permission. Pointer locals, reinterpretation and
+other pointee kinds remain outside this slice.
 
 The `struct-member` fixture accepts one named, public, non-inheriting aggregate
 `struct` whose fields are mutable `int`, signed 64-bit integers, or mutable `int*`. Clang supplies the
@@ -498,7 +527,7 @@ trivial copy assignment and an exact nominal RHS temporary lasting for the full
 expression. Click constructs into distinct raw RHS storage, copies into the live
 LHS and retires the RHS. References into separate backing remain usable only
 under the caller's existing authority. Move assignment, user-defined assignment
-and other materialization shapes remain refused. Artifact schema 52 requires an
+and other materialization shapes remain refused. Artifact schema 54 requires an
 explicit refresh of earlier locks.
 
 Taking the address of a supported int32 record field uses its checked Clang
@@ -507,7 +536,7 @@ qualification inherited from the root object and does not read the field or
 grant permission to dereference the resulting pointer. Constructor initializers
 can therefore store a pointer to a field of the destination object. This differs
 from copying an existing descriptor, which preserves pointer values rather than
-rebasing them to a new object. Artifact schema 52 requires refreshing earlier
+rebasing them to a new object. Artifact schema 54 requires refreshing earlier
 locks. Returned constructors use the narrower eligibility restriction above.
 
 Native int32 reference results and locals can also bind supported record fields
@@ -520,13 +549,14 @@ The pinned `std::span<int>` pointer/count constructor also has ordinary,
 expanded and retained coverage through native contracts; the returned `first`
 and `SpanPopBack` path remains pending.
 
-Literal `nullptr` and integer zero converted to mutable `int*`, implicitly or
+Literal `nullptr` and integer zero converted to mutable native `int*`,
+`unsigned int*` or `unsigned char*`, implicitly or
 through an explicit cast, lower to the shared C null pointer value. Returning
 or storing that value needs no pointee authority and grants none. Dereferencing
 it remains subject to the shared live-storage and access checks. Same-type
 explicit pointer casts preserve identity. Other pointee types, nonliteral
 `nullptr_t` expressions, and nonzero integer-to-pointer casts remain refused.
-These nodes use artifact schema 52; refresh earlier locks.
+These nodes use artifact schema 54; refresh earlier locks.
 
 Static scalar methods use a distinct `static_method` artifact kind with their
 class and declaration identities, without an implicit receiver or object-layout
@@ -1182,9 +1212,9 @@ Copy construction and moves, default or partial aggregate initialization, multip
 non-destructible aggregate locals, broader nested lifetime combinations,
 virtual dispatch, general inheritance, bit-fields, nested record construction,
 and same-named record layouts remain explicit errors.
-Uninitialized or nested scalar locals, references to scalar locals, shadowing,
+Nested scalar locals, references to scalar locals, shadowing,
 broader address-taking, pointer locals, pointer arithmetic outside the supported
-indexed `int*` slice, nonliteral null-pointer conversions, multiple
+indexed native object-pointer slice, nonliteral null-pointer conversions, multiple
 indirection, call results outside the supported initializer, return-call and direct Boolean
 condition slices,
 indirect calls, loops,

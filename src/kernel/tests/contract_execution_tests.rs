@@ -784,7 +784,7 @@ fn local_declaration_allocates_stack_object_for_address_of() {
     );
     let final_state = CState::new().with_local("x", int32(5)).with_memory(
         CMemory::new()
-            .with_block("local:x", 4)
+            .with_declared_scalar_block("local:x".into(), 4, CType::Int32)
             .store(local_pointer, int32(5)),
     );
     let theorem =
@@ -1244,7 +1244,7 @@ fn pointer_store_through_local_address_updates_named_lvalue() {
     );
     let final_state = CState::new().with_local("x", int32(5)).with_memory(
         CMemory::new()
-            .with_block("local:x", 4)
+            .with_declared_scalar_block("local:x".into(), 4, CType::Int32)
             .store(local_pointer, int32(5)),
     );
     let theorem =

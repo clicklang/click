@@ -54,8 +54,8 @@ dependency marker, not a prescribed implementation order. An unsound rule is
 P1 whatever it is about: the claim is worthless if the verifier accepts false
 contracts, so soundness bugs come first even when rbtree does not exercise
 them. A gap that only a different program would hit is normally P2. The
-remaining concurrency and shared-heap milestones are also P1: they check the
-architecture before launch while rbtree remains the key demo. The selected
+remaining shared-heap milestone is also P1: it checks the architecture
+before launch while rbtree remains the key demo. The selected
 control-flow, byte-representation, arena, and basic C++ milestones have
 landed with bounded support claims. The selected safe-Rust and shared C/Rust
 checksum milestones are P1 by user direction; broader language,
@@ -67,7 +67,7 @@ Soundness and kernel shape:
 
 Program import and execution:
 
-- [Verify a concurrency demo with threads, mutexes, and publication](concurrency-demo.md)
+- [Clean up library imports and frontend dependencies](import-cleanup.md)
 - [Support safe Rust and verify a shared C/Rust checksum specification](rust-support.md)
 
 The completed [basic C++ example](../examples/basic-cpp/README.md) verifies

@@ -138,10 +138,40 @@ What stays opaque:
   one-byte write forgets the pointer rather than editing it
   (`mdtests/byte_representation_pointer_byte_write_refused.md`).
 - **Float and `_Bool` cells** have no view either.
-- **Assembling bytes.** Several one-byte cells are never combined into a
-  wider integer load.
+- **Assembling bytes outside declared uint32 storage.** Untyped allocations,
+  arrays, wider integers and other scalar kinds do not acquire a wider typed
+  value from separate byte cells.
 - **Specification loads** read a snapshot's cells without the byte view; the
   view applies to C execution only.
+
+## Initializing a declared uint32 through bytes
+
+A complete automatic scalar declaration retains its type independently of
+the initialized cells. Under the selected little-endian target, a character
+store that completes all four bytes of a declared `unsigned int` object
+reconstructs its uint32 value as the masked bytes shifted by 0, 8, 16 and 24
+bits. The bytes may be written in any order, including through a helper's
+character pointer. Signed character values contribute their low eight bits.
+
+The resulting uint32 cell replaces the byte cells through the ordinary
+checked store transition. Existing typed and byte observations then read
+the same representation; there is no additional specification byte view.
+This normalization grants no permission, lifetime or allocation identity.
+Its declaration lookup and four exact cell queries touch no unrelated memory.
+
+A partial representation stays uninitialized. Allocation size or a requested
+load type cannot select a uint32 object: untyped blocks, byte arrays, heap
+storage, record fields and other scalar declarations remain outside this
+initial profile. Pointers, floating-point values and padding remain opaque.
+Unknown byte values remain unknown; no missing byte is guessed or zero-filled.
+The declaration metadata survives value forgetting, but reconstruction still
+requires the current byte values, so stale typed observations cannot return.
+
+`mdtests/byte_representation_initializes_declared_uint32.md` covers a previously
+uninitialized scalar filled through a concrete helper; its partial-write
+counterpart refuses the typed read. `byte_view_tests` also checks out-of-order
+and signed byte stores, symbolic masking, later byte updates, profile refusals
+and deterministic work beside unrelated memory.
 
 ## Typed and byte views never contradict
 
@@ -224,8 +254,8 @@ The regressions measure deterministic work at four or more sizes, under the
 
 - Union type punning beyond the existing typed union overlay, and general
   effective-type changes.
-- Reconstructing pointers from integers or integers from pointers, and
-  assembling several bytes into a wider load.
+- Reconstructing pointers from integers or integers from pointers, and byte
+  assembly beyond the declared automatic uint32 initialization profile.
 - Big-endian and other targets: the byte view exists only under an
   installed little-endian order, and there is no target matrix.
 - Byte-layout reallocation: `realloc` copies initialized cells between

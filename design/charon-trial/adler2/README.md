@@ -1,10 +1,10 @@
 # Unchanged adler2 crate adapter trial
 
 Click imports the complete selection rooted at `adler2::adler32_slice` and
-proves the four-lane helper bodies and the native-count small-batch bounds proof.
-The general and four-byte sidecars still need explicit native-count updates after
-the adapter's full-width iterator change; their previously checked results do
-not currently reverify. See the [tracked regression](../../../bugs/adler-sidecars-use-retired-signed-iterator-counts.md).
+proves the four-lane helper bodies and the native-count general, small-batch,
+and four-byte bounds proofs. The general proof covers every input length through
+2,147,483,647 bytes from canonical initial states, using actual native remaining
+counts, checked signed observations, and shared input views throughout all loops.
 **The general Adler-32 checksum postcondition remains unproved.**
 
 The two files in `src/` are byte-for-byte copies of adler2 2.0.1, revision

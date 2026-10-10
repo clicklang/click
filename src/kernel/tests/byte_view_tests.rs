@@ -35,10 +35,22 @@ fn load_byte(
 
 fn store_byte(memory: CMemory, offset: i64, byte: CValue, byte_order: ByteOrder) -> CMemory {
     let state = CState::new().with_memory(memory);
+    let value_type = if matches!(byte, CValue::Int8(_)) {
+        CType::Int8
+    } else {
+        CType::UInt8
+    };
     let statement = CStatement::TypedStore {
-        pointer: CExpression::Value(CValue::typed_pointer(word(offset), CType::UInt8Pointer)),
+        pointer: CExpression::Value(CValue::typed_pointer(
+            word(offset),
+            if value_type == CType::Int8 {
+                CType::Int8Pointer
+            } else {
+                CType::UInt8Pointer
+            },
+        )),
         value: CExpression::Value(byte),
-        value_type: CType::UInt8,
+        value_type,
         volatile: false,
         pointee_constant: false,
     };
@@ -60,6 +72,131 @@ fn store_byte(memory: CMemory, offset: i64, byte: CValue, byte_order: ByteOrder)
 
 fn uint8_constant(value: u32) -> CExpressionOutcome {
     CExpressionOutcome::Value(CValue::UInt8(Bitvector32Term::Constant(value)))
+}
+
+#[test]
+fn byte_stores_complete_declared_uint32_and_preserve_byte_observations() {
+    let mut memory = CMemory::new().with_declared_scalar_block(word(0).block, 4, CType::UInt32);
+    // Out-of-order stores must not treat a partial representation as a word.
+    for (offset, byte) in [(3, 0xFF), (1, 0x80), (0, 0x11)] {
+        memory = store_byte(
+            memory,
+            offset,
+            CValue::UInt8(byte.into()),
+            ByteOrder::Little,
+        );
+        assert!(!matches!(
+            memory.known_value(&word(0)),
+            Some(CValue::UInt32(_))
+        ));
+    }
+    memory = store_byte(
+        memory,
+        2,
+        CValue::Int8(0xFFFF_FFEEu32.into()),
+        ByteOrder::Little,
+    );
+    assert_eq!(
+        memory.known_value(&word(0)),
+        Some(CValue::UInt32(0xFFEE_8011u32.into()))
+    );
+    assert_eq!(memory.cells.len(), 1);
+    for (offset, byte) in [(0, 0x11), (1, 0x80), (2, 0xEE), (3, 0xFF)] {
+        assert_eq!(
+            load_byte(&memory, offset, CType::UInt8, Some(ByteOrder::Little)),
+            uint8_constant(byte)
+        );
+    }
+    memory = store_byte(memory, 1, CValue::UInt8(7u32.into()), ByteOrder::Little);
+    assert_eq!(
+        memory.known_value(&word(0)),
+        Some(CValue::UInt32(0xFFEE_0711u32.into()))
+    );
+}
+
+#[test]
+fn byte_assembly_refuses_untyped_other_types_missing_bytes_and_other_orders() {
+    use crate::kernel::eval::assemble_declared_uint32_after_byte_store as assemble;
+    let prefix = |mut memory: CMemory| {
+        for byte in 0..3 {
+            memory = memory.store(word(byte), CValue::UInt8(1u32.into()));
+        }
+        memory
+    };
+    let typed = prefix(CMemory::new().with_declared_scalar_block(word(0).block, 4, CType::UInt32));
+    let incoming = CValue::UInt8(2u32.into());
+    assert!(assemble(&typed, &word(3), &incoming, Some(ByteOrder::Little)).is_some());
+    for order in [None, Some(ByteOrder::Big)] {
+        assert!(assemble(&typed, &word(3), &incoming, order).is_none());
+    }
+    for memory in [
+        prefix(CMemory::new().with_block(word(0).block, 4)),
+        prefix(CMemory::new().with_declared_scalar_block(word(0).block, 4, CType::Int32)),
+        prefix(CMemory::new().with_declared_scalar_block(word(0).block, 8, CType::UInt64)),
+        CMemory::new()
+            .with_declared_scalar_block(word(0).block, 4, CType::UInt32)
+            .store(word(0), CValue::UInt8(1u32.into())),
+        typed.without_local_block(&word(0).block),
+    ] {
+        assert!(assemble(&memory, &word(3), &incoming, Some(ByteOrder::Little)).is_none());
+    }
+    assert!(assemble(&typed, &word(4), &incoming, Some(ByteOrder::Little)).is_none());
+    assert!(
+        assemble(
+            &typed,
+            &word(3),
+            &CValue::UInt32(2u32.into()),
+            Some(ByteOrder::Little)
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
+    use crate::kernel::eval::assemble_declared_uint32_after_byte_store as assemble;
+    let mut samples = Vec::new();
+    for size in [0, 64, 128, 512] {
+        let mut memory = CMemory::new().with_declared_scalar_block(word(0).block, 4, CType::UInt32);
+        for byte in 0..3 {
+            memory = memory.store(
+                word(byte),
+                CValue::UInt8(Bitvector32Term::Variable(Variable(8000 + byte as u64))),
+            );
+        }
+        for index in 0..size {
+            memory = memory.with_block(format!("global:other{index}"), 4).store(
+                Pointer {
+                    block: format!("global:other{index}").into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                CValue::UInt32(index.into()),
+            );
+        }
+        let incoming = CValue::UInt8(Bitvector32Term::Variable(Variable(8003)));
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assemble(&memory, &word(3), &incoming, Some(ByteOrder::Little))
+        });
+        let mut expected = Bitvector32Term::Constant(0);
+        for byte in 0u32..4 {
+            expected = Bitvector32Term::bitwise_or(
+                expected,
+                Bitvector32Term::unsigned_shift_left(
+                    Bitvector32Term::bitwise_and(
+                        Bitvector32Term::Variable(Variable(8000 + u64::from(byte))),
+                        0xFFu32.into(),
+                    ),
+                    (8 * byte).into(),
+                ),
+            );
+        }
+        assert_eq!(result, Some((word(0), CValue::UInt32(expected))));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
 }
 
 /// Whether a load produced a constant byte, which only the byte view (or an

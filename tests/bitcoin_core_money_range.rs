@@ -1194,6 +1194,19 @@ fn pinned_span_fixture_with_dependencies(
     harness: &str,
     additional_dependencies: &[&str],
 ) -> (PathBuf, PreparedCppImport) {
+    let mut dependencies = vec![
+        "sysroot/usr/include/c++/12/span",
+        "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
+    ];
+    dependencies.extend_from_slice(additional_dependencies);
+    pinned_span_fixture_with_exact_dependencies(name, harness, &dependencies)
+}
+
+fn pinned_span_fixture_with_exact_dependencies(
+    name: &str,
+    harness: &str,
+    declaration_dependencies: &[&str],
+) -> (PathBuf, PreparedCppImport) {
     assert_eq!(
         sha256(ARCHIVE),
         "fceeaef86784f820339f6dc3fc24992eb9c6bcf52edccbf6b7869d79296a3c7d"
@@ -1244,11 +1257,11 @@ fn pinned_span_fixture_with_dependencies(
         "exceptions": true, "rtti": true, "exporter": exporter,
         "compilation_database": "compile_commands.json", "working_directory": ".",
         "source": "span-probe.cpp", "logical_source": "span-probe.cpp",
-        "dependencies": ["sysroot/usr/include/c++/12/span", "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h"],
+        "dependencies": [],
         "function": "probe", "artifact": "span.click-cpp.json"
     });
     let dependencies = config["dependencies"].as_array_mut().unwrap();
-    dependencies.extend(additional_dependencies.iter().map(|path| (*path).into()));
+    dependencies.extend(declaration_dependencies.iter().map(|path| (*path).into()));
     dependencies.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
     let config_path = root.join("span.click.import.json");
     fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
@@ -1256,6 +1269,57 @@ fn pinned_span_fixture_with_dependencies(
     fs::remove_file(exporter).unwrap();
     let import = load_import(&config_path).unwrap();
     (root, import)
+}
+
+#[test]
+// The actual archived declaration is an empty scoped enum. Forwarding all of
+// its native values must work without inventing enumerators or backing access.
+fn pinned_std_byte_values_verify_with_native_integer_contracts_offline() {
+    use click::languages::cpp::CppType;
+    let header = "sysroot/usr/include/c++/12/cstddef";
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "byte-values",
+        "#include <span.h>\nstd::byte probe(std::byte value) noexcept { return value; }\n",
+        &[header],
+    );
+    assert_eq!(
+        sha256(&fs::read(root.join(header)).unwrap()),
+        "51409c852efecb6e4de3ef7c31e51e63ddd4ec376ee00e3c68e85e6579fa8648"
+    );
+    let CppType::Enumeration {
+        declaration_id,
+        name,
+        is_scoped,
+        is_fixed,
+        span,
+        ..
+    } = &import.export().function.return_type
+    else {
+        panic!("std::byte lost its nominal enum declaration");
+    };
+    assert_eq!(declaration_id, "c:@N@std@E@byte");
+    assert_eq!(name, "std::byte");
+    assert!(*is_scoped && *is_fixed);
+    assert_eq!(span.file, header);
+    let source = "verifying \"span-probe.cpp\"; uint8 probe(uint8 value) { ensures result == value; } by { execute(); simp(); }";
+    let path = root.join("byte.click");
+    fs::write(&path, source).unwrap();
+    let project = read_click_project(&path, source).unwrap();
+    verify_program_prepared_project(&project, &import).unwrap();
+    let expanded =
+        expand_program_prepared_project_claim_source_by_label(&project, &import, "probe.contract")
+            .unwrap();
+    let rewritten = project.with_entry_source(expanded.clone());
+    verify_program_prepared_project(&rewritten, &import).unwrap();
+    let (session, _) =
+        C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+    let position =
+        program_prepared_project_tactic_source_position(&rewritten, &import, "probe.contract", 0)
+            .unwrap();
+    session
+        .verify_at_project(&expanded, position.line, position.column)
+        .unwrap();
+    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

@@ -1,18 +1,9 @@
 # Model concurrency and atomics
 
-Click verifies disjoint fork/join, an even/odd locking loop, and the safety
-of a shared-worker mutex counter under an explicit modeled pthread runtime.
-The exact counter result, release/acquire publication, and native runtime
-validation remain open. The [P1 concurrency roadmap](concurrency-demo.md) is
-the current plan: finish status consolidation, make helper authority transfers
-ordinary contracts, complete the counter, test protected-resource composition,
-and review the surface language against those proofs before expanding it.
-
-The P1 [concurrency demo](concurrency-demo.md) owns the before-launch slice:
-three programs exercising fork/join ownership, mutex-protected mutation, and
-one-shot release/acquire publication, with production checked rules and
-deterministic scaling regressions. This P2 issue owns broader support beyond
-that slice, including general atomic read-modify-write operations, reusable
+Proofs are stated against Click's own `<pthread.h>` and `<stdatomic.h>`
+interfaces and their [trusted specification](../src/languages/c/modeled_pthread_spec.md).
+This issue owns concurrency support beyond fork/join, mutexes, and one-shot
+release/acquire publication, including general atomic read-modify-write operations, reusable
 protocols, additional orders/fences and synchronization APIs, reader/writer locks,
 detached threads, lock-free structures, and concurrent memory reclamation.
 Future C++ threading is also in scope: keep the shared task and completion

@@ -13,6 +13,7 @@ const FOUR_BYTE_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/four-byte-compute.click");
 const SMALL_PARTITION: &str = include_str!("../../design/charon-trial/adler2/partition.click");
 const TAIL_BOUNDS: &str = include_str!("../../design/charon-trial/adler2/tail-bounds.click");
+const BOUNDED_COUNT: &str = include_str!("../../design/charon-trial/adler2/bounded-count.click");
 const COUNT_BRIDGE: &str = include_str!("../../design/charon-trial/adler2/count-bridge.click");
 const SMALL_BATCH_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/small-batch-compute.click");
@@ -56,13 +57,18 @@ fn compute_proof(contract: &str) -> String {
     } else {
         ""
     };
+    let bounded_count = if contract.contains("adler_bounded_count") {
+        BOUNDED_COUNT
+    } else {
+        ""
+    };
     let common_spec = if contract.contains("adler_spec_one(") {
         COMMON_ADLER_SPEC
     } else {
         ""
     };
     format!(
-        "{}\n{common_spec}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{count_bridge}\n{contract}\n{getters}",
+        "{}\n{common_spec}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{count_bridge}\n{bounded_count}\n{contract}\n{getters}",
         helper_library()
     )
 }
@@ -1767,7 +1773,7 @@ fn charon_adler2_general_compute_proves_original_body() {
 #[ignore = "nightly: general computation authority, seeds and final bounds"]
 fn charon_adler2_general_compute_rejects_invalid_contracts() {
     for (before, after) in [
-        (" views bytes[0..(int32)(uint32)bytes_len];", ""),
+        (" views bytes[0..bytes_len];", ""),
         (" requires (uint32)self->a <= 65520u32;", ""),
         (" requires (uint32)self->b <= 65520u32;", ""),
         ("ensures self->a < 65521;", "ensures self->a < 1;"),
@@ -1875,5 +1881,21 @@ fn charon_adler2_helpers_from_rejects_wrong_mathematical_bytes() {
                 "old(to_integer((int32)bytes[0])) + 1",
             ),
         ],
+    );
+}
+
+// The bridge cannot equate a truncating signed observation with an unbounded
+// native count. The selected count and pointer lemmas require the signed limit.
+#[test]
+fn adler_bounded_native_count_observations_verify() {
+    click::surface::verify_c0_sources(BOUNDED_COUNT, &[]).unwrap();
+    let changed = BOUNDED_COUNT.replacen(" requires count <= 2147483647u64;", "", 1);
+    assert_ne!(changed, BOUNDED_COUNT);
+    let error = click::surface::verify_c0_sources(&changed, &[])
+        .expect_err("unbounded truncating observation accepted");
+    assert!(
+        !error.message().contains("budget exhausted"),
+        "{}",
+        error.message()
     );
 }

@@ -1896,6 +1896,7 @@ pub(super) fn execute_c_function_paths_with_contract_resources(
 fn refresh_returned_local_bindings_from_stores(
     outcome: &mut CFunctionOutcome,
     facts: &(impl ExecutionFactSource + ?Sized),
+    assumptions: &PureFactContext,
 ) {
     let state = match outcome {
         CFunctionOutcome::Return { state, .. } | CFunctionOutcome::Throw { state, .. } => state,
@@ -1906,55 +1907,15 @@ fn refresh_returned_local_bindings_from_stores(
             continue;
         };
         crate::instrumentation::record_deterministic_work(1);
-        let Some(name) = state
-            .locals
-            .name_for_slot(&store.pointer)
-            .map(str::to_owned)
-        else {
-            continue;
-        };
-        let Some(value) = state.memory.known_value(&store.pointer) else {
-            continue;
-        };
-        if let Some(
-            CLocalBinding::Object {
-                c_type,
-                slot,
-                volatile,
-                pointee_volatile,
-                constant,
-                pointee_constant,
-                ..
-            }
-            | CLocalBinding::UninitializedObject {
-                c_type,
-                slot,
-                volatile,
-                pointee_volatile,
-                constant,
-                pointee_constant,
-            },
-        ) = state.locals.binding(&name)
-        {
-            let (c_type, slot, volatile, pointee_volatile, constant, pointee_constant) = (
-                *c_type,
-                slot.clone(),
-                *volatile,
-                *pointee_volatile,
-                *constant,
-                *pointee_constant,
-            );
-            state.locals.set_typed_qualified_with_all_qualifiers(
-                name,
-                value,
-                c_type,
-                slot,
-                volatile,
-                pointee_volatile,
-                constant,
-                pointee_constant,
-            );
-        }
+        // Refresh the object whose bytes were written, including interior
+        // byte stores. The return snapshot's value is authoritative, rather
+        // than an earlier store's value or a narrower cell at its address.
+        crate::kernel::eval::refresh_scalar_local_after_memory_store(
+            state,
+            &store.pointer,
+            &store.value,
+            assumptions,
+        );
     }
 }
 
@@ -4870,6 +4831,12 @@ pub(super) fn execute_c_function_call_paths(
                     &return_assumptions,
                     None,
                 );
+                let mut outcome = outcome;
+                refresh_returned_local_bindings_from_stores(
+                    &mut outcome,
+                    &facts,
+                    &return_assumptions,
+                );
                 paths.push(CFunctionPath {
                     outcome,
                     facts,
@@ -4935,7 +4902,7 @@ pub(super) fn execute_c_function_call_paths(
                 )?;
 
             let mut outcome = outcome;
-            refresh_returned_local_bindings_from_stores(&mut outcome, &facts);
+            refresh_returned_local_bindings_from_stores(&mut outcome, &facts, &return_assumptions);
             paths.push(CFunctionPath {
                 outcome,
                 facts,

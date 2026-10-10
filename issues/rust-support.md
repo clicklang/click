@@ -34,10 +34,9 @@ parameters, and selected resolved operators execute verified imported bodies.
 
 The unchanged pinned adler2 2.0.1 selection imports successfully. Constructors,
 constants, lane helper bodies, numeric ceilings, and lane preservation verify.
-The existing general and four-byte sidecars need native-count updates to reverify
-after the full-width iterator change; the small-batch sidecar is already restored.
-See the [tracked regression](../bugs/adler-sidecars-use-retired-signed-iterator-counts.md).
-The original computation previously had a terminating whole-body bounds proof for every
+The general, small-batch, and four-byte sidecars check full-width native iterator
+state with explicitly bounded signed observations. The original computation has
+a terminating whole-body bounds proof for every
 length from zero through 2,147,483,647 bytes from any canonical initial state.
 It carries all eight lane ceilings, scalar-tail ceilings, the shared input view,
 and actual vector and scalar iterator state through reductions, recombination,
