@@ -3572,7 +3572,7 @@ fn rust_trait_argument_suffix(header: &[SourceToken], impl_type: &str) -> Option
     if segments.is_empty() {
         return None;
     }
-    let name = super::parser::rust_path_name(&segments);
+    let name = crate::languages::rust::names::path_name(&segments);
     let name = name.as_str();
     let name = if name == "Self" { impl_type } else { name };
     let scalar = matches!(name, "i32" | "u8" | "u16" | "u32" | "usize" | "bool");
@@ -3608,7 +3608,7 @@ fn declaration_source_index(
                 if let Some(open) = (index..tokens.len()).find(|at| tokens[*at].text == "{") {
                     let close = matching_delimiter(tokens, open, "{", "}")?;
                     let path = rust_path_ending_at(tokens, open - 1);
-                    let impl_type = super::parser::rust_path_name(&path);
+                    let impl_type = crate::languages::rust::names::path_name(&path);
                     let inherent = tokens[index..open].iter().all(|token| token.text != "for");
                     let module = (inherent && path.len() > 1).then(|| {
                         path[..path.len() - 1]
@@ -3632,8 +3632,8 @@ fn declaration_source_index(
                         let path = rust_path_ending_at(tokens, before);
                         match &impl_block {
                             // A method's own name, and an item inside it.
-                            Some(_) => super::parser::rust_method_path_name(&path),
-                            None => super::parser::rust_path_name(&path),
+                            Some(_) => crate::languages::rust::names::method_path_name(&path),
+                            None => crate::languages::rust::names::path_name(&path),
                         }
                     });
                 }
@@ -3647,7 +3647,7 @@ fn declaration_source_index(
                             format!("{impl_type}_{name}_{suffix}")
                         }
                         Some((impl_type, module, None, _)) => {
-                            super::parser::rust_inherent_method_name(
+                            crate::languages::rust::names::inherent_method_name(
                                 module.as_deref(),
                                 impl_type,
                                 &name,
@@ -4441,7 +4441,7 @@ fn resolve_rust_claim_label<'a>(
     if let Some((function, rest)) = claim_label.split_once('.')
         && function.contains("::")
         && let Some(block) = file.function_blocks().iter().find(|block| {
-            super::rust_names::rust_display_name(block.signature().name()).as_deref()
+            crate::languages::rust::names::rust_display_name(block.signature().name()).as_deref()
                 == Some(function)
         })
     {
