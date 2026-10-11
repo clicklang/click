@@ -194,6 +194,16 @@ site or prove the complete four-byte checksum by themselves. The four-byte
 caller proof below supplies those premises; general initial states and
 preservation over larger nonempty vector batches remain open.
 
+## Native cursor and signed byte addresses
+
+[count-bridge.click](count-bridge.click) checks that a native `uint64` count
+at most 22,208 denotes the same byte address as its signed index observation.
+The proof first establishes equality of their exact Integer values, then
+cites that equality to `normalize`. Both index widths remain intact; a
+truncated low word alone does not establish the address equality. This bridge
+supports reconstructing vector-loop byte positions. Constructor observations
+and checksum relations still have to be carried through the original loops.
+
 ## Native vector-prefix transitions
 
 [vector-prefix.click](vector-prefix.click) connects the joint optimized lane

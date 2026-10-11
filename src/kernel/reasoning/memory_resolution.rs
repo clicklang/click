@@ -1093,6 +1093,58 @@ fn pointers_proven_equal_for_memory_resolution_unmemoized(
             .pointers_proven_disjoint_by_explicit_range_for_memory_resolution(left, right)
 }
 
+/// Equal exact observations of a native unsigned index and a signed index
+/// denote the same displacement at the same element width. A truncated bit
+/// pattern alone is insufficient: only the explicitly established Integer
+/// equality participates, so high bits and the signed interpretation survive.
+fn mixed_index_offsets_equal(
+    left: &PointerOffsetTerm,
+    right: &PointerOffsetTerm,
+    assumptions: &PureFactContext,
+) -> Option<bool> {
+    use crate::kernel::{IntegerTerm, MachineIntegerType};
+    let (wide, narrow, wide_width, narrow_width) = match (left, right) {
+        (
+            PointerOffsetTerm::Int64Scaled {
+                value: wide,
+                byte_width: wide_width,
+                unsigned: true,
+            },
+            PointerOffsetTerm::Int32Scaled {
+                value: narrow,
+                byte_width: narrow_width,
+            },
+        )
+        | (
+            PointerOffsetTerm::Int32Scaled {
+                value: narrow,
+                byte_width: narrow_width,
+            },
+            PointerOffsetTerm::Int64Scaled {
+                value: wide,
+                byte_width: wide_width,
+                unsigned: true,
+            },
+        ) => (wide, narrow, wide_width, narrow_width),
+        _ => return None,
+    };
+    if wide_width != narrow_width || *wide_width < 1 {
+        return None;
+    }
+    let wide = IntegerTerm::from_machine(MachineIntegerType::UInt64, wide.as_ref().clone())?;
+    let narrow = IntegerTerm::from_machine(MachineIntegerType::Int32, narrow.as_ref().clone())?;
+    for (left, right) in [(wide.clone(), narrow.clone()), (narrow, wide)] {
+        crate::instrumentation::record_deterministic_work(1);
+        if assumptions
+            .exact_condition_value(&ConditionTerm::IntegerEqual(left.into(), right.into()))
+            == Some(true)
+        {
+            return Some(true);
+        }
+    }
+    None
+}
+
 pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
     left: &PointerOffsetTerm,
     right: &PointerOffsetTerm,
@@ -1103,6 +1155,9 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
     }
     if resolution_interrupted() {
         return None;
+    }
+    if let Some(equal) = mixed_index_offsets_equal(left, right, assumptions) {
+        return Some(equal);
     }
     // Two unsigned 64-bit indices at one element width. The offset is the
     // exact product `index * width`, so equal indices are one offset and
@@ -1229,6 +1284,9 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
             crate::kernel::assumptions::cancel_common_offset_addends(left, right);
         if let (Some(left), Some(right)) = (rest_left.as_const(), rest_right.as_const()) {
             return Some(left == right);
+        }
+        if let Some(equal) = mixed_index_offsets_equal(&rest_left, &rest_right, assumptions) {
+            return Some(equal);
         }
         // What is left after cancelling may be an unsigned 64-bit index
         // against a constant, `base + x` against `base`: the rule above
@@ -4774,4 +4832,135 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
         samples.iter().all(|(_, work)| *work <= baseline + 256),
         "interior alias framing scanned unrelated facts: {samples:?}"
     );
+}
+
+#[cfg(test)]
+#[test]
+fn mixed_index_offsets_require_exact_observations_and_matching_strides() {
+    use crate::kernel::{IntegerTerm, MachineIntegerType};
+    let wide = Bitvector32Term::Variable(Variable(81001));
+    let narrow = Bitvector32Term::Variable(Variable(81002));
+    let observed_wide =
+        IntegerTerm::from_machine(MachineIntegerType::UInt64, wide.clone()).unwrap();
+    let observed_narrow =
+        IntegerTerm::from_machine(MachineIntegerType::Int32, narrow.clone()).unwrap();
+    let fact =
+        ConditionTerm::IntegerEqual(observed_wide.clone().into(), observed_narrow.clone().into());
+    let native = |width| PointerOffsetTerm::scale_int64(wide.clone(), width, true);
+    let signed = |width| PointerOffsetTerm::scale_int32(narrow.clone(), width);
+    let empty = PureFactContext::new();
+    let checked = empty.clone().assume_condition(fact.clone(), true);
+    for width in [1, 2, 4, 8, 16] {
+        for (left, right) in [
+            (native(width), signed(width)),
+            (signed(width), native(width)),
+        ] {
+            assert_eq!(
+                pointer_offsets_equal_for_memory_resolution(&left, &right, &empty),
+                None
+            );
+            assert_eq!(
+                pointer_offsets_equal_for_memory_resolution(&left, &right, &checked),
+                Some(true)
+            );
+            let common =
+                PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(81003)), 4);
+            assert_eq!(
+                pointer_offsets_equal_for_memory_resolution(
+                    &PointerOffsetTerm::add(common.clone(), left),
+                    &PointerOffsetTerm::add(common, right),
+                    &checked
+                ),
+                Some(true)
+            );
+        }
+    }
+    let reversed = empty.clone().assume_condition(
+        ConditionTerm::IntegerEqual(observed_narrow.into(), observed_wide.into()),
+        true,
+    );
+    assert_eq!(
+        pointer_offsets_equal_for_memory_resolution(&native(1), &signed(1), &reversed),
+        Some(true)
+    );
+    assert_eq!(
+        pointer_offsets_equal_for_memory_resolution(&native(1), &signed(4), &checked),
+        None
+    );
+    let withdrawn = checked.without_exact_fact(&Proposition::ConditionIs(fact.clone(), true));
+    assert_eq!(
+        pointer_offsets_equal_for_memory_resolution(&native(1), &signed(1), &withdrawn),
+        None
+    );
+    let denied = empty.clone().assume_condition(fact, false);
+    assert_eq!(
+        pointer_offsets_equal_for_memory_resolution(&native(1), &signed(1), &denied),
+        None
+    );
+    let truncated = empty.assume_condition(
+        ConditionTerm::equal(
+            Bitvector32Term::uint32_from_64(wide.clone()),
+            narrow.clone(),
+        ),
+        true,
+    );
+    assert_ne!(
+        pointer_offsets_equal_for_memory_resolution(&native(1), &signed(1), &truncated),
+        Some(true)
+    );
+    assert_eq!(
+        pointer_offsets_equal_for_memory_resolution(
+            &PointerOffsetTerm::Constant(4294967296),
+            &PointerOffsetTerm::Constant(0),
+            &truncated
+        ),
+        Some(false)
+    );
+    assert_eq!(
+        pointer_offsets_equal_for_memory_resolution(
+            &PointerOffsetTerm::Constant(4294967295),
+            &PointerOffsetTerm::Constant(-1),
+            &truncated
+        ),
+        Some(false)
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn mixed_index_offsets_work_ignores_unrelated_facts() {
+    use crate::kernel::{IntegerTerm, MachineIntegerType};
+    let wide = Bitvector32Term::Variable(Variable(82001));
+    let narrow = Bitvector32Term::Variable(Variable(82002));
+    let native = PointerOffsetTerm::scale_int64(wide.clone(), 1, true);
+    let signed = PointerOffsetTerm::scale_int32(narrow.clone(), 1);
+    let fact = ConditionTerm::IntegerEqual(
+        IntegerTerm::from_machine(MachineIntegerType::UInt64, wide)
+            .unwrap()
+            .into(),
+        IntegerTerm::from_machine(MachineIntegerType::Int32, narrow)
+            .unwrap()
+            .into(),
+    );
+    let mut counts = Vec::new();
+    for size in [32, 128, 512] {
+        let mut context = PureFactContext::new().assume_condition(fact.clone(), true);
+        for i in 0..size {
+            context = context.assume_condition(
+                ConditionTerm::IntegerEqual(
+                    IntegerTerm::Variable(Variable(83000 + i)).into(),
+                    IntegerTerm::constant_i64(i as i64).into(),
+                ),
+                true,
+            );
+        }
+        let (answer, units) = crate::instrumentation::measure_deterministic_work(|| {
+            mixed_index_offsets_equal(&native, &signed, &context)
+        });
+        assert_eq!(answer, Some(true));
+        counts.push(units);
+    }
+    assert_eq!(counts[0], counts[1]);
+    assert_eq!(counts[1], counts[2]);
+    assert!(counts[0] > 0);
 }

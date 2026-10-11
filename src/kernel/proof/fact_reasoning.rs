@@ -304,6 +304,8 @@ pub(crate) fn normalize_using_conditions(
         }
         if crate::kernel::memory_provenance::pointer_offset_read_has_recorded_value(
             &left, &right, &selected,
+        ) || crate::kernel::reasoning::memory_resolution::pointer_offsets_proven_equal_for_memory_resolution(
+            &left, &right, &selected,
         ) {
             return Ok(());
         }
