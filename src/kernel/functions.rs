@@ -15054,15 +15054,15 @@ fn add_normalized_verified_ensure_facts(
     ensure_facts: &(impl ExecutionFactSource + ?Sized),
     ensure_obligations: &[ProofObligation],
 ) {
+    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = ensure
+    else {
+        return;
+    };
     if !ensure_obligations.is_empty()
         || !crate::kernel::eval::proposition_mentions_registered_load_variable(ensure)
     {
         return;
     }
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = ensure
-    else {
-        return;
-    };
     let assumptions = assumptions_with_path_context(ensure_assumptions, ensure_facts, &[])
         .assume_proposition(ensure.clone());
     let constant_value = |term: &Bitvector32Term| {
@@ -15816,6 +15816,7 @@ fn with_contract_interface_argument_views(
     values: &[CValue],
 ) -> CState {
     let mut state = state.clone();
+    state.resources = state.resources.unpublished_contract_view();
     for (parameter, value) in interface.parameters().iter().zip(values) {
         if parameter.aggregate_layout().is_some() {
             // Aggregate parameters are already represented by the copied
@@ -25162,9 +25163,7 @@ pub(super) fn expand_all_composite_resource_facts(
 ) -> Option<ResourceContext> {
     let mut cached = context.clone();
     let supports = context
-        .facts()
-        .iter()
-        .filter(|fact| matches!(fact.resource(), CResource::Composite { .. }))
+        .composite_facts()
         .cloned()
         .collect::<BTreeSet<_>>()
         .into_iter()
@@ -25209,7 +25208,7 @@ fn expand_checked_authority_controls(
 ) -> Option<(ResourceContext, Vec<CResourceFact>)> {
     let mut expanded = context.clone();
     let mut controls = Vec::new();
-    for fact in context.facts() {
+    for fact in context.composite_facts() {
         let CResource::Composite { name, .. } = fact.resource() else {
             continue;
         };
@@ -25428,12 +25427,7 @@ fn expand_composite_resource_context(
 ) -> Option<(ResourceContext, Vec<CResourceFact>)> {
     let mut expanded = context.clone();
     let mut composites = Vec::new();
-    let roots = context
-        .facts()
-        .iter()
-        .filter(|fact| matches!(fact.resource(), CResource::Composite { .. }))
-        .cloned()
-        .collect::<Vec<_>>();
+    let roots = context.composite_facts().cloned().collect::<Vec<_>>();
     for root in roots {
         expanded = expand_composite_resource_tree(
             &expanded,
@@ -30497,13 +30491,72 @@ fn retired_automatic_creation_blocks(state: &CState, after: &CMemory) -> Vec<Poi
         .collect()
 }
 
+type AutomaticLifetimeInput = (usize, usize, usize, usize, usize);
+
+struct AutomaticLifetimeRetirement {
+    // Pin the input roots so their addresses cannot be reused during a session.
+    input: CMemory,
+    blocks: Vec<PointerBlock>,
+    after: CMemory,
+}
+
+thread_local! {
+    static AUTOMATIC_LIFETIME_RETIREMENT: std::cell::RefCell<std::collections::HashMap<AutomaticLifetimeInput, AutomaticLifetimeRetirement>> = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+pub(super) fn clear_automatic_lifetime_retirement() {
+    AUTOMATIC_LIFETIME_RETIREMENT.with(|memo| memo.borrow_mut().clear());
+}
+
+/// Only the physical transition is reused. Callers check current loan,
+/// mutex, population and return-value restrictions before calling this.
+fn retire_automatic_lifetime_blocks(before: &CMemory, blocks: &[PointerBlock]) -> CMemory {
+    if blocks.is_empty() {
+        return before.clone();
+    }
+    crate::instrumentation::record_deterministic_work(1);
+    let key = before.diagnostic_identity();
+    let reused = AUTOMATIC_LIFETIME_RETIREMENT.with(|memo| {
+        let memo = memo.borrow();
+        let retained = memo.get(&key)?;
+        if !before.same_storage_roots(&retained.input) || blocks.len() != retained.blocks.len() {
+            return None;
+        }
+        crate::instrumentation::record_deterministic_work(blocks.len());
+        (blocks == retained.blocks).then(|| retained.after.clone())
+    });
+    if let Some(after) = reused {
+        return after;
+    }
+    let after = blocks.iter().fold(before.clone(), |memory, block| {
+        memory.without_local_block(block)
+    });
+    AUTOMATIC_LIFETIME_RETIREMENT.with(|memo| {
+        memo.borrow_mut().insert(
+            key,
+            AutomaticLifetimeRetirement {
+                input: before.clone(),
+                blocks: blocks.to_vec(),
+                after: after.clone(),
+            },
+        );
+    });
+    after
+}
+
 fn end_inline_frame_automatic_lifetimes(state: &CState) -> Result<CMemory, CRuntimeError> {
-    let mut memory = state.memory.clone();
+    let memory = &state.memory;
+    let mut blocks = Vec::new();
+    let mut selected = BTreeSet::new();
     for slot in state.locals.slots() {
+        crate::instrumentation::record_deterministic_work(1);
         if !block_is_frame_scoped_automatic_object(&slot.block) {
             continue;
         }
         if !memory.has_block(&slot.block) {
+            continue;
+        }
+        if !selected.insert(slot.block.clone()) {
             continue;
         }
         if let Some(error) = super::mutexes::automatic_storage_refusal(
@@ -30519,9 +30572,9 @@ fn end_inline_frame_automatic_lifetimes(state: &CState) -> Result<CMemory, CRunt
         if let Some(error) = state.population_storage_retirement_refusal(&slot.block) {
             return Err(error);
         }
-        memory = memory.without_local_block(&slot.block);
+        blocks.push(slot.block.clone());
     }
-    Ok(memory)
+    Ok(retire_automatic_lifetime_blocks(memory, &blocks))
 }
 
 /// A non-inline body's declared locals have ended before its postconditions
@@ -30535,14 +30588,20 @@ fn end_function_body_automatic_lifetimes(
     caller: &CMemory,
     returned: Option<&CValue>,
 ) -> Result<CMemory, CRuntimeError> {
-    let mut memory = state.memory.clone();
+    let memory = &state.memory;
+    let mut blocks = Vec::new();
+    let mut selected = BTreeSet::new();
     for slot in state.locals.slots() {
+        crate::instrumentation::record_deterministic_work(1);
         if slot.block.starts_with("local:")
             && !(function.return_aggregate_layout().is_some()
                 && matches!(returned, Some(CValue::Pointer(pointer)) if pointer.pointer().block == slot.block))
             && !caller.has_block(&slot.block)
             && memory.has_block(&slot.block)
         {
+            if !selected.insert(slot.block.clone()) {
+                continue;
+            }
             if let Some(error) = super::mutexes::automatic_storage_refusal(
                 state,
                 state
@@ -30556,10 +30615,10 @@ fn end_function_body_automatic_lifetimes(
             if let Some(error) = state.population_storage_retirement_refusal(&slot.block) {
                 return Err(error);
             }
-            memory = memory.without_local_block(&slot.block);
+            blocks.push(slot.block.clone());
         }
     }
-    Ok(memory)
+    Ok(retire_automatic_lifetime_blocks(memory, &blocks))
 }
 
 /// Whether this block is an automatic object a call frame minted for itself,
@@ -31394,12 +31453,13 @@ fn contract_exit_outcome_with_boundary_transfer(
     let outcome = match outcome {
         CStatementOutcome::Return { value, mut state } => {
             if state.loan_view_bindings().iter().next().is_none() {
-                let resources = match ResourceContext::new()
-                    .try_compose_with_facts(state.resources.facts().iter().cloned(), assumptions)
-                {
-                    Ok(resources) => resources,
-                    Err(error) => return Ok(Err(resource_context_runtime_error(error))),
-                };
+                // Validate the retained partition, then normalize its representation.
+                // Re-inserting every fact into an empty context repeated all
+                // attachment work at each explicit path completion.
+                if let Some(error) = state.resources.validity_error(assumptions) {
+                    return Ok(Err(resource_context_runtime_error(error)));
+                }
+                let resources = state.resources.clone().normalized(assumptions);
                 state = Box::new(state.with_resource_context(resources));
             } else if state.resources.validity_error(assumptions).is_some()
                 || !state.loan_bindings_are_consistent()
@@ -32307,6 +32367,50 @@ mod population_creation_frame_tests {
         used.record_population_storage_creation(block);
         assert!(!used.equal_up_to_unused_creation_ledgers(&unused));
         assert!(!unused.equal_up_to_unused_creation_ledgers(&used));
+    }
+
+    #[test]
+    fn automatic_lifetime_reuse_tracks_exact_memory_and_retired_blocks() {
+        for size in [16usize, 32, 64, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let blocks = (0..size)
+                .map(|i| PointerBlock::from(format!("local:lifetime:memo_{i}")))
+                .collect::<Vec<_>>();
+            let before = blocks.iter().fold(CMemory::new(), |memory, block| {
+                memory.with_block(block.clone(), 4)
+            });
+            let after = retire_automatic_lifetime_blocks(&before, &blocks);
+            let (repeated, work) = crate::instrumentation::measure_deterministic_work(|| {
+                retire_automatic_lifetime_blocks(&before, &blocks)
+            });
+            assert_eq!(after, repeated);
+            assert!(
+                work <= size + 1,
+                "retiring {size} exact blocks again rebuilt memory: {work}"
+            );
+            for block in &blocks {
+                assert!(!after.has_block(block));
+                assert!(after.is_ended_local_block(block));
+            }
+            // A sibling input must not evict the result needed when checking
+            // this branch again after execution has visited other outcomes.
+            let sibling = before.clone().with_block("caller:sibling", 4);
+            retire_automatic_lifetime_blocks(&sibling, &blocks);
+            let (interleaved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                retire_automatic_lifetime_blocks(&before, &blocks)
+            });
+            assert_eq!(interleaved, after);
+            assert!(
+                work <= size + 1,
+                "interleaved retirement rebuilt {size} blocks: {work}"
+            );
+            let partial = retire_automatic_lifetime_blocks(&before, &blocks[..size - 1]);
+            assert!(partial.has_block(&blocks[size - 1]));
+            let changed = before.clone().with_block("caller:preserved", 8);
+            let changed_after = retire_automatic_lifetime_blocks(&changed, &blocks);
+            assert!(changed_after.has_block(&PointerBlock::from("caller:preserved")));
+            assert!(!after.has_block(&PointerBlock::from("caller:preserved")));
+        }
     }
 
     #[test]

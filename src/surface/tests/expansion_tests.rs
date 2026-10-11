@@ -1,10 +1,24 @@
 use super::*;
 
 #[test]
+fn long_flat_integer_sum_expands_and_rechecks_without_parenthesis_growth() {
+    let sum = std::iter::repeat_n("a", 24).collect::<Vec<_>>().join(" + ");
+    let source = format!(
+        "theorem sum(a: Integer) {{ ensures {sum} == 24 * a by {{ have {sum} == 24 * a by {{ arithmetic(); }} assumption(); }} }}"
+    );
+    verify_click_theorems(&source).unwrap();
+    let position = expansion::position_at_offset(&source, source.find("arithmetic()").unwrap());
+    let expanded =
+        expand_c0_tactic_source_at(&source, &[], position.line, position.column).unwrap();
+    assert!(!expanded.contains("arithmetic()"), "{expanded}");
+    verify_click_theorems(&expanded).unwrap();
+}
+
+#[test]
 #[ignore = "nightly: rechecks vector tactic and whole-proof certificates"]
 fn vector_field_input_pointer_certificates_round_trip() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/composite_resource_vector_fill_loop_snapshot.md");
+        .join("tests/fixtures/proof-expansion/vector-field-input.md");
     let markdown = std::fs::read_to_string(&path).unwrap();
     let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
     let name = "composite_resource_vector_fill_loop_snapshot";
@@ -12276,7 +12290,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
         "linked-list",
         "linked_list.click",
         "list_roundtrip",
-        "rewrite(at(statement(5).entry, observed) == at(statement(5).entry, node->value));",
+        "have node->next == tail by {\n        assumption();\n    }",
     ),
     (
         "input-cursor",

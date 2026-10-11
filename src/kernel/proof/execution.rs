@@ -7212,7 +7212,15 @@ fn trace_completion_from_entry(
                 } else {
                     // Import this path's kernel-produced effects and resource
                     // observations once, before consuming any logical proof.
-                    for fact in &retained.context.facts {
+                    for fact in retained
+                        .context
+                        .facts
+                        .facts_not_assumed_by(executed_under)
+                        .into_iter()
+                        .chain(retained.context.facts.producer_facts().filter(|fact| {
+                            fact.is_certified() && fact.generated_load_binding().is_some()
+                        }))
+                    {
                         *executed_under =
                             retain_completed_path_fact(std::mem::take(executed_under), fact);
                     }
@@ -10646,21 +10654,20 @@ impl ExecutionProofCore {
             let body_outcome = candidate.outcome().clone();
             let retain_post_context = function.resource_requires().is_empty();
             let mut boundary_assumptions = statement_assumptions.clone();
-            let mut typed_candidate_facts = Vec::new();
-            for fact in candidate.facts() {
+            for fact in candidate
+                .facts()
+                .facts_not_assumed_by(&boundary_assumptions)
+            {
                 crate::instrumentation::record_deterministic_work(1);
-                if !boundary_assumptions.contains_assumed_exact(fact.proposition()) {
-                    crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
-                    boundary_assumptions =
-                        boundary_assumptions.assume_proposition(fact.proposition().clone());
-                }
-                if retain_post_context
+                crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
+                boundary_assumptions =
+                    boundary_assumptions.assume_proposition(fact.proposition().clone());
+            }
+            let typed_candidate_facts = candidate.facts().producer_facts().filter(|fact| {
+                retain_post_context
                     && fact.is_certified()
                     && fact.generated_load_binding().is_some()
-                {
-                    typed_candidate_facts.push(fact);
-                }
-            }
+            });
             let (
                 outcome,
                 obligations,
