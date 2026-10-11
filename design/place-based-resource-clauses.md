@@ -140,14 +140,14 @@ on for them.
 
 ## C++ and Rust
 
-C++ and Rust sidecars use the same clauses, written against a C-shaped
-restatement of each signature. The rule has to give the right answer there
-too, and three things need a decision.
+C++ and Rust sidecars use the same clauses. At acceptance, they were written
+against C-shaped restatements of their signatures. The rule led to the three
+decisions below; Rust now requires source-language signatures and fields.
 
-**References are spelled as one-element ranges.** C++ `int& value` appears in
+**References were spelled as one-element ranges.** C++ `int& value` appeared in
 the sidecar as `int32* value` with `owns value[0..1];` and is read as
 `value[0]` (`tests/fixtures/cpp-verification/branch-return`). A Rust `&mut T`
-or `&T` parameter is the same. Decided: each language spells a place the way
+or `&T` parameter used the same restatement. Decided: each language spells a place the way
 that language does.
 
 | Source | Whole object | Field |
@@ -159,15 +159,15 @@ that language does.
 | Rust `&mut self` | `owns *self` | `owns self.value` |
 
 A C++ reference names its referent, so there is no separate slot and `owns c`
-is the object. This needs C++ and Rust sidecars to state signatures in the
-source's own parameter names and types, not a C-shaped restatement. That is
-its own step, after the C work.
+is the object. This requires signatures in the
+source's own parameter names and types. Rust now uses `fn` signatures and
+`impl` blocks, with reference fields written as `p.f`.
 
-**Slices carry a separate length.** Rust `bytes: &[u8]` is restated as
+**Slices carried a separate length.** Rust `bytes: &[u8]` was restated as
 `const uint8* bytes, uint64 bytes_len`, and the clause is
 `views bytes[0..(int32)(uint32)bytes_len];` (`examples/rust-byte-sum`). A
-slice is one place whose length the reference carries. A place-based surface
-can say `views *bytes;` or `views bytes[..];` for the whole slice and keep the
+slice is one place whose length the reference carries. Rust now writes
+`bytes.len()` for that length and can say `views *bytes;` or `views bytes[..];` for the whole slice and keep the
 explicit range for a part of it. This is an addition, not a change to an
 existing meaning.
 
@@ -197,7 +197,7 @@ Decided 2026-10-07: references are a property of the parameter that the
 parser, the signature check and the printers all know. They are not a
 rewrite of the sidecar's text.
 
-Today both importers hand Click a C-shaped interface: `int& value` and
+At acceptance, both importers handed Click a C-shaped interface: `int& value` and
 `int* value` are the same `int32*` parameter, and the sidecar writes
 `value[0]` for the referent.
 
