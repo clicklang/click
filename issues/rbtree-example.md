@@ -1314,11 +1314,13 @@ adds mirrored red-sibling cases 1/2 after propagation with nonempty subtrees.
 `rbtree_erase_color_flips_red_outer.click` adds mirrored cases 1/4 after
 propagation. `rbtree_erase_color_flips_red_all.click` completes both
 orientations of propagated red-sibling cases 1/3/4 with nonempty subtrees.
-The unchanged `rb_erase` wrapper now verifies for non-root black-leaf deletion
-on either parent link in this combined sidecar. Its read-only callback-table
-splice and general color repair are both checked in the same unit; the wrapper
-returns the detached node and exact balanced root, with parent consistency and
-in-order removal. The other splice cases still need wrapper integration.
+The unchanged `rb_erase` wrapper now verifies for every leaf deletion: red or
+black leaves on either parent link, and the sole root. Its read-only
+callback-table splice and general color repair are both checked in the same
+unit. A conditional splice contract supplies either the deficit required by
+repair or a balanced context for the no-repair branch. The wrapper returns
+the detached node and exact balanced root, with parent consistency and
+in-order removal. Nodes with children still need wrapper integration.
 Depends on 12.
 
 ### Augmented

@@ -246,14 +246,16 @@ proof derives case coverage from the black-deficit invariant, so callers need
 no separate `erase_flips_red_all` precondition.
 
 The same sidecar now verifies the unchanged `rb_erase` wrapper end to end for
-black-leaf deletion below the root, on either parent link. The splice borrows
-the callback table read-only and calls the verified parent-link helper; its
-returned empty hole and deficit context satisfy the general repair contract.
+all leaf deletions: red or black leaves on either parent link, and the sole
+root. The splice borrows the callback table read-only and calls the verified
+parent-link helper. For a nonroot black leaf, its empty hole and deficit
+context satisfy the general repair contract; otherwise the wrapper refolds
+the already balanced tree without calling repair.
 The wrapper returns ownership of the detached node and a balanced root with
 consistent parents and exactly the in-order contents of the old context with
 the erased leaf removed. Its contract requires views of the static const dummy
 callback fields; initialization of these views at program startup is outside
-this local proof. The other splice cases still need wrapper integration.
+this local proof. Nodes with children still need wrapper integration.
 
 `rb_erase.c` includes the existing unchanged splice and repair extracts and adds
 the dummy callbacks, const table, and `rb_erase` definition verbatim from pinned
