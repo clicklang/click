@@ -2247,6 +2247,7 @@ fn fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources() {
 /// Long checked paths retain their beginning, late target, and added facts.
 /// Multiple sizes exercise both former aggregate caps without timing thresholds.
 #[test]
+#[ignore = "nightly: complete 4096-tactic traces and deterministic lineage scaling take 10s locally"]
 fn long_theorem_traces_retain_every_step_and_reach_late_targets() {
     for size in [512, 2048, 4096] {
         let mut source = String::from(
