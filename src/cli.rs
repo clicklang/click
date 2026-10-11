@@ -755,7 +755,7 @@ impl CInput {
         match self {
             Self::Bundle(sources) => crate::surface::ProgramInputs::Bundle(source_refs(sources)),
             Self::Prepared(imports) => crate::surface::ProgramInputs::Prepared(imports),
-            Self::PreparedProgram(import) => crate::surface::ProgramInputs::Program(import),
+            Self::PreparedProgram(import) => crate::surface::ProgramInputs::program(import),
         }
     }
 }
@@ -806,11 +806,8 @@ fn read_c_inputs_for_target(
             };
             return crate::languages::load_compiler_import(&config).map(|imports| match imports {
                 crate::languages::PreparedCompilerImport::C(imports) => CInput::Prepared(imports),
-                crate::languages::PreparedCompilerImport::Cpp(import) => {
-                    CInput::PreparedProgram(PreparedProgram::Cpp(import))
-                }
-                crate::languages::PreparedCompilerImport::Rust(import) => {
-                    CInput::PreparedProgram(PreparedProgram::Rust(import))
+                crate::languages::PreparedCompilerImport::Program(program) => {
+                    CInput::PreparedProgram(program)
                 }
             });
         }

@@ -1,5 +1,6 @@
 mod tokenizer;
 
+use crate::languages::SourceLanguage;
 use tokenizer::tokenize;
 
 use super::*;
@@ -297,56 +298,6 @@ fn is_builtin_tactic_spelling(name: &str) -> bool {
         })
 }
 
-/// The name the Rust importer gives the item at a path of two or more
-/// segments, `quad::walk` or `adler2::algo::U32X4`: `__rust_q` and each
-/// segment with its length, `__rust_q_I4_quad_I4_walk`
-/// (`qualified_record_name` in `src/languages/rust/charon.rs`). A single
-/// segment is the name itself.
-pub(in crate::surface) fn rust_path_name(segments: &[&str]) -> String {
-    match segments {
-        [name] => (*name).to_string(),
-        _ => segments
-            .iter()
-            .fold("__rust_q".to_string(), |encoded, segment| {
-                format!("{encoded}_I{}_{segment}", segment.len())
-            }),
-    }
-}
-
-/// The name of an inherent method of the type named `impl_type`, whose
-/// `impl` block is in the type's own module. A type named by a path has
-/// the importer's qualified method name, its module, then `_T` and the
-/// type, then the method (`qualified_function_name`); any other is
-/// `Type_method`.
-pub(in crate::surface) fn rust_inherent_method_name(
-    impl_module: Option<&str>,
-    impl_type: &str,
-    method: &str,
-) -> String {
-    // An item inside the method, `compute::LIMIT`, arrives with its path
-    // segments already written after the method's own name
-    // ([`rust_method_path_name`]); the length the importer writes is the
-    // method's alone.
-    let (own, inside) = method.split_at(method.find("_I").unwrap_or(method.len()));
-    match impl_module {
-        Some(module) => format!(
-            "{module}_T{}_{impl_type}_I{}_{own}{inside}",
-            impl_type.len(),
-            own.len()
-        ),
-        None => format!("{impl_type}_{method}"),
-    }
-}
-
-/// A method's name as written in an `impl` block, `compute` or
-/// `compute::LIMIT`: the method's own name, then each further segment as
-/// the importer writes a path segment.
-pub(in crate::surface) fn rust_method_path_name(path: &[&str]) -> String {
-    path[1..].iter().fold(path[0].to_string(), |name, segment| {
-        format!("{name}_I{}_{segment}", segment.len())
-    })
-}
-
 /// The C0 type a Rust scalar type name denotes.
 fn rust_scalar_type(name: &str) -> Option<C0Type> {
     Some(match name {
@@ -606,9 +557,9 @@ struct Parser {
     /// In a resource that declares no fields and names a child: the hidden
     /// parent field that holds each `child.field`.
     hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
-    /// Whether a `verifying` source is Rust, which is what admits a Rust
+    /// The language of the `verifying` sources. Rust admits a Rust
     /// signature (`fn name(a: T) -> T`).
-    verifies_rust: bool,
+    language: SourceLanguage,
     /// The slice parameters of the Rust signature being parsed. Each is one
     /// name in the sidecar and a pointer with a `name_len` length underneath.
     rust_slice_params: BTreeSet<String>,
@@ -833,6 +784,12 @@ struct ParsedFunctionSignature {
 
 /// Give a concrete replacement for scalar and slice signatures. Record and
 /// method contracts need an `impl` and the imported type identity instead.
+impl Parser {
+    fn verifies_rust(&self) -> bool {
+        self.language == SourceLanguage::Rust
+    }
+}
+
 fn rust_signature_hint(parsed: &ParsedFunctionSignature) -> Option<String> {
     let signature = &parsed.signature;
     if !parsed.struct_params.is_empty() || parsed.return_struct_name.is_some() {
@@ -846,7 +803,7 @@ fn rust_signature_hint(parsed: &ParsedFunctionSignature) -> Option<String> {
         .into_iter()
         .find(|name| rust_scalar_type(name) == Some(c_type))
     };
-    let name = super::rust_names::rust_display_name(&signature.name)
+    let name = crate::languages::rust::names::rust_display_name(&signature.name)
         .unwrap_or_else(|| signature.name.clone());
     // An importer name that is no path, or an operator method's qualified
     // form, has no `fn` spelling.
@@ -979,10 +936,13 @@ impl Parser {
         let (tokens, positions) = rewrite_model_accessors(tokens, positions, &struct_layouts);
         // Source clauses may follow declarations. Choose the spelling for the
         // whole file so moving the clause cannot bypass a Rust syntax check.
-        let verifies_rust = tokens.windows(2).any(|pair| {
-            matches!(pair, [Token::Ident(keyword), Token::String(path)]
-                if keyword == "verifying" && path.ends_with(".rs"))
-        });
+        let language =
+            SourceLanguage::of_sources(tokens.windows(2).filter_map(|pair| match pair {
+                [Token::Ident(keyword), Token::String(path)] if keyword == "verifying" => {
+                    Some(path.as_str())
+                }
+                _ => None,
+            }));
         let matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
         Ok(Self {
             source_aliases: BTreeMap::new(),
@@ -1000,7 +960,7 @@ impl Parser {
             in_resource_definition: false,
             declared_resource_fields: BTreeMap::new(),
             hidden_child_fields: BTreeMap::new(),
-            verifies_rust,
+            language,
             rust_slice_params: BTreeSet::new(),
             rust_impl_type: None,
             rust_impl_method_suffix: None,
@@ -1213,7 +1173,7 @@ impl Parser {
                 resource_definitions.push(self.parse_resource_definition(false)?);
             } else if self.peek_ident() == Some("extern") {
                 function_blocks.push(self.parse_function_block(true)?);
-            } else if self.verifies_rust && self.peek_ident() == Some("impl") {
+            } else if self.verifies_rust() && self.peek_ident() == Some("impl") {
                 self.parse_rust_impl_block(&mut function_blocks)?;
             } else {
                 function_blocks.push(self.parse_function_block(false)?);
@@ -1609,8 +1569,8 @@ impl Parser {
             }
         }
         self.expect(Token::Semicolon)?;
-        if source_path.ends_with(".rs") {
-            self.verifies_rust = true;
+        if SourceLanguage::of_source_path(&source_path) == SourceLanguage::Rust {
+            self.language = SourceLanguage::Rust;
         }
         Ok(source_path)
     }
@@ -3633,7 +3593,7 @@ impl Parser {
             reference_params,
             return_struct_name: parsed_return_type.struct_name,
         };
-        if self.verifies_rust && !self.in_contract_definition {
+        if self.verifies_rust() && !self.in_contract_definition {
             let replacement = rust_signature_hint(&parsed)
                 .map(|signature| format!("write `{signature}`"))
                 .unwrap_or_else(|| {
@@ -3651,7 +3611,7 @@ impl Parser {
     /// `impl` blocks. C-shaped function contracts are refused for Rust sources.
     #[inline(never)]
     fn parse_rust_function_signature(&mut self) -> Result<ParsedFunctionSignature, ClickError> {
-        if !self.verifies_rust {
+        if !self.verifies_rust() {
             return Err(self.error(
                 "a `fn` signature is the Rust spelling; a C or C++ source's contract is written `type name(type parameter, ...)`",
             ));
@@ -3667,9 +3627,13 @@ impl Parser {
         let name = if self.rust_impl_type.is_some() {
             // A method's own name; an item inside it, `compute::LIMIT`,
             // follows as the importer writes path segments.
-            rust_method_path_name(&path.iter().map(String::as_str).collect::<Vec<_>>())
+            crate::languages::rust::names::method_path_name(
+                &path.iter().map(String::as_str).collect::<Vec<_>>(),
+            )
         } else {
-            rust_path_name(&path.iter().map(String::as_str).collect::<Vec<_>>())
+            crate::languages::rust::names::path_name(
+                &path.iter().map(String::as_str).collect::<Vec<_>>(),
+            )
         };
         self.expect(Token::LParen)?;
         let mut parameters = Vec::new();
@@ -3802,7 +3766,7 @@ impl Parser {
         }
         self.expect(Token::LBrace)?;
         let segments: Vec<&str> = impl_path.iter().map(String::as_str).collect();
-        let impl_type = rust_path_name(&segments);
+        let impl_type = crate::languages::rust::names::path_name(&segments);
         // An inherent block is taken to be in its type's module.
         let impl_module = (inherent && segments.len() > 1).then(|| {
             segments[..segments.len() - 1]
@@ -3862,9 +3826,12 @@ impl Parser {
     #[inline(never)]
     fn rust_inherent_method(&self, impl_type: &str, method: &str) -> Result<String, ClickError> {
         let Some(module) = self.rust_impl_module.as_deref() else {
-            return Ok(rust_inherent_method_name(None, impl_type, method));
+            return Ok(crate::languages::rust::names::inherent_method_name(
+                None, impl_type, method,
+            ));
         };
-        let suffix = rust_inherent_method_name(Some(""), impl_type, method);
+        let suffix =
+            crate::languages::rust::names::inherent_method_name(Some(""), impl_type, method);
         let mut found = self
             .local_struct_pointers_by_function
             .keys()
@@ -3874,7 +3841,11 @@ impl Parser {
             (Some(_), Some(_)) => Err(self.error(format!(
                 "the import has more than one method `{method}` of this type"
             ))),
-            (None, _) => Ok(rust_inherent_method_name(Some(module), impl_type, method)),
+            (None, _) => Ok(crate::languages::rust::names::inherent_method_name(
+                Some(module),
+                impl_type,
+                method,
+            )),
         }
     }
 
@@ -3893,7 +3864,7 @@ impl Parser {
     #[inline(never)]
     fn expect_rust_path_name(&mut self, what: &str) -> Result<String, ClickError> {
         let path = self.expect_rust_path(what)?;
-        Ok(rust_path_name(
+        Ok(crate::languages::rust::names::path_name(
             &path.iter().map(String::as_str).collect::<Vec<_>>(),
         ))
     }
@@ -4793,7 +4764,7 @@ impl Parser {
     /// field's position, `self.0`, which names the field the importer calls
     /// `_0`.
     fn expect_field_name(&mut self) -> Result<String, ClickError> {
-        if self.verifies_rust
+        if self.verifies_rust()
             && self.position > 0
             && self.tokens.get(self.position - 1) == Some(&Token::Arrow)
         {
@@ -4801,7 +4772,7 @@ impl Parser {
                 self.error("a Rust reference field is written `p.f`; replace `p->f` with `p.f`")
             );
         }
-        if self.verifies_rust
+        if self.verifies_rust()
             && let Some(Token::Number(position)) = self.peek()
         {
             let name = format!("_{position}");
@@ -10483,7 +10454,7 @@ impl Parser {
         &mut self,
         mut operand: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
-        while self.verifies_rust
+        while self.verifies_rust()
             && self.peek_ident() == Some("as")
             && matches!(
                 self.peek_next(),

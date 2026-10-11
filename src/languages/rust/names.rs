@@ -1,10 +1,10 @@
-//! The Rust spelling of the names the Rust importer gives items.
+//! The names the Rust importer gives items, and their Rust spelling.
 //!
 //! The importer names an item at a path `quad::walk` by `__rust_q` and each
 //! segment with its length, `__rust_q_I4_quad_I4_walk`, and an inherent
 //! method by its module, then `_T` and its type's own name, then the method:
 //! `__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I3_new`
-//! ([`super::parser::rust_path_name`], [`super::parser::rust_inherent_method_name`]).
+//! ([`path_name`], [`inherent_method_name`]).
 //! A sidecar writes the path, `adler2::Adler32::new`, and a diagnostic prints
 //! it the same way. The encoding is self-delimiting, so decoding needs no
 //! import.
@@ -21,6 +21,75 @@
 use std::borrow::Cow;
 
 const PREFIX: &str = "__rust_q";
+
+/// Appends one path segment to an importer name: `_I`, its length, `_`, and
+/// the segment.
+pub(crate) fn push_path_segment(encoded: &mut String, segment: &str) {
+    encoded.push_str(&format!("_I{}_{segment}", segment.len()));
+}
+
+/// Appends the type an inherent method's `impl` block names: `_T`, the
+/// type's own importer name's length, `_`, and that name.
+pub(crate) fn push_impl_type(encoded: &mut String, type_name: &str) {
+    encoded.push_str(&format!("_T{}_{type_name}", type_name.len()));
+}
+
+/// The importer name of the item at a path, `quad::walk` or
+/// `adler2::algo::U32X4`: the prefix and each segment
+/// (`__rust_q_I4_quad_I4_walk`).
+pub(crate) fn qualified_name<'s>(segments: impl IntoIterator<Item = &'s str>) -> String {
+    let mut encoded = PREFIX.to_string();
+    for segment in segments {
+        push_path_segment(&mut encoded, segment);
+    }
+    encoded
+}
+
+/// The name a sidecar's path of segments denotes: a single segment is the
+/// name itself, a longer path its [`qualified_name`].
+pub(crate) fn path_name(segments: &[&str]) -> String {
+    match segments {
+        [name] => (*name).to_string(),
+        _ => qualified_name(segments.iter().copied()),
+    }
+}
+
+/// The name of an inherent method of the type named `impl_type`, whose
+/// `impl` block is in the type's own module. A type named by a path has
+/// the importer's qualified method name, its module, then the `impl` type,
+/// then the method; any other is `Type_method`.
+pub(crate) fn inherent_method_name(
+    impl_module: Option<&str>,
+    impl_type: &str,
+    method: &str,
+) -> String {
+    // An item inside the method, `compute::LIMIT`, arrives with its path
+    // segments already written after the method's own name
+    // ([`method_path_name`]); the length the importer writes is the
+    // method's alone.
+    let (own, inside) = method.split_at(method.find("_I").unwrap_or(method.len()));
+    match impl_module {
+        Some(module) => {
+            let mut encoded = module.to_string();
+            push_impl_type(&mut encoded, impl_type);
+            push_path_segment(&mut encoded, own);
+            encoded.push_str(inside);
+            encoded
+        }
+        None => format!("{impl_type}_{method}"),
+    }
+}
+
+/// A method's name as written in an `impl` block, `compute` or
+/// `compute::LIMIT`: the method's own name, then each further segment as
+/// the importer writes a path segment.
+pub(crate) fn method_path_name(path: &[&str]) -> String {
+    let mut name = path[0].to_string();
+    for segment in &path[1..] {
+        push_path_segment(&mut name, segment);
+    }
+    name
+}
 
 /// The path `name` stands for, `quad::walk`, when it is a whole importer
 /// name; `None` for any other name.

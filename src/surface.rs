@@ -102,8 +102,9 @@ mod integer_truncation;
 mod lowering;
 mod modules;
 mod parser;
-mod rust_names;
-pub use rust_names::{claim_label_matches, display_rust_names, rust_display_name};
+pub use crate::languages::rust::names::{
+    claim_label_matches, display_rust_names, rust_display_name,
+};
 pub(crate) mod planning;
 pub(crate) mod proof_diagnostics;
 mod source_registry;
@@ -6764,6 +6765,13 @@ impl ClickFile {
 
     pub fn verifying_sources(&self) -> &[String] {
         &self.verifying_sources
+    }
+
+    /// The language of this file's `verifying` sources.
+    pub fn source_language(&self) -> crate::languages::SourceLanguage {
+        crate::languages::SourceLanguage::of_sources(
+            self.verifying_sources.iter().map(String::as_str),
+        )
     }
 
     /// The declared C implementation target, if this file selects one.
