@@ -3191,23 +3191,97 @@ impl CAggregateRecord {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CAggregateLayout {
-    pub(super) size_bytes: u32,
-    pub(super) alignment_bytes: u32,
-    pub(super) fields: Vec<CAggregateField>,
-    pub(super) unions: Vec<CAggregateUnion>,
+    size_bytes: u32,
+    alignment_bytes: u32,
+    fields: Vec<CAggregateField>,
+    unions: Vec<CAggregateUnion>,
     records: Vec<CAggregateRecord>,
+    index: CAggregateLayoutCache,
+}
+
+/// A derived, immutable query cache, excluded from semantic comparisons. All
+/// source collections are private and only the two constructors/with_records
+/// can change them; those producers build the corresponding indexes. Layout
+/// clones share the cache and record updates share the unchanged leaf indexes.
+#[derive(Clone, Debug)]
+struct CAggregateLayoutCache(Arc<CAggregateLayoutIndex>);
+
+#[derive(Debug)]
+struct CAggregateLayoutIndex {
+    fields: Arc<BTreeMap<String, usize>>,
+    unions: Arc<BTreeMap<String, usize>>,
+    records: BTreeMap<String, usize>,
+    records_at: BTreeMap<u32, Vec<usize>>,
+    unique_leaves: bool,
+    unique_paths: bool,
+}
+
+impl PartialEq for CAggregateLayoutCache {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+impl Eq for CAggregateLayoutCache {}
+impl std::hash::Hash for CAggregateLayoutCache {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+impl Ord for CAggregateLayoutCache {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+impl PartialOrd for CAggregateLayoutCache {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl CAggregateLayoutCache {
+    fn new(fields: &[CAggregateField], unions: &[CAggregateUnion]) -> Self {
+        let mut field_index = BTreeMap::new();
+        let mut union_index = BTreeMap::new();
+        let mut unique_paths = true;
+        for (index, field) in fields.iter().enumerate() {
+            crate::instrumentation::record_deterministic_work(1);
+            unique_paths &= field_index.insert(field.name.clone(), index).is_none();
+        }
+        for (index, union) in unions.iter().enumerate() {
+            crate::instrumentation::record_deterministic_work(1);
+            unique_paths &= union_index.insert(union.name.clone(), index).is_none();
+        }
+        Self(Arc::new(CAggregateLayoutIndex {
+            fields: Arc::new(field_index),
+            unions: Arc::new(union_index),
+            records: BTreeMap::new(),
+            records_at: BTreeMap::new(),
+            unique_leaves: unique_paths,
+            unique_paths,
+        }))
+    }
+
+    fn with_records(&self, records: &[CAggregateRecord]) -> Self {
+        let mut names = BTreeMap::new();
+        let mut offsets = BTreeMap::<_, Vec<_>>::new();
+        let mut unique_paths = self.0.unique_leaves;
+        for (index, record) in records.iter().enumerate() {
+            crate::instrumentation::record_deterministic_work(1);
+            unique_paths &= names.insert(record.name.clone(), index).is_none();
+            offsets.entry(record.offset_bytes).or_default().push(index);
+        }
+        Self(Arc::new(CAggregateLayoutIndex {
+            fields: self.0.fields.clone(),
+            unions: self.0.unions.clone(),
+            records: names,
+            records_at: offsets,
+            unique_leaves: self.0.unique_leaves,
+            unique_paths,
+        }))
+    }
 }
 
 impl CAggregateLayout {
     pub fn new(size_bytes: u32, alignment_bytes: u32, fields: Vec<CAggregateField>) -> Self {
-        assert!(alignment_bytes.is_power_of_two());
-        Self {
-            size_bytes,
-            alignment_bytes,
-            fields,
-            unions: Vec::new(),
-            records: Vec::new(),
-        }
+        Self::with_unions(size_bytes, alignment_bytes, fields, Vec::new())
     }
 
     pub fn with_unions(
@@ -3217,12 +3291,14 @@ impl CAggregateLayout {
         unions: Vec<CAggregateUnion>,
     ) -> Self {
         assert!(alignment_bytes.is_power_of_two());
+        let index = CAggregateLayoutCache::new(&fields, &unions);
         Self {
             size_bytes,
             alignment_bytes,
             fields,
             unions,
             records: Vec::new(),
+            index,
         }
     }
 
@@ -3281,12 +3357,108 @@ impl CAggregateLayout {
             );
             ancestors.push(u32::try_from(index).expect("record boundary count fits u32"));
         }
+        self.index = self.index.with_records(&records);
         self.records = records;
         self
     }
 
     pub fn records(&self) -> &[CAggregateRecord] {
         &self.records
+    }
+
+    /// Exact structural selection from a complete declaration. Nominal native
+    /// identity remains frontend evidence. Only explicit boundary nodes can
+    /// select children; the name indexes merely project that selected node.
+    pub(in crate::kernel) fn selects_layout_at(&self, offset: u32, expected: &Self) -> bool {
+        if offset == 0 && self == expected {
+            return true;
+        }
+        self.index.0.records_at.get(&offset).is_some_and(|indexes| {
+            indexes.iter().any(|index| {
+                crate::instrumentation::record_deterministic_work(1);
+                self.record_matches_layout(*index, expected)
+            })
+        })
+    }
+
+    fn record_matches_layout(&self, selected: usize, expected: &Self) -> bool {
+        let record = &self.records[selected];
+        if record.size_bytes != expected.size_bytes
+            || record.alignment_bytes != expected.alignment_bytes
+            || !self.index.0.unique_paths
+            || !expected.index.0.unique_paths
+        {
+            return false;
+        }
+        let prefix = format!("{}.", record.name);
+        let count = |map: &BTreeMap<String, usize>| {
+            map.range(prefix.clone()..)
+                .take_while(|(name, _)| name.starts_with(&prefix))
+                .map(|_| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    1usize
+                })
+                .sum::<usize>()
+        };
+        if count(&self.index.0.fields) != expected.fields.len()
+            || count(&self.index.0.unions) != expected.unions.len()
+            || count(&self.index.0.records) != expected.records.len()
+        {
+            return false;
+        }
+        for field in &expected.fields {
+            crate::instrumentation::record_deterministic_work(1);
+            let Some(index) = self.index.0.fields.get(&format!("{prefix}{}", field.name)) else {
+                return false;
+            };
+            let held = &self.fields[*index];
+            if held.offset_bytes.checked_sub(record.offset_bytes) != Some(field.offset_bytes)
+                || held.c_type != field.c_type
+                || held.array_shape != field.array_shape
+            {
+                return false;
+            }
+        }
+        for union in &expected.unions {
+            crate::instrumentation::record_deterministic_work(1);
+            let Some(index) = self.index.0.unions.get(&format!("{prefix}{}", union.name)) else {
+                return false;
+            };
+            let held = &self.unions[*index];
+            if held.offset_bytes.checked_sub(record.offset_bytes) != Some(union.offset_bytes)
+                || held.size_bytes != union.size_bytes
+                || held.fields != union.fields
+            {
+                return false;
+            }
+        }
+        for child in &expected.records {
+            crate::instrumentation::record_deterministic_work(1);
+            let Some(index) = self.index.0.records.get(&format!("{prefix}{}", child.name)) else {
+                return false;
+            };
+            let held = &self.records[*index];
+            let parent = match child.parent {
+                None => Some(selected),
+                Some(parent) => self
+                    .index
+                    .0
+                    .records
+                    .get(&format!(
+                        "{prefix}{}",
+                        expected.records[parent as usize].name
+                    ))
+                    .copied(),
+            };
+            if held.offset_bytes.checked_sub(record.offset_bytes) != Some(child.offset_bytes)
+                || held.size_bytes != child.size_bytes
+                || held.alignment_bytes != child.alignment_bytes
+                || held.parent.map(|index| index as usize) != parent
+            {
+                return false;
+            }
+        }
+        true
     }
 }
 
@@ -5173,6 +5345,9 @@ pub(super) struct CHeapMemory {
     /// Explicit proof-entry objects whose bytes start unwritten. Unlike heap
     /// allocations these carry neither freshness nor deallocation authority.
     pub(super) uninitialized_objects: SnapshotMap<Pointer, u32>,
+    /// Interface-entry structural object requirements, independent of raw
+    /// footprints, allocation extent, initialization and access authority.
+    pub(super) object_input_domains: SnapshotMap<Pointer, Arc<CAggregateLayout>>,
     /// Bytes of storage with an initialization history — fresh heap
     /// allocations and automatic (`local:`) objects — that a C store has
     /// initialized, whether or not their cached value survives. A store the
@@ -5217,6 +5392,10 @@ impl std::hash::Hash for CHeapMemory {
             "uninitialized_objects".hash(state);
             self.uninitialized_objects.hash(state);
         }
+        if !self.object_input_domains.is_empty() {
+            "object_input_domains".hash(state);
+            self.object_input_domains.hash(state);
+        }
     }
 }
 
@@ -5240,6 +5419,9 @@ impl CHeapMemory {
             && self
                 .uninitialized_objects
                 .eq_relative_to(&other.uninitialized_objects, &base.uninitialized_objects)
+            && self
+                .object_input_domains
+                .eq_relative_to(&other.object_input_domains, &base.object_input_domains)
             && self
                 .initialized
                 .eq_relative_to(&other.initialized, &base.initialized)
@@ -5272,6 +5454,7 @@ impl CHeapMemory {
             && self.pending_allocations == other.pending_allocations
             && self.uninitialized_allocations == other.uninitialized_allocations
             && self.uninitialized_objects == other.uninitialized_objects
+            && self.object_input_domains == other.object_input_domains
             && self.zeroed_allocations == other.zeroed_allocations
             && self.zeroed_prefix_allocations == other.zeroed_prefix_allocations
             && self.zeroed_pending_allocations == other.zeroed_pending_allocations

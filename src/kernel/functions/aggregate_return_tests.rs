@@ -97,6 +97,301 @@ fn aggregate_record_boundary_parentage_is_explicit_and_checked() {
     }
 }
 
+fn selection_layouts() -> (CAggregateLayout, CAggregateLayout) {
+    let child = CAggregateLayout::new(8, 4, vec![CAggregateField::new("value", 0, CType::Int32)]);
+    let parent = CAggregateLayout::new(
+        24,
+        4,
+        vec![
+            CAggregateField::new("first.value", 0, CType::Int32),
+            CAggregateField::new("second.value", 8, CType::Int32),
+            CAggregateField::new("tail", 16, CType::Int32),
+        ],
+    )
+    .with_records(vec![
+        CAggregateRecord::new("first", 0, 8, 4, None),
+        CAggregateRecord::new("second", 8, 8, 4, None),
+    ]);
+    (parent, child)
+}
+
+#[test]
+fn constructor_binding_requires_complete_or_explicit_child_designation() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let (parent, child) = selection_layouts();
+    let paths = execute_c_statement_paths(
+        &CState::new(),
+        &c_allocate_aggregate_destination("parent", parent.clone()),
+        &PureFactContext::new(),
+        &CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap();
+    let [path] = paths.as_slice() else {
+        panic!("one parent declaration");
+    };
+    let CStatementOutcome::Normal(caller) = &path.outcome else {
+        panic!("parent allocation");
+    };
+    let caller = caller.as_ref().clone();
+    let at = caller.locals.slot("parent").unwrap().clone();
+    let function = c_function(
+        CType::Void,
+        "construct_child",
+        vec![c_parameter("destination", CType::Int32Pointer)],
+        c_skip(),
+    )
+    .with_construction_parameter(0, child.clone());
+    for offset in [0, 8, 4, 12, 16, 24] {
+        let values = [CValue::typed_pointer(
+            at.offset_by_bytes(offset),
+            CType::Int32Pointer,
+        )];
+        assert_eq!(
+            bind_c_function_arguments(&caller, &function, &values).is_some(),
+            matches!(offset, 0 | 8)
+        );
+        assert_eq!(
+            bind_c_contract_arguments(&caller, function.contract_interface(), &values, None)
+                .is_some(),
+            matches!(offset, 0 | 8)
+        );
+    }
+    assert!(caller.memory.has_object_layout_at(&at, &parent, false));
+    assert!(
+        !caller.memory.has_object_layout_at(&at, &child, false),
+        "complete result cannot target a member"
+    );
+    let flat = CAggregateLayout::new(24, 4, parent.fields().to_vec());
+    let wrong = caller.clone().with_memory(
+        caller
+            .memory
+            .clone()
+            .with_declared_aggregate_block(at.block.clone(), &flat)
+            .with_object_input_domain(at.offset_by_bytes(8), &child)
+            .unwrap(),
+    );
+    assert!(
+        bind_c_function_arguments(
+            &wrong,
+            &function,
+            &[CValue::typed_pointer(
+                at.offset_by_bytes(8),
+                CType::Int32Pointer
+            )]
+        )
+        .is_none(),
+        "matching input assumption cannot override a missing declared boundary"
+    );
+    let unsigned =
+        CAggregateLayout::new(8, 4, vec![CAggregateField::new("value", 0, CType::UInt32)]);
+    assert!(
+        !caller
+            .memory
+            .has_object_layout_at(&at.offset_by_bytes(8), &unsigned, true)
+    );
+    let raw = CMemory::new().with_uninitialized_block(at.block.clone(), 24);
+    assert!(!raw.has_object_layout_at(&at.offset_by_bytes(8), &child, true));
+    let selected = CState::new()
+        .with_memory(raw)
+        .with_aggregate_return_destination(at.offset_by_bytes(8), child.clone());
+    assert!(
+        !selected
+            .memory
+            .has_object_layout_at(&at.offset_by_bytes(8), &child, true)
+    );
+}
+
+#[test]
+fn object_input_domains_survive_value_transitions_without_allocating_or_initializing() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let (parent, child) = selection_layouts();
+    let at = Pointer::symbolic(Variable(984_001));
+    let raw = CMemory::new().with_uninitialized_object(at.clone(), 24);
+    let entry = raw
+        .clone()
+        .with_object_input_domain(at.clone(), &parent)
+        .unwrap();
+    assert!(entry.block_size(&at.block).is_none());
+    assert!(entry.known_value(&at).is_none());
+    assert!(!entry.has_initialized_bytes_at(&at, 24));
+    let written = entry.clone().store(at.offset_by_bytes(8), int32(19));
+    let range = CMemoryRange::new_with_element_width(at.clone(), 0u32.into(), 24u32.into(), 1);
+    let call = written.clone().with_call_memory_havoc(
+        Variable(984_002),
+        std::slice::from_ref(&range),
+        &PureFactContext::new(),
+        None,
+    );
+    let looped = written.clone().with_loop_memory_havoc_preserving_loans(
+        Variable(984_003),
+        &BTreeSet::new(),
+        Some(std::slice::from_ref(&range)),
+        None,
+    );
+    let joined = call
+        .clone()
+        .with_interface_memory_havoc(Variable(984_004), &BTreeSet::new(), &[&call, &looped])
+        .unwrap();
+    for memory in [&entry, &written, &call, &looped, &joined] {
+        assert!(memory.has_object_layout_at(&at.offset_by_bytes(8), &child, true));
+        assert!(
+            !memory.has_initialized_bytes_under(
+                &at.offset_by_bytes(12),
+                4,
+                &PureFactContext::new()
+            ),
+            "child padding stays raw"
+        );
+    }
+    let canonical = crate::kernel::memory_provenance::canonical_c_memory_for_pointer_load(
+        &joined,
+        &at.offset_by_bytes(8),
+    );
+    assert!(canonical.has_object_layout_at(&at.offset_by_bytes(8), &child, true));
+    let deep = crate::kernel::memory_provenance::canonical_c_memory_deep(&joined);
+    assert!(deep.has_object_layout_at(&at.offset_by_bytes(8), &child, true));
+    assert_ne!(intern_c_memory_ref(&entry), intern_c_memory_ref(&raw));
+    assert!(
+        entry
+            .clone()
+            .with_interface_memory_havoc(Variable(984_005), &BTreeSet::new(), &[&entry, &raw])
+            .is_err()
+    );
+    let conflict = raw.with_object_input_domain(at.clone(), &child).unwrap();
+    assert!(
+        entry
+            .clone()
+            .with_interface_memory_havoc(Variable(984_006), &BTreeSet::new(), &[&entry, &conflict])
+            .is_err()
+    );
+    assert!(entry.with_object_input_domain(at, &child).is_err());
+}
+
+#[test]
+fn object_input_substitution_preserves_exact_domains_and_refuses_collisions() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let (_, child) = selection_layouts();
+    let variable = Variable(984_011);
+    let at = Pointer::symbolic(variable);
+    let target = CMemory::frame_local_pointer(29, "target");
+    let memory = CMemory::new()
+        .with_object_input_domain(at.clone(), &child)
+        .unwrap();
+    let state = CState::new().with_memory(memory.clone());
+    let proposition = Proposition::CStatementVerifies {
+        state: Box::new(state.clone()),
+        statement: Box::new(c_skip()),
+        outcome: CStatementOutcome::Normal(Box::new(state)),
+    };
+    let mapped = crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
+        &proposition,
+        variable,
+        &target,
+    );
+    let Proposition::CStatementVerifies { state, .. } = mapped else {
+        panic!("mapped state");
+    };
+    assert!(state.memory.has_object_layout_at(&target, &child, true));
+    assert!(!state.memory.has_object_layout_at(&at, &child, true));
+    let mut variables = BTreeSet::new();
+    collect_c_state_bitvector_variables(&CState::new().with_memory(memory.clone()), &mut variables);
+    assert!(variables.contains(&variable));
+    let conflicting =
+        CAggregateLayout::new(8, 4, vec![CAggregateField::new("other", 0, CType::Int32)]);
+    let memory = memory
+        .with_object_input_domain(target.clone(), &conflicting)
+        .unwrap();
+    let domains = memory.map_object_input_domains(|pointer| {
+        if pointer == &at {
+            target.clone()
+        } else {
+            pointer.clone()
+        }
+    });
+    assert!(!domains.contains_key(&target));
+    let equal = CMemory::new()
+        .with_object_input_domain(at.clone(), &child)
+        .unwrap()
+        .with_object_input_domain(target.clone(), &child)
+        .unwrap();
+    assert_eq!(
+        equal
+            .map_object_input_domains(|pointer| if pointer == &at {
+                target.clone()
+            } else {
+                pointer.clone()
+            })
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn child_selection_work_ignores_siblings_and_unrelated_object_inputs() {
+    let (_, child) = selection_layouts();
+    let mut samples = Vec::new();
+    for count in [16, 128, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let parent = CAggregateLayout::new(
+            count * 8,
+            4,
+            (0..count)
+                .map(|index| {
+                    CAggregateField::new(format!("child{index}.value"), index * 8, CType::Int32)
+                })
+                .collect(),
+        )
+        .with_records(
+            (0..count)
+                .map(|index| CAggregateRecord::new(format!("child{index}"), index * 8, 8, 4, None))
+                .collect(),
+        );
+        let at = Pointer::symbolic(Variable(984_021));
+        let mut input = CMemory::new()
+            .with_object_input_domain(at.clone(), &parent)
+            .unwrap();
+        for index in 0..count {
+            input = input
+                .with_object_input_domain(
+                    Pointer::symbolic(Variable(985_000 + u64::from(index))),
+                    &child,
+                )
+                .unwrap();
+        }
+        let declared = CMemory::new().with_declared_aggregate_block(at.block.clone(), &parent);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for memory in [&input, &declared] {
+                for offset in [0, (count - 1) * 8] {
+                    assert!(memory.has_object_layout_at(&at.offset_by_bytes(offset), &child, true));
+                }
+            }
+        });
+        samples.push(work);
+        let rebuilt = parent.clone().with_records(vec![]);
+        assert!(!rebuilt.selects_layout_at(0, &child));
+        assert!(
+            parent.selects_layout_at(0, &child),
+            "clone keeps immutable index"
+        );
+        let independent = CAggregateLayout::new(count * 8, 4, parent.fields().to_vec())
+            .with_records(parent.records().to_vec());
+        assert_eq!(independent, parent);
+        use std::hash::{Hash, Hasher};
+        let hash = |layout: &CAggregateLayout| {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            layout.hash(&mut hasher);
+            hasher.finish()
+        };
+        assert_eq!(hash(&independent), hash(&parent));
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 8),
+        "{samples:?}"
+    );
+}
+
 #[test]
 fn aggregate_declaration_survives_value_changes_without_initializing_padding() {
     let _session = crate::kernel::VerificationSession::enter();
@@ -859,7 +1154,12 @@ fn construction_completion_work_scales_with_value_fields() {
             };
             let caller = CState::new()
                 .with_population_creation_tracking()
-                .with_memory(CMemory::new().with_uninitialized_block(at.block.clone(), count * 8))
+                .with_memory(
+                    CMemory::new()
+                        .with_uninitialized_block(at.block.clone(), count * 8)
+                        .with_object_input_domain(at.clone(), &layout)
+                        .unwrap(),
+                )
                 .with_resource_context(resources)
                 .with_aggregate_return_destination(at.clone(), layout.clone());
             let function = if parameter {

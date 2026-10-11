@@ -106,6 +106,9 @@ fn destination<'a>(
     if !interface.exceptional_signature().is_empty()
         || selected.layout != *layout
         || !valid_layout(layout)
+        || !state
+            .memory
+            .has_object_layout_at(&selected.pointer, layout, constructor)
         || !offset.is_multiple_of(layout.alignment_bytes())
         || !storage_matches
         || selected.pointer.is_in_null_block()

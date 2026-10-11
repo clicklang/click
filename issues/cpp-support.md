@@ -35,14 +35,18 @@ Complete automatic aggregate declarations now retain their layouts independently
 of values and initialization, including by-value copies and allocated return
 objects. Explicit embedded-record boundaries now retain parent relationships,
 full extents including padding, and alignment alongside flattened scalar fields.
-These are structural prerequisites: constructor selection and input designation
-are not yet checked against them, and the original RAII blocker remains.
+Constructor binding now checks a declared complete layout or explicit child
+boundary against the selected layout. Symbolic entry carries the same structural
+requirement separately from raw storage, without fixing the containing allocation
+size. Nominal identity and scalar-input designation remain unresolved, so the
+original RAII blocker remains.
 Keep object-validity facts separate from permissions and initialization. Audit
 which native interfaces supply those facts and check them at calls; explicit
 raw-storage requirements are needed only where native guarantees are insufficient.
 The [native-interface audit](../design/cpp-object-model.md#native-interface-audit-and-surface-syntax)
 identifies where reference and typed-object evidence is lost during lowering.
-No new keyword or precondition has been added to the existing constructor contracts.
+No new keyword or written precondition has been added to the constructor contracts;
+the call checker now enforces the native structural destination requirement.
 
 The subsequent audit also reproduced a shared C/C++ soundness defect:
 [one-past member pointers can read sibling fields](../bugs/pointer-arithmetic-crosses-scalar-subobject.md).

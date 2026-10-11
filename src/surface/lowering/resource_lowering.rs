@@ -435,6 +435,11 @@ pub(in crate::surface) fn initial_call_state(
             .with_uninitialized_object(destination, layout.size_bytes());
         state = state.with_memory(memory);
     }
+    // Native construction requires this selected structural object. Keep that
+    // entry requirement separate from raw storage and field permissions; calls
+    // must discharge it against the caller's declaration or retained input.
+    state = crate::kernel::c_state_with_construction_contract_input(state, function, &arguments)
+        .map_err(ClickError::new)?;
     if parameters
         .iter()
         .any(|parameter| parameter.is_struct_value())

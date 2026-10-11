@@ -510,18 +510,19 @@ not authorize either shortcut.
 The `Restore` regression cannot be repaired just by passing more ownership
 facts to the raw-footprint query. Its input integer is separate from the two
 owned fields, but that partition says nothing about the four padding bytes.
-The current constructor binder checks the requested layout, alignment, live
-storage containment and field permissions. It does not authenticate the
-selected object's declaration, its parent/subobject relationship, or the
-input's typed designation. Contract certification repeats that binder; it does
-not supply an independent missing object-validity premise.
+The constructor binder checks structural destination selection, alignment, live
+storage containment and field permissions. It now requires a declared complete
+layout or explicit child boundary, or the matching structural requirement of an
+enclosing symbolic constructor proof. It does not yet establish nominal object
+identity or a scalar input's typed designation. Contract certification repeats
+that binder; it does not supply the missing scalar object-validity premise.
 
 Complete automatic aggregate declarations now retain their layout in the shared
 block declaration metadata. Ordinary aggregate declarations, raw destination
 allocations, by-value parameter copies and actual copy-result allocations issue
 that evidence. Synthetic symbolic result blocks and constructor proof-entry raw
 markers do not. The metadata participates in snapshot identity and joins;
-resource semantics version 67 invalidates older retained artifacts. This step
+resource semantics version 68 invalidates older retained artifacts. This step
 preserves the existing scalar declaration behavior and grants no new access.
 The retained aggregate metadata is structural layout; it is not nominal C++
 class identity. Explicit embedded-record boundaries retain parent relationships,
@@ -536,23 +537,27 @@ The implementation sequence is:
    supply this metadata. Raw footprint markers, ownership, and selection of a
    desired construction destination must not manufacture it. Stores and value
    havoc preserve it; incompatible declarations cannot be combined at a join.
-2. **Boundary metadata delivered; admission still pending:** preserve explicit
+2. **Structural selection delivered:** preserve explicit
    embedded-record boundaries alongside flattened scalar leaves through shared
    C layout lowering, including imported C++ records. The flat pre-order list
    records parent indices and complete-object-relative extents; it is derived
    from declarations, never dotted leaf names. Matching scalar leaves or fitting
    inside a parent allocation is not evidence that a child of the requested
-   type exists there. Constructor binding must still select the actual complete
-   object or declared child and preserve its identity.
+   type exists there. Constructor binding checks the complete declared layout
+   or an explicit child boundary and its projected layout. Indexed lookup limits
+   work to the selected block, candidate boundaries and selected child contents.
+   Nominal C++ identity and pointer designation remain separate obligations.
 3. Carry checked input designation through pointers and modular calls. A scalar
    input cannot acquire a live integer object merely by pointing into padding.
    This is the same domain boundary required by the sibling-pointer defect,
    not a constructor-only exception to the memory-read rules.
-4. At symbolic body entry, represent the selected constructor object and valid
-   inputs with the same obligations checked at actual calls. Preserve the
-   unknown extent of a constructor's containing allocation: installing a block
-   whose size equals the selected child would wrongly assume complete-object
-   storage. Selection and initialization completion are separate transitions.
+4. **Structural entry requirement delivered; scalar validity pending:** source
+   entry lowering records the interface-selected constructor object as an input
+   domain separate from raw storage. Calls must discharge that structural
+   requirement from declarations or retained input domains. It does not fix the
+   unknown extent of a constructor's containing allocation. Scalar-input validity
+   must still be represented with matching call obligations. Selection and
+   initialization completion remain separate transitions.
 5. Use those checked facts to decide the input read while retaining the full raw
    footprint and unwritten padding. Re-run the original constructor and RAII
    proofs and the hostile padding, sibling, alias and no-op cases before closing
@@ -594,7 +599,7 @@ The current implementation nevertheless loses information needed to do this:
 | C and C++ raw pointer parameters | Pointer value and access type | Do not infer a live pointee merely from the signature; a pointer may be null or one-past when the function does not dereference it |
 | Memory `owns`/`views` clauses (`surface/lowering/resource_lowering.rs`) | Permission, range guards and snapshot-relative loadability propositions | Loadability is represented by address and byte extent, not a retained typed object or array designation |
 | By-value aggregate parameters (`kernel/functions.rs`) | A fresh copied destination with its declared layout | Check the source value against its actual object and preserve nested boundaries; do not use the requested layout to create source evidence |
-| Constructor body entry and binding | Raw footprint, selected layout, alignment, field permissions and storage containment | Match the actual selected object and input domains at calls and symbolic entry; retain unknown containing allocation extent |
+| Constructor body entry and binding | Separate structural input-domain requirement; checked complete or embedded layout selection, raw footprint, alignment and field permissions | Establish nominal identity and scalar-input designation; keep those checks distinct from initialized padding |
 
 This audit describes missing evidence, not new assumptions that callers already
 satisfy. `with_contract_interface_argument_views` also supplies broad views for

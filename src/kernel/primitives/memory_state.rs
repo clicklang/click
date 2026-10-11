@@ -2649,6 +2649,105 @@ impl CMemory {
         !self.heap.uninitialized_objects.is_empty()
     }
 
+    /// Adds only a source contract's interface-entry object requirement.
+    /// Actual calls discharge it against declarations or a retained requirement;
+    /// raw markers and selecting a return destination never issue this fact.
+    pub(crate) fn with_object_input_domain(
+        mut self,
+        pointer: Pointer,
+        layout: &CAggregateLayout,
+    ) -> Result<Self, String> {
+        if let Some(held) = self.heap.object_input_domains.get(&pointer) {
+            return if held.as_ref() == layout {
+                Ok(self)
+            } else {
+                Err("conflicting object input layouts at the same address".into())
+            };
+        }
+        let diagnostic_base = self.clone();
+        Arc::make_mut(&mut self.heap)
+            .object_input_domains
+            .insert(pointer.clone(), Arc::new(layout.clone()));
+        self.record_diagnostic_transform(
+            "object input domain",
+            vec![diagnostic_base],
+            vec![CValue::pointer(pointer)],
+        );
+        Ok(self)
+    }
+
+    /// Discharges an interface's structural destination requirement. A known
+    /// declaration is decisive: an input-domain assumption cannot override it.
+    /// Otherwise only retained source-entry requirements in this exact block
+    /// are candidates; possibly-aliasing unrelated input identities give no
+    /// designation evidence.
+    pub(in crate::kernel) fn has_object_layout_at(
+        &self,
+        pointer: &Pointer,
+        layout: &CAggregateLayout,
+        allow_records: bool,
+    ) -> bool {
+        let Some(offset) = pointer
+            .offset
+            .as_const()
+            .and_then(|offset| u32::try_from(offset).ok())
+        else {
+            return false;
+        };
+        let matches = |held: &CAggregateLayout, relative| {
+            if allow_records {
+                held.selects_layout_at(relative, layout)
+            } else {
+                relative == 0 && held == layout
+            }
+        };
+        if let Some(declaration) = self
+            .blocks
+            .get(&pointer.block)
+            .and_then(|block| block.declared_object.as_ref())
+        {
+            return match declaration {
+                CDeclaredObject::Scalar(_) => false,
+                CDeclaredObject::Aggregate(held) => matches(held, offset),
+            };
+        }
+        AliasCandidates::only_block(&pointer.block).any_entry(
+            &self.heap.object_input_domains,
+            |base, held| {
+                crate::instrumentation::record_deterministic_work(1);
+                base.offset
+                    .as_const()
+                    .and_then(|offset| u32::try_from(offset).ok())
+                    .and_then(|base| offset.checked_sub(base))
+                    .is_some_and(|relative| matches(held, relative))
+            },
+        )
+    }
+
+    /// A substitution can identify previously distinct inputs. Incompatible
+    /// collided requirements supply no selection witness; never choose the
+    /// last layout merely because it came last in a map traversal.
+    pub(in crate::kernel) fn map_object_input_domains(
+        &self,
+        mut rewrite: impl FnMut(&Pointer) -> Pointer,
+    ) -> SnapshotMap<Pointer, Arc<CAggregateLayout>> {
+        let mut mapped = SnapshotMap::<Pointer, Arc<CAggregateLayout>>::default();
+        let mut conflicts = BTreeSet::new();
+        for (pointer, layout) in self.heap.object_input_domains.iter() {
+            let pointer = rewrite(pointer);
+            if conflicts.contains(&pointer) {
+                continue;
+            }
+            if mapped.get(&pointer).is_some_and(|held| held != layout) {
+                mapped.remove(&pointer);
+                conflicts.insert(pointer);
+            } else {
+                mapped.insert(pointer, layout.clone());
+            }
+        }
+        mapped
+    }
+
     /// A conservative overlap query over only potentially aliasing tracked
     /// objects. Different symbolic spellings do not establish separation.
     #[cfg(test)]
@@ -3686,6 +3785,13 @@ impl CMemory {
         .map_err(|base| {
             format!("interface arms disagree on unwritten object extent at {base:?}")
         })?;
+        let object_input_domains = first.heap.object_input_domains.clone();
+        if others
+            .iter()
+            .any(|memory| memory.heap.object_input_domains != object_input_domains)
+        {
+            return Err("interface arms disagree on object input domains".into());
+        }
 
         let uninitialized_allocations = union_of_arm_sets(
             &first.heap.uninitialized_allocations,
@@ -3891,6 +3997,7 @@ impl CMemory {
             pending_allocations,
             uninitialized_allocations,
             uninitialized_objects,
+            object_input_domains,
             initialized,
             zeroed_allocations,
             zeroed_prefix_allocations,

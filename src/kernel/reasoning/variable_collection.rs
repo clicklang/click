@@ -5565,6 +5565,7 @@ fn memory_entry_count(memory: &CMemory) -> usize {
         + memory.cells.representation_len()
         + memory.union_cells.len()
         + memory.heap.uninitialized_objects.len()
+        + memory.heap.object_input_domains.len()
         + memory.heap.initialized.as_map().len()
 }
 
@@ -5714,6 +5715,7 @@ fn counts_whole(memory: &CMemory, whole: WholeCount) -> VariableCounts {
         .uninitialized_objects
         .keys()
         .chain(memory.heap.initialized.as_map().keys())
+        .chain(memory.heap.object_input_domains.keys())
     {
         add_counts(&mut counts, object_address_variables(pointer), 1);
     }
@@ -5764,6 +5766,19 @@ fn counts_from_base(
             if after.contains_key(pointer) {
                 add_counts(&mut counts, object_address_variables(pointer), 1);
             }
+        }
+    }
+    for change in base
+        .heap
+        .object_input_domains
+        .diff(&memory.heap.object_input_domains)
+    {
+        let pointer = change.key();
+        if base.heap.object_input_domains.contains_key(pointer) {
+            add_counts(&mut counts, object_address_variables(pointer), -1);
+        }
+        if memory.heap.object_input_domains.contains_key(pointer) {
+            add_counts(&mut counts, object_address_variables(pointer), 1);
         }
     }
     for change in base.cells.concrete().diff(memory.cells.concrete()) {
@@ -5893,6 +5908,7 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
         .uninitialized_objects
         .keys()
         .chain(memory.heap.initialized.as_map().keys())
+        .chain(memory.heap.object_input_domains.keys())
     {
         collect_pointer_bitvector_variables(pointer, variables);
     }

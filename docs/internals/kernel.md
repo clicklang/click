@@ -133,6 +133,17 @@ it does not replace the supplied arguments with a newly generated generic
 tuple. Rule packaging checks claim coverage and function identity, not the
 source-to-entry translation again.
 
+Native construction entry lowering also supplies the interface-selected
+structural object requirement, separately from raw storage, field permissions
+and initialization. `c_state_with_construction_contract_input` selects only the
+constructor parameter or construction-result destination named by the exact
+interface. It does not fix the enclosing allocation size for a constructor
+input. Ordinary call binding does not create that requirement: it checks the
+selected layout against a declaration or a retained input domain, including an
+explicit embedded-record boundary when selecting a child. Raw footprints and
+choosing a desired destination do not supply this evidence. This is structural
+layout checking, not a proof of nominal C++ identity or general pointer validity.
+
 A proof about one call and a proof of a function contract have different
 scopes. Checking a body at `x = 0` can establish a property of that call. To
 justify a reusable contract with no restriction on `x`, the entry must represent

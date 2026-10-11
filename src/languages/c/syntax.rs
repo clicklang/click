@@ -21986,8 +21986,9 @@ mod scope_metadata_tests {
             });
             assert_eq!(layouts.len(), size as usize);
             // Each selected child contributes its leaves and boundaries once;
-            // kernel conversion validates each selected boundary once again.
-            assert_eq!(work, (3 * size * (size - 1) / 2) as usize);
+            // conversion validates and indexes each boundary, and indexes each
+            // leaf including the enclosing declaration's own stamp.
+            assert_eq!(work, ((5 * size * size - 3 * size) / 2) as usize);
         }
     }
 

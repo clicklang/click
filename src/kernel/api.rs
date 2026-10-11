@@ -3201,6 +3201,56 @@ pub(crate) fn c_mutex_use_resource(state: &CState, mutex: &Pointer) -> CResource
     crate::kernel::mutexes::use_resource(state, mutex)
 }
 
+/// Represent the structural destination requirement of one native construction
+/// contract at symbolic proof entry. This is part of source obligation setup,
+/// not a call rule: actual calls must establish the same requirement through
+/// the constructor binder. The input may be a subobject of an unknown enclosing
+/// allocation. No storage, initialized value, separation or permission is added.
+pub(crate) fn c_state_with_construction_contract_input(
+    state: CState,
+    function: &CFunction,
+    arguments: &[CExpression],
+) -> Result<CState, String> {
+    let interface = function.contract_interface();
+    let (pointer, layout) = if let Some((index, layout)) = interface.construction_parameter() {
+        if interface.aggregate_return_mode() != CAggregateReturnMode::Copy
+            || interface.return_type() != CType::Void
+            || interface.return_aggregate_layout().is_some()
+        {
+            return Err("invalid constructor input interface".into());
+        }
+        let Some(parameter) = interface.parameters().get(index) else {
+            return Err("constructor input parameter is missing".into());
+        };
+        if !parameter.c_type().is_pointer() || parameter.aggregate_layout().is_some() {
+            return Err("constructor input parameter is not a destination pointer".into());
+        }
+        let Some(CExpression::Value(CValue::Pointer(pointer))) = arguments.get(index) else {
+            return Err("constructor input is not an entry pointer value".into());
+        };
+        (pointer.pointer().clone(), layout)
+    } else if interface.aggregate_return_mode() == CAggregateReturnMode::Construction {
+        let layout = interface
+            .return_aggregate_layout()
+            .ok_or("construction result has no layout")?;
+        let selected = state
+            .aggregate_destination
+            .as_deref()
+            .ok_or("construction result has no selected destination")?;
+        if &selected.layout != layout {
+            return Err("construction result destination has a different layout".into());
+        }
+        (selected.pointer.clone(), layout)
+    } else {
+        return Ok(state);
+    };
+    let memory = state
+        .memory()
+        .clone()
+        .with_object_input_domain(pointer, layout)?;
+    Ok(state.with_memory(memory))
+}
+
 pub fn c_function_entry_state(
     caller_state: &CState,
     function: &CFunction,
@@ -10306,4 +10356,114 @@ pub fn prove_memory_load_after_store_other(
         pointer: loaded_pointer,
         outcome,
     }))
+}
+
+#[cfg(test)]
+mod construction_contract_input_tests {
+    use super::*;
+
+    fn layout() -> CAggregateLayout {
+        CAggregateLayout::new(8, 4, vec![CAggregateField::new("value", 0, CType::Int32)])
+    }
+
+    #[test]
+    fn construction_input_setup_is_interface_selected_and_does_not_initialize_storage() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let at = Pointer::symbolic(Variable(981_501));
+        let other = Pointer::symbolic(Variable(981_502));
+        let function = c_function(
+            CType::Void,
+            "construct",
+            vec![
+                c_parameter("input", CType::Int32Pointer),
+                c_parameter("this", CType::Int32Pointer),
+            ],
+            c_skip(),
+        )
+        .with_construction_parameter(1, layout());
+        let memory = CMemory::new().with_uninitialized_object(at.clone(), 8);
+        let state = CState::new().with_memory(memory);
+        let arguments = vec![c_pointer_value(other.clone()), c_pointer_value(at.clone())];
+        let selected =
+            c_state_with_construction_contract_input(state.clone(), &function, &arguments).unwrap();
+        assert_eq!(selected.resources(), state.resources());
+        assert_eq!(selected.locals(), state.locals());
+        assert!(selected.memory().block_size(&at.block).is_none());
+        assert!(selected.memory().known_value(&at).is_none());
+        assert!(!selected.memory().has_initialized_bytes_at(&at, 8));
+        assert!(selected.memory().may_read_uninitialized_object(&at, 8));
+        assert_eq!(
+            selected.memory(),
+            &state
+                .memory()
+                .clone()
+                .with_object_input_domain(at, &layout())
+                .unwrap()
+        );
+        assert_ne!(
+            selected.memory(),
+            &state
+                .memory()
+                .clone()
+                .with_object_input_domain(other, &layout())
+                .unwrap()
+        );
+        assert!(
+            c_state_with_construction_contract_input(state, &function, &arguments[..1]).is_err()
+        );
+    }
+
+    #[test]
+    fn ordinary_pointer_contract_and_raw_destination_do_not_supply_object_inputs() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let at = Pointer::symbolic(Variable(981_503));
+        let state = CState::new()
+            .with_memory(CMemory::new().with_uninitialized_object(at.clone(), 8))
+            .with_aggregate_return_destination(at.clone(), layout());
+        let function = c_function(
+            CType::Void,
+            "ordinary",
+            vec![c_parameter("p", CType::Int32Pointer)],
+            c_skip(),
+        );
+        let after = c_state_with_construction_contract_input(
+            state.clone(),
+            &function,
+            &[c_pointer_value(at)],
+        )
+        .unwrap();
+        assert_eq!(after, state);
+    }
+
+    #[test]
+    fn construction_result_setup_requires_its_exact_selected_layout() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let at = Pointer::symbolic(Variable(981_504));
+        let function = c_function(CType::Int32Pointer, "factory", vec![], c_skip())
+            .with_construction_return(layout());
+        let state =
+            CState::new().with_memory(CMemory::new().with_uninitialized_block(at.block.clone(), 8));
+        assert!(c_state_with_construction_contract_input(state.clone(), &function, &[]).is_err());
+        let wrong =
+            CAggregateLayout::new(8, 4, vec![CAggregateField::new("value", 0, CType::UInt32)]);
+        assert!(
+            c_state_with_construction_contract_input(
+                state
+                    .clone()
+                    .with_aggregate_return_destination(at.clone(), wrong),
+                &function,
+                &[]
+            )
+            .is_err()
+        );
+        let selected = c_state_with_construction_contract_input(
+            state.with_aggregate_return_destination(at.clone(), layout()),
+            &function,
+            &[],
+        )
+        .unwrap();
+        assert_eq!(selected.memory().block_size(&at.block), Some(&8u32.into()));
+        assert!(!selected.memory().has_initialized_bytes_at(&at, 8));
+        assert_eq!(selected.resources(), CState::new().resources());
+    }
 }

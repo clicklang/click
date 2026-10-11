@@ -6153,7 +6153,12 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
     register_block_alignment(&proof_destination.block, 8);
     let proof_state = CState::new()
         .with_population_creation_tracking()
-        .with_memory(CMemory::new().with_uninitialized_block(proof_destination.block.clone(), 16))
+        .with_memory(
+            CMemory::new()
+                .with_uninitialized_block(proof_destination.block.clone(), 16)
+                .with_object_input_domain(proof_destination.clone(), &layout)
+                .unwrap(),
+        )
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             CResourceFact::own_memory(CMemoryRange::new(
                 proof_destination.clone(),
@@ -6456,7 +6461,12 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
     register_block_alignment(&at.block, 8);
     let entry = CState::new()
         .with_population_creation_tracking()
-        .with_memory(CMemory::new().with_uninitialized_block(at.block.clone(), 16))
+        .with_memory(
+            CMemory::new()
+                .with_uninitialized_block(at.block.clone(), 16)
+                .with_object_input_domain(at.clone(), &layout)
+                .unwrap(),
+        )
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             CResourceFact::own_memory(CMemoryRange::new(at.clone(), 0u32.into(), 4u32.into())),
         ));
@@ -6600,7 +6610,8 @@ fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
             CAggregateField::new("data", 0, CType::Int32Pointer),
             CAggregateField::new("extent.size", 8, CType::UInt64),
         ],
-    );
+    )
+    .with_records(vec![CAggregateRecord::new("extent", 8, 8, 8, None)]);
     let storage = CMemorySegment::new(
         c_variable("destination"),
         c_int32_literal(0),
@@ -6623,7 +6634,7 @@ fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
             c_return(c_void_value()),
         ),
     )
-    .with_construction_parameter(0, child)
+    .with_construction_parameter(0, child.clone())
     .with_resource_summary(vec![owner.clone()], vec![owner])
     .with_contract(
         vec![],
@@ -6638,7 +6649,10 @@ fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
     );
     let at = Pointer::symbolic(Variable(873_021));
     register_block_alignment(&at.block, 8);
-    let memory = CMemory::new().with_uninitialized_object(at.clone(), 8);
+    let memory = CMemory::new()
+        .with_uninitialized_object(at.clone(), 8)
+        .with_object_input_domain(at.clone(), &child)
+        .unwrap();
     assert!(memory.block_size(&at.block).is_none());
     let live = Proposition::CMemoryLoadable {
         memory: memory.clone(),

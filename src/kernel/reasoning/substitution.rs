@@ -1512,6 +1512,7 @@ fn collect_memory_bound_variables(memory: &CMemory, variables: &mut BTreeSet<Var
         .uninitialized_objects
         .keys()
         .chain(memory.heap.initialized.as_map().keys())
+        .chain(memory.heap.object_input_domains.keys())
     {
         collect_pointer_bound_variables(pointer, variables);
     }
@@ -5607,6 +5608,9 @@ fn substitute_bitvector_variable_in_memory_contents(
                     )
                 })
                 .collect(),
+            object_input_domains: memory.map_object_input_domains(|base| {
+                substitute_bitvector_variable_in_pointer(base, from, to)
+            }),
             uninitialized_objects: memory
                 .heap
                 .uninitialized_objects
@@ -7159,6 +7163,9 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                     )
                 })
                 .collect(),
+            object_input_domains: memory.map_object_input_domains(|base| {
+                substitute_pointer_variable_in_pointer(base, from, to)
+            }),
             uninitialized_objects: memory
                 .heap
                 .uninitialized_objects

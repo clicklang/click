@@ -36,11 +36,13 @@ overlap query accepts explicit byte-separation facts. That repaired the separate
 returned-observer regression, but this example supplies separation only through
 ownership of value fields. Those fields do not cover padding.
 
-The constructor binder checks requested layout/alignment, raw storage containment
-and field authority. It does not authenticate a declared object/subobject domain
-or a scalar input designation. Contract certification uses the same binder, so
-it does not add that evidence. A field-separation shortcut would therefore lack
-justification at actual callers as well as at symbolic body entry.
+The constructor binder now checks structural destination selection against a
+complete declaration, explicit embedded-record boundary, or retained native
+construction input requirement. Raw footprints alone no longer satisfy that
+selection. This check still does not establish nominal C++ identity or the
+scalar input's designation. Contract certification uses the same binder and
+does not add the missing scalar evidence. A field-separation shortcut would
+therefore still lack justification at callers and symbolic body entry.
 
 The [implementation sequence](../design/cpp-object-model.md#constructor-padding-implementation-sequence)
 starts with persistent declaration metadata, then retained subobject boundaries
