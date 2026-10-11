@@ -279,10 +279,9 @@ if ! command -v cargo-nextest >/dev/null 2>&1; then
     exit 1
 fi
 
-# The combined `click` binary includes each command source file as a module.
-# Cargo also discovers those source files as standalone binaries under
-# `src/bin/`, so `--bins` runs their identical test bodies a second time.
-# Test the shipped entry point once; clippy above still checks every target.
+# The combined `click` binary includes each command source file in `src/bin/`
+# as a module (`autobins = false` keeps Cargo from also building each as a
+# standalone binary), so `--bin click` runs every command's tests once.
 if [[ -n "$ci_artifacts" ]]; then
     mkdir -p "$ci_artifacts"
     cargo nextest archive "${unit_targets[@]}" "${fixture_targets[@]}" \
