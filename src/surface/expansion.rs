@@ -3823,6 +3823,27 @@ fn source_tactic_entries(
     Ok(entries)
 }
 
+/// A written one-tactic proof owns its `by` clause when expanded: a
+/// structured certificate or several generated steps need a real block.
+/// The lexer already marks its implicit opening brace with an empty span.
+fn written_tactic_source_edit(
+    tokens: &[SourceToken],
+    start: usize,
+    span: Range<usize>,
+) -> Result<TacticSourceEdit, ClickError> {
+    if let Some(open) = start.checked_sub(1)
+        && tokens[open].text == "{"
+        && tokens[open].span.is_empty()
+        && let Some(by) = open.checked_sub(1)
+        && tokens[by].text == "by"
+    {
+        return Ok(TacticSourceEdit::PartialProofClause(proof_span(
+            tokens, by,
+        )?));
+    }
+    Ok(TacticSourceEdit::Partial(span))
+}
+
 fn proof_tactic_entries(
     tokens: &[SourceToken],
     edit: &ProofSourceEdit,
@@ -3868,7 +3889,7 @@ fn proof_tactic_entries(
                     FlatTactic::Written(tactic) => (
                         tactic_name(tactic).to_string(),
                         source_site_kind(tactic) == SourceSiteKind::ExpandableAutomation,
-                        TacticSourceEdit::Partial(item.span.clone()),
+                        written_tactic_source_edit(tokens, item.tokens.start, item.span.clone())?,
                     ),
                     FlatTactic::Phase(tactic) => {
                         // A frontier-local loop phase proved by one smart
@@ -4056,7 +4077,7 @@ fn block_tactic_entries(
                 site: site.clone(),
                 source_index,
                 nested: path.clone(),
-                edit: TacticSourceEdit::Partial(span.clone()),
+                edit: written_tactic_source_edit(tokens, token_range.start, span.clone())?,
                 sibling_starts: Vec::new(),
                 function_block: None,
             }),

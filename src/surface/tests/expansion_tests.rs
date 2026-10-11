@@ -2289,6 +2289,44 @@ theorem default_have(x: int32) {
 /// one-tactic form as that block: every smart tactic in the proof below
 /// expands and rechecks, wherever the one-tactic proofs stand.
 #[test]
+fn batch_expansion_wraps_one_tactic_arithmetic_proofs() {
+    let c = "int nested(int x) { return x; }";
+    let source = r#"
+verifying "short.c";
+int32 nested(int32 x) {
+    requires 0 <= to_integer(x);
+    ensures result == x;
+} by {
+    execute();
+    have 0 <= to_integer(x) + 1 by arithmetic() using { 0 <= to_integer(x); };
+    have 0 <= to_integer(x) + 2 by arithmetic() using { 0 <= to_integer(x); };
+    have x == x by normalize();
+    simp();
+}
+"#;
+    let sources = [("short.c", c)];
+    verify_c0_sources(source, &sources).expect("the short arithmetic proofs verify");
+    let positions = source
+        .match_indices("arithmetic()")
+        .map(|(offset, _)| expansion::position_at_offset(source, offset))
+        .collect::<Vec<_>>();
+    let expanded = expansion::expand_tactics_source_at(
+        source,
+        &ProgramInputs::Bundle(sources.to_vec()),
+        &positions,
+    )
+    .expect("the batch expands both arithmetic proofs");
+    assert!(
+        expanded.source.contains("arithmetic_certificate"),
+        "{}",
+        expanded.source
+    );
+    assert!(expanded.source.contains("have x == x by normalize();"));
+    verify_c0_sources(&expanded.source, &sources)
+        .expect("the batch's structured certificates must parse and recheck");
+}
+
+#[test]
 fn expansion_reads_a_one_tactic_proof_as_its_block() {
     let source = r#"
 theorem helper(x: int32) {

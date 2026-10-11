@@ -2446,7 +2446,8 @@ fn charon_adler2_public_checksum_tools_recheck_original_contracts() {
         .unwrap();
     assert!(
         audit.status.success(),
-        "{}",
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&audit.stdout),
         String::from_utf8_lossy(&audit.stderr)
     );
     for name in [
@@ -2592,7 +2593,8 @@ fn check_public_boundary_tools(lengths: &[usize]) {
             .unwrap();
         assert!(
             audit.status.success(),
-            "{}",
+            "stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&audit.stdout),
             String::from_utf8_lossy(&audit.stderr)
         );
         let claims = ["adler2::Adler32::write_slice", "adler2::adler32_slice"];
