@@ -2786,3 +2786,35 @@ fn rbtree_erase_color_flips_red_inner_right_requires_inner_parent_link() {
         "unexpected refusal: {error}"
     );
 }
+
+#[test]
+#[ignore = "nightly: propagated red-sibling inner repair verifies a whole sidecar"]
+fn rbtree_erase_color_flips_red_all_requires_left_detached_child_link() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_red_all.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(sibling->rb_left, tmp1);",
+        "WRITE_ONCE(sibling->rb_left, parent);",
+        1,
+    );
+    assert!(
+        error.contains("rb_left == tmp1"),
+        "unexpected refusal: {error}"
+    );
+}
+
+#[test]
+#[ignore = "nightly: propagated red-sibling inner repair verifies a whole sidecar"]
+fn rbtree_erase_color_flips_red_all_requires_left_inner_parent_link() {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_color_flips_red_all.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(tmp2->rb_right, sibling);",
+        "WRITE_ONCE(tmp2->rb_right, parent);",
+        1,
+    );
+    assert!(
+        error.contains("iid->rb_right == sid"),
+        "unexpected refusal: {error}"
+    );
+}

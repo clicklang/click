@@ -237,6 +237,13 @@ saved child pointer is connected to the right link before the subtree is folded.
 The mirrored propagated red-sibling inner rotation and complete erase wrapper
 remain.
 
+`rbtree_erase_color_flips_red_all.click` adds the mirrored left-deficit
+red-sibling cases 1/3/4. It covers color-flip propagation followed by cases
+1/2, 1/4, or 1/3/4, as well as the black-sibling rotations, in both directions
+with nonempty focus and rotation subtrees. The exact result, parent links,
+red-black invariants, and in-order contents are preserved. Connecting this
+repair contract to the complete erase wrapper remains.
+
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is
 separated from fields the C may write. Metadata-carrying callbacks remain
