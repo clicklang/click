@@ -742,24 +742,6 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
     verify_click_file_theorems_with_environment(&file, Some(&function_environment))
 }
 
-pub(in crate::surface) fn verify_click_project_theorem(
-    project: &ClickProject,
-    c_sources: &[(&str, &str)],
-    theorem_name: &str,
-) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
-    let sources = CSourceContext::bundle(c_sources).with_click_project(project);
-    verify_click_project_theorem_context(project, &sources, theorem_name)
-}
-
-pub(in crate::surface) fn verify_click_prepared_project_theorem(
-    project: &ClickProject,
-    imports: &[PreparedCImport],
-    theorem_name: &str,
-) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
-    let sources = CSourceContext::prepared(imports).with_click_project(project);
-    verify_click_project_theorem_context(project, &sources, theorem_name)
-}
-
 pub(in crate::surface) fn verify_click_project_theorem_context(
     project: &ClickProject,
     sources: &CSourceContext<'_>,
@@ -1599,9 +1581,11 @@ impl C0VerificationSession {
         click_source: &str,
         c_sources: &[(&str, &str)],
     ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
-        instrumentation::with_default_tactic_limits(|| {
-            Self::new_with_limits(click_source, c_sources)
-        })
+        Self::start(
+            None,
+            click_source,
+            &ProgramInputs::Bundle(c_sources.to_vec()),
+        )
     }
 
     /// Starts a reusable verification session over compiler-prepared inputs.
@@ -1610,91 +1594,14 @@ impl C0VerificationSession {
         click_source: &str,
         imports: &[PreparedCImport],
     ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
-        instrumentation::with_default_tactic_limits(|| {
-            let sources = CSourceContext::prepared(imports);
-            let (verified, verified_function_environment) =
-                verify_c0_sources_with_context(click_source, &sources, None, None, None, None)?;
-            let baseline_file = parse_c0_click_file_context(click_source, &sources)?;
-            let environment_identity = sources.environment_identity_with_runtime(
-                baseline_file.selected_c_target(),
-                baseline_file.selected_thread_runtime(),
-            );
-            Ok((
-                Self {
-                    c_sources: Vec::new(),
-                    click_project: None,
-                    prepared_imports: Some(imports.to_vec()),
-                    prepared_program_import: None,
-                    baseline_file,
-                    verified_function_environment,
-                    environment_identity,
-                    kernel_generation: crate::kernel::verification_session_generation(),
-                    kernel_state: crate::kernel::VerificationSession::capture_state(),
-                },
-                verified,
-            ))
-        })
+        Self::start(None, click_source, &ProgramInputs::Prepared(imports))
     }
 
     pub fn new_program_prepared(
         click_source: &str,
         import: &impl PreparedProgramSource,
     ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
-        instrumentation::with_default_tactic_limits(|| {
-            let sources = CSourceContext::program(import)?;
-            let (verified, verified_function_environment) =
-                verify_c0_sources_with_context(click_source, &sources, None, None, None, None)?;
-            let baseline_file = parse_c0_click_file_context(click_source, &sources)?;
-            let environment_identity = sources.environment_identity_with_runtime(
-                baseline_file.selected_c_target(),
-                baseline_file.selected_thread_runtime(),
-            );
-            Ok((
-                Self {
-                    c_sources: Vec::new(),
-                    click_project: None,
-                    prepared_imports: None,
-                    prepared_program_import: Some(import.prepared_program()),
-                    baseline_file,
-                    verified_function_environment,
-                    environment_identity,
-                    kernel_generation: crate::kernel::verification_session_generation(),
-                    kernel_state: crate::kernel::VerificationSession::capture_state(),
-                },
-                verified,
-            ))
-        })
-    }
-
-    fn new_with_limits(
-        click_source: &str,
-        c_sources: &[(&str, &str)],
-    ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
-        let sources = CSourceContext::bundle(c_sources);
-        let (verified, verified_function_environment) =
-            verify_c0_sources_with_context(click_source, &sources, None, None, None, None)?;
-        let baseline_file = parse_c0_click_file_context(click_source, &sources)?;
-        let environment_identity = sources.environment_identity_with_runtime(
-            baseline_file.selected_c_target(),
-            baseline_file.selected_thread_runtime(),
-        );
-        Ok((
-            Self {
-                c_sources: c_sources
-                    .iter()
-                    .map(|(name, source)| ((*name).to_string(), (*source).to_string()))
-                    .collect(),
-                click_project: None,
-                prepared_imports: None,
-                prepared_program_import: None,
-                baseline_file,
-                verified_function_environment,
-                environment_identity,
-                kernel_generation: crate::kernel::verification_session_generation(),
-                kernel_state: crate::kernel::VerificationSession::capture_state(),
-            },
-            verified,
-        ))
+        Self::start(None, click_source, &ProgramInputs::Program(import))
     }
 
     /// Starts a reusable verification session over a loaded Click module graph.
@@ -1702,102 +1609,91 @@ impl C0VerificationSession {
         project: &ClickProject,
         c_sources: &[(&str, &str)],
     ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
-        instrumentation::with_default_tactic_limits(|| {
-            let sources = CSourceContext::bundle(c_sources).with_click_project(project);
-            let baseline_file = resolve_click_project_context(project, &sources)?;
-            let (verified, verified_function_environment) = verify_c0_sources_with_context(
-                project.entry_source().expect("resolved entry source"),
-                &sources,
-                None,
-                None,
-                None,
-                Some(baseline_file.clone()),
-            )?;
-            let environment_identity = sources.environment_identity_with_runtime(
-                baseline_file.selected_c_target(),
-                baseline_file.selected_thread_runtime(),
-            );
-            Ok((
-                Self {
-                    c_sources: c_sources
-                        .iter()
-                        .map(|(name, source)| ((*name).to_string(), (*source).to_string()))
-                        .collect(),
-                    click_project: Some(project.clone()),
-                    prepared_imports: None,
-                    prepared_program_import: None,
-                    baseline_file,
-                    verified_function_environment,
-                    environment_identity,
-                    kernel_generation: crate::kernel::verification_session_generation(),
-                    kernel_state: crate::kernel::VerificationSession::capture_state(),
-                },
-                verified,
-            ))
-        })
+        Self::start_project(project, &ProgramInputs::Bundle(c_sources.to_vec()))
     }
 
     pub fn new_prepared_project(
         project: &ClickProject,
         imports: &[PreparedCImport],
     ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
-        instrumentation::with_default_tactic_limits(|| {
-            let sources = CSourceContext::prepared(imports).with_click_project(project);
-            let baseline_file = resolve_click_project_context(project, &sources)?;
-            let (verified, verified_function_environment) = verify_c0_sources_with_context(
-                project.entry_source().expect("resolved entry source"),
-                &sources,
-                None,
-                None,
-                None,
-                Some(baseline_file.clone()),
-            )?;
-            let environment_identity = sources.environment_identity_with_runtime(
-                baseline_file.selected_c_target(),
-                baseline_file.selected_thread_runtime(),
-            );
-            Ok((
-                Self {
-                    c_sources: Vec::new(),
-                    click_project: Some(project.clone()),
-                    prepared_imports: Some(imports.to_vec()),
-                    prepared_program_import: None,
-                    baseline_file,
-                    verified_function_environment,
-                    environment_identity,
-                    kernel_generation: crate::kernel::verification_session_generation(),
-                    kernel_state: crate::kernel::VerificationSession::capture_state(),
-                },
-                verified,
-            ))
-        })
+        Self::start_project(project, &ProgramInputs::Prepared(imports))
     }
 
     pub fn new_program_prepared_project(
         project: &ClickProject,
         import: &impl PreparedProgramSource,
     ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
+        Self::start_project(project, &ProgramInputs::Program(import))
+    }
+
+    fn start_project(
+        project: &ClickProject,
+        inputs: &ProgramInputs<'_>,
+    ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
+        let source = project.entry_source().ok_or_else(|| {
+            ClickError::new(format!("missing entry module `{}`", project.entry()))
+        })?;
+        Self::start(Some(project), source, inputs)
+    }
+
+    /// Verifies the inputs once and retains them, with the resulting function
+    /// environment, for later rewrite checks.
+    fn start(
+        project: Option<&ClickProject>,
+        click_source: &str,
+        inputs: &ProgramInputs<'_>,
+    ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
         instrumentation::with_default_tactic_limits(|| {
-            let sources = CSourceContext::program(import)?.with_click_project(project);
-            let baseline_file = resolve_click_project_context(project, &sources)?;
-            let (verified, verified_function_environment) = verify_c0_sources_with_context(
-                project.entry_source().expect("resolved entry source"),
-                &sources,
-                None,
-                None,
-                None,
-                Some(baseline_file.clone()),
-            )?;
+            let sources = CSourceContext::of(inputs)?;
+            let (sources, verified, verified_function_environment, baseline_file) = match project {
+                Some(project) => {
+                    let sources = sources.with_click_project(project);
+                    let baseline_file = resolve_click_project_context(project, &sources)?;
+                    let (verified, environment) = verify_c0_sources_with_context(
+                        click_source,
+                        &sources,
+                        None,
+                        None,
+                        None,
+                        Some(baseline_file.clone()),
+                    )?;
+                    (sources, verified, environment, baseline_file)
+                }
+                None => {
+                    let (verified, environment) = verify_c0_sources_with_context(
+                        click_source,
+                        &sources,
+                        None,
+                        None,
+                        None,
+                        None,
+                    )?;
+                    let baseline_file = parse_c0_click_file_context(click_source, &sources)?;
+                    (sources, verified, environment, baseline_file)
+                }
+            };
             let environment_identity = sources.environment_identity_with_runtime(
                 baseline_file.selected_c_target(),
                 baseline_file.selected_thread_runtime(),
             );
             Ok((
                 Self {
-                    c_sources: Vec::new(),
-                    click_project: Some(project.clone()),
-                    prepared_imports: None,
-                    prepared_program_import: Some(import.prepared_program()),
+                    c_sources: match inputs {
+                        ProgramInputs::Bundle(c_sources) => c_sources
+                            .iter()
+                            .map(|(name, source)| ((*name).to_string(), (*source).to_string()))
+                            .collect(),
+                        _ => Vec::new(),
+                    },
+                    click_project: project.cloned(),
+                    prepared_imports: match inputs {
+                        ProgramInputs::Prepared(imports) => Some(imports.to_vec()),
+                        _ => None,
+                    },
+                    prepared_program_import: match inputs {
+                        ProgramInputs::Program(import) => Some(import.prepared_program()),
+                        _ => None,
+                    },
                     baseline_file,
                     verified_function_environment,
                     environment_identity,
@@ -2122,7 +2018,7 @@ pub fn verify_c0_prepared_sources_at(
 
 pub fn verify_program_prepared_sources_at(
     click_source: &str,
-    import: &impl PreparedProgramSource,
+    import: &(impl PreparedProgramSource + ?Sized),
     line: usize,
     column: usize,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {

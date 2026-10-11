@@ -20,12 +20,9 @@ use click::surface::{
     c0_prepared_smart_tactic_source_sites, c0_prepared_tactic_source_position,
     c0_smart_tactic_source_sites, c0_tactic_source_position, click_import_sites,
     expand_c0_claim_source_by_label, expand_c0_prepared_claim_source_by_label,
-    expand_c0_prepared_project_claim_source_by_label, expand_c0_prepared_project_tactic_source_at,
-    expand_c0_prepared_tactic_source_at, expand_c0_project_claim_source_by_label,
-    expand_c0_project_tactic_source_at, expand_c0_tactic_source_at,
-    expand_program_prepared_claim_source_by_label,
-    expand_program_prepared_project_claim_source_by_label,
-    expand_program_prepared_project_tactic_source_at, expand_program_prepared_tactic_source_at,
+    expand_c0_prepared_tactic_source_at, expand_c0_tactic_source_at,
+    expand_program_prepared_claim_source_by_label, expand_program_prepared_tactic_source_at,
+    expand_project_claim_source_by_label, expand_project_tactic_source_at,
     program_prepared_smart_tactic_source_sites, program_prepared_tactic_source_position,
     project_smart_tactic_source_sites, project_tactic_source_position,
     verify_c0_prepared_sources_at, verify_c0_sources_at, verify_program_prepared_sources_at,
@@ -1796,35 +1793,21 @@ fn expand_claim_with_source(
     source: &AuditSource,
     claim_label: &str,
 ) -> Result<String, String> {
-    let expanded_click = match &source.inputs {
-        CInput::Bundle(sources) => match &source.project {
-            Some(project) => {
-                expand_c0_project_claim_source_by_label(project, &source_refs(sources), claim_label)
-            }
-            None => expand_c0_claim_source_by_label(
-                &source.click_source,
-                &source_refs(sources),
-                claim_label,
-            ),
-        },
-        CInput::Prepared(imports) => match &source.project {
-            Some(project) => {
-                expand_c0_prepared_project_claim_source_by_label(project, imports, claim_label)
-            }
-            None => {
-                expand_c0_prepared_claim_source_by_label(&source.click_source, imports, claim_label)
-            }
-        },
-        CInput::PreparedProgram(import) => match &source.project {
-            Some(project) => {
-                expand_program_prepared_project_claim_source_by_label(project, import, claim_label)
-            }
-            None => expand_program_prepared_claim_source_by_label(
-                &source.click_source,
-                import,
-                claim_label,
-            ),
-        },
+    let expanded_click = match (&source.project, &source.inputs) {
+        (Some(project), inputs) => {
+            expand_project_claim_source_by_label(project, &inputs.program_inputs(), claim_label)
+        }
+        (None, CInput::Bundle(sources)) => expand_c0_claim_source_by_label(
+            &source.click_source,
+            &source_refs(sources),
+            claim_label,
+        ),
+        (None, CInput::Prepared(imports)) => {
+            expand_c0_prepared_claim_source_by_label(&source.click_source, imports, claim_label)
+        }
+        (None, CInput::PreparedProgram(import)) => {
+            expand_program_prepared_claim_source_by_label(&source.click_source, import, claim_label)
+        }
     }
     .map_err(|error| error.report())?;
     if looks_like_mdtest(click_path) {
@@ -2198,43 +2181,25 @@ fn expand_location_with_source_parts(
             "line {line} is outside the proof container's Click source"
         ));
     };
-    let expanded_click = match &source.inputs {
-        CInput::Bundle(sources) => match &source.project {
-            Some(project) => expand_c0_project_tactic_source_at(
-                project,
-                &source_refs(sources),
-                click_line,
-                column,
-            ),
-            None => expand_c0_tactic_source_at(
-                &source.click_source,
-                &source_refs(sources),
-                click_line,
-                column,
-            ),
-        },
-        CInput::Prepared(imports) => match &source.project {
-            Some(project) => {
-                expand_c0_prepared_project_tactic_source_at(project, imports, click_line, column)
-            }
-            None => expand_c0_prepared_tactic_source_at(
-                &source.click_source,
-                imports,
-                click_line,
-                column,
-            ),
-        },
-        CInput::PreparedProgram(import) => match &source.project {
-            Some(project) => expand_program_prepared_project_tactic_source_at(
-                project, import, click_line, column,
-            ),
-            None => expand_program_prepared_tactic_source_at(
-                &source.click_source,
-                import,
-                click_line,
-                column,
-            ),
-        },
+    let expanded_click = match (&source.project, &source.inputs) {
+        (Some(project), inputs) => {
+            expand_project_tactic_source_at(project, &inputs.program_inputs(), click_line, column)
+        }
+        (None, CInput::Bundle(sources)) => expand_c0_tactic_source_at(
+            &source.click_source,
+            &source_refs(sources),
+            click_line,
+            column,
+        ),
+        (None, CInput::Prepared(imports)) => {
+            expand_c0_prepared_tactic_source_at(&source.click_source, imports, click_line, column)
+        }
+        (None, CInput::PreparedProgram(import)) => expand_program_prepared_tactic_source_at(
+            &source.click_source,
+            import,
+            click_line,
+            column,
+        ),
     }
     .map_err(|error| error.report())?;
     if looks_like_mdtest(click_path) {

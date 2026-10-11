@@ -849,9 +849,9 @@ int32 identity(int32 x) { ensures result == x by { execute(); simp(); } }
             sites[0].source_index,
         )
         .unwrap();
-        let expanded = expansion::expand_c0_project_tactic_source_at(
+        let expanded = expansion::expand_project_tactic_source_at(
             &project,
-            &[],
+            &ProgramInputs::Bundle(Vec::new()),
             position.line,
             position.column,
         )
@@ -965,9 +965,9 @@ theorem sibling_bad() { ensures 0 == 1 by simp; }
             sites[0].source_index,
         )
         .unwrap();
-        let expanded = expansion::expand_c0_prepared_project_tactic_source_at(
+        let expanded = expansion::expand_project_tactic_source_at(
             &project,
-            &imports,
+            &ProgramInputs::Prepared(&imports),
             position.line,
             position.column,
         )

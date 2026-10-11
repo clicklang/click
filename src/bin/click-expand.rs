@@ -9,18 +9,14 @@ use click::cli::{
     read_mdtest, read_mdtest_project_if_needed, source_refs,
 };
 use click::surface::{
-    ClickProject, SmartTacticCandidate, SmartTacticSelectionError,
-    c0_prepared_project_select_smart_tactic, c0_prepared_select_smart_tactic,
-    c0_prepared_tactic_source_position, c0_project_select_smart_tactic, c0_select_smart_tactic,
-    c0_tactic_source_position, expand_c0_claim_source_by_label,
-    expand_c0_prepared_claim_source_by_label, expand_c0_prepared_project_claim_source_by_label,
-    expand_c0_prepared_project_tactic_source_at, expand_c0_prepared_tactic_source_at,
-    expand_c0_project_claim_source_by_label, expand_c0_project_tactic_source_at,
-    expand_c0_tactic_source_at, expand_program_prepared_claim_source_by_label,
-    expand_program_prepared_project_claim_source_by_label,
-    expand_program_prepared_project_tactic_source_at, expand_program_prepared_tactic_source_at,
-    map_verifying_source_paths, program_prepared_project_select_smart_tactic,
-    program_prepared_select_smart_tactic, program_prepared_tactic_source_position,
+    ClickProject, SmartTacticCandidate, SmartTacticSelectionError, c0_prepared_select_smart_tactic,
+    c0_prepared_tactic_source_position, c0_select_smart_tactic, c0_tactic_source_position,
+    expand_c0_claim_source_by_label, expand_c0_prepared_claim_source_by_label,
+    expand_c0_prepared_tactic_source_at, expand_c0_tactic_source_at,
+    expand_program_prepared_claim_source_by_label, expand_program_prepared_tactic_source_at,
+    expand_project_claim_source_by_label, expand_project_tactic_source_at,
+    map_verifying_source_paths, program_prepared_select_smart_tactic,
+    program_prepared_tactic_source_position, project_select_smart_tactic,
     project_tactic_source_position, verify_c0_prepared_sources_at, verify_c0_sources_at,
     verify_program_prepared_sources_at, verify_project_at,
 };
@@ -445,70 +441,40 @@ fn expand_selection(
                 .map_err(|error| report.describe(*line, *column, error))?;
             let claim = selected.claim_label;
             let (line, column) = (&selected.position.line, &selected.position.column);
-            let expanded = match inputs {
-                CInput::Bundle(sources) => match project {
-                    Some(project) => expand_c0_project_tactic_source_at(
-                        project,
-                        &source_refs(sources),
-                        *line,
-                        *column,
-                    ),
-                    None => expand_c0_tactic_source_at(
-                        click_source,
-                        &source_refs(sources),
-                        *line,
-                        *column,
-                    ),
-                },
-                CInput::Prepared(imports) => match project {
-                    Some(project) => expand_c0_prepared_project_tactic_source_at(
-                        project, imports, *line, *column,
-                    ),
-                    None => {
-                        expand_c0_prepared_tactic_source_at(click_source, imports, *line, *column)
-                    }
-                },
-                CInput::PreparedProgram(import) => match project {
-                    Some(project) => expand_program_prepared_project_tactic_source_at(
-                        project, import, *line, *column,
-                    ),
-                    None => expand_program_prepared_tactic_source_at(
-                        click_source,
-                        import,
-                        *line,
-                        *column,
-                    ),
-                },
+            let expanded = match (project, inputs) {
+                (Some(project), _) => expand_project_tactic_source_at(
+                    project,
+                    &inputs.program_inputs(),
+                    *line,
+                    *column,
+                ),
+                (None, CInput::Bundle(sources)) => {
+                    expand_c0_tactic_source_at(click_source, &source_refs(sources), *line, *column)
+                }
+                (None, CInput::Prepared(imports)) => {
+                    expand_c0_prepared_tactic_source_at(click_source, imports, *line, *column)
+                }
+                (None, CInput::PreparedProgram(import)) => {
+                    expand_program_prepared_tactic_source_at(click_source, import, *line, *column)
+                }
             }
             .map_err(|error| error.report())?;
             Ok((claim, expanded))
         }
         Selection::Claim(claim) => {
-            let expanded = match inputs {
-                CInput::Bundle(sources) => match project {
-                    Some(project) => expand_c0_project_claim_source_by_label(
-                        project,
-                        &source_refs(sources),
-                        claim,
-                    ),
-                    None => {
-                        expand_c0_claim_source_by_label(click_source, &source_refs(sources), claim)
-                    }
-                },
-                CInput::Prepared(imports) => match project {
-                    Some(project) => {
-                        expand_c0_prepared_project_claim_source_by_label(project, imports, claim)
-                    }
-                    None => expand_c0_prepared_claim_source_by_label(click_source, imports, claim),
-                },
-                CInput::PreparedProgram(import) => match project {
-                    Some(project) => expand_program_prepared_project_claim_source_by_label(
-                        project, import, claim,
-                    ),
-                    None => {
-                        expand_program_prepared_claim_source_by_label(click_source, import, claim)
-                    }
-                },
+            let expanded = match (project, inputs) {
+                (Some(project), _) => {
+                    expand_project_claim_source_by_label(project, &inputs.program_inputs(), claim)
+                }
+                (None, CInput::Bundle(sources)) => {
+                    expand_c0_claim_source_by_label(click_source, &source_refs(sources), claim)
+                }
+                (None, CInput::Prepared(imports)) => {
+                    expand_c0_prepared_claim_source_by_label(click_source, imports, claim)
+                }
+                (None, CInput::PreparedProgram(import)) => {
+                    expand_program_prepared_claim_source_by_label(click_source, import, claim)
+                }
             }
             .map_err(|error| error.report())?;
             Ok((claim.clone(), expanded))
@@ -584,25 +550,19 @@ fn select_smart_tactic(
     line: usize,
     column: Option<usize>,
 ) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
-    match inputs {
-        CInput::Bundle(sources) => match project {
-            Some(project) => {
-                c0_project_select_smart_tactic(project, &source_refs(sources), line, column)
-            }
-            None => c0_select_smart_tactic(click_source, &source_refs(sources), line, column),
-        },
-        CInput::Prepared(imports) => match project {
-            Some(project) => {
-                c0_prepared_project_select_smart_tactic(project, imports, line, column)
-            }
-            None => c0_prepared_select_smart_tactic(click_source, imports, line, column),
-        },
-        CInput::PreparedProgram(import) => match project {
-            Some(project) => {
-                program_prepared_project_select_smart_tactic(project, import, line, column)
-            }
-            None => program_prepared_select_smart_tactic(click_source, import, line, column),
-        },
+    match (project, inputs) {
+        (Some(project), _) => {
+            project_select_smart_tactic(project, &inputs.program_inputs(), line, column)
+        }
+        (None, CInput::Bundle(sources)) => {
+            c0_select_smart_tactic(click_source, &source_refs(sources), line, column)
+        }
+        (None, CInput::Prepared(imports)) => {
+            c0_prepared_select_smart_tactic(click_source, imports, line, column)
+        }
+        (None, CInput::PreparedProgram(import)) => {
+            program_prepared_select_smart_tactic(click_source, import, line, column)
+        }
     }
 }
 

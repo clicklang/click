@@ -169,95 +169,73 @@ pub(in crate::surface) fn capture_c0_tactic_expansion(
     }
 }
 
-pub(in crate::surface) fn capture_c0_project_tactic_expansion(
+pub(in crate::surface) fn capture_project_tactic_expansion(
     project: &ClickProject,
-    c_sources: &[(&str, &str)],
+    inputs: &ProgramInputs<'_>,
     site: ProofSite,
     source_index: usize,
     nested_path: &[usize],
 ) -> Result<Vec<ProofTactic>, ClickError> {
     let mut capture = ExpansionCapture::for_nested_tactic(site.clone(), source_index, nested_path);
-    let verification = verify_project_with_expansion_capture(
-        project,
-        &ProgramInputs::Bundle(c_sources.to_vec()),
-        &mut capture,
-    );
+    let verification = verify_project_with_expansion_capture(project, inputs, &mut capture);
     if let Some(result) = decided_tactic_expansion(&capture) {
         return result;
     }
     verification.and_then(|_| undecided_tactic_expansion(&capture, &site, source_index))
 }
 
-pub(in crate::surface) fn capture_c0_prepared_project_tactic_expansion(
-    project: &ClickProject,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
-    site: ProofSite,
-    source_index: usize,
-    nested_path: &[usize],
-) -> Result<Vec<ProofTactic>, ClickError> {
-    let mut capture = ExpansionCapture::for_nested_tactic(site.clone(), source_index, nested_path);
-    let verification = verify_project_with_expansion_capture(
-        project,
-        &ProgramInputs::Prepared(imports),
-        &mut capture,
-    );
-    if let Some(result) = decided_tactic_expansion(&capture) {
-        return result;
-    }
-    verification.and_then(|_| undecided_tactic_expansion(&capture, &site, source_index))
-}
-
-pub(in crate::surface) fn capture_program_prepared_project_tactic_expansion(
-    project: &ClickProject,
-    import: &impl crate::languages::PreparedProgramSource,
-    site: ProofSite,
-    source_index: usize,
-    nested_path: &[usize],
-) -> Result<Vec<ProofTactic>, ClickError> {
-    let mut capture = ExpansionCapture::for_nested_tactic(site.clone(), source_index, nested_path);
-    let verification = verify_project_with_expansion_capture(
-        project,
-        &ProgramInputs::Program(import),
-        &mut capture,
-    );
-    if let Some(result) = decided_tactic_expansion(&capture) {
-        return result;
-    }
-    verification.and_then(|_| undecided_tactic_expansion(&capture, &site, source_index))
-}
-
-pub(in crate::surface) fn capture_program_prepared_tactic_expansion(
+/// Captures one tactic's expansion over compiler-prepared inputs.
+pub(in crate::surface) fn capture_prepared_tactic_expansion(
     click_source: &str,
-    import: &impl crate::languages::PreparedProgramSource,
+    sources: &CSourceContext<'_>,
     site: ProofSite,
     source_index: usize,
     nested_path: &[usize],
 ) -> Result<Vec<ProofTactic>, ClickError> {
     let mut capture = ExpansionCapture::for_nested_tactic(site.clone(), source_index, nested_path);
-    let sources = CSourceContext::program(import)?;
     let verification =
-        verify_c0_sources_with_expansion_capture_context(click_source, &sources, &mut capture);
+        verify_c0_sources_with_expansion_capture_context(click_source, sources, &mut capture);
     if let Some(result) = decided_tactic_expansion(&capture) {
         return result;
     }
     verification.and_then(|_| undecided_tactic_expansion(&capture, &site, source_index))
 }
 
-pub(in crate::surface) fn capture_c0_prepared_tactic_expansion(
-    click_source: &str,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
+pub(in crate::surface) fn capture_project_proof_site_expansion(
+    project: &ClickProject,
+    inputs: &ProgramInputs<'_>,
     site: ProofSite,
-    source_index: usize,
-    nested_path: &[usize],
 ) -> Result<Vec<ProofTactic>, ClickError> {
-    let mut capture = ExpansionCapture::for_nested_tactic(site.clone(), source_index, nested_path);
-    let sources = CSourceContext::prepared(imports);
+    let mut capture = ExpansionCapture::for_site(site.clone());
+    let verification = verify_project_with_expansion_capture(project, inputs, &mut capture);
+    retained_proof_site_expansion(capture, verification, &site)
+}
+
+/// Captures a whole proof site's expansion over compiler-prepared inputs.
+pub(in crate::surface) fn capture_prepared_proof_site_expansion(
+    click_source: &str,
+    sources: &CSourceContext<'_>,
+    site: ProofSite,
+) -> Result<Vec<ProofTactic>, ClickError> {
+    let mut capture = ExpansionCapture::for_site(site.clone());
     let verification =
-        verify_c0_sources_with_expansion_capture_context(click_source, &sources, &mut capture);
-    if let Some(result) = decided_tactic_expansion(&capture) {
-        return result;
+        verify_c0_sources_with_expansion_capture_context(click_source, sources, &mut capture);
+    retained_proof_site_expansion(capture, verification, &site)
+}
+
+fn retained_proof_site_expansion<T>(
+    capture: ExpansionCapture,
+    verification: Result<T, ClickError>,
+    site: &ProofSite,
+) -> Result<Vec<ProofTactic>, ClickError> {
+    if let Some(result) = capture.result {
+        return result.map_err(ClickError::new);
     }
-    verification.and_then(|_| undecided_tactic_expansion(&capture, &site, source_index))
+    verification?;
+    Err(ClickError::new(format!(
+        "verification did not retain a certificate for {}",
+        site.description()
+    )))
 }
 
 pub(in crate::surface) fn capture_c0_proof_site_expansion(
@@ -284,117 +262,6 @@ pub(in crate::surface) fn capture_c0_proof_site_expansion(
                 site.description()
             )))
         }
-        Ok(_) => Err(ClickError::new(format!(
-            "verification did not retain a certificate for {}",
-            site.description()
-        ))),
-    }
-}
-
-pub(in crate::surface) fn capture_c0_project_proof_site_expansion(
-    project: &ClickProject,
-    c_sources: &[(&str, &str)],
-    site: ProofSite,
-) -> Result<Vec<ProofTactic>, ClickError> {
-    let mut capture = ExpansionCapture::for_site(site.clone());
-    let verification = verify_project_with_expansion_capture(
-        project,
-        &ProgramInputs::Bundle(c_sources.to_vec()),
-        &mut capture,
-    );
-    if let Some(result) = capture.result {
-        return result.map_err(ClickError::new);
-    }
-    match verification {
-        Err(error) => Err(error),
-        Ok(_) => Err(ClickError::new(format!(
-            "verification did not retain a certificate for {}",
-            site.description()
-        ))),
-    }
-}
-
-pub(in crate::surface) fn capture_c0_prepared_project_proof_site_expansion(
-    project: &ClickProject,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
-    site: ProofSite,
-) -> Result<Vec<ProofTactic>, ClickError> {
-    let mut capture = ExpansionCapture::for_site(site.clone());
-    let verification = verify_project_with_expansion_capture(
-        project,
-        &ProgramInputs::Prepared(imports),
-        &mut capture,
-    );
-    if let Some(result) = capture.result {
-        return result.map_err(ClickError::new);
-    }
-    match verification {
-        Err(error) => Err(error),
-        Ok(_) => Err(ClickError::new(format!(
-            "verification did not retain a certificate for {}",
-            site.description()
-        ))),
-    }
-}
-
-pub(in crate::surface) fn capture_program_prepared_project_proof_site_expansion(
-    project: &ClickProject,
-    import: &impl crate::languages::PreparedProgramSource,
-    site: ProofSite,
-) -> Result<Vec<ProofTactic>, ClickError> {
-    let mut capture = ExpansionCapture::for_site(site.clone());
-    let verification = verify_project_with_expansion_capture(
-        project,
-        &ProgramInputs::Program(import),
-        &mut capture,
-    );
-    if let Some(result) = capture.result {
-        return result.map_err(ClickError::new);
-    }
-    match verification {
-        Err(error) => Err(error),
-        Ok(_) => Err(ClickError::new(format!(
-            "verification did not retain a certificate for {}",
-            site.description()
-        ))),
-    }
-}
-
-pub(in crate::surface) fn capture_program_prepared_proof_site_expansion(
-    click_source: &str,
-    import: &impl crate::languages::PreparedProgramSource,
-    site: ProofSite,
-) -> Result<Vec<ProofTactic>, ClickError> {
-    let mut capture = ExpansionCapture::for_site(site.clone());
-    let sources = CSourceContext::program(import)?;
-    let verification =
-        verify_c0_sources_with_expansion_capture_context(click_source, &sources, &mut capture);
-    if let Some(result) = capture.result {
-        return result.map_err(ClickError::new);
-    }
-    match verification {
-        Err(error) => Err(error),
-        Ok(_) => Err(ClickError::new(format!(
-            "verification did not retain a certificate for {}",
-            site.description()
-        ))),
-    }
-}
-
-pub(in crate::surface) fn capture_c0_prepared_proof_site_expansion(
-    click_source: &str,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
-    site: ProofSite,
-) -> Result<Vec<ProofTactic>, ClickError> {
-    let mut capture = ExpansionCapture::for_site(site.clone());
-    let sources = CSourceContext::prepared(imports);
-    let verification =
-        verify_c0_sources_with_expansion_capture_context(click_source, &sources, &mut capture);
-    if let Some(result) = capture.result {
-        return result.map_err(ClickError::new);
-    }
-    match verification {
-        Err(error) => Err(error),
         Ok(_) => Err(ClickError::new(format!(
             "verification did not retain a certificate for {}",
             site.description()

@@ -214,9 +214,12 @@ const MEMORY_FRAME_C: &str = "struct Frame { int64 wide; int32 narrow; }; int32 
 fn authority_transfer_wrapper_memory_frame_expands_and_rechecks_retained_proof() {
     let sources = [("wrapper.c", MEMORY_FRAME_C)];
     for label in ["package.ensures_2", "unpack.ensures_2"] {
-        let expanded =
-            expand_c0_project_claim_source_by_label(&project(MEMORY_FRAME_SOURCE), &sources, label)
-                .expect("the checked wrapper exchange expands");
+        let expanded = expand_project_claim_source_by_label(
+            &project(MEMORY_FRAME_SOURCE),
+            &ProgramInputs::Bundle(sources.to_vec()),
+            label,
+        )
+        .expect("the checked wrapper exchange expands");
         verify_c0_project(&project(&expanded), &sources)
             .expect("the expanded exchange preserves both borrowed fields");
     }

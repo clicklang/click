@@ -155,9 +155,13 @@ fn authority_conditional_release_expansion_roundtrips_every_smart_site() {
             site.source_index,
         )
         .unwrap();
-        let expanded =
-            expand_c0_project_tactic_source_at(&project, &c, position.line, position.column)
-                .unwrap();
+        let expanded = expand_project_tactic_source_at(
+            &project,
+            &ProgramInputs::Bundle(c.to_vec()),
+            position.line,
+            position.column,
+        )
+        .unwrap();
         verify(&expanded).unwrap_or_else(|error| {
             panic!(
                 "{} site {} ({}) expansion failed: {}",
@@ -204,9 +208,13 @@ fn authority_borrowed_member_handoff_expands_every_smart_site() {
             site.source_index,
         )
         .unwrap();
-        let expanded =
-            expand_c0_project_tactic_source_at(&project, &c, position.line, position.column)
-                .unwrap();
+        let expanded = expand_project_tactic_source_at(
+            &project,
+            &ProgramInputs::Bundle(c.to_vec()),
+            position.line,
+            position.column,
+        )
+        .unwrap();
         let expanded_project = ClickProject::new(
             "handoff.click",
             [ClickModuleSource::new("handoff.click", expanded, [])],
@@ -290,9 +298,13 @@ fn authority_nonterminal_detach_keeps_folded_named_output_once() {
                 site.source_index,
             )
             .unwrap();
-            let expanded =
-                expand_c0_project_tactic_source_at(&project, &c, position.line, position.column)
-                    .unwrap();
+            let expanded = expand_project_tactic_source_at(
+                &project,
+                &ProgramInputs::Bundle(c.to_vec()),
+                position.line,
+                position.column,
+            )
+            .unwrap();
             verify_c0_project(&project_for(&expanded), &c).expect(
                 "the named-output expansion preserves one survivor and one output instance",
             );
@@ -381,7 +393,9 @@ fn authority_parent_entry_alias_expansion_preserves_later_resource_proof() {
             .position(|line| line.contains("have old(p->kid) == kid by simp;"))
             .unwrap()
             + 1;
-        let expanded = expand_c0_project_tactic_source_at(&project, &c, line, 13).unwrap();
+        let expanded =
+            expand_project_tactic_source_at(&project, &ProgramInputs::Bundle(c.to_vec()), line, 13)
+                .unwrap();
         verify_c0_project(&project_for(&expanded), &c)
             .expect("expanding the entry alias keeps later resource proofs equivalent");
     });

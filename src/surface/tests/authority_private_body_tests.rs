@@ -582,9 +582,9 @@ fn authority_control_survives_balanced_helper_calls() {
     "#;
     verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
         .expect("ordinary control returns through retaining and releasing helpers");
-    let expanded = expand_c0_project_claim_source_by_label(
+    let expanded = expand_project_claim_source_by_label(
         &project(click_source),
-        &[("private_body.c", c_source)],
+        &ProgramInputs::Bundle([("private_body.c", c_source)].to_vec()),
         "value.contract",
     )
     .expect("the caller expands with checked unselected helper contracts");

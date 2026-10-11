@@ -3085,9 +3085,9 @@ fn return_population_proofs_expand_without_effect_clauses() {
                 .map_or_else(
                     || expand_c0_claim_source(source, &sources, function, CProofClaim::Grouped),
                     |project| {
-                        expand_c0_project_claim_source_by_label(
+                        expand_project_claim_source_by_label(
                             project,
-                            &sources,
+                            &ProgramInputs::Bundle(sources.to_vec()),
                             &format!("{function}.contract"),
                         )
                     },
@@ -15847,9 +15847,9 @@ fn authority_population_certification_expands_every_smart_site() {
             site.source_index,
         )
         .unwrap();
-        let expanded = expand_c0_project_tactic_source_at(
+        let expanded = expand_project_tactic_source_at(
             &project,
-            &c_sources,
+            &ProgramInputs::Bundle(c_sources.to_vec()),
             position.line,
             position.column,
         )
@@ -15903,9 +15903,9 @@ fn authority_callback_count_refinement_expands_every_smart_site() {
             site.source_index,
         )
         .unwrap();
-        let expanded = expand_c0_project_tactic_source_at(
+        let expanded = expand_project_tactic_source_at(
             &project,
-            &c_sources,
+            &ProgramInputs::Bundle(c_sources.to_vec()),
             position.line,
             position.column,
         )
@@ -16055,9 +16055,13 @@ void caller(struct parent* p, struct child* kid) {
             site.source_index,
         )
         .unwrap();
-        let expanded =
-            expand_c0_project_tactic_source_at(&project, &c, position.line, position.column)
-                .unwrap();
+        let expanded = expand_project_tactic_source_at(
+            &project,
+            &ProgramInputs::Bundle(c.to_vec()),
+            position.line,
+            position.column,
+        )
+        .unwrap();
         verify_c0_project(&project_for(&expanded), &c)
             .expect("the explicit proof preserves actual instance fields and the caller frame");
     }
@@ -16623,7 +16627,12 @@ fn check_counted_pthread_whole_claim_expansion(fixture: &str, claim: &str) {
     };
     let project = project_for(&source);
     verify_c0_project(&project, &sources).expect("the original counted pthread proof verifies");
-    let expanded = expand_c0_project_claim_source_by_label(&project, &sources, claim).unwrap();
+    let expanded = expand_project_claim_source_by_label(
+        &project,
+        &ProgramInputs::Bundle(sources.to_vec()),
+        claim,
+    )
+    .unwrap();
     verify_c0_project(&project_for(&expanded), &sources)
         .unwrap_or_else(|error| panic!("{fixture}: {}\n{expanded}", error.message()));
     if fixture == "modeled_pthread_counted_join" {
@@ -16907,14 +16916,17 @@ fn exceptional_claim_labels_preserve_names_and_covering_proofs_in_projects() {
                 [ClickModuleSource::new("helper.click", source, [])],
             )
         };
-        let expanded =
-            expand_c0_project_claim_source_by_label(&project(&source), &c_sources, "helper.threw")
-                .unwrap();
+        let expanded = expand_project_claim_source_by_label(
+            &project(&source),
+            &ProgramInputs::Bundle(c_sources.to_vec()),
+            "helper.threw",
+        )
+        .unwrap();
         assert_ne!(expanded, source);
         verify_c0_project(&project(&expanded), &c_sources).unwrap();
-        expand_c0_project_claim_source_by_label(
+        expand_project_claim_source_by_label(
             &project(&source),
-            &c_sources,
+            &ProgramInputs::Bundle(c_sources.to_vec()),
             "helper.exceptional_ensures_0",
         )
         .expect_err("an explicitly named claim does not acquire a default label");
