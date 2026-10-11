@@ -6470,6 +6470,14 @@ impl<'a> Proof<'a> {
                     fixed_state_application_closes_goal,
                 )
             })
+            .or_else(|| {
+                let (unsigned, ordered) = recorded_wide_order_pairs(derivation, premise_pairs)?;
+                plan_recorded_wide_order_path(
+                    unsigned,
+                    &ordered,
+                    fixed_state_application_closes_goal,
+                )
+            })
             .or_else(|| plan_recorded_bitvector_equality_path(goal, derivation, premise_pairs))
             .or_else(|| {
                 if !derivation.is_int32_pinned_constant_equality() {
