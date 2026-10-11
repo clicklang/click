@@ -224,16 +224,16 @@ theorem successor_expansion(z: Integer) {
 }
 
 #[test]
-fn nat_to_integer_laws_expand_and_reject_wrong_successor() {
+fn nat_integer_laws_expand_and_reject_wrong_successor() {
     let source = r#"
-theorem nat_to_integer_client(n: Nat) {
-    ensures nat_to_integer(Nat::Succ(n)) == nat_to_integer(n) + 1 by {
-        apply(nat_to_integer_succ(n));
+theorem nat_integer_client(n: Nat) {
+    ensures to_integer(Nat::Succ(n)) == to_integer(n) + 1 by {
+        apply(nat_integer_succ(n));
     }
 }
 "#;
     verify_c0_sources(source, &[]).expect("Nat conversion law verifies");
-    let expanded = expand_c0_claim_source_by_label(source, &[], "nat_to_integer_client.ensures_0")
+    let expanded = expand_c0_claim_source_by_label(source, &[], "nat_integer_client.ensures_0")
         .expect("Nat conversion claim expands");
     verify_c0_sources(&expanded, &[]).expect("expanded Nat conversion re-verifies");
 
@@ -1782,7 +1782,7 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
     for step in [
         "apply(uint64_less_than_to_integer((i + 1u64), length))",
         "apply(uint64_add_to_integer(i, 2u64))",
-        "apply(uint64_less_equal_of_to_integer((i + 2u64), length))",
+        "apply(uint64_to_integer_less_equal_implies_less_equal((i + 2u64), length))",
         "arithmetic_certificate {",
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
@@ -1875,7 +1875,7 @@ fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
         "apply(int64_add_defined_by_integer_bounds(i, 1i64))",
         "apply(int64_add_to_integer(i, 2i64))",
         "apply(int64_less_than_to_integer((i + 1i64), length))",
-        "apply(int64_less_equal_of_to_integer((i + 2i64), length))",
+        "apply(int64_to_integer_less_equal_implies_less_equal((i + 2i64), length))",
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
     }

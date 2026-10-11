@@ -114,7 +114,7 @@ theorem subtract_from_sum(total: int32, left: int32, right: int32, amount: int32
                 to_integer(right - amount) == to_integer(right) - to_integer(amount);
             }
         }
-        apply(int32_equal_of_to_integer(total - amount, left + (right - amount))) using {
+        apply(int32_to_integer_equal_implies_equal(total - amount, left + (right - amount))) using {
             to_integer(total - amount) == to_integer(left + (right - amount));
         }
         simp();

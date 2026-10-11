@@ -43,7 +43,7 @@ void clear(int32* values, uint32 n) {
             step();
             step();
             have at(statement(3).entry, x) < 4u32 by {
-                apply(uint32_lt_le_transitive(at(statement(3).entry, x), n, 4u32)) using {
+                apply(uint32_less_than_less_equal_transitive(at(statement(3).entry, x), n, 4u32)) using {
                     at(statement(3).entry, x) < n;
                     n <= 4u32;
                 }

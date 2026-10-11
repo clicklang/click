@@ -62,7 +62,6 @@ synchronization, and graph coverage remain P2.
 Program import and execution:
 
 - [Support safe Rust and verify a shared C/Rust checksum specification](rust-support.md)
-- [Write the Adler sidecars in Rust syntax, then refuse the C-shaped spelling](adler-syntax.md)
 
 The completed [basic C++ example](../examples/basic-cpp/README.md) verifies
 references, checked scoped cleanup, and a modular caller. The unchanged

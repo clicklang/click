@@ -1364,7 +1364,8 @@ impl<'a> Proof<'a> {
         if crate::surface::proof_trace::enabled_for(self.claim_label()) {
             crate::surface::proof_trace::register_scope(
                 Arc::as_ptr(&body.node) as usize,
-                trace_path_lineage(&self.node, self.focused_branch_id()),
+                self.trace_lineage(self.claim_label())
+                    .expect("trace enabled"),
                 Box::new(self.node.clone()),
             );
         }

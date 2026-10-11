@@ -789,6 +789,104 @@ macro_rules! binary_spec_integer_expression {
 }
 pub(crate) use binary_spec_integer_expression;
 
+/// Matches every integer [`CValue`] that promotes to `int`, binding its operand to `$term`.
+macro_rules! int_promoted_c_value {
+    ($term:pat) => {
+        $crate::kernel::CValue::Int8($term)
+            | $crate::kernel::CValue::Int16($term)
+            | $crate::kernel::CValue::Int32($term)
+            | $crate::kernel::CValue::UInt8($term)
+            | $crate::kernel::CValue::UInt16($term)
+    };
+}
+pub(crate) use int_promoted_c_value;
+
+/// Matches every integer [`CValue`] of at most 32 bits, binding its operand to `$term`.
+macro_rules! integer32_c_value {
+    ($term:pat) => {
+        $crate::kernel::CValue::Int8($term)
+            | $crate::kernel::CValue::Int16($term)
+            | $crate::kernel::CValue::Int32($term)
+            | $crate::kernel::CValue::UInt8($term)
+            | $crate::kernel::CValue::UInt16($term)
+            | $crate::kernel::CValue::UInt32($term)
+    };
+}
+pub(crate) use integer32_c_value;
+
+/// Matches every integer [`CValue`] of at most 64 bits, binding its operand to `$term`.
+macro_rules! integer64_c_value {
+    ($term:pat) => {
+        $crate::kernel::CValue::Int8($term)
+            | $crate::kernel::CValue::Int16($term)
+            | $crate::kernel::CValue::Int32($term)
+            | $crate::kernel::CValue::UInt8($term)
+            | $crate::kernel::CValue::UInt16($term)
+            | $crate::kernel::CValue::UInt32($term)
+            | $crate::kernel::CValue::Int64($term)
+            | $crate::kernel::CValue::UInt64($term)
+    };
+}
+pub(crate) use integer64_c_value;
+
+/// Matches every integer [`CValue`], binding its operand to `$term`.
+macro_rules! integer_c_value {
+    ($term:pat) => {
+        $crate::kernel::CValue::Int8($term)
+            | $crate::kernel::CValue::Int16($term)
+            | $crate::kernel::CValue::Int32($term)
+            | $crate::kernel::CValue::UInt8($term)
+            | $crate::kernel::CValue::UInt16($term)
+            | $crate::kernel::CValue::UInt32($term)
+            | $crate::kernel::CValue::Int64($term)
+            | $crate::kernel::CValue::UInt64($term)
+            | $crate::kernel::CValue::Int128($term)
+            | $crate::kernel::CValue::UInt128($term)
+    };
+}
+pub(crate) use integer_c_value;
+
+/// Matches every arithmetic [`CValue`]: `_Bool`, the integers and the floating types, binding its
+/// operand to `$term`.
+macro_rules! arithmetic_c_value {
+    ($term:pat) => {
+        $crate::kernel::CValue::Bool($term)
+            | $crate::kernel::CValue::Int8($term)
+            | $crate::kernel::CValue::Int16($term)
+            | $crate::kernel::CValue::Int32($term)
+            | $crate::kernel::CValue::UInt8($term)
+            | $crate::kernel::CValue::UInt16($term)
+            | $crate::kernel::CValue::UInt32($term)
+            | $crate::kernel::CValue::Int64($term)
+            | $crate::kernel::CValue::UInt64($term)
+            | $crate::kernel::CValue::Int128($term)
+            | $crate::kernel::CValue::UInt128($term)
+            | $crate::kernel::CValue::Float32($term)
+            | $crate::kernel::CValue::Float64($term)
+    };
+}
+pub(crate) use arithmetic_c_value;
+
+/// Matches every one-operand [`Bitvector32Term`] operation and conversion, binding its operand to
+/// `$term`.
+macro_rules! unary_machine_term {
+    ($term:pat) => {
+        $crate::kernel::Bitvector32Term::BitwiseNot($term)
+            | $crate::kernel::Bitvector32Term::Int64BitwiseNot($term)
+            | $crate::kernel::Bitvector32Term::UInt64BitwiseNot($term)
+            | $crate::kernel::Bitvector32Term::Int64From32($term)
+            | $crate::kernel::Bitvector32Term::MachineIntegerCast { value: $term, .. }
+            | $crate::kernel::Bitvector32Term::UInt64From32($term)
+            | $crate::kernel::Bitvector32Term::UInt32From64($term)
+            | $crate::kernel::Bitvector32Term::Int64FromUInt32($term)
+            | $crate::kernel::Bitvector32Term::UInt64FromInt32($term)
+            | $crate::kernel::Bitvector32Term::UInt64FromInt64($term)
+            | $crate::kernel::Bitvector32Term::Float32Negate($term)
+            | $crate::kernel::Bitvector32Term::Float64Negate($term)
+    };
+}
+pub(crate) use unary_machine_term;
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Pointer {
     pub block: PointerBlock,
@@ -9525,7 +9623,6 @@ pub(crate) enum AtomicPropositionDerivationEvidence {
     Int32IncrementStrictGreaterFromStrictLower(Box<Int32IncrementBoundsEvidence>),
     Int32IncrementPreservesOrder(Box<Int32IncrementBoundsEvidence>),
     Int32PositiveIsNonnegative(Box<SignedOrderDerivationStep>),
-    Int32StrictlyPositiveIsNonnegative(Box<SignedOrderDerivationStep>),
     Int32SuccessorLeImpliesLt(Box<SignedOrderDerivationStep>),
     Int32ConstantLowerBoundWeakening(Box<SignedOrderDerivationStep>),
     Int32NegatedStrictSuccessorBound(Box<SignedOrderDerivationStep>),
@@ -10748,12 +10845,47 @@ pub(super) struct CStatementExecutionPath {
     pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
 }
 
+impl CStatementExecutionPath {
+    /// A path with no loop-invariant correspondence and no loan evidence,
+    /// which is every path not leaving a checked loop or a borrowing call.
+    pub(super) fn new(
+        outcome: CStatementOutcome,
+        facts: ExecutionFacts,
+        obligations: Vec<ProofObligation>,
+    ) -> Self {
+        Self {
+            loop_invariant_correspondence: Default::default(),
+            outcome,
+            facts,
+            obligations,
+            loan_evidence: super::loans::empty_checked_loan_evidence_sequence(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CFunctionPath {
     pub(super) outcome: CFunctionOutcome,
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
     pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
+}
+
+impl CFunctionPath {
+    /// A path with no loan evidence: every path not ending in a borrowing
+    /// call.
+    pub(super) fn new(
+        outcome: CFunctionOutcome,
+        facts: ExecutionFacts,
+        obligations: Vec<ProofObligation>,
+    ) -> Self {
+        Self {
+            outcome,
+            facts,
+            obligations,
+            loan_evidence: super::loans::empty_checked_loan_evidence_sequence(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

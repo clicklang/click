@@ -60,13 +60,13 @@ int32 owned_segmented_buffer_init(
     step();
     step();
     have 0 <= owner->first_len by {
-        apply(int32_positive_is_nonnegative(at(statement(4).entry, first_len))) using {
+        apply(int32_less_equal_transitive(0, 1, at(statement(4).entry, first_len))) using {
             at(statement(4).entry, 1) <= at(statement(4).entry, first_len);
         }
         assumption();
     }
     have 0 <= owner->second_len by {
-        apply(int32_positive_is_nonnegative(at(statement(4).entry, second_len))) using {
+        apply(int32_less_equal_transitive(0, 1, at(statement(4).entry, second_len))) using {
             at(statement(4).entry, 1) <= at(statement(4).entry, second_len);
         }
         assumption();
@@ -88,13 +88,13 @@ int32 owned_segmented_buffer_init(
         normalize();
     }
     have 0 < owner->first_len by {
-        apply(int32_successor_le_implies_lt(0, owner->first_len)) using {
+        apply(int32_increment_less_equal_implies_less_than(0, owner->first_len)) using {
             1 <= owner->first_len;
         }
         assumption();
     }
     have 0 < owner->second_len by {
-        apply(int32_successor_le_implies_lt(0, owner->second_len)) using {
+        apply(int32_increment_less_equal_implies_less_than(0, owner->second_len)) using {
             1 <= owner->second_len;
         }
         assumption();
@@ -226,13 +226,13 @@ int32 owned_segmented_buffer_swap(struct owned_segmented_buffer* owner) {
         normalize();
     }
     have 0 < owner->first_len by {
-        apply(int32_successor_le_implies_lt(0, owner->first_len)) using {
+        apply(int32_increment_less_equal_implies_less_than(0, owner->first_len)) using {
             1 <= owner->first_len;
         }
         assumption();
     }
     have 0 < owner->second_len by {
-        apply(int32_successor_le_implies_lt(0, owner->second_len)) using {
+        apply(int32_increment_less_equal_implies_less_than(0, owner->second_len)) using {
             1 <= owner->second_len;
         }
         assumption();

@@ -75,7 +75,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                     assumption();
                 } else {
                     have i == p by {
-                        apply(int32_le_and_not_lt_implies_eq(i, p)) using {
+                        apply(int32_less_equal_and_not_less_than_implies_equal(i, p)) using {
                             i <= p;
                             not (i < p);
                         }
@@ -143,7 +143,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             }
             contradiction(occupied[i] == 1);
         } else {
-            apply(int32_le_and_not_lt_implies_eq(i, p)) using {
+            apply(int32_less_equal_and_not_less_than_implies_equal(i, p)) using {
                 i <= p;
                 not (i < p);
             }
@@ -176,7 +176,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 assumption();
             }
             have k != p by {
-                apply(int32_lt_implies_neq(k, p)) using { k < p; }
+                apply(int32_less_than_implies_not_equal(k, p)) using { k < p; }
             }
             have k != i by {
                 rewrite(i == p);
@@ -188,10 +188,10 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             }
         } else {
             have k <= p by {
-                apply(int32_lt_successor_implies_le(k, p)) using { k < p + 1; }
+                apply(int32_less_than_increment_implies_less_equal(k, p)) using { k < p + 1; }
             }
             have k == p by {
-                apply(int32_le_and_not_lt_implies_eq(k, p)) using {
+                apply(int32_less_equal_and_not_less_than_implies_equal(k, p)) using {
                     k <= p;
                     not (k < p);
                 }
@@ -207,11 +207,11 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
         intro();
         extract(p + 1 <= k);
         apply(int32_increment_strictly_increases(p, capacity)) using { p < capacity; }
-        apply(int32_successor_le_implies_lt(p, k)) using {
+        apply(int32_increment_less_equal_implies_less_than(p, k)) using {
             p < p + 1;
             p + 1 <= k;
         }
-        apply(int32_lt_implies_le(p, k)) using { p < k; }
+        apply(int32_less_than_implies_less_equal(p, k)) using { p < k; }
         have at(before_store, occupied[k]) == 0 by {
             instantiate(forall (j: int32) {
                 at(before_store, p) <= at(before_store, j) and
@@ -228,7 +228,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             assumption();
         }
         have i != k by {
-            apply(int32_lt_implies_neq(i, k)) using { i < k; }
+            apply(int32_less_than_implies_not_equal(i, k)) using { i < k; }
         }
         transport(at(before_store, occupied[k]) == 0, occupied[k] == 0) using {
             at(before_store, occupied[k]) == 0;

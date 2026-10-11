@@ -131,7 +131,7 @@ int32 vector_copy(
         }
     }
     have i == length by {
-        apply(int32_le_and_not_lt_implies_eq(at(loop(0).exit, i), at(loop(0).exit, length))) using {
+        apply(int32_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), at(loop(0).exit, length))) using {
             at(loop(0).exit, i) <= at(loop(0).exit, length);
             not at(loop(0).exit, i) < at(loop(0).exit, length);
         }
@@ -195,13 +195,13 @@ int32 vector_grow(struct vector* owner) {
 } by {
     unfold(allocated_vector(owner));
     have owner->cap < 2147483647 by {
-        apply(int32_le_lt_transitive(owner->cap, 536870910, 2147483647)) using {
+        apply(int32_less_equal_less_than_transitive(owner->cap, 536870910, 2147483647)) using {
             owner->cap <= 536870910;
         }
         assumption();
     }
     have (owner->cap + 1) <= 536870911 by {
-        apply(int32_le_lt_transitive(owner->cap, 536870910, 536870911)) using {
+        apply(int32_less_equal_less_than_transitive(owner->cap, 536870910, 536870911)) using {
             owner->cap <= 536870910;
         }
         apply(int32_increment_upper_bound(owner->cap, 536870911)) using {
@@ -257,7 +257,7 @@ int32 vector_grow(struct vector* owner) {
         assumption();
     }
     have 0 <= new_capacity by {
-        apply(int32_positive_is_nonnegative(new_capacity)) using {
+        apply(int32_less_equal_transitive(0, 1, new_capacity)) using {
             1 <= new_capacity;
         }
         assumption();
@@ -267,7 +267,7 @@ int32 vector_grow(struct vector* owner) {
             normalize();
         }
         rewrite(old_capacity == owner->cap);
-        apply(int32_positive_is_nonnegative(owner->cap)) using {
+        apply(int32_less_equal_transitive(0, 1, owner->cap)) using {
             1 <= owner->cap;
         }
         assumption();
@@ -289,7 +289,7 @@ int32 vector_grow(struct vector* owner) {
         }
     }
     have owner->len <= 536870910 by {
-        apply(int32_le_transitive(owner->len, owner->cap, 536870910)) using {
+        apply(int32_less_equal_transitive(owner->len, owner->cap, 536870910)) using {
             owner->len <= owner->cap;
             owner->cap <= 536870910;
         }
@@ -589,7 +589,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             have 536870911 < 2147483647 by {
                 normalize();
             }
-            apply(int32_le_lt_transitive(at(function.entry, owner->cap), 536870911, 2147483647)) using {
+            apply(int32_less_equal_less_than_transitive(at(function.entry, owner->cap), 536870911, 2147483647)) using {
                 at(function.entry, owner->cap) <= 536870911;
                 536870911 < 2147483647;
             }
@@ -733,7 +733,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             assumption();
         }
         have owner->len < owner->cap by {
-            apply(int32_le_and_neq_implies_lt(owner->len, owner->cap)) using {
+            apply(int32_less_equal_and_not_equal_implies_less_than(owner->len, owner->cap)) using {
                 owner->len <= owner->cap;
                 not owner->len == owner->cap;
             }
@@ -978,7 +978,7 @@ int32 vector_fill(struct vector* owner, int32 value) {
         normalize();
     }
     have i <= owner->len by {
-        apply(int32_positive_is_nonnegative(owner->len)) using {
+        apply(int32_less_equal_transitive(0, 1, owner->len)) using {
             1 <= owner->len;
         }
         assumption();
@@ -1000,7 +1000,7 @@ int32 vector_fill(struct vector* owner, int32 value) {
         }
         preserve by {
             have i < owner->cap by {
-                apply(int32_lt_le_transitive(i, owner->len, owner->cap)) using {
+                apply(int32_less_than_less_equal_transitive(i, owner->len, owner->cap)) using {
                     i < owner->len;
                     owner->len <= owner->cap;
                 }
@@ -1129,7 +1129,7 @@ int32 vector_clear(struct vector* owner) {
     have owner->len == 0 by {
         normalize();
     }
-    apply(int32_le_transitive(1, at(statement(0).entry, owner->len), at(statement(0).entry, owner->cap))) using {
+    apply(int32_less_equal_transitive(1, at(statement(0).entry, owner->len), at(statement(0).entry, owner->cap))) using {
         at(statement(0).entry, 1) <= at(statement(0).entry, owner->len);
         at(statement(0).entry, owner->len) <= at(statement(0).entry, owner->cap);
     }
@@ -1182,7 +1182,7 @@ int32 vector_pipeline(
     }
     have owner->len <= owner->cap by {
         rewrite(owner->len == 0);
-        apply(int32_positive_is_nonnegative(owner->cap)) using {
+        apply(int32_less_equal_transitive(0, 1, owner->cap)) using {
             1 <= owner->cap;
         }
         assumption();
@@ -1190,7 +1190,7 @@ int32 vector_pipeline(
     fold(vector_storage(owner));
     have owner->len < owner->cap by {
         rewrite(owner->len == 0);
-        apply(int32_successor_le_implies_lt(0, owner->cap)) using {
+        apply(int32_increment_less_equal_implies_less_than(0, owner->cap)) using {
             1 <= owner->cap;
         }
         assumption();

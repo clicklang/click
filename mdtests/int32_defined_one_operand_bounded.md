@@ -21,7 +21,7 @@ int32 sum(int32 a, int32 b) {
     ensures result == a + b;
 } by {
     have defined(a + b) by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: 0 <= a => 0 <= a;
             premise 1: a < 100 => a < 100;
             int32_defined bounds [0, 1] => defined(a + b);

@@ -1669,16 +1669,14 @@ pub(super) fn execute_c_function_paths_with_contract_resources(
 ) -> ExecutionResult<Vec<CFunctionPath>> {
     budget.consume_function_call()?;
     if arguments.len() != function.parameters().len() {
-        return Ok(vec![CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::WrongArity {
+        return Ok(vec![CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(CRuntimeError::WrongArity {
                 expected: function.parameters().len(),
                 actual: arguments.len(),
             }),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     }
 
     let mut paths = Vec::new();
@@ -1686,13 +1684,11 @@ pub(super) fn execute_c_function_paths_with_contract_resources(
         evaluate_c_arguments_paths(state, arguments, assumptions, budget, Some(environment))?
     {
         if let Some(outcome) = arguments_path.outcome {
-            paths.push(CFunctionPath {
+            paths.push(CFunctionPath::new(
                 outcome,
-                facts: arguments_path.facts,
-                obligations: arguments_path.obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+                arguments_path.facts,
+                arguments_path.obligations,
+            ));
             continue;
         }
 
@@ -1707,13 +1703,11 @@ pub(super) fn execute_c_function_paths_with_contract_resources(
             &arguments_path.values,
             &path_assumptions,
         ) {
-            paths.push(CFunctionPath {
-                outcome: CFunctionOutcome::UndefinedBehavior(undefined_behavior),
-                facts: arguments_path.facts,
-                obligations: arguments_path.obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            paths.push(CFunctionPath::new(
+                CFunctionOutcome::UndefinedBehavior(undefined_behavior),
+                arguments_path.facts,
+                arguments_path.obligations,
+            ));
             continue;
         }
         let Some((argument_values, argument_obligations)) = coerce_c_function_arguments(
@@ -1722,28 +1716,24 @@ pub(super) fn execute_c_function_paths_with_contract_resources(
             &arguments_path.obligations,
             &path_assumptions,
         ) else {
-            paths.push(CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            paths.push(CFunctionPath::new(
+                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                     argument_binding_error(function, &arguments_path.values).to_string(),
                 )),
-                facts: arguments_path.facts,
-                obligations: arguments_path.obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+                arguments_path.facts,
+                arguments_path.obligations,
+            ));
             continue;
         };
         let Some(callee_state) = bind_c_function_arguments(state, function, &argument_values)
         else {
-            paths.push(CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            paths.push(CFunctionPath::new(
+                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                     argument_binding_error(function, &argument_values).to_string(),
                 )),
-                facts: arguments_path.facts,
-                obligations: argument_obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+                arguments_path.facts,
+                argument_obligations,
+            ));
             continue;
         };
 
@@ -1770,13 +1760,11 @@ pub(super) fn execute_c_function_paths_with_contract_resources(
             )? {
                 Ok(resource_transfer) => resource_transfer,
                 Err(error) => {
-                    paths.push(CFunctionPath {
-                        outcome: CFunctionOutcome::RuntimeError(error),
-                        facts: arguments_path.facts,
-                        obligations: argument_obligations,
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                    paths.push(CFunctionPath::new(
+                        CFunctionOutcome::RuntimeError(error),
+                        arguments_path.facts,
+                        argument_obligations,
+                    ));
                     continue;
                 }
             };
@@ -1809,16 +1797,11 @@ pub(super) fn execute_c_function_paths_with_contract_resources(
                 &body_path.outcome,
                 function,
             ) {
-                paths.push(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                paths.push(CFunctionPath::new(CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                         format!(
                             "by-value aggregate parameter `{parameter}` is modified, but a postcondition reads its current state"
                         ),
-                    )),
-                    facts,
-                    obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),});
+                    )), facts, obligations));
                 continue;
             }
             let return_assumptions =
@@ -1941,16 +1924,14 @@ pub(super) fn execute_c_function_verification_paths(
 ) -> ExecutionResult<Vec<CFunctionPath>> {
     budget.consume_function_call()?;
     if arguments.len() != function.parameters().len() {
-        return Ok(vec![CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::WrongArity {
+        return Ok(vec![CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(CRuntimeError::WrongArity {
                 expected: function.parameters().len(),
                 actual: arguments.len(),
             }),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     }
 
     let mut paths = Vec::new();
@@ -1961,13 +1942,11 @@ pub(super) fn execute_c_function_verification_paths(
         || evaluate_c_arguments_paths(state, arguments, assumptions, budget, Some(environment)),
     )? {
         if let Some(outcome) = arguments_path.outcome {
-            paths.push(CFunctionPath {
+            paths.push(CFunctionPath::new(
                 outcome,
-                facts: arguments_path.facts,
-                obligations: arguments_path.obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+                arguments_path.facts,
+                arguments_path.obligations,
+            ));
             continue;
         }
 
@@ -1982,13 +1961,11 @@ pub(super) fn execute_c_function_verification_paths(
             &arguments_path.values,
             &path_assumptions,
         ) {
-            paths.push(CFunctionPath {
-                outcome: CFunctionOutcome::UndefinedBehavior(undefined_behavior),
-                facts: arguments_path.facts,
-                obligations: arguments_path.obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            paths.push(CFunctionPath::new(
+                CFunctionOutcome::UndefinedBehavior(undefined_behavior),
+                arguments_path.facts,
+                arguments_path.obligations,
+            ));
             continue;
         }
         let Some((argument_values, argument_obligations)) = coerce_c_function_arguments(
@@ -1997,28 +1974,24 @@ pub(super) fn execute_c_function_verification_paths(
             &arguments_path.obligations,
             &path_assumptions,
         ) else {
-            paths.push(CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            paths.push(CFunctionPath::new(
+                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                     argument_binding_error(function, &arguments_path.values).to_string(),
                 )),
-                facts: arguments_path.facts,
-                obligations: arguments_path.obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+                arguments_path.facts,
+                arguments_path.obligations,
+            ));
             continue;
         };
         let Some(callee_state) = bind_c_function_arguments(state, function, &argument_values)
         else {
-            paths.push(CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            paths.push(CFunctionPath::new(
+                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                     argument_binding_error(function, &argument_values).to_string(),
                 )),
-                facts: arguments_path.facts,
-                obligations: argument_obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+                arguments_path.facts,
+                argument_obligations,
+            ));
             continue;
         };
 
@@ -2045,13 +2018,11 @@ pub(super) fn execute_c_function_verification_paths(
             )? {
                 Ok(resource_transfer) => resource_transfer,
                 Err(error) => {
-                    paths.push(CFunctionPath {
-                        outcome: CFunctionOutcome::RuntimeError(error),
-                        facts: arguments_path.facts,
-                        obligations: argument_obligations,
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                    paths.push(CFunctionPath::new(
+                        CFunctionOutcome::RuntimeError(error),
+                        arguments_path.facts,
+                        argument_obligations,
+                    ));
                     continue;
                 }
             };
@@ -2078,15 +2049,11 @@ pub(super) fn execute_c_function_verification_paths(
             }
             Ok(None) => std::borrow::Cow::Borrowed(environment),
             Err(message) => {
-                paths.push(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
-                        message,
-                    )),
-                    facts: arguments_path.facts,
-                    obligations: argument_obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
+                    arguments_path.facts,
+                    argument_obligations,
+                ));
                 continue;
             }
         };
@@ -2128,16 +2095,11 @@ pub(super) fn execute_c_function_verification_paths(
                 &body_path.outcome,
                 function,
             ) {
-                paths.push(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                paths.push(CFunctionPath::new(CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                         format!(
                             "by-value aggregate parameter `{parameter}` is modified, but a postcondition reads its current state"
                         ),
-                    )),
-                    facts,
-                    obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),});
+                    )), facts, obligations));
                 continue;
             }
             let return_assumptions =
@@ -4602,23 +4564,20 @@ pub(super) fn execute_c_function_call_paths(
             })
     {
         let error = authority_call_refusal();
-        return Ok(vec![CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(error),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+        return Ok(vec![CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(error),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     }
     if environment.selected_call_contract.is_some() {
-        return Ok(vec![CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+        return Ok(vec![CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                 "step(Contract) requires a function-pointer call".to_string(),
             )),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     }
     if let Some(rule) = environment.get_external_function_rule(function.name()) {
         // External summaries use the same body-independent application
@@ -4690,13 +4649,11 @@ pub(super) fn execute_c_function_call_paths(
                             function.name().to_string(),
                         )
                     };
-                    return Ok(vec![CFunctionPath {
-                        outcome: CFunctionOutcome::RuntimeError(error),
-                        facts: Vec::new().into(),
-                        obligations: Vec::new(),
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    }]);
+                    return Ok(vec![CFunctionPath::new(
+                        CFunctionOutcome::RuntimeError(error),
+                        Vec::new().into(),
+                        Vec::new(),
+                    )]);
                 };
                 let result = execute_verified_function_rule(
                     caller_state,
@@ -4712,16 +4669,14 @@ pub(super) fn execute_c_function_call_paths(
     }
     budget.consume_function_call()?;
     if arguments.len() != function.parameters().len() {
-        return Ok(vec![CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::WrongArity {
+        return Ok(vec![CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(CRuntimeError::WrongArity {
                 expected: function.parameters().len(),
                 actual: arguments.len(),
             }),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     }
 
     let mut paths = Vec::new();
@@ -4733,13 +4688,11 @@ pub(super) fn execute_c_function_call_paths(
         Some(environment),
     )? {
         if let Some(outcome) = arguments_path.outcome {
-            paths.push(CFunctionPath {
+            paths.push(CFunctionPath::new(
                 outcome,
-                facts: arguments_path.facts,
-                obligations: arguments_path.obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+                arguments_path.facts,
+                arguments_path.obligations,
+            ));
             continue;
         }
 
@@ -4754,13 +4707,11 @@ pub(super) fn execute_c_function_call_paths(
             &arguments_path.values,
             &path_assumptions,
         ) {
-            paths.push(CFunctionPath {
-                outcome: CFunctionOutcome::UndefinedBehavior(undefined_behavior),
-                facts: arguments_path.facts,
-                obligations: arguments_path.obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            paths.push(CFunctionPath::new(
+                CFunctionOutcome::UndefinedBehavior(undefined_behavior),
+                arguments_path.facts,
+                arguments_path.obligations,
+            ));
             continue;
         }
         let Some((argument_values, argument_obligations)) = coerce_c_function_arguments(
@@ -4769,15 +4720,13 @@ pub(super) fn execute_c_function_call_paths(
             &arguments_path.obligations,
             &path_assumptions,
         ) else {
-            paths.push(CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            paths.push(CFunctionPath::new(
+                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                     argument_binding_error(function, &arguments_path.values).to_string(),
                 )),
-                facts: arguments_path.facts,
-                obligations: arguments_path.obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+                arguments_path.facts,
+                arguments_path.obligations,
+            ));
             continue;
         };
         if let Some(outcome) = aggregate_argument_read_refusal(
@@ -4786,26 +4735,23 @@ pub(super) fn execute_c_function_call_paths(
             &argument_values,
             &path_assumptions,
         ) {
-            paths.push(CFunctionPath {
+            paths.push(CFunctionPath::new(
                 outcome,
-                facts: arguments_path.facts,
-                obligations: argument_obligations,
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+                arguments_path.facts,
+                argument_obligations,
+            ));
             continue;
         }
         let Some(callee_state) =
             bind_c_function_arguments(caller_state, function, &argument_values)
         else {
-            paths.push(CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            paths.push(CFunctionPath::new(
+                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                     argument_binding_error(function, &argument_values).to_string(),
                 )),
-                facts: arguments_path.facts,
-                obligations: argument_obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+                arguments_path.facts,
+                argument_obligations,
+            ));
             continue;
         };
 
@@ -4880,13 +4826,11 @@ pub(super) fn execute_c_function_call_paths(
         )? {
             Ok(resource_transfer) => resource_transfer,
             Err(error) => {
-                paths.push(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(error),
-                    facts: arguments_path.facts,
-                    obligations: argument_obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(error),
+                    arguments_path.facts,
+                    argument_obligations,
+                ));
                 continue;
             }
         };
@@ -5492,15 +5436,13 @@ fn execute_verified_function_applications_with_suspension(
     mut suspended: Option<&mut Vec<super::threads::WorkerCompletion>>,
 ) -> ExecutionResult<Vec<CFunctionPath>> {
     if applications.is_empty() {
-        return Ok(vec![CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+        return Ok(vec![CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                 "call requires at least one contract application".to_string(),
             )),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     }
     let application = applications[0];
     if applications
@@ -5517,14 +5459,13 @@ fn execute_verified_function_applications_with_suspension(
                         || function.contract_interface() != application.interface
                 }))
     {
-        return Ok(vec![CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(
-                CRuntimeError::UnsupportedOpaqueFunctionContract(application.name.to_string()),
-            ),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+        return Ok(vec![CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(CRuntimeError::UnsupportedOpaqueFunctionContract(
+                application.name.to_string(),
+            )),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     }
     // Every named instance the callee declares must be bound by the selected
     // application. The check is one map lookup per declared binder, so an
@@ -5573,15 +5514,13 @@ fn execute_verified_function_applications_with_suspension(
                     })
             })
     {
-        return Ok(vec![CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
+        return Ok(vec![CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
                 "calls with named resource instances require checked binder transport: `{unbound_function}` has an unbound instance binder `{unbound_binder}`; bind it in `step(..., {{ {unbound_binder}: instance }})`"
             ))),
-            facts: vec![].into(),
-            obligations: vec![],
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+            vec![].into(),
+            vec![],
+        )]);
     }
     budget.consume_function_call()?;
     let existing_variables = crate::instrumentation::measure_operation(
@@ -5621,13 +5560,11 @@ fn execute_verified_function_applications_with_suspension(
         Some(environment),
     )? {
         if let Some(outcome) = arguments_path.outcome {
-            paths.push(CFunctionPath {
+            paths.push(CFunctionPath::new(
                 outcome,
-                facts: arguments_path.facts,
-                obligations: arguments_path.obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+                arguments_path.facts,
+                arguments_path.obligations,
+            ));
             continue;
         }
 
@@ -5684,16 +5621,14 @@ fn execute_verified_function_applications_with_suspension(
                     || !call.transfer.memory_effects.is_empty()
             })
         {
-            paths.push(CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            paths.push(CFunctionPath::new(
+                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                     "ambiguous callback resource transition; use step(Contract) to select one"
                         .to_string(),
                 )),
-                facts: arguments_path.facts,
-                obligations: arguments_path.obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+                arguments_path.facts,
+                arguments_path.obligations,
+            ));
             continue;
         }
         // Supplementary guarantees are interpreted on the shared post-memory,
@@ -5734,15 +5669,11 @@ fn execute_verified_function_applications_with_suspension(
                 )
             })
         }) {
-            paths.push(CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(
-                    diagnostic,
-                ))),
+            paths.push(CFunctionPath::new(
+                CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(diagnostic))),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
             continue;
         }
         // A checked mutex-use call may execute runtime lock/unlock operations.
@@ -5808,14 +5739,11 @@ fn execute_verified_function_applications_with_suspension(
                     )
                 })
         }) {
-            paths.push(CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(
-                    diagnostic,
-                ))),
+            paths.push(CFunctionPath::new(
+                CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(diagnostic))),
                 facts,
                 obligations,
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
             continue;
         }
         let exceptional_path = if let Some(payload_identity) = exceptional_payload_identity {
@@ -5890,14 +5818,13 @@ fn execute_verified_function_applications_with_suspension(
         worker_effects.extend(mutex_storage_effects);
         let result = if interface.aggregate_return_mode() == CAggregateReturnMode::Construction {
             let Some(result) = construction_return::summary_result(&entry_state, interface) else {
-                paths.push(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                         "construction summary requires its checked destination".into(),
                     )),
                     facts,
                     obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                ));
                 continue;
             };
             result
@@ -5979,14 +5906,11 @@ fn execute_verified_function_applications_with_suspension(
                     let CResource::MutexUse(usage) = helper.required.resource() else {
                         unreachable!()
                     };
-                    paths.push(CFunctionPath {
-                        outcome: CFunctionOutcome::RuntimeError(
-                            error.into_runtime_error(&usage.mutex),
-                        ),
+                    paths.push(CFunctionPath::new(
+                        CFunctionOutcome::RuntimeError(error.into_runtime_error(&usage.mutex)),
                         facts,
                         obligations,
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                    ));
                     continue;
                 }
             }
@@ -6044,12 +5968,11 @@ fn execute_verified_function_applications_with_suspension(
                 }
             }
             if let Some(error) = failure {
-                paths.push(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(error),
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(error),
                     facts,
                     obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                ));
                 continue;
             }
         }
@@ -6148,13 +6071,11 @@ fn execute_verified_function_applications_with_suspension(
                     )]);
                 }
                 Err(error) => {
-                    return Ok(vec![CFunctionPath {
-                        outcome: CFunctionOutcome::RuntimeError(error),
+                    return Ok(vec![CFunctionPath::new(
+                        CFunctionOutcome::RuntimeError(error),
                         facts,
                         obligations,
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    }]);
+                    )]);
                 }
             };
             let fields = fresh_resource_instance_fields(
@@ -6172,12 +6093,11 @@ fn execute_verified_function_applications_with_suspension(
                 match evaluate_resource_reference_arguments(&entry_contract_state, resource) {
                     Ok(references) => references,
                     Err(error) => {
-                        return Ok(vec![CFunctionPath {
-                            outcome: CFunctionOutcome::RuntimeError(error),
+                        return Ok(vec![CFunctionPath::new(
+                            CFunctionOutcome::RuntimeError(error),
                             facts,
                             obligations,
-                            loan_evidence: empty_checked_loan_evidence_sequence(),
-                        }]);
+                        )]);
                     }
                 };
             produced_instances.insert(
@@ -6250,16 +6170,13 @@ fn execute_verified_function_applications_with_suspension(
                         .callee_resources
                         .satisfies_fact(&authority, &effective_assumptions)
                     {
-                        return Ok(vec![CFunctionPath {
-                            outcome: CFunctionOutcome::RuntimeError(
-                                CRuntimeError::MissingResource {
-                                    resource: Box::new(authority),
-                                },
-                            ),
+                        return Ok(vec![CFunctionPath::new(
+                            CFunctionOutcome::RuntimeError(CRuntimeError::MissingResource {
+                                resource: Box::new(authority),
+                            }),
                             facts,
                             obligations,
-                            loan_evidence: empty_checked_loan_evidence_sequence(),
-                        }]);
+                        )]);
                     }
                     let next = if events.recognizes_imported_population(&description) {
                         events.checked_imported_instance_exchange(
@@ -6294,15 +6211,11 @@ fn execute_verified_function_applications_with_suspension(
                 ) {
                 Ok(resources) => resources,
                 Err(error) => {
-                    return Ok(vec![CFunctionPath {
-                        outcome: CFunctionOutcome::RuntimeError(resource_context_runtime_error(
-                            error,
-                        )),
+                    return Ok(vec![CFunctionPath::new(
+                        CFunctionOutcome::RuntimeError(resource_context_runtime_error(error)),
                         facts,
                         obligations,
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    }]);
+                    )]);
                 }
             };
         }
@@ -6336,13 +6249,11 @@ fn execute_verified_function_applications_with_suspension(
         )? {
             Ok(resources) => resources,
             Err(error) => {
-                paths.push(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(error),
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(error),
                     facts,
                     obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                ));
                 continue;
             }
         };
@@ -6379,12 +6290,11 @@ fn execute_verified_function_applications_with_suspension(
             )? {
                 Ok(retires) => retires,
                 Err(error) => {
-                    paths.push(CFunctionPath {
-                        outcome: CFunctionOutcome::RuntimeError(error),
+                    paths.push(CFunctionPath::new(
+                        CFunctionOutcome::RuntimeError(error),
                         facts,
                         obligations,
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                    ));
                     continue;
                 }
             }
@@ -6595,12 +6505,11 @@ fn execute_verified_function_applications_with_suspension(
                     )? {
                         Ok(fact) => Some(fact),
                         Err(error) => {
-                            paths.push(CFunctionPath {
-                                outcome: CFunctionOutcome::RuntimeError(error),
+                            paths.push(CFunctionPath::new(
+                                CFunctionOutcome::RuntimeError(error),
                                 facts,
                                 obligations,
-                                loan_evidence: empty_checked_loan_evidence_sequence(),
-                            });
+                            ));
                             continue 'arguments;
                         }
                     }
@@ -6754,12 +6663,11 @@ fn execute_verified_function_applications_with_suspension(
         ) {
             Ok(state) => state,
             Err(error) => {
-                paths.push(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(error),
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(error),
                     facts,
                     obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                ));
                 continue;
             }
         };
@@ -6804,13 +6712,11 @@ fn execute_verified_function_applications_with_suspension(
         let (memory, allocation_effects, retired_creations) = match allocation_delta {
             Ok(result) => result,
             Err(VerifiedAllocationDeltaError::Runtime(error)) => {
-                paths.push(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(error),
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(error),
                     facts,
                     obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                ));
                 continue;
             }
             Err(VerifiedAllocationDeltaError::InconsistentReturnedAllocation) => continue,
@@ -6821,12 +6727,11 @@ fn execute_verified_function_applications_with_suspension(
             .into_iter()
             .find_map(|block| post_state.retire_population_storage(&block).err())
         {
-            paths.push(CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(error),
+            paths.push(CFunctionPath::new(
+                CFunctionOutcome::RuntimeError(error),
                 facts,
                 obligations,
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
             continue;
         }
         let post_contract_state = with_canonical_borrowed_pointer_memory(
@@ -6842,12 +6747,11 @@ fn execute_verified_function_applications_with_suspension(
         ) {
             Ok(state) => state,
             Err(error) => {
-                paths.push(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(error),
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(error),
                     facts,
                     obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                ));
                 continue;
             }
         };
@@ -7073,12 +6977,11 @@ fn execute_verified_function_applications_with_suspension(
         ) {
             Ok(recovered) => recovered,
             Err(error) => {
-                paths.push(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(error),
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(error),
                     facts,
                     obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                ));
                 continue;
             }
         };
@@ -7155,12 +7058,11 @@ fn execute_verified_function_applications_with_suspension(
                     )? {
                         Ok(fact) => fact,
                         Err(error) => {
-                            paths.push(CFunctionPath {
-                                outcome: CFunctionOutcome::RuntimeError(error),
+                            paths.push(CFunctionPath::new(
+                                CFunctionOutcome::RuntimeError(error),
                                 facts,
                                 obligations,
-                                loan_evidence: empty_checked_loan_evidence_sequence(),
-                            });
+                            ));
                             continue 'arguments;
                         }
                     };
@@ -7216,12 +7118,11 @@ fn execute_verified_function_applications_with_suspension(
             ) {
                 Ok(state) => state,
                 Err(error) => {
-                    paths.push(CFunctionPath {
-                        outcome: CFunctionOutcome::RuntimeError(error),
+                    paths.push(CFunctionPath::new(
+                        CFunctionOutcome::RuntimeError(error),
                         facts,
                         obligations,
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                    ));
                     continue;
                 }
             };
@@ -7266,12 +7167,11 @@ fn execute_verified_function_applications_with_suspension(
                     returned
                 }
                 Err(error) => {
-                    paths.push(CFunctionPath {
-                        outcome: CFunctionOutcome::RuntimeError(error),
+                    paths.push(CFunctionPath::new(
+                        CFunctionOutcome::RuntimeError(error),
                         facts,
                         obligations,
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                    ));
                     continue;
                 }
             };
@@ -7307,12 +7207,11 @@ fn execute_verified_function_applications_with_suspension(
         ) {
             Ok(state) => state,
             Err(error) => {
-                paths.push(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(error),
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(error),
                     facts,
                     obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                ));
                 continue;
             }
         };
@@ -7411,12 +7310,7 @@ fn exceptional_direct_function_path(
         state: Box::new(throw_state),
     };
     append_string_literal_loadable_facts(evidence, &outcome, &mut facts);
-    Ok(CFunctionPath {
-        outcome,
-        facts,
-        obligations,
-        loan_evidence: empty_checked_loan_evidence_sequence(),
-    })
+    Ok(CFunctionPath::new(outcome, facts, obligations))
 }
 
 struct PreparedVerifiedFunctionCall<'a> {
@@ -7653,12 +7547,11 @@ fn prepare_verified_function_call<'a>(
                 && !authority_preserves_assumed_resource_contract(contract_interface)))
     {
         let error = authority_call_refusal();
-        return Ok(Err(CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(error),
-            facts: arguments_path.facts,
-            obligations: arguments_path.obligations,
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }));
+        return Ok(Err(CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(error),
+            arguments_path.facts,
+            arguments_path.obligations,
+        )));
     }
     if contract_reaches_population(contract_interface)
         && !authority_supports_resource_contract(contract_interface)
@@ -7670,15 +7563,13 @@ fn prepare_verified_function_call<'a>(
     if contract_interface.contract_requirement_sources().len()
         != contract_interface.contract_requires().len()
     {
-        return Ok(Err(CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+        return Ok(Err(CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                 "call requirement source map does not match the selected contract".to_string(),
             )),
-            facts: arguments_path.facts,
-            obligations: arguments_path.obligations,
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }));
+            arguments_path.facts,
+            arguments_path.obligations,
+        )));
     }
     let mut call_requirement_site = None;
     let initial_obligation_count = arguments_path.obligations.len();
@@ -7693,13 +7584,11 @@ fn prepare_verified_function_call<'a>(
         &arguments_path.values,
         &path_assumptions,
     ) {
-        return Ok(Err(CFunctionPath {
-            outcome: CFunctionOutcome::UndefinedBehavior(undefined_behavior),
-            facts: arguments_path.facts,
-            obligations: arguments_path.obligations,
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }));
+        return Ok(Err(CFunctionPath::new(
+            CFunctionOutcome::UndefinedBehavior(undefined_behavior),
+            arguments_path.facts,
+            arguments_path.obligations,
+        )));
     }
     let Some((argument_values, argument_obligations)) = coerce_c_contract_arguments(
         contract_interface,
@@ -7707,19 +7596,17 @@ fn prepare_verified_function_call<'a>(
         &arguments_path.obligations,
         &path_assumptions,
     ) else {
-        return Ok(Err(CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+        return Ok(Err(CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                 contract_argument_binding_error(
                     contract_interface,
                     application.name,
                     &arguments_path.values,
                 ),
             )),
-            facts: arguments_path.facts,
-            obligations: arguments_path.obligations,
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }));
+            arguments_path.facts,
+            arguments_path.obligations,
+        )));
     };
     if let Some(outcome) = aggregate_argument_read_refusal(
         caller_state,
@@ -7727,12 +7614,11 @@ fn prepare_verified_function_call<'a>(
         &argument_values,
         &path_assumptions,
     ) {
-        return Ok(Err(CFunctionPath {
+        return Ok(Err(CFunctionPath::new(
             outcome,
-            facts: arguments_path.facts,
-            obligations: argument_obligations,
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }));
+            arguments_path.facts,
+            argument_obligations,
+        )));
     }
     let Some(mut entry_state) = bind_c_contract_arguments(
         caller_state,
@@ -7740,19 +7626,17 @@ fn prepare_verified_function_call<'a>(
         &argument_values,
         application.storage,
     ) else {
-        return Ok(Err(CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+        return Ok(Err(CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                 contract_argument_binding_error(
                     contract_interface,
                     application.name,
                     &argument_values,
                 ),
             )),
-            facts: arguments_path.facts,
-            obligations: argument_obligations,
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }));
+            arguments_path.facts,
+            argument_obligations,
+        )));
     };
     let path_assumptions =
         assumptions_with_path_context(assumptions, &arguments_path.facts, &argument_obligations);
@@ -7769,13 +7653,11 @@ fn prepare_verified_function_call<'a>(
             &path_assumptions,
             budget,
         )? {
-            return Ok(Err(CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(error),
-                facts: arguments_path.facts,
-                obligations: argument_obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }));
+            return Ok(Err(CFunctionPath::new(
+                CFunctionOutcome::RuntimeError(error),
+                arguments_path.facts,
+                argument_obligations,
+            )));
         }
         for parameter in application.parameters.iter() {
             let Some((formal, _)) = parameter.mutex_authority_binding() else {
@@ -7831,12 +7713,11 @@ fn prepare_verified_function_call<'a>(
                 Err(error) => Some(error),
             };
             if let Some(error) = error {
-                return Ok(Err(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(error),
-                    facts: arguments_path.facts,
-                    obligations: argument_obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                }));
+                return Ok(Err(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(error),
+                    arguments_path.facts,
+                    argument_obligations,
+                )));
             }
         }
     }
@@ -7878,13 +7759,11 @@ fn prepare_verified_function_call<'a>(
     )? {
         Ok(transfer) => transfer,
         Err(error) => {
-            return Ok(Err(CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(error),
+            return Ok(Err(CFunctionPath::new(
+                CFunctionOutcome::RuntimeError(error),
                 facts,
-                obligations: argument_obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }));
+                argument_obligations,
+            )));
         }
     };
     let callee_identity_state = entry_state.clone();
@@ -8125,11 +8004,9 @@ fn prepare_verified_function_call<'a>(
             input.fact.resource()
             && caller_state.population_body_is_open(name, arguments)
         {
-            return Ok(Err(CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            return Ok(Err(CFunctionPath::new(CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                     "population body is open; pass explicit body pieces instead of population membership".into(),
-                )), facts, obligations, loan_evidence: empty_checked_loan_evidence_sequence(),
-            }));
+                )), facts, obligations)));
         }
     }
     // The transfer's exposed population body and its untouched caller
@@ -8418,18 +8295,15 @@ fn prepare_verified_function_call<'a>(
         match guard_context.decide(&order) {
             Some(true) => {}
             Some(false) => {
-                return Ok(Err(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
-                        format!(
-                            "`{}` would be handed a range that ends before it starts; its \
+                return Ok(Err(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
+                        "`{}` would be handed a range that ends before it starts; its \
                              `views` and `owns` bounds have to be in order at this call",
-                            application.name
-                        ),
-                    )),
+                        application.name
+                    ))),
                     facts,
                     obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                }));
+                )));
             }
             None => {
                 let guard = Proposition::ConditionIs(order, true);
@@ -8449,15 +8323,13 @@ fn prepare_verified_function_call<'a>(
     // obligations must not be assumed to authorize this interface's effects
     // or make its guarantees available to another candidate.
     if require_established && obligations.len() != initial_obligation_count {
-        return Ok(Err(CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+        return Ok(Err(CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                 "no callback contract has established preconditions".to_string(),
             )),
             facts,
             obligations,
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }));
+        )));
     }
 
     // A self-call inside the certification of a function that declares an
@@ -8546,13 +8418,11 @@ fn prepare_verified_function_call<'a>(
             budget,
         )?
     {
-        return Ok(Err(CFunctionPath {
-            outcome: CFunctionOutcome::UndefinedBehavior(undefined_behavior),
+        return Ok(Err(CFunctionPath::new(
+            CFunctionOutcome::UndefinedBehavior(undefined_behavior),
             facts,
             obligations,
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }));
+        )));
     }
 
     let footprint_state = entry_contract_state.clone();
@@ -8576,15 +8446,13 @@ fn prepare_verified_function_call<'a>(
     )? {
         Ok(projection) => projection,
         Err(message) => {
-            return Ok(Err(CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
+            return Ok(Err(CFunctionPath::new(
+                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
                     "could not evaluate mutable footprint: {message}"
                 ))),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }));
+            )));
         }
     };
     // The joint transfer planner has already proved that every mutable input
@@ -8595,12 +8463,11 @@ fn prepare_verified_function_call<'a>(
     if let Some(error) = mutable_ranges.iter().find_map(|range| {
         super::mutexes::storage_write_refusal(caller_state, range, &effective_assumptions)
     }) {
-        return Ok(Err(CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(error),
+        return Ok(Err(CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(error),
             facts,
             obligations,
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }));
+        )));
     }
     let projection_range_sources = projection.range_sources;
     {
@@ -8679,14 +8546,13 @@ fn prepare_verified_function_call<'a>(
                     }
                     CandidateMemoryRangeRelation::Disjoint => unreachable!(),
                 };
-                return Ok(Err(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(
+                return Ok(Err(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(
                         diagnostic,
                     ))),
                     facts,
                     obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                }));
+                )));
             }
         }
     }
@@ -8710,16 +8576,14 @@ fn prepare_verified_function_call<'a>(
         .iter()
         .find(|range| entry_state.memory.is_read_only_block(&range.base().block))
     {
-        return Ok(Err(CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
+        return Ok(Err(CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
                 "mutable footprint covers read-only storage `{}`",
                 range.base().block
             ))),
             facts,
             obligations,
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }));
+        )));
     }
 
     Ok(Ok(PreparedVerifiedFunctionCall {
@@ -8895,13 +8759,11 @@ fn loadability_obligation_shape(proposition: &Proposition) -> bool {
 }
 
 fn resource_call_failure(message: &str) -> CFunctionPath {
-    CFunctionPath {
-        outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message.into())),
-        facts: vec![].into(),
-        obligations: vec![],
-
-        loan_evidence: empty_checked_loan_evidence_sequence(),
-    }
+    CFunctionPath::new(
+        CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message.into())),
+        vec![].into(),
+        vec![],
+    )
 }
 
 /// Unpack an atomic separation clause's bounds against the same caller facts,
@@ -28441,13 +28303,6 @@ pub(in crate::kernel) fn instance_arm_model_facts(
     {
         return Vec::new();
     }
-    let Ok(evaluation) = instance_body_evaluation(state, instance, definition) else {
-        return Vec::new();
-    };
-    let evaluation_assumptions = assumptions
-        .clone()
-        .allow_symbolic_contract_loads()
-        .prefer_symbolic_external_loads();
     let constructor = |arm: &CResourceMatchArm| {
         let term = AlgebraicTerm {
             algebraic_type: model.algebraic_type.clone(),
@@ -28458,42 +28313,77 @@ pub(in crate::kernel) fn instance_arm_model_facts(
         };
         (arm.bindings.is_empty() && term.is_well_formed()).then_some(term)
     };
+    // The body is evaluated, and arms are refuted, only for an answer this
+    // call can still publish.
+    let evaluated = std::cell::OnceCell::new();
+    let refuted = |arm: &CResourceMatchArm| -> Option<bool> {
+        let (evaluation, evaluation_assumptions) = evaluated
+            .get_or_init(|| {
+                instance_body_evaluation(state, instance, definition)
+                    .ok()
+                    .map(|evaluation| {
+                        let evaluation_assumptions = assumptions
+                            .clone()
+                            .allow_symbolic_contract_loads()
+                            .prefer_symbolic_external_loads();
+                        (evaluation, evaluation_assumptions)
+                    })
+            })
+            .as_ref()?;
+        Some(
+            arm_is_refuted_by_a_binding_free_fact(
+                evaluation,
+                arm,
+                evaluation_assumptions,
+                assumptions,
+            ) || arm_is_refuted_by_a_predicate_fact(
+                evaluation,
+                model,
+                arm,
+                evaluation_assumptions,
+                assumptions,
+            ),
+        )
+    };
+    // Only an arm naming a constructor without fields publishes anything: its
+    // exclusion, or, when it alone survives, the model's constructor. An arm
+    // whose exclusion is already a fact is refuted; nothing is learned by
+    // refuting it again.
     let mut published = Vec::new();
     let mut surviving = Vec::new();
+    let mut unpublishable = Vec::new();
     for arm in &body.arms {
         crate::instrumentation::record_deterministic_work(1);
-        if !arm_is_refuted_by_a_binding_free_fact(
-            &evaluation,
-            arm,
-            &evaluation_assumptions,
-            assumptions,
-        ) && !arm_is_refuted_by_a_predicate_fact(
-            &evaluation,
-            model,
-            arm,
-            &evaluation_assumptions,
-            assumptions,
-        ) {
-            surviving.push(arm);
-            continue;
-        }
         let Some(excluded) = constructor(arm) else {
+            unpublishable.push(arm);
             continue;
         };
         let negation = Proposition::Not(Box::new(Proposition::Equal(
             Term::Algebraic(model.clone()),
-            Term::Algebraic(excluded),
+            Term::Algebraic(excluded.clone()),
         )));
-        if !required_obligation_is_exactly_discharged(assumptions, &negation) {
-            published.push(negation);
+        if required_obligation_is_exactly_discharged(assumptions, &negation) {
+            continue;
+        }
+        match refuted(arm) {
+            None => return Vec::new(),
+            Some(true) => published.push(negation),
+            Some(false) => surviving.push(excluded),
         }
     }
-    if let [survivor] = surviving.as_slice()
-        && let Some(selected) = constructor(survivor)
-    {
+    // The other arms decide only whether a sole surviving constructor is the
+    // model's: each must be refuted for that.
+    if let [selected] = surviving.as_slice() {
+        for arm in unpublishable {
+            match refuted(arm) {
+                None => return Vec::new(),
+                Some(true) => {}
+                Some(false) => return published,
+            }
+        }
         published.push(Proposition::Equal(
             Term::Algebraic(model.clone()),
-            Term::Algebraic(selected),
+            Term::Algebraic(selected.clone()),
         ));
     }
     published

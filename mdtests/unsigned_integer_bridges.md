@@ -34,7 +34,7 @@ theorem bridge5(left: uint64, right: uint64) {
 }
 theorem bridge6(left: uint64, right: uint64) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right by apply(uint64_less_equal_of_to_integer(left, right));
+    ensures left <= right by apply(uint64_to_integer_less_equal_implies_less_equal(left, right));
 }
 ```
 

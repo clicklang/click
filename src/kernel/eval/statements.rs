@@ -42,25 +42,19 @@ pub(in crate::kernel) fn execute_c_lvalue_assignment_paths(
         let target_lvalue = match target_outcome {
             CLValueOutcome::LValue(lvalue) => lvalue,
             CLValueOutcome::UndefinedBehavior(undefined_behavior) => {
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::UndefinedBehavior(undefined_behavior),
-                    facts: target_facts,
-                    obligations: target_obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                paths.push(CStatementExecutionPath::new(
+                    CStatementOutcome::UndefinedBehavior(undefined_behavior),
+                    target_facts,
+                    target_obligations,
+                ));
                 continue;
             }
             CLValueOutcome::RuntimeError(error) => {
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(error),
-                    facts: target_facts,
-                    obligations: target_obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                paths.push(CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(error),
+                    target_facts,
+                    target_obligations,
+                ));
                 continue;
             }
         };
@@ -89,23 +83,19 @@ pub(in crate::kernel) fn execute_c_lvalue_assignment_paths(
                     budget,
                 )?),
                 CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                    paths.push(CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome: CStatementOutcome::UndefinedBehavior(undefined_behavior),
+                    paths.push(CStatementExecutionPath::new(
+                        CStatementOutcome::UndefinedBehavior(undefined_behavior),
                         facts,
                         obligations,
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    })
+                    ))
                 }
-                CExpressionOutcome::RuntimeError(error) => paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(error),
-                    facts,
-                    obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                }),
+                CExpressionOutcome::RuntimeError(error) => {
+                    paths.push(CStatementExecutionPath::new(
+                        CStatementOutcome::RuntimeError(error),
+                        facts,
+                        obligations,
+                    ))
+                }
             }
         }
     }
@@ -140,14 +130,7 @@ fn execute_c_lvalue_update_paths(
                 CLValueOutcome::RuntimeError(error) => CStatementOutcome::RuntimeError(error),
                 CLValueOutcome::LValue(_) => unreachable!(),
             };
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome,
-                facts,
-                obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
             continue;
         };
         let supported_integer_update = matches!(
@@ -169,14 +152,11 @@ fn execute_c_lvalue_update_paths(
                 | (CType::Float32 | CType::Float64, CUpdateOperator::Divide)
         );
         if !supported_integer_update && !supported_float_update {
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
             continue;
         }
 
@@ -204,14 +184,11 @@ fn execute_c_lvalue_update_paths(
                     }
                     CExpressionOutcome::Value(_) => unreachable!(),
                 };
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
+                paths.push(CStatementExecutionPath::new(
                     outcome,
-                    facts: current_facts,
-                    obligations: current_obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                    current_facts,
+                    current_obligations,
+                ));
                 continue;
             };
 
@@ -244,14 +221,7 @@ fn execute_c_lvalue_update_paths(
                         }
                         CExpressionOutcome::Value(_) => unreachable!(),
                     };
-                    paths.push(CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome,
-                        facts,
-                        obligations,
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                    paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
                     continue;
                 };
 
@@ -293,24 +263,18 @@ fn execute_c_lvalue_update_paths(
                             budget,
                         )?),
                         CExpressionOutcome::UndefinedBehavior(error) => {
-                            paths.push(CStatementExecutionPath {
-                                loop_invariant_correspondence: Default::default(),
-                                outcome: CStatementOutcome::UndefinedBehavior(error),
+                            paths.push(CStatementExecutionPath::new(
+                                CStatementOutcome::UndefinedBehavior(error),
                                 facts,
                                 obligations,
-
-                                loan_evidence: empty_checked_loan_evidence_sequence(),
-                            })
+                            ))
                         }
                         CExpressionOutcome::RuntimeError(error) => {
-                            paths.push(CStatementExecutionPath {
-                                loop_invariant_correspondence: Default::default(),
-                                outcome: CStatementOutcome::RuntimeError(error),
+                            paths.push(CStatementExecutionPath::new(
+                                CStatementOutcome::RuntimeError(error),
                                 facts,
                                 obligations,
-
-                                loan_evidence: empty_checked_loan_evidence_sequence(),
-                            })
+                            ))
                         }
                     }
                 }
@@ -436,14 +400,11 @@ fn write_c_lvalue_paths_for_initialization(
     initialization: bool,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     if lvalue.is_constant() && !initialization {
-        return Ok(vec![CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+        return Ok(vec![CStatementExecutionPath::new(
+            CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
             facts,
             obligations,
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+        )]);
     }
     let mut obligations = obligations;
     let effective_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
@@ -484,14 +445,11 @@ fn write_c_lvalue_paths_for_initialization(
     if !lvalue.value_type.is_pointer()
         && let Some(undefined_behavior) = freed_pointer_use(state, &value, assumptions)
     {
-        return Ok(vec![CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: CStatementOutcome::UndefinedBehavior(undefined_behavior),
+        return Ok(vec![CStatementExecutionPath::new(
+            CStatementOutcome::UndefinedBehavior(undefined_behavior),
             facts,
             obligations,
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+        )]);
     }
     let Some(value) = crate::kernel::functions::coerce_c_value_with_pointee_constant(
         value,
@@ -500,14 +458,11 @@ fn write_c_lvalue_paths_for_initialization(
         &mut obligations,
         &effective_assumptions,
     ) else {
-        return Ok(vec![CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+        return Ok(vec![CStatementExecutionPath::new(
+            CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
             facts,
             obligations,
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+        )]);
     };
 
     match lvalue.storage {
@@ -517,15 +472,13 @@ fn write_c_lvalue_paths_for_initialization(
                 .as_ref()
                 .is_some_and(|pending| pending.protects_local(state, &name))
             {
-                return Ok(vec![CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                return Ok(vec![CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
                         "pending pthread create permits only external disjoint stores".to_string(),
                     )),
                     facts,
                     obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                }]);
+                )]);
             }
             if let Some(pointer) = state.locals.slot(&name).cloned()
                 && let Some(outcome) = memory_write_permission_outcome(
@@ -535,13 +488,11 @@ fn write_c_lvalue_paths_for_initialization(
                     &effective_assumptions,
                 )
             {
-                return Ok(vec![CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
+                return Ok(vec![CStatementExecutionPath::new(
                     outcome,
                     facts,
                     obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                }]);
+                )]);
             }
             let mut state = state.clone();
             sync_stack_local(&mut state, &name, &value);
@@ -563,27 +514,22 @@ fn write_c_lvalue_paths_for_initialization(
                 constant,
                 pointee_constant,
             );
-            Ok(vec![CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::Normal(Box::new(state)),
+            Ok(vec![CStatementExecutionPath::new(
+                CStatementOutcome::Normal(Box::new(state)),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }])
+            )])
         }
         CLValueStorage::Memory { pointer } => {
             let pointer = resolve_local_pointer_alias(state, &pointer, &effective_assumptions);
             if state.pending_thread_create.is_some() && !is_external_memory_pointer(&pointer) {
-                return Ok(vec![CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                return Ok(vec![CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
                         "pending pthread create permits only external disjoint stores".to_string(),
                     )),
                     facts,
                     obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                }]);
+                )]);
             }
             if state
                 .memory
@@ -592,55 +538,35 @@ fn write_c_lvalue_paths_for_initialization(
                 .values()
                 .any(|pending| pending.old_pointer.block == pointer.block)
             {
-                return Ok(vec![CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(
-                        CRuntimeError::UnresolvedAllocationOutcome,
-                    ),
+                return Ok(vec![CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome),
                     facts,
                     obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                }]);
+                )]);
             }
             if state.memory.is_ended_local_address(&pointer) {
-                return Ok(vec![CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::UndefinedBehavior(
-                        CUndefinedBehavior::InvalidMemory,
-                    ),
+                return Ok(vec![CStatementExecutionPath::new(
+                    CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
                     facts,
                     obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                }]);
+                )]);
             }
             if state
                 .memory
                 .is_deallocated_heap_address(&pointer, assumptions)
             {
-                return Ok(vec![CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::UndefinedBehavior(
-                        CUndefinedBehavior::InvalidMemory,
-                    ),
+                return Ok(vec![CStatementExecutionPath::new(
+                    CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
                     facts,
                     obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                }]);
+                )]);
             }
             if state.memory.is_read_only_block(&pointer.block) {
-                return Ok(vec![CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::UndefinedBehavior(
-                        CUndefinedBehavior::InvalidMemory,
-                    ),
+                return Ok(vec![CStatementExecutionPath::new(
+                    CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
                     facts,
                     obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                }]);
+                )]);
             }
             let is_external = is_external_memory_pointer(&pointer);
             let authorized_range = is_external
@@ -687,14 +613,11 @@ fn write_c_lvalue_paths_for_initialization(
                 .unwrap_or_else(|| CRuntimeError::MissingResource {
                     resource: Box::new(CResourceFact::own_memory(missing)),
                 });
-                return Ok(vec![CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(error),
+                return Ok(vec![CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(error),
                     facts,
                     obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                }]);
+                )]);
             }
             // The write is owner-authorized here, so a refusal below names the
             // stable loan it conflicts with rather than masking the ordinary
@@ -705,13 +628,11 @@ fn write_c_lvalue_paths_for_initialization(
                 value.byte_width(),
                 &effective_assumptions,
             ) {
-                return Ok(vec![CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
+                return Ok(vec![CStatementExecutionPath::new(
                     outcome,
                     facts,
                     obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                }]);
+                )]);
             }
             let obligations = if has_external_write_resource {
                 obligations
@@ -762,15 +683,11 @@ fn write_c_lvalue_paths_for_initialization(
             ) {
                 Ok(plan) => plan,
                 Err(message) => {
-                    return Ok(vec![CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
-                            message,
-                        )),
+                    return Ok(vec![CStatementExecutionPath::new(
+                        CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
                         facts,
                         obligations,
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    }]);
+                    )]);
                 }
             };
             let before_memory = state.memory.clone();
@@ -779,15 +696,13 @@ fn write_c_lvalue_paths_for_initialization(
                 match iterated_plan.before_store(state.resources().clone()) {
                     Ok(resources) => state = state.with_resource_context(resources),
                     Err(message) => {
-                        return Ok(vec![CStatementExecutionPath {
-                            loop_invariant_correspondence: Default::default(),
-                            outcome: CStatementOutcome::RuntimeError(
-                                CRuntimeError::FunctionContract(message),
-                            ),
+                        return Ok(vec![CStatementExecutionPath::new(
+                            CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                                message,
+                            )),
                             facts,
                             obligations,
-                            loan_evidence: empty_checked_loan_evidence_sequence(),
-                        }]);
+                        )]);
                     }
                 }
             }
@@ -830,15 +745,13 @@ fn write_c_lvalue_paths_for_initialization(
                 match iterated_plan.after_store(state.resources().clone()) {
                     Ok(resources) => state = state.with_resource_context(resources),
                     Err(message) => {
-                        return Ok(vec![CStatementExecutionPath {
-                            loop_invariant_correspondence: Default::default(),
-                            outcome: CStatementOutcome::RuntimeError(
-                                CRuntimeError::FunctionContract(message),
-                            ),
+                        return Ok(vec![CStatementExecutionPath::new(
+                            CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                                message,
+                            )),
                             facts,
                             obligations,
-                            loan_evidence: empty_checked_loan_evidence_sequence(),
-                        }]);
+                        )]);
                     }
                 }
             }
@@ -882,14 +795,11 @@ fn write_c_lvalue_paths_for_initialization(
                     budget, true, pointer, value_type, value,
                 )?);
             }
-            Ok(vec![CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::Normal(Box::new(state)),
+            Ok(vec![CStatementExecutionPath::new(
+                CStatementOutcome::Normal(Box::new(state)),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }])
+            )])
         }
     }
 }
@@ -944,16 +854,13 @@ fn execute_c_aggregate_copy_paths(
                 layout,
                 &assumptions_with_path_context(assumptions, &facts, &obligations),
             ) {
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
+                paths.push(CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
                         resource: Box::new(resource),
                     }),
                     facts,
                     obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                ));
                 continue;
             }
             if let Some(outcome) = memory_write_permission_outcome(
@@ -962,13 +869,7 @@ fn execute_c_aggregate_copy_paths(
                 layout.size_bytes(),
                 &assumptions_with_path_context(assumptions, &facts, &obligations),
             ) {
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome,
-                    facts,
-                    obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
                 continue;
             }
             if let Some(resource) = missing_aggregate_copy_write_resource(
@@ -977,15 +878,13 @@ fn execute_c_aggregate_copy_paths(
                 layout,
                 &assumptions_with_path_context(assumptions, &facts, &obligations),
             ) {
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
+                paths.push(CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
                         resource: Box::new(resource),
                     }),
                     facts,
                     obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                ));
                 continue;
             }
             let mut state = state.clone();
@@ -997,26 +896,20 @@ fn execute_c_aggregate_copy_paths(
             ) {
                 Ok(memory) => memory,
                 Err(undefined_behavior) => {
-                    paths.push(CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome: CStatementOutcome::UndefinedBehavior(undefined_behavior),
+                    paths.push(CStatementExecutionPath::new(
+                        CStatementOutcome::UndefinedBehavior(undefined_behavior),
                         facts,
                         obligations,
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                    ));
                     continue;
                 }
             };
             state.set_memory(next_memory);
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::Normal(Box::new(state)),
+            paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::Normal(Box::new(state)),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
         }
     }
     budget.check_path_width(paths.len())?;
@@ -1147,14 +1040,11 @@ pub(super) fn execute_c_heap_allocate_paths(
         | CType::UInt64PointerPointer),
     ) = state.local_object_type(target)
     else {
-        return Ok(vec![CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+        return Ok(vec![CStatementExecutionPath::new(
+            CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     };
     let element_width = target_type
         .pointee_type()
@@ -1182,27 +1072,17 @@ pub(super) fn execute_c_heap_allocate_paths(
                     CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
                 }
             };
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome,
-                facts,
-                obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
             continue;
         };
         let effective_assumptions =
             assumptions_with_path_context(assumptions, &facts, &obligations);
         let Some(size) = allocation_size_value(value, &effective_assumptions) else {
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
             continue;
         };
         let (bytes, valid_size) = if element_count_expression.is_some() {
@@ -1224,14 +1104,11 @@ pub(super) fn execute_c_heap_allocate_paths(
             (size.term, valid)
         };
         if !valid_size {
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
             continue;
         }
 
@@ -1272,14 +1149,11 @@ pub(super) fn execute_c_heap_allocate_paths(
             else {
                 continue;
             };
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: assigned_path.outcome,
-                facts: merged_facts,
-                obligations: merged_obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            paths.push(CStatementExecutionPath::new(
+                assigned_path.outcome,
+                merged_facts,
+                merged_obligations,
+            ));
         }
     }
     budget.check_path_width(paths.len())?;
@@ -1482,17 +1356,14 @@ pub(crate) fn execute_c_realloc_assign_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     let [old_expression, size_expression] = arguments else {
-        return Ok(vec![CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::WrongArity {
+        return Ok(vec![CStatementExecutionPath::new(
+            CStatementOutcome::RuntimeError(CRuntimeError::WrongArity {
                 expected: 2,
                 actual: arguments.len(),
             }),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     };
     let Some(
         target_type @ (CType::Int32Pointer
@@ -1515,14 +1386,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
         | CType::UInt64PointerPointer),
     ) = state.local_object_type(target)
     else {
-        return Ok(vec![CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+        return Ok(vec![CStatementExecutionPath::new(
+            CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     };
     let element_width = target_type
         .pointee_type()
@@ -1545,14 +1413,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 CExpressionOutcome::RuntimeError(error) => CStatementOutcome::RuntimeError(error),
                 CExpressionOutcome::Value(_) => unreachable!(),
             };
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome,
-                facts,
-                obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
             continue;
         };
 
@@ -1562,14 +1423,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
             CValue::Pointer(pointer) => pointer.into_pointer(),
             CValue::Int32(bits) if bits.as_const() == Some(0) => Pointer::null(),
             _ => {
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                paths.push(CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                     facts,
                     obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                ));
                 continue;
             }
         };
@@ -1597,14 +1455,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 else {
                     continue;
                 };
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: allocation_path.outcome,
-                    facts: merged_facts,
-                    obligations: merged_obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                paths.push(CStatementExecutionPath::new(
+                    allocation_path.outcome,
+                    merged_facts,
+                    merged_obligations,
+                ));
             }
             continue;
         }
@@ -1620,14 +1475,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
             } else {
                 CInvalidFree::NonHeapPointer
             };
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(error)),
+            paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(error)),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
             continue;
         };
         let (old_count, old_range_width) = heap_range_element_count(&old_bytes, element_width);
@@ -1671,14 +1523,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 else {
                     continue;
                 };
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
+                paths.push(CStatementExecutionPath::new(
                     outcome,
-                    facts: merged_facts,
-                    obligations: merged_obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                    merged_facts,
+                    merged_obligations,
+                ));
                 continue;
             };
             let size_assumptions = assumptions_with_path_context(
@@ -1687,14 +1536,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 &size_obligations,
             );
             let Some(size) = allocation_size_value(new_size_value, &size_assumptions) else {
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-                    facts: size_facts,
-                    obligations: size_obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                paths.push(CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    size_facts,
+                    size_obligations,
+                ));
                 continue;
             };
             let new_bytes = if element_count_expression.is_some() {
@@ -1702,14 +1548,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 let fits =
                     allocation_size_fits_element_width(&size, element_width, &size_assumptions);
                 if !positive || !fits {
-                    paths.push(CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-                        facts: size_facts,
-                        obligations: size_obligations,
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                    paths.push(CStatementExecutionPath::new(
+                        CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                        size_facts,
+                        size_obligations,
+                    ));
                     continue;
                 }
                 AllocationSize {
@@ -1734,14 +1577,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
             let effective_assumptions =
                 assumptions_with_path_context(assumptions, &all_facts, &all_obligations);
             if !allocation_size_is_positive(&new_bytes, &effective_assumptions) {
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-                    facts: all_facts,
-                    obligations: all_obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                paths.push(CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    all_facts,
+                    all_obligations,
+                ));
                 continue;
             }
             let zeroed_source = if state.memory.heap.zeroed_allocations.contains(&old_pointer) {
@@ -1760,14 +1600,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
                     let (Some(old_prefix), Some(new_size)) =
                         (old_prefix.as_const(), new_bytes.term.as_const())
                     else {
-                        paths.push(CStatementExecutionPath {
-                            loop_invariant_correspondence: Default::default(),
-                            outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-                            facts: all_facts,
-                            obligations: all_obligations,
-
-                            loan_evidence: empty_checked_loan_evidence_sequence(),
-                        });
+                        paths.push(CStatementExecutionPath::new(
+                            CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                            all_facts,
+                            all_obligations,
+                        ));
                         continue;
                     };
                     Some(Bitvector32Term::Constant(old_prefix.min(new_size)))
@@ -1780,16 +1617,13 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 .clone()
                 .without_fact(&allocation, &effective_assumptions)
             else {
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
+                paths.push(CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
                         resource: Box::new(allocation),
                     }),
-                    facts: all_facts,
-                    obligations: all_obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                    all_facts,
+                    all_obligations,
+                ));
                 continue;
             };
             let complete_access = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
@@ -1810,14 +1644,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 .unwrap_or(CRuntimeError::MissingResource {
                     resource: Box::new(complete_access),
                 });
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(error),
-                    facts: all_facts,
-                    obligations: all_obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                paths.push(CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(error),
+                    all_facts,
+                    all_obligations,
+                ));
                 continue;
             };
             // Ownership of the old allocation and its complete access is
@@ -1826,13 +1657,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
             if let Some(outcome) =
                 allocation_retirement_outcome(state, &old_allocation_range, &effective_assumptions)
             {
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
+                paths.push(CStatementExecutionPath::new(
                     outcome,
-                    facts: all_facts,
-                    obligations: all_obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                    all_facts,
+                    all_obligations,
+                ));
                 continue;
             }
             let resource_assumptions = state
@@ -1851,18 +1680,13 @@ pub(crate) fn execute_c_realloc_assign_paths(
                         &resource_assumptions,
                     )
             }) {
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(
-                        CRuntimeError::StaleResourceAfterFree {
-                            resource: Box::new(stale.clone()),
-                        },
-                    ),
-                    facts: all_facts,
-                    obligations: all_obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                paths.push(CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(CRuntimeError::StaleResourceAfterFree {
+                        resource: Box::new(stale.clone()),
+                    }),
+                    all_facts,
+                    all_obligations,
+                ));
                 continue;
             }
 
@@ -1956,14 +1780,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 }
             }
             if copy_is_unsupported {
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-                    facts: all_facts,
-                    obligations: all_obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                paths.push(CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    all_facts,
+                    all_obligations,
+                ));
                 continue;
             }
 
@@ -2014,14 +1835,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 else {
                     continue;
                 };
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: assigned_path.outcome,
-                    facts: merged_facts,
-                    obligations: merged_obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                paths.push(CStatementExecutionPath::new(
+                    assigned_path.outcome,
+                    merged_facts,
+                    merged_obligations,
+                ));
             }
         }
     }
@@ -2061,14 +1879,7 @@ fn execute_c_heap_free_paths(
                     CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
                 }
             };
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome,
-                facts,
-                obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
             continue;
         };
 
@@ -2078,14 +1889,11 @@ fn execute_c_heap_free_paths(
             || effective_assumptions.decide(&pointer_is_null_condition(pointer.pointer().clone()))
                 == Some(true)
         {
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::Normal(Box::new(state.clone())),
+            paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::Normal(Box::new(state.clone())),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
             continue;
         }
 
@@ -2096,16 +1904,11 @@ fn execute_c_heap_free_paths(
             .values()
             .any(|pending| pending.old_pointer.block == pointer.block)
         {
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(
-                    CRuntimeError::UnresolvedAllocationOutcome,
-                ),
+            paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
             continue;
         }
 
@@ -2129,65 +1932,51 @@ fn execute_c_heap_free_paths(
             .is_deallocated_heap_address(pointer.pointer(), &effective_assumptions)
         {
             let error = CInvalidFree::DoubleFree;
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(error)),
+            paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(error)),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
             continue;
         } else if working_memory.is_live_heap_address(pointer.pointer(), &effective_assumptions) {
             let error = CInvalidFree::InteriorPointer;
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(error)),
+            paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(error)),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
             continue;
         } else if let Some(bytes) = declared_allocation {
             let Some(memory) =
                 working_memory.with_heap_allocation_claim(pointer.pointer().clone(), bytes.clone())
             else {
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(
+                paths.push(CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(
                         CInvalidFree::NonHeapPointer,
                     )),
                     facts,
                     obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                ));
                 continue;
             };
             working_memory = memory;
             bytes
         } else {
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(
+            paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(
                     CInvalidFree::NonHeapPointer,
                 )),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
             continue;
         };
         if let Some(error) = state.population_storage_retirement_refusal(&pointer.block) {
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(error),
+            paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(error),
                 facts,
                 obligations,
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
             continue;
         }
         let full_allocation_range = CMemoryRange::new_with_element_width(
@@ -2202,16 +1991,13 @@ fn execute_c_heap_free_paths(
             .clone()
             .without_fact(&allocation, &effective_assumptions)
         else {
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
+            paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
                     resource: Box::new(allocation),
                 }),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
             continue;
         };
         let (element_count, range_width) = heap_range_element_count(&bytes, element_width);
@@ -2233,14 +2019,11 @@ fn execute_c_heap_free_paths(
             .unwrap_or(CRuntimeError::MissingResource {
                 resource: Box::new(complete_access),
             });
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(error),
+            paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(error),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
             continue;
         };
         // The free is authorized by the allocation and its complete access, so
@@ -2248,13 +2031,7 @@ fn execute_c_heap_free_paths(
         if let Some(outcome) =
             allocation_retirement_outcome(state, &full_allocation_range, &effective_assumptions)
         {
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome,
-                facts,
-                obligations,
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
             continue;
         }
         let resource_assumptions = state
@@ -2273,16 +2050,13 @@ fn execute_c_heap_free_paths(
                     &resource_assumptions,
                 )
         }) {
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(CRuntimeError::StaleResourceAfterFree {
+            paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(CRuntimeError::StaleResourceAfterFree {
                     resource: Box::new(stale.clone()),
                 }),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
             continue;
         }
         let memory = working_memory
@@ -2301,23 +2075,18 @@ fn execute_c_heap_free_paths(
             .with_memory(memory)
             .with_resource_context(resources);
         if let Err(error) = next.retire_population_storage(&pointer.block) {
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(error),
+            paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(error),
                 facts,
                 obligations,
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            ));
             continue;
         }
-        paths.push(CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: CStatementOutcome::Normal(Box::new(next)),
+        paths.push(CStatementExecutionPath::new(
+            CStatementOutcome::Normal(Box::new(next)),
             facts,
             obligations,
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        });
+        ));
     }
     budget.check_path_width(paths.len())?;
     Ok(paths)
@@ -2538,14 +2307,11 @@ fn execute_c_return_expression_paths(
                             state: Box::new(resolved_state),
                         }
                     };
-                    paths.push(CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
+                    paths.push(CStatementExecutionPath::new(
                         outcome,
-                        facts: truthiness_path.facts,
-                        obligations: truthiness_path.obligations,
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                        truthiness_path.facts,
+                        truthiness_path.obligations,
+                    ));
                 }
             }
             CExpressionOutcome::Value(value) => {
@@ -2559,33 +2325,20 @@ fn execute_c_return_expression_paths(
                         state: Box::new(state.clone()),
                     }
                 };
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome,
-                    facts,
-                    obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
             }
             CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::UndefinedBehavior(undefined_behavior),
+                paths.push(CStatementExecutionPath::new(
+                    CStatementOutcome::UndefinedBehavior(undefined_behavior),
                     facts,
                     obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                ));
             }
-            CExpressionOutcome::RuntimeError(error) => paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(error),
+            CExpressionOutcome::RuntimeError(error) => paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(error),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }),
+            )),
         }
     }
     Ok(paths)
@@ -2866,14 +2619,11 @@ pub(in crate::kernel) fn execute_c_statement_paths(
                 | CStatementOutcome::Throw { .. }
                 | CStatementOutcome::VerificationDiverges
                 | CStatementOutcome::UndefinedBehavior(_)
-                | CStatementOutcome::RuntimeError(_)) => paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
+                | CStatementOutcome::RuntimeError(_)) => paths.push(CStatementExecutionPath::new(
                     outcome,
-                    facts: first_path.facts,
-                    obligations: first_path.obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                }),
+                    first_path.facts,
+                    first_path.obligations,
+                )),
             }
         }
         budget.check_path_width(paths.len())?;
@@ -3002,16 +2752,14 @@ fn execute_c_statement_leaf_paths(
                 if super::super::functions::c_expression_is_state_independent(condition) => {}
             _ => {
                 budget.consume_statement_step()?;
-                return Ok(vec![CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                return Ok(vec![CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
                         "resolve the pending pthread create status before this C operation"
                             .to_string(),
                     )),
-                    facts: Vec::new().into(),
-                    obligations: Vec::new(),
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                }]);
+                    Vec::new().into(),
+                    Vec::new(),
+                )]);
             }
         }
     }
@@ -3022,51 +2770,37 @@ fn execute_c_statement_leaf_paths(
         budget.consume_statement_step()?;
     }
     let paths = match statement {
-        CStatement::Skip => vec![CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: CStatementOutcome::Normal(Box::new(state.clone())),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }],
-        CStatement::Break => vec![CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: CStatementOutcome::Break(Box::new(state.clone())),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }],
-        CStatement::Continue => vec![CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: CStatementOutcome::Continue(Box::new(state.clone())),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }],
-        CStatement::Goto { target } => vec![CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: CStatementOutcome::Jump {
+        CStatement::Skip => vec![CStatementExecutionPath::new(
+            CStatementOutcome::Normal(Box::new(state.clone())),
+            Vec::new().into(),
+            Vec::new(),
+        )],
+        CStatement::Break => vec![CStatementExecutionPath::new(
+            CStatementOutcome::Break(Box::new(state.clone())),
+            Vec::new().into(),
+            Vec::new(),
+        )],
+        CStatement::Continue => vec![CStatementExecutionPath::new(
+            CStatementOutcome::Continue(Box::new(state.clone())),
+            Vec::new().into(),
+            Vec::new(),
+        )],
+        CStatement::Goto { target } => vec![CStatementExecutionPath::new(
+            CStatementOutcome::Jump {
                 target: *target,
                 state: Box::new(state.clone()),
             },
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }],
-        CStatement::EndAutomaticLifetimes { names } => vec![CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: match end_scope_automatic_lifetimes(state, names) {
+            Vec::new().into(),
+            Vec::new(),
+        )],
+        CStatement::EndAutomaticLifetimes { names } => vec![CStatementExecutionPath::new(
+            match end_scope_automatic_lifetimes(state, names) {
                 Ok(state) => CStatementOutcome::Normal(Box::new(state)),
                 Err(refusal) => CStatementOutcome::RuntimeError(refusal),
             },
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }],
+            Vec::new().into(),
+            Vec::new(),
+        )],
         CStatement::ForStep {
             step,
             exited_locals,
@@ -3075,13 +2809,11 @@ fn execute_c_statement_leaf_paths(
             let retired = match end_scope_automatic_lifetimes(state, exited_locals) {
                 Ok(state) => state,
                 Err(refusal) => {
-                    return Ok(vec![CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome: CStatementOutcome::RuntimeError(refusal),
-                        facts: Vec::new().into(),
-                        obligations: Vec::new(),
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    }]);
+                    return Ok(vec![CStatementExecutionPath::new(
+                        CStatementOutcome::RuntimeError(refusal),
+                        Vec::new().into(),
+                        Vec::new(),
+                    )]);
                 }
             };
             let mut paths = Vec::new();
@@ -3099,14 +2831,11 @@ fn execute_c_statement_leaf_paths(
                     }
                     outcome => outcome,
                 };
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
+                paths.push(CStatementExecutionPath::new(
                     outcome,
-                    facts: step_path.facts,
-                    obligations: step_path.obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                    step_path.facts,
+                    step_path.obligations,
+                ));
             }
             paths
         }
@@ -3162,13 +2891,11 @@ fn execute_c_statement_leaf_paths(
                             | CType::PointerArray(_, _)
                     )
                 {
-                    return Ok(vec![CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-                        facts: Vec::new().into(),
-                        obligations: Vec::new(),
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    }]);
+                    return Ok(vec![CStatementExecutionPath::new(
+                        CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                        Vec::new().into(),
+                        Vec::new(),
+                    )]);
                 }
                 let mut paths = Vec::new();
                 for path in evaluate_c_expression_paths(declared, expression, assumptions, budget)?
@@ -3195,22 +2922,18 @@ fn execute_c_statement_leaf_paths(
                             )?);
                         }
                         CExpressionOutcome::UndefinedBehavior(error) => {
-                            paths.push(CStatementExecutionPath {
-                                loop_invariant_correspondence: Default::default(),
-                                outcome: CStatementOutcome::UndefinedBehavior(error),
-                                facts: path.facts,
-                                obligations: path.obligations,
-                                loan_evidence: empty_checked_loan_evidence_sequence(),
-                            })
+                            paths.push(CStatementExecutionPath::new(
+                                CStatementOutcome::UndefinedBehavior(error),
+                                path.facts,
+                                path.obligations,
+                            ))
                         }
                         CExpressionOutcome::RuntimeError(error) => {
-                            paths.push(CStatementExecutionPath {
-                                loop_invariant_correspondence: Default::default(),
-                                outcome: CStatementOutcome::RuntimeError(error),
-                                facts: path.facts,
-                                obligations: path.obligations,
-                                loan_evidence: empty_checked_loan_evidence_sequence(),
-                            })
+                            paths.push(CStatementExecutionPath::new(
+                                CStatementOutcome::RuntimeError(error),
+                                path.facts,
+                                path.obligations,
+                            ))
                         }
                     }
                 }
@@ -3247,13 +2970,11 @@ fn execute_c_statement_leaf_paths(
                     }
                     outcome => outcome,
                 };
-                vec![CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
+                vec![CStatementExecutionPath::new(
                     outcome,
-                    facts: Vec::new().into(),
-                    obligations: Vec::new(),
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                }]
+                    Vec::new().into(),
+                    Vec::new(),
+                )]
             }
         }
         CStatement::DeclareAggregate { name, layout, kind } => {
@@ -3272,14 +2993,11 @@ fn execute_c_statement_leaf_paths(
                 ))),
                 Err(refusal) => CStatementOutcome::RuntimeError(refusal),
             };
-            vec![CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
+            vec![CStatementExecutionPath::new(
                 outcome,
-                facts: Vec::new().into(),
-                obligations: Vec::new(),
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }]
+                Vec::new().into(),
+                Vec::new(),
+            )]
         }
         CStatement::CopyAggregate {
             target,
@@ -3360,14 +3078,11 @@ fn execute_c_statement_leaf_paths(
                     state: Box::new(state.clone()),
                 }
             };
-            vec![CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
+            vec![CStatementExecutionPath::new(
                 outcome,
-                facts: Vec::new().into(),
-                obligations: Vec::new(),
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }]
+                Vec::new().into(),
+                Vec::new(),
+            )]
         }
         CStatement::Return(expression) => {
             execute_c_return_expression_paths(state, expression, assumptions, budget)?
@@ -3396,13 +3111,11 @@ fn execute_c_statement_leaf_paths(
                         CStatementOutcome::RuntimeError(error)
                     }
                 };
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
+                paths.push(CStatementExecutionPath::new(
                     outcome,
-                    facts: path.facts,
-                    obligations: path.obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                    path.facts,
+                    path.obligations,
+                ));
             }
             paths
         }
@@ -3536,15 +3249,9 @@ fn execute_c_statement_leaf_paths(
                                 match pending.resolve(&branch_state, &path_assumptions) {
                                     Some(resolved) => resolved,
                                     None => {
-                                        paths.push(CStatementExecutionPath {
-                                            loop_invariant_correspondence: Default::default(),
-                                            outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                                        paths.push(CStatementExecutionPath::new(CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
                                                 "C branch does not decide the pending pthread create status".to_string(),
-                                            )),
-                                            facts: truthiness_path.facts,
-                                            obligations: truthiness_path.obligations,
-                                            loan_evidence: empty_checked_loan_evidence_sequence(),
-                                        });
+                                            )), truthiness_path.facts, truthiness_path.obligations));
                                         continue;
                                     }
                                 }
@@ -3571,24 +3278,18 @@ fn execute_c_statement_leaf_paths(
                         }
                     }
                     CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                        paths.push(CStatementExecutionPath {
-                            loop_invariant_correspondence: Default::default(),
-                            outcome: CStatementOutcome::UndefinedBehavior(undefined_behavior),
+                        paths.push(CStatementExecutionPath::new(
+                            CStatementOutcome::UndefinedBehavior(undefined_behavior),
                             facts,
                             obligations,
-
-                            loan_evidence: empty_checked_loan_evidence_sequence(),
-                        })
+                        ))
                     }
                     CExpressionOutcome::RuntimeError(error) => {
-                        paths.push(CStatementExecutionPath {
-                            loop_invariant_correspondence: Default::default(),
-                            outcome: CStatementOutcome::RuntimeError(error),
+                        paths.push(CStatementExecutionPath::new(
+                            CStatementOutcome::RuntimeError(error),
                             facts,
                             obligations,
-
-                            loan_evidence: empty_checked_loan_evidence_sequence(),
-                        })
+                        ))
                     }
                 }
             }
@@ -3656,14 +3357,11 @@ fn execute_c_switch_paths(
         match outcome {
             CExpressionOutcome::Value(value) => {
                 let Some(selector) = promote_c_int32_path_value(value) else {
-                    paths.push(CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    paths.push(CStatementExecutionPath::new(
+                        CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                         facts,
                         obligations,
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                    ));
                     continue;
                 };
                 paths.extend(execute_c_switch_dispatch_paths(
@@ -3679,22 +3377,18 @@ fn execute_c_switch_paths(
                     budget,
                 )?);
             }
-            CExpressionOutcome::UndefinedBehavior(error) => paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::UndefinedBehavior(error),
+            CExpressionOutcome::UndefinedBehavior(error) => {
+                paths.push(CStatementExecutionPath::new(
+                    CStatementOutcome::UndefinedBehavior(error),
+                    facts,
+                    obligations,
+                ))
+            }
+            CExpressionOutcome::RuntimeError(error) => paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(error),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }),
-            CExpressionOutcome::RuntimeError(error) => paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(error),
-                facts,
-                obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }),
+            )),
         }
     }
     Ok(paths_after_scope_exit(paths, &declared))
@@ -3726,14 +3420,11 @@ fn execute_c_switch_dispatch_paths(
                 execution_semantics,
                 budget,
             ),
-            None => Ok(vec![CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::Normal(Box::new(state.clone())),
+            None => Ok(vec![CStatementExecutionPath::new(
+                CStatementOutcome::Normal(Box::new(state.clone())),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }]),
+            )]),
         };
     }
 
@@ -3805,14 +3496,11 @@ fn execute_c_switch_suffix_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     if case_index == cases.len() {
-        return Ok(vec![CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: CStatementOutcome::Normal(Box::new(state.clone())),
+        return Ok(vec![CStatementExecutionPath::new(
+            CStatementOutcome::Normal(Box::new(state.clone())),
             facts,
             obligations,
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+        )]);
     }
     let case_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
     let mut paths = Vec::new();
@@ -3845,28 +3533,22 @@ fn execute_c_switch_suffix_paths(
                 execution_semantics,
                 budget,
             )?),
-            CStatementOutcome::Break(next_state) => paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::Normal(next_state),
-                facts: case_facts,
-                obligations: case_obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }),
+            CStatementOutcome::Break(next_state) => paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::Normal(next_state),
+                case_facts,
+                case_obligations,
+            )),
             outcome @ (CStatementOutcome::Continue(_)
             | CStatementOutcome::Jump { .. }
             | CStatementOutcome::Return { .. }
             | CStatementOutcome::Throw { .. }
             | CStatementOutcome::VerificationDiverges
             | CStatementOutcome::UndefinedBehavior(_)
-            | CStatementOutcome::RuntimeError(_)) => paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
+            | CStatementOutcome::RuntimeError(_)) => paths.push(CStatementExecutionPath::new(
                 outcome,
-                facts: case_facts,
-                obligations: case_obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }),
+                case_facts,
+                case_obligations,
+            )),
         }
     }
     Ok(paths)
@@ -3894,34 +3576,25 @@ pub(in crate::kernel) fn execute_c_assert_paths(
                     if !truthiness_path.is_true {
                         obligations.push(assertion_obligation.clone());
                     }
-                    paths.push(CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome: CStatementOutcome::Normal(Box::new(state.clone())),
-                        facts: truthiness_path.facts,
+                    paths.push(CStatementExecutionPath::new(
+                        CStatementOutcome::Normal(Box::new(state.clone())),
+                        truthiness_path.facts,
                         obligations,
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                    ));
                 }
             }
             CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::UndefinedBehavior(undefined_behavior),
+                paths.push(CStatementExecutionPath::new(
+                    CStatementOutcome::UndefinedBehavior(undefined_behavior),
                     facts,
                     obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                })
+                ))
             }
-            CExpressionOutcome::RuntimeError(error) => paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(error),
+            CExpressionOutcome::RuntimeError(error) => paths.push(CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(error),
                 facts,
                 obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }),
+            )),
         }
     }
 
@@ -4029,15 +3702,9 @@ pub(in crate::kernel) fn execute_c_while_paths(
                 }
             }
             if may_continue && may_exit {
-                paths.push(CStatementExecutionPath {
-                    loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                paths.push(CStatementExecutionPath::new(CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
                         format!("inline helper `{helper}`: loop guard cannot be decided at the call site; give the helper a Click contract with a checked loop proof"),
-                    )),
-                    facts: accumulated_facts,
-                    obligations: accumulated_obligations,
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                    )), accumulated_facts, accumulated_obligations));
                 continue;
             }
         }
@@ -4075,14 +3742,11 @@ pub(in crate::kernel) fn execute_c_while_paths(
                             else {
                                 continue;
                             };
-                            paths.push(CStatementExecutionPath {
-                                loop_invariant_correspondence: Default::default(),
-                                outcome: CStatementOutcome::Normal(Box::new(current_state.clone())),
+                            paths.push(CStatementExecutionPath::new(
+                                CStatementOutcome::Normal(Box::new(current_state.clone())),
                                 facts,
                                 obligations,
-
-                                loan_evidence: empty_checked_loan_evidence_sequence(),
-                            });
+                            ));
                             continue;
                         }
 
@@ -4138,14 +3802,11 @@ pub(in crate::kernel) fn execute_c_while_paths(
                                     });
                                 }
                                 CStatementOutcome::Break(next_state) => {
-                                    paths.push(CStatementExecutionPath {
-                                        loop_invariant_correspondence: Default::default(),
-                                        outcome: CStatementOutcome::Normal(next_state),
+                                    paths.push(CStatementExecutionPath::new(
+                                        CStatementOutcome::Normal(next_state),
                                         facts,
                                         obligations,
-
-                                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                                    });
+                                    ));
                                 }
                                 outcome @ (CStatementOutcome::Return { .. }
                                 | CStatementOutcome::Throw { .. }
@@ -4153,14 +3814,11 @@ pub(in crate::kernel) fn execute_c_while_paths(
                                 | CStatementOutcome::VerificationDiverges
                                 | CStatementOutcome::UndefinedBehavior(_)
                                 | CStatementOutcome::RuntimeError(_)) => {
-                                    paths.push(CStatementExecutionPath {
-                                        loop_invariant_correspondence: Default::default(),
+                                    paths.push(CStatementExecutionPath::new(
                                         outcome,
                                         facts,
                                         obligations,
-
-                                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                                    });
+                                    ));
                                 }
                             }
                         }
@@ -4176,14 +3834,11 @@ pub(in crate::kernel) fn execute_c_while_paths(
                     ) else {
                         continue;
                     };
-                    paths.push(CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome: CStatementOutcome::UndefinedBehavior(undefined_behavior),
+                    paths.push(CStatementExecutionPath::new(
+                        CStatementOutcome::UndefinedBehavior(undefined_behavior),
                         facts,
                         obligations,
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                    ));
                 }
                 CExpressionOutcome::RuntimeError(error) => {
                     let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
@@ -4195,14 +3850,11 @@ pub(in crate::kernel) fn execute_c_while_paths(
                     ) else {
                         continue;
                     };
-                    paths.push(CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome: CStatementOutcome::RuntimeError(error),
+                    paths.push(CStatementExecutionPath::new(
+                        CStatementOutcome::RuntimeError(error),
                         facts,
                         obligations,
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                    ));
                 }
             }
         }

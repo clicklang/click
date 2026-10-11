@@ -2447,59 +2447,58 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "int32_subtract_defined_by_integer_bounds"
                 | "int64_add_defined_by_integer_bounds"
                 | "int64_subtract_defined_by_integer_bounds"
-                | "int64_less_than_of_to_integer"
-                | "int32_equal_of_to_integer"
+                | "int64_to_integer_less_than_implies_less_than"
+                | "int32_to_integer_equal_implies_equal"
                 | "int32_add_to_integer"
                 | "int32_remainder_to_integer"
-                | "int32_less_equal_of_to_integer"
+                | "int32_to_integer_less_equal_implies_less_equal"
                 | "int64_less_equal_to_integer"
                 | "int64_less_than_to_integer"
                 | "int64_greater_equal_to_integer"
-                | "int64_less_equal_of_to_integer"
+                | "int64_to_integer_less_equal_implies_less_equal"
                 | "int64_add_to_integer"
                 | "int64_subtract_to_integer"
-                | "int64_equal_of_to_integer"
-                | "uint64_pack_u16_to_integer"
-                | "uint32_pack_u16_to_integer"
-                | "uint32_pack_u16_high_first_to_integer"
+                | "int64_to_integer_equal_implies_equal"
+                | "uint64_pack_uint16_to_integer"
+                | "uint32_pack_uint16_to_integer"
+                | "uint32_pack_uint16_high_first_to_integer"
                 | "uint64_add_to_integer"
                 | "uint64_multiply_to_integer"
                 | "uint64_subtract_to_integer"
                 | "uint64_divide_to_integer"
                 | "uint64_remainder_to_integer"
                 | "uint64_less_equal_to_integer"
-                | "uint64_less_equal_of_to_integer"
+                | "uint64_to_integer_less_equal_implies_less_equal"
                 | "uint64_less_than_to_integer"
-                | "uint64_less_than_of_to_integer"
-                | "uint64_not_greater_equal_of_less_than"
-                | "uint64_equal_of_to_integer"
+                | "uint64_to_integer_less_than_implies_less_than"
+                | "uint64_less_than_implies_not_greater_equal"
+                | "uint64_to_integer_equal_implies_equal"
                 | "int32_less_equal_to_integer"
                 | "int32_subtract_to_integer"
                 | "int32_increment_upper_bound"
                 | "int32_increment_strictly_increases"
                 | "int32_increment_lower_bound"
                 | "int32_increment_greater_equal_lower_bound"
-                | "int32_increment_strict_greater_lower_bound"
+                | "int32_increment_greater_than_lower_bound"
                 | "int32_increment_preserves_order"
-                | "int32_le_lt_transitive"
-                | "int32_le_transitive"
-                | "int32_lt_le_transitive"
-                | "int32_lt_transitive"
-                | "int32_ge_transitive"
-                | "int32_ge_implies_reversed_le"
-                | "int32_le_implies_reversed_ge"
-                | "int32_le_and_not_lt_implies_eq"
-                | "int32_le_and_neq_implies_lt"
-                | "int32_ge_and_not_gt_implies_eq"
+                | "int32_less_equal_less_than_transitive"
+                | "int32_less_equal_transitive"
+                | "int32_less_than_less_equal_transitive"
+                | "int32_less_than_transitive"
+                | "int32_greater_equal_transitive"
+                | "int32_greater_equal_implies_reversed_less_equal"
+                | "int32_less_equal_implies_reversed_greater_equal"
+                | "int32_less_equal_and_not_less_than_implies_equal"
+                | "int32_less_equal_and_not_equal_implies_less_than"
+                | "int32_greater_equal_and_not_greater_than_implies_equal"
                 | "int32_le_antisymmetric"
                 | "int32_positive_is_nonnegative"
-                | "int32_lt_implies_le"
-                | "int32_lt_implies_neq"
-                | "int32_not_lt_implies_ge"
-                | "int32_strictly_positive_is_nonnegative"
+                | "int32_less_than_implies_less_equal"
+                | "int32_less_than_implies_not_equal"
+                | "int32_not_less_than_implies_greater_equal"
                 | "int32_increment_below_max_is_defined"
-                | "int32_one_plus_below_max_is_defined"
-                | "int32_one_plus_strictly_increases"
+                | "int32_increment_left_below_max_is_defined"
+                | "int32_increment_left_strictly_increases"
                 | "int32_nonnegative_add_within_max_is_defined"
                 | "int32_nonnegative_subtract_within_value_is_defined"
                 | "int32_move_one_from_right_to_left_preserves_sum"
@@ -2509,42 +2508,42 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "int32_positive_predecessor_is_nonnegative"
                 | "int32_positive_predecessor_strictly_decreases"
                 | "int32_nonnegative_predecessor_upper_bound"
-                | "int32_successor_le_implies_lt"
-                | "int32_lt_successor_implies_le"
+                | "int32_increment_less_equal_implies_less_than"
+                | "int32_less_than_increment_implies_less_equal"
                 | "uint32_positive_predecessor_strictly_decreases"
                 | "uint32_increment_upper_bound"
                 | "uint32_increment_strictly_increases"
                 | "uint32_widened_add_guard_by_integer_bound"
                 | "uint32_add_to_integer"
                 | "uint32_subtract_to_integer"
-                | "uint32_mul_to_integer"
+                | "uint32_multiply_to_integer"
                 | "uint32_divide_to_integer"
                 | "uint32_remainder_to_integer"
-                | "uint32_mul_guard_by_integer_bound"
+                | "uint32_multiply_guard_by_integer_bound"
                 | "uint32_remainder_less_than_divisor"
-                | "uint32_remainder_of_lt"
+                | "uint32_less_than_divisor_implies_remainder_is_value"
                 | "uint32_less_equal_to_integer"
-                | "uint32_less_equal_of_to_integer"
-                | "uint32_equal_of_to_integer"
-                | "uint32_lt_implies_positive_difference"
-                | "uint32_gt_implies_reversed_lt"
-                | "uint32_lt_implies_reversed_gt"
-                | "uint32_ge_implies_reversed_le"
-                | "uint32_le_implies_reversed_ge"
+                | "uint32_to_integer_less_equal_implies_less_equal"
+                | "uint32_to_integer_equal_implies_equal"
+                | "uint32_less_than_implies_positive_difference"
+                | "uint32_greater_than_implies_reversed_less_than"
+                | "uint32_less_than_implies_reversed_greater_than"
+                | "uint32_greater_equal_implies_reversed_less_equal"
+                | "uint32_less_equal_implies_reversed_greater_equal"
                 | "uint32_difference_decreases_after_increment"
-                | "uint32_lt_le_transitive"
-                | "uint32_le_lt_transitive"
-                | "uint32_lt_transitive"
-                | "uint32_le_transitive"
-                | "uint64_lt_le_transitive"
-                | "uint64_le_and_not_lt_implies_eq"
-                | "uint64_le_lt_transitive"
-                | "uint64_lt_transitive"
-                | "uint64_le_transitive"
-                | "int64_lt_le_transitive"
-                | "int64_le_lt_transitive"
-                | "int64_lt_transitive"
-                | "int64_le_transitive"
+                | "uint32_less_than_less_equal_transitive"
+                | "uint32_less_equal_less_than_transitive"
+                | "uint32_less_than_transitive"
+                | "uint32_less_equal_transitive"
+                | "uint64_less_than_less_equal_transitive"
+                | "uint64_less_equal_and_not_less_than_implies_equal"
+                | "uint64_less_equal_less_than_transitive"
+                | "uint64_less_than_transitive"
+                | "uint64_less_equal_transitive"
+                | "int64_less_than_less_equal_transitive"
+                | "int64_less_equal_less_than_transitive"
+                | "int64_less_than_transitive"
+                | "int64_less_equal_transitive"
         )
 }
 
@@ -2570,30 +2569,30 @@ fn verify_kernel_standard_theorem_axiom(
         | "int64_add_defined_by_integer_bounds"
         | "int64_subtract_defined_by_integer_bounds" => (2, 2),
         "int32_add_to_integer"
-        | "int32_less_equal_of_to_integer"
+        | "int32_to_integer_less_equal_implies_less_equal"
         | "int64_less_equal_to_integer"
         | "int64_less_than_to_integer"
         | "int64_greater_equal_to_integer"
-        | "int64_less_equal_of_to_integer"
-        | "int64_less_than_of_to_integer"
+        | "int64_to_integer_less_equal_implies_less_equal"
+        | "int64_to_integer_less_than_implies_less_than"
         | "int64_add_to_integer"
         | "int64_subtract_to_integer"
-        | "int64_equal_of_to_integer"
+        | "int64_to_integer_equal_implies_equal"
         | "int32_less_equal_to_integer"
         | "int32_subtract_to_integer"
-        | "int32_equal_of_to_integer"
+        | "int32_to_integer_equal_implies_equal"
         | "uint64_add_to_integer"
         | "uint64_multiply_to_integer"
         | "uint64_subtract_to_integer"
         | "uint64_less_equal_to_integer"
-        | "uint64_less_equal_of_to_integer"
+        | "uint64_to_integer_less_equal_implies_less_equal"
         | "uint64_less_than_to_integer"
-        | "uint64_less_than_of_to_integer"
-        | "uint64_not_greater_equal_of_less_than"
-        | "uint64_equal_of_to_integer" => (2, 1),
-        "uint64_pack_u16_to_integer"
-        | "uint32_pack_u16_to_integer"
-        | "uint32_pack_u16_high_first_to_integer"
+        | "uint64_to_integer_less_than_implies_less_than"
+        | "uint64_less_than_implies_not_greater_equal"
+        | "uint64_to_integer_equal_implies_equal" => (2, 1),
+        "uint64_pack_uint16_to_integer"
+        | "uint32_pack_uint16_to_integer"
+        | "uint32_pack_uint16_high_first_to_integer"
         | "uint64_divide_to_integer"
         | "uint64_remainder_to_integer"
         | "uint32_divide_to_integer"
@@ -2602,10 +2601,10 @@ fn verify_kernel_standard_theorem_axiom(
         "int32_increment_upper_bound" | "int32_increment_strictly_increases" => (2, 1),
         "int32_increment_lower_bound"
         | "int32_increment_greater_equal_lower_bound"
-        | "int32_increment_strict_greater_lower_bound"
+        | "int32_increment_greater_than_lower_bound"
         | "int32_increment_preserves_order" => (3, 2),
-        "int32_successor_le_implies_lt" => (2, 2),
-        "int32_lt_successor_implies_le" => (2, 1),
+        "int32_increment_less_equal_implies_less_than" => (2, 2),
+        "int32_less_than_increment_implies_less_equal" => (2, 1),
         "int32_nonnegative_predecessor_upper_bound"
         | "int32_nonnegative_add_within_max_is_defined"
         | "int32_nonnegative_subtract_within_value_is_defined"
@@ -2613,50 +2612,51 @@ fn verify_kernel_standard_theorem_axiom(
         | "int32_add_nonnegative_left_is_at_least_right" => (2, 2),
         "int32_move_one_from_right_to_left_preserves_sum" => (3, 3),
         "int32_le_antisymmetric" => (2, 2),
-        "int32_le_and_not_lt_implies_eq"
-        | "int32_le_and_neq_implies_lt"
-        | "int32_ge_and_not_gt_implies_eq" => (2, 2),
-        "int32_ge_implies_reversed_le" => (2, 1),
-        "int32_le_implies_reversed_ge" => (2, 1),
-        "int32_lt_implies_le" | "int32_lt_implies_neq" | "int32_not_lt_implies_ge" => (2, 1),
+        "int32_less_equal_and_not_less_than_implies_equal"
+        | "int32_less_equal_and_not_equal_implies_less_than"
+        | "int32_greater_equal_and_not_greater_than_implies_equal" => (2, 2),
+        "int32_greater_equal_implies_reversed_less_equal" => (2, 1),
+        "int32_less_equal_implies_reversed_greater_equal" => (2, 1),
+        "int32_less_than_implies_less_equal"
+        | "int32_less_than_implies_not_equal"
+        | "int32_not_less_than_implies_greater_equal" => (2, 1),
         "int32_positive_is_nonnegative"
-        | "int32_strictly_positive_is_nonnegative"
         | "int32_increment_below_max_is_defined"
-        | "int32_one_plus_below_max_is_defined"
-        | "int32_one_plus_strictly_increases"
+        | "int32_increment_left_below_max_is_defined"
+        | "int32_increment_left_strictly_increases"
         | "int32_above_one_predecessor_is_at_least_one"
         | "int32_positive_predecessor_is_nonnegative"
         | "int32_positive_predecessor_strictly_decreases" => (1, 1),
-        "int32_le_lt_transitive"
-        | "int32_le_transitive"
-        | "int32_lt_le_transitive"
-        | "int32_lt_transitive"
-        | "int32_ge_transitive" => (3, 2),
+        "int32_less_equal_less_than_transitive"
+        | "int32_less_equal_transitive"
+        | "int32_less_than_less_equal_transitive"
+        | "int32_less_than_transitive"
+        | "int32_greater_equal_transitive" => (3, 2),
         "uint32_widened_add_guard_by_integer_bound"
         | "uint32_add_to_integer"
         | "uint32_subtract_to_integer"
-        | "uint32_mul_to_integer"
-        | "uint32_mul_guard_by_integer_bound"
+        | "uint32_multiply_to_integer"
+        | "uint32_multiply_guard_by_integer_bound"
         | "uint32_less_equal_to_integer"
-        | "uint32_less_equal_of_to_integer"
-        | "uint32_equal_of_to_integer"
+        | "uint32_to_integer_less_equal_implies_less_equal"
+        | "uint32_to_integer_equal_implies_equal"
         | "uint32_remainder_less_than_divisor"
-        | "uint32_remainder_of_lt" => (2, 1),
+        | "uint32_less_than_divisor_implies_remainder_is_value" => (2, 1),
         "uint32_positive_predecessor_strictly_decreases" => (1, 1),
         "uint32_increment_upper_bound"
         | "uint32_increment_strictly_increases"
-        | "uint32_lt_implies_positive_difference"
-        | "uint32_gt_implies_reversed_lt"
-        | "uint32_lt_implies_reversed_gt"
-        | "uint32_ge_implies_reversed_le"
-        | "uint32_le_implies_reversed_ge"
+        | "uint32_less_than_implies_positive_difference"
+        | "uint32_greater_than_implies_reversed_less_than"
+        | "uint32_less_than_implies_reversed_greater_than"
+        | "uint32_greater_equal_implies_reversed_less_equal"
+        | "uint32_less_equal_implies_reversed_greater_equal"
         | "uint32_difference_decreases_after_increment" => (2, 1),
-        "uint32_lt_le_transitive"
-        | "uint32_le_lt_transitive"
-        | "uint32_lt_transitive"
-        | "uint32_le_transitive" => (3, 2),
+        "uint32_less_than_less_equal_transitive"
+        | "uint32_less_equal_less_than_transitive"
+        | "uint32_less_than_transitive"
+        | "uint32_less_equal_transitive" => (3, 2),
         name if crate::kernel::is_wide_order_transitivity_name(name) => (3, 2),
-        "uint64_le_and_not_lt_implies_eq" => (2, 2),
+        "uint64_less_equal_and_not_less_than_implies_equal" => (2, 2),
         _ => unreachable!("only registered kernel standard theorems call this verifier"),
     };
     if ensure_index != 0
@@ -2724,7 +2724,7 @@ fn verify_kernel_standard_theorem_axiom(
                 parameter(2)?,
             )
             .expect("registered uint64 transitivity")
-        } else if theorem.name() == "uint64_le_and_not_lt_implies_eq" {
+        } else if theorem.name() == "uint64_less_equal_and_not_less_than_implies_equal" {
             crate::kernel::prove_uint64_le_and_not_lt_implies_eq(parameter(0)?, parameter(1)?)
         } else {
             crate::kernel::prove_uint64_integer_bridge(theorem.name(), parameter(0)?, parameter(1)?)
@@ -2754,7 +2754,7 @@ fn verify_kernel_standard_theorem_axiom(
             "int64_subtract_defined_by_integer_bounds" => {
                 crate::kernel::prove_int64_subtract_defined_by_integer_bounds(left, right)
             }
-            "int64_less_than_of_to_integer" => {
+            "int64_to_integer_less_than_implies_less_than" => {
                 crate::kernel::prove_int64_less_than_of_to_integer(left, right)
             }
             "int64_less_equal_to_integer" => {
@@ -2766,14 +2766,14 @@ fn verify_kernel_standard_theorem_axiom(
             "int64_greater_equal_to_integer" => {
                 crate::kernel::prove_int64_greater_equal_to_integer(left, right)
             }
-            "int64_less_equal_of_to_integer" => {
+            "int64_to_integer_less_equal_implies_less_equal" => {
                 crate::kernel::prove_int64_less_equal_of_to_integer(left, right)
             }
             "int64_add_to_integer" => crate::kernel::prove_int64_add_to_integer(left, right),
             "int64_subtract_to_integer" => {
                 crate::kernel::prove_int64_subtract_to_integer(left, right)
             }
-            "int64_equal_of_to_integer" => {
+            "int64_to_integer_equal_implies_equal" => {
                 crate::kernel::prove_int64_equal_of_to_integer(left, right)
             }
             _ => unreachable!("only registered int64 bridges"),
@@ -2791,7 +2791,7 @@ fn verify_kernel_standard_theorem_axiom(
         };
         let value = uint32_parameter(0)?;
         match theorem.name() {
-            "uint32_pack_u16_high_first_to_integer" => {
+            "uint32_pack_uint16_high_first_to_integer" => {
                 crate::kernel::prove_unsigned_pack_u16_high_first_to_integer(
                     crate::kernel::MachineIntegerType::UInt32,
                     value,
@@ -2799,7 +2799,7 @@ fn verify_kernel_standard_theorem_axiom(
                 )
                 .expect("registered unsigned packing law")
             }
-            "uint32_pack_u16_to_integer" => crate::kernel::prove_unsigned_pack_u16_to_integer(
+            "uint32_pack_uint16_to_integer" => crate::kernel::prove_unsigned_pack_u16_to_integer(
                 crate::kernel::MachineIntegerType::UInt32,
                 value,
                 uint32_parameter(1)?,
@@ -2814,16 +2814,16 @@ fn verify_kernel_standard_theorem_axiom(
             "uint32_less_equal_to_integer" => {
                 crate::kernel::prove_uint32_less_equal_to_integer(value, uint32_parameter(1)?)
             }
-            "uint32_less_equal_of_to_integer" => {
+            "uint32_to_integer_less_equal_implies_less_equal" => {
                 crate::kernel::prove_uint32_less_equal_of_to_integer(value, uint32_parameter(1)?)
             }
-            "uint32_equal_of_to_integer" => {
+            "uint32_to_integer_equal_implies_equal" => {
                 crate::kernel::prove_uint32_equal_of_to_integer(value, uint32_parameter(1)?)
             }
             "uint32_remainder_less_than_divisor" => {
                 crate::kernel::prove_uint32_remainder_less_than_divisor(value, uint32_parameter(1)?)
             }
-            "uint32_remainder_of_lt" => {
+            "uint32_less_than_divisor_implies_remainder_is_value" => {
                 crate::kernel::prove_uint32_remainder_of_lt(value, uint32_parameter(1)?)
             }
             "uint32_add_to_integer" => {
@@ -2838,10 +2838,10 @@ fn verify_kernel_standard_theorem_axiom(
             "uint32_remainder_to_integer" => {
                 crate::kernel::prove_uint32_remainder_to_integer(value, uint32_parameter(1)?)
             }
-            "uint32_mul_to_integer" => {
+            "uint32_multiply_to_integer" => {
                 crate::kernel::prove_uint32_mul_to_integer(value, uint32_parameter(1)?)
             }
-            "uint32_mul_guard_by_integer_bound" => {
+            "uint32_multiply_guard_by_integer_bound" => {
                 crate::kernel::prove_uint32_mul_guard_by_integer_bound(value, uint32_parameter(1)?)
             }
             "uint32_positive_predecessor_strictly_decreases" => {
@@ -2853,34 +2853,34 @@ fn verify_kernel_standard_theorem_axiom(
             "uint32_increment_strictly_increases" => {
                 prove_uint32_increment_strictly_increases(value, uint32_parameter(1)?)
             }
-            "uint32_lt_implies_positive_difference" => {
+            "uint32_less_than_implies_positive_difference" => {
                 prove_uint32_lt_implies_positive_difference(value, uint32_parameter(1)?)
             }
-            "uint32_gt_implies_reversed_lt" => {
+            "uint32_greater_than_implies_reversed_less_than" => {
                 prove_uint32_gt_implies_reversed_lt(value, uint32_parameter(1)?)
             }
-            "uint32_lt_implies_reversed_gt" => {
+            "uint32_less_than_implies_reversed_greater_than" => {
                 prove_uint32_lt_implies_reversed_gt(value, uint32_parameter(1)?)
             }
-            "uint32_ge_implies_reversed_le" => {
+            "uint32_greater_equal_implies_reversed_less_equal" => {
                 prove_uint32_ge_implies_reversed_le(value, uint32_parameter(1)?)
             }
-            "uint32_le_implies_reversed_ge" => {
+            "uint32_less_equal_implies_reversed_greater_equal" => {
                 prove_uint32_le_implies_reversed_ge(value, uint32_parameter(1)?)
             }
             "uint32_difference_decreases_after_increment" => {
                 prove_uint32_difference_decreases_after_increment(value, uint32_parameter(1)?)
             }
-            "uint32_lt_le_transitive" => {
+            "uint32_less_than_less_equal_transitive" => {
                 prove_uint32_lt_le_transitive(value, uint32_parameter(1)?, uint32_parameter(2)?)
             }
-            "uint32_le_lt_transitive" => {
+            "uint32_less_equal_less_than_transitive" => {
                 prove_uint32_le_lt_transitive(value, uint32_parameter(1)?, uint32_parameter(2)?)
             }
-            "uint32_lt_transitive" => {
+            "uint32_less_than_transitive" => {
                 prove_uint32_lt_transitive(value, uint32_parameter(1)?, uint32_parameter(2)?)
             }
-            "uint32_le_transitive" => {
+            "uint32_less_equal_transitive" => {
                 prove_uint32_le_transitive(value, uint32_parameter(1)?, uint32_parameter(2)?)
             }
             _ => unreachable!("checked above"),
@@ -2913,10 +2913,10 @@ fn verify_kernel_standard_theorem_axiom(
             "int32_remainder_to_integer" => {
                 crate::kernel::prove_int32_remainder_to_integer(value, int32_parameter(1)?)
             }
-            "int32_equal_of_to_integer" => {
+            "int32_to_integer_equal_implies_equal" => {
                 crate::kernel::prove_int32_equal_of_to_integer(value, int32_parameter(1)?)
             }
-            "int32_less_equal_of_to_integer" => {
+            "int32_to_integer_less_equal_implies_less_equal" => {
                 crate::kernel::prove_int32_less_equal_of_to_integer(value, int32_parameter(1)?)
             }
             "int32_less_equal_to_integer" => {
@@ -2941,7 +2941,7 @@ fn verify_kernel_standard_theorem_axiom(
                     int32_parameter(2)?,
                 )
             }
-            "int32_increment_strict_greater_lower_bound" => {
+            "int32_increment_greater_than_lower_bound" => {
                 prove_int32_increment_strict_greater_lower_bound(
                     value,
                     int32_parameter(1)?,
@@ -2953,36 +2953,41 @@ fn verify_kernel_standard_theorem_axiom(
                 int32_parameter(1)?,
                 int32_parameter(2)?,
             ),
-            "int32_successor_le_implies_lt" => {
+            "int32_increment_less_equal_implies_less_than" => {
                 prove_int32_successor_le_implies_lt(value, int32_parameter(1)?)
             }
-            "int32_lt_successor_implies_le" => {
+            "int32_less_than_increment_implies_less_equal" => {
                 prove_int32_lt_successor_implies_le(value, int32_parameter(1)?)
             }
             "int32_le_antisymmetric" => prove_int32_le_antisymmetric(value, int32_parameter(1)?),
-            "int32_le_and_not_lt_implies_eq" => {
+            "int32_less_equal_and_not_less_than_implies_equal" => {
                 prove_int32_le_and_not_lt_implies_eq(value, int32_parameter(1)?)
             }
-            "int32_le_and_neq_implies_lt" => {
+            "int32_less_equal_and_not_equal_implies_less_than" => {
                 prove_int32_le_and_neq_implies_lt(value, int32_parameter(1)?)
             }
-            "int32_ge_and_not_gt_implies_eq" => {
+            "int32_greater_equal_and_not_greater_than_implies_equal" => {
                 prove_int32_ge_and_not_gt_implies_eq(value, int32_parameter(1)?)
             }
             "int32_positive_is_nonnegative" => prove_int32_positive_is_nonnegative(value),
-            "int32_lt_implies_le" => prove_int32_lt_implies_le(value, int32_parameter(1)?),
-            "int32_lt_implies_neq" => prove_int32_lt_implies_neq(value, int32_parameter(1)?),
-            "int32_not_lt_implies_ge" => prove_int32_not_lt_implies_ge(value, int32_parameter(1)?),
-            "int32_strictly_positive_is_nonnegative" => {
-                prove_int32_strictly_positive_is_nonnegative(value)
+            "int32_less_than_implies_less_equal" => {
+                prove_int32_lt_implies_le(value, int32_parameter(1)?)
+            }
+            "int32_less_than_implies_not_equal" => {
+                prove_int32_lt_implies_neq(value, int32_parameter(1)?)
+            }
+            "int32_not_less_than_implies_greater_equal" => {
+                prove_int32_not_lt_implies_ge(value, int32_parameter(1)?)
             }
             "int32_increment_below_max_is_defined" => {
                 prove_int32_increment_below_max_is_defined(value)
             }
-            "int32_one_plus_below_max_is_defined" => {
+            "int32_increment_left_below_max_is_defined" => {
                 prove_int32_one_plus_below_max_is_defined(value)
             }
-            "int32_one_plus_strictly_increases" => prove_int32_one_plus_strictly_increases(value),
+            "int32_increment_left_strictly_increases" => {
+                prove_int32_one_plus_strictly_increases(value)
+            }
             "int32_nonnegative_add_within_max_is_defined" => {
                 prove_int32_nonnegative_add_within_max_is_defined(value, int32_parameter(1)?)
             }
@@ -3014,25 +3019,25 @@ fn verify_kernel_standard_theorem_axiom(
             "int32_nonnegative_predecessor_upper_bound" => {
                 prove_int32_nonnegative_predecessor_upper_bound(value, int32_parameter(1)?)
             }
-            "int32_le_lt_transitive" => {
+            "int32_less_equal_less_than_transitive" => {
                 prove_int32_le_lt_transitive(value, int32_parameter(1)?, int32_parameter(2)?)
             }
-            "int32_le_transitive" => {
+            "int32_less_equal_transitive" => {
                 prove_int32_le_transitive(value, int32_parameter(1)?, int32_parameter(2)?)
             }
-            "int32_lt_le_transitive" => {
+            "int32_less_than_less_equal_transitive" => {
                 prove_int32_lt_le_transitive(value, int32_parameter(1)?, int32_parameter(2)?)
             }
-            "int32_lt_transitive" => {
+            "int32_less_than_transitive" => {
                 prove_int32_lt_transitive(value, int32_parameter(1)?, int32_parameter(2)?)
             }
-            "int32_ge_transitive" => {
+            "int32_greater_equal_transitive" => {
                 prove_int32_ge_transitive(value, int32_parameter(1)?, int32_parameter(2)?)
             }
-            "int32_ge_implies_reversed_le" => {
+            "int32_greater_equal_implies_reversed_less_equal" => {
                 prove_int32_ge_implies_reversed_le(value, int32_parameter(1)?)
             }
-            "int32_le_implies_reversed_ge" => {
+            "int32_less_equal_implies_reversed_greater_equal" => {
                 prove_int32_le_implies_reversed_ge(value, int32_parameter(1)?)
             }
             _ => unreachable!("checked above"),
@@ -4171,7 +4176,7 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 "to_integer(left) <= to_integer(right)",
             ),
             (
-                "uint32_less_equal_of_to_integer",
+                "uint32_to_integer_less_equal_implies_less_equal",
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
             ),
@@ -4204,7 +4209,7 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
 
     #[test]
     fn uint32_equality_bridge_checks_exact_declaration() {
-        let source = "theorem uint32_equal_of_to_integer(left: uint32, right: uint32) { requires to_integer(left) == to_integer(right); ensures left == right; }";
+        let source = "theorem uint32_to_integer_equal_implies_equal(left: uint32, right: uint32) { requires to_integer(left) == to_integer(right); ensures left == right; }";
         verify_standard_declaration(source).unwrap();
         for invalid in [
             source.replace("requires to_integer(left) == to_integer(right);", ""),
@@ -4240,7 +4245,7 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
 
     #[test]
     fn uint32_small_remainder_checks_exact_declaration() {
-        let source = "theorem uint32_remainder_of_lt(value: uint32, divisor: uint32) { requires value < divisor; ensures value % divisor == value; }";
+        let source = "theorem uint32_less_than_divisor_implies_remainder_is_value(value: uint32, divisor: uint32) { requires value < divisor; ensures value % divisor == value; }";
         verify_standard_declaration(source).unwrap();
         for invalid in [
             source.replace("requires value < divisor;", ""),
@@ -4306,10 +4311,10 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
     fn wide_order_transitivity_declarations_reject_forged_premises_types_and_goals() {
         for ty in ["uint64", "int64"] {
             for (shape, first, second, conclusion) in [
-                ("lt_le", "<", "<=", "<"),
-                ("le_lt", "<=", "<", "<"),
-                ("lt", "<", "<", "<"),
-                ("le", "<=", "<=", "<="),
+                ("less_than_less_equal", "<", "<=", "<"),
+                ("less_equal_less_than", "<=", "<", "<"),
+                ("less_than", "<", "<", "<"),
+                ("less_equal", "<=", "<=", "<="),
             ] {
                 let declaration = |ty: &str, first: &str, second: &str, conclusion: &str| {
                     format!(
@@ -4414,7 +4419,7 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 "to_integer(left) <= to_integer(right)",
             ),
             (
-                "uint64_less_equal_of_to_integer",
+                "uint64_to_integer_less_equal_implies_less_equal",
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
             ),
@@ -4424,12 +4429,12 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 "to_integer(left) < to_integer(right)",
             ),
             (
-                "uint64_less_than_of_to_integer",
+                "uint64_to_integer_less_than_implies_less_than",
                 "to_integer(left) < to_integer(right)",
                 "left < right",
             ),
             (
-                "uint64_not_greater_equal_of_less_than",
+                "uint64_less_than_implies_not_greater_equal",
                 "left < right",
                 "not (left >= right)",
             ),
@@ -4490,7 +4495,7 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 "(high << 16) | low"
             };
             let source = format!(
-                "theorem {ty}_pack_u16_{order}to_integer(low: {ty}, high: {ty}) {{ requires low <= 65535{suffix}; requires high <= 65535{suffix}; ensures to_integer({packed}) == to_integer(low) + 65536 * to_integer(high); }}"
+                "theorem {ty}_pack_uint16_{order}to_integer(low: {ty}, high: {ty}) {{ requires low <= 65535{suffix}; requires high <= 65535{suffix}; ensures to_integer({packed}) == to_integer(low) + 65536 * to_integer(high); }}"
             );
             verify_standard_declaration(&source).unwrap();
             for invalid in [
@@ -4512,7 +4517,7 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
     fn signed_integer_order_bridge_declarations_reject_wrong_guards_types_and_goals() {
         for (name, ty, premise, goal) in [
             (
-                "int32_less_equal_of_to_integer",
+                "int32_to_integer_less_equal_implies_less_equal",
                 "int32",
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
@@ -4536,19 +4541,19 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 "to_integer(left) >= to_integer(right)",
             ),
             (
-                "int64_less_equal_of_to_integer",
+                "int64_to_integer_less_equal_implies_less_equal",
                 "int64",
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
             ),
             (
-                "int64_less_than_of_to_integer",
+                "int64_to_integer_less_than_implies_less_than",
                 "int64",
                 "to_integer(left) < to_integer(right)",
                 "left < right",
             ),
             (
-                "int64_equal_of_to_integer",
+                "int64_to_integer_equal_implies_equal",
                 "int64",
                 "to_integer(left) == to_integer(right)",
                 "left == right",

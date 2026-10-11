@@ -93,7 +93,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     intro();
                     if k < (j - 1) {
                         have k != (j - 1) by {
-                            apply(int32_lt_implies_neq(k, (j - 1))) using {
+                            apply(int32_less_than_implies_not_equal(k, (j - 1))) using {
                                 k < (j - 1);
                             }
                         }
@@ -113,17 +113,17 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     } else {
                         have k == (j - 1) by {
                             have k <= (j - 1) by {
-                                apply(int32_lt_successor_implies_le(k, (j - 1))) using {
+                                apply(int32_less_than_increment_implies_less_equal(k, (j - 1))) using {
                                     k < j;
                                 }
                             }
-                            apply(int32_le_and_not_lt_implies_eq(k, (j - 1))) using {
+                            apply(int32_less_equal_and_not_less_than_implies_equal(k, (j - 1))) using {
                                 k <= (j - 1);
                                 not k < (j - 1);
                             }
                         }
                         rewrite(k == (j - 1));
-                        apply(int32_lt_implies_le(at(statement(7).entry, p[(j + 1)]), at(statement(7).entry, tmp))) using {
+                        apply(int32_less_than_implies_less_equal(at(statement(7).entry, p[(j + 1)]), at(statement(7).entry, tmp))) using {
                             at(statement(7).entry, p[(j + 1)]) < at(statement(7).entry, tmp);
                         }
                     }
@@ -208,7 +208,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     intro();
                     if k < (j - 1) {
                         have k != (j - 1) by {
-                            apply(int32_lt_implies_neq(k, (j - 1))) using {
+                            apply(int32_less_than_implies_not_equal(k, (j - 1))) using {
                                 k < (j - 1);
                             }
                         }
@@ -228,20 +228,20 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     } else {
                         have k == (j - 1) by {
                             have k <= (j - 1) by {
-                                apply(int32_lt_successor_implies_le(k, (j - 1))) using {
+                                apply(int32_less_than_increment_implies_less_equal(k, (j - 1))) using {
                                     k < j;
                                 }
                             }
-                            apply(int32_le_and_not_lt_implies_eq(k, (j - 1))) using {
+                            apply(int32_less_equal_and_not_less_than_implies_equal(k, (j - 1))) using {
                                 k <= (j - 1);
                                 not k < (j - 1);
                             }
                         }
                         rewrite(k == (j - 1));
-                        apply(int32_not_lt_implies_ge(at(statement(9).entry, p[(j + 1)]), at(statement(9).entry, p[j]))) using {
+                        apply(int32_not_less_than_implies_greater_equal(at(statement(9).entry, p[(j + 1)]), at(statement(9).entry, p[j]))) using {
                             not at(statement(9).entry, p[(j + 1)]) < at(statement(9).entry, p[j]);
                         }
-                        apply(int32_ge_implies_reversed_le(at(statement(9).entry, p[(j + 1)]), at(statement(9).entry, p[j]))) using {
+                        apply(int32_greater_equal_implies_reversed_less_equal(at(statement(9).entry, p[(j + 1)]), at(statement(9).entry, p[j]))) using {
                             at(statement(9).entry, p[(j + 1)]) >= at(statement(9).entry, p[j]);
                         }
                     }
@@ -361,10 +361,10 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
             if p[(j + 1)] < p[j] {
                 unfold(all_le_range);
                 have j == 0 by {
-                    apply(int32_lt_successor_implies_le(j, 0)) using {
+                    apply(int32_less_than_increment_implies_less_equal(j, 0)) using {
                         j < 1;
                     }
-                    apply(int32_le_and_not_lt_implies_eq(j, 0)) using {
+                    apply(int32_less_equal_and_not_less_than_implies_equal(j, 0)) using {
                         j <= 0;
                         j >= 0;
                     }
@@ -404,7 +404,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     at(before_swap, p[(j + 1)] < p[j]);
                 }
                 have p[0] <= p[1] by {
-                    apply(int32_lt_implies_le(p[0], p[1])) using {
+                    apply(int32_less_than_implies_less_equal(p[0], p[1])) using {
                         p[0] < p[1];
                     }
                 }
@@ -449,10 +449,10 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
             } else {
                 unfold(all_le_range);
                 have j == 0 by {
-                    apply(int32_lt_successor_implies_le(j, 0)) using {
+                    apply(int32_less_than_increment_implies_less_equal(j, 0)) using {
                         j < 1;
                     }
-                    apply(int32_le_and_not_lt_implies_eq(j, 0)) using {
+                    apply(int32_less_equal_and_not_less_than_implies_equal(j, 0)) using {
                         j <= 0;
                         j >= 0;
                     }
@@ -480,16 +480,16 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 }
                 have p[0] <= p[1] by {
                     have p[0] <= p[1] by {
-                        apply(int32_not_lt_implies_ge(p[1], p[0])) using {
+                        apply(int32_not_less_than_implies_greater_equal(p[1], p[0])) using {
                             not p[1] < p[0];
                         }
                     }
                     have p[0] <= p[1] by {
-                        apply(int32_not_lt_implies_ge(at(statement(18).entry, p[1]), at(statement(18).entry, p[0]))) using {
+                        apply(int32_not_less_than_implies_greater_equal(at(statement(18).entry, p[1]), at(statement(18).entry, p[0]))) using {
                             not at(statement(18).entry, p[1]) < at(statement(18).entry, p[0]);
                         }
                     }
-                    apply(int32_ge_implies_reversed_le(at(statement(18).entry, p[1]), at(statement(18).entry, p[0]))) using {
+                    apply(int32_greater_equal_implies_reversed_less_equal(at(statement(18).entry, p[1]), at(statement(18).entry, p[0]))) using {
                         at(statement(18).entry, p[1]) >= at(statement(18).entry, p[0]);
                     }
                 }

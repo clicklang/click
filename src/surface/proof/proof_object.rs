@@ -1051,19 +1051,7 @@ struct ProofDiagnosticProofState(
 
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
     match value {
-        CValue::Bool(term)
-        | CValue::Int8(term)
-        | CValue::Int16(term)
-        | CValue::Int32(term)
-        | CValue::UInt8(term)
-        | CValue::UInt16(term)
-        | CValue::UInt32(term)
-        | CValue::Int64(term)
-        | CValue::UInt64(term)
-        | CValue::Int128(term)
-        | CValue::UInt128(term)
-        | CValue::Float32(term)
-        | CValue::Float64(term) => match term {
+        crate::kernel::arithmetic_c_value!(term) => match term {
             Bitvector32Term::Variable(variable) => Some(*variable),
             _ => None,
         },
@@ -1213,6 +1201,8 @@ fn trace_path_lineage(
     let mut lineage = Vec::new();
     let mut current = Some(node);
     while let Some(entry) = current {
+        #[cfg(test)]
+        crate::surface::proof_trace::record_lineage_visit();
         let selected_arm = if entry.step.is_some() {
             if entry.focused_branch != goal {
                 current = entry.parent.as_deref();
@@ -1234,9 +1224,6 @@ fn trace_path_lineage(
             node: entry as *const ProofNode as usize,
             selected_arm,
         });
-        if lineage.len() == crate::surface::proof_trace::MAX_STEPS {
-            break;
-        }
         current = entry.parent.as_deref();
     }
     lineage.reverse();
@@ -1251,9 +1238,7 @@ fn trace_arm_lineage(
     let mut lineage = Vec::new();
     let mut current = Some(node);
     while let Some(entry) = current {
-        if std::ptr::eq(entry, marker.as_ref())
-            || lineage.len() == crate::surface::proof_trace::MAX_STEPS
-        {
+        if std::ptr::eq(entry, marker.as_ref()) {
             break;
         }
         if entry.step.is_some() && entry.focused_branch == arm {
@@ -1324,16 +1309,19 @@ impl Proof<'_> {
     pub(in crate::surface::proof) fn trace_lineage(
         &self,
         claim: &str,
-    ) -> Option<Vec<crate::surface::proof_trace::TracePathNode>> {
-        crate::surface::proof_trace::enabled_for(claim)
-            .then(|| trace_path_lineage(&self.node, self.focused_branch_id()))
+    ) -> Option<crate::surface::proof_trace::TraceLineage> {
+        crate::surface::proof_trace::enabled_for(claim).then(|| {
+            let node = self.node.clone();
+            let branch = self.focused_branch_id();
+            crate::surface::proof_trace::deferred_lineage(move || trace_path_lineage(&node, branch))
+        })
     }
 
     /// Makes `parent_lineage` the traced path above this proof's root, as a
     /// `have` body's root is placed under the proof that opened it.
     pub(in crate::surface::proof) fn register_trace_scope_under(
         &self,
-        parent_lineage: Vec<crate::surface::proof_trace::TracePathNode>,
+        parent_lineage: crate::surface::proof_trace::TraceLineage,
     ) {
         crate::surface::proof_trace::register_scope(
             Arc::as_ptr(&self.node) as usize,

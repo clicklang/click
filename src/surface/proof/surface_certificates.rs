@@ -536,7 +536,6 @@ pub(super) fn plan_explicit_named_signed_rule(
         .or_else(|| plan_explicit_increment_upper_bound(goal, premise_pairs))
         .or_else(|| plan_explicit_positive_is_nonnegative(goal, premise_pairs))
         .or_else(|| plan_explicit_le_transitive_constant_lower(goal, premise_pairs))
-        .or_else(|| plan_explicit_strictly_positive_is_nonnegative(goal, premise_pairs))
         .or_else(|| plan_explicit_strict_implies_nonstrict(goal, premise_pairs))
         .or_else(|| plan_explicit_greater_equal_to_reversed_less_equal(goal, premise_pairs))
         .or_else(|| plan_explicit_not_strict_implies_greater_equal(goal, premise_pairs))
@@ -617,7 +616,7 @@ fn plan_explicit_signed_antisymmetry(
     )])
 }
 
-fn plan_explicit_le_and_neq_implies_lt(
+pub(super) fn plan_explicit_le_and_neq_implies_lt(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -651,7 +650,7 @@ fn plan_explicit_le_and_neq_implies_lt(
             return Some(vec![
                 ProofTactic::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_le_and_neq_implies_lt".to_string(),
+                        name: "int32_less_equal_and_not_equal_implies_less_than".to_string(),
                         arguments: vec![surface_left, surface_right],
                     },
                     premises: vec![le_surface.clone(), neq_surface.clone()],
@@ -837,7 +836,7 @@ pub(super) fn recorded_wide_order_pairs(
 }
 
 /// A recorded 64-bit order chain written out as the standard library's
-/// transitivity lemmas, `uint64_lt_le_transitive` and its siblings, each
+/// transitivity lemmas, `uint64_less_than_less_equal_transitive` and its siblings, each
 /// link stated with `have` and the last closing the goal: the 64-bit
 /// counterpart of [`plan_recorded_signed_order_path_for_context`]. A link
 /// whose source premise is not written as `<`, `<=`, `>` or `>=` (a negated
@@ -864,10 +863,10 @@ pub(super) fn plan_recorded_wide_order_path(
     for (position, next) in path.iter().enumerate().skip(1) {
         let (_, upper, next_strict) = parts(&next.1)?;
         let link = match (strict, next_strict) {
-            (true, true) => "lt_transitive",
-            (true, false) => "lt_le_transitive",
-            (false, true) => "le_lt_transitive",
-            (false, false) => "le_transitive",
+            (true, true) => "less_than_transitive",
+            (true, false) => "less_than_less_equal_transitive",
+            (false, true) => "less_equal_less_than_transitive",
+            (false, false) => "less_equal_transitive",
         };
         let application = ProofTactic::ApplyTheoremUsing {
             application: TheoremApplication {
@@ -904,248 +903,39 @@ pub(super) fn plan_recorded_wide_order_path(
     Some(tactics)
 }
 
-pub(super) fn recorded_int32_increment_upper_bound_pairs(
-    derivation: &PropositionDerivation,
+/// The listed premise pairs that state each of `premises`, in order, or
+/// `None` when one is missing. With `polarity`, a condition stated with the
+/// opposite polarity also matches.
+pub(super) fn recorded_premise_pairs<'a>(
+    premises: impl IntoIterator<Item = &'a Proposition>,
     premise_pairs: &[(Proposition, ClickProposition)],
+    polarity: bool,
 ) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let premise = derivation.int32_increment_upper_bound_step()?.premise();
-    premise_pairs
-        .iter()
-        .find(|(kernel, _)| kernel == premise)
-        .cloned()
-        .map(|pair| vec![pair])
-}
-
-pub(super) fn recorded_int32_increment_constant_upper_bound_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let premise = derivation
-        .int32_increment_constant_upper_bound_step()?
-        .premise();
-    premise_pairs
-        .iter()
-        .find(|(kernel, _)| kernel == premise)
-        .cloned()
-        .map(|pair| vec![pair])
-}
-
-pub(super) fn recorded_int32_increment_strictly_increases_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let premise = derivation
-        .int32_increment_strictly_increases_step()?
-        .premise();
-    premise_pairs
-        .iter()
-        .find(|(kernel, _)| kernel == premise)
-        .cloned()
-        .map(|pair| vec![pair])
-}
-
-pub(super) fn recorded_int32_increment_below_max_is_defined_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let premise = derivation
-        .int32_increment_below_max_is_defined_step()?
-        .premise();
-    premise_pairs
-        .iter()
-        .find(|(kernel, _)| kernel == premise)
-        .cloned()
-        .map(|pair| vec![pair])
-}
-
-pub(super) fn recorded_int32_one_plus_below_max_is_defined_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let premise = derivation
-        .int32_one_plus_below_max_is_defined_step()?
-        .premise();
-    premise_pairs
-        .iter()
-        .find(|(kernel, _)| kernel == premise)
-        .cloned()
-        .map(|pair| vec![pair])
-}
-
-pub(super) fn recorded_int32_one_plus_strictly_increases_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let premise = derivation
-        .int32_one_plus_strictly_increases_step()?
-        .premise();
-    premise_pairs
-        .iter()
-        .find(|(kernel, _)| kernel == premise)
-        .cloned()
-        .map(|pair| vec![pair])
-}
-
-pub(super) fn recorded_int32_nonnegative_add_within_max_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let (amount_nonnegative, within_headroom) =
-        derivation.int32_nonnegative_add_within_max_steps()?;
-    [amount_nonnegative.premise(), within_headroom.premise()]
+    premises
         .into_iter()
         .map(|premise| {
             premise_pairs
                 .iter()
-                .find(|(kernel, _)| kernel == premise)
+                .find(|(kernel, _)| {
+                    kernel == premise
+                        || (polarity && condition_polarity_equivalent(kernel, premise))
+                })
                 .cloned()
         })
         .collect()
 }
 
-pub(super) fn recorded_int32_nonnegative_subtract_within_value_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let (amount_nonnegative, within_value) =
-        derivation.int32_nonnegative_subtract_within_value_steps()?;
-    [amount_nonnegative.premise(), within_value.premise()]
-        .into_iter()
-        .map(|premise| {
-            premise_pairs
-                .iter()
-                .find(|(kernel, _)| kernel == premise)
-                .cloned()
-        })
-        .collect()
-}
-
-pub(super) fn recorded_int32_increment_lower_bound_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let (lower_bound, upper_bound) = derivation.int32_increment_lower_bound_steps()?;
-    [lower_bound.premise(), upper_bound.premise()]
-        .into_iter()
-        .map(|premise| {
-            premise_pairs
-                .iter()
-                .find(|(kernel, _)| kernel == premise)
-                .cloned()
-        })
-        .collect()
-}
-
-pub(super) fn recorded_int32_increment_greater_equal_lower_bound_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let (lower_bound, upper_bound) =
-        derivation.int32_increment_greater_equal_lower_bound_steps()?;
-    [lower_bound.premise(), upper_bound.premise()]
-        .into_iter()
-        .map(|premise| {
-            premise_pairs
-                .iter()
-                .find(|(kernel, _)| kernel == premise)
-                .cloned()
-        })
-        .collect()
-}
-
-pub(super) fn recorded_int32_increment_strict_greater_lower_bound_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let (lower_bound, upper_bound) =
-        derivation.int32_increment_strict_greater_lower_bound_steps()?;
-    [lower_bound.premise(), upper_bound.premise()]
-        .into_iter()
-        .map(|premise| {
-            premise_pairs
-                .iter()
-                .find(|(kernel, _)| kernel == premise)
-                .cloned()
-        })
-        .collect()
-}
-
-pub(super) fn recorded_int32_increment_strict_greater_from_strict_lower_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let (lower_bound, upper_bound) =
-        derivation.int32_increment_strict_greater_from_strict_lower_steps()?;
-    [lower_bound.premise(), upper_bound.premise()]
-        .into_iter()
-        .map(|premise| {
-            premise_pairs
-                .iter()
-                .find(|(kernel, _)| kernel == premise)
-                .cloned()
-        })
-        .collect()
-}
-
-pub(super) fn recorded_int32_increment_preserves_order_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let (lower_bound, upper_bound) = derivation.int32_increment_preserves_order_steps()?;
-    [lower_bound.premise(), upper_bound.premise()]
-        .into_iter()
-        .map(|premise| {
-            premise_pairs
-                .iter()
-                .find(|(kernel, _)| kernel == premise)
-                .cloned()
-        })
-        .collect()
-}
-
-pub(super) fn recorded_int32_positive_predecessor_is_nonnegative_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let premise = derivation
-        .int32_positive_predecessor_is_nonnegative_step()?
-        .premise();
-    premise_pairs
-        .iter()
-        .find(|(kernel, _)| kernel == premise)
-        .cloned()
-        .map(|pair| vec![pair])
-}
-
-pub(super) fn recorded_int32_positive_predecessor_strictly_decreases_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let premise = derivation
-        .int32_positive_predecessor_strictly_decreases_step()?
-        .premise();
-    premise_pairs
-        .iter()
-        .find(|(kernel, _)| kernel == premise)
-        .cloned()
-        .map(|pair| vec![pair])
-}
-
-pub(super) fn recorded_int32_nonnegative_predecessor_upper_bound_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let (nonnegative, upper_bound) =
-        derivation.int32_nonnegative_predecessor_upper_bound_steps()?;
-    [nonnegative.premise(), upper_bound.premise()]
-        .into_iter()
-        .map(|premise| {
-            premise_pairs
-                .iter()
-                .find(|(kernel, _)| kernel == premise)
-                .cloned()
-        })
-        .collect()
+/// A recorded rule's tactics, without the trailing theorem assumption when
+/// the fixed-state application already closes the goal.
+pub(super) fn for_context(
+    tactics: Option<Vec<ProofTactic>>,
+    fixed_state_application_closes_goal: bool,
+) -> Option<Vec<ProofTactic>> {
+    let mut tactics = tactics?;
+    if fixed_state_application_closes_goal {
+        remove_trailing_theorem_assumption(&mut tactics)?;
+    }
+    Some(tactics)
 }
 
 pub(super) fn recorded_int32_one_le_predecessor_is_nonnegative_pairs(
@@ -1201,309 +991,6 @@ pub(super) fn recorded_int32_equal_one_predecessor_is_zero_pairs(
     derivation
         .int32_equal_one_predecessor_is_zero_path()
         .and_then(|path| recorded_bitvector_equality_path_pairs(path, premise_pairs))
-}
-
-pub(super) fn recorded_int32_le_and_not_lt_implies_equality_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let (less_equal, not_less_than) = derivation.int32_le_and_not_lt_implies_equality_premises()?;
-    [less_equal, not_less_than]
-        .into_iter()
-        .map(|premise| {
-            premise_pairs
-                .iter()
-                .find(|(kernel, _)| {
-                    kernel == premise || condition_polarity_equivalent(kernel, premise)
-                })
-                .cloned()
-        })
-        .collect()
-}
-
-pub(super) fn recorded_int32_ge_and_not_gt_implies_equality_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let (greater_equal, not_greater_than) =
-        derivation.int32_ge_and_not_gt_implies_equality_premises()?;
-    [greater_equal, not_greater_than]
-        .into_iter()
-        .map(|premise| {
-            premise_pairs
-                .iter()
-                .find(|(kernel, _)| {
-                    kernel == premise || condition_polarity_equivalent(kernel, premise)
-                })
-                .cloned()
-        })
-        .collect()
-}
-
-pub(super) fn recorded_int32_positive_is_nonnegative_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let premise = derivation.int32_positive_is_nonnegative_step()?.premise();
-    premise_pairs
-        .iter()
-        .find(|(kernel, _)| kernel == premise)
-        .cloned()
-        .map(|pair| vec![pair])
-}
-
-pub(super) fn recorded_int32_strictly_positive_is_nonnegative_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let premise = derivation
-        .int32_strictly_positive_is_nonnegative_step()?
-        .premise();
-    premise_pairs
-        .iter()
-        .find(|(kernel, _)| kernel == premise)
-        .cloned()
-        .map(|pair| vec![pair])
-}
-
-pub(super) fn recorded_int32_successor_le_implies_lt_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let premise = derivation.int32_successor_le_implies_lt_step()?.premise();
-    premise_pairs
-        .iter()
-        .find(|(kernel, _)| kernel == premise)
-        .cloned()
-        .map(|pair| vec![pair])
-}
-
-pub(super) fn recorded_int32_constant_lower_bound_weakening_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let premise = derivation
-        .int32_constant_lower_bound_weakening_step()?
-        .premise();
-    premise_pairs
-        .iter()
-        .find(|(kernel, _)| kernel == premise)
-        .cloned()
-        .map(|pair| vec![pair])
-}
-
-pub(super) fn recorded_int32_negated_strict_successor_bound_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let premise = derivation
-        .int32_negated_strict_successor_bound_step()?
-        .premise();
-    premise_pairs
-        .iter()
-        .find(|(kernel, _)| kernel == premise || condition_polarity_equivalent(kernel, premise))
-        .cloned()
-        .map(|pair| vec![pair])
-}
-
-pub(super) fn recorded_int32_le_and_neq_implies_strict_pairs(
-    derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
-    let (less_equal, not_equal) = derivation.int32_le_and_neq_implies_strict_premises()?;
-    [less_equal, not_equal]
-        .into_iter()
-        .map(|premise| {
-            premise_pairs
-                .iter()
-                .find(|(kernel, _)| {
-                    kernel == premise || condition_polarity_equivalent(kernel, premise)
-                })
-                .cloned()
-        })
-        .collect()
-}
-
-pub(super) fn plan_recorded_int32_increment_upper_bound_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_increment_upper_bound(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_increment_constant_upper_bound_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_increment_constant_upper_bound(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_increment_strictly_increases_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_increment_strictly_increases(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_increment_below_max_is_defined_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_increment_below_max_is_defined(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_one_plus_below_max_is_defined_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_one_plus_below_max_is_defined(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_one_plus_strictly_increases_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_one_plus_strictly_increases(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_nonnegative_add_within_max_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_nonnegative_add_within_max_is_defined(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_nonnegative_subtract_within_value_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics =
-        plan_explicit_nonnegative_subtract_within_value_is_defined(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_increment_lower_bound_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_increment_lower_bound(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_increment_greater_equal_lower_bound_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_increment_greater_equal_lower_bound(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_increment_strict_greater_lower_bound_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_increment_strict_greater_lower_bound(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_increment_strict_greater_from_strict_lower_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics =
-        plan_explicit_increment_strict_greater_from_strict_lower(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_increment_preserves_order_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_increment_preserves_order(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_positive_predecessor_is_nonnegative_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_positive_predecessor_is_nonnegative(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_positive_predecessor_strictly_decreases_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_positive_predecessor_strictly_decreases(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
 }
 
 pub(super) fn plan_recorded_int32_nonnegative_predecessor_upper_bound_for_context(
@@ -1643,54 +1130,6 @@ pub(super) fn plan_recorded_int32_equal_one_predecessor_is_zero(
     Some(tactics)
 }
 
-pub(super) fn plan_recorded_int32_le_and_not_lt_implies_equality_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_le_and_not_lt_implies_eq(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_ge_and_not_gt_implies_equality_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_ge_and_not_gt_implies_eq(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_positive_is_nonnegative_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_positive_is_nonnegative(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_strictly_positive_is_nonnegative_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_strictly_positive_is_nonnegative(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
 pub(super) fn plan_recorded_int32_successor_le_implies_lt_for_context(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
@@ -1719,18 +1158,6 @@ pub(super) fn plan_recorded_int32_successor_le_implies_lt_for_context(
     Some(tactics)
 }
 
-pub(super) fn plan_recorded_int32_constant_lower_bound_weakening_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_le_transitive_constant_lower(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
-    }
-    Some(tactics)
-}
-
 pub(super) fn plan_recorded_int32_negated_strict_successor_bound_for_context(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
@@ -1746,18 +1173,6 @@ pub(super) fn plan_recorded_int32_negated_strict_successor_bound_for_context(
             return None;
         };
         remove_trailing_theorem_assumption(body)?;
-    }
-    Some(tactics)
-}
-
-pub(super) fn plan_recorded_int32_le_and_neq_implies_strict_for_context(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    fixed_state_application_closes_goal: bool,
-) -> Option<Vec<ProofTactic>> {
-    let mut tactics = plan_explicit_le_and_neq_implies_lt(goal, premise_pairs)?;
-    if fixed_state_application_closes_goal {
-        remove_trailing_theorem_assumption(&mut tactics)?;
     }
     Some(tactics)
 }
@@ -1890,14 +1305,14 @@ fn order_transitivity_theorem(
     unsigned: bool,
 ) -> &'static str {
     match (unsigned, first_strict, second_strict) {
-        (false, false, false) => "int32_le_transitive",
-        (false, false, true) => "int32_le_lt_transitive",
-        (false, true, false) => "int32_lt_le_transitive",
-        (false, true, true) => "int32_lt_transitive",
-        (true, false, false) => "uint32_le_transitive",
-        (true, false, true) => "uint32_le_lt_transitive",
-        (true, true, false) => "uint32_lt_le_transitive",
-        (true, true, true) => "uint32_lt_transitive",
+        (false, false, false) => "int32_less_equal_transitive",
+        (false, false, true) => "int32_less_equal_less_than_transitive",
+        (false, true, false) => "int32_less_than_less_equal_transitive",
+        (false, true, true) => "int32_less_than_transitive",
+        (true, false, false) => "uint32_less_equal_transitive",
+        (true, false, true) => "uint32_less_equal_less_than_transitive",
+        (true, true, false) => "uint32_less_than_less_equal_transitive",
+        (true, true, true) => "uint32_less_than_transitive",
     }
 }
 
@@ -2205,21 +1620,6 @@ fn goal_exact_less_equal_parts(goal: &Proposition) -> Option<(&Bitvector32Term, 
     }
 }
 
-/// Exact `>=`-shaped goal parts as `(lower, value)`; see
-/// [`goal_exact_less_than_parts`]. For a theorem whose conclusion is written
-/// with `>=` (for example `int32_strictly_positive_is_nonnegative`).
-fn goal_exact_greater_equal_parts(
-    goal: &Proposition,
-) -> Option<(&Bitvector32Term, &Bitvector32Term)> {
-    match goal {
-        Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedGreaterEqual(value, lower),
-            true,
-        ) => Some((lower, value)),
-        _ => None,
-    }
-}
-
 fn increment_base(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
     let Bitvector32Term::Add(left, right) = term else {
         return None;
@@ -2293,7 +1693,7 @@ pub(super) fn surface_nonstrict_parts(
     }
 }
 
-fn plan_explicit_increment_upper_bound(
+pub(super) fn plan_explicit_increment_upper_bound(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -2322,22 +1722,24 @@ fn plan_explicit_increment_upper_bound(
     None
 }
 
-fn plan_explicit_positive_is_nonnegative(
+pub(super) fn plan_explicit_positive_is_nonnegative(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let (goal_lower, goal_value) = goal_exact_less_equal_parts(goal)?;
+    // `0 <= value` and `value >= 0` are one order; the theorem's
+    // `0 <= value` conclusion closes either spelling.
+    let (goal_lower, goal_value) = signed_nonstrict_parts(goal)?;
     if goal_lower != &Bitvector32Term::Constant(0) {
         return None;
     }
     for (kernel, surface) in premise_pairs {
-        let Some((premise_lower, premise_value)) = signed_nonstrict_parts(kernel) else {
+        let Some((premise_lower, premise_value)) = signed_strict_parts(kernel) else {
             continue;
         };
-        if premise_lower != &Bitvector32Term::Constant(1) || premise_value != goal_value {
+        if premise_lower != &Bitvector32Term::Constant(0) || premise_value != goal_value {
             continue;
         }
-        let (_, surface_value) = surface_nonstrict_parts(surface)?;
+        let (_, surface_value) = surface_strict_parts(surface)?;
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
@@ -2352,7 +1754,7 @@ fn plan_explicit_positive_is_nonnegative(
     None
 }
 
-fn plan_explicit_le_transitive_constant_lower(
+pub(super) fn plan_explicit_le_transitive_constant_lower(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -2394,7 +1796,7 @@ fn plan_explicit_le_transitive_constant_lower(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_le_transitive".to_string(),
+                    name: "int32_less_equal_transitive".to_string(),
                     arguments: vec![surface_lower, surface_middle, surface_value],
                 },
                 premises: vec![surface.clone()],
@@ -2429,7 +1831,7 @@ fn plan_explicit_strict_implies_nonstrict(
         };
         let mut tactics = vec![ProofTactic::ApplyTheoremUsing {
             application: TheoremApplication {
-                name: "int32_lt_implies_le".to_string(),
+                name: "int32_less_than_implies_less_equal".to_string(),
                 arguments: vec![surface_left.clone(), surface_right.clone()],
             },
             premises: vec![surface.clone()],
@@ -2437,7 +1839,7 @@ fn plan_explicit_strict_implies_nonstrict(
         if reversed {
             tactics.push(ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_le_implies_reversed_ge".to_string(),
+                    name: "int32_less_equal_implies_reversed_greater_equal".to_string(),
                     arguments: vec![surface_left, surface_right],
                 },
                 premises: vec![surface_nonstrict],
@@ -2544,7 +1946,7 @@ fn plan_explicit_greater_equal_to_reversed_less_equal(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_ge_implies_reversed_le".to_string(),
+                    name: "int32_greater_equal_implies_reversed_less_equal".to_string(),
                     arguments: vec![surface_greater, surface_lower],
                 },
                 premises: vec![surface.clone()],
@@ -2599,7 +2001,7 @@ fn plan_explicit_not_strict_implies_greater_equal(
         };
         let mut tactics = vec![ProofTactic::ApplyTheoremUsing {
             application: TheoremApplication {
-                name: "int32_not_lt_implies_ge".to_string(),
+                name: "int32_not_less_than_implies_greater_equal".to_string(),
                 arguments: vec![surface_left.clone(), surface_right.clone()],
             },
             premises: vec![surface.clone()],
@@ -2607,7 +2009,7 @@ fn plan_explicit_not_strict_implies_greater_equal(
         if reversed_less_equal {
             tactics.push(ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_ge_implies_reversed_le".to_string(),
+                    name: "int32_greater_equal_implies_reversed_less_equal".to_string(),
                     arguments: vec![surface_left, surface_right],
                 },
                 premises: vec![greater_equal],
@@ -2650,7 +2052,7 @@ fn plan_explicit_greater_equal_transitive(
             return Some(vec![
                 ProofTactic::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_ge_transitive".to_string(),
+                        name: "int32_greater_equal_transitive".to_string(),
                         arguments: vec![surface_last, surface_middle, surface_first],
                     },
                     premises: vec![second_surface.clone(), first_surface.clone()],
@@ -2718,7 +2120,7 @@ fn plan_explicit_negated_strict_successor_bound(
                 proof: SourceProof::Script(vec![
                     ProofTactic::ApplyTheoremUsing {
                         application: TheoremApplication {
-                            name: "int32_not_lt_implies_ge".to_string(),
+                            name: "int32_not_less_than_implies_greater_equal".to_string(),
                             arguments: vec![surface_value.clone(), surface_upper.clone()],
                         },
                         premises: vec![surface.clone()],
@@ -2732,7 +2134,7 @@ fn plan_explicit_negated_strict_successor_bound(
             }),
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_ge_transitive".to_string(),
+                    name: "int32_greater_equal_transitive".to_string(),
                     arguments: vec![surface_value, surface_upper, surface_lower],
                 },
                 premises: vec![value_ge_upper, upper_ge_lower],
@@ -2743,7 +2145,7 @@ fn plan_explicit_negated_strict_successor_bound(
     None
 }
 
-fn plan_explicit_increment_greater_equal_lower_bound(
+pub(super) fn plan_explicit_increment_greater_equal_lower_bound(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -2786,7 +2188,7 @@ fn plan_explicit_increment_greater_equal_lower_bound(
     None
 }
 
-fn plan_explicit_increment_strict_greater_lower_bound(
+pub(super) fn plan_explicit_increment_strict_greater_lower_bound(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -2817,7 +2219,7 @@ fn plan_explicit_increment_strict_greater_lower_bound(
             return Some(vec![
                 ProofTactic::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_increment_strict_greater_lower_bound".to_string(),
+                        name: "int32_increment_greater_than_lower_bound".to_string(),
                         arguments: vec![surface_value, surface_lower, surface_upper],
                     },
                     premises: vec![lower_surface.clone(), upper_surface.clone()],
@@ -2829,7 +2231,7 @@ fn plan_explicit_increment_strict_greater_lower_bound(
     None
 }
 
-fn plan_explicit_increment_strict_greater_from_strict_lower(
+pub(super) fn plan_explicit_increment_strict_greater_from_strict_lower(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -2862,14 +2264,14 @@ fn plan_explicit_increment_strict_greater_from_strict_lower(
     Some(vec![
         ProofTactic::ApplyTheoremUsing {
             application: TheoremApplication {
-                name: "int32_lt_implies_le".to_string(),
+                name: "int32_less_than_implies_less_equal".to_string(),
                 arguments: vec![surface_lower.clone(), surface_value.clone()],
             },
             premises: vec![lower_surface.clone()],
         },
         ProofTactic::ApplyTheoremUsing {
             application: TheoremApplication {
-                name: "int32_increment_strict_greater_lower_bound".to_string(),
+                name: "int32_increment_greater_than_lower_bound".to_string(),
                 arguments: vec![surface_value, surface_lower, surface_upper],
             },
             premises: vec![weakened_lower, upper_surface.clone()],
@@ -2879,7 +2281,7 @@ fn plan_explicit_increment_strict_greater_from_strict_lower(
 }
 
 /// `first <= middle` and `middle <= last` give `first <= last` through
-/// `int32_le_transitive`; the non-strict counterpart of
+/// `int32_less_equal_transitive`; the non-strict counterpart of
 /// [`plan_explicit_strict_transitive`].
 fn plan_explicit_nonstrict_transitive(
     goal: &Proposition,
@@ -2911,7 +2313,7 @@ fn plan_explicit_nonstrict_transitive(
             return Some(vec![
                 ProofTactic::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_le_transitive".to_string(),
+                        name: "int32_less_equal_transitive".to_string(),
                         arguments: vec![surface_first, surface_middle, surface_last],
                     },
                     premises: vec![first_surface.clone(), second_surface.clone()],
@@ -2953,7 +2355,7 @@ fn plan_explicit_strict_transitive(
             return Some(vec![
                 ProofTactic::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_lt_transitive".to_string(),
+                        name: "int32_less_than_transitive".to_string(),
                         arguments: vec![surface_first, surface_middle, surface_last],
                     },
                     premises: vec![first_surface.clone(), second_surface.clone()],
@@ -2967,7 +2369,7 @@ fn plan_explicit_strict_transitive(
 
 /// A non-strict leg followed by a strict leg is strict end to end:
 /// `first < last` follows from listed `first <= middle` and `middle < last`
-/// through `int32_le_lt_transitive`, mirroring the strict-then-nonstrict
+/// through `int32_less_equal_less_than_transitive`, mirroring the strict-then-nonstrict
 /// planner below.
 fn plan_explicit_nonstrict_then_strict_transitive(
     goal: &Proposition,
@@ -2999,7 +2401,7 @@ fn plan_explicit_nonstrict_then_strict_transitive(
             return Some(vec![
                 ProofTactic::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_le_lt_transitive".to_string(),
+                        name: "int32_less_equal_less_than_transitive".to_string(),
                         arguments: vec![surface_first, surface_middle, surface_last],
                     },
                     premises: vec![first_surface.clone(), second_surface.clone()],
@@ -3041,7 +2443,7 @@ fn plan_explicit_strict_then_nonstrict_transitive(
             return Some(vec![
                 ProofTactic::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_lt_le_transitive".to_string(),
+                        name: "int32_less_than_less_equal_transitive".to_string(),
                         arguments: vec![surface_first, surface_middle, surface_last],
                     },
                     premises: vec![first_surface.clone(), second_surface.clone()],
@@ -3055,7 +2457,7 @@ fn plan_explicit_strict_then_nonstrict_transitive(
 
 /// A constant non-strict upper bound sharpens below any larger constant:
 /// `x < c1` follows from a listed `x <= c2` when `c2 < c1`, through
-/// `int32_le_lt_transitive` over the context-free constant order.
+/// `int32_less_equal_less_than_transitive` over the context-free constant order.
 fn plan_explicit_constant_strict_upper_bound_weakening(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
@@ -3098,9 +2500,9 @@ fn plan_explicit_constant_strict_upper_bound_weakening(
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
                     name: if strict {
-                        "int32_lt_transitive"
+                        "int32_less_than_transitive"
                     } else {
-                        "int32_le_lt_transitive"
+                        "int32_less_equal_less_than_transitive"
                     }
                     .to_string(),
                     arguments: vec![surface_value, surface_premise_upper, goal_upper_surface],
@@ -3116,7 +2518,7 @@ fn plan_explicit_constant_strict_upper_bound_weakening(
 /// An increment stays under a constant bound that clears its base's constant
 /// bound: `x + 1 <= c1` follows from a listed `x <= c2` when `c2 < c1`,
 /// through the strict weakening and `int32_increment_upper_bound`.
-fn plan_explicit_increment_constant_upper_bound(
+pub(super) fn plan_explicit_increment_constant_upper_bound(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -3156,7 +2558,7 @@ fn plan_explicit_increment_constant_upper_bound(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_le_lt_transitive".to_string(),
+                    name: "int32_less_equal_less_than_transitive".to_string(),
                     arguments: vec![
                         surface_value.clone(),
                         surface_premise_upper,
@@ -3180,7 +2582,7 @@ fn plan_explicit_increment_constant_upper_bound(
 
 /// A constant lower bound relaxes to any smaller constant: `c1 <= x` follows
 /// from a listed `x >= c2` (in either form) when `c1 <= c2`, through
-/// `int32_ge_transitive` over the context-free constant order and the
+/// `int32_greater_equal_transitive` over the context-free constant order and the
 /// reversed-form theorem.
 fn plan_explicit_constant_lower_bound_weakening(
     goal: &Proposition,
@@ -3220,7 +2622,7 @@ fn plan_explicit_constant_lower_bound_weakening(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_ge_transitive".to_string(),
+                    name: "int32_greater_equal_transitive".to_string(),
                     arguments: vec![
                         surface_value.clone(),
                         surface_premise_lower,
@@ -3231,7 +2633,7 @@ fn plan_explicit_constant_lower_bound_weakening(
             },
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_ge_implies_reversed_le".to_string(),
+                    name: "int32_greater_equal_implies_reversed_less_equal".to_string(),
                     arguments: vec![surface_value, goal_lower_surface],
                 },
                 premises: vec![weakened_surface],
@@ -3242,37 +2644,7 @@ fn plan_explicit_constant_lower_bound_weakening(
     None
 }
 
-fn plan_explicit_strictly_positive_is_nonnegative(
-    goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<ProofTactic>> {
-    let (goal_lower, goal_value) = goal_exact_greater_equal_parts(goal)?;
-    if goal_lower != &Bitvector32Term::Constant(0) {
-        return None;
-    }
-    for (kernel, surface) in premise_pairs {
-        let Some((premise_lower, premise_value)) = signed_strict_parts(kernel) else {
-            continue;
-        };
-        if premise_lower != &Bitvector32Term::Constant(0) || premise_value != goal_value {
-            continue;
-        }
-        let (_, surface_value) = surface_strict_parts(surface)?;
-        return Some(vec![
-            ProofTactic::ApplyTheoremUsing {
-                application: TheoremApplication {
-                    name: "int32_strictly_positive_is_nonnegative".to_string(),
-                    arguments: vec![surface_value],
-                },
-                premises: vec![surface.clone()],
-            },
-            ProofTactic::Assumption,
-        ]);
-    }
-    None
-}
-
-fn plan_explicit_increment_below_max_is_defined(
+pub(super) fn plan_explicit_increment_below_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -3308,7 +2680,7 @@ fn plan_explicit_increment_below_max_is_defined(
     None
 }
 
-fn plan_explicit_one_plus_below_max_is_defined(
+pub(super) fn plan_explicit_one_plus_below_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -3331,7 +2703,7 @@ fn plan_explicit_one_plus_below_max_is_defined(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_one_plus_below_max_is_defined".to_string(),
+                    name: "int32_increment_left_below_max_is_defined".to_string(),
                     arguments: vec![surface_value],
                 },
                 premises: vec![surface.clone()],
@@ -3342,7 +2714,7 @@ fn plan_explicit_one_plus_below_max_is_defined(
     None
 }
 
-fn plan_explicit_one_plus_strictly_increases(
+pub(super) fn plan_explicit_one_plus_strictly_increases(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -3367,7 +2739,7 @@ fn plan_explicit_one_plus_strictly_increases(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_one_plus_strictly_increases".to_string(),
+                    name: "int32_increment_left_strictly_increases".to_string(),
                     arguments: vec![surface_value],
                 },
                 premises: vec![surface.clone()],
@@ -3378,7 +2750,7 @@ fn plan_explicit_one_plus_strictly_increases(
     None
 }
 
-fn plan_explicit_nonnegative_add_within_max_is_defined(
+pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -3422,7 +2794,7 @@ fn plan_explicit_nonnegative_add_within_max_is_defined(
     ])
 }
 
-fn plan_explicit_nonnegative_subtract_within_value_is_defined(
+pub(super) fn plan_explicit_nonnegative_subtract_within_value_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -3454,7 +2826,7 @@ fn plan_explicit_nonnegative_subtract_within_value_is_defined(
     ])
 }
 
-fn plan_explicit_positive_predecessor_is_nonnegative(
+pub(super) fn plan_explicit_positive_predecessor_is_nonnegative(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -3628,7 +3000,7 @@ fn plan_explicit_one_le_predecessor(
                 proof: SourceProof::Script(vec![
                     ProofTactic::ApplyTheoremUsing {
                         application: TheoremApplication {
-                            name: "int32_successor_le_implies_lt".to_string(),
+                            name: "int32_increment_less_equal_implies_less_than".to_string(),
                             arguments: vec![surface_zero, surface_value.clone()],
                         },
                         premises: vec![surface.clone()],
@@ -3690,7 +3062,7 @@ fn surface_one_le_equality_source(surface: &ClickProposition) -> Option<ClickPro
     }
 }
 
-fn plan_explicit_positive_predecessor_strictly_decreases(
+pub(super) fn plan_explicit_positive_predecessor_strictly_decreases(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -3723,7 +3095,7 @@ fn plan_explicit_positive_predecessor_strictly_decreases(
     None
 }
 
-fn plan_explicit_le_and_not_lt_implies_eq(
+pub(super) fn plan_explicit_le_and_not_lt_implies_eq(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -3760,7 +3132,7 @@ fn plan_explicit_le_and_not_lt_implies_eq(
             return Some(vec![
                 ProofTactic::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_le_and_not_lt_implies_eq".to_string(),
+                        name: "int32_less_equal_and_not_less_than_implies_equal".to_string(),
                         arguments: vec![surface_left, surface_right],
                     },
                     premises: vec![le_surface.clone(), not_lt_surface.clone()],
@@ -3890,7 +3262,7 @@ fn pointer_int32_scaled_value(offset: &PointerOffsetTerm) -> Option<Bitvector32T
     (*byte_width == 4).then(|| value.as_ref().clone())
 }
 
-fn plan_explicit_ge_and_not_gt_implies_eq(
+pub(super) fn plan_explicit_ge_and_not_gt_implies_eq(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -3930,7 +3302,7 @@ fn plan_explicit_ge_and_not_gt_implies_eq(
             return Some(vec![
                 ProofTactic::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_ge_and_not_gt_implies_eq".to_string(),
+                        name: "int32_greater_equal_and_not_greater_than_implies_equal".to_string(),
                         arguments: vec![surface_left, surface_right],
                     },
                     premises: vec![ge_surface.clone(), not_gt_surface.clone()],
@@ -3942,7 +3314,7 @@ fn plan_explicit_ge_and_not_gt_implies_eq(
     None
 }
 
-fn plan_explicit_increment_strictly_increases(
+pub(super) fn plan_explicit_increment_strictly_increases(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -4016,7 +3388,7 @@ fn plan_explicit_successor_le_implies_lt(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_successor_le_implies_lt".to_string(),
+                    name: "int32_increment_less_equal_implies_less_than".to_string(),
                     arguments: vec![surface_lower, surface_value],
                 },
                 premises: vec![bound_surface.clone()],
@@ -4027,7 +3399,7 @@ fn plan_explicit_successor_le_implies_lt(
     None
 }
 
-fn plan_explicit_increment_preserves_order(
+pub(super) fn plan_explicit_increment_preserves_order(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
@@ -4079,7 +3451,7 @@ fn plan_explicit_increment_preserves_order(
     None
 }
 
-fn plan_explicit_increment_lower_bound(
+pub(super) fn plan_explicit_increment_lower_bound(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {

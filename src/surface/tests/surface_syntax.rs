@@ -1683,7 +1683,7 @@ fn special_arithmetic_certificate_round_trips_and_rejects_bad_premises() {
     let source = r#"
         theorem special_certificate_forms(p: int32) {
             ensures aligned(p, 8) by {
-                arithmetic_certificate special {
+                arithmetic_certificate rules {
                     premise 0: aligned(p, 8) => aligned(p, 8);
                     pointer_alignment premise 0 => aligned(p, 8);
                     conclusion 0;
@@ -1691,7 +1691,7 @@ fn special_arithmetic_certificate_round_trips_and_rejects_bad_premises() {
             }
         }
     "#;
-    let file = parse(source).expect("special certificate should parse");
+    let file = parse(source).expect("rules certificate should parse");
     let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
         panic!("expected an explicit theorem proof");
     };
@@ -1703,14 +1703,14 @@ fn special_arithmetic_certificate_round_trips_and_rejects_bad_premises() {
     ));
     let printed = super::printing::format_partial_tactic_sequence(tactics);
     assert!(
-        printed.contains("arithmetic_certificate special {"),
+        printed.contains("arithmetic_certificate rules {"),
         "{printed}"
     );
     assert_eq!(
         parse(&format!(
             "theorem special_certificate_forms(p: int32) {{ ensures aligned(p, 8) by {{ {printed} }} }}"
         ))
-        .expect("printed special certificate should reparse")
+        .expect("printed rules certificate should reparse")
         .theorem_definitions()[0]
             .ensures()[0]
             .proof(),
@@ -1750,7 +1750,7 @@ fn special_certificate_accepts_deep_identity_and_rejects_late_mismatch() {
     let nested = format!("{}aligned(p, 8)", "aligned(p, 8) and ".repeat(260),);
     let source = format!(
         "theorem deep_special_certificate(p: int32) {{ ensures aligned(p, 8) by {{\
-            arithmetic_certificate special {{\
+            arithmetic_certificate rules {{\
                 premise 0: {nested} => {nested};\
                 pointer_alignment premise 0 => aligned(p, 8);\
                 conclusion 0;\
@@ -1775,7 +1775,7 @@ fn special_certificate_accepts_deep_identity_and_rejects_late_mismatch() {
     let call_mismatch = r#"
         theorem special_call_mismatch(p: int32) {
             ensures aligned(p, 8) by {
-                arithmetic_certificate special {
+                arithmetic_certificate rules {
                     premise 0: first(p) => second(p);
                     pointer_alignment premise 0 => aligned(p, 8);
                     conclusion 0;
@@ -1785,7 +1785,7 @@ fn special_certificate_accepts_deep_identity_and_rejects_late_mismatch() {
     "#;
     assert!(
         parse(call_mismatch).is_err(),
-        "special premise token comparison must reject differing call names"
+        "`rules` premise token comparison must reject differing call names"
     );
 }
 
@@ -1798,7 +1798,7 @@ fn integer_product_bounds_round_trip_reverify_and_reject_unavailable_or_altered_
             requires -4 <= y;
             requires y <= 5;
             ensures x * y <= 15 by {
-                arithmetic_certificate special {
+                arithmetic_certificate rules {
                     premise 0: -2 <= x => -2 <= x;
                     premise 1: x <= 3 => x <= 3;
                     premise 2: -4 <= y => -4 <= y;
@@ -1866,7 +1866,7 @@ fn float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks() {
         .expanded_proof_source()
         .expect("float reflexivity should expand");
     assert!(
-        expanded.contains("arithmetic_certificate special"),
+        expanded.contains("arithmetic_certificate rules"),
         "{expanded}"
     );
     assert_eq!(expanded.matches("premise ").count(), 1, "{expanded}");
@@ -2137,8 +2137,8 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
 fn pure_simp_exposes_an_explicit_theorem_certificate() {
     let source = r#"
         theorem positive_is_nonnegative(x: int32) {
-            requires x > 0;
-            ensures x >= 0 by simp;
+            requires 0 < x;
+            ensures 0 <= x by simp;
         }
     "#;
 
@@ -2146,7 +2146,7 @@ fn pure_simp_exposes_an_explicit_theorem_certificate() {
     assert!(matches!(
         verified[0].proof_tactics().as_deref(),
         Some([ProofTactic::ApplyTheoremUsing { application, premises }])
-            if application.name == "int32_strictly_positive_is_nonnegative"
+            if application.name == "int32_positive_is_nonnegative"
             && premises.len() == 1
     ));
 }
@@ -4564,10 +4564,10 @@ fn a_hidden_record_needs_its_child_declared_first() {
 }
 
 /// A Rust sidecar states a signature as Rust does. It declares the same
-/// function as the C-shaped spelling, and `expr as T` is the scalar cast.
+/// contract representation as a C signature, and `expr as T` is the scalar cast.
 #[test]
 fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
-    let c_shaped = "verifying \"arithmetic.rs\"; \
+    let c_shaped = "verifying \"arithmetic.c\"; \
         uint32 add_byte(uint32 sum, uint8 byte) { requires sum <= 4294967040u32; \
         ensures result == sum + (uint32)byte; } by { execute(); simp(); } \
         bool touch(uint64 count, bool flag) { ensures result == flag; } by { execute(); simp(); }";
@@ -4576,10 +4576,26 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
         ensures result == sum + byte as u32; } by { execute(); simp(); } \
         fn touch(count: usize, flag: bool) -> bool { ensures result == flag; } by { execute(); simp(); }";
     assert_eq!(
-        parser::parse(rust).expect("the Rust spelling parses"),
-        parser::parse(c_shaped).expect("the C-shaped spelling parses"),
+        parser::parse(rust)
+            .expect("the Rust spelling parses")
+            .function_blocks(),
+        parser::parse(c_shaped)
+            .expect("the C-shaped spelling parses")
+            .function_blocks(),
     );
     for (source, expected) in [
+        (
+            "verifying \"bytes.rs\"; uint32 f(const uint8* bytes, uint64 bytes_len) { ensures result == 0u32; } by simp();",
+            "write `fn f(bytes: &[u8]) -> u32`",
+        ),
+        (
+            "uint32 f(const uint8* bytes, uint64 bytes_len) { ensures result == 0u32; } by simp(); verifying \"bytes.rs\";",
+            "write `fn f(bytes: &[u8]) -> u32`",
+        ),
+        (
+            "verifying \"borrow.rs\"; fn f(p: &u32) -> u32 { ensures result == p->f; } by simp();",
+            "replace `p->f` with `p.f`",
+        ),
         (
             "verifying \"add.c\"; fn add(a: i32) -> i32 { ensures result == result; } by { execute(); simp(); }",
             "a `fn` signature is the Rust spelling",
@@ -4608,13 +4624,15 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
              fn set(value: &mut i32, seen: &i32) { owns *value; views *seen; \
              ensures *value == *seen; } by { execute(); simp(); }"
         )
-        .expect("the Rust spelling parses"),
+        .expect("the Rust spelling parses")
+        .function_blocks(),
         parser::parse(
-            "verifying \"borrow.rs\"; \
+            "verifying \"borrow.c\"; \
              void set(int32* value, const int32* seen) { owns *value; views *seen; \
              ensures *value == *seen; } by { execute(); simp(); }"
         )
-        .expect("the C-shaped spelling parses"),
+        .expect("the C-shaped spelling parses")
+        .function_blocks(),
     );
     // A contract does not use lifetimes, so it may write them or leave them
     // out, in the generic parameters and on a reference or slice.
@@ -4643,13 +4661,15 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
             "verifying \"bytes.rs\"; fn length(bytes: &[u8], out: &mut [u32]) -> usize { \
              ensures result == bytes.len() + out.len(); } by { execute(); simp(); }"
         )
-        .expect("the Rust spelling parses"),
+        .expect("the Rust spelling parses")
+        .function_blocks(),
         parser::parse(
-            "verifying \"bytes.rs\"; uint64 length(const uint8* bytes, uint64 bytes_len, \
+            "verifying \"bytes.c\"; uint64 length(const uint8* bytes, uint64 bytes_len, \
              uint32* out, uint64 out_len) { ensures result == bytes_len + out_len; } \
              by { execute(); simp(); }"
         )
-        .expect("the C-shaped spelling parses"),
+        .expect("the C-shaped spelling parses")
+        .function_blocks(),
     );
     // `*bytes` is the whole slice, and a `usize` parameter written alone
     // as an index is the 32-bit index a place takes. The importer test
@@ -4689,12 +4709,12 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
                 "verifying \"l.rs\"; impl {header} for Lanes {{ fn {method}(&mut self, {parameter}) {{ \
                  ensures 0 == 0; }} by {{ execute(); simp(); }} }}"
             ))
-            .unwrap_or_else(|error| panic!("{header}: {error:?}")),
+            .unwrap_or_else(|error| panic!("{header}: {error:?}")).function_blocks(),
             parser::parse(&format!(
-                "verifying \"l.rs\"; void {name}(struct Lanes* self, {c_parameter}) {{ \
+                "verifying \"l.c\"; void {name}(struct Lanes* self, {c_parameter}) {{ \
                  ensures 0 == 0; }} by {{ execute(); simp(); }}"
             ))
-            .expect("the C-shaped spelling parses"),
+            .expect("the C-shaped spelling parses").function_blocks(),
             "{header}"
         );
     }
@@ -4738,11 +4758,13 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
         let rust = rust.replace('@', "by { execute(); simp(); }");
         assert_eq!(
             parser::parse(&format!("verifying \"lib.rs\"; {rust}"))
-                .unwrap_or_else(|error| panic!("{rust}: {error:?}")),
+                .unwrap_or_else(|error| panic!("{rust}: {error:?}"))
+                .function_blocks(),
             parser::parse(&format!(
-                "verifying \"lib.rs\"; {c_shaped} by {{ execute(); simp(); }}"
+                "verifying \"lib.c\"; {c_shaped} by {{ execute(); simp(); }}"
             ))
-            .unwrap_or_else(|error| panic!("{c_shaped}: {error:?}")),
+            .unwrap_or_else(|error| panic!("{c_shaped}: {error:?}"))
+            .function_blocks(),
             "{rust}"
         );
     }
@@ -4816,12 +4838,14 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
             "verifying \"arrays.rs\"; fn first(bytes: &[u8; 4], words: &mut [u32; 1 + 2]) -> u8 { \
              views bytes[0..4]; ensures result == bytes[0]; } by { execute(); simp(); }"
         )
-        .expect("the Rust spelling parses"),
+        .expect("the Rust spelling parses")
+        .function_blocks(),
         parser::parse(
-            "verifying \"arrays.rs\"; uint8 first(const uint8* bytes, uint32* words) { \
+            "verifying \"arrays.c\"; uint8 first(const uint8* bytes, uint32* words) { \
              views bytes[0..4]; ensures result == bytes[0]; } by { execute(); simp(); }"
         )
-        .expect("the C-shaped spelling parses"),
+        .expect("the C-shaped spelling parses")
+        .function_blocks(),
     );
     // `as` before anything but a scalar type is not a cast.
     parser::parse(
@@ -5094,7 +5118,7 @@ fn integer_cast_identity_round_trips_and_cannot_establish_an_unrelated_integer_e
             requires -5 <= x;
             requires x <= 5;
             ensures x == y by {
-                arithmetic_certificate special {
+                arithmetic_certificate rules {
                     premise 0: -5 <= x => -5 <= x;
                     premise 1: x <= 5 => x <= 5;
                     integer_cast_identity bounds [0, 1] => x == y;

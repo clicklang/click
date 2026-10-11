@@ -583,7 +583,7 @@ mod tests {
     }
 
     #[test]
-    fn legend_bounds_recursive_output_and_preserves_failure_tail() {
+    fn legend_bounds_recursive_output_and_preserves_complete_trace() {
         let mut labels = SnapshotLabels::default();
         for id in 0..128 {
             let pointer = Pointer::symbolic(Variable(987_000 + id));
@@ -595,9 +595,8 @@ mod tests {
         assert!(legend.contains("additional label definitions omitted"));
         let mut trace = "é".repeat(32 * 1024);
         trace.push_str("failure comparison retained");
+        let original = trace.clone();
         crate::surface::proof_trace::append_legend(&mut trace, &mut labels);
-        assert!(trace.len() <= 64 * 1024);
-        assert!(trace.contains("failure comparison retained"));
-        assert!(trace.contains("earlier trace text omitted"));
+        assert_eq!(trace, format!("{original}{legend}"));
     }
 }

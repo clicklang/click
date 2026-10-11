@@ -2,7 +2,10 @@
 
 The 2026-10 design review of Click's surface language closed these
 questions. Each is a decision with its reason, kept so it is not reopened
-without one. Open work from the review is in `issues/adler-syntax.md`.
+without one. Rust function contracts use Rust signatures and `impl` blocks;
+the parser refuses C-shaped function contracts and `->` field access for Rust
+sources. The hash-pinned migration fixtures stay unchanged and are adapted
+only by the tests that read them.
 
 - `unfold(pred)` keeps both of its meanings; it is documented as a
   branch-wide transparency switch.

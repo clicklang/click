@@ -13,11 +13,11 @@ theorem byte_lane(value: uint32) {
     requires value <= 255u32;
     ensures value % 65521u32 == value by {
         have value < 65521u32 by { arithmetic() using { value <= 255u32; } }
-        apply(uint32_remainder_of_lt(value, 65521u32));
+        apply(uint32_less_than_divisor_implies_remainder_is_value(value, 65521u32));
     }
     ensures to_integer(value % 65521u32) == to_integer(value) by {
         have value < 65521u32 by { arithmetic() using { value <= 255u32; } }
-        apply(uint32_remainder_of_lt(value, 65521u32));
+        apply(uint32_less_than_divisor_implies_remainder_is_value(value, 65521u32));
         rewrite(value % 65521u32 == value);
         simp() using {};
     }
@@ -25,7 +25,7 @@ theorem byte_lane(value: uint32) {
 theorem full_width(value: uint32) {
     requires value < 4294967295u32;
     ensures value % 4294967295u32 == value by {
-        apply(uint32_remainder_of_lt(value, 4294967295u32));
+        apply(uint32_less_than_divisor_implies_remainder_is_value(value, 4294967295u32));
     }
 }
 uint32 reduce_lane(uint32 value) {

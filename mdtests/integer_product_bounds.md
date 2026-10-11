@@ -32,7 +32,7 @@ theorem signed64_by_signed32_product(a: Integer, b: Integer) {
     requires -2147483648 <= b;
     requires b <= 2147483647;
     ensures -170141183460469231731687303715884105728 <= a * b by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: -9223372036854775808 <= a => -9223372036854775808 <= a;
             premise 1: a <= 9223372036854775807 => a <= 9223372036854775807;
             premise 2: -2147483648 <= b => -2147483648 <= b;
@@ -42,7 +42,7 @@ theorem signed64_by_signed32_product(a: Integer, b: Integer) {
         }
     }
     ensures a * b <= 170141183460469231731687303715884105727 by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: -9223372036854775808 <= a => -9223372036854775808 <= a;
             premise 1: a <= 9223372036854775807 => a <= 9223372036854775807;
             premise 2: -2147483648 <= b => -2147483648 <= b;
@@ -59,7 +59,7 @@ theorem observed_machine_product(a: int64, b: int32) {
     requires -2147483648 <= to_integer(b);
     requires to_integer(b) <= 2147483647;
     ensures to_integer(a) * to_integer(b) <= 170141183460469231731687303715884105727 by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: -9223372036854775808 <= to_integer(a) => -9223372036854775808 <= to_integer(a);
             premise 1: to_integer(a) <= 9223372036854775807 => to_integer(a) <= 9223372036854775807;
             premise 2: -2147483648 <= to_integer(b) => -2147483648 <= to_integer(b);
@@ -76,7 +76,7 @@ theorem crossing_product(x: Integer, y: Integer) {
     requires -4 <= y;
     requires y <= 5;
     ensures -12 <= x * y by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: -2 <= x => -2 <= x;
             premise 1: x <= 3 => x <= 3;
             premise 2: -4 <= y => -4 <= y;
@@ -86,7 +86,7 @@ theorem crossing_product(x: Integer, y: Integer) {
         }
     }
     ensures x * y <= 15 by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: -2 <= x => -2 <= x;
             premise 1: x <= 3 => x <= 3;
             premise 2: -4 <= y => -4 <= y;
@@ -105,7 +105,7 @@ int64 bounded_identity(int64 a, int32 b) {
     ensures to_integer(result) * to_integer(b) <= 170141183460469231731687303715884105727;
 } by {
     execute();
-    arithmetic_certificate special {
+    arithmetic_certificate rules {
         premise 0: -9223372036854775808 <= to_integer(a) => -9223372036854775808 <= to_integer(a);
         premise 1: to_integer(a) <= 9223372036854775807 => to_integer(a) <= 9223372036854775807;
         premise 2: -2147483648 <= to_integer(b) => -2147483648 <= to_integer(b);

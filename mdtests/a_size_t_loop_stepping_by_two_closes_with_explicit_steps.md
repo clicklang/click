@@ -9,8 +9,8 @@ invariant `i + 2 <= length`, and that `length - i` decreases.
 proved through `to_integer`: the order bridges carry the 64-bit premises to
 Integer order (`uint64_less_than_to_integer` for the strict loop
 condition), `uint64_add_to_integer` and `uint64_subtract_to_integer` carry
-the sums once they are shown not to wrap, and `uint64_less_equal_of_to_integer`
-or `uint64_less_than_of_to_integer` carries the conclusion back.
+the sums once they are shown not to wrap, and `uint64_to_integer_less_equal_implies_less_equal`
+or `uint64_to_integer_less_than_implies_less_than` carries the conclusion back.
 
 ```c filename=a_size_t_loop_stepping_by_two_closes_with_explicit_steps.c
 unsigned char last(const unsigned char *bytes, unsigned long length) {
@@ -56,7 +56,7 @@ theorem step_two(i: uint64, length: uint64) {
                 to_integer(i + 1u64) + 1 <= to_integer(length);
             }
         }
-        apply(uint64_less_equal_of_to_integer(i + 2u64, length));
+        apply(uint64_to_integer_less_equal_implies_less_equal(i + 2u64, length));
     }
 }
 
@@ -81,7 +81,7 @@ theorem step_two_decreases(i: uint64, length: uint64) {
                 to_integer(i + 2u64) == to_integer(i) + to_integer(2u64);
             }
         }
-        apply(uint64_less_than_of_to_integer(length - (i + 2u64), length - i));
+        apply(uint64_to_integer_less_than_implies_less_than(length - (i + 2u64), length - i));
     }
 }
 

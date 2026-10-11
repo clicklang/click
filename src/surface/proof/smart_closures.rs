@@ -2813,7 +2813,7 @@ impl<'a> Proof<'a> {
                     disequality_scope
                         .apply_step(ProofStep::ApplyTheoremUsing {
                             application: TheoremApplication {
-                                name: "int32_lt_implies_neq".to_string(),
+                                name: "int32_less_than_implies_not_equal".to_string(),
                                 arguments: vec![left, right],
                             },
                             premises: vec![condition.clone()],
@@ -2845,7 +2845,7 @@ impl<'a> Proof<'a> {
                     nonstrict_scope
                         .apply_step(ProofStep::ApplyTheoremUsing {
                             application: TheoremApplication {
-                                name: "int32_lt_successor_implies_le".to_string(),
+                                name: "int32_less_than_increment_implies_less_equal".to_string(),
                                 arguments: surface_nonstrict_parts(&nonstrict)
                                     .map(|(left, right)| vec![left, right])?,
                             },
@@ -2969,7 +2969,7 @@ impl<'a> Proof<'a> {
                     }
                     let theorem = ProofStep::ApplyTheoremUsing {
                         application: TheoremApplication {
-                            name: "int32_ge_transitive".to_string(),
+                            name: "int32_greater_equal_transitive".to_string(),
                             arguments: vec![last.clone(), middle.clone(), first.clone()],
                         },
                         premises: vec![second_surface.clone(), first_surface.clone()],
@@ -4906,9 +4906,9 @@ impl<'a> Proof<'a> {
             let theorem = ProofStep::ApplyTheoremUsing {
                 application: TheoremApplication {
                     name: if lower_bound {
-                        "int32_ge_transitive".to_string()
+                        "int32_greater_equal_transitive".to_string()
                     } else {
-                        "int32_le_transitive".to_string()
+                        "int32_less_equal_transitive".to_string()
                     },
                     arguments: vec![
                         surface_value.clone(),
@@ -5013,7 +5013,7 @@ impl<'a> Proof<'a> {
         let proof = self
             .apply_step(ProofStep::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "uint32_gt_implies_reversed_lt".to_string(),
+                    name: "uint32_greater_than_implies_reversed_less_than".to_string(),
                     arguments: vec![upper.clone(), lower.clone()],
                 },
                 premises: vec![surface],
@@ -5147,7 +5147,8 @@ impl<'a> Proof<'a> {
                         let proof = proof
                             .apply_step(ProofStep::ApplyTheoremUsing {
                                 application: TheoremApplication {
-                                    name: "uint32_lt_implies_positive_difference".to_string(),
+                                    name: "uint32_less_than_implies_positive_difference"
+                                        .to_string(),
                                     arguments: vec![lower, upper],
                                 },
                                 premises: vec![premise],
@@ -5186,7 +5187,7 @@ impl<'a> Proof<'a> {
                 }
                 reversed_fact(
                     ConditionTerm::unsigned_greater_than(right, left),
-                    "uint32_gt_implies_reversed_lt",
+                    "uint32_greater_than_implies_reversed_less_than",
                     true,
                 )
             }
@@ -5205,18 +5206,18 @@ impl<'a> Proof<'a> {
                 }
                 reversed_fact(
                     ConditionTerm::unsigned_greater_equal(right, left),
-                    "uint32_ge_implies_reversed_le",
+                    "uint32_greater_equal_implies_reversed_less_equal",
                     false,
                 )
             }
             UnsignedOrder::Greater => reversed_fact(
                 ConditionTerm::unsigned_less_than(right, left),
-                "uint32_lt_implies_reversed_gt",
+                "uint32_less_than_implies_reversed_greater_than",
                 true,
             ),
             UnsignedOrder::GreaterEqual => reversed_fact(
                 ConditionTerm::unsigned_less_equal(right, left),
-                "uint32_le_implies_reversed_ge",
+                "uint32_less_equal_implies_reversed_greater_equal",
                 false,
             ),
         }
@@ -6510,156 +6511,201 @@ impl<'a> Proof<'a> {
             })
             .or_else(|| plan_pointer_advanced_load_equality(goal, premise_pairs))
             .or_else(|| {
-                let recorded =
-                    recorded_int32_increment_upper_bound_pairs(derivation, premise_pairs)?;
-                plan_recorded_int32_increment_upper_bound_for_context(
-                    goal,
-                    &recorded,
-                    fixed_state_application_closes_goal,
-                )
-            })
-            .or_else(|| {
-                let recorded =
-                    recorded_int32_increment_constant_upper_bound_pairs(derivation, premise_pairs)?;
-                plan_recorded_int32_increment_constant_upper_bound_for_context(
-                    goal,
-                    &recorded,
-                    fixed_state_application_closes_goal,
-                )
-            })
-            .or_else(|| {
-                let recorded =
-                    recorded_int32_increment_strictly_increases_pairs(derivation, premise_pairs)?;
-                plan_recorded_int32_increment_strictly_increases_for_context(
-                    goal,
-                    &recorded,
-                    fixed_state_application_closes_goal,
-                )
-            })
-            .or_else(|| {
-                let recorded =
-                    recorded_int32_one_plus_strictly_increases_pairs(derivation, premise_pairs)?;
-                plan_recorded_int32_one_plus_strictly_increases_for_context(
-                    goal,
-                    &recorded,
-                    fixed_state_application_closes_goal,
-                )
-            })
-            .or_else(|| {
-                let recorded =
-                    recorded_int32_increment_below_max_is_defined_pairs(derivation, premise_pairs)?;
-                plan_recorded_int32_increment_below_max_is_defined_for_context(
-                    goal,
-                    &recorded,
-                    fixed_state_application_closes_goal,
-                )
-            })
-            .or_else(|| {
-                let recorded =
-                    recorded_int32_one_plus_below_max_is_defined_pairs(derivation, premise_pairs)?;
-                plan_recorded_int32_one_plus_below_max_is_defined_for_context(
-                    goal,
-                    &recorded,
-                    fixed_state_application_closes_goal,
-                )
-            })
-            .or_else(|| {
-                let recorded =
-                    recorded_int32_nonnegative_add_within_max_pairs(derivation, premise_pairs)?;
-                plan_recorded_int32_nonnegative_add_within_max_for_context(
-                    goal,
-                    &recorded,
-                    fixed_state_application_closes_goal,
-                )
-            })
-            .or_else(|| {
-                let recorded = recorded_int32_nonnegative_subtract_within_value_pairs(
-                    derivation,
+                let recorded = recorded_premise_pairs(
+                    [derivation.int32_increment_upper_bound_step()?.premise()],
                     premise_pairs,
+                    false,
                 )?;
-                plan_recorded_int32_nonnegative_subtract_within_value_for_context(
-                    goal,
-                    &recorded,
+                for_context(
+                    plan_explicit_increment_upper_bound(goal, &recorded),
                     fixed_state_application_closes_goal,
                 )
             })
             .or_else(|| {
-                let recorded =
-                    recorded_int32_increment_lower_bound_pairs(derivation, premise_pairs)?;
-                plan_recorded_int32_increment_lower_bound_for_context(
-                    goal,
-                    &recorded,
-                    fixed_state_application_closes_goal,
-                )
-            })
-            .or_else(|| {
-                let recorded = recorded_int32_increment_greater_equal_lower_bound_pairs(
-                    derivation,
+                let recorded = recorded_premise_pairs(
+                    [derivation
+                        .int32_increment_constant_upper_bound_step()?
+                        .premise()],
                     premise_pairs,
+                    false,
                 )?;
-                plan_recorded_int32_increment_greater_equal_lower_bound_for_context(
-                    goal,
-                    &recorded,
+                for_context(
+                    plan_explicit_increment_constant_upper_bound(goal, &recorded),
                     fixed_state_application_closes_goal,
                 )
             })
             .or_else(|| {
-                let recorded = recorded_int32_increment_strict_greater_lower_bound_pairs(
-                    derivation,
+                let recorded = recorded_premise_pairs(
+                    [derivation
+                        .int32_increment_strictly_increases_step()?
+                        .premise()],
                     premise_pairs,
+                    false,
                 )?;
-                plan_recorded_int32_increment_strict_greater_lower_bound_for_context(
-                    goal,
-                    &recorded,
+                for_context(
+                    plan_explicit_increment_strictly_increases(goal, &recorded),
                     fixed_state_application_closes_goal,
                 )
             })
             .or_else(|| {
-                let recorded = recorded_int32_increment_strict_greater_from_strict_lower_pairs(
-                    derivation,
+                let recorded = recorded_premise_pairs(
+                    [derivation
+                        .int32_one_plus_strictly_increases_step()?
+                        .premise()],
                     premise_pairs,
+                    false,
                 )?;
-                plan_recorded_int32_increment_strict_greater_from_strict_lower_for_context(
-                    goal,
-                    &recorded,
+                for_context(
+                    plan_explicit_one_plus_strictly_increases(goal, &recorded),
                     fixed_state_application_closes_goal,
                 )
             })
             .or_else(|| {
-                let recorded =
-                    recorded_int32_increment_preserves_order_pairs(derivation, premise_pairs)?;
-                plan_recorded_int32_increment_preserves_order_for_context(
-                    goal,
-                    &recorded,
-                    fixed_state_application_closes_goal,
-                )
-            })
-            .or_else(|| {
-                let recorded = recorded_int32_positive_predecessor_is_nonnegative_pairs(
-                    derivation,
+                let recorded = recorded_premise_pairs(
+                    [derivation
+                        .int32_increment_below_max_is_defined_step()?
+                        .premise()],
                     premise_pairs,
+                    false,
                 )?;
-                plan_recorded_int32_positive_predecessor_is_nonnegative_for_context(
-                    goal,
-                    &recorded,
+                for_context(
+                    plan_explicit_increment_below_max_is_defined(goal, &recorded),
                     fixed_state_application_closes_goal,
                 )
             })
             .or_else(|| {
-                let recorded = recorded_int32_positive_predecessor_strictly_decreases_pairs(
-                    derivation,
+                let recorded = recorded_premise_pairs(
+                    [derivation
+                        .int32_one_plus_below_max_is_defined_step()?
+                        .premise()],
                     premise_pairs,
+                    false,
                 )?;
-                plan_recorded_int32_positive_predecessor_strictly_decreases_for_context(
-                    goal,
-                    &recorded,
+                for_context(
+                    plan_explicit_one_plus_below_max_is_defined(goal, &recorded),
                     fixed_state_application_closes_goal,
                 )
             })
             .or_else(|| {
-                let recorded = recorded_int32_nonnegative_predecessor_upper_bound_pairs(
-                    derivation,
+                let (first, second) = derivation.int32_nonnegative_add_within_max_steps()?;
+                let recorded = recorded_premise_pairs(
+                    [first.premise(), second.premise()],
                     premise_pairs,
+                    false,
+                )?;
+                for_context(
+                    plan_explicit_nonnegative_add_within_max_is_defined(goal, &recorded),
+                    fixed_state_application_closes_goal,
+                )
+            })
+            .or_else(|| {
+                let (first, second) = derivation.int32_nonnegative_subtract_within_value_steps()?;
+                let recorded = recorded_premise_pairs(
+                    [first.premise(), second.premise()],
+                    premise_pairs,
+                    false,
+                )?;
+                for_context(
+                    plan_explicit_nonnegative_subtract_within_value_is_defined(goal, &recorded),
+                    fixed_state_application_closes_goal,
+                )
+            })
+            .or_else(|| {
+                let (first, second) = derivation.int32_increment_lower_bound_steps()?;
+                let recorded = recorded_premise_pairs(
+                    [first.premise(), second.premise()],
+                    premise_pairs,
+                    false,
+                )?;
+                for_context(
+                    plan_explicit_increment_lower_bound(goal, &recorded),
+                    fixed_state_application_closes_goal,
+                )
+            })
+            .or_else(|| {
+                let (first, second) =
+                    derivation.int32_increment_greater_equal_lower_bound_steps()?;
+                let recorded = recorded_premise_pairs(
+                    [first.premise(), second.premise()],
+                    premise_pairs,
+                    false,
+                )?;
+                for_context(
+                    plan_explicit_increment_greater_equal_lower_bound(goal, &recorded),
+                    fixed_state_application_closes_goal,
+                )
+            })
+            .or_else(|| {
+                let (first, second) =
+                    derivation.int32_increment_strict_greater_lower_bound_steps()?;
+                let recorded = recorded_premise_pairs(
+                    [first.premise(), second.premise()],
+                    premise_pairs,
+                    false,
+                )?;
+                for_context(
+                    plan_explicit_increment_strict_greater_lower_bound(goal, &recorded),
+                    fixed_state_application_closes_goal,
+                )
+            })
+            .or_else(|| {
+                let (first, second) =
+                    derivation.int32_increment_strict_greater_from_strict_lower_steps()?;
+                let recorded = recorded_premise_pairs(
+                    [first.premise(), second.premise()],
+                    premise_pairs,
+                    false,
+                )?;
+                for_context(
+                    plan_explicit_increment_strict_greater_from_strict_lower(goal, &recorded),
+                    fixed_state_application_closes_goal,
+                )
+            })
+            .or_else(|| {
+                let (first, second) = derivation.int32_increment_preserves_order_steps()?;
+                let recorded = recorded_premise_pairs(
+                    [first.premise(), second.premise()],
+                    premise_pairs,
+                    false,
+                )?;
+                for_context(
+                    plan_explicit_increment_preserves_order(goal, &recorded),
+                    fixed_state_application_closes_goal,
+                )
+            })
+            .or_else(|| {
+                let recorded = recorded_premise_pairs(
+                    [derivation
+                        .int32_positive_predecessor_is_nonnegative_step()?
+                        .premise()],
+                    premise_pairs,
+                    false,
+                )?;
+                for_context(
+                    plan_explicit_positive_predecessor_is_nonnegative(goal, &recorded),
+                    fixed_state_application_closes_goal,
+                )
+            })
+            .or_else(|| {
+                let recorded = recorded_premise_pairs(
+                    [derivation
+                        .int32_positive_predecessor_strictly_decreases_step()?
+                        .premise()],
+                    premise_pairs,
+                    false,
+                )?;
+                for_context(
+                    plan_explicit_positive_predecessor_strictly_decreases(goal, &recorded),
+                    fixed_state_application_closes_goal,
+                )
+            })
+            .or_else(|| {
+                let (first, second) =
+                    derivation.int32_nonnegative_predecessor_upper_bound_steps()?;
+                let recorded = recorded_premise_pairs(
+                    [first.premise(), second.premise()],
+                    premise_pairs,
+                    false,
                 )?;
                 plan_recorded_int32_nonnegative_predecessor_upper_bound_for_context(
                     goal,
@@ -6708,46 +6754,38 @@ impl<'a> Proof<'a> {
                 )
             })
             .or_else(|| {
-                let recorded =
-                    recorded_int32_le_and_not_lt_implies_equality_pairs(derivation, premise_pairs)?;
-                plan_recorded_int32_le_and_not_lt_implies_equality_for_context(
-                    goal,
-                    &recorded,
+                let (first, second) = derivation.int32_le_and_not_lt_implies_equality_premises()?;
+                let recorded = recorded_premise_pairs([first, second], premise_pairs, true)?;
+                for_context(
+                    plan_explicit_le_and_not_lt_implies_eq(goal, &recorded),
                     fixed_state_application_closes_goal,
                 )
             })
             .or_else(|| {
-                let recorded =
-                    recorded_int32_ge_and_not_gt_implies_equality_pairs(derivation, premise_pairs)?;
-                plan_recorded_int32_ge_and_not_gt_implies_equality_for_context(
-                    goal,
-                    &recorded,
+                let (first, second) = derivation.int32_ge_and_not_gt_implies_equality_premises()?;
+                let recorded = recorded_premise_pairs([first, second], premise_pairs, true)?;
+                for_context(
+                    plan_explicit_ge_and_not_gt_implies_eq(goal, &recorded),
                     fixed_state_application_closes_goal,
                 )
             })
             .or_else(|| {
-                let recorded =
-                    recorded_int32_positive_is_nonnegative_pairs(derivation, premise_pairs)?;
-                plan_recorded_int32_positive_is_nonnegative_for_context(
-                    goal,
-                    &recorded,
-                    fixed_state_application_closes_goal,
-                )
-            })
-            .or_else(|| {
-                let recorded = recorded_int32_strictly_positive_is_nonnegative_pairs(
-                    derivation,
+                let recorded = recorded_premise_pairs(
+                    [derivation.int32_positive_is_nonnegative_step()?.premise()],
                     premise_pairs,
+                    false,
                 )?;
-                plan_recorded_int32_strictly_positive_is_nonnegative_for_context(
-                    goal,
-                    &recorded,
+                for_context(
+                    plan_explicit_positive_is_nonnegative(goal, &recorded),
                     fixed_state_application_closes_goal,
                 )
             })
             .or_else(|| {
-                let recorded =
-                    recorded_int32_successor_le_implies_lt_pairs(derivation, premise_pairs)?;
+                let recorded = recorded_premise_pairs(
+                    [derivation.int32_successor_le_implies_lt_step()?.premise()],
+                    premise_pairs,
+                    false,
+                )?;
                 plan_recorded_int32_successor_le_implies_lt_for_context(
                     goal,
                     &recorded,
@@ -6755,17 +6793,26 @@ impl<'a> Proof<'a> {
                 )
             })
             .or_else(|| {
-                let recorded =
-                    recorded_int32_constant_lower_bound_weakening_pairs(derivation, premise_pairs)?;
-                plan_recorded_int32_constant_lower_bound_weakening_for_context(
-                    goal,
-                    &recorded,
+                let recorded = recorded_premise_pairs(
+                    [derivation
+                        .int32_constant_lower_bound_weakening_step()?
+                        .premise()],
+                    premise_pairs,
+                    false,
+                )?;
+                for_context(
+                    plan_explicit_le_transitive_constant_lower(goal, &recorded),
                     fixed_state_application_closes_goal,
                 )
             })
             .or_else(|| {
-                let recorded =
-                    recorded_int32_negated_strict_successor_bound_pairs(derivation, premise_pairs)?;
+                let recorded = recorded_premise_pairs(
+                    [derivation
+                        .int32_negated_strict_successor_bound_step()?
+                        .premise()],
+                    premise_pairs,
+                    true,
+                )?;
                 plan_recorded_int32_negated_strict_successor_bound_for_context(
                     goal,
                     &recorded,
@@ -6773,11 +6820,10 @@ impl<'a> Proof<'a> {
                 )
             })
             .or_else(|| {
-                let recorded =
-                    recorded_int32_le_and_neq_implies_strict_pairs(derivation, premise_pairs)?;
-                plan_recorded_int32_le_and_neq_implies_strict_for_context(
-                    goal,
-                    &recorded,
+                let (first, second) = derivation.int32_le_and_neq_implies_strict_premises()?;
+                let recorded = recorded_premise_pairs([first, second], premise_pairs, true)?;
+                for_context(
+                    plan_explicit_le_and_neq_implies_lt(goal, &recorded),
                     fixed_state_application_closes_goal,
                 )
             })

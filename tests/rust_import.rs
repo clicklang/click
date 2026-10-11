@@ -291,18 +291,18 @@ fn charon_assignment_operators_check_lanes_panic_obligations_and_authority() {
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(CHARON_OPERATOR_SIDECAR, &prepared).unwrap();
     for (before, after) in [
-        ("old(self->_0[0]) * rhs", "old(self->_0[0]) + rhs"),
-        ("old(self->_0[3]) % quotient", "old(self->_0[2]) % quotient"),
+        ("old(self.0[0]) * rhs", "old(self.0[0]) + rhs"),
+        ("old(self.0[3]) % quotient", "old(self.0[2]) % quotient"),
         (
-            "ensures other->_0[0] == old(other->_0[0]);",
-            "ensures other->_0[0] == 0u32;",
+            "ensures other.0[0] == old(other.0[0]);",
+            "ensures other.0[0] == 0u32;",
         ),
         ("requires quotient != 0u32;", "requires quotient == 0u32;"),
-        ("owns self->_0[0..4];", "views self->_0[0..4];"),
-        ("views other->_0[0..4];", "views other->_0[1..4];"),
+        ("owns self.0[0..4];", "views self.0[0..4];"),
+        ("views other.0[0..4];", "views other.0[1..4];"),
         (
-            "requires rhs == 0u32 or self->_0[0] <= 4294967295u32 / rhs;",
-            "requires rhs == 2u32; requires self->_0[0] == 4294967295u32;",
+            "requires rhs == 0u32 or self.0[0] <= 4294967295u32 / rhs;",
+            "requires rhs == 2u32; requires self.0[0] == 4294967295u32;",
         ),
         ("(b * 2u32 % 7u32)", "(b * 2u32 % 3u32)"),
         ("(a * 2u32 % 7u32)", "(a * 2u32)"),
@@ -623,15 +623,15 @@ fn charon_array_fields_check_bounds_authority_and_frames() {
     for invalid in [
         CHARON_FIELDS_SIDECAR.replace("requires index < 4u64;", "requires index == 4u64;"),
         CHARON_FIELDS_SIDECAR.replace("requires index < 7u64;", "requires index == 4294967296u64;"),
-        CHARON_FIELDS_SIDECAR.replace("views state->values[0..4];", ""),
-        CHARON_FIELDS_SIDECAR.replace("owns state->values[0..4];", "views state->values[0..4];"),
+        CHARON_FIELDS_SIDECAR.replace("views state.values[0..4];", ""),
+        CHARON_FIELDS_SIDECAR.replace("owns state.values[0..4];", "views state.values[0..4];"),
         CHARON_FIELDS_SIDECAR.replace(
-            "ensures state->values[index] == value;",
-            "ensures state->values[index] != value;",
+            "ensures state.values[index] == value;",
+            "ensures state.values[index] != value;",
         ),
         CHARON_FIELDS_SIDECAR.replace(
-            "result == old(state->_0[index])",
-            "result != old(state->_0[index])",
+            "result == old(state.0[index])",
+            "result != old(state.0[index])",
         ),
     ] {
         assert_ne!(invalid, CHARON_FIELDS_SIDECAR);

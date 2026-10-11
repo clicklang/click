@@ -54,6 +54,11 @@ const CONTRACT_LET_RECURSION_LIMIT: usize = 8;
 /// mutex's protected resource now comes from its checked initialization, so
 /// the spelling is refused with that direction.
 const RETIRED_GUARDED_BY: &str = "`guarded_by` is retired: a mutex protects the resource its checked `pthread_mutex_init` step deposits, so remove the clause and pass the resource to that step";
+/// `special` named the pointer, finite-float, definedness, and exact
+/// Integer rule family of `arithmetic_certificate`; the family is now spelled
+/// `rules`, and the old spelling is refused with that direction.
+const RETIRED_SPECIAL_CERTIFICATE: &str =
+    "`arithmetic_certificate special` is retired: write `arithmetic_certificate rules { ... }`";
 
 /// The index shape and scalar element type of a C global or static array
 /// visible to one function's contract. Resource lowering only knows parameter
@@ -823,6 +828,60 @@ struct ParsedFunctionSignature {
     return_struct_name: Option<String>,
 }
 
+/// Give a concrete replacement for scalar and slice signatures. Record and
+/// method contracts need an `impl` and the imported type identity instead.
+fn rust_signature_hint(parsed: &ParsedFunctionSignature) -> Option<String> {
+    let signature = &parsed.signature;
+    if !parsed.struct_params.is_empty() || parsed.return_struct_name.is_some() {
+        return None;
+    }
+    let scalar_name = |c_type| {
+        [
+            "bool", "i8", "i16", "i32", "isize", "i128", "u8", "u16", "u32", "usize", "u128",
+            "f32", "f64",
+        ]
+        .into_iter()
+        .find(|name| rust_scalar_type(name) == Some(c_type))
+    };
+    let name = super::rust_names::rust_display_name(&signature.name)
+        .unwrap_or_else(|| signature.name.clone());
+    if name.starts_with("__rust_q") {
+        return None;
+    }
+    let mut parameters = Vec::new();
+    let mut index = 0;
+    while let Some(parameter) = signature.parameters.get(index) {
+        let spelling = if let Some(pointee) = parameter.c_type().pointee_type() {
+            let reference = if parameter.pointee_constant {
+                "&"
+            } else {
+                "&mut "
+            };
+            let base = scalar_name(pointee)?;
+            let slice = signature.parameters.get(index + 1).is_some_and(|length| {
+                length.name == format!("{}_len", parameter.name)
+                    && length.c_type() == C0Type::UInt64
+            });
+            if slice {
+                index += 1;
+                format!("{reference}[{base}]")
+            } else {
+                format!("{reference}{base}")
+            }
+        } else {
+            scalar_name(parameter.c_type())?.to_string()
+        };
+        parameters.push(format!("{}: {spelling}", parameter.name));
+        index += 1;
+    }
+    let return_type = if signature.return_type == C0Type::Void {
+        String::new()
+    } else {
+        format!(" -> {}", scalar_name(signature.return_type)?)
+    };
+    Some(format!("fn {name}({}){return_type}", parameters.join(", ")))
+}
+
 fn algebraic_parameter_types(
     parameters: &[FunctionParameter],
 ) -> BTreeMap<String, (AlgebraicTypeApplication, usize)> {
@@ -913,6 +972,12 @@ impl Parser {
     ) -> Result<Self, ClickError> {
         let (tokens, positions) = tokenize(source, container)?;
         let (tokens, positions) = rewrite_model_accessors(tokens, positions, &struct_layouts);
+        // Source clauses may follow declarations. Choose the spelling for the
+        // whole file so moving the clause cannot bypass a Rust syntax check.
+        let verifies_rust = tokens.windows(2).any(|pair| {
+            matches!(pair, [Token::Ident(keyword), Token::String(path)]
+                if keyword == "verifying" && path.ends_with(".rs"))
+        });
         let matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
         Ok(Self {
             source_aliases: BTreeMap::new(),
@@ -930,7 +995,7 @@ impl Parser {
             in_resource_definition: false,
             declared_resource_fields: BTreeMap::new(),
             hidden_child_fields: BTreeMap::new(),
-            verifies_rust: false,
+            verifies_rust,
             rust_slice_params: BTreeSet::new(),
             rust_impl_type: None,
             rust_impl_method_suffix: None,
@@ -3515,7 +3580,7 @@ impl Parser {
         let struct_array_params = parsed_parameters.struct_array_params;
         let reference_params = parsed_parameters.reference_params;
 
-        Ok(ParsedFunctionSignature {
+        let parsed = ParsedFunctionSignature {
             signature: FunctionSignature {
                 return_type,
                 return_pointee_constant: parsed_return_type.pointee_constant,
@@ -3531,13 +3596,23 @@ impl Parser {
             struct_array_params,
             reference_params,
             return_struct_name: parsed_return_type.struct_name,
-        })
+        };
+        if self.verifies_rust && !self.in_contract_definition {
+            let replacement = rust_signature_hint(&parsed)
+                .map(|signature| format!("write `{signature}`"))
+                .unwrap_or_else(|| {
+                    "write a `fn` signature, with methods in an `impl` block".into()
+                });
+            return Err(self.error(format!(
+                "a Rust source's function contract uses Rust syntax; {replacement}"
+            )));
+        }
+        Ok(parsed)
     }
 
     /// A Rust sidecar states its signature as Rust does:
-    /// `fn name(a: T, b: U) -> R`. It declares the same function the C-shaped
-    /// spelling `R name(T a, U b)` does. References, slices and methods are
-    /// not in this form yet (`design/rust-sidecar-signatures.md`).
+    /// `fn name(a: T, b: U) -> R`, with references, slices, and methods in
+    /// `impl` blocks. C-shaped function contracts are refused for Rust sources.
     #[inline(never)]
     fn parse_rust_function_signature(&mut self) -> Result<ParsedFunctionSignature, ClickError> {
         if !self.verifies_rust {
@@ -4682,6 +4757,14 @@ impl Parser {
     /// field's position, `self.0`, which names the field the importer calls
     /// `_0`.
     fn expect_field_name(&mut self) -> Result<String, ClickError> {
+        if self.verifies_rust
+            && self.position > 0
+            && self.tokens.get(self.position - 1) == Some(&Token::Arrow)
+        {
+            return Err(
+                self.error("a Rust reference field is written `p.f`; replace `p->f` with `p.f`")
+            );
+        }
         if self.verifies_rust
             && let Some(Token::Number(position)) = self.peek()
         {
@@ -8039,9 +8122,11 @@ impl Parser {
         let parsed = if self.peek_ident() == Some("signed_int32") {
             self.position += 1;
             self.parse_signed_int32_certificate_body()
-        } else if self.peek_ident() == Some("special") {
+        } else if self.peek_ident() == Some("rules") {
             self.position += 1;
             self.parse_special_arithmetic_certificate_body()
+        } else if self.peek_ident() == Some("special") {
+            Err(self.error(RETIRED_SPECIAL_CERTIFICATE))
         } else {
             self.parse_arithmetic_certificate_body()
         };
@@ -8055,10 +8140,10 @@ impl Parser {
         let mut nodes = Vec::new();
         let mut conclusion = None;
         while self.peek() != Some(&Token::RBrace) {
-            let keyword = self.expect_ident("special arithmetic certificate node")?;
+            let keyword = self.expect_ident("`rules` arithmetic certificate node")?;
             match keyword.as_str() {
                 "premise" => {
-                    let index = self.expect_index("special premise index")?;
+                    let index = self.expect_index("`rules` premise index")?;
                     self.expect(Token::Colon)?;
                     let proposition_start = self.position;
                     let proposition = self.parse_proposition()?;
@@ -8073,12 +8158,12 @@ impl Parser {
                         &self.tokens[result_start..result_end],
                     ) {
                         return Err(self.error(format!(
-                            "special arithmetic premise {index} must repeat the same proposition on both sides"
+                            "`rules` arithmetic premise {index} must repeat the same proposition on both sides"
                         )));
                     }
                     if index > premises.len() {
                         return Err(self.error(format!(
-                            "special arithmetic premise indices must be contiguous; expected {} but found {index}",
+                            "`rules` arithmetic premise indices must be contiguous; expected {} but found {index}",
                             premises.len()
                         )));
                     }
@@ -8087,7 +8172,7 @@ impl Parser {
                     }
                     if premises[index].replace(proposition).is_some() {
                         return Err(self.error(format!(
-                            "special arithmetic premise {index} is declared more than once"
+                            "`rules` arithmetic premise {index} is declared more than once"
                         )));
                     }
                 }
@@ -8262,7 +8347,7 @@ impl Parser {
                 "conclusion" => {
                     if conclusion.is_some() {
                         return Err(self.error(
-                            "special arithmetic certificate may contain only one `conclusion` line",
+                            "`rules` arithmetic certificate may contain only one `conclusion` line",
                         ));
                     }
                     conclusion = Some(self.expect_index("conclusion node")?);
@@ -8270,17 +8355,17 @@ impl Parser {
                 }
                 _ => {
                     return Err(self.error(format!(
-                        "unknown special arithmetic certificate node `{keyword}`"
+                        "unknown `rules` arithmetic certificate node `{keyword}`"
                     )));
                 }
             }
         }
         self.expect(Token::RBrace)?;
         let conclusion = conclusion.ok_or_else(|| {
-            self.error("special arithmetic certificate must end with `conclusion N;`")
+            self.error("`rules` arithmetic certificate must end with `conclusion N;`")
         })?;
         if nodes.is_empty() {
-            return Err(self.error("special arithmetic certificate must contain a node"));
+            return Err(self.error("`rules` arithmetic certificate must contain a node"));
         }
         let premises = premises
             .into_iter()
@@ -8288,7 +8373,7 @@ impl Parser {
             .map(|(index, premise)| {
                 premise.ok_or_else(|| {
                     self.error(format!(
-                        "special arithmetic premise indices must be contiguous; missing {index}"
+                        "`rules` arithmetic premise indices must be contiguous; missing {index}"
                     ))
                 })
             })

@@ -14,7 +14,7 @@ theorem preserve(left: uint32, right: uint32) {
 theorem reflect(left: uint32, right: uint32) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right by {
-        apply(uint32_less_equal_of_to_integer(left, right));
+        apply(uint32_to_integer_less_equal_implies_less_equal(left, right));
     }
 }
 theorem observed_range(value: uint32) {

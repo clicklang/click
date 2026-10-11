@@ -10,18 +10,17 @@ counts, checked signed observations, and shared input views throughout all loops
 The 2,147,483,647-byte limit comes from the bound library
 ([`bounded-count.click`](bounded-count.click) and the proofs built on it), which
 states counts over `int32` and reads each `usize` count through
-`(int32)(uint32)`. The kernel no longer needs it: a 64-bit count bounds a range
+`((count as u32) as i32)`. The kernel no longer needs it: a 64-bit count bounds a range
 and indexes memory directly (`design/typed-indices.md`), so restating the
 library over `uint64` would lift the limit.
 
-These sidecars are the last ones written in the C-shaped spelling, with
-importer names such as `__rust_q_I6_adler2_I4_algo_I5_U32X4` and `->`. A new
-or touched sidecar here uses Rust syntax (`docs/reference/rust.md`,
+The function contracts use Rust syntax (`docs/reference/rust.md`,
 "Signatures in Rust syntax"): `fn` signatures, `impl` blocks, paths such as
-`adler2::algo::U32X4`, `bytes.len()` and `p.f`. It also takes the short proof forms,
-`have P;` and `by T(args);`. When the last one is
-converted, Click refuses the C-shaped spelling for a Rust source
-(`issues/adler-syntax.md`).
+`adler2::algo::U32X4`, `bytes.len()` and `p.f`. Proofs use `have P;` and
+`by T(args);` for single steps. The standalone theorem libraries keep Click's
+numeric types and casts because the same lemmas also check C proofs.
+Rust sources require this function spelling; C-shaped signatures and reference
+fields written with `->` are refused.
 
 The two files in `src/` are byte-for-byte copies of adler2 2.0.1, revision
 `89a031a0f42eeff31c70dc598b398cbf31f1680f`. Their hashes match the
@@ -101,7 +100,7 @@ the optimized state to the specification; they do not establish the general
 checksum postcondition.
 
 The multiplication helper also exports the exact Integer product for each lane.
-`uint32_mul_to_integer` uses the original native quotient guard, including its
+`uint32_multiply_to_integer` uses the original native quotient guard, including its
 zero-factor branch, to justify the non-wrapping observation. This lets caller
 proofs carry numeric lane ceilings through the original `*=` body: for example,
 a reduced lane at most 65520, multiplied by four, has an Integer observation at

@@ -53,7 +53,7 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
                     assumption();
                 } else {
                     have a == 0 by {
-                        apply(int32_ge_and_not_gt_implies_eq(a, 0)) using {
+                        apply(int32_greater_equal_and_not_greater_than_implies_equal(a, 0)) using {
                             a >= 0;
                             not (a > 0);
                         }

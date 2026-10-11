@@ -4158,7 +4158,7 @@ fn copy_loop_with_unrelated_requirements(fact_count: usize) -> String {
                  preserve by {{\n            step();\n            step();\n            simp();\n        }}\n    \
              }}\n    \
              have i == length by {{\n        \
-                 apply(int32_le_and_not_lt_implies_eq(at(loop(0).exit, i), at(loop(0).exit, length))) using {{\n            \
+                 apply(int32_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), at(loop(0).exit, length))) using {{\n            \
                      at(loop(0).exit, i) <= at(loop(0).exit, length);\n            \
                      not at(loop(0).exit, i) < at(loop(0).exit, length);\n        \
                  }}\n        \

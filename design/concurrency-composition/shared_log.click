@@ -129,7 +129,7 @@ int32 vector_copy(
         }
     }
     have i == length by {
-        apply(int32_le_and_not_lt_implies_eq(at(loop(0).exit, i), at(loop(0).exit, length))) using {
+        apply(int32_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), at(loop(0).exit, length))) using {
             at(loop(0).exit, i) <= at(loop(0).exit, length);
             not at(loop(0).exit, i) < at(loop(0).exit, length);
         }
@@ -193,13 +193,13 @@ int32 vector_grow(struct vector* owner) {
 } by {
     unfold(before);
     have owner->cap < 2147483647 by {
-        apply(int32_le_lt_transitive(owner->cap, 536870910, 2147483647)) using {
+        apply(int32_less_equal_less_than_transitive(owner->cap, 536870910, 2147483647)) using {
             owner->cap <= 536870910;
         }
         assumption();
     }
     have (owner->cap + 1) <= 536870911 by {
-        apply(int32_le_lt_transitive(owner->cap, 536870910, 536870911)) using {
+        apply(int32_less_equal_less_than_transitive(owner->cap, 536870910, 536870911)) using {
             owner->cap <= 536870910;
         }
         apply(int32_increment_upper_bound(owner->cap, 536870911)) using {
@@ -255,7 +255,7 @@ int32 vector_grow(struct vector* owner) {
         assumption();
     }
     have 0 <= new_capacity by {
-        apply(int32_positive_is_nonnegative(new_capacity)) using {
+        apply(int32_less_equal_transitive(0, 1, new_capacity)) using {
             1 <= new_capacity;
         }
         assumption();
@@ -265,7 +265,7 @@ int32 vector_grow(struct vector* owner) {
             normalize();
         }
         rewrite(old_capacity == owner->cap);
-        apply(int32_positive_is_nonnegative(owner->cap)) using {
+        apply(int32_less_equal_transitive(0, 1, owner->cap)) using {
             1 <= owner->cap;
         }
         assumption();
@@ -287,7 +287,7 @@ int32 vector_grow(struct vector* owner) {
         }
     }
     have owner->len <= 536870910 by {
-        apply(int32_le_transitive(owner->len, owner->cap, 536870910)) using {
+        apply(int32_less_equal_transitive(owner->len, owner->cap, 536870910)) using {
             owner->len <= owner->cap;
             owner->cap <= 536870910;
         }
@@ -560,7 +560,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             }
             have old(owner->cap) <= 536870910;
             have 536870910 < 2147483647 by normalize();
-            have old(owner->cap) < 2147483647 by apply(int32_le_lt_transitive(old(owner->cap), 536870910, 2147483647)) using {
+            have old(owner->cap) < 2147483647 by apply(int32_less_equal_less_than_transitive(old(owner->cap), 536870910, 2147483647)) using {
                 old(owner->cap) <= 536870910;
                 536870910 < 2147483647;
             }
@@ -607,7 +607,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             have 536870911 < 2147483647 by {
                 normalize();
             }
-            apply(int32_le_lt_transitive(at(function.entry, owner->cap), 536870911, 2147483647)) using {
+            apply(int32_less_equal_less_than_transitive(at(function.entry, owner->cap), 536870911, 2147483647)) using {
                 at(function.entry, owner->cap) <= 536870911;
                 536870911 < 2147483647;
             }
@@ -760,7 +760,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             assumption();
         }
         have owner->len < owner->cap by {
-            apply(int32_le_and_neq_implies_lt(owner->len, owner->cap)) using {
+            apply(int32_less_equal_and_not_equal_implies_less_than(owner->len, owner->cap)) using {
                 owner->len <= owner->cap;
                 not owner->len == owner->cap;
             }
@@ -863,7 +863,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         }
         have old(owner->cap) <= 536870910;
         have 536870910 < 2147483647 by normalize();
-        have old(owner->cap) < 2147483647 by apply(int32_le_lt_transitive(old(owner->cap), 536870910, 2147483647)) using {
+        have old(owner->cap) < 2147483647 by apply(int32_less_equal_less_than_transitive(old(owner->cap), 536870910, 2147483647)) using {
             old(owner->cap) <= 536870910;
             536870910 < 2147483647;
         }
@@ -928,7 +928,7 @@ void* producer(void* argument) {
         to_integer(1) == 1;
         to_integer(536870909) == 536870909;
     };
-    have cap <= 536870909 by apply(int32_less_equal_of_to_integer(cap, 536870909));
+    have cap <= 536870909 by apply(int32_to_integer_less_equal_implies_less_equal(cap, 536870909));
     have items.cap == cap;
     let { cap: items_cap } = unfold(items);
     have log->items->cap == items_cap;
