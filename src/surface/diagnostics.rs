@@ -4,7 +4,6 @@ use crate::kernel::SharedCMemory;
 use crate::kernel::resource_tracker;
 use crate::kernel::{CComparisonOperator, CFloatBinaryOperator, CFloatCondition, CUpdateOperator};
 use crate::surface::validation::describe_click_type;
-use std::fmt::Write;
 
 const MAX_DIAGNOSTIC_ITEMS: usize = 12;
 const TRUNCATION_SUFFIX: &str =
@@ -2888,6 +2887,28 @@ pub(super) fn describe_proposition_version_mismatch(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> Option<String> {
+    let (explanation, internal) =
+        proposition_version_explanation(goal, premises, parameters, arguments)?;
+    describe_resource_version_mismatch(
+        &explanation,
+        if internal {
+            "the snapshot the other side reads"
+        } else {
+            premise_point
+        },
+        parameters,
+        arguments,
+    )
+}
+
+/// Recover the bounded history comparison without discarding its exact addresses.
+/// The terminal report can then use the same label map as its goal and facts.
+pub(crate) fn proposition_version_explanation(
+    goal: &Proposition,
+    premises: &[&Proposition],
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> Option<(resource_tracker::Explanation, bool)> {
     // A goal that reads no resource has no version to differ about. Deciding
     // that first keeps this diagnostic, and the tracker's walk, off the
     // failure path of every proof that never touches memory.
@@ -2896,12 +2917,7 @@ pub(super) fn describe_proposition_version_mismatch(
     }
     if let Some((resource, here, there)) = resource_tracker::internal_version_mismatch(goal) {
         let explanation = resource_tracker::explain(resource.as_resource(), &here, &there);
-        return describe_resource_version_mismatch(
-            &explanation,
-            "the snapshot the other side reads",
-            parameters,
-            arguments,
-        );
+        return Some((explanation, true));
     }
     // The structural question — do these two read the same resources at
     // different points — is asked first, so only a premise that answers it
@@ -2926,7 +2942,7 @@ pub(super) fn describe_proposition_version_mismatch(
             (shape(premise) == shape(goal)).then_some(mismatch)
         })?;
     let explanation = resource_tracker::explain(resource.as_resource(), &here, &there);
-    describe_resource_version_mismatch(&explanation, premise_point, parameters, arguments)
+    Some((explanation, false))
 }
 
 /// One user-grade explanation of "these two same-looking terms read different
@@ -2941,7 +2957,8 @@ pub(super) fn describe_proposition_version_mismatch(
 /// inequality for two indexes into one array, a filled-in `separate(..)` for
 /// two objects nothing separates. A repair is printed only where it is known
 /// to work; where none does, the text says what is missing instead. It prints
-/// no memory: at most the blocking step, plus a count of the steps after it.
+/// no memory contents: the structured report labels the blocking snapshot and
+/// both addresses separately. Later steps are recorded memory transitions.
 pub(super) fn describe_resource_version_mismatch(
     explanation: &resource_tracker::Explanation,
     since: &str,
@@ -2982,12 +2999,13 @@ pub(super) fn describe_resource_version_mismatch(
         } => describe_model_field_version_stop(*identity, children, *field_index, stop, since)?,
     };
     if explanation.crossed_after > 0 {
-        let steps = explanation.crossed_after;
-        let _ = if steps == 1 {
-            write!(message, " The one later step does not touch it.")
-        } else {
-            write!(message, " The {steps} later steps do not touch it.")
-        };
+        message.push_str(" The subsequent recorded memory transitions preserve this resource.");
+    }
+    if !matches!(
+        explanation.resource,
+        resource_tracker::OwnedResource::ModelField { .. }
+    ) {
+        message.push_str(" This diagnostic checks recorded memory history without using the proof context's equality and ownership facts.");
     }
     Some(message)
 }
@@ -3274,12 +3292,12 @@ fn describe_store_cause(
         // the step the reader has to separate their read from.
         return match &store {
             Some(store) => format!(
-                "the store to `{}` may have written it, and nothing tells that address apart \
+                "the memory-history check could not establish that the store to `{}` is separate \
                  from this read.",
                 store.text()
             ),
-            None => "a store in between may have written it, and nothing tells the two addresses \
-                     apart."
+            None => "the memory-history check could not establish that an intervening store is separate \
+                     from this read."
                 .to_string(),
         };
     };
@@ -3340,12 +3358,12 @@ fn describe_same_object_store_cause(
             )
         }
         (Some(read), _) => format!(
-            "the store to `{}` may have written it. Nothing states that its index differs from \
+            "the store to `{}` may have written it. The memory-history check did not establish that its index differs from \
              `{read}`.",
             store.text()
         ),
         _ => format!(
-            "the store to `{}` may have written it, and nothing tells the two indexes apart.",
+            "the store to `{}` may have written it, and the memory-history check did not establish that the indexes differ.",
             store.text()
         ),
     }

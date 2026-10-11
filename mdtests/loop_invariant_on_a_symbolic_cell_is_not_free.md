@@ -46,5 +46,5 @@ void mark_prefix(int32 a[], int32 n, int32 m) {
 ```
 
 ```expect
-fail: `a[m]` may have changed since the available fact was stated: the store to `a[…]` may have written it. Nothing states that its index differs from `m`.
+fail: `a[m]` may have changed since the available fact was stated: the store to `a[…]` may have written it. The memory-history check did not establish that its index differs from `m`.
 ```

@@ -47,6 +47,15 @@ name their source and stride; call and loop effects show their write footprints
 when those are specified. Recorded marks and program points appear in these
 definitions when they match the snapshot.
 
+A memory-history explanation identifies a blocking store, its snapshot, and the
+checked read range and write width. Its result is retained at failure time, so
+formatting does not repeat the check under a different verification context.
+This diagnostic walks recorded memory history
+without using the proof context's equality and ownership facts. Failure to show
+separation in that walk does not mean the proof has no separating evidence.
+Subsequent transitions mentioned by the explanation are memory transitions, not
+necessarily C statements.
+
 Construction records travel with snapshots across threads and are excluded from
 memory equality and proof evidence. A missing record on a noninitial snapshot is
 reported as an internal recording defect, not a normal unknown origin. New memory
