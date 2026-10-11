@@ -211,7 +211,8 @@ re-verification check both observation lemmas; mutations reject shifted byte
 positions and missing count or lane bounds. The original small-batch vector
 loop explicitly recovers all four constructor lanes from its shared subslice,
 then uses the checked byte-cast lemma to obtain their Integer observations at
-the constructor mark. Connecting that subslice to the input prefix and carrying
+the constructor mark. These new constructor steps use direct normalization,
+explicit lemma applications and rewrites. Connecting that subslice to the input prefix and carrying
 both checksum residues through the original loops remains necessary.
 
 ## Native vector-prefix transitions
@@ -493,7 +494,10 @@ and computation. Extend that composition to larger inputs by carrying both
 prefix residues through the original nested loops, reductions, recombination
 and final tail.
 The general contract supplies induction and bounds rather than a checksum
-postcondition. All helper bodies remain checked
+postcondition. Full original-computation smart audits currently exhaust the
+standard ten-minute run bound before completing a site, although ordinary
+verification succeeds. Investigate that audit cost before extending the loop
+proof; the standalone byte-observation claims pass complete audits. All helper bodies remain checked
 alongside the computation. Then prove incremental processing, the unchanged
 C implementation, and equality under matched input and seed conditions.
 

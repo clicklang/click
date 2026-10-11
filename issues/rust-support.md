@@ -77,7 +77,11 @@ checked word additions and exact constructor byte observations to both common
 prefix residues. Its iterator adapter derives the prefix from stored remaining
 state and checks the four-byte advance and remaining-length bounds. Establishing
 and carrying these premises through the arbitrary-length computation’s nested
-loops and reductions remains incomplete.
+loops and reductions remains incomplete. Full original-computation smart audits
+currently exhaust the standard ten-minute run bound before completing a site,
+while ordinary verification succeeds. Investigate that audit cost before
+extending the loop proof; the standalone byte-observation claims pass complete
+audits and the new constructor-observation steps are explicit simple proofs.
 The unchanged Rust one- through four-byte computations prove both fields equal
 the shared specification on the entry byte snapshot, starting from A = 1 and
 B = 0. The four-byte bridge checks the native unsigned recombination and its

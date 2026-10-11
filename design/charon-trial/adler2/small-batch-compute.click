@@ -213,25 +213,25 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
    have old((int32)(uint32)(bytes_len - bytes_len % 4u64)) <= (int32)(uint32)bytes_len by { simp() using { (int32)(uint32)(bytes_len - bytes_len % 4u64) == old((int32)(uint32)(bytes_len - bytes_len % 4u64)); (int32)(uint32)(bytes_len - bytes_len % 4u64) <= (int32)(uint32)bytes_len; } }
    execute_until(assignment(__rust_mir_71, 0));
    mark vector_a;
-   have at(vector_a, __rust_mir_68._0[0]) == at(vector_a, (uint32)__rust_mir_69[0]) by { simp() using { __rust_mir_68._0[0] == at(vector_a, (uint32)__rust_mir_69[0]); } }
+   have at(vector_a, __rust_mir_68._0[0]) == at(vector_a, (uint32)__rust_mir_69[0]) by { normalize() using { __rust_mir_68._0[0] == at(vector_a, (uint32)__rust_mir_69[0]); } }
    apply(adler_helper_byte_observation(at(vector_a, __rust_mir_69[0]))) using {};
    have to_integer(at(vector_a, __rust_mir_68._0[0])) == at(vector_a, to_integer((int32)__rust_mir_69[0])) by {
     rewrite(at(vector_a, __rust_mir_68._0[0]) == at(vector_a, (uint32)__rust_mir_69[0]));
     normalize() using { at(vector_a, to_integer((uint32)__rust_mir_69[0])) == at(vector_a, to_integer((int32)__rust_mir_69[0])); }
    }
-   have at(vector_a, __rust_mir_68._0[1]) == at(vector_a, (uint32)__rust_mir_69[1]) by { simp() using { __rust_mir_68._0[1] == at(vector_a, (uint32)__rust_mir_69[1]); } }
+   have at(vector_a, __rust_mir_68._0[1]) == at(vector_a, (uint32)__rust_mir_69[1]) by { normalize() using { __rust_mir_68._0[1] == at(vector_a, (uint32)__rust_mir_69[1]); } }
    apply(adler_helper_byte_observation(at(vector_a, __rust_mir_69[1]))) using {};
    have to_integer(at(vector_a, __rust_mir_68._0[1])) == at(vector_a, to_integer((int32)__rust_mir_69[1])) by {
     rewrite(at(vector_a, __rust_mir_68._0[1]) == at(vector_a, (uint32)__rust_mir_69[1]));
     normalize() using { at(vector_a, to_integer((uint32)__rust_mir_69[1])) == at(vector_a, to_integer((int32)__rust_mir_69[1])); }
    }
-   have at(vector_a, __rust_mir_68._0[2]) == at(vector_a, (uint32)__rust_mir_69[2]) by { simp() using { __rust_mir_68._0[2] == at(vector_a, (uint32)__rust_mir_69[2]); } }
+   have at(vector_a, __rust_mir_68._0[2]) == at(vector_a, (uint32)__rust_mir_69[2]) by { normalize() using { __rust_mir_68._0[2] == at(vector_a, (uint32)__rust_mir_69[2]); } }
    apply(adler_helper_byte_observation(at(vector_a, __rust_mir_69[2]))) using {};
    have to_integer(at(vector_a, __rust_mir_68._0[2])) == at(vector_a, to_integer((int32)__rust_mir_69[2])) by {
     rewrite(at(vector_a, __rust_mir_68._0[2]) == at(vector_a, (uint32)__rust_mir_69[2]));
     normalize() using { at(vector_a, to_integer((uint32)__rust_mir_69[2])) == at(vector_a, to_integer((int32)__rust_mir_69[2])); }
    }
-   have at(vector_a, __rust_mir_68._0[3]) == at(vector_a, (uint32)__rust_mir_69[3]) by { simp() using { __rust_mir_68._0[3] == at(vector_a, (uint32)__rust_mir_69[3]); } }
+   have at(vector_a, __rust_mir_68._0[3]) == at(vector_a, (uint32)__rust_mir_69[3]) by { normalize() using { __rust_mir_68._0[3] == at(vector_a, (uint32)__rust_mir_69[3]); } }
    apply(adler_helper_byte_observation(at(vector_a, __rust_mir_69[3]))) using {};
    have to_integer(at(vector_a, __rust_mir_68._0[3])) == at(vector_a, to_integer((int32)__rust_mir_69[3])) by {
     rewrite(at(vector_a, __rust_mir_68._0[3]) == at(vector_a, (uint32)__rust_mir_69[3]));
