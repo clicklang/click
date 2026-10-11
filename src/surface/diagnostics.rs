@@ -980,36 +980,19 @@ pub(super) fn describe_unverified_contract_claims(
                 format!("{function_name} effect clause {index}")
             }
             CFunctionContractClaimKey::Ensure(index) => {
-                function_block.ensures().get(*index).map_or_else(
-                    || format!("{function_name}.ensures_{index}"),
-                    |clause| {
-                        describe_clause(
-                            crate::surface::verification::function_claim_label(
-                                function_name,
-                                &crate::surface::proof::FunctionClaimRef::Ensure(*index, clause),
-                            ),
-                            clause,
-                        )
-                    },
-                )
+                let label = function_block.ensure_claim_label(*index);
+                match function_block.ensures().get(*index) {
+                    Some(clause) => describe_clause(label, clause),
+                    None => label,
+                }
             }
-            CFunctionContractClaimKey::ExceptionalEnsure(index) => function_block
-                .exceptional_ensures()
-                .get(*index)
-                .map_or_else(
-                    || format!("{function_name}.exceptional_ensures_{index}"),
-                    |clause| {
-                        describe_clause(
-                            crate::surface::verification::function_claim_label(
-                                function_name,
-                                &crate::surface::proof::FunctionClaimRef::ExceptionalEnsure(
-                                    *index, clause,
-                                ),
-                            ),
-                            clause,
-                        )
-                    },
-                ),
+            CFunctionContractClaimKey::ExceptionalEnsure(index) => {
+                let label = function_block.exceptional_ensure_claim_label(*index);
+                match function_block.exceptional_ensures().get(*index) {
+                    Some(clause) => describe_clause(label, clause),
+                    None => label,
+                }
+            }
         })
         .collect::<Vec<_>>();
     if keys.len() > item_limit {

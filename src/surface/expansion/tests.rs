@@ -2014,7 +2014,7 @@ int32 set_then_read(int32 p[], int32 value) {
         ("set_cell.c", callee_source),
         ("set_then_read.c", caller_source),
     ];
-    let position = c0_tactic_source_position(click_source, &sources, "set_then_read.ensures_1", 0)
+    let position = c0_tactic_source_position(click_source, &sources, "set_then_read.ensures_0", 0)
         .expect("later claim should have a source tactic");
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)

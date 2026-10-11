@@ -35,7 +35,7 @@ use click::surface::{
 
 const USAGE: &str = "\
 usage: click verify [--work-limit <UNITS>] [--time-limit <DURATION>] <sidecar.click|mdtest.md>[:<line>:<column>]
-       click verify --trace-proof <PROOF> [--trace-to <LINE[:COLUMN]>] <sidecar.click|mdtest.md>
+       click verify --trace-proof <PROOF|PATH:LINE[:COLUMN]> [--trace-to <LINE[:COLUMN]>] <sidecar.click|mdtest.md>
        click verify [--work-limit <UNITS>] [--time-limit <DURATION>] <project-directory|examples-directory>
        click verify --changed-since <REVISION> [--explain] <sidecar.click|directory>
 
@@ -61,7 +61,8 @@ wall-clock crash-containment bound for a hung or CPU-starved run; a run it
 stops says so, and that is not a verdict about the proof.
 
 `--trace-proof PROOF` verifies one C function or one pure theorem of the
-sidecar, by name, and shows checked fact and resource changes on the path to
+sidecar, by name or by a PATH:LINE[:COLUMN] of the sidecar that a claim of
+it covers, and shows checked fact and resource changes on the path to
 the failing tactic, or an accepted path when the proof succeeds. `--trace-to`
 selects a written tactic by source line (and column when the line has several
 tactics) within the selected proof.
@@ -1371,6 +1372,24 @@ fn verify_file_within_limits(
         inputs,
         mdtest,
     } = target;
+    // `--trace-proof FILE:LINE[:COLUMN]` traces the proof unit that owns the
+    // claim covering that line.
+    let trace_proof = trace_proof
+        .map(|requested| {
+            match click::cli::claim_at_argument(
+                requested,
+                click_path,
+                line_offset,
+                Some(&project),
+                &click_source,
+                &inputs,
+            ) {
+                Some(claim) => claim.map(|claim| claim.owner),
+                None => Ok(requested.to_string()),
+            }
+        })
+        .transpose()?;
+    let trace_proof = trace_proof.as_deref();
     let trace_unit = trace_proof
         .map(|requested| {
             trace_unit(requested, &project, &inputs)

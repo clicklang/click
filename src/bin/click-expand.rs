@@ -17,7 +17,7 @@ use click::surface::{
     project_tactic_source_position, tactic_source_position, verify_project_at, verify_sources_at,
 };
 
-const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n\nExpansion is checked before output. With --in-place, the original is atomically replaced only after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
+const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n\n--claim selects a claim by its label or by a line its clause or proof covers. Expansion is checked before output. With --in-place, the original is atomically replaced only after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Arguments {
@@ -457,7 +457,20 @@ fn expand_selection(
             .map_err(|error| error.report())?;
             Ok((claim, expanded))
         }
-        Selection::Claim(claim) => {
+        Selection::Claim(requested) => {
+            // `--claim FILE:LINE[:COLUMN]` names the claim covering that line.
+            let claim = match cli::claim_at_argument(
+                requested,
+                report.path,
+                report.line_offset,
+                project,
+                click_source,
+                inputs,
+            ) {
+                Some(selected) => selected?.label,
+                None => requested.clone(),
+            };
+            let claim = &claim;
             let expanded = match (project, inputs) {
                 (Some(project), _) => {
                     expand_project_claim_source_by_label(project, &inputs.program_inputs(), claim)
