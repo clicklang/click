@@ -3443,6 +3443,7 @@ impl Parser {
                     exceptional_type: None,
                     diverges: false,
                     declared_loadable_bytes: parsed_parameters.declared_loadable_bytes,
+                    rust_spelling: Default::default(),
                 },
                 struct_params: parsed_parameters.struct_params,
                 struct_array_params: parsed_parameters.struct_array_params,
@@ -3524,6 +3525,7 @@ impl Parser {
                 exceptional_type,
                 diverges,
                 declared_loadable_bytes: parsed_parameters.declared_loadable_bytes,
+                rust_spelling: Default::default(),
             },
             struct_params,
             struct_array_params,
@@ -3582,6 +3584,7 @@ impl Parser {
             }
             None => name,
         };
+        let mut rust_slice_parameters = Vec::new();
         while self.peek() != Some(&Token::RParen) {
             let parameter_name = self.expect_ident("parameter name")?;
             self.expect(Token::Colon)?;
@@ -3590,6 +3593,7 @@ impl Parser {
                 // sidecar names the slice once and reads `bytes.len()`.
                 let length = format!("{parameter_name}_len");
                 self.rust_slice_params.insert(parameter_name.clone());
+                rust_slice_parameters.push(parameter_name.clone());
                 parameters.push(
                     self.parse_parameter_array_suffix(parameter_name, element)?
                         .parameter,
@@ -3657,6 +3661,7 @@ impl Parser {
                 exceptional_type: None,
                 diverges,
                 declared_loadable_bytes: Vec::new(),
+                rust_spelling: super::RustSignatureSpelling::rust(rust_slice_parameters),
             },
             struct_params,
             struct_array_params: BTreeSet::new(),

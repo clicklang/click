@@ -460,7 +460,7 @@ fn rust_crate_scalar_constants_execute_checked_initializers() {
         };
         proof.push_str(&format!(
             "fn {}() -> {ty} {{ ensures result == {value}; }} by {{ execute(); simp(); }}\n",
-            rust_path(&function.name)
+            click::surface::rust_display_name(&function.name).unwrap()
         ));
     }
     assert_eq!(prepared.export().functions.len(), 12);
@@ -479,6 +479,26 @@ fn rust_crate_scalar_constants_execute_checked_initializers() {
         "{}",
         String::from_utf8_lossy(&cli.stderr)
     );
+    // A failure names the item by its path, as the sidecar writes it.
+    fs::write(
+        p.root.join("borrow.click"),
+        proof.replace("result == 22208u64", "result == 22209u64"),
+    )
+    .unwrap();
+    let cli = p.cli(&["verify"]);
+    let stderr = String::from_utf8_lossy(&cli.stderr);
+    assert!(!cli.status.success());
+    assert!(stderr.contains("demo::entry"), "{stderr}");
+    assert!(!stderr.contains("__rust_q"), "{stderr}");
+    let traced = p.cli(&["verify", "--trace-proof", "demo::entry::CHUNK_SIZE"]);
+    let stderr = String::from_utf8_lossy(&traced.stderr);
+    assert!(
+        !traced.status.success(),
+        "{stderr}{}",
+        String::from_utf8_lossy(&traced.stdout)
+    );
+    assert!(!stderr.contains("not a selected proof"), "{stderr}");
+    assert!(stderr.contains("demo::entry"), "{stderr}");
     // Lock loading checks the initializer's source too.
     fs::write(
         p.root.join("lib.rs"),
@@ -486,19 +506,4 @@ fn rust_crate_scalar_constants_execute_checked_initializers() {
     )
     .unwrap();
     assert!(load_import(&p.config()).is_err());
-}
-
-/// The Rust path of the item the importer names
-/// `__rust_q_I4_demo_I4_left_I3_MOD`: `demo::left::MOD`.
-fn rust_path(name: &str) -> String {
-    let mut rest = name.strip_prefix("__rust_q").unwrap();
-    let mut segments = Vec::new();
-    while let Some(tail) = rest.strip_prefix("_I") {
-        let (length, tail) = tail.split_once('_').unwrap();
-        let (segment, tail) = tail.split_at(length.parse().unwrap());
-        segments.push(segment);
-        rest = tail;
-    }
-    assert!(rest.is_empty(), "{name}");
-    segments.join("::")
 }

@@ -102,6 +102,8 @@ mod integer_truncation;
 mod lowering;
 mod modules;
 mod parser;
+mod rust_names;
+pub use rust_names::{claim_label_matches, display_rust_names, rust_display_name};
 pub(crate) mod planning;
 pub(crate) mod proof_diagnostics;
 mod source_registry;
@@ -1264,7 +1266,36 @@ pub struct FunctionSignature {
     /// Byte spans declared by sized array parameter spellings
     /// (`int32 p[2]`), used to certify requirement side-obligations.
     declared_loadable_bytes: Vec<(String, u32)>,
+    /// How a diagnostic spells this function's places, from how its
+    /// signature is written.
+    rust_spelling: RustSignatureSpelling,
 }
+
+/// A Rust sidecar's `fn` signature: its slice parameters, each passed as a
+/// pointer and a `name_len` length, which a diagnostic and `click expand`
+/// print as `name.len()`. `None` for a signature in the C-shaped spelling.
+/// Presentation only: the Rust and C-shaped spellings of one declaration are
+/// equal.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct RustSignatureSpelling(Option<Vec<String>>);
+
+impl RustSignatureSpelling {
+    pub(crate) fn rust(slice_parameters: Vec<String>) -> Self {
+        Self(Some(slice_parameters))
+    }
+
+    pub(crate) fn slice_parameters(&self) -> Option<&[String]> {
+        self.0.as_deref()
+    }
+}
+
+impl PartialEq for RustSignatureSpelling {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for RustSignatureSpelling {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionParameter {
@@ -6568,6 +6599,7 @@ thread_local! {
 /// addressed yet.
 pub(crate) fn enter_ambient_declaration(name: &str) {
     proof_diagnostics::render::clear_ambient_naming();
+    diagnostics::enter_rust_spelling(None);
     AMBIENT_PROOF_SOURCE.with(|ambient| {
         *ambient.borrow_mut() = AmbientProofSource {
             declaration: Some(name.to_owned()),
@@ -7167,7 +7199,14 @@ impl FunctionSignature {
             exceptional_type: None,
             diverges: false,
             declared_loadable_bytes: Vec::new(),
+            rust_spelling: RustSignatureSpelling::default(),
         }
+    }
+
+    /// The slice parameters of a signature written in Rust syntax; `None`
+    /// for the C-shaped spelling.
+    pub(crate) fn rust_slice_parameters(&self) -> Option<&[String]> {
+        self.rust_spelling.slice_parameters()
     }
 
     pub fn with_return_pointee_constant(mut self, return_pointee_constant: bool) -> Self {
