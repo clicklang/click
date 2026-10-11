@@ -200,7 +200,6 @@ fn render_diagnostic_labeled(
             rendered.push_str(&requirement);
         }
     }
-    let mut internal_goal_shown = false;
     if summary.is_some()
         && let Some(goal) = diagnostic.kernel_goal()
     {
@@ -215,54 +214,22 @@ fn render_diagnostic_labeled(
                 rendered.push_str("\n  goal: ");
                 rendered.push_str(&source);
             }
-            if crate::surface::proof_trace::enabled_for(&diagnostic.claim_label) {
-                let internal = render::render_internal_proposition_labeled(goal, labels);
-                if internal.contains("snapshot#") || internal.contains("snapshot<untracked>") {
-                    rendered.push_str("\n  snapshot identity (internal): ");
-                    rendered.push_str(&internal);
-                    internal_goal_shown = true;
-                }
-            }
         } else if let Some(source) = render::render_simple_click_fact_labeled(goal, labels) {
             rendered.push_str("\n  goal: ");
             rendered.push_str(&source);
         } else if let Some(partial) = render::render_partial_click_fact_labeled(goal, labels) {
             rendered.push_str("\n  goal (partial): ");
             rendered.push_str(&partial);
-        } else if crate::surface::proof_trace::enabled_for(&diagnostic.claim_label) {
-            rendered.push_str("\n  internal goal (no exact Click spelling): ");
-            rendered.push_str(&render::render_internal_proposition_labeled(goal, labels));
-            internal_goal_shown = true;
-        } else {
+        } else if !tracing {
             rendered.push_str("\n  goal has no exact Click spelling at this frontier");
         }
     }
-    // A refined goal can lose its source presentation. An explicit trace
-    // must still show its numeric formats and exact snapshot identities.
-    if tracing
-        && !internal_goal_shown
-        && let Some(
-            goal @ Proposition::ConditionIs(
-                crate::kernel::ConditionTerm::IntegerEqual(..)
-                | crate::kernel::ConditionTerm::IntegerNotEqual(..)
-                | crate::kernel::ConditionTerm::IntegerLessThan(..)
-                | crate::kernel::ConditionTerm::IntegerLessEqual(..)
-                | crate::kernel::ConditionTerm::IntegerGreaterThan(..)
-                | crate::kernel::ConditionTerm::IntegerGreaterEqual(..),
-                _,
-            ),
-        ) = diagnostic.kernel_goal()
-    {
-        rendered.push_str("\n  integer goal identity (internal): ");
-        let internal = render::render_internal_proposition_labeled(goal, labels);
-        let mut end = internal.len().min(1024);
-        while !internal.is_char_boundary(end) {
-            end -= 1;
-        }
-        rendered.push_str(&internal[..end]);
-        if end < internal.len() {
-            rendered.push('…');
-        }
+    // A rewrite can remove the source presentation while leaving a readable
+    // fallback. Neither spelling determines the checked argument identities.
+    // Always show the actual goal in a trace, using the facts' shared labels.
+    if tracing && let Some(goal) = diagnostic.kernel_goal() {
+        rendered.push_str("\n  checked goal: ");
+        rendered.push_str(&render::render_trace_fact_labeled(goal, labels));
     }
     if summary.is_some() {
         let premises = diagnostic.premises(8);
@@ -622,9 +589,7 @@ mod tests {
             };
             let report = crate::surface::ClickError::with_diagnostic("failed", diagnostic).report();
             assert!(
-                report.contains(
-                    "internal goal (no exact Click spelling): viewable(memory=snapshot#1"
-                ),
+                report.contains("checked goal: viewable(memory=snapshot#1"),
                 "{report}"
             );
             assert!(

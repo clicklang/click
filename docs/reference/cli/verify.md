@@ -145,6 +145,10 @@ the same formatted failure report, including the written tactic and its source
 location. A separate `To get a trace:` section gives the command to rerun.
 The source excerpt points to the failing written tactic (including steps inside
 `have` and `open`), and the ordinary error omits the internal premise dump.
+When a proposition check fails, the trace includes a `checked goal:` entry
+showing the exact kernel proposition after any rewrites. This supplements its
+readable spelling and uses the same value and snapshot labels as the traced
+facts and their legend, including pointer arguments to pure functions.
 An `assumption()` failure on an existential goal suggests the
 `witness { name: value }` tactic. A trace reports facts introduced into the
 focused proof context and changes to exact resource representations, using
