@@ -8857,3 +8857,90 @@ fn native_owned_fragments_supply_indexed_writes() {
         .unchecked_with_fact(CResourceFact::View(CResource::Memory(range(0, 3))));
     assert!(viewed.memory_write_range(&base, 4, &facts).is_none());
 }
+
+#[test]
+fn observable_projection_uses_current_loan_bindings_and_composite_eligibility() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let context = context_with_one_loan_dependency(false);
+    let original = context.observable_composition();
+    let (occurrence, binding) = context.live_loan_dependencies().next().unwrap();
+    assert_eq!(original.loan_dependency(occurrence), Some(binding));
+    let current = context
+        .clone()
+        .with_loan_dependency_state(ResourceContext::new().loan_dependency_state());
+    let updated = current.observable_composition();
+    assert!(std::sync::Arc::ptr_eq(&original.storage, &updated.storage));
+    assert!(updated.loan_dependency(occurrence).is_none());
+    assert_eq!(updated, current.observable_composition_uncached());
+    assert_ne!(original, updated);
+    let composite = CResourceFact::own_composite("observable_box".into(), Vec::new());
+    let context = ResourceContext::new().unchecked_with_fact(composite.clone());
+    assert_eq!(
+        context
+            .observable_facts_assuming_valid(&PureFactContext::new())
+            .len(),
+        1
+    );
+    let context = context.without_exact_representation(&composite).unwrap();
+    assert!(
+        context
+            .observable_facts_assuming_valid(&PureFactContext::new())
+            .is_empty()
+    );
+}
+
+#[test]
+fn observable_projection_ignores_excluded_loan_bindings_when_hashing() {
+    let mut costs = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        crate::kernel::set_never_address_taken_locals(
+            (0..size).map(|index| format!("hidden_{index}")).collect(),
+        );
+        let base = context_with_one_loan_dependency(false);
+        let expected = base.observable_composition();
+        let mut context = base;
+        let ledger = LoanLedger::new();
+        let owner = ledger.fresh_participant().unwrap();
+        let reader = ledger.fresh_participant().unwrap();
+        for index in 0..size {
+            let range = CMemoryRange::new(
+                CMemory::local_pointer(&format!("hidden_{index}")),
+                0u32.into(),
+                1u32.into(),
+            );
+            let support = CResourceFact::own_memory(range.clone());
+            let view = CResourceFact::view_memory(range);
+            context = context.unchecked_with_fact(support.clone());
+            let support_occurrence = context.owned_occurrences_for_fact(&support)[0];
+            let opening = ledger
+                .lend(owner, reader, support_occurrence, support.clone())
+                .unwrap();
+            context = context.unchecked_with_supported_facts(&support, [view.clone()]);
+            let occurrence = context.occurrences_for_fact(&view)[0];
+            context = context.with_loan_dependency(
+                occurrence,
+                LoanViewBinding {
+                    loan: opening.loan,
+                    scope: opening.scope,
+                    share: opening.root_share,
+                    support: support_occurrence,
+                    viewed: view,
+                    hold: None,
+                },
+            );
+        }
+        let observed = context.observable_composition();
+        assert_eq!(observed, expected);
+        let (hash, work) =
+            crate::instrumentation::measure_deterministic_work(|| resource_context_hash(&observed));
+        assert_eq!(hash, resource_context_hash(&expected));
+        assert_eq!(observed.live_loan_dependencies().count(), 1);
+        assert!(work <= 16, "{size} excluded loans caused {work} hash units");
+        costs.push(work);
+    }
+    assert!(
+        costs.iter().all(|work| *work == costs[0]),
+        "excluded loan costs: {costs:?}"
+    );
+}

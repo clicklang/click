@@ -6576,6 +6576,10 @@ pub struct ResourceContext {
     /// Derived trusted-kernel index. It never supplies ownership evidence.
     memory_equalities: std::sync::Mutex<memory_equality_index::MemoryPairings>,
     pub(super) storage: std::sync::Arc<ResourceContextStorage>,
+    /// Disposable projection, never ownership evidence or semantic identity.
+    /// Immutable forks share even the cold cache; producers detach it before
+    /// advancing only their own delta.
+    observable_projection: std::sync::Arc<std::sync::Mutex<Option<ObservableResourceProjection>>>,
     /// Checked dependency bundles for resource occurrences that are views of
     /// an active stable loan.  This is deliberately separate from the
     /// resource algebra's support graph: equal resource terms can have
@@ -6589,6 +6593,7 @@ impl Clone for ResourceContext {
         Self {
             instance_consumptions: self.instance_consumptions.clone(),
             storage: self.storage.clone(),
+            observable_projection: self.observable_projection.clone(),
             loan_dependencies: self.loan_dependencies.clone(),
             memory_equalities: std::sync::Mutex::new(
                 self.memory_equalities
@@ -6695,15 +6700,37 @@ impl ResourceContext {
     pub(crate) fn live_loan_dependencies(
         &self,
     ) -> impl Iterator<Item = (ResourceOccurrenceId, &crate::kernel::loans::LoanViewBinding)> {
+        // A filtered observation shares the current loan state, which may
+        // also contain excluded occurrences. Query the smaller side of the
+        // intersection; never walk all excluded loans for a small frame.
+        let by_entries = self.storage.facts.len() < self.loan_dependencies.map.len();
+        let mut selected = Vec::new();
+        if by_entries {
+            for (_, occurrence) in self.storage.occurrence_by_entry.iter() {
+                crate::instrumentation::record_deterministic_work(1);
+                if let Some(binding) = self.loan_dependencies.map.get(occurrence) {
+                    selected.push((*occurrence, binding));
+                }
+            }
+            // Preserve the original occurrence ordering for every caller.
+            selected.sort_unstable_by_key(|(occurrence, _)| *occurrence);
+        }
         self.loan_dependencies
             .map
             .iter()
+            .take(if by_entries {
+                0
+            } else {
+                self.loan_dependencies.map.len()
+            })
             .filter_map(|(occurrence, binding)| {
+                crate::instrumentation::record_deterministic_work(1);
                 self.storage
                     .entry_by_occurrence
                     .contains_key(occurrence)
                     .then_some((*occurrence, binding))
             })
+            .chain(selected)
     }
 }
 
@@ -6730,6 +6757,15 @@ pub(super) struct ResourceMemoryIntervalNode {
     pub(super) block: PointerBlock,
     pub(super) level: u8,
     pub(super) start: u32,
+}
+
+#[derive(Clone)]
+struct ObservableResourceProjection {
+    classification: u64,
+    /// A weak checkpoint detects any producer that replaces storage without
+    /// advancing the view, without retaining the unfiltered context.
+    source: std::sync::Weak<ResourceContextStorage>,
+    storage: std::sync::Arc<ResourceContextStorage>,
 }
 
 #[derive(Clone, Default)]
@@ -6812,6 +6848,8 @@ pub(super) struct ResourceContextChange {
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct ResourceContextIndex {
+    owned_count: usize,
+    owned_composite_count: usize,
     pub(super) instances: PersistentMap<Variable, ResourceEntryIds>,
     /// Only duplicated or malformed mutex authority atoms need a validity check.
     pub(super) suspect_mutex_authorities: PersistentMap<CResource, ()>,
@@ -7565,12 +7603,6 @@ pub(super) trait ResourceFamilyAlgebra {
     ) -> Option<CResourceFact>;
 
     fn core(&self, fact: &CResourceFact) -> Option<CResourceFact>;
-
-    fn observable_facts(
-        &self,
-        facts: &[&CResourceFact],
-        assumptions: &PureFactContext,
-    ) -> Vec<Proposition>;
 }
 
 struct MemoryResourceAlgebra;

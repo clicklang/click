@@ -1419,6 +1419,7 @@ pub(in crate::surface) fn elaborate_fixed_state_proposition_with_algebraic_and_i
     // This one source walk keeps nested binders from rescanning the context.
     let mut referenced = BTreeSet::new();
     collect_click_proposition_referenced_names(proposition, &mut referenced);
+    lowerer.capture_referenced_names = Some(referenced.clone());
     for name in referenced {
         if let Some(crate::kernel::SpecIntegerExpression::Term(term)) = integer_values.get(&name)
             && let Some(variable) = max_spec_integer_expression_variable(

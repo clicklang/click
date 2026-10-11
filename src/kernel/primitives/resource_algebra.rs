@@ -1,4 +1,5 @@
 use super::*;
+mod observable;
 
 /// A proof-aware composition query in progress on this thread. Bridging a
 /// query's snapshot form to a carrier entry can itself ask whether a
@@ -337,6 +338,12 @@ impl ResourceContextIndex {
 
     fn with_inserted(&self, entry: ResourceEntryId, fact: &CResourceFact) -> Self {
         let mut result = self.clone();
+        if fact.is_own() {
+            result.owned_count += 1;
+            if matches!(fact.resource(), CResource::Composite { .. }) {
+                result.owned_composite_count += 1;
+            }
+        }
         if let CResource::MutexGuard(identity) = fact.resource() {
             result.mutex_authorities = insert_resource_index_entry(
                 &result.mutex_authorities,
@@ -520,6 +527,12 @@ impl ResourceContextIndex {
 
     fn without_entry(&self, entry: ResourceEntryId, fact: &CResourceFact) -> Self {
         let mut result = self.clone();
+        if fact.is_own() {
+            result.owned_count -= 1;
+            if matches!(fact.resource(), CResource::Composite { .. }) {
+                result.owned_composite_count -= 1;
+            }
+        }
         if let CResource::MutexGuard(identity) = fact.resource() {
             result.mutex_authorities = remove_resource_index_entry(
                 &result.mutex_authorities,
@@ -1823,13 +1836,31 @@ impl ResourceContext {
         support_metadata: Option<ResourceSupportMetadata>,
         occurrence_override: Option<ResourceOccurrenceId>,
     ) {
-        let entry = self.storage.next_entry_id;
+        self.insert_fact_with_support_at_entry(
+            fact,
+            support,
+            support_occurrence,
+            support_metadata,
+            occurrence_override,
+            self.storage.next_entry_id,
+        );
+    }
+
+    fn insert_fact_with_support_at_entry(
+        &mut self,
+        fact: CResourceFact,
+        support: Option<CResourceFact>,
+        support_occurrence: Option<ResourceOccurrenceId>,
+        support_metadata: Option<ResourceSupportMetadata>,
+        occurrence_override: Option<ResourceOccurrenceId>,
+        entry: ResourceEntryId,
+    ) {
+        let previous = self.storage.clone();
         let occurrence = occurrence_override.unwrap_or_else(ResourceOccurrenceId::fresh);
-        let next_entry_id = self
-            .storage
-            .next_entry_id
+        let next_entry_id = entry
             .checked_add(1)
-            .expect("resource entry id space exhausted");
+            .expect("resource entry id space exhausted")
+            .max(self.storage.next_entry_id);
         let supported_by = support.as_ref().map_or_else(
             || self.storage.supported_by.clone(),
             |support| {
@@ -1995,6 +2026,7 @@ impl ResourceContext {
             })),
             materialized: std::sync::OnceLock::new(),
         });
+        self.advance_observable_insertion(&previous, entry);
         self.advance_published_resource_entries();
     }
 
@@ -2056,6 +2088,7 @@ impl ResourceContext {
     }
 
     fn remove_entry_only(&mut self, entry: ResourceEntryId) -> CResourceFact {
+        let previous = self.storage.clone();
         let fact = self.fact(entry).clone();
         let support = self.storage.supported_by.get(&entry).cloned();
         let supported_by = self.storage.supported_by.without_key(&entry);
@@ -2201,6 +2234,7 @@ impl ResourceContext {
             })),
             materialized: std::sync::OnceLock::new(),
         });
+        self.advance_observable_removal(&previous, entry);
         self.advance_published_resource_entries();
         if fact.is_own() {
             self.rekey_cached_support_entries(&fact);
@@ -2213,6 +2247,7 @@ impl ResourceContext {
     /// authority; leaving the old `(fact, rank)` entries in place would let a
     /// later insertion inherit stale expansion evidence.
     fn rekey_cached_support_entries(&mut self, fact: &CResourceFact) {
+        let previous = self.storage.clone();
         let mut bucket = PersistentMap::default();
         let mut rank = 0usize;
         for entry in self
@@ -2270,6 +2305,7 @@ impl ResourceContext {
             history: self.storage.history.clone(),
             materialized: std::sync::OnceLock::new(),
         });
+        self.advance_observable_rekey(&previous, fact);
     }
 
     fn replace_facts(
@@ -2333,6 +2369,7 @@ impl ResourceContext {
             history,
             materialized: std::sync::OnceLock::new(),
         });
+        self.observable_projection = Default::default();
         self.rebuild_paired_memory_entries();
     }
 
@@ -4341,7 +4378,7 @@ impl ResourceContext {
     }
 
     pub(crate) fn with_cached_supported_expansion_for_occurrence(
-        mut self,
+        self,
         support_occurrence: ResourceOccurrenceId,
         support: &CResourceFact,
         expansion: Vec<CResourceFact>,
@@ -4352,7 +4389,20 @@ impl ResourceContext {
                 .get(&support_occurrence)
                 .is_some_and(|entry| self.fact(*entry) == support)
         );
-        let expansion = std::sync::Arc::new(expansion);
+        self.with_cached_supported_expansion_arc(
+            support_occurrence,
+            support,
+            std::sync::Arc::new(expansion),
+        )
+    }
+
+    fn with_cached_supported_expansion_arc(
+        mut self,
+        support_occurrence: ResourceOccurrenceId,
+        support: &CResourceFact,
+        expansion: std::sync::Arc<Vec<CResourceFact>>,
+    ) -> Self {
+        let previous = self.storage.clone();
         self.storage = std::sync::Arc::new(ResourceContextStorage {
             facts: self.storage.facts.clone(),
             next_entry_id: self.storage.next_entry_id,
@@ -4393,6 +4443,7 @@ impl ResourceContext {
             })),
             materialized: std::sync::OnceLock::new(),
         });
+        self.advance_observable_expansion(&previous, support_occurrence);
         self.rekey_cached_support_entries(support);
         self
     }
@@ -4463,6 +4514,7 @@ impl ResourceContext {
         mut self,
         occurrence: ResourceOccurrenceId,
     ) -> Self {
+        let previous = self.storage.clone();
         let support_entry = *self
             .storage
             .entry_by_occurrence
@@ -4499,6 +4551,7 @@ impl ResourceContext {
             history: self.storage.history.clone(),
             materialized: std::sync::OnceLock::new(),
         });
+        self.advance_observable_expansion(&previous, occurrence);
         let support = self.fact(support_entry).clone();
         self.rekey_cached_support_entries(&support);
         self
@@ -5109,49 +5162,16 @@ impl ResourceContext {
     /// been established by an enclosing resource law.
     pub(crate) fn observable_facts_assuming_valid(
         &self,
-        assumptions: &PureFactContext,
+        _assumptions: &PureFactContext,
     ) -> Vec<Proposition> {
-        let mut propositions = Vec::new();
-        let memory_facts = self
-            .iter()
-            .filter(|fact| fact.family() == ResourceFamily::Memory)
-            .collect::<Vec<_>>();
-        propositions.extend(MEMORY_RESOURCE_ALGEBRA.observable_facts(&memory_facts, assumptions));
-        // Two owned members are pairwise separate, and one owned composite
-        // expands to several: either way the composition is what a frame
-        // check consults for ownership-derived disjointness.
-        // Unaddressable automatic storage cannot contribute a nonstructural
-        // separation: no program pointer can reach it. Keep its permissions
-        // in the execution context, but leave it out of the observable
-        // composition so unrelated declarations do not restate a memory frame.
-        let mut composition = self.clone();
-        let mut detached_pairings = false;
-        for (block, entries) in self.storage.index.owned_automatic_memory_by_block.iter() {
-            crate::instrumentation::record_deterministic_work(1);
-            if crate::kernel::block_is_never_address_taken_local(block) {
-                if !detached_pairings {
-                    // This is a scratch projection, not a published execution
-                    // resource delta. Do not advance the source's prepared
-                    // equality inputs once per discarded private owner: those
-                    // intermediate compositions will never answer a query.
-                    // Pair only the final retained composition when it is used.
-                    composition.memory_equalities = Default::default();
-                    detached_pairings = true;
-                }
-                for entry in entries.iter() {
-                    crate::instrumentation::record_deterministic_work(1);
-                    composition.remove_entry(*entry);
-                }
-            }
+        let composition = self.observable_composition();
+        if composition.storage.index.owned_count >= 2
+            || composition.storage.index.owned_composite_count != 0
+        {
+            vec![Proposition::CResourceComposition(composition)]
+        } else {
+            Vec::new()
         }
-        let owned = composition.iter().filter(|fact| fact.is_own());
-        let owned_composite = composition
-            .iter()
-            .any(|fact| fact.is_own() && matches!(fact.resource(), CResource::Composite { .. }));
-        if owned.count() >= 2 || owned_composite {
-            propositions.push(Proposition::CResourceComposition(composition));
-        }
-        propositions
     }
 
     pub fn satisfies_fact(&self, fact: &CResourceFact, assumptions: &PureFactContext) -> bool {
@@ -7269,26 +7289,6 @@ fn owner_observation_core(resource: &CResourceFact) -> Option<CResourceFact> {
     }
 }
 
-fn same_family_separate_facts(facts: &[&CResourceFact]) -> Vec<Proposition> {
-    let owned = facts
-        .iter()
-        .filter_map(|fact| fact.owned_resource())
-        .collect::<Vec<_>>();
-    let mut propositions = Vec::new();
-    for i in 0..owned.len() {
-        for right in &owned[i + 1..] {
-            if resources_structurally_separate(owned[i], right) {
-                continue;
-            }
-            propositions.push(Proposition::CResourceSeparate {
-                left: Box::new(owned[i].clone()),
-                right: Box::new((*right).clone()),
-            });
-        }
-    }
-    propositions
-}
-
 /// Separation cases whose proof depends only on the resource constructors,
 /// not on ambient facts or the composition that happened to contain them.
 pub(in crate::kernel) fn resources_structurally_separate(
@@ -7436,19 +7436,6 @@ impl ResourceFamilyAlgebra for MemoryResourceAlgebra {
     fn core(&self, fact: &CResourceFact) -> Option<CResourceFact> {
         owner_observation_core(fact)
     }
-
-    fn observable_facts(
-        &self,
-        facts: &[&CResourceFact],
-        _assumptions: &PureFactContext,
-    ) -> Vec<Proposition> {
-        // Same-block separation is never materialized into ambient
-        // propositions: a separation query asks the retained compact
-        // composition for two owned members that hold its two sides
-        // (`ResourceContext::separated_owned_members_in_block`).
-        let _ = facts;
-        Vec::new()
-    }
 }
 
 macro_rules! impl_exact_resource_algebra {
@@ -7516,14 +7503,6 @@ macro_rules! impl_exact_resource_algebra {
             fn core(&self, fact: &CResourceFact) -> Option<CResourceFact> {
                 owner_observation_core(fact)
             }
-
-            fn observable_facts(
-                &self,
-                facts: &[&CResourceFact],
-                _assumptions: &PureFactContext,
-            ) -> Vec<Proposition> {
-                same_family_separate_facts(facts)
-            }
         }
     };
 }
@@ -7577,9 +7556,6 @@ impl ResourceFamilyAlgebra for InstanceResourceAlgebra {
     fn core(&self, _: &CResourceFact) -> Option<CResourceFact> {
         None
     }
-    fn observable_facts(&self, _: &[&CResourceFact], _: &PureFactContext) -> Vec<Proposition> {
-        vec![]
-    }
 }
 
 impl ResourceFamilyAlgebra for PopulationAuthorityResourceAlgebra {
@@ -7630,9 +7606,6 @@ impl ResourceFamilyAlgebra for PopulationAuthorityResourceAlgebra {
     fn core(&self, _: &CResourceFact) -> Option<CResourceFact> {
         None
     }
-    fn observable_facts(&self, _: &[&CResourceFact], _: &PureFactContext) -> Vec<Proposition> {
-        vec![]
-    }
 }
 
 impl ResourceFamilyAlgebra for MutexGuardResourceAlgebra {
@@ -7680,9 +7653,6 @@ impl ResourceFamilyAlgebra for MutexGuardResourceAlgebra {
     }
     fn core(&self, _: &CResourceFact) -> Option<CResourceFact> {
         None
-    }
-    fn observable_facts(&self, _: &[&CResourceFact], _: &PureFactContext) -> Vec<Proposition> {
-        vec![]
     }
 }
 
@@ -7738,9 +7708,6 @@ impl ResourceFamilyAlgebra for PublicationResourceAlgebra {
     fn core(&self, _: &CResourceFact) -> Option<CResourceFact> {
         None
     }
-    fn observable_facts(&self, _: &[&CResourceFact], _: &PureFactContext) -> Vec<Proposition> {
-        vec![]
-    }
 }
 
 impl ResourceFamilyAlgebra for MutexLiveResourceAlgebra {
@@ -7789,9 +7756,6 @@ impl ResourceFamilyAlgebra for MutexLiveResourceAlgebra {
     fn core(&self, _: &CResourceFact) -> Option<CResourceFact> {
         None
     }
-    fn observable_facts(&self, _: &[&CResourceFact], _: &PureFactContext) -> Vec<Proposition> {
-        vec![]
-    }
 }
 
 impl ResourceFamilyAlgebra for MutexUseResourceAlgebra {
@@ -7839,9 +7803,6 @@ impl ResourceFamilyAlgebra for MutexUseResourceAlgebra {
     }
     fn core(&self, _: &CResourceFact) -> Option<CResourceFact> {
         None
-    }
-    fn observable_facts(&self, _: &[&CResourceFact], _: &PureFactContext) -> Vec<Proposition> {
-        vec![]
     }
 }
 
@@ -7899,9 +7860,6 @@ impl ResourceFamilyAlgebra for IteratedResourceAlgebra {
     }
     fn core(&self, _: &CResourceFact) -> Option<CResourceFact> {
         None
-    }
-    fn observable_facts(&self, _: &[&CResourceFact], _: &PureFactContext) -> Vec<Proposition> {
-        vec![]
     }
 }
 

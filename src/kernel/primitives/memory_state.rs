@@ -8360,6 +8360,7 @@ pub(crate) fn restore_block_registries(state: &BlockRegistriesState) {
     BLOCK_ALIGNMENT_REGISTRY.with(|registry| *registry.borrow_mut() = state.alignment.clone());
     NEVER_ADDRESS_TAKEN_LOCALS
         .with(|registry| *registry.borrow_mut() = state.never_address_taken.clone());
+    advance_never_address_taken_generation();
 }
 
 pub(crate) fn clear_block_alignment_registry() {
@@ -8367,6 +8368,7 @@ pub(crate) fn clear_block_alignment_registry() {
 }
 
 thread_local! {
+    static NEVER_ADDRESS_TAKEN_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// The names of automatic objects — locals and parameters — whose address
     /// no function in this session's C sources ever takes, and which are
     /// declared everywhere with a scalar or pointer type.
@@ -8389,11 +8391,29 @@ thread_local! {
         const { std::cell::RefCell::new(BTreeSet::new()) };
 }
 
+/// Globally unique revisions also distinguish registries on different threads.
+fn advance_never_address_taken_generation() {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let revision = NEXT
+        .fetch_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |value| value.checked_add(1),
+        )
+        .expect("addressability revision space exhausted");
+    NEVER_ADDRESS_TAKEN_GENERATION.with(|generation| generation.set(revision));
+}
+
+pub(super) fn never_address_taken_generation() -> u64 {
+    NEVER_ADDRESS_TAKEN_GENERATION.with(std::cell::Cell::get)
+}
+
 /// Records the program-wide never-address-taken names for this session. The
 /// surface computes them from every function body it parsed; see
 /// `never_address_taken_local_names`.
 pub(crate) fn set_never_address_taken_locals(names: BTreeSet<String>) {
     NEVER_ADDRESS_TAKEN_LOCALS.with(|registry| *registry.borrow_mut() = names);
+    advance_never_address_taken_generation();
 }
 
 /// Withdraws names a later source bundle shows to be address-taken, for a
@@ -8404,12 +8424,16 @@ pub(crate) fn set_never_address_taken_locals(names: BTreeSet<String>) {
 /// in the registry. Today no caller joins a session with different sources,
 /// and this keeps that from becoming a silent staleness bug if one appears.
 pub(crate) fn withdraw_never_address_taken_locals(taken: &BTreeSet<String>) -> bool {
-    NEVER_ADDRESS_TAKEN_LOCALS.with(|registry| {
+    let changed = NEVER_ADDRESS_TAKEN_LOCALS.with(|registry| {
         let mut registry = registry.borrow_mut();
         let before = registry.len();
         registry.retain(|name| !taken.contains(name));
         registry.len() != before
-    })
+    });
+    if changed {
+        advance_never_address_taken_generation();
+    }
+    changed
 }
 
 /// The automatic object a `local:` block holds, as the program names it, or
@@ -8463,6 +8487,7 @@ pub(crate) fn block_is_never_address_taken_local(block: &PointerBlock) -> bool {
 
 pub(crate) fn clear_never_address_taken_locals() {
     NEVER_ADDRESS_TAKEN_LOCALS.with(|registry| registry.borrow_mut().clear());
+    advance_never_address_taken_generation();
 }
 
 #[cfg(test)]
