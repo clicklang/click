@@ -3392,7 +3392,8 @@ impl ResourceContext {
                 CMemoryDerivation::LocalLifetimeEnded { block, .. } => {
                     dropped.extend(facts_in_block(&self, block));
                 }
-                CMemoryDerivation::LoopHavoc { .. }
+                CMemoryDerivation::BranchJoin { .. }
+                | CMemoryDerivation::LoopHavoc { .. }
                 | CMemoryDerivation::BlockDeclared { .. }
                 | CMemoryDerivation::HeapAllocated { .. }
                 | CMemoryDerivation::HeapAllocationPending { .. }
@@ -3431,6 +3432,7 @@ impl ResourceContext {
                 entries.with_value(*occurrence)
             });
         let ambiguous_event = match derivation {
+            CMemoryDerivation::BranchJoin { .. } => true,
             CMemoryDerivation::Store { pointer, .. } => memory_block_may_alias(&pointer.block),
             CMemoryDerivation::CellsSeeded { run, .. } => memory_block_may_alias(&run.base().block),
             CMemoryDerivation::CallHavoc { mutable_ranges, .. }
@@ -3555,7 +3557,8 @@ impl ResourceContext {
                     }
                 }
             }
-            CMemoryDerivation::LoopHavoc {
+            CMemoryDerivation::BranchJoin { .. }
+            | CMemoryDerivation::LoopHavoc {
                 mutable_ranges: None,
                 ..
             } => {

@@ -4961,6 +4961,12 @@ pub struct CForgottenKnowledge {
     /// the projections used for load naming, so a state that has forgotten
     /// something can never re-intern as the state it forgot it from.
     pub(super) forgotten_from: Option<ForgottenFrom>,
+    /// Inputs of the most recent branch abstraction. Their exact arena
+    /// identities prevent first-wins provenance from mixing different joins;
+    /// their content hashes keep read names reproducible across sessions.
+    /// The persistent set caches its hash and does not retain recursive
+    /// snapshot contents. Read projections must retain this identity.
+    pub(super) join_inputs: SnapshotSet<ForgottenFrom>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -5113,6 +5119,7 @@ impl CMemory {
                     .eq_relative_to(&other.union_cells, &base.union_cells))
             && (std::sync::Arc::ptr_eq(&self.forgotten, &other.forgotten)
                 || (self.forgotten.forgotten_from == other.forgotten.forgotten_from
+                    && self.forgotten.join_inputs == other.forgotten.join_inputs
                     && self.forgotten.ended_local_blocks.eq_relative_to(
                         &other.forgotten.ended_local_blocks,
                         &base.forgotten.ended_local_blocks,
@@ -5209,6 +5216,9 @@ impl CMemory {
         if self.forgotten.forgotten_from != other.forgotten.forgotten_from {
             parts.push("which earlier memory each forgot values from");
         }
+        if self.forgotten.join_inputs != other.forgotten.join_inputs {
+            parts.push("incoming branch memories");
+        }
         if self.heap != other.heap {
             parts.push("heap records");
         }
@@ -5246,6 +5256,7 @@ impl std::hash::Hash for CMemory {
         self.forgotten.ended_local_blocks.hash(state);
         self.heap.hash(state);
         self.forgotten.forgotten_from.hash(state);
+        self.forgotten.join_inputs.hash(state);
     }
 }
 
@@ -5266,6 +5277,7 @@ impl Ord for CMemory {
                     .forgotten_from
                     .cmp(&other.forgotten.forgotten_from)
             })
+            .then_with(|| self.forgotten.join_inputs.cmp(&other.forgotten.join_inputs))
     }
 }
 
@@ -5789,6 +5801,14 @@ pub enum CMemoryDerivation {
         base: SharedCMemory,
         block: PointerBlock,
     },
+    /// A memory abstraction of all incoming branch states. A read crosses
+    /// only with typed evidence that every incoming memory agrees with `base`
+    /// on the complete access. The constructor retains all inputs in the
+    /// snapshot identity; this edge carries no branch-local assumptions.
+    BranchJoin {
+        base: SharedCMemory,
+        incoming: Vec<SharedCMemory>,
+    },
     /// `base` after a call that may write only within `mutable_ranges`.
     ///
     /// Preservation of a load outside those ranges must be justified in the
@@ -5854,6 +5874,7 @@ impl CMemoryDerivation {
             Self::LocalLifetimeEnded { .. } => "LocalLifetimeEnded",
             Self::LoopHavoc { .. } => "LoopHavoc",
             Self::CallHavoc { .. } => "CallHavoc",
+            Self::BranchJoin { .. } => "BranchJoin",
         }
     }
 
@@ -5873,6 +5894,7 @@ impl CMemoryDerivation {
             | Self::LocalLifetimeEnded { base, .. }
             | Self::LoopHavoc { base, .. }
             | Self::CallHavoc { base, .. }
+            | Self::BranchJoin { base, .. }
             | Self::CellsSeeded { base, .. } => base,
         }
     }

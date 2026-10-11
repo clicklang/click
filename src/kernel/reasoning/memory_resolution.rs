@@ -2167,7 +2167,9 @@ pub(in crate::kernel) fn memories_proven_equal_for_memory_resolution(
     // The cell comparison below reads an entry neither side holds as
     // agreement, which holds only between maps over one underlying state
     // (see `snapshot_objects_agree`).
-    if left.forgotten.forgotten_from != right.forgotten.forgotten_from {
+    if left.forgotten.forgotten_from != right.forgotten.forgotten_from
+        || left.forgotten.join_inputs != right.forgotten.join_inputs
+    {
         return false;
     }
     left.cells
@@ -2536,6 +2538,7 @@ fn snapshot_objects_agree(left: &CMemory, right: &CMemory, pointer: &Pointer) ->
     // same reason; two snapshots with different marks are related by the
     // recorded history or not at all.
     left.forgotten.forgotten_from == right.forgotten.forgotten_from
+        && left.forgotten.join_inputs == right.forgotten.join_inputs
         && left
             .blocks
             .iter()
@@ -2757,6 +2760,7 @@ pub(in crate::kernel) fn memories_match_for_pointer_load(
     // the same order on both sides.
     let candidates = AliasCandidates::of_block(&pointer.block);
     left.forgotten.forgotten_from == right.forgotten.forgotten_from
+        && left.forgotten.join_inputs == right.forgotten.join_inputs
         && observable_blocks_match_for_load(left, right, pointer, &candidates)
         && retirements_agree_for_load(left, right, pointer)
         && observable_heap_metadata_matches_for_load(left, right, pointer, &candidates)
@@ -3450,6 +3454,8 @@ fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointe
         // names a changed load `old(...)`.
         std::sync::Arc::make_mut(&mut canonical.forgotten).forgotten_from =
             memory.forgotten.forgotten_from;
+        std::sync::Arc::make_mut(&mut canonical.forgotten).join_inputs =
+            memory.forgotten.join_inputs.clone();
     }
     // Only the cells below decide what a load reads. Declaring a block writes
     // nothing, so the block list stays the load's own block plus the havoc
