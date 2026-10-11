@@ -341,8 +341,9 @@ changes, and the Integer observation of its returned word is exactly
 [packing.click](packing.click) checks the narrow-field observations and the
 original `(B << 16) | A` order. Both 16-bit bounds are retained in the kernel
 packing law. Its conditional bridge connects fields satisfying the common A/B
-specification to the common packed checksum. The one-byte public entry point
-is checked below; general-length implementation correctness remains pending.
+specification to the common packed checksum. The zero-, one-, and four-byte
+public entry points are checked below; general-length implementation correctness
+remains pending.
 
 The fixture harness combines these contract fragments with the shared
 mathematical specification and the existing locked crate import. The positive
@@ -354,27 +355,38 @@ cargo nextest run --test rust_import --run-ignored all \
   -E 'test(charon_adler2_checksum)'
 ```
 
-## Original one-byte public entry point
+## Original public entry-point boundaries
 
-[public-one-byte.click](public-one-byte.click) composes the unchanged
-`Default::default`, `Adler32::new`, `Adler32::write_slice`, and `Adler32::checksum`
-bodies at `adler32_slice`. For one arbitrary input byte, the returned word's
-Integer observation equals `adler_spec_checksum` on the entry byte snapshot,
-with initial A = 1 and B = 0. The shared input byte is preserved. Constructor
-fields, the mutable computation call, the shared getter, and local storage
-cleanup all use the original locked Charon selection.
+[public-constructors.click](public-constructors.click) checks the unchanged
+`Default::default` and `Adler32::new` bodies in a shared fragment for the public API fixtures.
+[public-empty.click](public-empty.click),
+[public-one-byte.click](public-one-byte.click), and
+[public-four-byte.click](public-four-byte.click) compose those constructors,
+`Adler32::write_slice`, the original computation, and `Adler32::checksum` at
+`adler32_slice`. For zero, one, or four arbitrary input bytes, the returned
+word's Integer observation equals `adler_spec_checksum` on the entry byte
+snapshot, with initial A = 1 and B = 0. Every input byte is preserved.
+The empty public call also verifies without an input-byte view; it dereferences
+no input bytes. The four-byte call exercises the optimized vector path.
 
-The harness assembles this fragment with the existing one-byte computation,
-helper bodies, packing lemmas, and common specification; no callee interface
-is assumed in the complete proof. The ordinary gate checks the four newly
-composed bodies. Nightly checks verify the complete assembly, reject wrong
-results, seeds, length, missing input views, and false byte preservation, and
-recheck verify/profile/audit plus expansion of all four contracts:
+The harness assembles these fragments with the matching existing computation,
+helper bodies, packing lemmas, and common specification. Complete verification
+checks all original callee bodies. The ordinary gate checks the new API bodies;
+nightly checks cover complete assembly, wrong results, seeds and extents,
+insufficient byte views and false byte preservation, plus focused audit,
+contract expansion and re-verification. Full profiling checks the zero- and
+four-byte assemblies before expansion. The Rust source and locked Charon
+artifact remain unchanged.
 
 ```sh
 cargo nextest run --test rust_import --run-ignored all \
-  -E 'test(charon_adler2_public_checksum)'
+  -E 'test(charon_adler2_public_)'
 ```
+
+The two- and three-byte computation contracts still express native arithmetic
+results. Relate those results to the common field specification before extending
+public API composition to those serial-tail boundaries. General-length
+implementation correctness remains pending.
 
 ## Reproduce
 
@@ -423,8 +435,9 @@ Connect the optimized lane recurrences to the shared
 mathematical checksum specification in the [checksum assessment](../../rust-checksum-assessment.md).
 The constructor-state contracts for zero through four bytes provide exact
 result and byte-order checks. The shared getter proves exact packing, and the
-one-byte public entry point composes it with the constructor and computation.
-Extend that composition to the other checked boundaries and the general loop.
+zero-, one-, and four-byte public entry points compose it with the constructor
+and computation. Bridge the two- and three-byte native results to the common
+specification, then extend that composition to those tails and the general loop.
 The general contract supplies induction and bounds rather than a checksum
 postcondition. All helper bodies remain checked
 alongside the computation. Then prove incremental processing, the unchanged
