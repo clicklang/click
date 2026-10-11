@@ -4539,6 +4539,14 @@ pub enum CRuntimeError {
     UnsupportedOpaqueFunctionContract(String),
     AbstractFunctionPointerCall(String),
     FunctionContract(String),
+    /// Exact operands retained at a rejected contract boundary. Diagnostic
+    /// only: these values never establish a fact or grant access.
+    ContractResourceDiagnostic {
+        reason: String,
+        held: Option<Box<CResourceFact>>,
+        required: Box<CResourceFact>,
+        memory: Option<Box<CMemory>>,
+    },
     /// Lock or destroy encountered no successful modeled initialization for
     /// this mutex on the current path.
     UninitializedMutex {

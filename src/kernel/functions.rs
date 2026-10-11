@@ -28935,19 +28935,33 @@ fn resource_clause_position(resources: &[CResourceSpec], index: usize) -> (usize
         .unwrap_or((index, resources.len()))
 }
 
+fn annotate_resource_clause_error(error: CRuntimeError, note: String) -> CRuntimeError {
+    match error {
+        CRuntimeError::FunctionContract(message) => {
+            CRuntimeError::FunctionContract(format!("{message} ({note})"))
+        }
+        CRuntimeError::ContractResourceDiagnostic {
+            reason,
+            held,
+            required,
+            memory,
+        } => CRuntimeError::ContractResourceDiagnostic {
+            reason: format!("{reason} ({note})"),
+            held,
+            required,
+            memory,
+        },
+        error => error,
+    }
+}
+
 fn resource_clause_runtime_error(
     error: CRuntimeError,
     index: usize,
     resources: &[CResourceSpec],
 ) -> CRuntimeError {
-    let CRuntimeError::FunctionContract(message) = error else {
-        return error;
-    };
     let (index, total) = resource_clause_position(resources, index);
-    CRuntimeError::FunctionContract(format!(
-        "{message} ({})",
-        resource_clause_position_note(index, total)
-    ))
+    annotate_resource_clause_error(error, resource_clause_position_note(index, total))
 }
 
 /// Whether a clause failed for want of a value it had to read, which is the
@@ -28955,6 +28969,9 @@ fn resource_clause_runtime_error(
 /// a section that stalls on these as a pair; anything else is one clause's own
 /// problem.
 fn resource_clause_failure_awaits_supply(error: &CRuntimeError) -> bool {
+    if let CRuntimeError::ContractResourceDiagnostic { memory, .. } = error {
+        return memory.is_some();
+    }
     let CRuntimeError::FunctionContract(message) = error else {
         return false;
     };
@@ -28975,15 +28992,9 @@ fn resource_clause_cycle_runtime_error(
     other: usize,
     resources: &[CResourceSpec],
 ) -> CRuntimeError {
-    let CRuntimeError::FunctionContract(message) = error else {
-        return error;
-    };
     let (index, _) = resource_clause_position(resources, index);
     let (other, _) = resource_clause_position(resources, other);
-    CRuntimeError::FunctionContract(format!(
-        "{message} ({})",
-        resource_clause_stall_note(index, other)
-    ))
+    annotate_resource_clause_error(error, resource_clause_stall_note(index, other))
 }
 
 fn resource_context_runtime_error(error: ResourceContextValidityError) -> CRuntimeError {
@@ -29559,20 +29570,46 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 Ok(references) => references,
                 Err(error) => return Ok(Err(error)),
             };
-            if instance.resource_arguments() != references.as_slice()
-                || quantity.as_const() != Some(1)
-                || instance.name() != name
-                || instance.schema() != schema
-                || instance.arguments().len() != arguments.len()
-                || !instance
+            let mismatch = if instance.resource_arguments() != references.as_slice() {
+                Some("resource reference arguments differ".to_owned())
+            } else if quantity.as_const() != Some(1) {
+                Some("the required quantity is not one".to_owned())
+            } else if instance.name() != name {
+                Some("resource families differ".to_owned())
+            } else if instance.schema() != schema {
+                Some("resource field schemas differ".to_owned())
+            } else if instance.arguments().len() != arguments.len() {
+                Some("resource argument counts differ".to_owned())
+            } else {
+                instance
                     .arguments()
                     .iter()
                     .zip(arguments.iter())
-                    .all(|(a, b)| crate::kernel::resource_arguments_proven_equal(a, b, assumptions))
-            {
-                return Ok(Err(CRuntimeError::FunctionContract(
-                    "named resource instance does not match its contract".into(),
-                )));
+                    .enumerate()
+                    .find(|(_, (a, b))| {
+                        !crate::kernel::resource_arguments_proven_equal(a, b, assumptions)
+                    })
+                    .map(|(index, _)| {
+                        format!(
+                            "equality of resource argument {} was not established",
+                            index + 1
+                        )
+                    })
+            };
+            if let Some(reason) = mismatch {
+                return Ok(Err(CRuntimeError::ContractResourceDiagnostic {
+                    reason: format!(
+                        "named resource instance does not match its contract: {reason}"
+                    ),
+                    held: Some(Box::new(CResourceFact::own(CResource::Instance(
+                        instance.clone(),
+                    )))),
+                    required: Box::new(CResourceFact::Own(
+                        CResource::Composite { name, arguments },
+                        quantity,
+                    )),
+                    memory: None,
+                }));
             }
             Ok(Ok(CResourceFact::own(CResource::Instance(
                 instance.clone(),
@@ -30172,15 +30209,29 @@ fn evaluate_function_declared_resource_spec(
                 Bitvector32Term::Constant(CType::Int32.byte_width()),
             ))
         } else {
-            match evaluate_loop_effect_segment_value(
+            let mut diagnostic = None;
+            match super::loops::evaluate_resource_argument_value(
                 argument_state,
                 argument,
                 assumptions,
-                &format!("resource `{name}` argument {index}"),
+                &format!("resource `{name}` argument {}", index + 1),
                 budget,
+                &mut diagnostic,
             )? {
                 Ok(value) => value,
                 Err(error) => {
+                    if let Some(mut diagnostic) = diagnostic {
+                        if let (
+                            Some(spelling),
+                            CRuntimeError::ContractResourceDiagnostic { reason, .. },
+                        ) = (
+                            source_arguments.and_then(|items| items.get(index)),
+                            &mut diagnostic,
+                        ) {
+                            *reason = format!("{reason}; expression `{spelling}`");
+                        }
+                        return Ok(Err(diagnostic));
+                    }
                     if let Some(spelling) = source_arguments.and_then(|items| items.get(index)) {
                         let action = match access {
                             CResourceAccessMode::Own => "owns",

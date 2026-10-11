@@ -803,6 +803,7 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &CRuntimeEr
         CRuntimeError::PointerConversion(message) | CRuntimeError::FunctionContract(message) => {
             message.clone()
         }
+        CRuntimeError::ContractResourceDiagnostic { reason, .. } => reason.clone(),
         CRuntimeError::UnboundVariable(name) => format!("unbound variable `{name}`"),
         CRuntimeError::UnknownFunction(name) => format!("unknown function `{name}`"),
         CRuntimeError::MissingVerifiedFunctionRule(name) => {
