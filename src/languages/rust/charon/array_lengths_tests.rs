@@ -99,9 +99,9 @@ fn charon_scalar_array_length_metadata_has_bounded_shape_and_proof_work() {
     let prepared = super::super::import::prepared_for_test(export).unwrap();
     let mut samples = Vec::new();
     for (name, ty, length) in [
-        ("empty_len", "uint32", 0),
-        ("signed_len", "int32", 1024),
-        ("million_len", "uint32", 1_000_000),
+        ("empty_len", "u32", 0),
+        ("signed_len", "i32", 1024),
+        ("million_len", "u32", 1_000_000),
     ] {
         let _session = crate::kernel::VerificationSession::enter();
         let function = functions
@@ -110,7 +110,7 @@ fn charon_scalar_array_length_metadata_has_bounded_shape_and_proof_work() {
             .unwrap()
             .to_kernel_function();
         let claim = format!(
-            "verifying \"bounds.rs\"; uint64 {name}(const {ty}* values) {{ ensures result == {length}u64; }} by {{ execute(); simp(); }}"
+            "verifying \"bounds.rs\"; fn {name}(values: &[{ty}; {length}]) -> usize {{ ensures result == {length}u64; }} by {{ execute(); simp(); }}"
         );
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
             C0VerificationSession::new_program_prepared(&claim, &prepared)

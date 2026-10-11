@@ -244,7 +244,7 @@ fn charon_slice_into_iter_work_does_not_depend_on_slice_extent() {
     let mut previous = None;
     for length in [8, 128, 1024] {
         let sidecar = format!(
-            "verifying \"iteration.rs\"; uint8 first_byte(const uint8* bytes, uint64 bytes_len) {{ requires bytes_len == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[0]); }} by {{ execute(); simp(); }}"
+            "verifying \"iteration.rs\"; fn first_byte(bytes: &[u8]) -> u8 {{ requires bytes.len() == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[0]); }} by {{ execute(); simp(); }}"
         );
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             C0VerificationSession::new_program_prepared(&sidecar, &prepared)

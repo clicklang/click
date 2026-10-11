@@ -201,6 +201,23 @@ pub(super) fn tokenize(
                 tokens.push(Token::String(value));
                 index = next_index;
             }
+            // `'a` with no closing quote after one character is a Rust
+            // lifetime, as in `&'a u32`; `'a'` is a character.
+            '\'' if chars
+                .get(index + 1)
+                .is_some_and(|next| is_ident_start(*next))
+                && chars.get(index + 2) != Some(&'\'') =>
+            {
+                let start = index + 1;
+                index = start + 1;
+                while chars
+                    .get(index)
+                    .is_some_and(|next| is_ident_continue(*next))
+                {
+                    index += 1;
+                }
+                tokens.push(Token::Lifetime(chars[start..index].iter().collect()));
+            }
             '\'' => {
                 let (value, next_index) = tokenize_char_literal(&chars, index)
                     .map_err(|error| error.with_context(position.to_string()))?;

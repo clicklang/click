@@ -41,27 +41,22 @@ copies under `design/charon-trial`.
 Remaining:
 
 - Refuse `->` and the C-shaped signature for a Rust source, with the
-  spelling to write. Not ready. The plain functions of the sidecars under
-  `design/charon-trial` take Rust signatures as of 2026-10-08, and their
-  methods are `impl` blocks, operator traits included
-  (`impl MulAssign<u32> for U32X4`). An item in a module is named by its
-  path, `fn quad::walk(...)` and `quad::Quad` (decided 2026-10-08), and the
-  four small crate sidecars use it. An inherent method whose `impl` block
-  is in another module than its type (`Adler32::compute`) is found in the
-  import by its type and name. Still C-shaped: the Adler sidecars,
-  whose tests cut `helpers.click` apart by its text and have to change
-  with it; the five
-  frozen originals, which are hash-pinned and stay; and about 90 sidecars
-  written inline in the tests. A claim label and a diagnostic still print
-  the importer's name (`__rust_q_I4_quad_I4_walk.contract`). Convert
-  those, then refuse.
-- Diagnostics and `click expand` print C-shaped spellings for a Rust
-  sidecar (`bytes[0..(int32)bytes_len]`). They parse back; they are not what
-  the sidecar writes. Decided 2026-10-08: do this after the
-  typed-index work, which landed on 2026-10-11 and removed most of the
-  conversions printed (`design/typed-indices.md`).
-- An array by value, a reference to a reference, generics and lifetimes in
-  a `fn` signature are refused.
+  spelling to write. Waits on `design/charon-trial/adler2`, which another
+  work stream changes daily: its sidecars are the last C-shaped ones, and a
+  new or touched one uses Rust syntax (decided 2026-10-11; the note is in
+  its README). Every other Rust sidecar is converted, the tests' inline
+  ones included, except `a_rust_sidecar_states_its_signature_in_rust_syntax`
+  in `src/surface/tests/surface_syntax.rs`, which compares the two
+  spellings and becomes the refusal's test. The five frozen originals are
+  hash-pinned and stay.
+- Claim labels, diagnostics and `click expand` print the importer's names
+  and C-shaped places for a Rust sidecar (`__rust_q_I4_quad_I4_walk.contract`,
+  `bytes_len`, `views bytes[0u64..bytes_len]`). They parse back; they are
+  not what the sidecar writes.
+
+Lifetimes and tuple fields (`self.0`) are accepted. An array or slice by
+value, a reference to a reference, a non-scalar slice element and a generic
+function are refused in the sidecar because the importer refuses them.
 
 Done when: every Rust example and trial sidecar is in Rust syntax, the
 C-shaped form is refused for a Rust source, and no diagnostic for one

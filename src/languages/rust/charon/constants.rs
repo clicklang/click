@@ -174,7 +174,7 @@ mod tests {
             Some(&sources),
         )
     }
-    const PROOF: &str = "verifying \"lib.rs\"; uint64 __rust_q_I4_demo_I5_entry_I10_CHUNK_SIZE() { ensures result == 22208u64; } by { execute(); simp(); } uint64 __rust_q_I4_demo_I5_entry() { ensures result == 22208u64; } by { execute(); simp(); }";
+    const PROOF: &str = "verifying \"lib.rs\"; fn demo::entry::CHUNK_SIZE() -> usize { ensures result == 22208u64; } by { execute(); simp(); } fn demo::entry() -> usize { ensures result == 22208u64; } by { execute(); simp(); }";
 
     #[test]
     fn charon_constants_verify_bodies_and_reject_assumed_values() {
