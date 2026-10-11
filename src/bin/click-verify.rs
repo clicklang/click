@@ -1383,6 +1383,8 @@ fn verify_file_within_limits(
                 Some(&project),
                 &click_source,
                 &inputs,
+                // Only the owner is traced, so no loop phase is resolved.
+                click::surface::ClaimLocationScope::ProofUnit,
             ) {
                 Some(claim) => claim.map(|claim| claim.owner),
                 None => Ok(requested.to_string()),

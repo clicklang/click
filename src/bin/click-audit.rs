@@ -1284,6 +1284,8 @@ fn resolve_audit_claims(sources: &[PathBuf], claims: &[String]) -> Result<Vec<Au
                 source.project.as_ref(),
                 &source.click_source,
                 &source.inputs,
+                // Audit sites carry the label of the proof that writes them.
+                click::surface::ClaimLocationScope::ProofUnit,
             )
             .expect("a parsed claim location")?;
             Ok(AuditClaim {
