@@ -613,7 +613,7 @@ fn verify_click_file_theorems_with_environment(
         &combined_external_function_blocks(file)?,
     )?);
     verify_theorem_definitions(
-        standard_library_theorem_definitions()?,
+        TheoremEnvironment::with_standard_library(&[])?,
         file.theorem_definitions(),
         &predicate_environment,
         &click_function_environment,
@@ -642,7 +642,7 @@ pub fn verify_standard_library() -> Result<Vec<VerifiedPureTheorem>, ClickError>
         &combined_external_function_blocks(&empty)?,
     )?);
     verify_theorem_definitions(
-        &[],
+        TheoremEnvironment::new(&[]),
         standard_library_theorem_definitions()?,
         &predicate_environment,
         &click_function_environment,
@@ -788,33 +788,19 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
             function_environment = function_environment.with_verified_function_rule(hypothesis);
         }
     }
-    let theorem_environment = TheoremEnvironment::new(
-        &standard_library_theorem_definitions()?
-            .iter()
-            .cloned()
-            .chain(
-                file.theorem_definitions()
-                    .iter()
-                    .map(clone_theorem_definition_iteratively),
-            )
-            .collect::<Vec<_>>(),
-    );
+    let theorem_environment =
+        TheoremEnvironment::with_standard_library(file.theorem_definitions())?;
     if theorem.executes.is_some() {
         let registry = std::sync::Arc::new(FunctionSourceRegistry::from_function_blocks(
             &external_and_user_function_blocks,
         )?);
-        let dependencies = standard_library_theorem_definitions()?
-            .iter()
-            .cloned()
-            .chain(
-                file.theorem_definitions()
-                    .iter()
-                    .take_while(|definition| definition.name() != theorem_name)
-                    .map(clone_theorem_definition_iteratively),
-            )
-            .collect::<Vec<_>>();
+        let dependencies = TheoremEnvironment::with_standard_library(
+            file.theorem_definitions()
+                .iter()
+                .take_while(|definition| definition.name() != theorem_name),
+        )?;
         return verify_theorem_definitions(
-            &dependencies,
+            dependencies,
             std::slice::from_ref(theorem),
             &predicate_environment,
             &click_function_environment,
@@ -2528,11 +2514,9 @@ fn verify_c0_sources_in_context(
             .filter(|theorem| !selected_theorem_names.contains(theorem.name()))
             .map(clone_theorem_definition_iteratively)
             .collect::<Vec<_>>();
-        let mut theorem_dependencies = standard_library_theorems.to_vec();
-        theorem_dependencies.extend(
-            unselected_theorem_definitions
-                .iter()
-                .map(clone_theorem_definition_iteratively),
+        let theorem_dependencies = TheoremEnvironment::with_standard_library_prefix(
+            standard_library_theorems,
+            &unselected_theorem_definitions,
         );
         let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
             .with_contracts(file.contract_definitions());
@@ -2645,7 +2629,7 @@ fn verify_c0_sources_in_context(
         }
         drop(_timing);
         let verified_theorems = verify_theorem_definitions(
-            &theorem_dependencies,
+            theorem_dependencies,
             &theorem_definitions,
             &predicate_environment,
             &click_function_environment,
@@ -2675,16 +2659,9 @@ fn verify_c0_sources_in_context(
             &mut theorem_certification_facts,
             &mut theorem_certification_authorities,
         );
-        let theorem_environment = TheoremEnvironment::new(
-            &standard_library_theorems
-                .iter()
-                .map(Clone::clone)
-                .chain(
-                    file.theorem_definitions()
-                        .iter()
-                        .map(clone_theorem_definition_iteratively),
-                )
-                .collect::<Vec<_>>(),
+        let theorem_environment = TheoremEnvironment::with_standard_library_prefix(
+            standard_library_theorems,
+            file.theorem_definitions(),
         );
         check_verification_deadline()?;
         (
@@ -3189,7 +3166,10 @@ fn verify_c0_sources_in_context(
                 && theorem_has_certification_binders(&standard_library_theorems[index])
             {
                 let verified_dependency = verify_theorem_definitions(
-                    &standard_library_theorems[..index],
+                    TheoremEnvironment::with_standard_library_prefix(
+                        &standard_library_theorems[..index],
+                        &[],
+                    ),
                     &standard_library_theorems[index..=index],
                     &predicate_environment,
                     &click_function_environment,

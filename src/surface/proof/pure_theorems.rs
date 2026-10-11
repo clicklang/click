@@ -39,11 +39,11 @@ pub(in crate::surface) fn theorem_requirement_propositions(
         .collect()
 }
 
-/// Proves `theorem_definitions` in order. Each proof may apply `dependencies`
-/// and the definitions before it. Dependencies are declarations proved
-/// elsewhere, such as the standard library, and are not re-proved here.
+/// Proves `theorem_definitions` in order. Each proof may apply the theorems of
+/// `dependencies` and the definitions before it. Dependencies are declarations
+/// proved elsewhere, such as the standard library, and are not re-proved here.
 pub(in crate::surface) fn verify_theorem_definitions(
-    dependencies: &[TheoremDefinition],
+    dependencies: TheoremEnvironment,
     theorem_definitions: &[TheoremDefinition],
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
@@ -52,7 +52,7 @@ pub(in crate::surface) fn verify_theorem_definitions(
     function_source_registry: Arc<FunctionSourceRegistry>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     let mut verified = Vec::new();
-    let mut theorem_environment = TheoremEnvironment::new(dependencies);
+    let mut theorem_environment = dependencies;
     for theorem in theorem_definitions {
         crate::surface::enter_ambient_declaration(theorem.name());
         #[cfg(test)]

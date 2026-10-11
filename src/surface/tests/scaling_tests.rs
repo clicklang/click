@@ -889,6 +889,28 @@ fn targeted_simple_verification_does_not_verify_unrelated_theorems() {
     );
 }
 
+/// A verification shares the standard library's theorem declarations; it
+/// copies only its own file's. Each copied the whole library several times,
+/// a fixed cost that dominated small verifications.
+#[test]
+fn verification_copies_only_its_own_theorem_declarations() {
+    let c_source = "int32 scaling_target(int32 x) { return x; }\n";
+    let library = standard_library_theorem_definitions()
+        .expect("the standard library should load")
+        .len();
+    for size in [4, 8, 16, 32] {
+        let click_source = target_with_unrelated_theorems(size);
+        let before = theorem_definition_copies();
+        verify_c0_sources(&click_source, &[("target.c", c_source)])
+            .expect("the target and its theorems should verify");
+        let copies = theorem_definition_copies() - before;
+        assert!(
+            copies <= 4 * size,
+            "{size} file theorems made {copies} theorem copies; the library has {library}"
+        );
+    }
+}
+
 #[test]
 fn targeted_certification_keeps_an_explicit_theorem_dependency() {
     let c_source = "int32 scaling_target(int32 x) { return x; }\n";

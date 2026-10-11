@@ -425,6 +425,12 @@ The complexity contract implies several design constraints:
   indexed base facts.
 - Each function should receive the transitive dependencies it references, not
   a copied global environment or every theorem in the project.
+- The parsed standard library is shared by every verification in a process.
+  Validation borrows its theorem declarations and a theorem environment looks
+  them up through a process-wide name index, so a verification copies only
+  its own file's theorems; `verification_copies_only_its_own_theorem_declarations`
+  (`src/surface/tests/scaling_tests.rs`) counts the copies at 4, 8, 16, and
+  32 file theorems.
 
 These constraints are semantic-neutral. They must preserve independent kernel
 checking and must never turn an unproved, failed, or deadline-limited result

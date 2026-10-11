@@ -870,7 +870,7 @@ impl ResourceWitness {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct TheoremDefinition {
     name: String,
     type_parameters: Vec<String>,
@@ -1971,9 +1971,27 @@ pub(crate) fn clone_click_proposition_iteratively(
     values.pop().expect("the root proposition is cloned")
 }
 
+impl Clone for TheoremDefinition {
+    fn clone(&self) -> Self {
+        clone_theorem_definition_iteratively(self)
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static THEOREM_DEFINITION_COPIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn theorem_definition_copies() -> usize {
+    THEOREM_DEFINITION_COPIES.with(std::cell::Cell::get)
+}
+
 pub(crate) fn clone_theorem_definition_iteratively(
     theorem: &TheoremDefinition,
 ) -> TheoremDefinition {
+    #[cfg(test)]
+    THEOREM_DEFINITION_COPIES.with(|copies| copies.set(copies.get() + 1));
     TheoremDefinition {
         name: theorem.name.clone(),
         type_parameters: theorem.type_parameters.clone(),
@@ -6306,16 +6324,44 @@ impl ResourceEnvironment {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TheoremEnvironment {
+    /// A declaration-order prefix of the standard library's theorems, shared
+    /// with every other environment in the process rather than copied: a
+    /// verification pays for the library theorems it looks up, not for the
+    /// whole library.
+    standard_library: &'static [TheoremDefinition],
+    /// Theorems declared after `standard_library`; a later declaration of a
+    /// name shadows an earlier one.
     definitions: BTreeMap<String, TheoremDefinition>,
     verified_generic_instances: RefCell<BTreeSet<String>>,
     active_generic_instances: RefCell<BTreeSet<String>>,
 }
 
 impl TheoremEnvironment {
-    fn new(definitions: &[TheoremDefinition]) -> Self {
+    fn new<'a>(definitions: impl IntoIterator<Item = &'a TheoremDefinition>) -> Self {
+        Self::with_standard_library_prefix(&[], definitions)
+    }
+
+    /// The whole standard library followed by `definitions`.
+    fn with_standard_library<'a>(
+        definitions: impl IntoIterator<Item = &'a TheoremDefinition>,
+    ) -> Result<Self, ClickError> {
+        Ok(Self::with_standard_library_prefix(
+            standard_library_theorem_definitions()?,
+            definitions,
+        ))
+    }
+
+    /// `standard_library` must be a prefix of
+    /// [`standard_library_theorem_definitions`]: lookups find a library
+    /// theorem through that slice's process-wide name index.
+    fn with_standard_library_prefix<'a>(
+        standard_library: &'static [TheoremDefinition],
+        definitions: impl IntoIterator<Item = &'a TheoremDefinition>,
+    ) -> Self {
         Self {
+            standard_library,
             definitions: definitions
-                .iter()
+                .into_iter()
                 .map(|definition| {
                     (
                         definition.name().to_string(),
@@ -6329,7 +6375,9 @@ impl TheoremEnvironment {
     }
 
     fn get(&self, name: &str) -> Option<&TheoremDefinition> {
-        self.definitions.get(name)
+        self.definitions.get(name).or_else(|| {
+            standard_library_theorem_index(name).and_then(|index| self.standard_library.get(index))
+        })
     }
 
     fn insert(&mut self, definition: TheoremDefinition) {

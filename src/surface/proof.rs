@@ -655,7 +655,7 @@ mod certificate_tests {
             ClickFunctionEnvironment::new(file.click_function_definitions());
 
         let verified = verify_theorem_definitions(
-            &[],
+            TheoremEnvironment::new(&[]),
             file.theorem_definitions(),
             &predicate_environment,
             &click_function_environment,

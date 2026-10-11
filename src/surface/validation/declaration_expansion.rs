@@ -2835,16 +2835,37 @@ pub(in crate::surface) fn combined_resource_definitions(
     Ok(definitions)
 }
 
+/// The standard library's definitions followed by a file's, borrowed rather
+/// than copied: the library is shared by every verification in the process.
+pub(in crate::surface) struct CombinedDefinitions<'a, T: 'static> {
+    standard_library: &'static [T],
+    file: &'a [T],
+}
+
+impl<'a, T> CombinedDefinitions<'a, T> {
+    pub(in crate::surface) fn iter(
+        &self,
+    ) -> std::iter::Chain<std::slice::Iter<'a, T>, std::slice::Iter<'a, T>> {
+        self.standard_library.iter().chain(self.file.iter())
+    }
+}
+
+impl<'a, T> IntoIterator for &CombinedDefinitions<'a, T> {
+    type Item = &'a T;
+    type IntoIter = std::iter::Chain<std::slice::Iter<'a, T>, std::slice::Iter<'a, T>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 pub(in crate::surface) fn combined_theorem_definitions(
     file: &ClickFile,
-) -> Result<Vec<TheoremDefinition>, ClickError> {
-    let mut definitions = standard_library()?.theorem_definitions().to_vec();
-    definitions.extend(
-        file.theorem_definitions()
-            .iter()
-            .map(clone_theorem_definition_iteratively),
-    );
-    Ok(definitions)
+) -> Result<CombinedDefinitions<'_, TheoremDefinition>, ClickError> {
+    Ok(CombinedDefinitions {
+        standard_library: standard_library()?.theorem_definitions(),
+        file: file.theorem_definitions(),
+    })
 }
 
 /// The standard library's theorem definitions in declaration order.
