@@ -2,7 +2,7 @@
 
 `n >= 0` and `n != 0` say `0 < n`. The certificate had no step that combined
 a bound with a disequality, so the strict bound was out of reach even though
-both facts were cited. `lt_from_neq` is that step: a non-strict bound and a
+both facts were cited. `less_than_from_not_equal` is that step: a non-strict bound and a
 disequality on the same two sides (in either spelling) give the strict bound,
 because integers have nothing between `0` and `1`.
 

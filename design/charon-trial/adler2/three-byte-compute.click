@@ -228,7 +228,7 @@ impl adler2::Adler32 {
      premise 0: to_integer(a) == to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) => to_integer(a) == to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144));
      premise 1: to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) == to_integer(at(tail_a_1, a)) + to_integer(at(tail_a_1, __rust_mir_144)) => to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) == to_integer(at(tail_a_1, a)) + to_integer(at(tail_a_1, __rust_mir_144));
      add 0, 1 => to_integer(a) + to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) == to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) + (to_integer(at(tail_a_1, a)) + to_integer(at(tail_a_1, __rust_mir_144)));
-     eq_to_le 2 => to_integer(a) + to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) <= to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) + (to_integer(at(tail_a_1, a)) + to_integer(at(tail_a_1, __rust_mir_144)));
+     less_equal_from_equal 2 => to_integer(a) + to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) <= to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) + (to_integer(at(tail_a_1, a)) + to_integer(at(tail_a_1, __rust_mir_144)));
      premise 2: to_integer(at(tail_a_1, a)) <= 1 => to_integer(at(tail_a_1, a)) <= 1;
      add 4, 3 => to_integer(at(tail_a_1, a)) + (to_integer(a) + to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144))) <= 1 + (to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) + (to_integer(at(tail_a_1, a)) + to_integer(at(tail_a_1, __rust_mir_144))));
      premise 3: to_integer(at(tail_a_1, __rust_mir_144)) <= 255 => to_integer(at(tail_a_1, __rust_mir_144)) <= 255;
@@ -257,7 +257,7 @@ impl adler2::Adler32 {
      premise 0: to_integer(__rust_mir_148) == to_integer(at(tail_b_1, b) + at(tail_b_1, a)) => to_integer(__rust_mir_148) == to_integer(at(tail_b_1, b) + at(tail_b_1, a));
      premise 1: to_integer(at(tail_b_1, b) + at(tail_b_1, a)) == to_integer(at(tail_b_1, b)) + to_integer(at(tail_b_1, a)) => to_integer(at(tail_b_1, b) + at(tail_b_1, a)) == to_integer(at(tail_b_1, b)) + to_integer(at(tail_b_1, a));
      add 0, 1 => to_integer(__rust_mir_148) + to_integer(at(tail_b_1, b) + at(tail_b_1, a)) == to_integer(at(tail_b_1, b) + at(tail_b_1, a)) + (to_integer(at(tail_b_1, b)) + to_integer(at(tail_b_1, a)));
-     eq_to_le 2 => to_integer(__rust_mir_148) + to_integer(at(tail_b_1, b) + at(tail_b_1, a)) <= to_integer(at(tail_b_1, b) + at(tail_b_1, a)) + (to_integer(at(tail_b_1, b)) + to_integer(at(tail_b_1, a)));
+     less_equal_from_equal 2 => to_integer(__rust_mir_148) + to_integer(at(tail_b_1, b) + at(tail_b_1, a)) <= to_integer(at(tail_b_1, b) + at(tail_b_1, a)) + (to_integer(at(tail_b_1, b)) + to_integer(at(tail_b_1, a)));
      premise 2: to_integer(at(tail_b_1, b)) <= 393126 => to_integer(at(tail_b_1, b)) <= 393126;
      add 4, 3 => to_integer(at(tail_b_1, b)) + (to_integer(__rust_mir_148) + to_integer(at(tail_b_1, b) + at(tail_b_1, a))) <= 393126 + (to_integer(at(tail_b_1, b) + at(tail_b_1, a)) + (to_integer(at(tail_b_1, b)) + to_integer(at(tail_b_1, a))));
      premise 3: to_integer(at(tail_b_1, a)) <= 256 => to_integer(at(tail_b_1, a)) <= 256;
@@ -300,7 +300,7 @@ impl adler2::Adler32 {
      premise 0: to_integer(a) == to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) => to_integer(a) == to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144));
      premise 1: to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) == to_integer(at(tail_a_2, a)) + to_integer(at(tail_a_2, __rust_mir_144)) => to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) == to_integer(at(tail_a_2, a)) + to_integer(at(tail_a_2, __rust_mir_144));
      add 0, 1 => to_integer(a) + to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) == to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) + (to_integer(at(tail_a_2, a)) + to_integer(at(tail_a_2, __rust_mir_144)));
-     eq_to_le 2 => to_integer(a) + to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) <= to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) + (to_integer(at(tail_a_2, a)) + to_integer(at(tail_a_2, __rust_mir_144)));
+     less_equal_from_equal 2 => to_integer(a) + to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) <= to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) + (to_integer(at(tail_a_2, a)) + to_integer(at(tail_a_2, __rust_mir_144)));
      premise 2: to_integer(at(tail_a_2, a)) <= 256 => to_integer(at(tail_a_2, a)) <= 256;
      add 4, 3 => to_integer(at(tail_a_2, a)) + (to_integer(a) + to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144))) <= 256 + (to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) + (to_integer(at(tail_a_2, a)) + to_integer(at(tail_a_2, __rust_mir_144))));
      premise 3: to_integer(at(tail_a_2, __rust_mir_144)) <= 255 => to_integer(at(tail_a_2, __rust_mir_144)) <= 255;
@@ -329,7 +329,7 @@ impl adler2::Adler32 {
      premise 0: to_integer(__rust_mir_148) == to_integer(at(tail_b_2, b) + at(tail_b_2, a)) => to_integer(__rust_mir_148) == to_integer(at(tail_b_2, b) + at(tail_b_2, a));
      premise 1: to_integer(at(tail_b_2, b) + at(tail_b_2, a)) == to_integer(at(tail_b_2, b)) + to_integer(at(tail_b_2, a)) => to_integer(at(tail_b_2, b) + at(tail_b_2, a)) == to_integer(at(tail_b_2, b)) + to_integer(at(tail_b_2, a));
      add 0, 1 => to_integer(__rust_mir_148) + to_integer(at(tail_b_2, b) + at(tail_b_2, a)) == to_integer(at(tail_b_2, b) + at(tail_b_2, a)) + (to_integer(at(tail_b_2, b)) + to_integer(at(tail_b_2, a)));
-     eq_to_le 2 => to_integer(__rust_mir_148) + to_integer(at(tail_b_2, b) + at(tail_b_2, a)) <= to_integer(at(tail_b_2, b) + at(tail_b_2, a)) + (to_integer(at(tail_b_2, b)) + to_integer(at(tail_b_2, a)));
+     less_equal_from_equal 2 => to_integer(__rust_mir_148) + to_integer(at(tail_b_2, b) + at(tail_b_2, a)) <= to_integer(at(tail_b_2, b) + at(tail_b_2, a)) + (to_integer(at(tail_b_2, b)) + to_integer(at(tail_b_2, a)));
      premise 2: to_integer(at(tail_b_2, b)) <= 393382 => to_integer(at(tail_b_2, b)) <= 393382;
      add 4, 3 => to_integer(at(tail_b_2, b)) + (to_integer(__rust_mir_148) + to_integer(at(tail_b_2, b) + at(tail_b_2, a))) <= 393382 + (to_integer(at(tail_b_2, b) + at(tail_b_2, a)) + (to_integer(at(tail_b_2, b)) + to_integer(at(tail_b_2, a))));
      premise 3: to_integer(at(tail_b_2, a)) <= 511 => to_integer(at(tail_b_2, a)) <= 511;
@@ -372,7 +372,7 @@ impl adler2::Adler32 {
      premise 0: to_integer(a) == to_integer(at(tail_a_3, a) + at(tail_a_3, __rust_mir_144)) => to_integer(a) == to_integer(at(tail_a_3, a) + at(tail_a_3, __rust_mir_144));
      premise 1: to_integer(at(tail_a_3, a) + at(tail_a_3, __rust_mir_144)) == to_integer(at(tail_a_3, a)) + to_integer(at(tail_a_3, __rust_mir_144)) => to_integer(at(tail_a_3, a) + at(tail_a_3, __rust_mir_144)) == to_integer(at(tail_a_3, a)) + to_integer(at(tail_a_3, __rust_mir_144));
      add 0, 1 => to_integer(a) + to_integer(at(tail_a_3, a) + at(tail_a_3, __rust_mir_144)) == to_integer(at(tail_a_3, a) + at(tail_a_3, __rust_mir_144)) + (to_integer(at(tail_a_3, a)) + to_integer(at(tail_a_3, __rust_mir_144)));
-     eq_to_le 2 => to_integer(a) + to_integer(at(tail_a_3, a) + at(tail_a_3, __rust_mir_144)) <= to_integer(at(tail_a_3, a) + at(tail_a_3, __rust_mir_144)) + (to_integer(at(tail_a_3, a)) + to_integer(at(tail_a_3, __rust_mir_144)));
+     less_equal_from_equal 2 => to_integer(a) + to_integer(at(tail_a_3, a) + at(tail_a_3, __rust_mir_144)) <= to_integer(at(tail_a_3, a) + at(tail_a_3, __rust_mir_144)) + (to_integer(at(tail_a_3, a)) + to_integer(at(tail_a_3, __rust_mir_144)));
      premise 2: to_integer(at(tail_a_3, a)) <= 511 => to_integer(at(tail_a_3, a)) <= 511;
      add 4, 3 => to_integer(at(tail_a_3, a)) + (to_integer(a) + to_integer(at(tail_a_3, a) + at(tail_a_3, __rust_mir_144))) <= 511 + (to_integer(at(tail_a_3, a) + at(tail_a_3, __rust_mir_144)) + (to_integer(at(tail_a_3, a)) + to_integer(at(tail_a_3, __rust_mir_144))));
      premise 3: to_integer(at(tail_a_3, __rust_mir_144)) <= 255 => to_integer(at(tail_a_3, __rust_mir_144)) <= 255;
@@ -401,7 +401,7 @@ impl adler2::Adler32 {
      premise 0: to_integer(__rust_mir_148) == to_integer(at(tail_b_3, b) + at(tail_b_3, a)) => to_integer(__rust_mir_148) == to_integer(at(tail_b_3, b) + at(tail_b_3, a));
      premise 1: to_integer(at(tail_b_3, b) + at(tail_b_3, a)) == to_integer(at(tail_b_3, b)) + to_integer(at(tail_b_3, a)) => to_integer(at(tail_b_3, b) + at(tail_b_3, a)) == to_integer(at(tail_b_3, b)) + to_integer(at(tail_b_3, a));
      add 0, 1 => to_integer(__rust_mir_148) + to_integer(at(tail_b_3, b) + at(tail_b_3, a)) == to_integer(at(tail_b_3, b) + at(tail_b_3, a)) + (to_integer(at(tail_b_3, b)) + to_integer(at(tail_b_3, a)));
-     eq_to_le 2 => to_integer(__rust_mir_148) + to_integer(at(tail_b_3, b) + at(tail_b_3, a)) <= to_integer(at(tail_b_3, b) + at(tail_b_3, a)) + (to_integer(at(tail_b_3, b)) + to_integer(at(tail_b_3, a)));
+     less_equal_from_equal 2 => to_integer(__rust_mir_148) + to_integer(at(tail_b_3, b) + at(tail_b_3, a)) <= to_integer(at(tail_b_3, b) + at(tail_b_3, a)) + (to_integer(at(tail_b_3, b)) + to_integer(at(tail_b_3, a)));
      premise 2: to_integer(at(tail_b_3, b)) <= 393893 => to_integer(at(tail_b_3, b)) <= 393893;
      add 4, 3 => to_integer(at(tail_b_3, b)) + (to_integer(__rust_mir_148) + to_integer(at(tail_b_3, b) + at(tail_b_3, a))) <= 393893 + (to_integer(at(tail_b_3, b) + at(tail_b_3, a)) + (to_integer(at(tail_b_3, b)) + to_integer(at(tail_b_3, a))));
      premise 3: to_integer(at(tail_b_3, a)) <= 766 => to_integer(at(tail_b_3, a)) <= 766;

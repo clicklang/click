@@ -22,7 +22,7 @@ A proof of one step needs no braces: `by T(args);` is `by { T(args); }` for
 any tactic written as a call, as in `have 0 <= x by assumption();`. `click
 expand`, `profile` and `audit` read it as that block, and an expansion that
 needs the braces writes them. `by simp;` and `by auto;` are written without
-parentheses.
+parentheses, and a `simp` step in a block may be too: `simp;` is `simp();`.
 
 `by simp;` does not execute C. For a whole-function proof, use `by auto;` or make the
 sequence explicit:

@@ -1305,9 +1305,9 @@ fn signed_int32_arithmetic_certificate_round_trips_every_step_spelling() {
                     premise 0: n == n => n == n;
                     scale 0 by 1 => n == n;
                     add 1, 2 => n == n;
-                    eq_to_le 3 => n <= n;
-                    eq_to_le 3 reverse => n <= n;
-                    eq_from_bounds 4, 5 => n == n;
+                    less_equal_from_equal 3 => n <= n;
+                    less_equal_from_equal 3 reverse => n <= n;
+                    equal_from_bounds 4, 5 => n == n;
                     trivial => n == n;
                     interval_from_affine 0 (n) 0 2147483647;
                     interval_atom (n) 0 2147483647;
@@ -1323,7 +1323,7 @@ fn signed_int32_arithmetic_certificate_round_trips_every_step_spelling() {
                     interval_sign_bit_flip 8 -2147483648 2147483647;
                     interval_compare 8, 9 le => n <= n;
                     affine_conclusion 3 8 => n == n;
-                    lt_from_neq 4, 5 => n < n;
+                    less_than_from_not_equal 4, 5 => n < n;
                     conclusion 20;
                 }
             }
@@ -1366,7 +1366,10 @@ fn signed_int32_arithmetic_certificate_round_trips_every_step_spelling() {
     );
     assert!(printed.contains("interval_add_bounded"), "{printed}");
     assert!(printed.contains("affine_conclusion"), "{printed}");
-    assert!(printed.contains("lt_from_neq 4, 5 =>"), "{printed}");
+    assert!(
+        printed.contains("less_than_from_not_equal 4, 5 =>"),
+        "{printed}"
+    );
     let reparsed = parse(&format!(
         "theorem signed_certificate_forms(n: int32) {{ ensures n == n by {{ {printed} }} }}"
     ))
