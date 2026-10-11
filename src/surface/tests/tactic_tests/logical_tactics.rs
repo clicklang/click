@@ -315,7 +315,7 @@ fn assumption_reuses_facts_but_does_not_normalize_or_extract_implications() {
         int32 keep(int32 x, int32 y) {
             requires x == 0;
             requires x == 0 implies y == 0;
-            ensures result == result;
+            ensures result <= result;
         } by {
             step();
             have y == 0 by {

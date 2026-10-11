@@ -362,6 +362,17 @@ fn describe_context_pure_and_execution_facts(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> String {
+    let mut labels =
+        crate::surface::proof_diagnostics::render::SnapshotLabels::naming(parameters, arguments);
+    let text = describe_context_facts_labeled(pure_facts, execution_pure_facts, &mut labels);
+    format!("{text}{}", labels.trace_legend())
+}
+
+fn describe_context_facts_labeled(
+    pure_facts: &[Proposition],
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
+    labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
+) -> String {
     let total = pure_facts.len() + execution_pure_facts.len();
     if total == 0 {
         return "[]".to_string();
@@ -375,7 +386,9 @@ fn describe_context_pure_and_execution_facts(
                 .map(ExecutionPureFact::proposition),
         )
         .take(item_limit)
-        .map(|fact| describe_stated_fact(fact, parameters, arguments))
+        .map(|fact| {
+            crate::surface::proof_diagnostics::render::render_proposition_labeled(fact, labels)
+        })
         .collect::<Vec<_>>();
     compact_unspelled_facts(&mut entries);
     if total > item_limit {
@@ -396,9 +409,12 @@ pub(super) fn describe_pure_facts_for_diagnostic(
     if pure_facts.is_empty() {
         return "[]".to_string();
     }
-    describe_bounded_list(pure_facts, |fact| {
-        describe_pure_fact(fact, parameters, arguments)
-    })
+    let mut labels =
+        crate::surface::proof_diagnostics::render::SnapshotLabels::naming(parameters, arguments);
+    let text = describe_bounded_list(pure_facts, |fact| {
+        crate::surface::proof_diagnostics::render::render_proposition_labeled(fact, &mut labels)
+    });
+    format!("{text}{}", labels.trace_legend())
 }
 
 pub(super) fn describe_pure_facts(pure_facts: &[Proposition]) -> String {
@@ -406,14 +422,12 @@ pub(super) fn describe_pure_facts(pure_facts: &[Proposition]) -> String {
         return "[]".to_string();
     }
 
-    describe_bounded_list(pure_facts, |fact| describe_pure_fact(fact, &[], &[]))
+    describe_pure_facts_for_diagnostic(pure_facts, &[], &[])
 }
 
 /// Describes one fact, and for a refused concrete named-contract formation
 /// appends the explicit refinement theorem the user has to write.
 ///
-/// The prefix is the same sentence [`describe_pure_fact`] prints without an
-/// environment, so a reader (and a fixture) sees one diagnostic either way.
 /// The skeleton itself comes from the kernel, built from the two declarations
 /// the formation check read.
 pub(super) fn describe_pure_fact_with_environment(
@@ -435,7 +449,9 @@ pub(super) fn describe_pure_fact_with_environment(
     ) else {
         return description;
     };
-    format!("{description} automatically;\nprove it explicitly:\n{skeleton}")
+    format!(
+        "function `{target}` does not satisfy named contract `{contract}` automatically;\nprove it explicitly:\n{skeleton}"
+    )
 }
 
 /// The C spelling each of a named contract's parameters has in its source
@@ -574,158 +590,16 @@ pub(super) fn describe_pure_fact(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> String {
-    match fact {
-        Proposition::CResourceComposition(context) => format!(
-            "resource composition {}",
-            describe_resource_facts(context.facts(), parameters, arguments)
-        ),
-        Proposition::Not(body) => {
-            format!("not ({})", describe_pure_fact(body, parameters, arguments))
-        }
-        Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_)) => {
-            "algebraic value equality".to_string()
-        }
-        Proposition::CMemoryLoadable { base, bytes, .. } => describe_loadable_as_source_range(
-            base, bytes, parameters, arguments,
-        )
-        .unwrap_or_else(|| {
-            format!(
-                "viewable(base={}, bytes={})",
-                describe_pointer(base, parameters, arguments),
-                describe_bitvector_with_context(bytes, parameters, arguments)
-            )
-        }),
-        Proposition::CResourceSeparate { left, right } => format!(
-            "separate({}, {})",
-            describe_c_resource(left, parameters, arguments),
-            describe_c_resource(right, parameters, arguments)
-        ),
-        Proposition::CResourceContains { parent, child } => format!(
-            "contains({}, {})",
-            describe_c_resource(parent, parameters, arguments),
-            describe_c_resource(child, parameters, arguments)
-        ),
-        Proposition::CMemoryMutatesOnly { writes, .. } => format!(
-            "memory mutates only at {}",
-            describe_bounded_list(writes, |(pointer, bytes)| {
-                format!(
-                    "{} ({bytes} bytes)",
-                    describe_pointer(pointer, parameters, arguments)
-                )
-            })
-        ),
-        Proposition::CMemoryEffectSummary { mutable_ranges, .. } => format!(
-            "memory effect ranges {}",
-            describe_bounded_list(mutable_ranges, |range| {
-                describe_memory_range(range, parameters, arguments)
-            })
-        ),
-        Proposition::CHeapAllocationFreed {
-            allocation_base,
-            bytes,
-            ..
-        } => format!(
-            "freed heap allocation {} ({} bytes)",
-            describe_pointer(allocation_base, parameters, arguments),
-            describe_bitvector_with_context(bytes, parameters, arguments)
-        ),
-        Proposition::ForAll { sort, .. } => {
-            format!(
-                "universal proposition over {}",
-                crate::surface::proof_diagnostics::render::render_sort(sort)
-            )
-        }
-        Proposition::Exists { sort, .. } => {
-            format!(
-                "existential proposition over {}",
-                crate::surface::proof_diagnostics::render::render_sort(sort)
-            )
-        }
-        // A ground constant has nothing to name but its value: say which
-        // constant, so `false is true` does not read as a true condition.
-        Proposition::ConditionIs(ConditionTerm::Constant(constant), value) => {
-            format!("constant condition `{constant}` is {value}")
-        }
-        // A condition is shown with its operands: "int32 equality is true"
-        // names a shape, and a list of several of them tells a reader nothing
-        // about which fact is which.
-        Proposition::ConditionIs(condition, value) => format!(
-            "{} is {value}",
-            describe_condition_with_context(condition, parameters, arguments)
-        ),
-        Proposition::Predicate {
-            name,
-            arguments: predicate_arguments,
-        } if crate::kernel::CFunctionContract::surface_name_from_predicate(name).is_some() => {
-            let contract = crate::kernel::CFunctionContract::surface_name_from_predicate(name)
-                .expect("guarded contract predicate");
-            match predicate_arguments.as_slice() {
-                [_, Term::CValue(CValue::Pointer(pointer))] => match pointer.pointer() {
-                    Pointer {
-                        block: PointerBlock::Function(target),
-                        offset: PointerOffsetTerm::Constant(0),
-                    } => {
-                        format!("function `{target}` does not satisfy named contract `{contract}`")
-                    }
-                    // This arm describes a fact, and the same sentence serves
-                    // a list of available facts and a report of a missing
-                    // one. Say what the fact asserts; the surrounding
-                    // sentence says whether it is held or wanted.
-                    pointer => format!(
-                        "named contract `{contract}` holds for {}",
-                        describe_pointer(pointer, parameters, arguments)
-                    ),
-                },
-                _ => format!("malformed named contract fact `{contract}`"),
-            }
-        }
-        _ => describe_unclassified_pure_fact(fact, parameters, arguments),
-    }
-}
-
-/// Renders a fact whose shape has no sentence above through the bounded
-/// proposition printer.
-///
-/// `Debug` is not an option here. A kernel proposition carries shared
-/// structure a developer dump repeats per occurrence — an algebraic term
-/// holds its whole instantiated `AlgebraicSchemas`, and a state-indexed term
-/// holds memory snapshots — so the fallback grows with the datatype
-/// declarations rather than with the claim. The printer in
-/// `proof_diagnostics::render` spells the same proposition in its source
-/// vocabulary under node, depth, and byte bounds; `CLICK_FULL_DIAGNOSTICS`
-/// still yields the developer dump.
-fn describe_unclassified_pure_fact(
-    fact: &Proposition,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
-) -> String {
-    if std::env::var_os(FULL_DIAGNOSTICS_ENV).is_some() {
-        return format!("{fact:?}");
-    }
-    crate::surface::proof_diagnostics::render::render_proposition_labeled(
-        fact,
-        &mut crate::surface::proof_diagnostics::render::SnapshotLabels::naming(
-            parameters, arguments,
-        ),
-    )
+    let mut labels =
+        crate::surface::proof_diagnostics::render::SnapshotLabels::naming(parameters, arguments);
+    let mut text =
+        crate::surface::proof_diagnostics::render::render_proposition_labeled(fact, &mut labels);
+    text.push_str(&labels.trace_legend());
+    text
 }
 
 pub(super) fn describe_execution_pure_facts(facts: &(impl ExecutionFactSource + ?Sized)) -> String {
-    if facts.is_empty() {
-        return "[]".to_string();
-    }
-
-    let limit = diagnostic_item_limit();
-    let mut entries = facts
-        .fact_iter()
-        .take(limit)
-        .map(|fact| describe_pure_fact(fact.proposition(), &[], &[]))
-        .collect::<Vec<_>>();
-    compact_unspelled_facts(&mut entries);
-    if facts.len() > limit {
-        entries.push(format!("… {} more omitted", facts.len() - limit));
-    }
-    format!("[{}]", entries.join(", "))
+    describe_context_pure_and_execution_facts(&[], facts, &[], &[])
 }
 
 pub(super) fn describe_available_facts(
@@ -749,11 +623,7 @@ pub(super) fn describe_available_facts(
 
 /// Describes a fact a proof needs and does not have.
 ///
-/// A named-contract fact over a concrete function address reads as a refused
-/// refinement in [`describe_pure_fact`], which is what it means where
-/// automatic formation refused it. Here nothing was refused: the fact was
-/// never established, so name the two routes that establish it instead of
-/// blaming the implementation.
+/// For a missing named-contract fact, also name the routes that establish it.
 pub(super) fn describe_required_pure_fact(
     required: &Proposition,
     parameters: &[syntax::C0Parameter],
@@ -775,16 +645,18 @@ pub(super) fn describe_missing_pure_fact(
     arguments: &[CExpression],
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
+    let mut labels =
+        crate::surface::proof_diagnostics::render::SnapshotLabels::naming(parameters, arguments);
+    let requirement = if concrete_named_contract_fact(required).is_some() {
+        describe_required_pure_fact(required, parameters, arguments)
+    } else {
+        crate::surface::proof_diagnostics::render::render_proposition_labeled(required, &mut labels)
+    };
+    let available = describe_context_facts_labeled(pure_facts, execution_pure_facts, &mut labels);
     format!(
-        "missing pure fact: {}\n  {}",
-        describe_required_pure_fact(required, parameters, arguments),
-        describe_available_facts(
-            pure_facts,
-            resource_facts,
-            parameters,
-            arguments,
-            execution_pure_facts
-        )
+        "missing pure fact: {requirement}\n  available pure facts: {available}\n  available resource facts: {}{}",
+        describe_resource_facts(resource_facts, parameters, arguments),
+        labels.trace_legend()
     )
 }
 
@@ -2169,6 +2041,9 @@ pub(super) fn describe_memory_range(
     if let Some(description) = describe_parameter_relative_range(range, parameters, arguments) {
         return description;
     }
+    if let Some(description) = describe_indexed_base_range(range, parameters, arguments) {
+        return description;
+    }
     // A range over a named object starts at the object itself (`g[0..4]`),
     // not at a pointer to it.
     let base = match named_object_block(&range.base().block, parameters, arguments) {
@@ -2205,6 +2080,48 @@ pub(super) fn describe_memory_range(
         describe_bitvector_with_context(range.start(), parameters, arguments),
         describe_bitvector_with_context(range.end(), parameters, arguments)
     )
+}
+
+/// A range whose base is another pointer advanced by a scaled index, the
+/// address of `p[i]` for an index `i` of the range's element width, spelled
+/// from that pointer: `s->data[s->len]` for the one element at the address a
+/// read through a loaded pointer forms, rather than an unnamed base. Only a
+/// base the describer can name takes part.
+fn describe_indexed_base_range(
+    range: &CMemoryRange,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> Option<String> {
+    let width = i64::from(range.element_width());
+    let PointerOffsetTerm::Add(rest, last) = &range.base().offset else {
+        return None;
+    };
+    let index = match last.as_ref() {
+        PointerOffsetTerm::Int64Scaled {
+            value, byte_width, ..
+        }
+        | PointerOffsetTerm::Int32Scaled { value, byte_width }
+            if *byte_width == width =>
+        {
+            value.as_ref()
+        }
+        _ => return None,
+    };
+    let root = Pointer {
+        block: range.base().block.clone(),
+        offset: rest.as_ref().clone(),
+    };
+    let base = describe_pointer(&root, parameters, arguments);
+    if base.contains("the pointer value at this program point") || base.contains('…') {
+        return None;
+    }
+    let index = describe_bitvector_with_context(index, parameters, arguments);
+    let bounds = range.int32_bounds()?;
+    match (bounds.0.as_const(), bounds.1.as_const()) {
+        (Some(0), Some(1)) => Some(format!("{base}[{index}]")),
+        (Some(start), Some(end)) => Some(format!("{base}[({index} + {start})..({index} + {end})]")),
+        _ => None,
+    }
 }
 
 /// The source name of the object a block holds: a local, global or static
@@ -2986,9 +2903,19 @@ pub(super) fn describe_proposition_version_mismatch(
         .filter(|premise| **premise != goal)
         .find_map(|premise| {
             let mismatch = resource_tracker::version_mismatch(goal, premise)?;
-            (describe_pure_fact_spelled(premise, parameters, arguments)
-                == describe_pure_fact_spelled(goal, parameters, arguments))
-            .then_some(mismatch)
+            // Compare shapes without their construction legends. Each side
+            // gets fresh local labels; differing snapshot derivations belong
+            // to the explanation, not this diagnostic shape comparison.
+            let shape = |fact: &Proposition| {
+                let mut labels = crate::surface::proof_diagnostics::render::SnapshotLabels::naming(
+                    parameters, arguments,
+                );
+                crate::surface::proof_diagnostics::render::render_proposition_labeled(
+                    fact,
+                    &mut labels,
+                )
+            };
+            (shape(premise) == shape(goal)).then_some(mismatch)
         })?;
     let explanation = resource_tracker::explain(resource.as_resource(), &here, &there);
     describe_resource_version_mismatch(&explanation, premise_point, parameters, arguments)
@@ -4022,68 +3949,6 @@ fn describe_mutex_pointer(
         }
     }
     describe_pointer(pointer, parameters, arguments)
-}
-
-/// A loadability fact spelled as the source range it came from:
-/// `viewable(visited[0..n])` for a base inside a parameter's array whose byte
-/// count is an element count times that parameter's element width (`n * 4`
-/// for an `int32 *`). `None` when the byte count is not such a product, so the
-/// caller keeps the byte spelling rather than guessing an element type.
-fn describe_loadable_as_source_range(
-    base: &Pointer,
-    bytes: &Bitvector32Term,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
-) -> Option<String> {
-    let count_at_width = |width: i64| -> Option<Bitvector32Term> {
-        if width <= 0 {
-            return None;
-        }
-        let width = u32::try_from(width).ok()?;
-        // Only the product form: a constant byte count says nothing about
-        // how the source counted it (eight bytes of a struct pointer's
-        // fields are not two `int32` elements).
-        match bytes {
-            Bitvector32Term::Multiply(left, right) => match (left.as_const(), right.as_const()) {
-                (_, Some(factor)) if factor == width => Some(left.as_ref().clone()),
-                (Some(factor), _) if factor == width => Some(right.as_ref().clone()),
-                _ => None,
-            },
-            _ => None,
-        }
-    };
-    let mut best: Option<String> = None;
-    for (parameter, argument) in parameters.iter().zip(arguments) {
-        let CExpression::Value(CValue::Pointer(parameter_base)) = argument else {
-            continue;
-        };
-        // Only an array of scalars has an element count a byte count divides
-        // into; a struct pointer's bytes are its fields, not elements.
-        if parameter.pointee_struct_layout().is_some() || parameter.struct_layout().is_some() {
-            continue;
-        }
-        let Some(width) = scalar_element_width(parameter.c_type()) else {
-            continue;
-        };
-        let Some(count) = count_at_width(width) else {
-            continue;
-        };
-        let Some(start) = diagnostic_pointer_element_index_from_base(base, parameter_base, width)
-        else {
-            continue;
-        };
-        let count = describe_bitvector_with_context(&count, parameters, arguments);
-        let spelled = if start == Bitvector32Term::Constant(0) {
-            format!("viewable({}[0..{count}])", parameter.name())
-        } else {
-            let start = describe_bitvector_with_context(&start, parameters, arguments);
-            format!("viewable({}[{start}..{start} + {count}])", parameter.name())
-        };
-        if best.as_ref().is_none_or(|best| spelled.len() < best.len()) {
-            best = Some(spelled);
-        }
-    }
-    best
 }
 
 /// The element width of a parameter that points to (or is) an array of one
@@ -6602,20 +6467,13 @@ pub(super) fn describe_pure_fact_spelled(
     describe_pure_fact(fact, parameters, arguments)
 }
 
-/// A fact as a proof would state it: a true condition is the condition
-/// itself, spelled through the C names, rather than the kind of comparison
-/// [`describe_pure_fact`] names, so a list of several reads as what each says.
+/// A stated fact uses the same checked-proposition display as every goal.
 pub(super) fn describe_stated_fact(
     fact: &Proposition,
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> String {
-    match fact {
-        Proposition::ConditionIs(condition, true) => {
-            describe_condition_with_context(condition, parameters, arguments)
-        }
-        other => describe_pure_fact_spelled(other, parameters, arguments),
-    }
+    describe_pure_fact(fact, parameters, arguments)
 }
 
 /// [`describe_condition`] with machine operands spelled through the C

@@ -34,5 +34,5 @@ int32 probe(int32 n) {
 ```
 
 ```expect
-fail: listed premise `1 <= 0` (it is false at this instance) is not an available fact: missing pure fact: constant condition `false` is true
+fail: listed premise `1 <= 0` (it is false at this instance) is not an available fact: missing pure fact: false
 ```

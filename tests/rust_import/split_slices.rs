@@ -51,14 +51,14 @@ fn charon_split_at_empty_endpoints_and_full_width_lengths() {
         (u64::MAX, 0),
     ] {
         let claim = format!(
-            "verifying \"split.rs\"; uint64 right_length(const uint8* bytes, uint64 bytes_len, uint64 mid) {{ requires bytes_len == {length}u64; requires mid == {mid}u64; ensures result == {}u64; }} by {{ execute(); simp(); }}",
+            "verifying \"split.rs\"; fn right_length(bytes: &[u8], mid: usize) -> usize {{ requires bytes.len() == {length}u64; requires mid == {mid}u64; ensures result == {}u64; }} by {{ execute(); simp(); }}",
             length - mid
         );
         C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
     for claim in [
-        "verifying \"split.rs\"; uint64 left_length(const uint8* bytes, uint64 bytes_len, uint64 mid) { requires bytes_len == 0u64; requires mid == 1u64; ensures result == 1u64; } by { execute(); simp(); }",
-        "verifying \"split.rs\"; uint8 left_first(const uint8* bytes, uint64 bytes_len, uint64 mid) { requires bytes_len == 0u64; requires mid == 0u64; ensures result == 0; } by { execute(); simp(); }",
+        "verifying \"split.rs\"; fn left_length(bytes: &[u8], mid: usize) -> usize { requires bytes.len() == 0u64; requires mid == 1u64; ensures result == 1u64; } by { execute(); simp(); }",
+        "verifying \"split.rs\"; fn left_first(bytes: &[u8], mid: usize) -> u8 { requires bytes.len() == 0u64; requires mid == 0u64; ensures result == 0; } by { execute(); simp(); }",
     ] {
         assert!(C0VerificationSession::new_program_prepared(claim, &prepared).is_err());
     }

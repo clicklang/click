@@ -495,6 +495,9 @@ fn collect_spec_algebraic_carriers(
                 return;
             }
             for arm in arms {
+                for variable in arm.binding_variables.iter().flatten() {
+                    variables.integer.insert(*variable);
+                }
                 collect_spec_algebraic_carriers(&arm.body, variables, integer_seen);
                 if variables.exhausted() {
                     return;
@@ -1379,6 +1382,38 @@ impl<'a> TermRewrite<'a> {
         }
     }
 
+    fn rewrite_spec_algebraic_match_bindings(
+        &mut self,
+        arm: &SpecAlgebraicResultMatchArm,
+        index: usize,
+    ) -> Result<(Vec<Option<Variable>>, SpecAlgebraicExpression), SpecRewriteError> {
+        if index == 0 && !arm.bindings_are_well_formed() {
+            return Err(SpecRewriteError::UnsupportedCarrier);
+        }
+        if index == arm.bindings.len() {
+            return Ok((Vec::new(), self.rewrite_spec_algebraic(&arm.body)?));
+        }
+        match (&arm.binding_types[index], arm.binding_variables[index]) {
+            (AlgebraicValueType::Integer, Some(variable)) => {
+                let (variable, (mut variables, body)) =
+                    self.with_spec_scope(BindingCarrier::Integer, variable, |rewrite| {
+                        rewrite.rewrite_spec_algebraic_match_bindings(arm, index + 1)
+                    })?;
+                variables.push(Some(variable));
+                Ok((variables, body))
+            }
+            (AlgebraicValueType::Integer, None) | (_, Some(_)) => {
+                Err(SpecRewriteError::UnsupportedCarrier)
+            }
+            (_, None) => {
+                let (mut variables, body) =
+                    self.rewrite_spec_algebraic_match_bindings(arm, index + 1)?;
+                variables.push(None);
+                Ok((variables, body))
+            }
+        }
+    }
+
     fn rewrite_spec_algebraic(
         &mut self,
         expression: &SpecAlgebraicExpression,
@@ -1423,11 +1458,15 @@ impl<'a> TermRewrite<'a> {
                     arms: arms
                         .iter()
                         .map(|arm| {
+                            let (mut binding_variables, body) =
+                                self.rewrite_spec_algebraic_match_bindings(arm, 0)?;
+                            binding_variables.reverse();
                             Ok(SpecAlgebraicResultMatchArm {
                                 variant: arm.variant.clone(),
                                 bindings: arm.bindings.clone(),
                                 binding_types: arm.binding_types.clone(),
-                                body: Box::new(self.rewrite_spec_algebraic(&arm.body)?),
+                                binding_variables,
+                                body: Box::new(body),
                             })
                         })
                         .collect::<Result<Vec<_>, SpecRewriteError>>()?,

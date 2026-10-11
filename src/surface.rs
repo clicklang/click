@@ -181,19 +181,21 @@ pub(in crate::surface) use verification::CSourceContext;
 pub(in crate::surface) use verification::*;
 pub use verification::{
     C0IncrementalSelection, CProjectSummary, CProofArtifactIdentity, SorryAdmission,
-    c0_external_dependencies, c0_function_names, c0_incremental_selection,
+    SummarizedVerification, c0_external_dependencies, c0_function_names, c0_incremental_selection,
     c0_prepared_external_dependencies, c0_prepared_project_selected_proof_names,
     c0_prepared_project_summary, c0_project_function_names, c0_project_selected_proof_names,
     c0_project_summary, parse, program_prepared_project_selected_proof_names,
     program_prepared_project_summary, take_sorry_admissions, verify_c0_prepared_project,
     verify_c0_prepared_project_at, verify_c0_prepared_project_functions,
-    verify_c0_prepared_project_theorem, verify_c0_prepared_sources, verify_c0_prepared_sources_at,
+    verify_c0_prepared_project_theorem, verify_c0_prepared_project_with_summary,
+    verify_c0_prepared_sources, verify_c0_prepared_sources_at,
     verify_c0_prepared_sources_functions, verify_c0_project, verify_c0_project_at,
-    verify_c0_project_functions, verify_c0_project_theorem, verify_c0_sources,
-    verify_c0_sources_at, verify_c0_sources_functions, verify_click_theorems,
+    verify_c0_project_functions, verify_c0_project_theorem, verify_c0_project_with_summary,
+    verify_c0_sources, verify_c0_sources_at, verify_c0_sources_functions, verify_click_theorems,
     verify_program_prepared_project, verify_program_prepared_project_at,
     verify_program_prepared_project_functions, verify_program_prepared_project_theorem,
-    verify_program_prepared_sources_at, verify_standard_library, with_allow_sorry,
+    verify_program_prepared_project_with_summary, verify_program_prepared_sources_at,
+    verify_standard_library, with_allow_sorry,
 };
 mod proof_trace;
 pub use proof_trace::with_proof_trace;
@@ -872,7 +874,7 @@ impl ResourceWitness {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct TheoremDefinition {
     name: String,
     type_parameters: Vec<String>,
@@ -1979,9 +1981,27 @@ pub(crate) fn clone_click_proposition_iteratively(
     values.pop().expect("the root proposition is cloned")
 }
 
+impl Clone for TheoremDefinition {
+    fn clone(&self) -> Self {
+        clone_theorem_definition_iteratively(self)
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static THEOREM_DEFINITION_COPIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn theorem_definition_copies() -> usize {
+    THEOREM_DEFINITION_COPIES.with(std::cell::Cell::get)
+}
+
 pub(crate) fn clone_theorem_definition_iteratively(
     theorem: &TheoremDefinition,
 ) -> TheoremDefinition {
+    #[cfg(test)]
+    THEOREM_DEFINITION_COPIES.with(|copies| copies.set(copies.get() + 1));
     TheoremDefinition {
         name: theorem.name.clone(),
         type_parameters: theorem.type_parameters.clone(),
@@ -6315,16 +6335,44 @@ impl ResourceEnvironment {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TheoremEnvironment {
+    /// A declaration-order prefix of the standard library's theorems, shared
+    /// with every other environment in the process rather than copied: a
+    /// verification pays for the library theorems it looks up, not for the
+    /// whole library.
+    standard_library: &'static [TheoremDefinition],
+    /// Theorems declared after `standard_library`; a later declaration of a
+    /// name shadows an earlier one.
     definitions: BTreeMap<String, TheoremDefinition>,
     verified_generic_instances: RefCell<BTreeSet<String>>,
     active_generic_instances: RefCell<BTreeSet<String>>,
 }
 
 impl TheoremEnvironment {
-    fn new(definitions: &[TheoremDefinition]) -> Self {
+    fn new<'a>(definitions: impl IntoIterator<Item = &'a TheoremDefinition>) -> Self {
+        Self::with_standard_library_prefix(&[], definitions)
+    }
+
+    /// The whole standard library followed by `definitions`.
+    fn with_standard_library<'a>(
+        definitions: impl IntoIterator<Item = &'a TheoremDefinition>,
+    ) -> Result<Self, ClickError> {
+        Ok(Self::with_standard_library_prefix(
+            standard_library_theorem_definitions()?,
+            definitions,
+        ))
+    }
+
+    /// `standard_library` must be a prefix of
+    /// [`standard_library_theorem_definitions`]: lookups find a library
+    /// theorem through that slice's process-wide name index.
+    fn with_standard_library_prefix<'a>(
+        standard_library: &'static [TheoremDefinition],
+        definitions: impl IntoIterator<Item = &'a TheoremDefinition>,
+    ) -> Self {
         Self {
+            standard_library,
             definitions: definitions
-                .iter()
+                .into_iter()
                 .map(|definition| {
                     (
                         definition.name().to_string(),
@@ -6338,7 +6386,9 @@ impl TheoremEnvironment {
     }
 
     fn get(&self, name: &str) -> Option<&TheoremDefinition> {
-        self.definitions.get(name)
+        self.definitions.get(name).or_else(|| {
+            standard_library_theorem_index(name).and_then(|index| self.standard_library.get(index))
+        })
     }
 
     fn insert(&mut self, definition: TheoremDefinition) {
@@ -8044,7 +8094,7 @@ impl ClickError {
             .missing_tactic_requirement()
             .map(|required| format!("requirement `{required}` not satisfied"));
         let reason = requirement_reason.as_deref().unwrap_or(reason);
-        let (mut report, reason, certification_obligation) = if self.kind == ClickErrorKind::Proof
+        let (mut report, reason, _certification_obligation) = if self.kind == ClickErrorKind::Proof
             && let Some(rest) = reason.strip_prefix("could not certify contract for `")
             && let Some((function, detail)) = rest.split_once("`: ")
         {
@@ -8111,31 +8161,29 @@ impl ClickError {
         if let Some(diagnostic) = &self.diagnostic
             && let Some(state) = diagnostic.state.as_ref()
         {
-            let requirement = proof_diagnostics::render_failed_requirement(
-                state.as_ref(),
-                &mut proof_diagnostics::render::SnapshotLabels::ambient(),
-                false,
-            );
-            if !requirement.is_empty() && !proof_trace::enabled_for(&diagnostic.claim_label) {
-                context.push(requirement);
-            }
-            let source_goal = state.source_goal();
-            if let Some(goal) = &source_goal
-                && !certification_obligation
-                && self.missing_tactic_requirement().is_none()
-            {
-                context.push(format!("goal: {goal}"));
+            let mut labels = proof_diagnostics::render::SnapshotLabels::ambient();
+            state.register_names(&mut labels);
+            if !proof_trace::enabled_for(&diagnostic.claim_label) {
+                let requirement =
+                    proof_diagnostics::render_failed_requirement(state.as_ref(), &mut labels);
+                if !requirement.is_empty() {
+                    context.push(requirement);
+                }
+                if let Some(goal) = state.kernel_goal() {
+                    context.push(format!(
+                        "goal: {}",
+                        proof_diagnostics::render::render_proposition_labeled(goal, &mut labels)
+                    ));
+                }
+                let legend = labels.trace_legend();
+                if !legend.is_empty() {
+                    context.push(legend);
+                }
             }
             if self.failed_tactic == Some("assumption()")
-                && matches!(state.kernel_goal(), Some(Proposition::Exists { .. }))
+                && let Some(Proposition::Exists { name, .. }) = state.kernel_goal()
             {
-                let binder = source_goal
-                    .as_deref()
-                    .and_then(|goal| goal.strip_prefix("exists ("))
-                    .and_then(|rest| rest.split_once(':'))
-                    .map(|(name, _)| name.trim())
-                    .filter(|name| !name.is_empty())
-                    .unwrap_or("name");
+                let binder = if name.is_empty() { "name" } else { name };
                 context.push(format!(
                     "help: choose a witness with `witness({binder} = <value>);`, then prove its body"
                 ));
@@ -8376,8 +8424,6 @@ impl ClickError {
     pub(crate) fn diagnostic(&self) -> Option<&proof_diagnostics::ProofFailureDiagnostic> {
         self.diagnostic.as_deref()
     }
-
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(in crate::surface) fn unresolved_requirement(&self) -> Option<&UnresolvedRequirement> {
         self.unresolved_requirement.as_deref()
     }

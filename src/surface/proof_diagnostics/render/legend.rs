@@ -113,9 +113,6 @@ impl SnapshotLabels {
     }
 
     fn legend_pointer(&mut self, pointer: &Pointer) -> String {
-        if let Some(name) = self.pointer_sources.get(pointer) {
-            return name.clone();
-        }
         if pointer == &Pointer::null() {
             return "null pointer (0)".into();
         }
@@ -133,6 +130,9 @@ impl SnapshotLabels {
                 self.snapshot_name(memory.memory()),
                 self.pointer_value_name(&address)
             );
+        }
+        if let Some(name) = self.pointer_sources.get(pointer) {
+            return name.clone();
         }
         let base = Pointer {
             block: pointer.block.clone(),

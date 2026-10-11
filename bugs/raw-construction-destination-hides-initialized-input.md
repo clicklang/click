@@ -15,7 +15,7 @@ MDTEST_FILTER=cpp_one_guard_unwind cargo nextest run --test mdtests
 CLICK_EXAMPLE=basic-cpp cargo nextest run --test examples -E 'test(example_projects)'
 ```
 
-The current full local corpus also reproduces the existing
+The full local corpus at `4aa7e0ff1` also reproduces the existing
 `cpp_one_guard_unwind.md`, `cpp_two_guard_unwind.md`,
 `cpp_guard_unwind_before_second.md`, `cpp_single_guard_throw_step.md`, and
 `examples/basic-cpp/with_restore.click` failures at the same constructor input

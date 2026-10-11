@@ -772,7 +772,7 @@ impl<'a> Proof<'a> {
                 Some(match &uncarried {
                     Some(reason) => format!("{reason}: {}", error.raw_summary()),
                     None => format!(
-                        "the goal's Integer reading `{}` does not follow from the listed premises' Integer readings by one Integer `arithmetic` step, which combines at most two order premises; state an intermediate fact with `have` first: {}",
+                        "the goal's Integer reading `{}` does not follow from the listed premises' Integer readings by one Integer `arithmetic` step, which combines a pair of order premises and at most one more taken whole; state an intermediate fact with `have` first: {}",
                         spell(&observed_goal),
                         error.raw_summary()
                     ),

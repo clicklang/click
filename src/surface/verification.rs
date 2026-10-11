@@ -613,7 +613,7 @@ fn verify_click_file_theorems_with_environment(
         &combined_external_function_blocks(file)?,
     )?);
     verify_theorem_definitions(
-        standard_library_theorem_definitions()?,
+        TheoremEnvironment::with_standard_library(&[])?,
         file.theorem_definitions(),
         &predicate_environment,
         &click_function_environment,
@@ -642,7 +642,7 @@ pub fn verify_standard_library() -> Result<Vec<VerifiedPureTheorem>, ClickError>
         &combined_external_function_blocks(&empty)?,
     )?);
     verify_theorem_definitions(
-        &[],
+        TheoremEnvironment::new(&[]),
         standard_library_theorem_definitions()?,
         &predicate_environment,
         &click_function_environment,
@@ -788,33 +788,19 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
             function_environment = function_environment.with_verified_function_rule(hypothesis);
         }
     }
-    let theorem_environment = TheoremEnvironment::new(
-        &standard_library_theorem_definitions()?
-            .iter()
-            .cloned()
-            .chain(
-                file.theorem_definitions()
-                    .iter()
-                    .map(clone_theorem_definition_iteratively),
-            )
-            .collect::<Vec<_>>(),
-    );
+    let theorem_environment =
+        TheoremEnvironment::with_standard_library(file.theorem_definitions())?;
     if theorem.executes.is_some() {
         let registry = std::sync::Arc::new(FunctionSourceRegistry::from_function_blocks(
             &external_and_user_function_blocks,
         )?);
-        let dependencies = standard_library_theorem_definitions()?
-            .iter()
-            .cloned()
-            .chain(
-                file.theorem_definitions()
-                    .iter()
-                    .take_while(|definition| definition.name() != theorem_name)
-                    .map(clone_theorem_definition_iteratively),
-            )
-            .collect::<Vec<_>>();
+        let dependencies = TheoremEnvironment::with_standard_library(
+            file.theorem_definitions()
+                .iter()
+                .take_while(|definition| definition.name() != theorem_name),
+        )?;
         return verify_theorem_definitions(
-            &dependencies,
+            dependencies,
             std::slice::from_ref(theorem),
             &predicate_environment,
             &click_function_environment,
@@ -2528,11 +2514,9 @@ fn verify_c0_sources_in_context(
             .filter(|theorem| !selected_theorem_names.contains(theorem.name()))
             .map(clone_theorem_definition_iteratively)
             .collect::<Vec<_>>();
-        let mut theorem_dependencies = standard_library_theorems.to_vec();
-        theorem_dependencies.extend(
-            unselected_theorem_definitions
-                .iter()
-                .map(clone_theorem_definition_iteratively),
+        let theorem_dependencies = TheoremEnvironment::with_standard_library_prefix(
+            standard_library_theorems,
+            &unselected_theorem_definitions,
         );
         let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
             .with_contracts(file.contract_definitions());
@@ -2645,7 +2629,7 @@ fn verify_c0_sources_in_context(
         }
         drop(_timing);
         let verified_theorems = verify_theorem_definitions(
-            &theorem_dependencies,
+            theorem_dependencies,
             &theorem_definitions,
             &predicate_environment,
             &click_function_environment,
@@ -2675,16 +2659,9 @@ fn verify_c0_sources_in_context(
             &mut theorem_certification_facts,
             &mut theorem_certification_authorities,
         );
-        let theorem_environment = TheoremEnvironment::new(
-            &standard_library_theorems
-                .iter()
-                .map(Clone::clone)
-                .chain(
-                    file.theorem_definitions()
-                        .iter()
-                        .map(clone_theorem_definition_iteratively),
-                )
-                .collect::<Vec<_>>(),
+        let theorem_environment = TheoremEnvironment::with_standard_library_prefix(
+            standard_library_theorems,
+            file.theorem_definitions(),
         );
         check_verification_deadline()?;
         (
@@ -3189,7 +3166,10 @@ fn verify_c0_sources_in_context(
                 && theorem_has_certification_binders(&standard_library_theorems[index])
             {
                 let verified_dependency = verify_theorem_definitions(
-                    &standard_library_theorems[..index],
+                    TheoremEnvironment::with_standard_library_prefix(
+                        &standard_library_theorems[..index],
+                        &[],
+                    ),
                     &standard_library_theorems[index..=index],
                     &predicate_environment,
                     &click_function_environment,
@@ -4319,6 +4299,78 @@ pub fn program_prepared_project_summary(
     let sources = CSourceContext::program(import)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     c0_project_summary_file(&file, &sources)
+}
+
+/// A summary and a verification of one loaded project from a single
+/// resolution of its sources. The outer error is the summary's, a failure to
+/// resolve or summarize the sources; the inner result is verification's.
+pub type SummarizedVerification =
+    Result<(CProjectSummary, Result<Vec<VerifiedCTheorem>, ClickError>), ClickError>;
+
+/// [`c0_project_summary`] then [`verify_c0_project`], resolving the sources
+/// once for both: the resolution validates every declaration, standard
+/// library included, so a caller reporting the summary should not pay twice.
+pub fn verify_c0_project_with_summary(
+    project: &ClickProject,
+    c_sources: &[(&str, &str)],
+) -> SummarizedVerification {
+    let sources = CSourceContext::bundle(c_sources).with_click_project(project);
+    summarize_then_verify(project, &sources, true)
+}
+
+/// [`c0_prepared_project_summary`] then [`verify_c0_prepared_project`] from
+/// one resolution.
+pub fn verify_c0_prepared_project_with_summary(
+    project: &ClickProject,
+    imports: &[PreparedCImport],
+) -> SummarizedVerification {
+    let sources = CSourceContext::prepared(imports).with_click_project(project);
+    summarize_then_verify(project, &sources, false)
+}
+
+/// [`program_prepared_project_summary`] then
+/// [`verify_program_prepared_project`] from one resolution.
+pub fn verify_program_prepared_project_with_summary(
+    project: &ClickProject,
+    import: &impl PreparedProgramSource,
+) -> SummarizedVerification {
+    let sources = CSourceContext::program(import)?.with_click_project(project);
+    summarize_then_verify(project, &sources, false)
+}
+
+fn summarize_then_verify(
+    project: &ClickProject,
+    sources: &CSourceContext<'_>,
+    emit_timing_failure: bool,
+) -> SummarizedVerification {
+    // As in the separate summary: the CLI's phase name, which a stop report
+    // cites, and its own kernel session, so what this thread verified before
+    // cannot change its units. The resolved file holds no session state; the
+    // separate verification entry points also resolve before verification
+    // enters its session.
+    let (file, summary) = {
+        let _phase = instrumentation::VerificationPhase::new("external dependency summary");
+        let _session = crate::kernel::VerificationSession::enter();
+        let file = resolve_click_project_context(project, sources)?;
+        let summary = c0_project_summary_file(&file, sources)?;
+        (file, summary)
+    };
+    let verified = instrumentation::with_default_tactic_limits(|| {
+        let result = verify_c0_sources_with_context(
+            project.entry_source().expect("resolved entry source"),
+            sources,
+            None,
+            None,
+            None,
+            Some(file),
+        )
+        .map(|(verified, _)| verified);
+        if emit_timing_failure && let Err(error) = &result {
+            error.emit_timing_failure();
+        }
+        result
+    });
+    Ok((summary, verified))
 }
 
 /// Reports the same explicit external-contract assumptions for compiler imports.

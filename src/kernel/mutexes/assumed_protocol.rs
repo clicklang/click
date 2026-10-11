@@ -107,6 +107,7 @@ impl AssumedMutexProtocol {
         Ok(ledger)
     }
 
+    #[cfg(test)]
     pub(super) fn acquire(
         &self,
         state: &CState,
@@ -222,6 +223,7 @@ impl AssumedMutexProtocol {
         Ok((state.memory.clone(), Some(instance)))
     }
 
+    #[cfg(test)]
     pub(super) fn release(
         &self,
         state: &CState,

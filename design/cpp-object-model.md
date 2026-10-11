@@ -712,7 +712,7 @@ block declaration metadata. Ordinary aggregate declarations, raw destination
 allocations, by-value parameter copies and actual copy-result allocations issue
 that evidence. Synthetic symbolic result blocks and constructor proof-entry raw
 markers do not. The metadata participates in snapshot identity and joins;
-resource semantics version 69 invalidates older retained artifacts. This step
+resource semantics version 70 invalidates older retained artifacts. This step
 preserves the existing scalar declaration behavior and grants no new access.
 The retained aggregate metadata is structural layout; it is not nominal C++
 class identity. Explicit embedded-record boundaries retain parent relationships,

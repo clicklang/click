@@ -1364,7 +1364,6 @@ pub(crate) enum CExceptionalSignature {
     #[default]
     None,
     // Staged for kernel callers before any source importer can construct it.
-    #[allow(dead_code)]
     Int32,
 }
 
@@ -1869,7 +1868,31 @@ pub struct SpecAlgebraicResultMatchArm {
     pub variant: String,
     pub bindings: Vec<String>,
     pub binding_types: Vec<AlgebraicValueType>,
+    /// Kernel identities of Integer fields in the lowered arm body.
+    /// Other carriers are bound through their typed environments.
+    pub binding_variables: Vec<Option<Variable>>,
     pub body: Box<SpecAlgebraicExpression>,
+}
+
+impl SpecAlgebraicResultMatchArm {
+    pub(crate) fn bindings_are_well_formed(&self) -> bool {
+        let mut names = BTreeSet::new();
+        let mut variables = BTreeSet::new();
+        self.bindings.len() == self.binding_types.len()
+            && self.bindings.len() == self.binding_variables.len()
+            && self.bindings.iter().all(|name| names.insert(name))
+            && self
+                .binding_types
+                .iter()
+                .zip(&self.binding_variables)
+                .all(|(ty, variable)| {
+                    if ty == &AlgebraicValueType::Integer {
+                        variable.is_some_and(|variable| variables.insert(variable))
+                    } else {
+                        variable.is_none()
+                    }
+                })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -9788,6 +9811,12 @@ pub(crate) enum AtomicPropositionDerivationEvidence {
     Int32PinnedConstantEquality(Box<DirectBitvectorEqualityEvidence>),
     ForallInt32Instantiation(Box<ForallInt32InstantiationEvidence>),
     SignedOrderPath(Vec<SignedOrderDerivationStep>),
+    /// A chain of exact 64-bit order facts, `uint64` when `unsigned` and
+    /// `int64` otherwise, each step's premise in the context as written.
+    WideOrderPath {
+        unsigned: bool,
+        path: Vec<SignedOrderDerivationStep>,
+    },
     Int32IncrementUpperBound(Box<SignedOrderDerivationStep>),
     Int32IncrementConstantUpperBound(Box<SignedOrderDerivationStep>),
     Int32IncrementStrictlyIncreases(Box<SignedOrderDerivationStep>),
@@ -10057,6 +10086,7 @@ pub struct PureFactContext {
     /// terms. Appended on insertion; withdrawal rebuilds from exact equality
     /// indexes, preserving the remaining support in every fragment.
     pub(super) equality_graph: super::equality_graph::EqualityGraph,
+    pub(super) congruence_conditions: crate::persistent::PersistentMap<ConditionTerm, bool>,
     /// Exact defining equations for pointer-typed reads issued on this path,
     /// indexed by their load variable. Producer metadata certifies the C
     /// value's type; the equation supplies its snapshot and address. Both
@@ -10444,12 +10474,10 @@ impl GeneratedLoadSourceEvent {
     /// Construct an event from one exact producer observation. Ambiguity is a
     /// property of the persistent resolution store, never an operation that
     /// execution can claim to have observed at one source occurrence.
-    #[allow(dead_code)]
     pub(crate) fn new(source: LoadSourceId, binding: GeneratedLoadBinding) -> Option<Self> {
         matches!(binding, GeneratedLoadBinding::Exact { .. }).then_some(Self { source, binding })
     }
-
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn source(&self) -> &LoadSourceId {
         &self.source
     }

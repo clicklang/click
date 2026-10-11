@@ -32,5 +32,5 @@ int32 count(int32 n) {
 ```
 
 ```expect
-fail: condition-certificate premise search did not derive `1 <= (n - 1)` from 4 ambient condition facts: [1 <= n is true, n <= 0 is false, n <= 100 is true
+fail: condition-certificate premise search did not derive `1 <= (n - 1)` from 4 ambient condition facts: [1 <= n, n > 0, n <= 100
 ```

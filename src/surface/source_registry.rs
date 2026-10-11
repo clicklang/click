@@ -46,7 +46,6 @@ pub(in crate::surface) enum EntryFactOrigin {
 
 /// Bounded source leaf retained after a checked `choose` projection.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[allow(dead_code)]
 pub(in crate::surface) struct ProjectionSourceToken {
     pub(in crate::surface) source_id: RequirementSourceId,
     pub(in crate::surface) connective_path: Vec<usize>,
@@ -55,7 +54,6 @@ pub(in crate::surface) struct ProjectionSourceToken {
 /// Shallow lookup key for a direct caller predicate argument.  Exact
 /// propositions and expressions remain validation payloads, never map keys.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-#[allow(dead_code)]
 pub(in crate::surface) struct CallerRequirementKey {
     pub(in crate::surface) predicate_name: String,
     pub(in crate::surface) predicate_argument_slot: usize,
@@ -63,7 +61,6 @@ pub(in crate::surface) struct CallerRequirementKey {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[allow(dead_code)]
 pub(in crate::surface) struct CallerRequirementRecord {
     pub(in crate::surface) source_id: RequirementSourceId,
     pub(in crate::surface) source_proposition: ClickProposition,
@@ -75,7 +72,6 @@ pub(in crate::surface) struct CallerRequirementRecord {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[allow(dead_code)]
 pub(in crate::surface) struct CallerRequirementSelection {
     pub(in crate::surface) source_id: RequirementSourceId,
     pub(in crate::surface) principal_fact_index: usize,
@@ -370,7 +366,6 @@ impl FunctionSourceRequirements {
     /// Returns the source form at the exact outer requirement ordinal.  A
     /// missing ordinal and an intentionally unresolvable source both fail
     /// closed as `None`.
-    #[allow(dead_code)]
     pub(in crate::surface) fn get(&self, ordinal: usize) -> Option<&FunctionRequirementSource> {
         self.requirements.get(ordinal).and_then(Option::as_ref)
     }
@@ -481,7 +476,6 @@ impl FunctionSourceRegistry {
 
     /// Finds one ordinary function's source requirements by stable function
     /// name.  No project-wide scan occurs at retry time.
-    #[allow(dead_code)]
     pub(in crate::surface) fn ordinary_function(
         &self,
         name: &str,

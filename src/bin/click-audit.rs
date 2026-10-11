@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::env;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -8,6 +7,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::git::{git_commit_id, git_repo_root, git_show};
 use click::cli::{
     self, CInput, MdTestExpectation, TargetSelection, containing_directory, find_mdtests,
     format_duration, looks_like_mdtest, parse_duration, prepare_mdtest_inputs, read_c_inputs,
@@ -121,13 +121,6 @@ options:
   --exclude <PATH>            leave out a proof container, or every one
                               under a directory; may be repeated
   --max-sites <COUNT>         bounded diagnostic run; prints the next cursor";
-
-fn main() {
-    if let Err(message) = entry() {
-        eprintln!("click-audit: {message}");
-        std::process::exit(1);
-    }
-}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Arguments {
@@ -439,10 +432,6 @@ fn verify_in_session(
         verify().map(|_| ()).map_err(|error| error.report())
     })?;
     Ok(cost)
-}
-
-fn entry() -> Result<(), String> {
-    entry_with(env::args().skip(1))
 }
 
 pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
@@ -1387,50 +1376,6 @@ fn select_function_sites(sites: &[AuditSite], functions: &BTreeSet<&str>) -> Vec
         .collect()
 }
 
-fn git_repo_root(path: &Path) -> Result<PathBuf, String> {
-    let anchor = if path.is_dir() {
-        path
-    } else {
-        containing_directory(path)
-    };
-    let output = Command::new("git")
-        .args([
-            "-C",
-            &anchor.display().to_string(),
-            "rev-parse",
-            "--show-toplevel",
-        ])
-        .output()
-        .map_err(|error| format!("failed to run git: {error}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "`{}` is not inside a readable git worktree",
-            path.display()
-        ));
-    }
-    Ok(PathBuf::from(
-        String::from_utf8_lossy(&output.stdout).trim(),
-    ))
-}
-
-fn git_commit_id(repo: &Path, revision: &str) -> Result<String, String> {
-    let output = Command::new("git")
-        .args([
-            "-C",
-            &repo.display().to_string(),
-            "rev-parse",
-            "--verify",
-            &format!("{revision}^{{commit}}"),
-        ])
-        .output()
-        .map_err(|error| format!("failed to run git: {error}"))?;
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
-        Err(format!("unknown git revision `{revision}`"))
-    }
-}
-
 fn git_changed_paths(repo: &Path, revision: &str) -> Result<Vec<PathBuf>, String> {
     let output = Command::new("git")
         .args([
@@ -1465,26 +1410,6 @@ fn changed_paths_require_full_audit(repo: &Path, changed_paths: &[PathBuf]) -> b
                 || path == Path::new("Cargo.lock")
                 || path.starts_with("stdlib")
         })
-}
-
-fn git_show(repo: &Path, revision: &str, path: &Path) -> Result<Option<String>, String> {
-    let relative = path.strip_prefix(repo).map_err(|_| {
-        format!(
-            "`{}` is outside git worktree `{}`",
-            path.display(),
-            repo.display()
-        )
-    })?;
-    let spec = format!("{revision}:{}", relative.display());
-    let output = Command::new("git")
-        .args(["-C", &repo.display().to_string(), "show", &spec])
-        .output()
-        .map_err(|error| format!("failed to run git: {error}"))?;
-    if output.status.success() {
-        Ok(Some(String::from_utf8_lossy(&output.stdout).into_owned()))
-    } else {
-        Ok(None)
-    }
 }
 
 fn load_baseline_audit_source(

@@ -395,15 +395,27 @@ live at the top of `src/lib.rs` with their reasons.
 
 ## Time-Bounded runs
 
-Ordinary development and test builds use `debug = "line-tables-only"` to
-reduce per-worktree build storage while retaining filename/line-number
-backtraces. This does not change optimization, assertions, overflow checks,
-or incremental compilation. Full variable/type inspection in a debugger needs
-an explicit override, for example `CARGO_PROFILE_TEST_DEBUG=2 cargo nextest run`
-or `CARGO_PROFILE_DEV_DEBUG=2 cargo build`. The dedicated `profiling` profile
+Ordinary development and test builds carry no debug information
+(`debug = false`): every test executable statically links all of Click, and
+line tables alone made each one about 60% larger. A cold build of the gate's
+test targets takes about 5.3 GB and 193 seconds on four cores, against 7.7 GB
+and 243 seconds with line tables. This does not change optimization,
+assertions, overflow checks, or incremental compilation. Panic and assertion
+messages still give their file and line, and backtraces still name every
+function. For file and line numbers in backtraces, rebuild with
+`CARGO_PROFILE_DEV_DEBUG=line-tables-only
+CARGO_PROFILE_TEST_DEBUG=line-tables-only`; for full variable and type
+inspection in a debugger, use `2` instead. The dedicated `profiling` profile
 continues to retain full debug information. Existing build artifacts do not
 shrink automatically; clean an old target directory only when no task is using
 it.
+
+A machine that runs the gate once, such as a fresh cloud container, gains
+nothing from Cargo's incremental cache, which is about 3.4 GB for the gate's
+targets. `CARGO_INCREMENTAL=0 scripts/check.sh` skips it, and also makes the
+cold build faster because there is no cache to write. Keep the default when
+editing and rerunning: without the cache, a one-line edit recompiles all of
+Click instead of taking about half a minute.
 
 Prover regressions usually manifest as hangs rather than failures, so the
 suite has a hard per-test time budget enforced by cargo-nextest. Prepare all

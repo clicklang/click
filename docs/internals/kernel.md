@@ -630,7 +630,8 @@ still use that constructor. The carrier also retains an optional unresolved or
 explicit object/array designation. Full-value substitution transports that
 designation; address-only rewrites preserve it without treating address equality
 as object identity. Stored-value and resource comparisons require matching
-designations, while native pointer comparison still compares addresses. Explicit
+designations, while native pointer comparison still compares addresses. Pure-function
+congruence retains designated pointer arguments as complete opaque values. Explicit
 descriptors contain root/path, base, element type/stride and mathematical count;
 they are terms, not independent evidence of object validity or permission.
 Binder traversal, alpha keys and substitution include their dependencies.

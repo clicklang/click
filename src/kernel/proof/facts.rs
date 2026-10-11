@@ -522,8 +522,14 @@ impl ProofFacts {
         self
     }
 
+    /// Indexed membership for fact bookkeeping and certificate construction.
     pub(crate) fn contains(&self, fact: &Proposition) -> bool {
         self.exact.contains(fact)
+    }
+
+    /// Semantic availability for checking a requested premise or goal.
+    pub(crate) fn available(&self, fact: &Proposition) -> bool {
+        self.contains(fact) || self.assumptions.contains_known(fact)
     }
 
     pub(crate) fn contains_top_level(&self, fact: &Proposition) -> bool {
@@ -962,11 +968,10 @@ impl ProofFacts {
             .cloned()
     }
 
-    /// Exact or direct-load-materialization-equivalent availability used by
-    /// the deterministic rewrite rule. Unlike snapshot check, this does not
-    /// admit polarity changes or a semantic bridge beyond normalization.
+    /// Availability modulo the shared equality closure for deterministic
+    /// rewriting. This admits no unfolding or cross-snapshot transport.
     pub(crate) fn materialization_available(&self, required: &Proposition) -> bool {
-        self.exact.contains(required)
+        self.available(required)
     }
 
     /// Availability of a proposition to the explicit pure `assumption`
@@ -975,6 +980,14 @@ impl ProofFacts {
     /// retained proof step before a later assumption may consume it.
     pub(crate) fn pure_assumption_available(&self, required: &Proposition) -> bool {
         self.materialization_available(required)
+            || self.integer_alpha_fact_available(required)
+            || self.quantified_fact_available(required)
+    }
+
+    /// Implicit closure after introducing facts preserves the structural
+    /// proof script. New graph consequences are consumed by explicit closers.
+    pub(crate) fn introduced_goal_available(&self, required: &Proposition) -> bool {
+        self.contains(required)
             || self.integer_alpha_fact_available(required)
             || self.quantified_fact_available(required)
     }

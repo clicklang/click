@@ -145,6 +145,12 @@ the same formatted failure report, including the written tactic and its source
 location. A separate `To get a trace:` section gives the command to rerun.
 The source excerpt points to the failing written tactic (including steps inside
 `have` and `open`), and the ordinary error omits the internal premise dump.
+Facts, goals, and rejected requirements share one proposition format in ordinary
+errors and traces. `goal:` shows the checked proposition after rewrites;
+`adds:` uses that same format for each admitted fact. Readable expressions are
+used only when they preserve checked identities. Typed memory operands include
+their read width, snapshot, and address, with shared labels and a construction
+legend. A source spelling is not printed in place of a snapshot-dependent fact.
 An `assumption()` failure on an existential goal suggests the
 `witness { name: value }` tactic. A trace reports facts introduced into the
 focused proof context and changes to exact resource representations, using

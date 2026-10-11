@@ -855,7 +855,6 @@ struct CertifiedFunctionClaimPath {
 pub(crate) struct ContractPathPreparationFailure {
     pub reason: String,
     pub obligation: Option<Proposition>,
-    pub source_goal: Option<String>,
     pub available: Vec<Proposition>,
     pub available_count: usize,
 }
@@ -865,7 +864,6 @@ impl From<String> for ContractPathPreparationFailure {
         Self {
             reason,
             obligation: None,
-            source_goal: None,
             available: Vec::new(),
             available_count: 0,
         }
@@ -903,7 +901,6 @@ fn unproved_contract_path_condition(
     ContractPathPreparationFailure {
         reason,
         obligation: Some(obligation.proposition().clone()),
-        source_goal: None,
         available: first,
         available_count: count,
     }

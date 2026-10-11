@@ -6477,6 +6477,14 @@ impl<'a> Proof<'a> {
                     fixed_state_application_closes_goal,
                 )
             })
+            .or_else(|| {
+                let (unsigned, ordered) = recorded_wide_order_pairs(derivation, premise_pairs)?;
+                plan_recorded_wide_order_path(
+                    unsigned,
+                    &ordered,
+                    fixed_state_application_closes_goal,
+                )
+            })
             .or_else(|| plan_recorded_bitvector_equality_path(goal, derivation, premise_pairs))
             .or_else(|| {
                 if !derivation.is_int32_pinned_constant_equality() {
@@ -7195,14 +7203,12 @@ impl<'a> Proof<'a> {
                 .get(index + 1)
                 .is_some_and(|next| !matches!(next, ProofTactic::Assumption | ProofTactic::Simp));
             let retain_application = retain_application
-                || (pure_source
-                    && matches!(
-                        tactic,
-                        ProofTactic::Extract(_) | ProofTactic::ApplyTheorem(_)
-                    )
-                    && tactics.get(index + 1).is_some_and(|next| {
-                        !matches!(next, ProofTactic::Assumption | ProofTactic::Simp)
-                    }));
+                || (matches!(
+                    tactic,
+                    ProofTactic::Extract(_) | ProofTactic::ApplyTheorem(_)
+                ) && tactics.get(index + 1).is_some_and(|next| {
+                    !matches!(next, ProofTactic::Assumption | ProofTactic::Simp)
+                }));
             let before_application = retain_application.then(|| proof.clone());
             match tactic {
                 ProofTactic::ApplyInduction {

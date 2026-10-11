@@ -2177,7 +2177,7 @@ fn pure_simp_after_unfold_exposes_an_explicit_certificate() {
     assert!(
         tactics
             .iter()
-            .any(|tactic| matches!(tactic, ProofTactic::Rewrite(_)))
+            .any(|tactic| matches!(tactic, ProofTactic::Assumption))
     );
 }
 
@@ -4586,11 +4586,15 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
         ),
         (
             "verifying \"add.rs\"; fn read(value: &&i32) -> i32 { ensures result == result; } by { execute(); simp(); }",
-            "a reference to a reference or `()` in a `fn` signature is not supported yet",
+            "a reference to a reference or to `()` in a `fn` signature is not supported",
         ),
         (
             "verifying \"add.rs\"; fn read(bytes: [u8; 4]) -> u8 { ensures result == result; } by { execute(); simp(); }",
-            "an array or slice in a `fn` signature is not supported yet",
+            "an array or slice passed by value in a `fn` signature is not supported",
+        ),
+        (
+            "verifying \"add.rs\"; fn read<T>(value: &T) -> i32 { ensures result == result; } by { execute(); simp(); }",
+            "generic parameters may only be lifetimes",
         ),
     ] {
         let error = parser::parse(source).expect_err("the signature is refused");
@@ -4612,6 +4616,27 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
         )
         .expect("the C-shaped spelling parses"),
     );
+    // A contract does not use lifetimes, so it may write them or leave them
+    // out, in the generic parameters and on a reference or slice.
+    assert_eq!(
+        parser::parse(
+            "verifying \"borrow.rs\"; \
+             fn set<'a, 'b: 'a>(value: &'a mut i32, seen: &'b i32, bytes: &'a [u8]) \
+             { owns *value; views *seen; ensures *value == *seen; } by { execute(); simp(); }"
+        )
+        .expect("the spelling with lifetimes parses"),
+        parser::parse(
+            "verifying \"borrow.rs\"; \
+             fn set(value: &mut i32, seen: &i32, bytes: &[u8]) \
+             { owns *value; views *seen; ensures *value == *seen; } by { execute(); simp(); }"
+        )
+        .expect("the spelling without lifetimes parses"),
+    );
+    // A character literal is still one byte between quotes.
+    let byte = parser::parse(
+        "verifying \"c.rs\"; fn f(x: u8) -> u8 { ensures result == 'a'; } by { execute(); simp(); }",
+    );
+    assert!(byte.is_ok(), "{byte:?}");
     // A slice is one name over the pointer and length Rust passes.
     assert_eq!(
         parser::parse(

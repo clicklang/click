@@ -18,7 +18,9 @@ fn allocate_quantifier_variable(next: &mut u64) -> Result<Variable, String> {
     Ok(variable)
 }
 
-fn algebraic_binder_variable(binder_index: usize) -> Result<Variable, String> {
+pub(in crate::surface) fn algebraic_binder_variable(
+    binder_index: usize,
+) -> Result<Variable, String> {
     let index = u64::try_from(binder_index).map_err(|_| "too many algebraic binders")?;
     let identity = index
         .checked_mul(ALGEBRAIC_BINDER_STRIDE)
@@ -5681,6 +5683,23 @@ impl AnnotationLowerer<'_> {
                         variant: arm.variant.clone(),
                         bindings: arm.bindings.clone(),
                         binding_types: variant.fields.clone(),
+                        binding_variables: arm
+                            .bindings
+                            .iter()
+                            .zip(&variant.fields)
+                            .map(|(binding, ty)| {
+                                if ty == &AlgebraicValueType::Integer {
+                                    match body_environment.integer_values.get(binding) {
+                                        Some(crate::kernel::SpecIntegerExpression::Term(
+                                            crate::kernel::IntegerTerm::Variable(variable),
+                                        )) => Some(*variable),
+                                        _ => None,
+                                    }
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect(),
                         body: Box::new(body),
                     });
                 }

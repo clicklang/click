@@ -1,7 +1,21 @@
 use super::*;
 use crate::surface::planning::proposition_search::PropositionSearch;
 
+#[cfg(test)]
+thread_local! {
+    static DEFINITION_VALIDATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many times this thread has validated a file's definitions. Each
+/// validation re-checks the whole standard library.
+#[cfg(test)]
+pub(in crate::surface) fn definition_validations() -> usize {
+    DEFINITION_VALIDATIONS.with(std::cell::Cell::get)
+}
+
 pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result<(), ClickError> {
+    #[cfg(test)]
+    DEFINITION_VALIDATIONS.with(|count| count.set(count.get() + 1));
     // A failure before the first declaration belongs to none of them.
     crate::surface::clear_ambient_proof_source();
     validate_algebraic_type_declarations(file)?;

@@ -1837,6 +1837,20 @@ fn scan_source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
                 }
                 index += next.len_utf8();
             }
+        } else if character == '\''
+            && let mut rest = source[index + 1..].chars()
+            && rest
+                .next()
+                .is_some_and(|next| next.is_ascii_alphabetic() || next == '_')
+            && rest.next() != Some('\'')
+        {
+            // A Rust lifetime, `'a`, as the surface tokenizer reads it.
+            index += 1;
+            while let Some(next) = source[index..].chars().next()
+                && (next.is_ascii_alphanumeric() || next == '_')
+            {
+                index += 1;
+            }
         } else if matches!(character, '"' | '\'') {
             let quote = character;
             index += character.len_utf8();

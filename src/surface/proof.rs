@@ -537,7 +537,7 @@ mod certificate_tests {
         let file = parse(
             r#"
                 theorem reflexive(x: int32) {
-                    ensures x == x by auto;
+                    ensures x <= x by auto;
                 }
             "#,
         )
@@ -655,7 +655,7 @@ mod certificate_tests {
             ClickFunctionEnvironment::new(file.click_function_definitions());
 
         let verified = verify_theorem_definitions(
-            &[],
+            TheoremEnvironment::new(&[]),
             file.theorem_definitions(),
             &predicate_environment,
             &click_function_environment,

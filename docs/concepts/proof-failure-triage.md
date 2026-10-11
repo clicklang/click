@@ -26,47 +26,26 @@ semantics, do not rewrite otherwise-correct implementation code merely to make
 a proof easier. Keep the original source pattern in the regression and put the
 adaptation or fix in the contract, proof, language, verifier, or kernel.
 
-Ordinary failure reports use source names and Click expressions for goals and
-recent facts. A historical read is shown as `at(point, expression)` only when
-that exact recorded state and the read's type can be recovered; it is never
-silently rewritten as a current read. Values held in live locals retain those
-locals' names inside fixed-state subproofs. When a symbolic operand has no
-source name, a partial diagnostic retains the surrounding expression with a
-placeholder such as `<unnamed A>`. These placeholders share identities
-within one report and are diagnostic text, not Click proof expressions. Facts
-whose structure cannot be rendered within the fixed budget are omitted with
-one bounded explanation per context. Transport failures keep
-the written source and target and name stores that may have changed the cell.
-An explicitly requested `--trace-proof` can additionally show bounded internal
-facts and snapshot identities for debugging. Checked fact additions that
-cannot be displayed as source expressions use bounded internal notation with
-stable value and snapshot labels, marked as not being Click proof syntax.
-Their content is displayed rather than replaced by a count. Existing step,
-fact and output limits still explicitly report omissions.
+Facts, goals, and rejected requirements use one proposition formatter in both
+ordinary errors and proof traces. Readable Click expressions are used when they
+preserve the checked operands. Otherwise the formatter uses typed diagnostic
+notation; a saved source expression never substitutes for the checked fact.
+For example, a memory operand prints as
+`read<Bits64>(snapshot#1, pointer=value#1)`, in an added fact just as in a goal.
+The width, snapshot, and address remain visible even when the source wrote only
+`parent->__rb_parent_color`. Different snapshots do not by themselves establish
+unequal values: the proof may establish that their reads agree.
 
-For pointer equalities with retained read identities, the trace recovers
-source expressions against the read's defining snapshot. When the reads share one snapshot it prints a common
-heading, for example `adds at before_rotation: p->left == rid`. Mixed reads
-are qualified individually, for example
-`adds: at(before_rotation, p->left) == at(after_rotation, sibling->left)`.
-Immutable proof-local names such as `rid` need no snapshot qualifier.
-
-Named marks and recorded program points are preferred; unnamed snapshots use
-stable report-local `snapshot#N` labels. Source names are used only when their
-values and field addresses match: reassigning a C local must not rename an
-older read as a current one. If source recovery fails, the trace retains its
-explicit `at(snapshot#N, pointer_read(address value#M))` fallback. An address
-through a local from another state is qualified separately, as in
-`at(snapshot#N, at(before_rotation, sibling)->left)`. Different terms or
-defining snapshots do not by themselves establish unequal values.
-A bounded legend after the trace defines generated address and snapshot labels.
-It shows immutable proof names, pointer-read constructions, byte offsets, and
-memory constructions with their inputs. An initial empty memory is an explicit
-root. Other snapshots describe a recorded transition or an internal transformation,
-such as projecting a source memory for a particular pointer read, substituting a
-variable, or joining branch memories. Read projections name both their source
-snapshot and their pointer. Seeded cells name their source and stride; call and
-loop effects show their write footprints when those are specified.
+Goals, requirements, and traced facts share names and snapshot labels. A bounded legend defines
+generated addresses and snapshots, including immutable proof names, pointer-read
+constructions, byte offsets, and memory constructions with their inputs. An
+initial empty memory is an explicit root. Other snapshots describe a recorded
+transition or an internal transformation, such as projecting a source memory
+for a particular pointer read, substituting a variable, or joining branch
+memories. Read projections name their source snapshot and pointer. Seeded cells
+name their source and stride; call and loop effects show their write footprints
+when those are specified. Recorded marks and program points appear in these
+definitions when they match the snapshot.
 
 Construction records travel with snapshots across threads and are excluded from
 memory equality and proof evidence. A missing record on a noninitial snapshot is
@@ -78,8 +57,9 @@ and program points are used only for matching snapshots, never guessed from near
 statements. These definitions describe constructions, not additional checked
 equalities or a complete execution history.
 
-When an exact source spelling is unavailable, `adds (internal):` prints the
-fact's typed diagnostic form. This includes pointer and scalar equalities,
+Each trace addition uses `adds:` followed by the same proposition form used
+for `goal:` and requirements. Typed diagnostic notation is used wherever a
+source expression would hide checked identities. This includes pointer and scalar equalities,
 viewability with byte extents, model/function equalities, resource containment,
 validated resource-composition entries, and distinct volatile-write events.
 Internal notation is not promised to be valid Click proof input. Read types,
@@ -95,7 +75,7 @@ supplied and required values and the argument position. Up to four explicit
 equalities sharing the supplied value may be shown as potentially relevant
 evidence. That selection is diagnostic guidance, not a claim about the cause
 of failure or a prescription for the missing proof. The comparison uses the
-same source expressions and snapshot conventions as the preceding trace facts.
+same value and snapshot labels as the preceding trace facts.
 These details are diagnostic only and do not add equalities or change proof
 checking.
 

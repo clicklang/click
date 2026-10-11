@@ -39,11 +39,11 @@ pub(in crate::surface) fn theorem_requirement_propositions(
         .collect()
 }
 
-/// Proves `theorem_definitions` in order. Each proof may apply `dependencies`
-/// and the definitions before it. Dependencies are declarations proved
-/// elsewhere, such as the standard library, and are not re-proved here.
+/// Proves `theorem_definitions` in order. Each proof may apply the theorems of
+/// `dependencies` and the definitions before it. Dependencies are declarations
+/// proved elsewhere, such as the standard library, and are not re-proved here.
 pub(in crate::surface) fn verify_theorem_definitions(
-    dependencies: &[TheoremDefinition],
+    dependencies: TheoremEnvironment,
     theorem_definitions: &[TheoremDefinition],
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
@@ -52,7 +52,7 @@ pub(in crate::surface) fn verify_theorem_definitions(
     function_source_registry: Arc<FunctionSourceRegistry>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     let mut verified = Vec::new();
-    let mut theorem_environment = TheoremEnvironment::new(dependencies);
+    let mut theorem_environment = dependencies;
     for theorem in theorem_definitions {
         crate::surface::enter_ambient_declaration(theorem.name());
         #[cfg(test)]
@@ -185,6 +185,8 @@ pub(in crate::surface) fn verify_concrete_theorem_definition(
 
 #[derive(Clone, Debug)]
 pub(super) struct PureTheoremContext {
+    /// Immutable specification parameter names, retained for diagnostics.
+    pub(super) diagnostic_names: std::sync::Arc<[(Variable, String)]>,
     pub(super) declaration_bindings: BTreeMap<String, ContractExpression>,
     pub(super) memory: CMemory,
     pub(super) values: BTreeMap<String, CValue>,
@@ -1298,27 +1300,32 @@ pub(super) fn pure_theorem_context(
     // positional is what keeps `requirement N` diagnostics and `apply … using`
     // lists naming the clause the reader wrote.
     let surface_requires = theorem_requirement_propositions(theorem)?;
-    let requires = surface_requires
-        .iter()
-        .map(|proposition| {
-            lower_pure_theorem_proposition_with_integer_values(
-                theorem.name(),
-                proposition,
-                &values,
-                &integer_values,
-                &array_refs,
-                &memory,
-                predicate_environment,
-                click_function_environment,
-            )
-            .map_err(|message| {
-                ClickError::new(format!(
-                    "theorem `{}` setup failed: could not lower requirement: {message}",
-                    theorem.name()
-                ))
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut requires = Vec::with_capacity(surface_requires.len());
+    let mut requirement_assumptions = PureFactContext::new();
+    for proposition in &surface_requires {
+        let (lowered, _) = lower_pure_theorem_proposition_recording_introductions(
+            theorem.name(),
+            proposition,
+            &requirement_assumptions,
+            &values,
+            &array_refs,
+            &BTreeMap::new(),
+            &integer_values,
+            &memory,
+            predicate_environment,
+            click_function_environment,
+        )
+        .map_err(|message| {
+            ClickError::new(format!(
+                "theorem `{}` setup failed: could not lower requirement: {message}",
+                theorem.name()
+            ))
+        })?;
+        // Guard evidence is available to later requirements, while every
+        // principal remains in the exported implication's premise list.
+        requirement_assumptions = requirement_assumptions.assume_proposition(lowered.clone());
+        requires.push(lowered);
+    }
     let mut surface_requirements = SurfacePropositionMap::default();
     for (kernel, surface) in requires.iter().zip(&surface_requires) {
         surface_requirements.record_lowering(surface, kernel)?;
@@ -1348,7 +1355,24 @@ pub(super) fn pure_theorem_context(
             requires.push(guard);
         }
     }
+    let diagnostic_names = theorem
+        .parameters()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, parameter)| {
+            let variable = match parameter.click_type() {
+                ClickType::Algebraic(_) => {
+                    crate::surface::lowering::algebraic_binder_variable(index).ok()?
+                }
+                ClickType::Integer => Variable(index as u64),
+                _ => return None,
+            };
+            Some((variable, parameter.name().to_owned()))
+        })
+        .collect::<Vec<_>>()
+        .into();
     Ok(PureTheoremContext {
+        diagnostic_names,
         declaration_bindings: BTreeMap::new(),
         memory,
         values,
@@ -3530,6 +3554,52 @@ mod tests {
     use super::*;
 
     #[test]
+    fn pure_requirements_use_earlier_evaluation_guards_without_dropping_them() {
+        for (parameters, arguments, expression, wrong_expression) in [
+            ("n: int32", "n", "n + 1", "n - 1"),
+            ("n: int64", "n", "n + 1i64", "n - 1i64"),
+            ("n: uint32, d: uint32", "n, d", "n / d", "n * d"),
+            ("n: uint64, d: uint64", "n, d", "n / d", "n * d"),
+        ] {
+            let guard = format!("requires defined({expression});");
+            let observation = format!("requires to_integer({expression}) == 1;");
+            let source = format!(
+                "theorem guarded({parameters}) {{ {guard} {observation} ensures to_integer({expression}) == 1 by {{ assumption(); }} }}"
+            );
+            crate::surface::verify_c0_sources(&source, &[]).unwrap();
+            let expanded =
+                crate::surface::expand_c0_claim_source_by_label(&source, &[], "guarded.ensures_0")
+                    .unwrap();
+            crate::surface::verify_c0_sources(&expanded, &[]).unwrap();
+            for invalid in [
+                source.replace(&guard, ""),
+                source.replace(&guard, &format!("requires defined({wrong_expression});")),
+                source.replace(
+                    &format!("{guard} {observation}"),
+                    &format!("{observation} {guard}"),
+                ),
+            ] {
+                assert!(
+                    crate::surface::verify_c0_sources(&invalid, &[]).is_err(),
+                    "{invalid}"
+                );
+            }
+            let caller = format!(
+                "{source} theorem caller({parameters}) {{ {guard} {observation} ensures to_integer({expression}) == 1 by {{ apply(guarded({arguments})); assumption(); }} }}"
+            );
+            crate::surface::verify_c0_sources(&caller, &[]).unwrap();
+        }
+        let source = "theorem byte_at_next(bytes: uint8[], n: int32, value: Integer) { requires defined(n + 1); requires value == to_integer((int32)bytes[n + 1]); ensures value == to_integer((int32)bytes[n + 1]) by { assumption(); } }";
+        crate::surface::verify_c0_sources(source, &[]).unwrap();
+        assert!(
+            crate::surface::verify_c0_sources(&source.replace("requires defined(n + 1);", ""), &[])
+                .is_err()
+        );
+        let missing_call_guard = "theorem guarded(n: int32) { requires defined(n + 1); requires to_integer(n + 1) == 1; ensures n == n by { normalize(); } } theorem caller(n: int32) { ensures n == n by { apply(guarded(n)); normalize(); } }";
+        assert!(crate::surface::verify_c0_sources(missing_call_guard, &[]).is_err());
+    }
+
+    #[test]
     fn ordinary_pure_scripts_retain_completion_without_compatibility() {
         for body in [
             "normalize();",
@@ -3979,13 +4049,13 @@ mod tests {
     fn pure_instantiate_branch_continuations_keep_checked_sibling_proofs() {
         let source = r#"
             theorem branched(x: int32) {
-                requires forall (k: int32) { k == k };
+                requires forall (k: int32) { k <= k };
                 requires x == 0 or x != 0;
-                ensures x == x by {
+                ensures x <= x by {
                     if x == 0 {
-                        instantiate(forall (k: int32) { k == k }, x) using {}
+                        instantiate(forall (k: int32) { k <= k }, x) using {}
                     } else {
-                        instantiate(forall (k: int32) { k == k }, x) using {}
+                        instantiate(forall (k: int32) { k <= k }, x) using {}
                     }
                     assumption();
                 }
@@ -4029,7 +4099,7 @@ mod tests {
                     .is_some()
             );
             let wrong_sibling = source.replacen(
-                "instantiate(forall (k: int32) { k == k }, x) using {}",
+                "instantiate(forall (k: int32) { k <= k }, x) using {}",
                 "",
                 1,
             );

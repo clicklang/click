@@ -161,7 +161,7 @@ fn charon_owned_array_fields_live_refresh_and_compiler_rejections() {
     .unwrap();
     fs::write(p.root.join("owned.rs"), "pub struct Packet { pub words: [u32;4] } pub fn nonuniform()->u32 { let packet=Packet { words:[1,2,3,4] }; let next=packet; next.words[0] }").unwrap();
     refresh_import(&p.config()).unwrap();
-    C0VerificationSession::new_program_prepared("verifying \"owned.rs\"; uint32 nonuniform() { ensures result == 1u32; } by { execute(); simp(); }", &load_import(&p.config()).unwrap()).unwrap();
+    C0VerificationSession::new_program_prepared("verifying \"owned.rs\"; fn nonuniform() -> u32 { ensures result == 1u32; } by { execute(); simp(); }", &load_import(&p.config()).unwrap()).unwrap();
     fs::write(p.root.join("owned.rs"), "pub struct Packet { pub words: [u32;4] } pub fn invalid()->u32 { let packet=Packet { words:[1;4] }; let next=packet; packet.words[0] + next.words[0] }").unwrap();
     fs::remove_file(p.root.join("owned.ullbc")).unwrap();
     let error = refresh_import(&p.config()).unwrap_err();
@@ -447,15 +447,15 @@ fn charon_assignment_operators_live_refresh_and_source_semantics() {
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     let sidecar = r#"verifying "operators.rs";
-void S_add_assign_u32(struct S* self, uint32 rhs) { owns self->_0; ensures self->_0 == rhs; } by { execute(); simp(); }
-void S_add_assign_ref_S(struct S* self, const struct S* rhs) { requires separate(memory(self->_0), memory(rhs->_0)); views rhs->_0; owns self->_0; ensures self->_0 == old(rhs->_0); ensures rhs->_0 == old(rhs->_0); } by { execute(); simp(); }
-void scalar(struct S* x, uint32 rhs) { owns x->_0; ensures x->_0 == rhs; } by { execute(); simp(); }
-void borrowed(struct S* x, const struct S* rhs) { requires separate(memory(x->_0), memory(rhs->_0)); views rhs->_0; owns x->_0; ensures x->_0 == old(rhs->_0); } by { execute(); simp(); }
+impl AddAssign<u32> for S { fn add_assign(&mut self, rhs: u32) { owns self.0; ensures self.0 == rhs; } by { execute(); simp(); } }
+impl AddAssign<&S> for S { fn add_assign(&mut self, rhs: &S) { requires separate(memory(self.0), memory(rhs.0)); views rhs.0; owns self.0; ensures self.0 == old(rhs.0); ensures rhs.0 == old(rhs.0); } by { execute(); simp(); } }
+fn scalar(x: &mut S, rhs: u32) { owns x.0; ensures x.0 == rhs; } by { execute(); simp(); }
+fn borrowed(x: &mut S, rhs: &S) { requires separate(memory(x.0), memory(rhs.0)); views rhs.0; owns x.0; ensures x.0 == old(rhs.0); } by { execute(); simp(); }
 "#;
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     let false_math = sidecar.replace(
-        "ensures self->_0 == rhs;",
-        "ensures self->_0 == old(self->_0) + rhs;",
+        "ensures self.0 == rhs;",
+        "ensures self.0 == old(self.0) + rhs;",
     );
     assert!(C0VerificationSession::new_program_prepared(&false_math, &prepared).is_err());
 }
@@ -721,13 +721,13 @@ fn charon_checksum_arithmetic_checks_panic_bounds_and_full_width_values() {
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(CHARON_ARITHMETIC_SIDECAR, &prepared).unwrap();
     for claim in [
-        "uint32 reduce(uint32 value) { requires value == 4294967295u32; ensures result == 224u32; }",
-        "uint64 wide_quotient(uint64 value, uint64 divisor) { requires value == 18446744073709551615u64; requires divisor == 1u64; ensures result == 18446744073709551615u64; }",
-        "uint64 wide_left(uint64 value, uint64 count) { requires value == 18446744073709551615u64; requires count == 1u64; ensures result == 18446744073709551614u64; }",
-        "uint64 wide_right(uint64 value, uint64 count) { requires value == 18446744073709551615u64; requires count == 63u64; ensures result == 1u64; }",
-        "uint16 word_right(uint16 value, uint64 count) { requires value == 65535; requires count == 15u64; ensures result == 1; }",
-        "uint8 shifted_byte(uint8 value, uint32 count) { requires value == 128; requires count == 1u32; ensures result == 0; }",
-        "uint32 conditional_divide(uint32 value, uint32 divisor, bool skip) { requires skip != 0; requires divisor == 0u32; ensures result == 0u32; }",
+        "fn reduce(value: u32) -> u32 { requires value == 4294967295u32; ensures result == 224u32; }",
+        "fn wide_quotient(value: usize, divisor: usize) -> usize { requires value == 18446744073709551615u64; requires divisor == 1u64; ensures result == 18446744073709551615u64; }",
+        "fn wide_left(value: usize, count: usize) -> usize { requires value == 18446744073709551615u64; requires count == 1u64; ensures result == 18446744073709551614u64; }",
+        "fn wide_right(value: usize, count: usize) -> usize { requires value == 18446744073709551615u64; requires count == 63u64; ensures result == 1u64; }",
+        "fn word_right(value: u16, count: usize) -> u16 { requires value == 65535; requires count == 15u64; ensures result == 1; }",
+        "fn shifted_byte(value: u8, count: u32) -> u8 { requires value == 128; requires count == 1u32; ensures result == 0; }",
+        "fn conditional_divide(value: u32, divisor: u32, skip: bool) -> u32 { requires skip != 0; requires divisor == 0u32; ensures result == 0u32; }",
     ] {
         let claim = format!("verifying \"arithmetic.rs\"; {claim} by {{ execute(); simp(); }}");
         C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
@@ -750,7 +750,7 @@ fn charon_checksum_arithmetic_checks_panic_bounds_and_full_width_values() {
     }
     for count in [64u64, 4294967296, u64::MAX] {
         let claim = format!(
-            "verifying \"arithmetic.rs\"; uint64 wide_left(uint64 value, uint64 count) {{ requires value == 0u64; requires count == {count}u64; ensures result == 0u64; }} by {{ execute(); }}"
+            "verifying \"arithmetic.rs\"; fn wide_left(value: usize, count: usize) -> usize {{ requires value == 0u64; requires count == {count}u64; ensures result == 0u64; }} by {{ execute(); }}"
         );
         let error = C0VerificationSession::new_program_prepared(&claim, &prepared)
             .err()
@@ -967,7 +967,7 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
         (7, 4294967296),
     ] {
         let claim = format!(
-            "verifying \"chunks.rs\"; uint64 tail(const uint8* bytes, uint64 bytes_len, uint64 size) {{ requires bytes_len == {length}u64; requires size == {size}u64; ensures result == {}u64; }} by {{ execute(); simp(); }}",
+            "verifying \"chunks.rs\"; fn tail(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == {size}u64; ensures result == {}u64; }} by {{ execute(); simp(); }}",
             length % size
         );
         C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
@@ -975,14 +975,14 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
     for length in [0u64, 3, 4, 7, 8] {
         let result = if length < 4 { 0 } else { 4 };
         let claim = format!(
-            "verifying \"chunks.rs\"; uint64 next_len(const uint8* bytes, uint64 bytes_len) {{ requires bytes_len == {length}u64; ensures result == {result}u64; }} by {{ execute(); simp(); }}"
+            "verifying \"chunks.rs\"; fn next_len(bytes: &[u8]) -> usize {{ requires bytes.len() == {length}u64; ensures result == {result}u64; }} by {{ execute(); simp(); }}"
         );
         C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
     for length in [1u64, 3, 5, 7] {
         let offset = length - length % 4;
         let claim = format!(
-            "verifying \"chunks.rs\"; uint8 tail_byte(const uint8* bytes, uint64 bytes_len) {{ requires bytes_len == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[{offset}]); }} by {{ have bytes_len - bytes_len % 4u64 == {offset}u64 by {{ rewrite(bytes_len == {length}u64); simp(); }} execute(); simp(); }}"
+            "verifying \"chunks.rs\"; fn tail_byte(bytes: &[u8]) -> u8 {{ requires bytes.len() == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[{offset}]); }} by {{ have bytes.len() - bytes.len() % 4u64 == {offset}u64 by {{ rewrite(bytes.len() == {length}u64); simp(); }} execute(); simp(); }}"
         );
         C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
@@ -1132,7 +1132,7 @@ fn charon_slices_preserve_metadata_permissions_and_cleanup() {
     // Metadata alone requires no memory resource, including empty and very large slices.
     for length in [0u64, 8, 1024, 1_000_000, u64::MAX] {
         let claim = format!(
-            "verifying \"slices.rs\"; uint64 length(const uint8* bytes, uint64 bytes_len) {{ requires bytes_len == {length}u64; ensures result == {length}u64; }} by {{ execute(); simp(); }}"
+            "verifying \"slices.rs\"; fn length(bytes: &[u8]) -> usize {{ requires bytes.len() == {length}u64; ensures result == {length}u64; }} by {{ execute(); simp(); }}"
         );
         C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
@@ -1907,9 +1907,9 @@ fn assert_native_boundary_proof(source: &str, sidecar: &str) {
     assert!(C0VerificationSession::new_program_prepared(&false_claim, &prepared).is_err());
     for permission in [
         "owns bytes[0..1];",
-        "owns p[0..1];",
+        "owns *p;",
         "views bytes[0..2];",
-        "owns bytes[0..(int32)(uint32)bytes_len];",
+        "owns *bytes;",
     ] {
         if sidecar.contains(permission) {
             assert!(
@@ -1991,7 +1991,7 @@ fn rust_checked_arithmetic_requires_a_panic_freedom_bound() {
     let p = Project::new("pub fn increment(x:i32)->i32 { x + 1 }");
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
-    let claim = "verifying \"borrow.rs\"; int32 increment(int32 x) { ensures result == x + 1; } by { execute(); simp(); }";
+    let claim = "verifying \"borrow.rs\"; fn increment(x: i32) -> i32 { ensures result == x + 1; } by { execute(); simp(); }";
     assert!(C0VerificationSession::new_program_prepared(claim, &prepared).is_err());
     let bounded = claim.replace("ensures result", "requires x < 2147483647; ensures result");
     C0VerificationSession::new_program_prepared(&bounded, &prepared).unwrap();
@@ -2003,7 +2003,7 @@ fn rust_boolean_return_and_local_initialization_verify() {
     let p = Project::new("pub fn invert(x:bool)->bool { let answer = !x; answer }");
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
-    let claim = "verifying \"borrow.rs\"; bool invert(bool x) { ensures result == (if x != 0 { 0 } else { 1 }); } by { if x == 0 { execute(); simp(); } else { execute(); simp(); } }";
+    let claim = "verifying \"borrow.rs\"; fn invert(x: bool) -> bool { ensures result == (if x != 0 { 0 } else { 1 }); } by { if x == 0 { execute(); simp(); } else { execute(); simp(); } }";
     C0VerificationSession::new_program_prepared(claim, &prepared).unwrap();
 }
 
@@ -2048,7 +2048,7 @@ fn rust_moves_drop_effect_and_return_capture_verify() {
 fn rust_move_borrow_conflicts_and_partial_moves_fail_closed() {
     assert_native_boundary_proof(
         "pub struct S<'a> {pub p:&'a mut i32} pub fn bad(p:&mut i32) {let a=S{p};let moved=a.p;*moved=4;}",
-        "verifying \"borrow.rs\"; void bad(int32* p) { owns p[0..1]; ensures p[0] == 4; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(p: &mut i32) { owns *p; ensures *p == 4; } by { execute(); simp(); }",
     );
 
     for (source, diagnostic) in [
@@ -2102,13 +2102,13 @@ fn rust_owned_field_loan_recovery_verifies() {
         MOVE_SOURCE.split("pub fn restore").next().unwrap()
     );
     let (p, _) = moves_project(&source);
-    let sidecar = format!("{}void cleanup(int32* value) {{ owns value[0..1]; ensures value[0] == 42; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("fn restore").next().unwrap()).replace("guard.rs", "borrow.rs");
+    let sidecar = format!("{}fn cleanup(value: &mut i32) {{ owns *value; ensures *value == 42; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("fn restore").next().unwrap()).replace("guard.rs", "borrow.rs");
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     assert!(
         C0VerificationSession::new_program_prepared(
-            &sidecar.replace("value[0] == 42", "value[0] == 1"),
+            &sidecar.replace("*value == 42", "*value == 1"),
             &prepared
         )
         .is_err()
@@ -2143,7 +2143,7 @@ fn rust_owned_field_parent_can_write_after_explicit_child_drop() {
         MOVE_SOURCE.split("pub fn restore").next().unwrap()
     );
     let (p, _) = moves_project(&source);
-    let sidecar = format!("{}void cleanup(int32* value) {{ owns value[0..1]; ensures value[0] == 43; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("fn restore").next().unwrap()).replace("guard.rs", "borrow.rs");
+    let sidecar = format!("{}fn cleanup(value: &mut i32) {{ owns *value; ensures *value == 43; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("fn restore").next().unwrap()).replace("guard.rs", "borrow.rs");
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
@@ -2154,7 +2154,7 @@ fn rust_owned_field_parent_can_write_after_explicit_child_drop() {
 fn rust_owned_disjoint_mutable_fields_verify() {
     let source = "pub struct Pair {pub x:i32,pub y:i32} pub fn set(left:&mut i32,right:&mut i32) {*left=7;*right=9;} pub fn fields()->i32 {let mut pair=Pair{x:1,y:2}; let left=&mut pair.x; let right=&mut pair.y; set(left,right); if pair.y == 9 {pair.x} else {0}}";
     let p = Project::new(source);
-    let sidecar = "verifying \"borrow.rs\"; void set(int32* left,int32* right) {owns left[0..1];owns right[0..1];ensures left[0]==7;ensures right[0]==9;} by {execute();simp();} int32 fields() {ensures result==7;} by {execute();simp();}";
+    let sidecar = "verifying \"borrow.rs\"; fn set(left: &mut i32, right: &mut i32) {owns *left;owns *right;ensures *left==7;ensures *right==9;} by {execute();simp();} fn fields() -> i32 {ensures result==7;} by {execute();simp();}";
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
@@ -2203,7 +2203,7 @@ fn rust_moves_plain_struct_and_reads_destination() {
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(
-        "verifying \"borrow.rs\"; int32 plain() {ensures result == 17;} by {execute(); simp();}",
+        "verifying \"borrow.rs\"; fn plain() -> i32 {ensures result == 17;} by {execute(); simp();}",
         &prepared,
     )
     .unwrap();
@@ -2218,7 +2218,7 @@ fn rust_two_guards_clean_up_in_reverse_construction_order() {
         MOVE_SOURCE.split("pub fn restore").next().unwrap()
     );
     let (p, _) = moves_project(&source);
-    let sidecar = format!("{}void cleanup(int32* left,int32* right) {{ owns left[0..1]; owns right[0..1]; ensures left[0] == 17; ensures right[0] == 42; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("fn restore").next().unwrap()).replace("guard.rs", "borrow.rs");
+    let sidecar = format!("{}fn cleanup(left: &mut i32, right: &mut i32) {{ owns *left; owns *right; ensures *left == 17; ensures *right == 42; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("fn restore").next().unwrap()).replace("guard.rs", "borrow.rs");
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
@@ -2430,9 +2430,8 @@ fn rust_unsigned_panic_paths_are_rejected() {
         let p = Project::new(&format!("pub fn bad(x:{ty})->{ty} {{ {expression} }}"));
         refresh_import(&p.config()).unwrap();
         let prepared = load_import(&p.config()).unwrap();
-        let cty = if ty == "u8" { "uint8" } else { "uint32" };
         let sidecar = format!(
-            "verifying \"borrow.rs\"; {cty} bad({cty} x) {{ requires {precondition}; ensures result == result; }} by {{ execute(); simp(); }}"
+            "verifying \"borrow.rs\"; fn bad(x: {ty}) -> {ty} {{ requires {precondition}; ensures result == result; }} by {{ execute(); simp(); }}"
         );
         assert!(
             C0VerificationSession::new_program_prepared(&sidecar, &prepared).is_err(),
@@ -2444,21 +2443,20 @@ fn rust_unsigned_panic_paths_are_rejected() {
 #[test]
 #[ignore = "nightly: 13 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_unsigned_nested_checks_and_short_circuit_preserve_panics() {
-    for (expression, return_type, valid) in [
-        ("(x + 1) as u8", "uint8", false),
+    for (expression, rust_type, valid) in [
+        ("(x + 1) as u8", "u8", false),
         ("false && x + 1 > 0", "bool", true),
         ("true || x + 1 > 0", "bool", true),
         ("true && x + 1 > 0", "bool", false),
         ("false || x + 1 > 0", "bool", false),
     ] {
-        let rust_type = if return_type == "bool" { "bool" } else { "u8" };
         let p = Project::new(&format!(
             "pub fn check(x:u32)->{rust_type} {{ {expression} }}"
         ));
         refresh_import(&p.config()).unwrap();
         let prepared = load_import(&p.config()).unwrap();
         let sidecar = format!(
-            "verifying \"borrow.rs\"; {return_type} check(uint32 x) {{ requires x == 4294967295u32; ensures result == result; }} by {{ execute(); simp(); }}"
+            "verifying \"borrow.rs\"; fn check(x: u32) -> {rust_type} {{ requires x == 4294967295u32; ensures result == result; }} by {{ execute(); simp(); }}"
         );
         let result = C0VerificationSession::new_program_prepared(&sidecar, &prepared);
         assert_eq!(result.is_ok(), valid, "{expression}: {:?}", result.err());
@@ -2474,11 +2472,11 @@ fn rust_unsigned_casts_bitwise_and_assignments_verify() {
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     let sidecar = "verifying \"borrow.rs\";
-uint8 bits(uint8 x) { requires x == 128; ensures result == 128; } by { execute(); simp(); }
-uint8 narrow(int32 x) { requires x == -1; ensures result == 255; } by { execute(); simp(); }
-int32 signed(uint32 x) { requires x == 4294967295u32; ensures result == -1; } by { execute(); simp(); }
-uint32 shift(uint32 x, int32 n) { requires x == 4294967295u32; requires n == 31; ensures result == 1u32; } by { execute(); simp(); }
-uint32 byte_count(uint32 x, uint8 n) { requires n < 32u32; ensures result == (x << (uint32)n); } by { execute(); simp(); }";
+fn bits(x: u8) -> u8 { requires x == 128; ensures result == 128; } by { execute(); simp(); }
+fn narrow(x: i32) -> u8 { requires x == -1; ensures result == 255; } by { execute(); simp(); }
+fn signed(x: u32) -> i32 { requires x == 4294967295u32; ensures result == -1; } by { execute(); simp(); }
+fn shift(x: u32, n: i32) -> u32 { requires x == 4294967295u32; requires n == 31; ensures result == 1u32; } by { execute(); simp(); }
+fn byte_count(x: u32, n: u8) -> u32 { requires n < 32u32; ensures result == (x << n as u32); } by { execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     assert!(
         C0VerificationSession::new_program_prepared(
@@ -2498,8 +2496,8 @@ fn rust_unsigned_references_and_byte_field_layout_verify() {
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     let sidecar = "verifying \"borrow.rs\";
-void write(uint8* p, uint32* q) { owns p[0..1]; owns q[0..1]; ensures p[0] == 255; ensures q[0] == 4294967295u32; } by { execute(); simp(); }
-void field(struct Pair* p) { owns p->byte; owns p->word; ensures p->byte == 7; ensures p->word == old(p->word); } by { execute(); simp(); }";
+fn write(p: &mut u8, q: &mut u32) { owns *p; owns *q; ensures *p == 255; ensures *q == 4294967295u32; } by { execute(); simp(); }
+fn field(p: &mut Pair) { owns p.byte; owns p.word; ensures p.byte == 7; ensures p.word == old(p.word); } by { execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
 }
 
@@ -2549,7 +2547,7 @@ fn rust_split_at_endpoints_and_full_width_lengths_verify() {
         (u64::MAX, 0),
     ] {
         let sidecar = format!(
-            "verifying \"borrow.rs\"; uint64 length(const uint8* bytes, uint64 bytes_len, uint64 mid) {{ requires bytes_len == {length}u64; requires mid == {midpoint}u64; ensures result == {}u64; }} by {{ execute(); simp(); }}",
+            "verifying \"borrow.rs\"; fn length(bytes: &[u8], mid: usize) -> usize {{ requires bytes.len() == {length}u64; requires mid == {midpoint}u64; ensures result == {}u64; }} by {{ execute(); simp(); }}",
             length - midpoint
         );
         C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
@@ -2558,35 +2556,35 @@ fn rust_split_at_endpoints_and_full_width_lengths_verify() {
 
 #[test]
 #[ignore = "nightly: 3s in the parallel gate"]
-fn rust_split_at_checks_bounds_before_pointer_narrowing() {
+fn rust_split_at_checks_its_bound_at_full_width() {
     let p = Project::new(
         "pub fn length(bytes: &[u8], mid: usize) -> usize { let (left, right) = bytes.split_at(mid); right.len() }",
     );
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
-    for (length, midpoint, label) in [
-        (0u64, 1u64, "Rust split_at panic check"),
-        (4, 5, "Rust split_at panic check"),
-        (4, 4294967296, "Rust split_at panic check"),
-        (
-            u64::MAX,
-            u64::MAX,
-            "Rust split_at memory-model offset bound",
-        ),
-        (
-            4294967296,
-            4294967296,
-            "Rust split_at memory-model offset bound",
-        ),
-    ] {
-        let sidecar = format!(
-            "verifying \"borrow.rs\"; uint64 length(const uint8* bytes, uint64 bytes_len, uint64 mid) {{ requires bytes_len == {length}u64; requires mid == {midpoint}u64; ensures result == result; }} by {{ execute(); simp(); }}"
-        );
-        let error = C0VerificationSession::new_program_prepared(&sidecar, &prepared)
-            .err()
-            .expect("invalid split must fail");
+    let sidecar = |length: u64, midpoint: u64| {
+        format!(
+            "verifying \"borrow.rs\"; fn length(bytes: &[u8], mid: usize) -> usize {{ requires bytes.len() == {length}u64; requires mid == {midpoint}u64; ensures result == result; }} by {{ execute(); simp(); }}"
+        )
+    };
+    // A midpoint past the length panics, whatever its width.
+    for (length, midpoint) in [(0u64, 1u64), (4, 5), (4, 4294967296)] {
+        let error =
+            C0VerificationSession::new_program_prepared(&sidecar(length, midpoint), &prepared)
+                .err()
+                .expect("invalid split must fail");
         assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
-        assert!(error.message().contains(label), "{}", error.message());
+        assert!(
+            error.message().contains("Rust split_at panic check"),
+            "{}",
+            error.message()
+        );
+    }
+    // A midpoint at a length past 32 bits splits: the offset is a 64-bit
+    // element index, with no narrower bound on it (`design/typed-indices.md`).
+    for (length, midpoint) in [(u64::MAX, u64::MAX), (4294967296, 4294967296)] {
+        C0VerificationSession::new_program_prepared(&sidecar(length, midpoint), &prepared)
+            .unwrap_or_else(|error| panic!("{length}, {midpoint}: {}", error.message()));
     }
 }
 
@@ -2595,22 +2593,22 @@ fn rust_split_at_checks_bounds_before_pointer_narrowing() {
 fn rust_split_at_rejects_unsupported_results_and_mutation() {
     assert_native_boundary_proof(
         "pub fn bad(bytes: &[u8]) { let pair = bytes.split_at(1); }",
-        "verifying \"borrow.rs\"; void bad(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 4u64; ensures 1 == 1; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(bytes: &[u8]) { requires bytes.len() == 4u64; ensures 1 == 1; } by { execute(); simp(); }",
     );
 
     assert_native_boundary_proof(
         "pub fn bad(bytes: &[u8; 4]) { let (left, right) = bytes.split_at(1); }",
-        "verifying \"borrow.rs\"; void bad(const uint8* bytes) {  ensures 1 == 1; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(bytes: &[u8; 4]) {  ensures 1 == 1; } by { execute(); simp(); }",
     );
 
     assert_native_boundary_proof(
         "pub fn bad(bytes: &mut [u8]) { let (left, right) = bytes.split_at(1); }",
-        "verifying \"borrow.rs\"; void bad(uint8* bytes, uint64 bytes_len) { requires bytes_len == 4u64; ensures 1 == 1; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(bytes: &mut [u8]) { requires bytes.len() == 4u64; ensures 1 == 1; } by { execute(); simp(); }",
     );
 
     assert_native_boundary_proof(
         "pub fn bad(bytes: &[u8]) { let (left, _) = bytes.split_at(1); }",
-        "verifying \"borrow.rs\"; void bad(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 4u64; ensures 1 == 1; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(bytes: &[u8]) { requires bytes.len() == 4u64; ensures 1 == 1; } by { execute(); simp(); }",
     );
 
     for (source, message) in [
@@ -2645,7 +2643,7 @@ fn rust_split_at_empty_results_reject_indexing() {
         refresh_import(&p.config()).unwrap();
         let prepared = load_import(&p.config()).unwrap();
         let sidecar = format!(
-            "verifying \"borrow.rs\"; uint8 read(const uint8* bytes, uint64 bytes_len, uint64 mid) {{ requires bytes_len == {length}u64; requires mid == {midpoint}u64; views bytes[0..{length}]; ensures result == result; }} by {{ execute(); simp(); }}"
+            "verifying \"borrow.rs\"; fn read(bytes: &[u8], mid: usize) -> u8 {{ requires bytes.len() == {length}u64; requires mid == {midpoint}u64; views bytes[0..{length}]; ensures result == result; }} by {{ execute(); simp(); }}"
         );
         let error = C0VerificationSession::new_program_prepared(&sidecar, &prepared)
             .err()
@@ -2694,36 +2692,36 @@ pub fn once(bytes: &[u8], counter: &mut u32) -> usize {
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     let sidecar = r#"verifying "borrow.rs";
-uint8 first(const uint8* bytes, uint64 bytes_len) {
-    requires bytes_len == 2u64;
+fn first(bytes: &[u8]) -> u8 {
+    requires bytes.len() == 2u64;
     views bytes[0..1];
     ensures result == bytes[0];
 } by { execute(); simp(); }
-uint8 nested(const uint8* bytes, uint64 bytes_len) {
-    requires bytes_len == 4u64;
+fn nested(bytes: &[u8]) -> u8 {
+    requires bytes.len() == 4u64;
     views bytes[0..4];
     ensures result == bytes[2];
     ensures bytes[0] == old(bytes[0]);
     ensures bytes[3] == old(bytes[3]);
 } by { execute(); simp(); }
-uint64 retarget(const uint8* bytes, uint64 bytes_len) {
-    requires bytes_len == 4u64;
+fn retarget(bytes: &[u8]) -> usize {
+    requires bytes.len() == 4u64;
     ensures result == 3u64;
 } by { execute(); simp(); }
-uint64 shadow(const uint8* bytes, uint64 bytes_len) {
-    requires bytes_len == 4u64;
+fn shadow(bytes: &[u8]) -> usize {
+    requires bytes.len() == 4u64;
     ensures result == 3u64;
 } by { execute(); simp(); }
-uint64 next(uint32* counter) {
+fn next(counter: &mut u32) -> usize {
     requires *counter == 1u32;
-    owns counter[0..1];
+    owns *counter;
     ensures result == 1u64;
     ensures *counter == 2u32;
 } by { execute(); simp(); }
-uint64 once(const uint8* bytes, uint64 bytes_len, uint32* counter) {
-    requires bytes_len == 4u64;
+fn once(bytes: &[u8], counter: &mut u32) -> usize {
+    requires bytes.len() == 4u64;
     requires *counter == 1u32;
-    owns counter[0..1];
+    owns *counter;
     ensures result == 3u64;
     ensures *counter == 2u32;
 } by { execute(); simp(); }
@@ -2764,9 +2762,9 @@ fn rust_byte_slices_variable_length_indexing_verify() {
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     let sidecar = "verifying \"borrow.rs\";
-uint8 read(const uint8* bytes, uint64 bytes_len, uint64 index) {
-    requires index < bytes_len;
-    views bytes[0..bytes_len];
+fn read(bytes: &[u8], index: usize) -> u8 {
+    requires index < bytes.len();
+    views *bytes;
     ensures result == bytes[index];
 } by { execute(); simp(); }";
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
@@ -2782,25 +2780,25 @@ fn rust_byte_slices_reject_panics_and_missing_write_authority() {
     for (source, signature, resource, index) in [
         (
             "pub fn bad(bytes:&[u8], index:usize)->u8 { bytes[index] }",
-            "uint8 bad(const uint8* bytes, uint64 bytes_len, uint64 index)",
+            "fn bad(bytes: &[u8], index: usize) -> u8",
             "views",
             0u64,
         ),
         (
             "pub fn bad(bytes:&[u8], index:usize)->u8 { bytes[index] }",
-            "uint8 bad(const uint8* bytes, uint64 bytes_len, uint64 index)",
+            "fn bad(bytes: &[u8], index: usize) -> u8",
             "views",
             4,
         ),
         (
             "pub fn bad(bytes:&[u8], index:usize)->u8 { bytes[index] }",
-            "uint8 bad(const uint8* bytes, uint64 bytes_len, uint64 index)",
+            "fn bad(bytes: &[u8], index: usize) -> u8",
             "views",
             4294967296,
         ),
         (
             "pub fn bad(bytes:&mut [u8], index:usize) { bytes[index] = 7; }",
-            "void bad(uint8* bytes, uint64 bytes_len, uint64 index)",
+            "fn bad(bytes: &mut [u8], index: usize)",
             "views",
             1,
         ),
@@ -2810,13 +2808,13 @@ fn rust_byte_slices_reject_panics_and_missing_write_authority() {
         let prepared = load_import(&p.config()).unwrap();
         let length = if index == 0 { 0 } else { 4 };
         let sidecar = format!(
-            "verifying \"borrow.rs\"; {signature} {{ requires bytes_len == {length}u64; requires index == {index}u64; {resource} bytes[0..{length}]; }} by {{ execute(); simp(); }}"
+            "verifying \"borrow.rs\"; {signature} {{ requires bytes.len() == {length}u64; requires index == {index}u64; {resource} bytes[0..{length}]; }} by {{ execute(); simp(); }}"
         );
         let error = C0VerificationSession::new_program_prepared(&sidecar, &prepared)
             .err()
             .expect("unsafe slice contract must fail");
         assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
-        if resource == "views" && signature.starts_with("void") {
+        if resource == "views" && signature.contains("&mut") {
             assert!(error.message().contains("owns"), "{}", error.message());
         } else {
             assert!(
@@ -2837,9 +2835,9 @@ fn rust_byte_slices_length_preserves_target_width_and_index_borrows_verify() {
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     let sidecar = "verifying \"borrow.rs\";
-uint64 length(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 4294967296u64; ensures result == 4294967296u64; } by { execute(); simp(); }
-void replace(uint8* bytes, uint64 bytes_len, uint64 index) { requires bytes_len == 4u64; requires index < 4u64; owns bytes[0..4]; ensures bytes[index] == 9; } by { execute(); simp(); }
-uint32 shift(uint32 x, uint64 n) { requires x == 1u32; requires n == 31u64; ensures result == 2147483648u32; } by { execute(); rewrite(n == 31u64); rewrite(x == 1u32); normalize(); }";
+fn length(bytes: &[u8]) -> usize { requires bytes.len() == 4294967296u64; ensures result == 4294967296u64; } by { execute(); simp(); }
+fn replace(bytes: &mut [u8], index: usize) { requires bytes.len() == 4u64; requires index < 4u64; owns bytes[0..4]; ensures bytes[index] == 9; } by { execute(); simp(); }
+fn shift(x: u32, n: usize) -> u32 { requires x == 1u32; requires n == 31u64; ensures result == 2147483648u32; } by { execute(); rewrite(n == 31u64); rewrite(x == 1u32); normalize(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     let error = C0VerificationSession::new_program_prepared(
         &sidecar.replace("n == 31u64", "n == 4294967296u64"),
@@ -2866,12 +2864,12 @@ uint32 shift(uint32 x, uint64 n) { requires x == 1u32; requires n == 31u64; ensu
 fn rust_byte_slice_unsupported_shapes_and_borrow_errors_are_refused() {
     assert_native_boundary_proof(
         "pub fn bad(bytes:&[u32])->usize { bytes.len() }",
-        "verifying \"borrow.rs\"; uint64 bad(const uint32* bytes, uint64 bytes_len) { ensures result == bytes_len; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(bytes: &[u32]) -> usize { ensures result == bytes.len(); } by { execute(); simp(); }",
     );
 
     assert_native_boundary_proof(
         "pub fn bad(bytes:&mut [u8], index:usize) { bytes[index] += 1; }",
-        "verifying \"borrow.rs\"; void bad(uint8* bytes, uint64 bytes_len, uint64 index) { requires index < bytes_len; requires bytes[index] < 255; owns bytes[0..bytes_len]; ensures bytes[index] == old(bytes[index]) + 1; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(bytes: &mut [u8], index: usize) { requires index < bytes.len(); requires bytes[index] < 255; owns *bytes; ensures bytes[index] == old(bytes[index]) + 1; } by { execute(); simp(); }",
     );
 
     for (source, message) in [
@@ -2918,7 +2916,7 @@ fn rust_fixed_array_indices_reject_panics_before_narrowing() {
         refresh_import(&p.config()).unwrap();
         let prepared = load_import(&p.config()).unwrap();
         let sidecar = format!(
-            "verifying \"borrow.rs\"; uint8 read(const uint8* bytes, uint64 index) {{ requires index == {index}u64; views bytes[0..{length}]; }} by {{ execute(); simp(); }}"
+            "verifying \"borrow.rs\"; fn read(bytes: &[u8; {length}], index: usize) -> u8 {{ requires index == {index}u64; views bytes[0..{length}]; }} by {{ execute(); simp(); }}"
         );
         let error = C0VerificationSession::new_program_prepared(&sidecar, &prepared)
             .err()
@@ -2937,12 +2935,12 @@ fn rust_fixed_array_access_requires_memory_authority() {
     for (source, signature, resources) in [
         (
             "pub fn read(bytes: &[u8; 4]) -> u8 { bytes[0] }",
-            "uint8 read(const uint8* bytes)",
+            "fn read(bytes: &[u8; 4]) -> u8",
             "",
         ),
         (
             "pub fn write(words: &mut [u32; 3]) { words[1] = 7; }",
-            "void write(uint32* words)",
+            "fn write(words: &mut [u32; 3])",
             "views words[0..3];",
         ),
     ] {
@@ -2982,7 +2980,7 @@ fn rust_fixed_array_access_requires_memory_authority() {
 fn rust_fixed_array_unsupported_shapes_and_conflicting_borrows_are_refused() {
     assert_native_boundary_proof(
         "pub fn bad(bytes: &mut [u8; 4]) { bytes[0] += 1; }",
-        "verifying \"borrow.rs\"; void bad(uint8* bytes) { requires bytes[0] < 255; owns bytes[0..1]; ensures bytes[0] == old(bytes[0]) + 1; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(bytes: &mut [u8; 4]) { requires bytes[0] < 255; owns bytes[0..1]; ensures bytes[0] == old(bytes[0]) + 1; } by { execute(); simp(); }",
     );
 
     for (source, message) in [
@@ -3123,7 +3121,7 @@ fn rust_arrays_coerce_to_byte_slices_with_lengths_and_authority() {
 fn rust_array_to_slice_coercions_preserve_bounds_and_borrow_checks() {
     assert_native_boundary_proof(
         "pub fn bad(words: &[u32; 4]) -> usize { let s: &[u32] = words; s.len() }",
-        "verifying \"borrow.rs\"; uint64 bad(const uint32* words) { ensures result == 4u64; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(words: &[u32; 4]) -> usize { ensures result == 4u64; } by { execute(); simp(); }",
     );
 
     for (source, diagnostic) in [
@@ -3147,7 +3145,7 @@ fn rust_array_to_slice_coercions_preserve_bounds_and_borrow_checks() {
     let prepared = load_import(&p.config()).unwrap();
     for index in ["2u64", "4294967296u64", "18446744073709551615u64"] {
         let sidecar = format!(
-            "verifying \"borrow.rs\"; uint8 read(const uint8* bytes, uint64 index) {{ requires index == {index}; views bytes[0..2]; ensures result == 0; }} by {{ execute(); simp(); }}"
+            "verifying \"borrow.rs\"; fn read(bytes: &[u8; 2], index: usize) -> u8 {{ requires index == {index}; views bytes[0..2]; ensures result == 0; }} by {{ execute(); simp(); }}"
         );
         assert!(C0VerificationSession::new_program_prepared(&sidecar, &prepared).is_err());
     }
@@ -3162,7 +3160,7 @@ fn rust_local_array_authority_and_copies_scale_with_array_length() {
         );
         let p = gate_fixtures::project(&format!("array-scale-{length}"), &source);
         let prepared = load_import(&p.config()).unwrap();
-        let sidecar = "verifying \"borrow.rs\"; uint8 first(const uint8* bytes, uint64 bytes_len) { requires bytes_len > 0u64; requires bytes_len <= 2147483647u64; views bytes[0..1]; ensures result == bytes[0]; } by { execute(); simp(); } uint8 run() { ensures result == 7; } by { execute(); simp(); }";
+        let sidecar = "verifying \"borrow.rs\"; fn first(bytes: &[u8]) -> u8 { requires bytes.len() > 0u64; requires bytes.len() <= 2147483647u64; views bytes[0..1]; ensures result == bytes[0]; } by { execute(); simp(); } fn run() -> u8 { ensures result == 7; } by { execute(); simp(); }";
         let (result, work) = click::instrumentation::measure_deterministic_work(|| {
             C0VerificationSession::new_program_prepared(sidecar, &prepared)
         });
@@ -3186,7 +3184,7 @@ fn rust_array_to_slice_calls_preserve_untouched_local_elements() {
     );
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
-    let sidecar = "verifying \"borrow.rs\"; uint8 first(const uint8* bytes, uint64 bytes_len) { requires bytes_len > 0u64; requires bytes_len <= 2147483647u64; views bytes[0..1]; ensures result == bytes[0]; } by { execute(); simp(); } void set(uint8* bytes, uint64 bytes_len) { requires bytes_len > 1u64; requires bytes_len <= 2147483647u64; owns bytes[1..2]; ensures bytes[1] == 7; } by { execute(); simp(); } uint8 untouched() { ensures result == 3; } by { execute(); simp(); } uint8 initial() { ensures result == 3; } by { execute(); simp(); }";
+    let sidecar = "verifying \"borrow.rs\"; fn first(bytes: &[u8]) -> u8 { requires bytes.len() > 0u64; requires bytes.len() <= 2147483647u64; views bytes[0..1]; ensures result == bytes[0]; } by { execute(); simp(); } fn set(bytes: &mut [u8]) { requires bytes.len() > 1u64; requires bytes.len() <= 2147483647u64; owns bytes[1..2]; ensures bytes[1] == 7; } by { execute(); simp(); } fn untouched() -> u8 { ensures result == 3; } by { execute(); simp(); } fn initial() -> u8 { ensures result == 3; } by { execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
 }
 
@@ -3249,7 +3247,7 @@ fn rust_usize_panic_paths_are_rejected() {
         refresh_import(&p.config()).unwrap();
         let prepared = load_import(&p.config()).unwrap();
         let sidecar = format!(
-            "verifying \"borrow.rs\"; uint64 bad(uint64 x) {{ requires {precondition}; ensures result == result; }} by {{ execute(); simp(); }}"
+            "verifying \"borrow.rs\"; fn bad(x: usize) -> usize {{ requires {precondition}; ensures result == result; }} by {{ execute(); simp(); }}"
         );
         assert!(
             C0VerificationSession::new_program_prepared(&sidecar, &prepared).is_err(),
@@ -3264,56 +3262,56 @@ fn rust_usize_boundaries_and_nested_checks() {
     for (source, return_type, precondition, expected, valid) in [
         (
             "x + 0",
-            "uint64",
+            "usize",
             "x == 18446744073709551615u64",
             "18446744073709551615u64",
             true,
         ),
         (
             "x * 0",
-            "uint64",
+            "usize",
             "x == 18446744073709551615u64",
             "0u64",
             true,
         ),
         (
             "x * 1",
-            "uint64",
+            "usize",
             "x == 18446744073709551615u64",
             "18446744073709551615u64",
             true,
         ),
         (
             "x - 1",
-            "uint64",
+            "usize",
             "x == 9223372036854775808u64",
             "9223372036854775807u64",
             true,
         ),
         (
             "x / 2",
-            "uint64",
+            "usize",
             "x == 18446744073709551615u64",
             "9223372036854775807u64",
             true,
         ),
         (
             "x % 2",
-            "uint64",
+            "usize",
             "x == 18446744073709551615u64",
             "1u64",
             true,
         ),
         (
             "{ let mut y = x; y += 1; y -= 1; y *= 1; y /= 1; y %= 2; y <<= 63; y >>= 63; y }",
-            "uint64",
+            "usize",
             "x == 4294967297u64",
             "1u64",
             true,
         ),
         (
             "(x + 1) as u32",
-            "uint32",
+            "u32",
             "x == 18446744073709551615u64",
             "0u32",
             false,
@@ -3340,16 +3338,13 @@ fn rust_usize_boundaries_and_nested_checks() {
             false,
         ),
     ] {
-        let ty = match return_type {
-            "uint32" => "u32",
-            "bool" => "bool",
-            _ => "usize",
-        };
-        let p = Project::new(&format!("pub fn check(x:usize)->{ty} {{ {source} }}"));
+        let p = Project::new(&format!(
+            "pub fn check(x:usize)->{return_type} {{ {source} }}"
+        ));
         refresh_import(&p.config()).unwrap();
         let prepared = load_import(&p.config()).unwrap();
         let sidecar = format!(
-            "verifying \"borrow.rs\"; {return_type} check(uint64 x) {{ requires {precondition}; ensures result == {expected}; }} by {{ execute(); simp(); }}"
+            "verifying \"borrow.rs\"; fn check(x: usize) -> {return_type} {{ requires {precondition}; ensures result == {expected}; }} by {{ execute(); simp(); }}"
         );
         let result = C0VerificationSession::new_program_prepared(&sidecar, &prepared);
         assert_eq!(result.is_ok(), valid, "{source}: {:?}", result.err());
@@ -3357,7 +3352,7 @@ fn rust_usize_boundaries_and_nested_checks() {
     let p = Project::new("pub fn right(x:usize, n:i32)->usize { x >> n }");
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
-    let sidecar = "verifying \"borrow.rs\"; uint64 right(uint64 x, int32 n) { requires n == -1; ensures result == result; } by { execute(); simp(); }";
+    let sidecar = "verifying \"borrow.rs\"; fn right(x: usize, n: i32) -> usize { requires n == -1; ensures result == result; } by { execute(); simp(); }";
     assert!(C0VerificationSession::new_program_prepared(sidecar, &prepared).is_err());
 }
 
@@ -3390,7 +3385,7 @@ fn rust_while_loop_rejects_unsupported_control_flow_and_guards() {
         let prepared = load_import(&p.config()).unwrap();
         assert!(
             C0VerificationSession::new_program_prepared(
-                "verifying \"borrow.rs\"; void bad() { ensures 1 == 1; } by { execute(); simp(); }",
+                "verifying \"borrow.rs\"; fn bad() { ensures 1 == 1; } by { execute(); simp(); }",
                 &prepared
             )
             .is_err()
@@ -3403,7 +3398,7 @@ fn rust_while_loop_rejects_unsupported_control_flow_and_guards() {
         let prepared = load_import(&p.config()).unwrap();
         assert!(
             C0VerificationSession::new_program_prepared(
-                "verifying \"borrow.rs\"; void bad() { ensures 1 == 1; } by { execute(); simp(); }",
+                "verifying \"borrow.rs\"; fn bad() { ensures 1 == 1; } by { execute(); simp(); }",
                 &prepared
             )
             .is_err()
@@ -3412,7 +3407,7 @@ fn rust_while_loop_rejects_unsupported_control_flow_and_guards() {
 
     assert_native_boundary_proof(
         "pub fn bad() { while true { break; } }",
-        "verifying \"borrow.rs\"; void bad() { ensures 1 == 1; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad() { ensures 1 == 1; } by { execute(); simp(); }",
     );
 
     for (source, diagnostic) in [
@@ -3445,18 +3440,18 @@ fn rust_while_loop_panic_paths_are_rejected() {
     for (source, signature, invariant) in [
         (
             "pub fn bad(mut i:i32) { while i >= 0 { i += 1; } }",
-            "void bad(int32 i)",
+            "fn bad(i: i32)",
             "i >= 0",
         ),
         (
             "pub fn bad(mut i:usize) { while i <= 18446744073709551615usize { i += 1; } }",
-            "void bad(uint64 i)",
+            "fn bad(i: usize)",
             "i <= 18446744073709551615u64",
         ),
         (
             "pub fn bad(bytes:&[u8]) { let mut i=0usize; while i <= bytes.len() { let _byte=bytes[i]; i += 1; } }",
-            "void bad(const uint8* bytes, uint64 bytes_len)",
-            "i <= bytes_len",
+            "fn bad(bytes: &[u8])",
+            "i <= bytes.len()",
         ),
     ] {
         let p = Project::new(source);
@@ -3467,7 +3462,7 @@ fn rust_while_loop_panic_paths_are_rejected() {
         let prepared = load_import(&p.config()).unwrap();
         let prefix = "execute_until(loop(0));";
         let requirements = if signature.contains("bytes") {
-            "requires bytes_len <= 2147483647u64; views bytes[0..(int32)(uint32)bytes_len];"
+            "requires bytes.len() <= 2147483647u64; views *bytes;"
         } else {
             ""
         };
@@ -3493,7 +3488,7 @@ fn rust_nested_while_loop_invariants_keep_preorder_indices() {
     );
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
-    let sidecar = "verifying \"borrow.rs\"; int32 nested() { ensures result == 1; } by { execute_until(loop(0)); loop { decreases 1-i; invariant 0<=i and i<=1; preserve by { execute_until(loop(1)); loop { decreases 1-j; invariant 0<=j and j<=1; } execute_until(back_edge()); close_invariants(); } } execute(); simp(); }";
+    let sidecar = "verifying \"borrow.rs\"; fn nested() -> i32 { ensures result == 1; } by { execute_until(loop(0)); loop { decreases 1-i; invariant 0<=i and i<=1; preserve by { execute_until(loop(1)); loop { decreases 1-j; invariant 0<=j and j<=1; } execute_until(back_edge()); close_invariants(); } } execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
     assert_cli(&p, &["expand", "--claim", "nested.contract", "--in-place"]);
@@ -3508,7 +3503,7 @@ fn rust_readable_local_names_preserve_shadowed_binding_identities() {
     );
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
-    let sidecar = "verifying \"borrow.rs\"; int32 run(int32 n) { ensures result == 4; } by { execute(); simp(); }";
+    let sidecar = "verifying \"borrow.rs\"; fn run(n: i32) -> i32 { ensures result == 4; } by { execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     assert!(
         C0VerificationSession::new_program_prepared(
@@ -3597,11 +3592,11 @@ fn rust_empty_slice_iterator_needs_no_read_authority() {
         };
         let p = gate_fixtures::project(fixture, &source);
         let prepared = load_import(&p.config()).unwrap();
-        let sidecar = "verifying \"borrow.rs\"; int32 empty(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 0u64; ensures result == 0; } by { execute(); simp(); }";
+        let sidecar = "verifying \"borrow.rs\"; fn empty(bytes: &[u8]) -> i32 { requires bytes.len() == 0u64; ensures result == 0; } by { execute(); simp(); }";
         C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
         assert!(
             C0VerificationSession::new_program_prepared(
-                &sidecar.replace("bytes_len == 0u64", "bytes_len == 1u64"),
+                &sidecar.replace("bytes.len() == 0u64", "bytes.len() == 1u64"),
                 &prepared
             )
             .is_err()
@@ -3660,42 +3655,42 @@ fn rust_slice_for_sum_verifies_and_expands() {
 fn rust_slice_for_rejects_unsupported_iteration() {
     assert_native_boundary_proof(
         "pub fn bad(bytes: &[u8; 2]) { for &byte in bytes {} }",
-        "verifying \"borrow.rs\"; void bad(const uint8* bytes) { views bytes[0..2]; ensures 1 == 1; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(bytes: &[u8; 2]) { views bytes[0..2]; ensures 1 == 1; } by { execute(); simp(); }",
     );
 
     assert_native_boundary_proof(
         "pub fn bad(bytes: &[u8]) { for &byte in bytes { continue; } }",
-        "verifying \"borrow.rs\"; void bad(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 0u64; ensures 1 == 1; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(bytes: &[u8]) { requires bytes.len() == 0u64; ensures 1 == 1; } by { execute(); simp(); }",
     );
 
     assert_native_boundary_proof(
         "pub fn bad(bytes: &[u8]) { for &byte in bytes { break; } }",
-        "verifying \"borrow.rs\"; void bad(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 0u64; ensures 1 == 1; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(bytes: &[u8]) { requires bytes.len() == 0u64; ensures 1 == 1; } by { execute(); simp(); }",
     );
 
     assert_native_boundary_proof(
         "pub fn bad(bytes: &[u8]) { 'outer: for &byte in bytes {} }",
-        "verifying \"borrow.rs\"; void bad(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 0u64; ensures 1 == 1; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(bytes: &[u8]) { requires bytes.len() == 0u64; ensures 1 == 1; } by { execute(); simp(); }",
     );
 
     assert_native_boundary_proof(
         "pub fn bad(mut bytes: &[u8]) { for &byte in bytes {} }",
-        "verifying \"borrow.rs\"; void bad(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 0u64; ensures 1 == 1; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(bytes: &[u8]) { requires bytes.len() == 0u64; ensures 1 == 1; } by { execute(); simp(); }",
     );
 
     assert_native_boundary_proof(
         "pub fn bad(mut bytes: &[u8]) { for byte in bytes.iter() {} }",
-        "verifying \"borrow.rs\"; void bad(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 0u64; ensures 1 == 1; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(bytes: &[u8]) { requires bytes.len() == 0u64; ensures 1 == 1; } by { execute(); simp(); }",
     );
 
     assert_native_boundary_proof(
         "pub fn bad(bytes: &[u8]) { let iter = bytes.iter(); for byte in iter {} }",
-        "verifying \"borrow.rs\"; void bad(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 0u64; ensures 1 == 1; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(bytes: &[u8]) { requires bytes.len() == 0u64; ensures 1 == 1; } by { execute(); simp(); }",
     );
 
     assert_native_boundary_proof(
         "pub fn bad(bytes: &mut [u8]) { for byte in bytes.iter() {} }",
-        "verifying \"borrow.rs\"; void bad(uint8* bytes, uint64 bytes_len) { requires bytes_len == 0u64; ensures 1 == 1; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(bytes: &mut [u8]) { requires bytes.len() == 0u64; ensures 1 == 1; } by { execute(); simp(); }",
     );
 
     for source in [
@@ -3761,14 +3756,14 @@ fn rust_chunks_exact_remainder_metadata_and_bytes() {
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     let sidecar = "verifying \"borrow.rs\";
-    uint64 tail_len(const uint8* bytes, uint64 bytes_len, uint64 size) {
+    fn tail_len(bytes: &[u8], size: usize) -> usize {
         requires size != 0u64;
-        ensures result == bytes_len % size;
+        ensures result == bytes.len() % size;
     } by { execute(); simp(); }
-    uint8 tail_byte(const uint8* bytes, uint64 bytes_len) {
-        requires bytes_len == 5u64; views bytes[0..5];
+    fn tail_byte(bytes: &[u8]) -> u8 {
+        requires bytes.len() == 5u64; views bytes[0..5];
         ensures result == bytes[4];
-    } by { have bytes_len - bytes_len % 2u64 == 4u64 by { rewrite(bytes_len == 5u64); normalize(); } execute(); simp(); }";
+    } by { have bytes.len() - bytes.len() % 2u64 == 4u64 by { rewrite(bytes.len() == 5u64); normalize(); } execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     for invalid in [
         sidecar.replace("requires size != 0u64;", ""),
@@ -3875,14 +3870,14 @@ fn rust_chunks_exact_boundaries_and_full_width_sizes() {
         (5, u64::MAX),
     ] {
         let sidecar = format!(
-            "verifying \"borrow.rs\"; uint64 length(const uint8* bytes, uint64 bytes_len, uint64 size) {{ requires bytes_len == {length}u64; requires size == {size}u64; ensures result == {}u64; }} by {{ execute(); simp(); }}",
+            "verifying \"borrow.rs\"; fn length(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == {size}u64; ensures result == {}u64; }} by {{ execute(); simp(); }}",
             length % size
         );
         C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     }
     for length in [0, 5] {
         let sidecar = format!(
-            "verifying \"borrow.rs\"; uint64 length(const uint8* bytes, uint64 bytes_len, uint64 size) {{ requires bytes_len == {length}u64; requires size == 0u64; ensures result == 0u64; }} by {{ execute(); }}"
+            "verifying \"borrow.rs\"; fn length(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == 0u64; ensures result == 0u64; }} by {{ execute(); }}"
         );
         let error = C0VerificationSession::new_program_prepared(&sidecar, &prepared)
             .err()
@@ -3906,9 +3901,9 @@ fn rust_chunks_exact_evaluates_size_once_and_keeps_shadowed_iterators_distinct()
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     let sidecar = "verifying \"borrow.rs\";
-    uint64 size(int32* p) { requires p[0] == 0; owns p[0..1]; ensures p[0] == 1; ensures result == 4u64; } by { execute(); simp(); }
-    uint64 length(const uint8* bytes, uint64 bytes_len, int32* p) { requires bytes_len == 5u64; requires p[0] == 0; owns p[0..1]; ensures p[0] == 1; ensures result == 1u64; } by { execute(); simp(); }
-    uint64 shadow(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 5u64; ensures result == 0u64; } by { execute(); simp(); }";
+    fn size(p: &mut i32) -> usize { requires *p == 0; owns *p; ensures *p == 1; ensures result == 4u64; } by { execute(); simp(); }
+    fn length(bytes: &[u8], p: &mut i32) -> usize { requires bytes.len() == 5u64; requires *p == 0; owns *p; ensures *p == 1; ensures result == 1u64; } by { execute(); simp(); }
+    fn shadow(bytes: &[u8]) -> usize { requires bytes.len() == 5u64; ensures result == 0u64; } by { execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     let artifact = prepared.export();
     let function = artifact
@@ -3924,7 +3919,7 @@ fn rust_chunks_exact_evaluates_size_once_and_keeps_shadowed_iterators_distinct()
 fn rust_chunks_exact_rejects_writes_and_unsupported_iterator_protocols() {
     assert_native_boundary_proof(
         "pub fn bad(bytes: &[u8]) { let chunks = bytes.chunks_exact(4); let copy = chunks; }",
-        "verifying \"borrow.rs\"; void bad(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 5u64; ensures 1 == 1; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; fn bad(bytes: &[u8]) { requires bytes.len() == 5u64; ensures 1 == 1; } by { execute(); simp(); }",
     );
 
     for (source, diagnostic) in [
@@ -3972,7 +3967,7 @@ fn rust_chunks_exact_direct_nested_loops_keep_independent_state() {
     let p = Project::new(source);
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
-    let sidecar = "verifying \"borrow.rs\"; uint64 nested(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 8u64; ensures result == 0u64; } by { execute(); simp(); }";
+    let sidecar = "verifying \"borrow.rs\"; fn nested(bytes: &[u8]) -> usize { requires bytes.len() == 8u64; ensures result == 0u64; } by { execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared)
         .unwrap_or_else(|error| panic!("{}", error.message()));
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
@@ -3993,15 +3988,15 @@ fn rust_integer_from_preserves_native_unsigned_values() {
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     let sidecar = "verifying \"borrow.rs\";
-        uint32 byte(uint8 x) { ensures result == (uint32)x; } by { execute(); simp(); }
-        uint16 half(uint8 x) { ensures ((uint32)result) == (uint32)x; } by { execute(); simp(); }
-        uint32 word(uint16 x) { ensures result == (uint32)x; } by { execute(); simp(); }
-        uint64 size(uint16 x) { ensures result == (uint64)x; } by { execute(); simp(); }
-        uint16 identity(uint16 x) { ensures result == x; } by { execute(); simp(); }";
+        fn byte(x: u8) -> u32 { ensures result == x as u32; } by { execute(); simp(); }
+        fn half(x: u8) -> u16 { ensures result as u32 == x as u32; } by { execute(); simp(); }
+        fn word(x: u16) -> u32 { ensures result == x as u32; } by { execute(); simp(); }
+        fn size(x: u16) -> usize { ensures result == x as usize; } by { execute(); simp(); }
+        fn identity(x: u16) -> u16 { ensures result == x; } by { execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     assert!(
         C0VerificationSession::new_program_prepared(
-            &sidecar.replace("result == (uint32)x", "result == (uint32)x + 1u32"),
+            &sidecar.replace("result == x as u32", "result == x as u32 + 1u32"),
             &prepared,
         )
         .is_err()
@@ -4022,11 +4017,11 @@ fn rust_integer_from_evaluates_nested_calls_once_in_order() {
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     let sidecar = "verifying \"borrow.rs\";
-        uint8 next(int32* p) { requires 0 <= p[0] and p[0] <= 1; owns p[0..1];
-            ensures p[0] == old(p[0]) + 1; ensures ((uint32)result) == ((uint32)p[0] & 255u32);
+        fn next(p: &mut i32) -> u8 { requires 0 <= *p and *p <= 1; owns *p;
+            ensures *p == old(*p) + 1; ensures result as u32 == (*p as u32 & 255u32);
         } by { execute(); simp(); }
-        uint32 pair(int32* p) { requires p[0] == 0; owns p[0..1];
-            ensures p[0] == 2; ensures result == 258u32;
+        fn pair(p: &mut i32) -> u32 { requires *p == 0; owns *p;
+            ensures *p == 2; ensures result == 258u32;
         } by { execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
 }
@@ -4044,12 +4039,12 @@ fn rust_u16_casts_truncate_and_shifts_keep_sixteen_bits() {
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     let sidecar = "verifying \"borrow.rs\";
-        uint16 low(uint64 x) { ensures ((uint32)result) == ((uint32)x & 65535u32); } by { execute(); simp(); }
-        uint16 signed(int32 x) { ensures ((uint32)result) == ((uint32)x & 65535u32); } by { execute(); simp(); }
-        uint8 byte(uint16 x) { ensures ((uint32)result) == ((uint32)x & 255u32); } by { execute(); simp(); }
-        uint16 invert(uint16 x) { ensures ((uint32)result) == (~(uint32)x & 65535u32); } by { execute(); simp(); }
-        uint16 shift(uint16 x, uint64 count) { requires count < 16u64;
-            ensures ((uint32)result) == (((uint32)x << (uint32)count) & 65535u32);
+        fn low(x: usize) -> u16 { ensures result as u32 == (x as u32 & 65535u32); } by { execute(); simp(); }
+        fn signed(x: i32) -> u16 { ensures result as u32 == (x as u32 & 65535u32); } by { execute(); simp(); }
+        fn byte(x: u16) -> u8 { ensures result as u32 == (x as u32 & 255u32); } by { execute(); simp(); }
+        fn invert(x: u16) -> u16 { ensures result as u32 == (~(x as u32) & 65535u32); } by { execute(); simp(); }
+        fn shift(x: u16, count: usize) -> u16 { requires count < 16u64;
+            ensures result as u32 == ((x as u32 << count as u32) & 65535u32);
         } by { execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     for count in [16, 4294967296u64, u64::MAX] {
@@ -4081,11 +4076,11 @@ fn rust_u16_arithmetic_checks_its_own_width() {
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     let sidecar = "verifying \"borrow.rs\";
-        uint16 add(uint16 x) { requires x <= 65534; ensures ((uint32)result) == (uint32)x + 1u32; } by { execute(); simp(); }
-        uint16 sub(uint16 x) { requires 1 <= x; ensures ((uint32)result) == (uint32)x - 1u32; } by { execute(); simp(); }
-        uint16 mul(uint16 x) { requires x <= 21845; ensures ((uint32)result) == (uint32)x * 3u32; } by { have 0 <= ((int32)x) * 3 by { arithmetic() using { 0 <= x; x <= 21845; } } have ((int32)x) * 3 <= 65535 by { arithmetic() using { 0 <= x; x <= 21845; } } execute(); simp(); }
-        uint16 div(uint16 x, uint16 d) { requires 0 < d; ensures ((uint32)result) == (uint32)x / (uint32)d; } by { execute(); simp(); }
-        uint16 rem(uint16 x, uint16 d) { requires 0 < d; ensures ((uint32)result) == (uint32)x % (uint32)d; } by { execute(); simp(); }";
+        fn add(x: u16) -> u16 { requires x <= 65534; ensures result as u32 == x as u32 + 1u32; } by { execute(); simp(); }
+        fn sub(x: u16) -> u16 { requires 1 <= x; ensures result as u32 == x as u32 - 1u32; } by { execute(); simp(); }
+        fn mul(x: u16) -> u16 { requires x <= 21845; ensures result as u32 == x as u32 * 3u32; } by { have 0 <= (x as i32) * 3 by { arithmetic() using { 0 <= x; x <= 21845; } } have (x as i32) * 3 <= 65535 by { arithmetic() using { 0 <= x; x <= 21845; } } execute(); simp(); }
+        fn div(x: u16, d: u16) -> u16 { requires 0 < d; ensures result as u32 == x as u32 / d as u32; } by { execute(); simp(); }
+        fn rem(x: u16, d: u16) -> u16 { requires 0 < d; ensures result as u32 == x as u32 % d as u32; } by { execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     for (operator, input, divisor, label) in [
         ("+", 65535, 1, "Rust add panic check"),
@@ -4100,7 +4095,7 @@ fn rust_u16_arithmetic_checks_its_own_width() {
         refresh_import(&p.config()).unwrap();
         let prepared = load_import(&p.config()).unwrap();
         let sidecar = format!(
-            "verifying \"borrow.rs\"; uint16 bad(uint16 x, uint16 d) {{ requires x == {input}; requires d == {divisor}; ensures result == 0; }} by {{ execute(); }}"
+            "verifying \"borrow.rs\"; fn bad(x: u16, d: u16) -> u16 {{ requires x == {input}; requires d == {divisor}; ensures result == 0; }} by {{ execute(); }}"
         );
         let error = C0VerificationSession::new_program_prepared(&sidecar, &prepared)
             .err()

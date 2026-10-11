@@ -49,6 +49,8 @@
 
 use super::prelude::*;
 
+#[cfg(test)]
+mod fact_congruence_tests;
 mod inputs;
 #[cfg(test)]
 mod int32_addition_tests;
@@ -1225,17 +1227,40 @@ impl EqualityGraph {
         if left == right {
             return true;
         }
-        self.state
-            .lock()
-            .expect("equality graph")
-            .terms
-            .are_int32_equal(left, right)
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_int32_operands(&mut state, left, right);
+        let equal = state.terms.are_int32_equal(left, right);
+        state.close(Vec::new());
+        equal
     }
 
-    /// Prepare only the addresses used by the selected wide expressions.
+    fn register_int32_operands(
+        &self,
+        state: &mut EqualityGraphState,
+        left: &Bitvector32Term,
+        right: &Bitvector32Term,
+    ) {
+        // Existing opaque scalar queries need no traversal or registration.
+        // Only these constructors can contain new pointer-valued arguments.
+        let contains_arguments = |term: &Bitvector32Term| {
+            matches!(
+                term,
+                Bitvector32Term::ClickFunctionApplication { .. }
+                    | Bitvector32Term::Add(..)
+                    | Bitvector32Term::UnsignedDivide(..)
+                    | Bitvector32Term::UnsignedRemainder(..)
+                    | Bitvector32Term::BitwiseXor(..)
+            )
+        };
+        if contains_arguments(left) || contains_arguments(right) {
+            self.register_machine_operands(state, left, right);
+        }
+    }
+
+    /// Prepare only the addresses used by the selected machine expressions.
     /// Logical read definitions and affine aliases use the same address classes
     /// as pointer queries; no history search or ambient-fact scan is needed.
-    fn register_uint64_operands(
+    fn register_machine_operands(
         &self,
         state: &mut EqualityGraphState,
         left: &Bitvector32Term,
@@ -1245,7 +1270,27 @@ impl EqualityGraph {
         let mut pointers = Vec::new();
         while let Some(term) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
-            if let Some((_, a, b)) = terms::uint64_binary(term) {
+            if let Bitvector32Term::ClickFunctionApplication { arguments, .. } = term {
+                for argument in arguments {
+                    match argument {
+                        PureFunctionArgument::Value(value)
+                        | PureFunctionArgument::ArrayRef { pointer: value, .. } => match value {
+                            CValue::Pointer(pointer) => pointers.push(pointer.pointer().clone()),
+                            CValue::Int32(t) | CValue::UInt32(t) | CValue::UInt64(t) => {
+                                pending.push(t)
+                            }
+                            _ => {}
+                        },
+                        _ => {}
+                    }
+                }
+            } else if let Bitvector32Term::Add(a, b)
+            | Bitvector32Term::UnsignedDivide(a, b)
+            | Bitvector32Term::UnsignedRemainder(a, b)
+            | Bitvector32Term::BitwiseXor(a, b) = term
+            {
+                pending.extend([a.as_ref(), b.as_ref()]);
+            } else if let Some((_, a, b)) = terms::uint64_binary(term) {
                 pending.extend([a, b]);
             } else if let Some((_, pointer)) = terms::uint64_read(term) {
                 pointers.push(pointer);
@@ -1253,7 +1298,11 @@ impl EqualityGraph {
                 pointers.push(pointer.as_ref().clone());
             }
         }
+        if pointers.is_empty() {
+            return;
+        }
         self.register_logical_read_values(state, pointers.iter());
+        state.register_blocks(pointers.iter().map(|pointer| pointer.block.clone()));
         for pointer in pointers {
             state.register_pointer_address(&pointer);
         }
@@ -1271,7 +1320,7 @@ impl EqualityGraph {
         let left = crate::kernel::canonical_term(left);
         let right = crate::kernel::canonical_term(right);
         let mut state = self.state.lock().expect("equality graph");
-        self.register_uint64_operands(&mut state, &left, &right);
+        self.register_machine_operands(&mut state, &left, &right);
         state.terms.are_uint64_equal(&left, &right)
     }
 
@@ -1283,7 +1332,7 @@ impl EqualityGraph {
         let left = crate::kernel::canonical_term(left);
         let right = crate::kernel::canonical_term(right);
         let mut state = self.state.lock().expect("equality graph");
-        self.register_uint64_operands(&mut state, &left, &right);
+        self.register_machine_operands(&mut state, &left, &right);
         let changed = state.terms.add_uint64_equality(&left, &right);
         state.close(Vec::new());
         if changed {
@@ -1298,13 +1347,85 @@ impl EqualityGraph {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        let state = self.state.get_mut().expect("equality graph");
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_int32_operands(&mut state, left, right);
         let changed = state.terms.add_int32_equality(left, right);
         state.close(Vec::new());
         if changed {
             state.remember_input(inputs::Input::Int32(left.clone(), right.clone()));
         }
         changed
+    }
+
+    fn prepare_condition(&self, state: &mut EqualityGraphState, condition: &ConditionTerm) {
+        match condition {
+            ConditionTerm::PointerEqual(a, b) => {
+                self.register_logical_read_values(state, [a.as_ref(), b.as_ref()]);
+                state.register_blocks([a.block.clone(), b.block.clone()]);
+                state.register_pointer_address(a);
+                state.register_pointer_address(b);
+                state.close(Vec::new());
+            }
+            _ => {
+                if let Some((a, b)) = condition.bitvector_sides_for_congruence() {
+                    self.register_machine_operands(state, a, b);
+                }
+            }
+        }
+    }
+
+    pub(in crate::kernel) fn add_condition(
+        &mut self,
+        condition: &ConditionTerm,
+        value: bool,
+    ) -> bool {
+        // True equations already enter through the typed equality inputs.
+        // They need no second truth node or retained support index.
+        if value
+            && matches!(
+                condition,
+                ConditionTerm::Bitvector32Equal(..)
+                    | ConditionTerm::Bitvector64Equal(..)
+                    | ConditionTerm::PointerEqual(..)
+                    | ConditionTerm::PointerOffsetEqual(..)
+            )
+        {
+            return false;
+        }
+        let mut state = self.state.lock().expect("equality graph");
+        self.prepare_condition(&mut state, condition);
+        let supported = state.terms.admit_condition(condition, value);
+        state.close(Vec::new());
+        // Predicate truth is scoped state, not a value equality. Resource
+        // indexes apply only admitted equations; unrelated comparisons must
+        // not invalidate their checkpoints or lengthen their history walks.
+        supported
+    }
+
+    pub(in crate::kernel) fn knows_condition(
+        &self,
+        condition: &ConditionTerm,
+        value: bool,
+    ) -> bool {
+        // True equations are represented directly by classes, never truth
+        // nodes. A miss must not register an unrelated condition application.
+        if value {
+            match condition {
+                ConditionTerm::Bitvector32Equal(a, b) => return self.are_int32_equal(a, b),
+                ConditionTerm::Bitvector64Equal(a, b) => return self.are_uint64_equal(a, b),
+                ConditionTerm::PointerEqual(a, b) => return self.are_equal(a, b),
+                ConditionTerm::PointerOffsetEqual(a, b) => return self.are_offsets_equal(a, b),
+                _ => {}
+            }
+        }
+        let mut state = self.state.lock().expect("equality graph");
+        if !state.terms.may_know_condition(condition, value) {
+            return false;
+        }
+        self.prepare_condition(&mut state, condition);
+        let known = state.terms.knows_condition(condition, value);
+        state.close(Vec::new());
+        known
     }
 
     /// Admit an already established offset equality in this proof context.

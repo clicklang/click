@@ -296,13 +296,6 @@ pub(in crate::kernel) fn permits_return(state: &CState) -> bool {
         })
 }
 
-pub(in crate::kernel) fn has_export_permission(state: &CState) -> bool {
-    state
-        .mutex_input_reservations
-        .as_ref()
-        .is_some_and(|inputs| inputs.helper_return.is_some())
-}
-
 pub(in crate::kernel) fn exported_guard(state: &CState) -> Option<CResourceFact> {
     if !permits_return(state) {
         return None;

@@ -3098,6 +3098,9 @@ impl PureFactContext {
         for ((pointer, alignment), _) in self.pointer_alignment_facts.iter() {
             classes.register_alignment(pointer, *alignment);
         }
+        for (condition, value) in self.congruence_conditions.iter() {
+            classes.add_condition(condition, *value);
+        }
         self.equality_graph = classes;
     }
 
@@ -3708,6 +3711,7 @@ impl PureFactContext {
         self.pointer_block_aliases = crate::persistent::PersistentMap::default();
         self.pointer_block_aliases_by_offset = crate::persistent::PersistentMap::default();
         self.equality_graph = EqualityGraph::default();
+        self.congruence_conditions = crate::persistent::PersistentMap::default();
         self.int32_graph_equalities = crate::persistent::PersistentMap::default();
         self.uint64_graph_equalities = crate::persistent::PersistentMap::default();
         self.typed_pointer_read_definitions = crate::persistent::PersistentMap::default();
@@ -3721,6 +3725,9 @@ impl PureFactContext {
             self.adjust_pointer_offset_alias(condition, *value, true);
             self.adjust_int32_graph_equality(condition, *value, true);
             self.adjust_uint64_graph_equality(condition, *value, true);
+            if self.equality_graph.add_condition(condition, *value) {
+                self.congruence_conditions.insert(condition.clone(), *value);
+            }
         }
         // Restore typing support by the selected equations' load variables,
         // rather than walking every pointer read in the ambient context.
@@ -5276,6 +5283,32 @@ impl PureFactContext {
         }
     }
 
+    /// Semantic availability through the shared scoped equality graph. Exact
+    /// membership remains separate for provenance, admission, and withdrawal.
+    /// This performs no unfolding, implication search, or snapshot transport.
+    pub(crate) fn contains_known(&self, proposition: &Proposition) -> bool {
+        // Logical structure is handled by the proof rule. Do not repeatedly
+        // traverse a whole conjunction while its caller visits its leaves.
+        if matches!(proposition, Proposition::And(..) | Proposition::Or(..)) {
+            return self.prop_facts.contains(proposition);
+        }
+        if self.contains_assumed_exact(proposition) {
+            return true;
+        }
+        match proposition {
+            Proposition::ConditionIs(condition, value) => {
+                self.equality_graph.knows_condition(condition, *value)
+            }
+            Proposition::Not(body) => match body.as_ref() {
+                Proposition::ConditionIs(condition, value) => {
+                    self.equality_graph.knows_condition(condition, !*value)
+                }
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     /// This context extended by `condition == value`, charged one unit of
     /// deterministic work: every fact a context is built from is charged
     /// once, so a caller that rebuilds a context from a growing list per
@@ -5355,6 +5388,10 @@ impl PureFactContext {
         self.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
         self.bitvector_equality_facts = std::sync::Arc::new(std::sync::OnceLock::new());
         if let Some(old) = old {
+            if self.congruence_conditions.contains_key(&condition) {
+                self.congruence_conditions.remove(&condition);
+                self.rebuild_equality_graph();
+            }
             self.adjust_stated_proposition_index(
                 &Proposition::ConditionIs(condition.clone(), old),
                 false,
@@ -5400,6 +5437,9 @@ impl PureFactContext {
             }
         } else {
             self.file_constant_class_equality(&condition, value);
+        }
+        if self.equality_graph.add_condition(&condition, value) {
+            self.congruence_conditions.insert(condition.clone(), value);
         }
         self.content_fingerprint ^= Self::fingerprint(1, &(condition, value));
         self
@@ -5836,6 +5876,10 @@ impl PureFactContext {
     fn forget_condition_fact(&mut self, condition: &ConditionTerm, assumed: bool) {
         crate::instrumentation::record_deterministic_work(1);
         self.condition_facts = self.condition_facts.without_key(condition);
+        if self.congruence_conditions.contains_key(condition) {
+            self.congruence_conditions.remove(condition);
+            self.rebuild_equality_graph();
+        }
         self.execution_fact_projection
             .remove(&ContextFactKey::Condition(condition.clone()));
         self.adjust_condition_match_indexes(condition, assumed, false);

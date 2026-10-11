@@ -1215,7 +1215,6 @@ impl CFunction {
 
     /// Internal staging hook for importers and tests. No source frontend opts
     /// into the exceptional channel yet.
-    #[allow(dead_code)]
     pub(crate) fn with_int32_exceptional_outcome(mut self) -> Self {
         self.contract_interface.exceptional_signature = CExceptionalSignature::Int32;
         self
@@ -1224,7 +1223,6 @@ impl CFunction {
     /// Internal staging hook for the exceptional postcondition family. The
     /// payload is available to these propositions through the kernel's
     /// exceptional-result binding.
-    #[allow(dead_code)]
     pub(crate) fn with_exceptional_ensures(mut self, ensures: Vec<SpecProposition>) -> Self {
         self.contract_interface.exceptional_ensures = ensures;
         self
@@ -1860,8 +1858,6 @@ impl CFunctionContractClaim {
             target: CFunctionContractClaimTarget::EnsureResource(resource_index),
         }
     }
-
-    #[allow(dead_code)]
     pub(crate) fn exceptional_ensure_proposition(
         source_index: usize,
         contract_index: usize,

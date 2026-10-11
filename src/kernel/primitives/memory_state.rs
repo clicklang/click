@@ -3703,7 +3703,7 @@ impl CMemory {
     /// branch is transported across it. What survives is a value every arm
     /// still caches for the same cell, kept as a cell of the joined snapshot,
     /// and whatever the interface states as a fact.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(in crate::kernel) fn with_interface_memory_havoc(
         self,
         variable: Variable,
@@ -8318,13 +8318,9 @@ impl CState {
         );
         self
     }
-
-    #[allow(dead_code)]
     pub(crate) fn loan_ledger(&self) -> Option<&crate::kernel::loans::LoanLedger> {
         self.loan_ledger.as_ref()
     }
-
-    #[allow(dead_code)]
     pub(crate) fn with_loan_ledger(
         mut self,
         ledger: Option<crate::kernel::loans::LoanLedger>,

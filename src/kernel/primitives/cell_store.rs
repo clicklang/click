@@ -2433,19 +2433,6 @@ impl CellStore {
         };
         self.set_run(&key, Some(merged));
     }
-
-    /// This store's runs over another concrete map, for a caller rebuilding
-    /// the concrete cells while the runs stay as they are.
-    #[allow(dead_code)]
-    pub(crate) fn with_concrete(&self, concrete: SnapshotMap<Pointer, CValue>) -> Self {
-        Self {
-            concrete,
-            runs: self.runs.clone(),
-            span_cover: self.span_cover.clone(),
-            run_cells: self.run_cells,
-            logical: OnceLock::new(),
-        }
-    }
 }
 
 /// The entries of an ordered pointer collection that can be slots of `run`,

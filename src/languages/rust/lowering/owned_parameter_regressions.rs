@@ -52,16 +52,21 @@ fn fixture() -> RustExport {
     export
 }
 fn proof(export: &RustExport) -> String {
-    let record = &export.records[0].name;
+    assert_eq!(export.records[0].name, "__rust_q_I4_demo_I5_Value");
     let mut proof = String::from("verifying \"lib.rs\";\n");
     for f in &export.functions {
         let params = f
             .parameters
             .iter()
-            .map(|p| format!("struct {record} {}", p.name))
+            .map(|p| format!("{}: demo::Value", p.name))
             .collect::<Vec<_>>()
             .join(", ");
-        proof.push_str(&format!("struct {record} {}({params}) {{ ensures result.a == 1u32; ensures result.b == 0u32; }} by {{ execute(); simp(); }}\n", f.name));
+        let (block, method) = if f.name.ends_with("_default") {
+            ("impl Default for demo::Value", "default")
+        } else {
+            ("impl demo::Value", "new")
+        };
+        proof.push_str(&format!("{block} {{ fn {method}({params}) -> demo::Value {{ ensures result.a == 1u32; ensures result.b == 0u32; }} by {{ execute(); simp(); }} }}\n"));
     }
     proof
 }

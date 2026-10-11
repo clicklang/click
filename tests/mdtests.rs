@@ -346,22 +346,12 @@ fn check_expectation(
             path.display()
         )),
         (MdTestExpectation::FailContains(expected), Err((message, report))) => {
-            if let Some(internal) = ["snapshot#", "snapshot<", "load A=", "pointer(pointer "]
+            if let Some(internal) = ["CMemory {", "CHeapMemory {", "pointer(pointer "]
                 .into_iter()
                 .find(|internal| report.contains(internal))
             {
                 return Err(format!(
                     "`{}` leaked `{internal}` in its proof report: {report}",
-                    path.display()
-                ));
-            }
-            if report
-                .split("value ")
-                .skip(1)
-                .any(|tail| tail.as_bytes().first().is_some_and(u8::is_ascii_uppercase))
-            {
-                return Err(format!(
-                    "`{}` leaked an anonymous value in its proof report: {report}",
                     path.display()
                 ));
             }

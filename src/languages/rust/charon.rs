@@ -2248,9 +2248,9 @@ mod tests {
             }
             let prepared = super::super::import::prepared_for_test(export).unwrap();
             let claim = if duplicate {
-                "verifying \"iteration.rs\"; uint32 moved(uint32 a, uint32 b) { ensures result == (a ^ b); } by { execute(); simp(); }"
+                "verifying \"iteration.rs\"; fn moved(a: u32, b: u32) -> u32 { ensures result == (a ^ b); } by { execute(); simp(); }"
             } else {
-                "verifying \"iteration.rs\"; int32 signed(const int32* words) { views words[0..4]; ensures result == old(words[0]); } by { execute(); simp(); }"
+                "verifying \"iteration.rs\"; fn signed(words: &[i32; 4]) -> i32 { views words[0..4]; ensures result == old(words[0]); } by { execute(); simp(); }"
             };
             assert!(C0VerificationSession::new_program_prepared(claim, &prepared).is_err());
         }
@@ -2305,7 +2305,7 @@ mod tests {
         };
         mir.blocks[none].statements.insert(0, payload);
         let prepared = super::super::import::prepared_for_test(export).unwrap();
-        assert!(C0VerificationSession::new_program_prepared("verifying \"iteration.rs\"; int32 signed(const int32* words) { ensures result == 0; } by { execute(); simp(); }", &prepared).is_err());
+        assert!(C0VerificationSession::new_program_prepared("verifying \"iteration.rs\"; fn signed(words: &[i32; 4]) -> i32 { ensures result == 0; } by { execute(); simp(); }", &prepared).is_err());
     }
 
     #[test]
@@ -2337,7 +2337,7 @@ mod tests {
                 });
             let prepared = prepared.unwrap();
             let claim = format!(
-                "verifying \"iteration.rs\"; int32 signed(const int32* words) {{ views words[0..{length}]; ensures result == old(words[0]); }} by {{ execute(); simp(); }}"
+                "verifying \"iteration.rs\"; fn signed(words: &[i32; {length}]) -> i32 {{ views words[0..{length}]; ensures result == old(words[0]); }} by {{ execute(); simp(); }}"
             );
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
                 C0VerificationSession::new_program_prepared(&claim, &prepared)
@@ -2434,7 +2434,7 @@ mod tests {
             let shape = nodes(functions[0].to_kernel_function().body());
             let prepared = super::super::import::prepared_for_test(export).unwrap();
             let claim = format!(
-                "verifying \"owned.rs\"; uint32 moved(uint32 value, uint64 index) {{ requires index < {length}u64; ensures result == value; }} by {{ execute(); simp(); }}"
+                "verifying \"owned.rs\"; fn moved(value: u32, index: usize) -> u32 {{ requires index < {length}u64; ensures result == value; }} by {{ execute(); simp(); }}"
             );
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 C0VerificationSession::new_program_prepared(&claim, &prepared)
@@ -2503,7 +2503,7 @@ mod tests {
             }
             let shape = nodes(functions[0].to_kernel_function().body());
             let prepared = super::super::import::prepared_for_test(export).unwrap();
-            let claim = "verifying \"snapshots.rs\"; uint32 sparse(uint32 a, uint32 b) { ensures result == b; } by { execute(); simp(); }";
+            let claim = "verifying \"snapshots.rs\"; fn sparse(a: u32, b: u32) -> u32 { ensures result == b; } by { execute(); simp(); }";
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 C0VerificationSession::new_program_prepared(claim, &prepared)
             });
@@ -2538,7 +2538,7 @@ mod tests {
             .statements
             .insert(index + 1, block.statements[index].clone());
         let prepared = super::super::import::prepared_for_test(export).unwrap();
-        assert!(C0VerificationSession::new_program_prepared("verifying \"owned.rs\"; uint32 moved(uint32 value, uint64 index) { requires index < 4u64; ensures result == value; } by { execute(); simp(); }", &prepared).is_err());
+        assert!(C0VerificationSession::new_program_prepared("verifying \"owned.rs\"; fn moved(value: u32, index: usize) -> u32 { requires index < 4u64; ensures result == value; } by { execute(); simp(); }", &prepared).is_err());
     }
 
     const FIELDS_ARTIFACT: &[u8] =
@@ -2576,7 +2576,7 @@ mod tests {
             );
             let prepared = super::super::import::prepared_for_test(export).unwrap();
             let sidecar = format!(
-                "verifying \"fields.rs\"; uint32 read(const struct Lanes* state, uint64 index) {{ requires index == 0u64; views state->values[0..{length}]; ensures result == old(state->values[index]); }} by {{ execute(); simp(); }}"
+                "verifying \"fields.rs\"; fn read(state: &Lanes, index: usize) -> u32 {{ requires index == 0u64; views state.values[0..{length}]; ensures result == old(state.values[index]); }} by {{ execute(); simp(); }}"
             );
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
                 C0VerificationSession::new_program_prepared(&sidecar, &prepared)
@@ -2911,7 +2911,7 @@ mod tests {
         ] {
             let _session = crate::kernel::VerificationSession::enter();
             let claim = format!(
-                "verifying \"nested.rs\"; uint64 {name}() {{ ensures result == {length}u64; }} by {{ execute(); simp(); }}"
+                "verifying \"nested.rs\"; fn {name}() -> usize {{ ensures result == {length}u64; }} by {{ execute(); simp(); }}"
             );
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
                 C0VerificationSession::new_program_prepared(&claim, &prepared)
@@ -3128,7 +3128,7 @@ mod tests {
         };
         mir.blocks[none].statements.insert(0, payload);
         let prepared = super::super::import::prepared_for_test(export).unwrap();
-        let claim = "verifying \"chunks.rs\"; uint64 next_len(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 0u64; ensures result == 0u64; } by { execute(); simp(); }";
+        let claim = "verifying \"chunks.rs\"; fn next_len(bytes: &[u8]) -> usize { requires bytes.len() == 0u64; ensures result == 0u64; } by { execute(); simp(); }";
         assert!(C0VerificationSession::new_program_prepared(claim, &prepared).is_err());
     }
 
@@ -3140,7 +3140,7 @@ mod tests {
         for length in [0u64, 8, 1024, 1_000_000] {
             let _session = crate::kernel::VerificationSession::enter();
             let claim = format!(
-                "verifying \"chunks.rs\"; uint64 tail(const uint8* bytes, uint64 bytes_len, uint64 size) {{ requires bytes_len == {length}u64; requires size == 4u64; ensures result == {}u64; }} by {{ execute(); simp(); }}",
+                "verifying \"chunks.rs\"; fn tail(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == 4u64; ensures result == {}u64; }} by {{ execute(); simp(); }}",
                 length % 4
             );
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -3241,7 +3241,7 @@ mod tests {
         for length in [0u64, 8, 1024, 1_000_000, u64::MAX] {
             let _session = crate::kernel::VerificationSession::enter();
             let claim = format!(
-                "verifying \"slices.rs\"; uint64 length(const uint8* bytes, uint64 bytes_len) {{ requires bytes_len == {length}u64; ensures result == {length}u64; }} by {{ execute(); simp(); }}"
+                "verifying \"slices.rs\"; fn length(bytes: &[u8]) -> usize {{ requires bytes.len() == {length}u64; ensures result == {length}u64; }} by {{ execute(); simp(); }}"
             );
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
                 C0VerificationSession::new_program_prepared(&claim, &prepared)
@@ -3533,7 +3533,7 @@ mod tests {
             let prepared = super::super::import::prepared_for_test(export).unwrap();
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
                 C0VerificationSession::new_program_prepared(
-                    "verifying \"arrays.rs\"; uint8 large_array() { ensures result == 7; } by { execute(); simp(); }",
+                    "verifying \"arrays.rs\"; fn large_array() -> u8 { ensures result == 7; } by { execute(); simp(); }",
                     &prepared,
                 )
             });

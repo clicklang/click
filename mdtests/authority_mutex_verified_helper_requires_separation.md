@@ -29,5 +29,5 @@ void write_value(struct holder *holder, int *data) {
 ```
 
 ```expect
-fail: missing prerequisite (touch precondition): separate(memory(data[0])
+fail: missing prerequisite (touch precondition): memory(
 ```

@@ -81,6 +81,18 @@ impl PropositionDerivation {
         }
     }
 
+    /// Return the kind (`true` for `uint64`, `false` for `int64`) and the
+    /// exact ordered edges selected by an atomic 64-bit order decision.
+    pub fn wide_order_path(&self) -> Option<(bool, &[SignedOrderDerivationStep])> {
+        match &self.rule {
+            PropositionDerivationRule::ContextualAtomic {
+                evidence: AtomicPropositionDerivationEvidence::WideOrderPath { unsigned, path },
+                ..
+            } => Some((*unsigned, path)),
+            _ => None,
+        }
+    }
+
     /// Return the exact oriented ground-int32 equality edges selected by an
     /// atomic equality decision.
     pub fn bitvector_equality_path(&self) -> Option<&[BitvectorEqualityDerivationStep]> {

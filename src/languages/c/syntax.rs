@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::source::{SourcePosition, character_positions};
+use crate::source::{SourcePosition, SourcePositionCursor};
 
 use super::provenance::CSourceMap;
 use super::source::ExpandedLineMap;
@@ -20985,15 +20985,25 @@ fn classify_float_bits(
 }
 
 fn tokenize(source: &str) -> Result<(Vec<Token>, Vec<SourcePosition>), C0SyntaxError> {
-    let chars = source.chars().collect::<Vec<_>>();
-    let char_positions = character_positions(source);
+    // Sized once from the byte length, an upper bound on the characters:
+    // collecting from `chars()` regrows from a quarter of it, and each
+    // regrowth touches fresh pages.
+    let mut chars = Vec::with_capacity(source.len());
+    chars.extend(source.chars());
+    let mut cursor = SourcePositionCursor::new(None);
+    let mut cursor_index = 0;
     let mut tokens = Vec::new();
     let mut positions = Vec::new();
     let mut index = 0;
 
     while index < chars.len() {
         let ch = chars[index];
-        let position = char_positions[index].clone();
+        // Each scan below only moves `index` forward.
+        for &passed in &chars[cursor_index..index] {
+            cursor.advance(passed);
+        }
+        cursor_index = index;
+        let position = cursor.position();
         if ch.is_whitespace() {
             index += 1;
             continue;

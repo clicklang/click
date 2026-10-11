@@ -112,3 +112,92 @@ theorem adler_count_zero(r: uint64) {
   apply(uint64_equal_of_to_integer(r, 0u64)) using { to_integer(r) == to_integer(0u64); }
  }
 }
+
+# Within the checked small-count range, the native cursor and the signed
+# specification index denote exactly the same byte address.
+theorem adler_count_byte_pointer(base: const uint8*, count: uint64) {
+ requires count <= 22208u64;
+ ensures base + count == base + (int32)(uint32)count by {
+  apply(adler_count_observation(count)) using { count <= 22208u64; }
+  normalize() using { to_integer((int32)(uint32)count) == to_integer(count); }
+ }
+}
+
+# Read equality first, then transport the native byte into the Integer spec.
+theorem adler_count_byte_observation(bytes: uint8[], count: uint64) {
+ requires count <= 22208u64;
+ ensures to_integer((int32)bytes[count]) == to_integer((int32)bytes[(int32)(uint32)count]) by {
+  apply(adler_count_byte_pointer(bytes, count)) using { count <= 22208u64; }
+  have bytes[count] == bytes[(int32)(uint32)count] by {
+   simp() using { bytes + count == bytes + (int32)(uint32)count; }
+  }
+  rewrite(bytes[count] == bytes[(int32)(uint32)count]);
+  normalize();
+ }
+}
+theorem adler_count_chunk_byte_observation(bytes: uint8[], count: uint64, lane: int32) {
+ requires count <= 22204u64;
+ requires 0 <= lane;
+ requires lane <= 3;
+ ensures to_integer((int32)(bytes + count)[lane]) == to_integer((int32)bytes[(int32)(uint32)count + lane]) by {
+  have count <= 22208u64 by { normalize() using { count <= 22204u64; } }
+  apply(adler_count_byte_pointer(bytes, count)) using { count <= 22208u64; }
+  apply(adler_count_bounds(count)) using { count <= 22208u64; }
+  have (int32)(uint32)count <= 22204 by { simp(); }
+  have defined((int32)(uint32)count + lane) by { simp(); }
+  have bytes + count + lane == bytes + ((int32)(uint32)count + lane) by {
+   rewrite(bytes + count == bytes + (int32)(uint32)count);
+   normalize() using { defined((int32)(uint32)count + lane); }
+  }
+  have (bytes + count)[lane] == bytes[(int32)(uint32)count + lane] by {
+   simp() using { bytes + count + lane == bytes + ((int32)(uint32)count + lane); }
+  }
+  rewrite((bytes + count)[lane] == bytes[(int32)(uint32)count + lane]);
+  normalize();
+ }
+}
+
+# After Next has consumed four bytes, recover their positions from the actual
+# remaining count. No auxiliary processed count supplies the input position.
+theorem adler_count_previous_chunk_byte_observation(bytes: uint8[], total: uint64, remaining: uint64, lane: int32) {
+ requires remaining <= total;
+ requires 4u64 <= total - remaining;
+ requires total <= 22204u64;
+ requires 0 <= (int32)(uint32)remaining;
+ requires (int32)(uint32)remaining <= (int32)(uint32)total;
+ requires (int32)(uint32)total <= 22204;
+ requires 0 <= lane;
+ requires lane <= 3;
+ ensures to_integer((int32)(bytes + (total - remaining - 4u64))[lane]) == to_integer((int32)bytes[((int32)(uint32)total - (int32)(uint32)remaining) - 4 + lane]) by {
+  have total <= 22208u64 by { normalize() using { total <= 22204u64; } }
+  have total - remaining <= 22208u64 by { arithmetic() using { remaining <= total; total <= 22204u64; } }
+  have total - remaining - 4u64 <= 22204u64 by { arithmetic() using { remaining <= total; 4u64 <= total - remaining; total <= 22204u64; } }
+  apply(adler_count_step(total, remaining)) using { remaining <= total; total <= 22208u64; }
+  apply(adler_count_lane_step(total - remaining)) using { 4u64 <= total - remaining; total - remaining <= 22208u64; }
+  apply(adler_count_chunk_byte_observation(bytes, total - remaining - 4u64, lane)) using { total - remaining - 4u64 <= 22204u64; 0 <= lane; lane <= 3; }
+  have (int32)(uint32)(total - remaining - 4u64) == ((int32)(uint32)total - (int32)(uint32)remaining) - 4 by {
+   rewrite((int32)(uint32)(total - remaining - 4u64) == (int32)(uint32)(total - remaining) - 4);
+   rewrite((int32)(uint32)(total - remaining) == (int32)(uint32)total - (int32)(uint32)remaining);
+   normalize();
+  }
+  have ((int32)(uint32)total - (int32)(uint32)remaining) - 4 == (int32)(uint32)(total - remaining - 4u64) by { normalize() using { (int32)(uint32)(total - remaining - 4u64) == ((int32)(uint32)total - (int32)(uint32)remaining) - 4; } }
+  rewrite(((int32)(uint32)total - (int32)(uint32)remaining) - 4 == (int32)(uint32)(total - remaining - 4u64));
+  assumption();
+ }
+}
+
+# Exact prefix advance used by the deferred scalar B contribution.
+theorem adler_small_prefix_integer_advance(total: int32, remaining: int32) {
+ requires 0 <= remaining;
+ requires remaining <= total;
+ requires total <= 22204;
+ requires 4 <= total - remaining;
+ ensures to_integer(total - remaining) == to_integer((total - remaining) - 4) + 4 by {
+  apply(int32_nonnegative_subtract_within_value_is_defined(total, remaining)) using { 0 <= remaining; remaining <= total; };
+  have defined(total - remaining) by { assumption(); }
+  apply(int32_nonnegative_subtract_within_value_is_defined(total - remaining, 4)) using { 0 <= 4; 4 <= total - remaining; };
+  have defined((total - remaining) - 4) by { simp(); }
+  apply(int32_subtract_to_integer(total - remaining, 4)) using { defined((total - remaining) - 4); };
+  arithmetic() using { to_integer((total - remaining) - 4) == to_integer(total - remaining) - to_integer(4); };
+ }
+}

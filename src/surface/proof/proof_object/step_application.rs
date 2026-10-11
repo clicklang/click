@@ -3333,7 +3333,6 @@ fn describe_signed_arithmetic_check_error(
         Error::UnsupportedPremise(index) => {
             format!("premise {index} is not a signed `int32` claim")
         }
-        Error::UnsupportedGoal => "the goal is not a signed `int32` claim".to_string(),
         Error::InvalidDefinedness(index) => {
             format!("node {index} lacks the definedness evidence its rule needs")
         }
@@ -3390,13 +3389,6 @@ fn describe_special_arithmetic_check_error(
         Error::InvalidPremise(index) => format!("premise {index} is not a listed premise"),
         Error::InvalidNodeReference(index) => {
             format!("node {index} is referenced but is not an earlier node")
-        }
-        Error::InvalidRelation(index) => {
-            format!("node {index} combines relations its rule does not accept")
-        }
-        Error::InvalidAlignment(index) => format!("node {index} states an invalid alignment"),
-        Error::InvalidDefinedness(index) => {
-            format!("node {index} lacks the definedness evidence its rule needs")
         }
         Error::InvalidOperator(index) => {
             format!("node {index} applies its rule to an operator it does not accept")

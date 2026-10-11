@@ -1602,6 +1602,46 @@ fn memory_resolution_order_walk_ignores_shared_bounds_of_other_indices() {
 /// variable, so the walk reads the edges filed under its own nodes and costs
 /// the same at every size. The full scan beside it reads every unsigned bound
 /// at each node and has to grow.
+/// The wide copy of [`unsigned_order_walk_ignores_unsigned_bounds_of_other_indices`]
+/// (`design/typed-indices.md`, stage 2, step 1): `x < n` and `n <= 4` as
+/// `uint64` facts beside `N` other indices below the same `n`. Deciding
+/// `x < 4` walks up from `x` and must not read the bounds that only share
+/// `n`, so its work is the same at every size.
+#[test]
+fn wide_order_walk_ignores_uint64_bounds_of_other_indices() {
+    let variable = |id: u64| Bitvector32Term::Variable(Variable(97_600 + id));
+    let (x, n) = (variable(0), variable(1));
+    let four = Bitvector32Term::UInt64Constant(4);
+    let bounded = |facts: PureFactContext, index: &Bitvector32Term| {
+        facts.assume_condition(
+            ConditionTerm::uint64_less_than(index.clone(), n.clone()),
+            true,
+        )
+    };
+    let mut work = Vec::new();
+    for size in [64u64, 128, 256, 512] {
+        let facts = (0..size).fold(
+            bounded(
+                PureFactContext::new().assume_condition(
+                    ConditionTerm::uint64_less_equal(n.clone(), four.clone()),
+                    true,
+                ),
+                &x,
+            ),
+            |facts, index| bounded(facts, &variable(10 + index)),
+        );
+        let (answer, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.decide(&ConditionTerm::uint64_less_than(x.clone(), four.clone()))
+        });
+        assert_eq!(answer, Some(true), "the wide chain at {size}");
+        work.push((size, cost));
+    }
+    assert!(
+        work.iter().all(|(_, cost)| *cost == work[0].1),
+        "the wide order walk visited unrelated bounds: {work:?}"
+    );
+}
+
 #[test]
 fn unsigned_order_walk_ignores_unsigned_bounds_of_other_indices() {
     let variable = |id: u64| Bitvector32Term::Variable(Variable(97_100 + id));

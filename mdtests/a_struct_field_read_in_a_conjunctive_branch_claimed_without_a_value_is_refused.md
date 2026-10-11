@@ -33,5 +33,5 @@ int32 f(int32 x) {
 ```
 
 ```expect
-fail: case: [0 <= x, x < 2, x == 0 is false]
+fail: case: [0 <= x, x < 2, x != 0]
 ```

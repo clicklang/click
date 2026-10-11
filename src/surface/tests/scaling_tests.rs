@@ -889,6 +889,28 @@ fn targeted_simple_verification_does_not_verify_unrelated_theorems() {
     );
 }
 
+/// A verification shares the standard library's theorem declarations; it
+/// copies only its own file's. Each copied the whole library several times,
+/// a fixed cost that dominated small verifications.
+#[test]
+fn verification_copies_only_its_own_theorem_declarations() {
+    let c_source = "int32 scaling_target(int32 x) { return x; }\n";
+    let library = standard_library_theorem_definitions()
+        .expect("the standard library should load")
+        .len();
+    for size in [4, 8, 16, 32] {
+        let click_source = target_with_unrelated_theorems(size);
+        let before = theorem_definition_copies();
+        verify_c0_sources(&click_source, &[("target.c", c_source)])
+            .expect("the target and its theorems should verify");
+        let copies = theorem_definition_copies() - before;
+        assert!(
+            copies <= 4 * size,
+            "{size} file theorems made {copies} theorem copies; the library has {library}"
+        );
+    }
+}
+
 #[test]
 fn targeted_certification_keeps_an_explicit_theorem_dependency() {
     let c_source = "int32 scaling_target(int32 x) { return x; }\n";
@@ -2500,7 +2522,11 @@ fn exceptional_cleanup_chain_project(
     }
     c_source.push_str("    return result;\n}\n");
 
-    let mut click_source = String::from("verifying \"cleanup.c\";\n\n");
+    // These facts must not name x: result == x merges would then have to
+    // update their predicate signatures, making them relevant to each call.
+    let mut click_source = String::from(
+        "verifying \"cleanup.c\";\n\nfunction unrelated_fact(n: int32) -> int32 { n }\n\n",
+    );
     click_source.push_str(
         "int32 helper(int32 x) throws int32 {\n    ensures result == x;\n    exceptional ensures exception == 7;\n}\n\n",
     );
@@ -2516,7 +2542,10 @@ fn exceptional_cleanup_chain_project(
     }
     click_source.push_str("int32 cleanup_caller(int32 x) throws int32 {\n");
     for index in 0..unrelated_fact_count {
-        click_source.push_str(&format!("    requires x != {};\n", 10_000 + index));
+        click_source.push_str(&format!(
+            "    requires unrelated_fact({}) != 0;\n",
+            10_000 + index
+        ));
     }
     click_source.push_str("    ensures result == x;\n    exceptional ensures exception == 7;\n}\n");
     (c_source, click_source)
@@ -2816,6 +2845,51 @@ fn stores_beside_many_owned_ranges_scale_near_linearly() {
     // the ownership composition. The query's own scaling and checked witness
     // are pinned directly by
     // `composition_store_separation_uses_checked_aliases_without_scanning_other_owners`.
+}
+
+/// [`stores_beside_many_owned_ranges`] with the stored array held as a wide
+/// range, `owns value[0..length]` for a `size_t` length: each constant-index
+/// store finds its cell in a 64-bit range (`design/typed-indices.md`, step 3).
+fn stores_beside_many_owned_size_t_ranges(size: usize) -> (String, String) {
+    let (c_source, click_source) = stores_beside_many_owned_ranges(size);
+    let c_source = c_source.replace(
+        "int32* read_acquired(int32* (*acquire)(), int32* value)",
+        "int32* read_acquired(int32* (*acquire)(), int32* value, unsigned long length)",
+    );
+    let click_source = click_source
+        .replace(
+            "int32* read_acquired(int32* (*acquire)(), int32* value) {",
+            "int32* read_acquired(int32* (*acquire)(), int32* value, uint64 length) {",
+        )
+        .replace(
+            &format!("    owns value[0..{size}];\n"),
+            &format!("    requires {size}u64 <= length;\n    owns value[0..length];\n"),
+        );
+    assert!(
+        c_source.contains("unsigned long length") && click_source.contains("owns value[0..length]")
+    );
+    (c_source, click_source)
+}
+
+#[test]
+fn stores_beside_many_owned_size_t_ranges_scale_near_linearly() {
+    let samples = [2, 4, 8, 16]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = stores_beside_many_owned_size_t_ranges(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("acquire.c", c_source.as_str())])
+            });
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "size {size} owned size_t range store fixture failed: {}",
+                    error.message()
+                )
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+    assert_near_linear_scaling("stores beside many owned size_t ranges", &samples);
 }
 
 /// The frozen byte-representation round trip
@@ -3561,9 +3635,9 @@ fn many_clause_bundle_grows_at_most_quadratically() {
     }
 }
 
-/// `simp` closes `x0 == xN` from the chain `x0 == x1`, ..., `x(N-1) == xN`
-/// in one step, with work linear in the chain; a query about two unrelated
-/// equal terms costs the same whatever chain sits beside it.
+/// `simp` closes a chain of equal opaque applications. Function arity stays
+/// fixed so the unrelated-query axis measures ambient facts independently
+/// of the cost of lowering a contract with more parameters.
 #[test]
 fn simp_equality_chain_is_linear_and_unrelated_queries_are_flat() {
     let simp_work = |sample: &ScalingSample| {
@@ -3575,23 +3649,21 @@ fn simp_equality_chain_is_linear_and_unrelated_queries_are_flat() {
             .sum::<usize>()
     };
     let sources = |size: usize, goal: &str| {
-        let c_parameters = (0..=size)
-            .map(|index| format!("int x{index}"))
-            .chain(["int y".into(), "int z".into(), "int w".into()])
-            .collect::<Vec<_>>()
-            .join(", ");
-        let parameters = (0..=size)
-            .map(|index| format!("int32 x{index}"))
-            .chain(["int32 y".into(), "int32 z".into(), "int32 w".into()])
-            .collect::<Vec<_>>()
-            .join(", ");
+        // Keep function arity fixed: otherwise claim lowering itself grows
+        // with the parameter list, obscuring the unrelated-fact lookup axis.
+        let parameters = "int32 x, int32 y, int32 z, int32 w";
         let requires = (0..size)
-            .map(|index| format!("    requires x{index} == x{};\n", index + 1))
+            .map(|index| {
+                format!(
+                    "    requires marker({index}, x) == marker({}, x);\n",
+                    index + 1
+                )
+            })
             .collect::<String>();
         (
-            format!("int chain({c_parameters}) {{\n    return 0;\n}}\n"),
+            format!("int chain({parameters}) {{\n    return 0;\n}}\n"),
             format!(
-                "verifying \"chain.c\";\n\nint32 chain({parameters}) {{\n{requires}    requires y == z;\n    requires z == w;\n    ensures {goal};\n}} by {{\n    execute();\n    simp();\n}}\n"
+                "verifying \"chain.c\";\n\nfunction marker(index: int32, x: int32) -> int32 {{ x }}\n\nint32 chain({parameters}) {{\n{requires}    requires y == z;\n    requires z == w;\n    ensures {goal};\n}} by {{\n    execute();\n    simp();\n}}\n"
             ),
         )
     };
@@ -3599,7 +3671,7 @@ fn simp_equality_chain_is_linear_and_unrelated_queries_are_flat() {
     let mut unrelated = Vec::new();
     for size in [4, 8, 16, 32] {
         for (goal, samples) in [
-            (format!("x0 == x{size}"), &mut chain),
+            (format!("marker(0, x) == marker({size}, x)"), &mut chain),
             ("y == w".to_string(), &mut unrelated),
         ] {
             let (c_source, click_source) = sources(size, &goal);
@@ -4900,6 +4972,58 @@ fn stores_to_bounded_unordered_size_t_indices_are_near_linear() {
             .skip(1)
             .all(|pair| within(pair[0].work, pair[1].work)),
         "stores to bounded unordered size_t indices are not near linear: {:?}; named work: {}",
+        samples.iter().map(|sample| sample.work).collect::<Vec<_>>(),
+        named_growth_diagnostic(&samples)
+    );
+}
+
+/// `N` calls that each hand the callee the owned window `bytes + index` of
+/// an owned `size_t` range: each call splits the caller's range around the
+/// window and rejoins it when the window comes back.
+fn owned_size_t_window_calls(calls: usize) -> (String, String) {
+    let call_lines = "    set_four(bytes + index);\n".repeat(calls);
+    let c_source = format!(
+        "void set_four(unsigned char *chunk) {{ chunk[0] = 1; }}\n\
+         void write(unsigned char *bytes, unsigned long length, unsigned long index) {{\n\
+         {call_lines}}}\n"
+    );
+    let steps = "    step();\n".repeat(calls);
+    let click_source = format!(
+        "verifying \"write.c\";\n\n\
+         void set_four(uint8* chunk) {{\n    owns chunk[0..4];\n}} by {{ execute(); simp(); }}\n\n\
+         void write(uint8* bytes, uint64 length, uint64 index) {{\n    \
+         requires index <= length;\n    requires 4u64 <= length - index;\n    \
+         owns bytes[0..length];\n}} by {{\n{steps}    execute();\n    simp();\n}}\n"
+    );
+    (c_source, click_source)
+}
+
+#[test]
+fn owned_size_t_window_calls_are_near_linear() {
+    let samples = [4, 8, 16, 32]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = owned_size_t_window_calls(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("write.c", c_source.as_str())])
+            });
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "{size} owned size_t window calls should verify: {}",
+                    error.message()
+                )
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+    // A linear curve doubles per doubling; a quadratic one quadruples.
+    let within = |low: usize, high: usize| high.saturating_mul(4) <= low.saturating_mul(9);
+    assert!(
+        samples
+            .windows(2)
+            .skip(1)
+            .all(|pair| within(pair[0].work, pair[1].work)),
+        "owned size_t window calls are not near linear: {:?}; named work: {}",
         samples.iter().map(|sample| sample.work).collect::<Vec<_>>(),
         named_growth_diagnostic(&samples)
     );

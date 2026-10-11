@@ -4,10 +4,12 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
+use crate::git::{git_commit_id, git_repo_root, git_show};
 use click::cli::{
     CInput, LoadedTarget, RunLimits, SelectedProject, containing_directory, load_sidecar_inputs,
     load_target_inputs, lone_sidecar_project_root, looks_like_mdtest, looks_like_source_location,
@@ -28,12 +30,12 @@ use click::surface::{
     program_prepared_project_summary, program_prepared_project_tactic_source_positions,
     selected_c_target, tactic_arm_containing_position, tactic_have_body_contains_position,
     tactic_line_has_multiple_starts, tactic_source_at_position, tactic_starts_on_line,
-    verify_c0_prepared_project, verify_c0_prepared_project_at,
-    verify_c0_prepared_project_functions, verify_c0_prepared_project_theorem, verify_c0_project,
+    verify_c0_prepared_project_at, verify_c0_prepared_project_functions,
+    verify_c0_prepared_project_theorem, verify_c0_prepared_project_with_summary, verify_c0_project,
     verify_c0_project_at, verify_c0_project_functions, verify_c0_project_theorem,
-    verify_program_prepared_project, verify_program_prepared_project_at,
+    verify_c0_project_with_summary, verify_program_prepared_project_at,
     verify_program_prepared_project_functions, verify_program_prepared_project_theorem,
-    verifying_source_paths, with_proof_trace,
+    verify_program_prepared_project_with_summary, verifying_source_paths, with_proof_trace,
 };
 
 const USAGE: &str = "\
@@ -95,26 +97,6 @@ struct Arguments {
 struct TraceTo {
     line: usize,
     column: Option<usize>,
-}
-
-fn main() {
-    if let Err(message) = entry() {
-        if message.starts_with("proof error:")
-            || message.starts_with("proof error in `")
-            || message.starts_with("syntax error:")
-            || message.starts_with("type error:")
-            || message.starts_with("internal error:")
-        {
-            eprintln!("{message}");
-        } else {
-            eprintln!("click-verify: {message}");
-        }
-        std::process::exit(1);
-    }
-}
-
-fn entry() -> Result<(), String> {
-    entry_with(env::args().skip(1))
 }
 
 pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
@@ -1090,50 +1072,6 @@ fn bounded_names(names: &[String]) -> String {
     shown.join(", ")
 }
 
-fn git_repo_root(path: &Path) -> Result<PathBuf, String> {
-    let anchor = if path.is_dir() {
-        path
-    } else {
-        containing_directory(path)
-    };
-    let output = Command::new("git")
-        .args([
-            "-C",
-            &anchor.display().to_string(),
-            "rev-parse",
-            "--show-toplevel",
-        ])
-        .output()
-        .map_err(|error| format!("failed to run git: {error}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "`{}` is not inside a readable git worktree",
-            path.display()
-        ));
-    }
-    Ok(PathBuf::from(
-        String::from_utf8_lossy(&output.stdout).trim(),
-    ))
-}
-
-fn git_commit_id(repo: &Path, revision: &str) -> Result<String, String> {
-    let output = Command::new("git")
-        .args([
-            "-C",
-            &repo.display().to_string(),
-            "rev-parse",
-            "--verify",
-            &format!("{revision}^{{commit}}"),
-        ])
-        .output()
-        .map_err(|error| format!("failed to run git: {error}"))?;
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
-        Err(format!("unknown git revision `{revision}`"))
-    }
-}
-
 fn verification_marker_path(repo: &Path, commit: &str, sidecar: &Path) -> Result<PathBuf, String> {
     let relative = sidecar.strip_prefix(repo).map_err(|_| {
         format!(
@@ -1172,14 +1110,25 @@ fn verifier_fingerprint() -> Result<&'static str, String> {
         .get_or_init(|| {
             let executable = env::current_exe()
                 .map_err(|error| format!("failed to locate the Click executable: {error}"))?;
-            let bytes = fs::read(&executable).map_err(|error| {
+            let failed = |error: std::io::Error| {
                 format!(
                     "failed to fingerprint Click executable `{}`: {error}",
                     executable.display()
                 )
-            })?;
+            };
+            // Stream the executable through the hasher: a debug or profiling
+            // build is hundreds of megabytes, and reading it whole made it
+            // the largest allocation of a directory verification.
+            let mut file = fs::File::open(&executable).map_err(failed)?;
             let mut hasher = DefaultHasher::new();
-            bytes.hash(&mut hasher);
+            let mut chunk = vec![0; 1 << 20];
+            loop {
+                let read = file.read(&mut chunk).map_err(failed)?;
+                if read == 0 {
+                    break;
+                }
+                hasher.write(&chunk[..read]);
+            }
             Ok(format!("{:016x}", hasher.finish()))
         })
         .as_deref()
@@ -1323,26 +1272,6 @@ fn record_full_verification(
     Ok(())
 }
 
-fn git_show(repo: &Path, revision: &str, path: &Path) -> Result<Option<String>, String> {
-    let relative = path.strip_prefix(repo).map_err(|_| {
-        format!(
-            "`{}` is outside git worktree `{}`",
-            path.display(),
-            repo.display()
-        )
-    })?;
-    let spec = format!("{revision}:{}", relative.display());
-    let output = Command::new("git")
-        .args(["-C", &repo.display().to_string(), "show", &spec])
-        .output()
-        .map_err(|error| format!("failed to run git: {error}"))?;
-    if output.status.success() {
-        Ok(Some(String::from_utf8_lossy(&output.stdout).into_owned()))
-    } else {
-        Ok(None)
-    }
-}
-
 fn load_baseline_sidecar(
     repo: &Path,
     revision: &str,
@@ -1479,31 +1408,49 @@ fn verify_file_within_limits(
     let trace_target = trace_to
         .map(|target| resolve_trace_target(&click_source, line_offset, target))
         .transpose()?;
-    let summary = sidecar_summary(click_path, &project, &inputs, line_offset)?;
+    // An untraced run takes its summary from the verification's own
+    // resolution of the sources; a traced one summarizes separately.
+    let (summary, untraced) = match &trace_unit {
+        Some(_) => (
+            sidecar_summary(click_path, &project, &inputs, line_offset)?,
+            None,
+        ),
+        None => {
+            let summarized = match &inputs {
+                CInput::Bundle(sources) => {
+                    verify_c0_project_with_summary(&project, &source_refs(sources))
+                }
+                CInput::Prepared(imports) => {
+                    verify_c0_prepared_project_with_summary(&project, imports)
+                }
+                CInput::PreparedProgram(import) => {
+                    verify_program_prepared_project_with_summary(&project, import)
+                }
+            };
+            let (summary, verified) = summarized
+                .map_err(|error| located_click_message(error, click_path, &project, line_offset))?;
+            (summary, Some(verified))
+        }
+    };
     let (verified, successful_trace) = {
-        let run_selected = || match (&inputs, &trace_unit) {
-            (CInput::Bundle(sources), Some(TraceUnit::Function(function))) => {
+        let run_traced = |unit: &TraceUnit| match (&inputs, unit) {
+            (CInput::Bundle(sources), TraceUnit::Function(function)) => {
                 verify_c0_project_functions(&project, &source_refs(sources), [function.clone()])
             }
-            (CInput::Prepared(imports), Some(TraceUnit::Function(function))) => {
+            (CInput::Prepared(imports), TraceUnit::Function(function)) => {
                 verify_c0_prepared_project_functions(&project, imports, [function.clone()])
             }
-            (CInput::Bundle(sources), Some(TraceUnit::Theorem(theorem))) => {
+            (CInput::Bundle(sources), TraceUnit::Theorem(theorem)) => {
                 verify_c0_project_theorem(&project, &source_refs(sources), theorem)
             }
-            (CInput::Prepared(imports), Some(TraceUnit::Theorem(theorem))) => {
+            (CInput::Prepared(imports), TraceUnit::Theorem(theorem)) => {
                 verify_c0_prepared_project_theorem(&project, imports, theorem)
             }
-            (CInput::PreparedProgram(import), Some(TraceUnit::Function(function))) => {
+            (CInput::PreparedProgram(import), TraceUnit::Function(function)) => {
                 verify_program_prepared_project_functions(&project, import, [function.clone()])
             }
-            (CInput::PreparedProgram(import), Some(TraceUnit::Theorem(theorem))) => {
+            (CInput::PreparedProgram(import), TraceUnit::Theorem(theorem)) => {
                 verify_program_prepared_project_theorem(&project, import, theorem)
-            }
-            (CInput::Bundle(sources), None) => verify_c0_project(&project, &source_refs(sources)),
-            (CInput::Prepared(imports), None) => verify_c0_prepared_project(&project, imports),
-            (CInput::PreparedProgram(import), None) => {
-                verify_program_prepared_project(&project, import)
             }
         };
         let report = |error: ClickError| {
@@ -1519,7 +1466,7 @@ fn verify_file_within_limits(
         };
         match &trace_unit {
             Some(unit) => with_proof_trace(unit.name(), || {
-                let verified = run_selected().map_err(report)?;
+                let verified = run_traced(unit).map_err(report)?;
                 // The renderer asks for one step's location several times.
                 let source_locations = ProofSourceLocations::new(&project, &inputs);
                 let located = RefCell::new(HashMap::<
@@ -1576,7 +1523,8 @@ fn verify_file_within_limits(
                 );
                 Ok((verified, trace))
             }),
-            None => run_selected()
+            None => untraced
+                .expect("an untraced run verified with its summary")
                 .map(|verified| (verified, None))
                 .map_err(report),
         }
@@ -1844,12 +1792,13 @@ mod tests {
     }
 
     #[test]
-    fn refused_transport_names_the_cell_and_loop_counter_without_kernel_notation() {
+    fn refused_transport_names_the_cell_and_prints_checked_effects() {
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("mdtests/loop_binder_instance_footprint_includes_its_memory.md");
         let report =
             entry_with([fixture.display().to_string()]).expect_err("the loop may write the cell");
-        assert_source_diagnostic(&report);
+        assert!(report.contains("memory-effects("), "{report}");
+        assert!(report.contains("label definitions"), "{report}");
         assert!(report.contains("store to occupied[start]"), "{report}");
         assert!(report.contains("i >= end"), "{report}");
         assert!(report.contains("at(pre, occupied[start])"), "{report}");
@@ -1858,7 +1807,7 @@ mod tests {
             report
                 .matches("some effect facts have no exact Click spelling")
                 .count(),
-            1,
+            0,
             "{report}"
         );
     }
@@ -2504,6 +2453,34 @@ mod tests {
             costs[0], costs[1],
             "beyond resolution, the summary's work grew with the initializer: {costs:?}"
         );
+    }
+
+    /// An untraced run reports its external-dependency summary from the
+    /// verification's own resolution of the sources. Resolving validates every
+    /// declaration, the standard library's included, and once cost about a
+    /// tenth of a small run when the summary resolved the sources again.
+    #[test]
+    fn an_untraced_verification_resolves_its_sources_once() {
+        use click::instrumentation::{VerificationEvent, collect};
+        let (root, click_path) = temporary_project(
+            "one-resolution",
+            "int32 identity(int32 x) { return x; }\n",
+            "verifying \"program.c\";\n\
+             int32 identity(int32 x) {\n\
+                 ensures result == x;\n\
+             } by {\n\
+                 execute();\n\
+                 simp();\n\
+             }\n",
+        );
+        let (result, events) = collect(|| entry_with([click_path.display().to_string()]));
+        fs::remove_dir_all(&root).expect("temporary verification directory should be removable");
+        result.expect("the program verifies");
+        let resolutions = events
+            .iter()
+            .filter(|event| matches!(event, VerificationEvent::PhaseStarted("source resolution")))
+            .count();
+        assert_eq!(resolutions, 1);
     }
 
     /// The crash-containment bound is installed before the run loads its

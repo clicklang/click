@@ -364,9 +364,19 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         // the kernel `extract` step.  This does not derive or normalize a
         // weaker proposition: the complete conjunction remains the supplied
         // evidence and only its checked conjunct satisfies this requirement.
+        // A requirement is also met by a listed fact that states the same
+        // order claim from the other side, `c >= b` for `b <= c`, in any
+        // order family: the kernel's `int32` order lemmas accept that
+        // spelling, and the standard library's 64-bit ones are applied here.
+        let mirrored_order_listed = || {
+            crate::kernel::proof::fact_reasoning::order_claim_forms(&lowered)
+                .iter()
+                .any(|form| exact_fact_is_available(form, available))
+        };
         if !crate::kernel::listed_premise_holds(&lowered, |premise| {
             exact_fact_is_available(premise, available)
-        }) && !matches!(normalize_proposition(&lowered), SimpProposition::True)
+        }) && !mirrored_order_listed()
+            && !matches!(normalize_proposition(&lowered), SimpProposition::True)
         {
             return Err(theorem_application_error(
                 claim_label,

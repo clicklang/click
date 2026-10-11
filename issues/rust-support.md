@@ -62,22 +62,55 @@ remainders for all four lanes under its native nonzero-divisor precondition.
 Checked Integer lane-state lemmas establish the optimized four-byte recurrence,
 including the original recombination offset and weights, and preservation of
 both residues through lane reductions. The constructor exports each lane’s
-exact mathematical entry-byte value. One- and four-byte prefix lemmas preserve
+exact mathematical entry-byte value. The small-count cursor bridge also proves
+equal byte addresses for the full native count and its checked signed index,
+using equality of exact values rather than low-bit truncation. Source-proved
+read bridges connect the native count and all four positions in its chunk to
+the signed byte observations used by the common spec, with checked signed-index
+guards. The original small-batch vector loop checks each constructor lane’s
+native and Integer value against its shared subslice and its position in the
+original input. That position is derived from the actual remaining count after
+`Next`, with checked native and signed subtraction bounds. One- and four-byte prefix
+lemmas preserve
 the A residue against the common specification; a four-byte B prefix lemma
 checks the ordered weighted update under explicit index and nonnegative
-representative bounds. Connecting those relations to the arbitrary-length
-computation’s nested loops remains incomplete.
-The unchanged Rust one-byte and four-byte computations prove both fields equal
+representative bounds. A joint native vector-prefix bridge now connects the
+checked word additions and exact constructor byte observations to both common
+prefix residues. Its iterator adapter derives the prefix from stored remaining
+state and checks the four-byte advance and remaining-length bounds. The original
+small-batch vector loop carries both residues against the common
+specification at every actual remaining count and establishes their relations
+for the completed four-byte prefix, from any canonical A and B seeds. The B
+representative includes the deferred prefix-length times A-seed contribution,
+the original four lane weights and the `6*MOD` offset, and stays nonnegative.
+Initialization, native lane additions, exact input-byte observations, signed
+prefix subtraction safety and exact Integer prefix advances are checked.
+A now passes through the original lane reductions and four scalar additions
+into its prefix residue before the tail. The native B seed product and
+addition prove the exact deferred prefix-length times seed contribution,
+including the exact length-cast observation. Transporting B through reductions
+and weighted recombination and finishing the scalar tail
+remain pending, as do the arbitrary-length computation’s nested loops. Full original-computation smart audits
+currently exhaust the standard ten-minute run bound before completing a site,
+while ordinary verification succeeds. This is an audit-tool limitation, not a
+reported proof failure; continue checksum proof work with ordinary verification
+and retain audit coverage where it completes. The standalone native-count and
+chunk-position observation claims pass complete audits. The loop bridge uses
+scoped native byte equalities and explicit Integer premises.
+The unchanged Rust one- through four-byte computations prove both fields equal
 the shared specification on the entry byte snapshot, starting from A = 1 and
 B = 0. The four-byte bridge checks the native unsigned recombination and its
 ordered B weights. The unchanged shared checksum getter proves the exact packed
 value for any two u16 fields, preserves both fields under shared views, and has
 a checked conditional bridge from the field specification to the packed
-specification. The unchanged one-byte `adler32_slice` entry point composes the
-constructor, mutable computation, and shared getter, proves the common packed
-specification from A = 1 and B = 0, and preserves its input byte. General-length
-correctness, broader public-entry-point composition, and implementation
-incremental correctness remain pending.
+specification. The unchanged `adler32_slice` entry point composes the constructor,
+mutable computation, and shared getter for every input length zero through
+four, proves the common packed specification from A = 1 and B = 0, and preserves
+every input byte. The empty call needs no input-byte authority. The serial-tail
+bridges check unsigned prefix sums, the ordered B weights, and removal of the
+native modulus offset before connecting both fields to the common specification.
+General-length correctness, broader public-entry-point composition, and
+implementation incremental correctness remain pending.
 The independently locked, unchanged zlib one-byte path proves its packed result
 equal the same specification and preserves its input byte; its empty path also
 verifies. General-length C correctness and C/Rust result equality remain pending. The specification is not yet connected

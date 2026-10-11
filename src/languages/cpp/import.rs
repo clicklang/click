@@ -5,8 +5,7 @@
 //! semantic artifact without consulting or executing the exporter.
 
 use std::collections::BTreeMap;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,6 +17,7 @@ use super::schema::{
     CppExceptionBehavior, CppExport, CppLibraryAssertion, CppPreprocessorFile, CppProfile,
     CppStatement, EXPORT_SCHEMA, LANGUAGE, MAX_PREPROCESSOR_FILES, STANDARD, TARGET,
 };
+use crate::cli::write_file_atomically;
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
 
 const CONFIG_SCHEMA: u32 = 6;
@@ -263,8 +263,8 @@ fn refresh_import_inner(config_path: &Path) -> Result<(), String> {
         return Err("C++ import lock exceeds its size limit".into());
     }
 
-    atomic_write(&artifact_path(&config)?, &artifact)?;
-    atomic_write(&lock_path(config_path)?, &lock_bytes)
+    write_file_atomically(&artifact_path(&config)?, &artifact)?;
+    write_file_atomically(&lock_path(config_path)?, &lock_bytes)
 }
 
 fn run_cpp_exporter(
@@ -1018,32 +1018,6 @@ fn read_stable(path: &Path, max: usize, label: &str) -> Result<Vec<u8>, String> 
         ));
     }
     Ok(bytes)
-}
-
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| format!("output `{}` has no parent", path.display()))?;
-    fs::create_dir_all(parent)
-        .map_err(|error| format!("create output directory `{}`: {error}", parent.display()))?;
-    let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temporary)
-        .map_err(|error| format!("create temporary output `{}`: {error}", temporary.display()))?;
-    let result = (|| {
-        file.write_all(bytes)
-            .map_err(|error| format!("write temporary output: {error}"))?;
-        file.sync_all()
-            .map_err(|error| format!("sync temporary output: {error}"))?;
-        fs::rename(&temporary, path)
-            .map_err(|error| format!("replace output `{}`: {error}", path.display()))
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result
 }
 
 fn hex_digest(bytes: &[u8]) -> String {

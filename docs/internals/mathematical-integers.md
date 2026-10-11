@@ -157,6 +157,13 @@ explicit premises, without opening their operands or deriving nonlinear laws.
 Evaluation guards remain mandatory before a term can enter a proposition or
 certificate. There is no promise of general nonlinear automation.
 
+Pure theorem requirements lower in source order. Earlier requirements supply
+evaluation evidence for later Integer observations, such as `defined(n + 1)`
+before `to_integer(n + 1) == value`. Every requirement remains in the exported
+theorem premises, so an application must establish the guards as well as the
+observations. Lowering shares the persistent premise context between clauses.
+
+
 Arithmetic planning emits explicit, inspectable evidence. The kernel validates
 operators, coefficients, terms, premises, and range claims independently;
 zero-premise tautologies are valid, while sparse or altered premise indices

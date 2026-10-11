@@ -387,6 +387,8 @@ enum Token {
     Int64MinimumMagnitude,
     UInt64Number(u64),
     CharLiteral(u8),
+    /// A Rust lifetime, `'a`, by its name without the quote.
+    Lifetime(String),
     String(String),
     LBrace,
     RBrace,
@@ -451,6 +453,7 @@ impl Token {
             Self::CharLiteral(value) => {
                 format!("character literal `{}`", (*value as char).escape_default())
             }
+            Self::Lifetime(name) => format!("lifetime `'{name}`"),
             Self::String(value) => format!("string literal `\"{value}\"`"),
             other => format!("`{}`", other.spelling()),
         }
@@ -469,6 +472,7 @@ impl Token {
             | Self::Int64MinimumMagnitude
             | Self::UInt64Number(_)
             | Self::CharLiteral(_)
+            | Self::Lifetime(_)
             | Self::String(_) => "",
             Self::LBrace => "{",
             Self::RBrace => "}",
@@ -2201,6 +2205,15 @@ impl Parser {
                 }
                 Some("fact") => {
                     self.position += 1;
+                    // Nothing names a resource's fact: a fold that cannot
+                    // establish one prints the fact itself.
+                    if matches!(self.peek(), Some(Token::Ident(_)))
+                        && self.peek_next() == Some(&Token::Colon)
+                    {
+                        return Err(self.error(
+                            "a `fact` clause takes no label; a failed fold names the fact by its proposition",
+                        ));
+                    }
                     let fact = self.parse_proposition()?;
                     self.note_child_field_equation(&fact);
                     facts.push(fact);
@@ -2211,12 +2224,12 @@ impl Parser {
                 }
                 Some(name) => {
                     return Err(self.error(format!(
-                        "expected `contains`, `owns`, `views`, `fact`, `forall`, or `let` in resource body, got `{name}`"
+                        "expected `owns`, `views`, `fact`, `forall`, or `let` in resource body, got `{name}`"
                     )));
                 }
                 None => {
                     return Err(self.error(
-                        "expected `contains`, `owns`, `views`, `fact`, `forall`, or `let` in resource body, got end of input",
+                        "expected `owns`, `views`, `fact`, `forall`, or `let` in resource body, got end of input",
                     ));
                 }
             }
@@ -3537,6 +3550,7 @@ impl Parser {
         }
         self.expect_ident_spelling("fn")?;
         let path = self.expect_rust_path("function name")?;
+        self.skip_rust_lifetime_parameters()?;
         let name = if self.rust_impl_type.is_some() {
             // A method's own name; an item inside it, `compute::LIMIT`,
             // follows as the importer writes path segments.
@@ -3768,6 +3782,48 @@ impl Parser {
         ))
     }
 
+    /// A lifetime, `'a` in `&'a T`, which a contract does not use.
+    fn skip_rust_lifetime(&mut self) {
+        if matches!(self.peek(), Some(Token::Lifetime(_))) {
+            self.position += 1;
+        }
+    }
+
+    /// The generic parameters after a function's name, `<'a, 'b: 'a>`, when
+    /// they are all lifetimes. The importer refuses a generic function, so a
+    /// type parameter is refused here too.
+    fn skip_rust_lifetime_parameters(&mut self) -> Result<(), ClickError> {
+        if self.peek() != Some(&Token::LessThan) {
+            return Ok(());
+        }
+        self.position += 1;
+        loop {
+            let Some(Token::Lifetime(_)) = self.peek() else {
+                return Err(self.error(
+                    "a `fn` signature's generic parameters may only be lifetimes, such as `<'a>`; a generic function is not supported",
+                ));
+            };
+            self.position += 1;
+            if self.peek() == Some(&Token::Colon) {
+                self.position += 1;
+                while matches!(self.peek(), Some(Token::Lifetime(_))) {
+                    self.position += 1;
+                    if self.peek() != Some(&Token::Plus) {
+                        break;
+                    }
+                    self.position += 1;
+                }
+            }
+            if self.peek() == Some(&Token::Comma) {
+                self.position += 1;
+            }
+            if self.peek() == Some(&Token::GreaterThan) {
+                self.position += 1;
+                return Ok(());
+            }
+        }
+    }
+
     /// The type argument of an operator trait, `<u32>`, `<&Lanes>` or
     /// `<Self>`: whether it is a reference, whether that is mutable, and
     /// the type's name. The caller turns it into the suffix the Rust
@@ -3785,6 +3841,7 @@ impl Parser {
         let reference = self.peek() == Some(&Token::Amp);
         if reference {
             self.position += 1;
+            self.skip_rust_lifetime();
         }
         let mutable = reference && self.peek_ident() == Some("mut");
         if mutable {
@@ -3803,6 +3860,7 @@ impl Parser {
         let reference = self.peek() == Some(&Token::Amp);
         if reference {
             self.position += 1;
+            self.skip_rust_lifetime();
         }
         let mutable = reference && self.peek_ident() == Some("mut");
         if mutable {
@@ -3830,8 +3888,10 @@ impl Parser {
         if self.peek() != Some(&Token::Amp) {
             return Ok(None);
         }
-        let mutable = self.peek_next() == Some(&Token::Ident("mut".into()));
-        let bracket = self.position + 1 + usize::from(mutable);
+        let lifetime = usize::from(matches!(self.peek_next(), Some(Token::Lifetime(_))));
+        let mutable =
+            self.tokens.get(self.position + 1 + lifetime) == Some(&Token::Ident("mut".into()));
+        let bracket = self.position + 1 + lifetime + usize::from(mutable);
         if self.tokens.get(bracket) != Some(&Token::LBracket) {
             return Ok(None);
         }
@@ -3843,7 +3903,7 @@ impl Parser {
         let spelling = self.expect_ident("slice element type")?;
         let Some(c_type) = rust_scalar_type(&spelling).and_then(C0Type::pointer_type) else {
             return Err(self.error(format!(
-                "a slice of `{spelling}` in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling"
+                "a slice of `{spelling}` in a `fn` signature is not supported; the Rust importer reads slices of scalars only"
             )));
         };
         self.expect(Token::RBracket)?;
@@ -3903,6 +3963,7 @@ impl Parser {
     #[inline(never)]
     fn parse_rust_reference_type(&mut self) -> Result<ParsedType, ClickError> {
         self.expect(Token::Amp)?;
+        self.skip_rust_lifetime();
         let mutable = if self.peek_ident() == Some("mut") {
             self.position += 1;
             true
@@ -3911,7 +3972,7 @@ impl Parser {
         };
         if matches!(self.peek(), Some(Token::Amp | Token::LParen)) {
             return Err(self.error(
-                "a reference to a reference or `()` in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling",
+                "a reference to a reference or to `()` in a `fn` signature is not supported; the Rust importer refuses it",
             ));
         }
         // `&[T; N]` is the pointer to the array's first element. The length
@@ -3930,7 +3991,7 @@ impl Parser {
             self.expect(Token::RBracket)?;
             if rust_scalar_type(&spelling).is_none() {
                 return Err(self.error(format!(
-                    "an array of `{spelling}` in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling"
+                    "an array of `{spelling}` in a `fn` signature is not supported; the Rust importer reads arrays of scalars only"
                 )));
             }
         }
@@ -3982,7 +4043,7 @@ impl Parser {
         }
         if self.peek() == Some(&Token::LBracket) {
             return Err(self.error(
-                "an array or slice in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling",
+                "an array or slice passed by value in a `fn` signature is not supported; the Rust importer refuses it",
             ));
         }
         let spelling = self.expect_rust_path_name("type")?;
@@ -4610,6 +4671,20 @@ impl Parser {
             declared_bytes,
             struct_array: false,
         })
+    }
+
+    /// A field after `.` or `->`: an identifier, or in a Rust sidecar a tuple
+    /// field's position, `self.0`, which names the field the importer calls
+    /// `_0`.
+    fn expect_field_name(&mut self) -> Result<String, ClickError> {
+        if self.verifies_rust
+            && let Some(Token::Number(position)) = self.peek()
+        {
+            let name = format!("_{position}");
+            self.position += 1;
+            return Ok(name);
+        }
+        self.expect_ident("field name")
     }
 
     /// A clause's optional `name:` prefix, as `ensures` takes.
@@ -9162,7 +9237,7 @@ impl Parser {
                 continue;
             }
             self.position += 1;
-            let field_name = self.expect_ident("field name")?;
+            let field_name = self.expect_field_name()?;
             // Under `*`, the last field is read as the pointer it holds, not
             // owned as a slot.
             if !dereference
@@ -10915,7 +10990,7 @@ impl Parser {
                         ));
                     }
                     self.position += 1;
-                    let field_name = self.expect_ident("field name")?;
+                    let field_name = self.expect_field_name()?;
                     let surface_base = expression.clone();
                     let base = match &expression {
                         ContractExpression::Old(inner)
@@ -11830,7 +11905,7 @@ impl Parser {
                 }
                 Some(Token::Arrow | Token::Dot) => {
                     self.position += 1;
-                    let field_name = self.expect_ident("field name")?;
+                    let field_name = self.expect_field_name()?;
                     let base = expression;
                     expression = self
                         .resolve_c0_field_load(base.clone(), &field_name)?

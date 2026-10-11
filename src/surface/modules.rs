@@ -88,6 +88,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
     }
 
     let mut locals = BTreeMap::<String, ClickFile>::new();
+    let mut entry_combined = None;
     for identity in &order {
         let module = modules[identity];
         let imported_ids = transitive_imports(identity, &modules)?;
@@ -153,6 +154,9 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
                 .with_kind(ClickErrorKind::Type)
                 .located_by_ambient_declaration()
         })?;
+        if identity == project.entry() {
+            entry_combined = Some(combined);
+        }
     }
 
     for identity in order
@@ -178,12 +182,11 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
         }
     }
 
-    let imported = order
-        .iter()
-        .filter(|identity| identity.as_str() != project.entry())
-        .cloned()
-        .collect::<Vec<_>>();
-    let mut combined = merge_modules(&imported, project.entry(), &locals)?;
+    // Every module is reachable from the entry, so the entry's import
+    // closure is every other module and its checked merge above is the
+    // project's. Expansion, validation, and field schemas never read the
+    // target or runtime the profile overrides, so it is not checked again.
+    let mut combined = entry_combined.expect("the entry module is resolved");
     if let Some(profile) = project.c_profile() {
         if let Some(target) = profile.target {
             combined.c_target = Some(target);
@@ -192,22 +195,6 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             combined.thread_runtime = runtime;
         }
     }
-    combined =
-        validation::expand_declared_resource_clauses_for_project(combined).map_err(|error| {
-            error
-                .with_kind(ClickErrorKind::Type)
-                .located_by_ambient_declaration()
-        })?;
-    validation::validate_click_definitions(&combined).map_err(|error| {
-        error
-            .with_kind(ClickErrorKind::Type)
-            .located_by_ambient_declaration()
-    })?;
-    lowering::check_resource_field_schemas(&mut combined).map_err(|error| {
-        error
-            .with_kind(ClickErrorKind::Type)
-            .located_by_ambient_declaration()
-    })?;
     reject_theorem_justification_cycles(&combined)?;
     Ok(combined)
 }
@@ -563,6 +550,32 @@ abstract resource tree_token(key: int32);
                 ),
             ],
         )
+    }
+
+    /// The entry module's checked merge is the project's, so resolution
+    /// validates each module once and not the whole project again; every
+    /// validation re-checks the standard library.
+    #[test]
+    fn resolution_validates_each_module_once() {
+        let single = ClickProject::new(
+            "proofs/entry.click",
+            [ClickModuleSource::new(
+                "proofs/entry.click",
+                "predicate positive(x: int32) { x > 0 }\n",
+                [],
+            )],
+        );
+        for (project, modules) in [
+            (single, 1),
+            (three_file_project("import \"../models/tree.click\";\n"), 3),
+        ] {
+            let before = crate::surface::validation::definition_validations();
+            resolve_click_project(&project, &[]).expect("the project resolves");
+            assert_eq!(
+                crate::surface::validation::definition_validations() - before,
+                modules
+            );
+        }
     }
 
     #[test]

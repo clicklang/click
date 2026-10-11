@@ -105,9 +105,6 @@ impl WorkerCompletion {
 
 #[derive(Clone, Debug)]
 struct CompletionRight {
-    // Retain the exact callback, task argument, and checked resource plan.
-    worker: Arc<CVerifiedFunctionRule>,
-    argument: CValue,
     completion: WorkerCompletion,
 }
 
@@ -718,8 +715,6 @@ impl Ord for ThreadLedger {
 /// exact termination evidence have been validated against this parent.
 pub(super) struct PreparedThreadCreate<'a> {
     parent: &'a ThreadContext,
-    worker: &'a CVerifiedFunctionRule,
-    argument: CValue,
     completion: WorkerCompletion,
     retained_names: Option<Arc<super::named_authority::NamedMutexAuthorities>>,
 }
@@ -768,8 +763,6 @@ impl PreparedThreadCreate<'_> {
         next.parent.thread_ledger = Some(ledger.with_right(
             handle,
             CompletionRight {
-                worker: Arc::new(self.worker.clone()),
-                argument: self.argument,
                 completion: self.completion,
             },
             before_loans,
@@ -825,7 +818,7 @@ impl ThreadContext {
 
     pub(super) fn prepare_create<'a>(
         &'a self,
-        worker: &'a CVerifiedFunctionRule,
+        worker: &CVerifiedFunctionRule,
         termination: Option<&CVerifiedFunctionTerminationRule>,
         argument: CValue,
         assumptions: &PureFactContext,
@@ -840,7 +833,7 @@ impl ThreadContext {
         let completion = match suspend_verified_worker(
             &self.parent,
             worker,
-            argument.clone(),
+            argument,
             assumptions,
             environment,
             budget,
@@ -886,13 +879,12 @@ impl ThreadContext {
         };
         Ok(Ok(PreparedThreadCreate {
             parent: self,
-            worker,
-            argument,
             completion,
             retained_names,
         }))
     }
 
+    #[cfg(test)]
     pub(super) fn spawn(
         &self,
         worker: &CVerifiedFunctionRule,
