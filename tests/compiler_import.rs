@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use click::languages::c::compiler_import::{create_lock, load_imports};
 use click::surface::{
-    expand_c0_prepared_tactic_source_at, verify_c0_prepared_sources, verify_c0_prepared_sources_at,
+    expand_c0_prepared_tactic_source_at, verify_c0_prepared_sources, verify_sources_at,
 };
 use serde_json::json;
 
@@ -107,20 +107,27 @@ fn compiler_import_fixture_verifies_targets_and_checked_expansion() {
         .count()
         + 1;
     let column = offset - proof[..offset].rfind('\n').unwrap();
-    verify_c0_prepared_sources_at(&proof, &imports, line, column).expect("targeted imported proof");
+    verify_sources_at(&proof, &ProgramInputs::Prepared(&imports), line, column)
+        .expect("targeted imported proof");
     let expanded = expand_c0_prepared_tactic_source_at(&proof, &imports, line, column)
         .expect("checked compiler-backed tactic expansion");
     assert_ne!(expanded, proof);
     verify_c0_prepared_sources(&expanded, &imports).expect("expanded certificate verifies");
-    let sites = click::surface::c0_prepared_smart_tactic_source_sites(&proof, &imports).unwrap();
+    let sites =
+        click::surface::smart_tactic_source_sites(&proof, &ProgramInputs::Prepared(&imports))
+            .unwrap();
     let claim = &sites.last().unwrap().claim_label;
     let positions = sites
         .iter()
         .filter(|site| &site.claim_label == claim)
         .map(|site| site.position.clone())
         .collect::<Vec<_>>();
-    let batch =
-        click::surface::expand_c0_prepared_tactics_source_at(&proof, &imports, &positions).unwrap();
+    let batch = click::surface::expand_tactics_source_at(
+        &proof,
+        &ProgramInputs::Prepared(&imports),
+        &positions,
+    )
+    .unwrap();
     verify_c0_prepared_sources(&batch.source, &imports).expect("batch compiler-backed expansion");
     let scoped = click::surface::ClickProject::new(
         "main.click",
@@ -452,7 +459,7 @@ int answer(void) { return ANSWER; }
         "{error:?}"
     );
     let column = wrong.find("execute();").unwrap() + 1;
-    assert!(verify_c0_prepared_sources_at(&wrong, &imports, 1, column).is_err());
+    assert!(verify_sources_at(&wrong, &ProgramInputs::Prepared(&imports), 1, column).is_err());
     assert!(expand_c0_prepared_tactic_source_at(&wrong, &imports, 1, column).is_err());
     // Opened headers remain lock dependencies even when their bytes do not
     // affect the selected function.
@@ -663,7 +670,9 @@ fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
         proof.replace("views buf[0u64..1u64];", ""),
     ] {
         assert_ne!(proof, invalid);
-        assert!(verify_c0_prepared_sources_at(&invalid, &imports, line, column).is_err());
+        assert!(
+            verify_sources_at(&invalid, &ProgramInputs::Prepared(&imports), line, column).is_err()
+        );
     }
 }
 

@@ -107,8 +107,13 @@ fn reject_compute(contract: &str, before: &str, after: &str) {
     let invalid = compute_proof(&changed);
     let offset = invalid.find("execute_until(assignment(b, 0))").unwrap();
     let line = invalid[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
-    let error = click::surface::verify_program_prepared_sources_at(&invalid, &prepared, line, 2)
-        .expect_err("invalid computation contract was accepted");
+    let error = click::surface::verify_sources_at(
+        &invalid,
+        &click::surface::ProgramInputs::Program(&prepared),
+        line,
+        2,
+    )
+    .expect_err("invalid computation contract was accepted");
     assert!(
         !error.message().contains("budget exhausted"),
         "{}",
@@ -1019,8 +1024,13 @@ fn reject_empty_compute(before: &str, after: &str) {
     // mutation; the complete fixture is checked separately below.
     let offset = invalid.find("execute_until(assignment(b, 0))").unwrap();
     let line = invalid[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
-    let error = click::surface::verify_program_prepared_sources_at(&invalid, &prepared, line, 2)
-        .expect_err("invalid original computation contract was accepted");
+    let error = click::surface::verify_sources_at(
+        &invalid,
+        &click::surface::ProgramInputs::Program(&prepared),
+        line,
+        2,
+    )
+    .expect_err("invalid original computation contract was accepted");
     assert!(
         !error.message().contains("budget exhausted"),
         "rejection must be a proof error: {}",
@@ -2304,7 +2314,13 @@ fn verify_public_checksum_unit(
     let prefix = &source[..offset];
     let line = prefix.bytes().filter(|&b| b == b'\n').count() + 1;
     let column = prefix.rsplit('\n').next().unwrap().len() + 1;
-    click::surface::verify_program_prepared_sources_at(source, prepared, line, column).map(|_| ())
+    click::surface::verify_sources_at(
+        source,
+        &click::surface::ProgramInputs::Program(prepared),
+        line,
+        column,
+    )
+    .map(|_| ())
 }
 
 #[test]

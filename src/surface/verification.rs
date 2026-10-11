@@ -2002,28 +2002,18 @@ pub fn verify_c0_sources_at(
     })
 }
 
-pub fn verify_c0_prepared_sources_at(
+/// Verifies only the proof unit at a source location.
+pub fn verify_sources_at(
     click_source: &str,
-    imports: &[PreparedCImport],
+    inputs: &ProgramInputs<'_>,
     line: usize,
     column: usize,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+    if let ProgramInputs::Bundle(c_sources) = inputs {
+        return verify_c0_sources_at(click_source, c_sources, line, column);
+    }
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::prepared(imports);
-        let target = verification_target_at_context(click_source, &sources, line, column)?;
-        verify_c0_sources_with_context(click_source, &sources, Some(target), None, None, None)
-            .map(|(verified, _)| verified)
-    })
-}
-
-pub fn verify_program_prepared_sources_at(
-    click_source: &str,
-    import: &(impl PreparedProgramSource + ?Sized),
-    line: usize,
-    column: usize,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
-    instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::program(import)?;
+        let sources = CSourceContext::of(inputs)?;
         let target = verification_target_at_context(click_source, &sources, line, column)?;
         verify_c0_sources_with_context(click_source, &sources, Some(target), None, None, None)
             .map(|(verified, _)| verified)

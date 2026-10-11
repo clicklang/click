@@ -353,8 +353,12 @@ fn expand_c0_prepared_claim_source(
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
-    let verified =
-        verify_c0_prepared_sources_at(click_source, imports, target.line, target.column)?;
+    let verified = verify_sources_at(
+        click_source,
+        &ProgramInputs::Prepared(imports),
+        target.line,
+        target.column,
+    )?;
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
     let replacement = claim_expansion_source(theorem)?;
     let span = edit.span();
@@ -581,7 +585,7 @@ fn expand_program_prepared_claim_source_by_label_context(
 
 fn expand_program_prepared_claim_source_context(
     click_source: &str,
-    import: &(impl crate::languages::PreparedProgramSource + ?Sized),
+    import: &dyn crate::languages::PreparedProgramSource,
     function_name: &str,
     claim: CProofClaim,
 ) -> Result<String, ClickError> {
@@ -599,8 +603,12 @@ fn expand_program_prepared_claim_source_context(
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
-    let verified =
-        verify_program_prepared_sources_at(click_source, import, target.line, target.column)?;
+    let verified = verify_sources_at(
+        click_source,
+        &ProgramInputs::Program(import),
+        target.line,
+        target.column,
+    )?;
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
     let replacement = claim_expansion_source(theorem)?;
     let span = edit.span();
@@ -636,29 +644,18 @@ pub struct SmartTacticSourceSite {
     pub position: SourcePosition,
 }
 
-/// Inventories every source-selectable smart tactic without running proofs.
 pub fn c0_smart_tactic_source_sites(
     click_source: &str,
     c_sources: &[(&str, &str)],
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
-    let sources = CSourceContext::bundle(c_sources);
-    c0_smart_tactic_source_sites_context(click_source, &sources)
+    smart_tactic_source_sites(click_source, &ProgramInputs::Bundle(c_sources.to_vec()))
 }
 
-pub fn c0_prepared_smart_tactic_source_sites(
+pub fn smart_tactic_source_sites(
     click_source: &str,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
+    inputs: &ProgramInputs<'_>,
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
-    let sources = CSourceContext::prepared(imports);
-    c0_smart_tactic_source_sites_context(click_source, &sources)
-}
-
-pub fn program_prepared_smart_tactic_source_sites(
-    click_source: &str,
-    import: &impl crate::languages::PreparedProgramSource,
-) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
-    let sources = CSourceContext::program(import)?;
-    c0_smart_tactic_source_sites_context(click_source, &sources)
+    c0_smart_tactic_source_sites_context(click_source, &CSourceContext::of(inputs)?)
 }
 
 pub fn project_smart_tactic_source_sites(
@@ -2563,20 +2560,12 @@ pub fn expand_project_tactics_source_at(
     )
 }
 
-pub fn expand_c0_prepared_tactics_source_at(
+pub fn expand_tactics_source_at(
     source: &str,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
+    inputs: &ProgramInputs<'_>,
     positions: &[SourcePosition],
 ) -> Result<SelectedTacticExpansion, ClickError> {
-    expand_selected_tactics_context(None, source, &CSourceContext::prepared(imports), positions)
-}
-
-pub fn expand_program_prepared_tactics_source_at(
-    source: &str,
-    import: &impl crate::languages::PreparedProgramSource,
-    positions: &[SourcePosition],
-) -> Result<SelectedTacticExpansion, ClickError> {
-    expand_selected_tactics_context(None, source, &CSourceContext::program(import)?, positions)
+    expand_selected_tactics_context(None, source, &CSourceContext::of(inputs)?, positions)
 }
 
 fn expand_selected_tactics_context(
@@ -3045,31 +3034,21 @@ pub fn c0_select_smart_tactic(
     line: usize,
     column: Option<usize>,
 ) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
-    let sources = CSourceContext::bundle(c_sources);
-    let file = parse_source_with_c_layouts_context(click_source, &sources)
-        .map_err(SmartTacticSelectionError::from_error)?;
-    select_smart_tactic_file(click_source, &file, line, column)
+    select_smart_tactic(
+        click_source,
+        &ProgramInputs::Bundle(c_sources.to_vec()),
+        line,
+        column,
+    )
 }
 
-pub fn c0_prepared_select_smart_tactic(
+pub fn select_smart_tactic(
     click_source: &str,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
+    inputs: &ProgramInputs<'_>,
     line: usize,
     column: Option<usize>,
 ) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
-    let sources = CSourceContext::prepared(imports);
-    let file = parse_source_with_c_layouts_context(click_source, &sources)
-        .map_err(SmartTacticSelectionError::from_error)?;
-    select_smart_tactic_file(click_source, &file, line, column)
-}
-
-pub fn program_prepared_select_smart_tactic(
-    click_source: &str,
-    import: &impl crate::languages::PreparedProgramSource,
-    line: usize,
-    column: Option<usize>,
-) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
-    let sources = CSourceContext::program(import).map_err(SmartTacticSelectionError::from_error)?;
+    let sources = CSourceContext::of(inputs).map_err(SmartTacticSelectionError::from_error)?;
     let file = parse_source_with_c_layouts_context(click_source, &sources)
         .map_err(SmartTacticSelectionError::from_error)?;
     select_smart_tactic_file(click_source, &file, line, column)
@@ -4037,27 +4016,21 @@ pub fn c0_tactic_source_position(
     claim_label: &str,
     source_index: usize,
 ) -> Result<SourcePosition, ClickError> {
-    let sources = CSourceContext::bundle(c_sources);
-    c0_tactic_source_position_context(&sources, click_source, claim_label, source_index)
+    tactic_source_position(
+        click_source,
+        &ProgramInputs::Bundle(c_sources.to_vec()),
+        claim_label,
+        source_index,
+    )
 }
 
-pub fn c0_prepared_tactic_source_position(
+pub fn tactic_source_position(
     click_source: &str,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
+    inputs: &ProgramInputs<'_>,
     claim_label: &str,
     source_index: usize,
 ) -> Result<SourcePosition, ClickError> {
-    let sources = CSourceContext::prepared(imports);
-    c0_tactic_source_position_context(&sources, click_source, claim_label, source_index)
-}
-
-pub fn program_prepared_tactic_source_position(
-    click_source: &str,
-    import: &impl crate::languages::PreparedProgramSource,
-    claim_label: &str,
-    source_index: usize,
-) -> Result<SourcePosition, ClickError> {
-    let sources = CSourceContext::program(import)?;
+    let sources = CSourceContext::of(inputs)?;
     c0_tactic_source_position_context(&sources, click_source, claim_label, source_index)
 }
 
