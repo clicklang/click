@@ -314,7 +314,12 @@ fn expand_c0_project_claim_source(
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
-    let verified = verify_c0_project_at(project, c_sources, target.line, target.column)?;
+    let verified = verify_project_at(
+        project,
+        &ProgramInputs::Bundle(c_sources.to_vec()),
+        target.line,
+        target.column,
+    )?;
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
     let replacement = claim_expansion_source(theorem)?;
     let span = edit.span();
@@ -356,7 +361,12 @@ fn expand_c0_prepared_project_claim_source(
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
-    let verified = verify_c0_prepared_project_at(project, imports, target.line, target.column)?;
+    let verified = verify_project_at(
+        project,
+        &ProgramInputs::Prepared(imports),
+        target.line,
+        target.column,
+    )?;
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
     let replacement = claim_expansion_source(theorem)?;
     let span = edit.span();
@@ -716,9 +726,12 @@ fn expand_program_prepared_claim_source_context(
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified = match project {
-        Some(project) => {
-            verify_program_prepared_project_at(project, import, target.line, target.column)?
-        }
+        Some(project) => verify_project_at(
+            project,
+            &ProgramInputs::Program(import),
+            target.line,
+            target.column,
+        )?,
         None => {
             verify_program_prepared_sources_at(click_source, import, target.line, target.column)?
         }
@@ -783,35 +796,11 @@ pub fn program_prepared_smart_tactic_source_sites(
     c0_smart_tactic_source_sites_context(click_source, &sources)
 }
 
-pub fn c0_project_smart_tactic_source_sites(
+pub fn project_smart_tactic_source_sites(
     project: &ClickProject,
-    c_sources: &[(&str, &str)],
+    inputs: &ProgramInputs<'_>,
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
-    let sources = CSourceContext::bundle(c_sources).with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    c0_smart_tactic_source_sites_file(
-        project.entry_source().expect("resolved entry source"),
-        &file,
-    )
-}
-
-pub fn c0_prepared_project_smart_tactic_source_sites(
-    project: &ClickProject,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
-) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
-    let sources = CSourceContext::prepared(imports).with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    c0_smart_tactic_source_sites_file(
-        project.entry_source().expect("resolved entry source"),
-        &file,
-    )
-}
-
-pub fn program_prepared_project_smart_tactic_source_sites(
-    project: &ClickProject,
-    import: &impl crate::languages::PreparedProgramSource,
-) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
-    let sources = CSourceContext::program(import)?.with_click_project(project);
+    let sources = CSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     c0_smart_tactic_source_sites_file(
         project.entry_source().expect("resolved entry source"),
@@ -2824,9 +2813,9 @@ pub fn expand_c0_tactics_source_at(
     expand_selected_tactics_context(None, source, &CSourceContext::bundle(c_sources), positions)
 }
 
-pub fn expand_c0_project_tactics_source_at(
+pub fn expand_project_tactics_source_at(
     project: &ClickProject,
-    c_sources: &[(&str, &str)],
+    inputs: &ProgramInputs<'_>,
     positions: &[SourcePosition],
 ) -> Result<SelectedTacticExpansion, ClickError> {
     let source = project
@@ -2835,7 +2824,7 @@ pub fn expand_c0_project_tactics_source_at(
     expand_selected_tactics_context(
         Some(project),
         source,
-        &CSourceContext::bundle(c_sources).with_click_project(project),
+        &CSourceContext::of(inputs)?.with_click_project(project),
         positions,
     )
 }
@@ -2848,44 +2837,12 @@ pub fn expand_c0_prepared_tactics_source_at(
     expand_selected_tactics_context(None, source, &CSourceContext::prepared(imports), positions)
 }
 
-pub fn expand_c0_prepared_project_tactics_source_at(
-    project: &ClickProject,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
-    positions: &[SourcePosition],
-) -> Result<SelectedTacticExpansion, ClickError> {
-    let source = project
-        .entry_source()
-        .ok_or_else(|| ClickError::new("missing entry source"))?;
-    expand_selected_tactics_context(
-        Some(project),
-        source,
-        &CSourceContext::prepared(imports).with_click_project(project),
-        positions,
-    )
-}
-
 pub fn expand_program_prepared_tactics_source_at(
     source: &str,
     import: &impl crate::languages::PreparedProgramSource,
     positions: &[SourcePosition],
 ) -> Result<SelectedTacticExpansion, ClickError> {
     expand_selected_tactics_context(None, source, &CSourceContext::program(import)?, positions)
-}
-
-pub fn expand_program_prepared_project_tactics_source_at(
-    project: &ClickProject,
-    import: &impl crate::languages::PreparedProgramSource,
-    positions: &[SourcePosition],
-) -> Result<SelectedTacticExpansion, ClickError> {
-    let source = project
-        .entry_source()
-        .ok_or_else(|| ClickError::new("missing entry source"))?;
-    expand_selected_tactics_context(
-        Some(project),
-        source,
-        &CSourceContext::program(import)?.with_click_project(project),
-        positions,
-    )
 }
 
 fn expand_selected_tactics_context(
@@ -4405,13 +4362,13 @@ pub fn click_declaration_source_position(click_source: &str, name: &str) -> Opti
     Some(position_at_offset(click_source, first_token))
 }
 
-pub fn c0_project_tactic_source_position(
+pub fn project_tactic_source_position(
     project: &ClickProject,
-    c_sources: &[(&str, &str)],
+    inputs: &ProgramInputs<'_>,
     claim_label: &str,
     source_index: usize,
 ) -> Result<SourcePosition, ClickError> {
-    let sources = CSourceContext::bundle(c_sources).with_click_project(project);
+    let sources = CSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     c0_tactic_source_position_file(
         &file,
@@ -4421,72 +4378,12 @@ pub fn c0_project_tactic_source_position(
     )
 }
 
-pub fn c0_prepared_project_tactic_source_position(
+pub fn project_tactic_source_positions(
     project: &ClickProject,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
-    claim_label: &str,
-    source_index: usize,
-) -> Result<SourcePosition, ClickError> {
-    let sources = CSourceContext::prepared(imports).with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    c0_tactic_source_position_file(
-        &file,
-        project.entry_source().expect("resolved entry source"),
-        claim_label,
-        source_index,
-    )
-}
-
-pub fn program_prepared_project_tactic_source_position(
-    project: &ClickProject,
-    import: &impl crate::languages::PreparedProgramSource,
-    claim_label: &str,
-    source_index: usize,
-) -> Result<SourcePosition, ClickError> {
-    let sources = CSourceContext::program(import)?.with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    c0_tactic_source_position_file(
-        &file,
-        project.entry_source().expect("resolved entry source"),
-        claim_label,
-        source_index,
-    )
-}
-
-pub fn c0_project_tactic_source_positions(
-    project: &ClickProject,
-    c_sources: &[(&str, &str)],
+    inputs: &ProgramInputs<'_>,
     claim_label: &str,
 ) -> Result<Vec<SourcePosition>, ClickError> {
-    let sources = CSourceContext::bundle(c_sources).with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    c0_tactic_source_positions_file(
-        &file,
-        project.entry_source().expect("resolved entry source"),
-        claim_label,
-    )
-}
-
-pub fn c0_prepared_project_tactic_source_positions(
-    project: &ClickProject,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
-    claim_label: &str,
-) -> Result<Vec<SourcePosition>, ClickError> {
-    let sources = CSourceContext::prepared(imports).with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    c0_tactic_source_positions_file(
-        &file,
-        project.entry_source().expect("resolved entry source"),
-        claim_label,
-    )
-}
-
-pub fn program_prepared_project_tactic_source_positions(
-    project: &ClickProject,
-    import: &impl crate::languages::PreparedProgramSource,
-    claim_label: &str,
-) -> Result<Vec<SourcePosition>, ClickError> {
-    let sources = CSourceContext::program(import)?.with_click_project(project);
+    let sources = CSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     c0_tactic_source_positions_file(
         &file,

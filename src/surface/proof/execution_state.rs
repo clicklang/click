@@ -177,7 +177,11 @@ pub(in crate::surface) fn capture_c0_project_tactic_expansion(
     nested_path: &[usize],
 ) -> Result<Vec<ProofTactic>, ClickError> {
     let mut capture = ExpansionCapture::for_nested_tactic(site.clone(), source_index, nested_path);
-    let verification = verify_c0_project_with_expansion_capture(project, c_sources, &mut capture);
+    let verification = verify_project_with_expansion_capture(
+        project,
+        &ProgramInputs::Bundle(c_sources.to_vec()),
+        &mut capture,
+    );
     if let Some(result) = decided_tactic_expansion(&capture) {
         return result;
     }
@@ -192,8 +196,11 @@ pub(in crate::surface) fn capture_c0_prepared_project_tactic_expansion(
     nested_path: &[usize],
 ) -> Result<Vec<ProofTactic>, ClickError> {
     let mut capture = ExpansionCapture::for_nested_tactic(site.clone(), source_index, nested_path);
-    let verification =
-        verify_c0_prepared_project_with_expansion_capture(project, imports, &mut capture);
+    let verification = verify_project_with_expansion_capture(
+        project,
+        &ProgramInputs::Prepared(imports),
+        &mut capture,
+    );
     if let Some(result) = decided_tactic_expansion(&capture) {
         return result;
     }
@@ -208,8 +215,11 @@ pub(in crate::surface) fn capture_program_prepared_project_tactic_expansion(
     nested_path: &[usize],
 ) -> Result<Vec<ProofTactic>, ClickError> {
     let mut capture = ExpansionCapture::for_nested_tactic(site.clone(), source_index, nested_path);
-    let verification =
-        verify_program_prepared_project_with_expansion_capture(project, import, &mut capture);
+    let verification = verify_project_with_expansion_capture(
+        project,
+        &ProgramInputs::Program(import),
+        &mut capture,
+    );
     if let Some(result) = decided_tactic_expansion(&capture) {
         return result;
     }
@@ -287,7 +297,11 @@ pub(in crate::surface) fn capture_c0_project_proof_site_expansion(
     site: ProofSite,
 ) -> Result<Vec<ProofTactic>, ClickError> {
     let mut capture = ExpansionCapture::for_site(site.clone());
-    let verification = verify_c0_project_with_expansion_capture(project, c_sources, &mut capture);
+    let verification = verify_project_with_expansion_capture(
+        project,
+        &ProgramInputs::Bundle(c_sources.to_vec()),
+        &mut capture,
+    );
     if let Some(result) = capture.result {
         return result.map_err(ClickError::new);
     }
@@ -306,8 +320,11 @@ pub(in crate::surface) fn capture_c0_prepared_project_proof_site_expansion(
     site: ProofSite,
 ) -> Result<Vec<ProofTactic>, ClickError> {
     let mut capture = ExpansionCapture::for_site(site.clone());
-    let verification =
-        verify_c0_prepared_project_with_expansion_capture(project, imports, &mut capture);
+    let verification = verify_project_with_expansion_capture(
+        project,
+        &ProgramInputs::Prepared(imports),
+        &mut capture,
+    );
     if let Some(result) = capture.result {
         return result.map_err(ClickError::new);
     }
@@ -326,8 +343,11 @@ pub(in crate::surface) fn capture_program_prepared_project_proof_site_expansion(
     site: ProofSite,
 ) -> Result<Vec<ProofTactic>, ClickError> {
     let mut capture = ExpansionCapture::for_site(site.clone());
-    let verification =
-        verify_program_prepared_project_with_expansion_capture(project, import, &mut capture);
+    let verification = verify_project_with_expansion_capture(
+        project,
+        &ProgramInputs::Program(import),
+        &mut capture,
+    );
     if let Some(result) = capture.result {
         return result.map_err(ClickError::new);
     }

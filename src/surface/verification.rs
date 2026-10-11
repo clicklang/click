@@ -132,6 +132,16 @@ pub(in crate::surface) struct CSourceContext<'a> {
     prepared_parse_count: Cell<usize>,
 }
 
+/// The C translation units or prepared program a Click project verifies.
+pub enum ProgramInputs<'a> {
+    /// C sources, by path.
+    Bundle(Vec<(&'a str, &'a str)>),
+    /// Compiler-prepared C imports.
+    Prepared(&'a [PreparedCImport]),
+    /// A prepared program of another language.
+    Program(&'a dyn PreparedProgramSource),
+}
+
 impl<'a> CSourceContext<'a> {
     pub(in crate::surface) fn bundle(sources: &[(&'a str, &'a str)]) -> Self {
         let bundle = sources.iter().copied().collect::<BTreeMap<_, _>>();
@@ -243,8 +253,8 @@ impl<'a> CSourceContext<'a> {
         }
     }
 
-    pub(in crate::surface) fn program(
-        import: &impl PreparedProgramSource,
+    pub(in crate::surface) fn program<P: PreparedProgramSource + ?Sized>(
+        import: &P,
     ) -> Result<Self, ClickError> {
         let program = import.prepared_program();
         let program_execution = program.prepare_execution().map_err(ClickError::new)?;
@@ -373,6 +383,14 @@ impl<'a> CSourceContext<'a> {
         }
         self.specification_digest = Some(hasher.finalize().into());
         self
+    }
+
+    pub(in crate::surface) fn of(inputs: &ProgramInputs<'a>) -> Result<Self, ClickError> {
+        match inputs {
+            ProgramInputs::Bundle(sources) => Ok(Self::bundle(sources)),
+            ProgramInputs::Prepared(imports) => Ok(Self::prepared(imports)),
+            ProgramInputs::Program(import) => Self::program(*import),
+        }
     }
 
     fn bundle_sources(&self) -> Result<&BTreeMap<&'a str, &'a str>, ClickError> {
@@ -1115,14 +1133,14 @@ pub fn verify_c0_project(
 }
 
 /// Verifies only the proof unit at an entry-module source location.
-pub fn verify_c0_project_at(
+pub fn verify_project_at(
     project: &ClickProject,
-    c_sources: &[(&str, &str)],
+    inputs: &ProgramInputs<'_>,
     line: usize,
     column: usize,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::bundle(c_sources).with_click_project(project);
+        let sources = CSourceContext::of(inputs)?.with_click_project(project);
         let file = resolve_click_project_context(project, &sources)?;
         let source = project.entry_source().expect("resolved entry source");
         let target = expansion::verification_target_at_file(source, &file, line, column)?;
@@ -1131,14 +1149,14 @@ pub fn verify_c0_project_at(
     })
 }
 
-pub fn verify_c0_project_functions(
+pub fn verify_project_functions(
     project: &ClickProject,
-    c_sources: &[(&str, &str)],
+    inputs: &ProgramInputs<'_>,
     functions: impl IntoIterator<Item = String>,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     let functions = functions.into_iter().collect::<BTreeSet<_>>();
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::bundle(c_sources).with_click_project(project);
+        let sources = CSourceContext::of(inputs)?.with_click_project(project);
         let file = resolve_click_project_context(project, &sources)?;
         let source = project.entry_source().expect("resolved entry source");
         verify_c0_sources_with_context(
@@ -1194,138 +1212,20 @@ pub fn verify_program_prepared_project(
     })
 }
 
-pub fn verify_c0_prepared_project_at(
-    project: &ClickProject,
-    imports: &[PreparedCImport],
-    line: usize,
-    column: usize,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
-    instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::prepared(imports).with_click_project(project);
-        let file = resolve_click_project_context(project, &sources)?;
-        let source = project.entry_source().expect("resolved entry source");
-        let target = expansion::verification_target_at_file(source, &file, line, column)?;
-        verify_c0_sources_with_context(source, &sources, Some(target), None, None, Some(file))
-            .map(|(verified, _)| verified)
-    })
-}
-
-pub fn verify_program_prepared_project_at(
-    project: &ClickProject,
-    import: &impl PreparedProgramSource,
-    line: usize,
-    column: usize,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
-    instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::program(import)?.with_click_project(project);
-        let file = resolve_click_project_context(project, &sources)?;
-        let source = project.entry_source().expect("resolved entry source");
-        let target = expansion::verification_target_at_file(source, &file, line, column)?;
-        verify_c0_sources_with_context(source, &sources, Some(target), None, None, Some(file))
-            .map(|(verified, _)| verified)
-    })
-}
-
 /// Verifies only the entry module's pure theorem `theorem`. Theorems it
 /// cites remain interfaces, exactly as when a source location selects it.
-pub fn verify_c0_project_theorem(
+pub fn verify_project_theorem(
     project: &ClickProject,
-    c_sources: &[(&str, &str)],
+    inputs: &ProgramInputs<'_>,
     theorem: &str,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::bundle(c_sources).with_click_project(project);
+        let sources = CSourceContext::of(inputs)?.with_click_project(project);
         let file = resolve_click_project_context(project, &sources)?;
         verify_c0_sources_with_context(
             project.entry_source().expect("resolved entry source"),
             &sources,
             Some(VerificationTarget::Theorem(theorem.to_owned())),
-            None,
-            None,
-            Some(file),
-        )
-        .map(|(verified, _)| verified)
-    })
-}
-
-/// [`verify_c0_project_theorem`] for compiler-prepared translation units.
-pub fn verify_c0_prepared_project_theorem(
-    project: &ClickProject,
-    imports: &[PreparedCImport],
-    theorem: &str,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
-    instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::prepared(imports).with_click_project(project);
-        let file = resolve_click_project_context(project, &sources)?;
-        verify_c0_sources_with_context(
-            project.entry_source().expect("resolved entry source"),
-            &sources,
-            Some(VerificationTarget::Theorem(theorem.to_owned())),
-            None,
-            None,
-            Some(file),
-        )
-        .map(|(verified, _)| verified)
-    })
-}
-
-pub fn verify_c0_prepared_project_functions(
-    project: &ClickProject,
-    imports: &[PreparedCImport],
-    functions: impl IntoIterator<Item = String>,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
-    let functions = functions.into_iter().collect::<BTreeSet<_>>();
-    instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::prepared(imports).with_click_project(project);
-        let file = resolve_click_project_context(project, &sources)?;
-        verify_c0_sources_with_context(
-            project.entry_source().expect("resolved entry source"),
-            &sources,
-            Some(VerificationTarget::Functions(functions)),
-            None,
-            None,
-            Some(file),
-        )
-        .map(|(verified, _)| verified)
-    })
-}
-
-/// Verify selected proofs from a typed prepared program through the ordinary
-/// bounded engine, with other function contracts remaining interfaces.
-pub fn verify_program_prepared_project_theorem(
-    project: &ClickProject,
-    import: &impl PreparedProgramSource,
-    theorem: &str,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
-    instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::program(import)?.with_click_project(project);
-        let file = resolve_click_project_context(project, &sources)?;
-        verify_c0_sources_with_context(
-            project.entry_source().expect("resolved entry source"),
-            &sources,
-            Some(VerificationTarget::Theorem(theorem.to_owned())),
-            None,
-            None,
-            Some(file),
-        )
-        .map(|(verified, _)| verified)
-    })
-}
-
-/// Verify only the named function contracts in a typed prepared program.
-pub fn verify_program_prepared_project_functions(
-    project: &ClickProject,
-    import: &impl PreparedProgramSource,
-    functions: impl IntoIterator<Item = String>,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
-    let functions = functions.into_iter().collect::<BTreeSet<_>>();
-    instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::program(import)?.with_click_project(project);
-        let file = resolve_click_project_context(project, &sources)?;
-        verify_c0_sources_with_context(
-            project.entry_source().expect("resolved entry source"),
-            &sources,
-            Some(VerificationTarget::Functions(functions)),
             None,
             None,
             Some(file),
@@ -1385,53 +1285,13 @@ pub(in crate::surface) fn verify_c0_sources_with_expansion_capture_context(
     })
 }
 
-pub(in crate::surface) fn verify_c0_project_with_expansion_capture(
+pub(in crate::surface) fn verify_project_with_expansion_capture(
     project: &ClickProject,
-    c_sources: &[(&str, &str)],
+    inputs: &ProgramInputs<'_>,
     expansion_capture: &mut ExpansionCapture,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::bundle(c_sources).with_click_project(project);
-        let file = resolve_click_project_context(project, &sources)?;
-        verify_c0_sources_with_context(
-            project.entry_source().expect("resolved entry source"),
-            &sources,
-            None,
-            None,
-            Some(expansion_capture),
-            Some(file),
-        )
-        .map(|(verified, _)| verified)
-    })
-}
-
-pub(in crate::surface) fn verify_c0_prepared_project_with_expansion_capture(
-    project: &ClickProject,
-    imports: &[PreparedCImport],
-    expansion_capture: &mut ExpansionCapture,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
-    instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::prepared(imports).with_click_project(project);
-        let file = resolve_click_project_context(project, &sources)?;
-        verify_c0_sources_with_context(
-            project.entry_source().expect("resolved entry source"),
-            &sources,
-            None,
-            None,
-            Some(expansion_capture),
-            Some(file),
-        )
-        .map(|(verified, _)| verified)
-    })
-}
-
-pub(in crate::surface) fn verify_program_prepared_project_with_expansion_capture(
-    project: &ClickProject,
-    import: &impl PreparedProgramSource,
-    expansion_capture: &mut ExpansionCapture,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
-    instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::program(import)?.with_click_project(project);
+        let sources = CSourceContext::of(inputs)?.with_click_project(project);
         let file = resolve_click_project_context(project, &sources)?;
         verify_c0_sources_with_context(
             project.entry_source().expect("resolved entry source"),
@@ -1476,30 +1336,11 @@ pub fn c0_project_function_names(
         .collect())
 }
 
-pub fn c0_project_selected_proof_names(
+pub fn project_selected_proof_names(
     project: &ClickProject,
-    c_sources: &[(&str, &str)],
+    inputs: &ProgramInputs<'_>,
 ) -> Result<Vec<String>, ClickError> {
-    let sources = CSourceContext::bundle(c_sources).with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    Ok(selected_entry_proof_names(&file))
-}
-
-pub fn c0_prepared_project_selected_proof_names(
-    project: &ClickProject,
-    imports: &[PreparedCImport],
-) -> Result<Vec<String>, ClickError> {
-    let sources = CSourceContext::prepared(imports).with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    Ok(selected_entry_proof_names(&file))
-}
-
-/// Entry proofs available for selection in a typed prepared program.
-pub fn program_prepared_project_selected_proof_names(
-    project: &ClickProject,
-    import: &impl PreparedProgramSource,
-) -> Result<Vec<String>, ClickError> {
-    let sources = CSourceContext::program(import)?.with_click_project(project);
+    let sources = CSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     Ok(selected_entry_proof_names(&file))
 }
@@ -4266,38 +4107,14 @@ fn c0_project_summary_file(
     })
 }
 
-pub fn c0_project_summary(
+pub fn project_summary(
     project: &ClickProject,
-    c_sources: &[(&str, &str)],
+    inputs: &ProgramInputs<'_>,
 ) -> Result<CProjectSummary, ClickError> {
     // The run's budget charges the summary's work, so it gets its own kernel
     // session: what this thread verified before cannot change its units.
     let _session = crate::kernel::VerificationSession::enter();
-    let sources = CSourceContext::bundle(c_sources).with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    c0_project_summary_file(&file, &sources)
-}
-
-pub fn c0_prepared_project_summary(
-    project: &ClickProject,
-    imports: &[PreparedCImport],
-) -> Result<CProjectSummary, ClickError> {
-    // The run's budget charges the summary's work, so it gets its own kernel
-    // session: what this thread verified before cannot change its units.
-    let _session = crate::kernel::VerificationSession::enter();
-    let sources = CSourceContext::prepared(imports).with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    c0_project_summary_file(&file, &sources)
-}
-
-pub fn program_prepared_project_summary(
-    project: &ClickProject,
-    import: &impl PreparedProgramSource,
-) -> Result<CProjectSummary, ClickError> {
-    // The run's budget charges the summary's work, so it gets its own kernel
-    // session: what this thread verified before cannot change its units.
-    let _session = crate::kernel::VerificationSession::enter();
-    let sources = CSourceContext::program(import)?.with_click_project(project);
+    let sources = CSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     c0_project_summary_file(&file, &sources)
 }
@@ -4308,35 +4125,19 @@ pub fn program_prepared_project_summary(
 pub type SummarizedVerification =
     Result<(CProjectSummary, Result<Vec<VerifiedCTheorem>, ClickError>), ClickError>;
 
-/// [`c0_project_summary`] then [`verify_c0_project`], resolving the sources
+/// [`project_summary`] then [`verify_c0_project`], resolving the sources
 /// once for both: the resolution validates every declaration, standard
 /// library included, so a caller reporting the summary should not pay twice.
-pub fn verify_c0_project_with_summary(
+pub fn verify_project_with_summary(
     project: &ClickProject,
-    c_sources: &[(&str, &str)],
+    inputs: &ProgramInputs<'_>,
 ) -> SummarizedVerification {
-    let sources = CSourceContext::bundle(c_sources).with_click_project(project);
-    summarize_then_verify(project, &sources, true)
-}
-
-/// [`c0_prepared_project_summary`] then [`verify_c0_prepared_project`] from
-/// one resolution.
-pub fn verify_c0_prepared_project_with_summary(
-    project: &ClickProject,
-    imports: &[PreparedCImport],
-) -> SummarizedVerification {
-    let sources = CSourceContext::prepared(imports).with_click_project(project);
-    summarize_then_verify(project, &sources, false)
-}
-
-/// [`program_prepared_project_summary`] then
-/// [`verify_program_prepared_project`] from one resolution.
-pub fn verify_program_prepared_project_with_summary(
-    project: &ClickProject,
-    import: &impl PreparedProgramSource,
-) -> SummarizedVerification {
-    let sources = CSourceContext::program(import)?.with_click_project(project);
-    summarize_then_verify(project, &sources, false)
+    let sources = CSourceContext::of(inputs)?.with_click_project(project);
+    summarize_then_verify(
+        project,
+        &sources,
+        matches!(inputs, ProgramInputs::Bundle(_)),
+    )
 }
 
 fn summarize_then_verify(

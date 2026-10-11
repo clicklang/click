@@ -3,6 +3,7 @@
 //! Compiler-backed fixtures call the shared verification engine directly.
 //! They require GNU GCC at `/usr/bin/gcc`, which macOS does not provide.
 
+use click::surface::ProgramInputs;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -129,9 +130,12 @@ fn compiler_import_fixture_verifies_targets_and_checked_expansion() {
             [],
         )],
     );
-    let batch =
-        click::surface::expand_c0_prepared_project_tactics_source_at(&scoped, &imports, &positions)
-            .unwrap();
+    let batch = click::surface::expand_project_tactics_source_at(
+        &scoped,
+        &ProgramInputs::Prepared(&imports),
+        &positions,
+    )
+    .unwrap();
     click::surface::verify_c0_prepared_project(&scoped.with_entry_source(batch.source), &imports)
         .expect("batch project compiler-backed expansion");
     fs::write(project.0.join("main.click"), &expanded).unwrap();

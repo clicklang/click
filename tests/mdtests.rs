@@ -1,3 +1,4 @@
+use click::surface::ProgramInputs;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -7,9 +8,8 @@ use click::cli::{
 };
 use click::instrumentation::{self, ArtifactReuseRejection};
 use click::surface::{
-    c0_project_tactic_source_position, c0_tactic_source_position,
-    program_prepared_project_tactic_source_position, verify_c0_project, verify_c0_sources,
-    verify_program_prepared_project,
+    c0_tactic_source_position, project_tactic_source_position, verify_c0_project,
+    verify_c0_sources, verify_program_prepared_project,
 };
 
 #[path = "support/limits.rs"]
@@ -299,9 +299,9 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
             &samples,
             |claim, source_index| {
                 let position = match (&inputs, &project) {
-                    (CInput::Bundle(sources), Some(project)) => c0_project_tactic_source_position(
+                    (CInput::Bundle(sources), Some(project)) => project_tactic_source_position(
                         project,
-                        &source_refs(sources),
+                        &ProgramInputs::Bundle(source_refs(sources)),
                         claim,
                         source_index,
                     ),
@@ -312,9 +312,9 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
                         source_index,
                     ),
                     (CInput::PreparedProgram(import), Some(project)) => {
-                        program_prepared_project_tactic_source_position(
+                        project_tactic_source_position(
                             project,
-                            import,
+                            &ProgramInputs::Program(import),
                             claim,
                             source_index,
                         )

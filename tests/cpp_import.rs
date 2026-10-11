@@ -1,3 +1,4 @@
+use click::surface::ProgramInputs;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -17,9 +18,8 @@ use click::languages::cpp::{
 };
 use click::surface::{
     C0VerificationSession, VerifiedClaim, expand_program_prepared_project_claim_source_by_label,
-    expand_program_prepared_project_tactic_source_at,
-    program_prepared_project_smart_tactic_source_sites,
-    program_prepared_project_tactic_source_position, verify_program_prepared_project,
+    expand_program_prepared_project_tactic_source_at, project_smart_tactic_source_sites,
+    project_tactic_source_position, verify_program_prepared_project,
 };
 
 #[test]
@@ -96,9 +96,9 @@ int32 probe() { ensures result == 11; } by { execute(); simp(); }
         verify_program_prepared_project(&rewritten, &import).unwrap();
         let (session, _) =
             C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
-        let position = program_prepared_project_tactic_source_position(
+        let position = project_tactic_source_position(
             &rewritten,
-            &import,
+            &ProgramInputs::Program(&import),
             "probe.contract",
             0,
         )
@@ -205,9 +205,9 @@ int32 probe(struct View& input) {
         let (session, _) =
             C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
         let rewritten = parsed.with_entry_source(expanded.clone());
-        let position = program_prepared_project_tactic_source_position(
+        let position = project_tactic_source_position(
             &rewritten,
-            &import,
+            &ProgramInputs::Program(&import),
             "probe.contract",
             0,
         )
@@ -1397,9 +1397,13 @@ int32& probe(int32& value) { views value; ensures &result == &value; ensures res
     fs::write(&path, source).unwrap();
     let parsed = read_click_project(&path, source).unwrap();
     verify_program_prepared_project(&parsed, &import).unwrap();
-    let position =
-        program_prepared_project_tactic_source_position(&parsed, &import, "probe.contract", 1)
-            .unwrap();
+    let position = project_tactic_source_position(
+        &parsed,
+        &ProgramInputs::Program(&import),
+        "probe.contract",
+        1,
+    )
+    .unwrap();
     for expanded in [
         click::surface::expand_program_prepared_project_claim_source_by_label(
             &parsed,
@@ -2136,9 +2140,9 @@ fn scalar_int32_profile_propagates_a_modular_throw_past_a_normal_call_continuati
         .expect("the expanded exceptional proof must reverify");
     let (session, _) = C0VerificationSession::new_program_prepared_project(&rewritten, &prepared)
         .expect("retain the expanded scalar exception environment");
-    let site = program_prepared_project_tactic_source_position(
+    let site = project_tactic_source_position(
         &rewritten,
-        &prepared,
+        &ProgramInputs::Program(&prepared),
         "caller.exceptional_ensures_0",
         0,
     )
@@ -2247,9 +2251,9 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
         .expect("the expanded handler proof must reverify");
     let (session, _) = C0VerificationSession::new_program_prepared_project(&rewritten, &prepared)
         .expect("retain the expanded handler environment");
-    let site = program_prepared_project_tactic_source_position(
+    let site = project_tactic_source_position(
         &rewritten,
-        &prepared,
+        &ProgramInputs::Program(&prepared),
         "caller.ensures_0",
         0,
     )
@@ -2369,9 +2373,9 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
     let (session, _) =
         C0VerificationSession::new_program_prepared_project(&click_project, &prepared)
             .expect("retain the mixed outcome verification environment");
-    let site = program_prepared_project_tactic_source_position(
+    let site = project_tactic_source_position(
         &rewritten,
-        &prepared,
+        &ProgramInputs::Program(&prepared),
         "caller.contract",
         0,
     )
@@ -2461,9 +2465,13 @@ int32 caller(bool fail) { ensures result == 7; }
     verify_program_prepared_project(&rewritten, &import).unwrap();
     let (session, _) =
         C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
-    let position =
-        program_prepared_project_tactic_source_position(&rewritten, &import, "caller.ensures_0", 0)
-            .unwrap();
+    let position = project_tactic_source_position(
+        &rewritten,
+        &ProgramInputs::Program(&import),
+        "caller.ensures_0",
+        0,
+    )
+    .unwrap();
     session
         .verify_at_project(&expanded, position.line, position.column)
         .unwrap();
@@ -3493,8 +3501,8 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
         "both return paths certify returned ownership and both postconditions"
     );
 
-    let sites =
-        program_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
+    let sites = project_smart_tactic_source_sites(&click_project, &ProgramInputs::Program(&import))
+        .unwrap();
     assert_eq!(
         sites
             .iter()
@@ -3502,9 +3510,9 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
             .collect::<Vec<_>>(),
         vec!["execute", "simp"]
     );
-    let execute = program_prepared_project_tactic_source_position(
+    let execute = project_tactic_source_position(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         "choose.contract",
         0,
     )
@@ -3521,9 +3529,13 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
         .expect("the expanded branch proof must reverify");
     let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the original branch verification environment");
-    let next =
-        program_prepared_project_tactic_source_position(&rewritten, &import, "choose.contract", 0)
-            .unwrap();
+    let next = project_tactic_source_position(
+        &rewritten,
+        &ProgramInputs::Program(&import),
+        "choose.contract",
+        0,
+    )
+    .unwrap();
     session
         .verify_at_project(&expanded, next.line, next.column)
         .expect("retained audit session must accept the expanded branch proof");
@@ -3590,8 +3602,8 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
         "the proof returns ownership and checks both postconditions without an inferred view"
     );
 
-    let sites =
-        program_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
+    let sites = project_smart_tactic_source_sites(&click_project, &ProgramInputs::Program(&import))
+        .unwrap();
     assert_eq!(
         sites
             .iter()
@@ -3599,9 +3611,9 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
             .collect::<Vec<_>>(),
         vec!["execute", "simp"]
     );
-    let execute = program_prepared_project_tactic_source_position(
+    let execute = project_tactic_source_position(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         "write_then_read.contract",
         0,
     )
@@ -3618,9 +3630,9 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
         .expect("the expanded const-reference proof must reverify");
     let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the const-reference verification environment");
-    let next = program_prepared_project_tactic_source_position(
+    let next = project_tactic_source_position(
         &rewritten,
-        &import,
+        &ProgramInputs::Program(&import),
         "write_then_read.contract",
         0,
     )
@@ -3885,8 +3897,8 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
         .expect("verify the helper and caller through shared modular call rules");
     assert_eq!(verified.len(), 6);
 
-    let sites =
-        program_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
+    let sites = project_smart_tactic_source_sites(&click_project, &ProgramInputs::Program(&import))
+        .unwrap();
     assert_eq!(
         sites
             .iter()
@@ -3894,9 +3906,9 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
             .collect::<Vec<_>>(),
         vec!["execute", "simp", "execute", "simp"]
     );
-    let execute = program_prepared_project_tactic_source_position(
+    let execute = project_tactic_source_position(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         "call_set_seven.contract",
         0,
     )
@@ -3913,9 +3925,9 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
         .expect("the expanded modular C++ proof must reverify");
     let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the modular C++ verification environment");
-    let next = program_prepared_project_tactic_source_position(
+    let next = project_tactic_source_position(
         &rewritten,
-        &import,
+        &ProgramInputs::Program(&import),
         "call_set_seven.contract",
         0,
     )
@@ -4003,9 +4015,9 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
         .expect("verify local initialization through the shared call-result rule");
     assert_eq!(verified.len(), 5);
 
-    let execute = program_prepared_project_tactic_source_position(
+    let execute = project_tactic_source_position(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         "relay_value.contract",
         0,
     )
@@ -4022,9 +4034,9 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
         .expect("the expanded scalar-local proof must reverify");
     let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the scalar-local verification environment");
-    let next = program_prepared_project_tactic_source_position(
+    let next = project_tactic_source_position(
         &rewritten,
-        &import,
+        &ProgramInputs::Program(&import),
         "relay_value.contract",
         0,
     )
@@ -4148,9 +4160,9 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
         .expect("verify pointer load/store and reference address through shared rules");
     assert_eq!(verified.len(), 6);
 
-    let execute = program_prepared_project_tactic_source_position(
+    let execute = project_tactic_source_position(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         "bump_reference.contract",
         0,
     )
@@ -4252,9 +4264,9 @@ fn record_reference_member_loads_and_stores_verify_offline() {
         .expect("verify field access and the loaded pointer through shared memory rules");
     assert_eq!(verified.len(), 7);
 
-    let execute = program_prepared_project_tactic_source_position(
+    let execute = project_tactic_source_position(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         "stage_restore.contract",
         0,
     )
@@ -4352,9 +4364,9 @@ fn brace_initialized_local_aggregate_verifies_offline() {
         .expect("verify local aggregate initialization and later field reads");
     assert_eq!(verified.len(), 3);
 
-    let execute = program_prepared_project_tactic_source_position(
+    let execute = project_tactic_source_position(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         "stage_restore.contract",
         0,
     )
@@ -4496,9 +4508,9 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     verify_program_prepared_project(&click_project, &import)
         .expect("verify the constructor body and its implicit local invocation modularly");
 
-    let execute = program_prepared_project_tactic_source_position(
+    let execute = project_tactic_source_position(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         "capture.contract",
         0,
     )
@@ -4637,9 +4649,9 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     verify_program_prepared_project(&click_project, &import)
         .expect("verify captured result and restored caller memory");
 
-    let execute = program_prepared_project_tactic_source_position(
+    let execute = project_tactic_source_position(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         "capture.contract",
         0,
     )
@@ -4756,9 +4768,9 @@ fn every_return_after_construction_runs_the_checked_destructor() {
         "both caller return paths must certify ownership, the captured result, and restoration: {ensure_indices:?}"
     );
 
-    let execute = program_prepared_project_tactic_source_position(
+    let execute = project_tactic_source_position(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         "with_restore.contract",
         0,
     )
@@ -4830,9 +4842,9 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
     let click_project = read_click_project(&sidecar, RESTORE_CALLER_SIDECAR).unwrap();
     verify_program_prepared_project(&click_project, &import)
         .expect("the caller must receive 7 or 9 and still own an unchanged 41");
-    let execute = program_prepared_project_tactic_source_position(
+    let execute = project_tactic_source_position(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         "call_with_restore.contract",
         0,
     )
@@ -4849,9 +4861,9 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
         .expect("the expanded RAII caller proof must reverify");
     let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the caller's original verification environment");
-    let next = program_prepared_project_tactic_source_position(
+    let next = project_tactic_source_position(
         &rewritten,
-        &import,
+        &ProgramInputs::Program(&import),
         "call_with_restore.contract",
         0,
     )
@@ -4932,9 +4944,9 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     verify_program_prepared_project(&click_project, &import)
         .expect("verify both return values and reverse-order restoration");
 
-    let execute = program_prepared_project_tactic_source_position(
+    let execute = project_tactic_source_position(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         "restore_twice.contract",
         0,
     )
@@ -5044,9 +5056,9 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     verify_program_prepared_project(&click_project, &import)
         .expect("verify early exit and normal exit from the nested scope");
 
-    let execute = program_prepared_project_tactic_source_position(
+    let execute = project_tactic_source_position(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         "scoped_restore.contract",
         0,
     )
@@ -5172,9 +5184,9 @@ fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
     verify_program_prepared_project(&click_project, &import)
         .expect("verify independent cleanup and restoration in both sibling scopes");
 
-    let execute = program_prepared_project_tactic_source_position(
+    let execute = project_tactic_source_position(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         "sibling_restore.contract",
         0,
     )
@@ -5327,9 +5339,9 @@ fn overlapping_scope_destroys_inner_before_outer_on_every_exit() {
     verify_program_prepared_project(&click_project, &import)
         .expect("verify inner-then-outer cleanup and memory restoration");
 
-    let execute = program_prepared_project_tactic_source_position(
+    let execute = project_tactic_source_position(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         "overlap_restore.contract",
         0,
     )
@@ -5468,9 +5480,9 @@ fn conditional_construction_cleans_up_only_the_constructed_arm() {
         .expect("the fully expanded conditional-construction proof must reverify");
     let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the original conditional-construction verification environment");
-    let next = program_prepared_project_tactic_source_position(
+    let next = project_tactic_source_position(
         &rewritten,
-        &import,
+        &ProgramInputs::Program(&import),
         "conditional_restore.contract",
         0,
     )
@@ -5884,8 +5896,8 @@ fn cpp_profile_expansion_and_audit_session_share_the_locked_input() {
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
 
-    let sites =
-        program_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
+    let sites = project_smart_tactic_source_sites(&click_project, &ProgramInputs::Program(&import))
+        .unwrap();
     assert_eq!(
         sites
             .iter()
@@ -5893,9 +5905,9 @@ fn cpp_profile_expansion_and_audit_session_share_the_locked_input() {
             .collect::<Vec<_>>(),
         vec!["execute", "simp"]
     );
-    let execute = program_prepared_project_tactic_source_position(
+    let execute = project_tactic_source_position(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         "increment.contract",
         0,
     )
@@ -5913,9 +5925,9 @@ fn cpp_profile_expansion_and_audit_session_share_the_locked_input() {
 
     let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("start the retained audit session");
-    let next = program_prepared_project_tactic_source_position(
+    let next = project_tactic_source_position(
         &rewritten,
-        &import,
+        &ProgramInputs::Program(&import),
         "increment.contract",
         0,
     )
@@ -6679,11 +6691,12 @@ fn ordinary_value_methods_import_with_const_receiver_and_mixed_width_fields() {
         let parsed = read_click_project(&sidecar, &sidecar_source).unwrap();
         verify_program_prepared_project(&parsed, &import)
             .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
-        let sites = program_prepared_project_smart_tactic_source_sites(&parsed, &import).unwrap();
+        let sites =
+            project_smart_tactic_source_sites(&parsed, &ProgramInputs::Program(&import)).unwrap();
         let site = sites.first().unwrap();
-        let site = program_prepared_project_tactic_source_position(
+        let site = project_tactic_source_position(
             &parsed,
-            &import,
+            &ProgramInputs::Program(&import),
             &site.claim_label,
             site.source_index,
         )
@@ -6701,11 +6714,12 @@ fn ordinary_value_methods_import_with_const_receiver_and_mixed_width_fields() {
         let (session, _) =
             C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
         let next_sites =
-            program_prepared_project_smart_tactic_source_sites(&rewritten, &import).unwrap();
+            project_smart_tactic_source_sites(&rewritten, &ProgramInputs::Program(&import))
+                .unwrap();
         let next = next_sites.first().unwrap();
-        let next = program_prepared_project_tactic_source_position(
+        let next = project_tactic_source_position(
             &rewritten,
-            &import,
+            &ProgramInputs::Program(&import),
             &next.claim_label,
             next.source_index,
         )
@@ -6776,7 +6790,8 @@ fn check_sidecar_tactic(
     let parsed = read_click_project(&sidecar, &source).unwrap();
     verify_program_prepared_project(&parsed, import)
         .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
-    let sites = program_prepared_project_smart_tactic_source_sites(&parsed, import).unwrap();
+    let sites =
+        project_smart_tactic_source_sites(&parsed, &ProgramInputs::Program(import)).unwrap();
     let first = match claim_prefix {
         Some(prefix) => sites
             .iter()
@@ -6784,9 +6799,9 @@ fn check_sidecar_tactic(
             .expect("selected caller tactic"),
         None => sites.first().unwrap(),
     };
-    let position = program_prepared_project_tactic_source_position(
+    let position = project_tactic_source_position(
         &parsed,
-        import,
+        &ProgramInputs::Program(import),
         &first.claim_label,
         first.source_index,
     )
@@ -6807,7 +6822,8 @@ fn check_sidecar_tactic(
     });
     let (session, _) =
         C0VerificationSession::new_program_prepared_project(&parsed, import).unwrap();
-    let sites = program_prepared_project_smart_tactic_source_sites(&rewritten, import).unwrap();
+    let sites =
+        project_smart_tactic_source_sites(&rewritten, &ProgramInputs::Program(import)).unwrap();
     let first = match claim_prefix {
         Some(prefix) => sites
             .iter()
@@ -6815,9 +6831,9 @@ fn check_sidecar_tactic(
             .expect("selected caller tactic"),
         None => sites.first().unwrap(),
     };
-    let position = program_prepared_project_tactic_source_position(
+    let position = project_tactic_source_position(
         &rewritten,
-        import,
+        &ProgramInputs::Program(import),
         &first.claim_label,
         first.source_index,
     )
@@ -15286,14 +15302,15 @@ theorem read_application() executes read(const struct State& state) {
     fs::write(&path, source).unwrap();
     let parsed = read_click_project(&path, source).unwrap();
     verify_program_prepared_project(&parsed, &import).unwrap();
-    let sites = program_prepared_project_smart_tactic_source_sites(&parsed, &import).unwrap();
+    let sites =
+        project_smart_tactic_source_sites(&parsed, &ProgramInputs::Program(&import)).unwrap();
     let first = sites
         .iter()
         .find(|site| site.claim_label.starts_with("read_application."))
         .unwrap();
-    let position = program_prepared_project_tactic_source_position(
+    let position = project_tactic_source_position(
         &parsed,
-        &import,
+        &ProgramInputs::Program(&import),
         &first.claim_label,
         first.source_index,
     )
@@ -15309,9 +15326,9 @@ theorem read_application() executes read(const struct State& state) {
     verify_program_prepared_project(&rewritten, &import).unwrap();
     let (session, _) =
         C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
-    let position = program_prepared_project_tactic_source_position(
+    let position = project_tactic_source_position(
         &rewritten,
-        &import,
+        &ProgramInputs::Program(&import),
         &first.claim_label,
         first.source_index,
     )
@@ -15879,11 +15896,12 @@ fn cpp_expansion_writes_a_branch_over_a_reference_by_its_referent_offline() {
     fs::write(&path, text).unwrap();
     let parsed = read_click_project(&path, text).unwrap();
     verify_program_prepared_project(&parsed, &import).unwrap();
-    let sites = program_prepared_project_smart_tactic_source_sites(&parsed, &import).unwrap();
+    let sites =
+        project_smart_tactic_source_sites(&parsed, &ProgramInputs::Program(&import)).unwrap();
     let first = sites.first().unwrap();
-    let position = program_prepared_project_tactic_source_position(
+    let position = project_tactic_source_position(
         &parsed,
-        &import,
+        &ProgramInputs::Program(&import),
         &first.claim_label,
         first.source_index,
     )
@@ -15917,11 +15935,12 @@ fn cpp_expansion_writes_a_branch_over_a_struct_reference_by_its_field_offline() 
     fs::write(&path, text).unwrap();
     let parsed = read_click_project(&path, text).unwrap();
     verify_program_prepared_project(&parsed, &import).unwrap();
-    let sites = program_prepared_project_smart_tactic_source_sites(&parsed, &import).unwrap();
+    let sites =
+        project_smart_tactic_source_sites(&parsed, &ProgramInputs::Program(&import)).unwrap();
     let first = sites.first().unwrap();
-    let position = program_prepared_project_tactic_source_position(
+    let position = project_tactic_source_position(
         &parsed,
-        &import,
+        &ProgramInputs::Program(&import),
         &first.claim_label,
         first.source_index,
     )
@@ -16726,9 +16745,13 @@ uint64 probe(int32* p, uint64 n) {
     verify_program_prepared_project(&whole.with_entry_source(expanded), &import).unwrap();
     let (session, _) =
         C0VerificationSession::new_program_prepared_project(&whole, &import).unwrap();
-    let position =
-        program_prepared_project_tactic_source_position(&whole, &import, "probe.ensures_0", 0)
-            .unwrap();
+    let position = project_tactic_source_position(
+        &whole,
+        &ProgramInputs::Program(&import),
+        "probe.ensures_0",
+        0,
+    )
+    .unwrap();
     session
         .verify_at_project(proof, position.line, position.column)
         .unwrap();
@@ -16880,9 +16903,13 @@ uint64 probe(struct View& view, uint64 n) {
     verify_program_prepared_project(&whole.with_entry_source(expanded), &import).unwrap();
     let (session, _) =
         C0VerificationSession::new_program_prepared_project(&whole, &import).unwrap();
-    let position =
-        program_prepared_project_tactic_source_position(&whole, &import, "probe.ensures_0", 0)
-            .unwrap();
+    let position = project_tactic_source_position(
+        &whole,
+        &ProgramInputs::Program(&import),
+        "probe.ensures_0",
+        0,
+    )
+    .unwrap();
     session
         .verify_at_project(proof, position.line, position.column)
         .unwrap();

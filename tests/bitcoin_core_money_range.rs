@@ -1,5 +1,6 @@
 //! Hermetic re-export of the pinned Bitcoin Core v31.1 MoneyRange fixture.
 
+use click::surface::ProgramInputs;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -9,9 +10,8 @@ use click::instrumentation::{self, VerificationEvent};
 use click::languages::cpp::{PreparedCppImport, load_import, refresh_import};
 use click::surface::{
     C0VerificationSession, expand_program_prepared_project_claim_source_by_label,
-    expand_program_prepared_project_tactic_source_at,
-    program_prepared_project_smart_tactic_source_sites,
-    program_prepared_project_tactic_source_position, verify_program_prepared_project,
+    expand_program_prepared_project_tactic_source_at, project_smart_tactic_source_sites,
+    project_tactic_source_position, verify_program_prepared_project,
 };
 use sha2::{Digest, Sha256};
 
@@ -350,9 +350,9 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             } else {
                 let (session, _) =
                     C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-                let position = program_prepared_project_tactic_source_position(
+                let position = project_tactic_source_position(
                     &rewritten,
-                    &import,
+                    &ProgramInputs::Program(&import),
                     &format!("{root_name}.contract"),
                     0,
                 )
@@ -442,11 +442,12 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             "GetSizeOfCompactSize" | "FeeFrac::Mul" | "FeeFrac::Div"
         )
     {
-        let sites = program_prepared_project_smart_tactic_source_sites(&project, &import).unwrap();
+        let sites =
+            project_smart_tactic_source_sites(&project, &ProgramInputs::Program(&import)).unwrap();
         let first = sites.first().unwrap();
-        let position = program_prepared_project_tactic_source_position(
+        let position = project_tactic_source_position(
             &project,
-            &import,
+            &ProgramInputs::Program(&import),
             &first.claim_label,
             first.source_index,
         )
@@ -463,12 +464,12 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             .expect("expanded upstream proof reverifies");
         let (session, _) =
             C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-        let sites =
-            program_prepared_project_smart_tactic_source_sites(&rewritten, &import).unwrap();
+        let sites = project_smart_tactic_source_sites(&rewritten, &ProgramInputs::Program(&import))
+            .unwrap();
         let first = sites.first().unwrap();
-        let position = program_prepared_project_tactic_source_position(
+        let position = project_tactic_source_position(
             &rewritten,
-            &import,
+            &ProgramInputs::Program(&import),
             &first.claim_label,
             first.source_index,
         )
@@ -527,9 +528,9 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         verify_program_prepared_project(&rewritten, &import).unwrap();
         let (session, _) =
             C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-        let position = program_prepared_project_tactic_source_position(
+        let position = project_tactic_source_position(
             &rewritten,
-            &import,
+            &ProgramInputs::Program(&import),
             &format!("FeeFrac_EvaluateFee__bool_{instance}.contract"),
             0,
         )
@@ -1168,9 +1169,13 @@ fn pinned_std_byte_values_verify_with_native_integer_contracts_offline() {
     verify_program_prepared_project(&rewritten, &import).unwrap();
     let (session, _) =
         C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-    let position =
-        program_prepared_project_tactic_source_position(&rewritten, &import, "probe.contract", 0)
-            .unwrap();
+    let position = project_tactic_source_position(
+        &rewritten,
+        &ProgramInputs::Program(&import),
+        "probe.contract",
+        0,
+    )
+    .unwrap();
     session
         .verify_at_project(&expanded, position.line, position.column)
         .unwrap();
@@ -1514,7 +1519,8 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
             .any(|event| matches!(event, VerificationEvent::TacticFinished { .. }))
     );
 
-    let sites = program_prepared_project_smart_tactic_source_sites(&project, &imported).unwrap();
+    let sites =
+        project_smart_tactic_source_sites(&project, &ProgramInputs::Program(&imported)).unwrap();
     assert_eq!(
         sites.len(),
         14,
@@ -1522,9 +1528,9 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     );
     for event in &profile {
         if let VerificationEvent::TacticFinished { tactic, .. } = event {
-            program_prepared_project_tactic_source_position(
+            project_tactic_source_position(
                 &project,
-                &imported,
+                &ProgramInputs::Program(&imported),
                 &tactic.claim,
                 tactic.source_index,
             )
@@ -1565,9 +1571,9 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
         .expect("the documented expanded range claim must reverify");
     for site in sites {
         let claim = site.claim_label.as_str();
-        let position = program_prepared_project_tactic_source_position(
+        let position = project_tactic_source_position(
             &project,
-            &imported,
+            &ProgramInputs::Program(&imported),
             claim,
             site.source_index,
         )
@@ -1577,9 +1583,9 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
         } else {
             claim.to_owned()
         };
-        let profiled_position = program_prepared_project_tactic_source_position(
+        let profiled_position = project_tactic_source_position(
             &project,
-            &imported,
+            &ProgramInputs::Program(&imported),
             &profiled_claim,
             site.source_index,
         )
@@ -1594,24 +1600,31 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
         .expect("expand a tactic against the same locked import");
         assert_ne!(expanded, SIDECAR);
         let rewritten = project.with_entry_source(expanded.clone());
-        let remaining = program_prepared_project_smart_tactic_source_sites(&rewritten, &imported)
-            .expect("expanded proof remains source-inventoriable")
-            .into_iter()
-            .filter(|candidate| candidate.claim_label == claim)
-            .count();
-        let original = program_prepared_project_smart_tactic_source_sites(&project, &imported)
-            .unwrap()
-            .into_iter()
-            .filter(|candidate| candidate.claim_label == claim)
-            .count();
+        let remaining =
+            project_smart_tactic_source_sites(&rewritten, &ProgramInputs::Program(&imported))
+                .expect("expanded proof remains source-inventoriable")
+                .into_iter()
+                .filter(|candidate| candidate.claim_label == claim)
+                .count();
+        let original =
+            project_smart_tactic_source_sites(&project, &ProgramInputs::Program(&imported))
+                .unwrap()
+                .into_iter()
+                .filter(|candidate| candidate.claim_label == claim)
+                .count();
         assert!(
             remaining < original,
             "expansion must remove the audited smart site"
         );
         verify_program_prepared_project(&rewritten, &imported)
             .expect("expanded certificate must reverify against the upstream import");
-        let next = program_prepared_project_tactic_source_position(&rewritten, &imported, claim, 0)
-            .expect("the audited claim remains source-selectable");
+        let next = project_tactic_source_position(
+            &rewritten,
+            &ProgramInputs::Program(&imported),
+            claim,
+            0,
+        )
+        .expect("the audited claim remains source-selectable");
         session_checks.push((expanded, next));
     }
     // A retained session's environment names its own kernel tables, which
@@ -3310,9 +3323,13 @@ fn check_pinned_byte_proof(root: &Path, import: &PreparedCppImport, source: &str
     verify_program_prepared_project(&rewritten, import).unwrap();
     let (session, _) =
         C0VerificationSession::new_program_prepared_project(&project, import).unwrap();
-    let position =
-        program_prepared_project_tactic_source_position(&rewritten, import, "probe.contract", 0)
-            .unwrap();
+    let position = project_tactic_source_position(
+        &rewritten,
+        &ProgramInputs::Program(import),
+        "probe.contract",
+        0,
+    )
+    .unwrap();
     session
         .verify_at_project(&expanded, position.line, position.column)
         .unwrap();
