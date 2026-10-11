@@ -243,8 +243,22 @@ red-sibling cases 1/3/4. It covers color-flip propagation followed by cases
 with nonempty focus and rotation subtrees. The exact result, parent links,
 red-black invariants, and in-order contents are preserved. A structural context
 proof derives case coverage from the black-deficit invariant, so callers need
-no separate `erase_flips_red_all` precondition. Connecting this repair contract
-to the complete erase wrapper remains.
+no separate `erase_flips_red_all` precondition.
+
+The same sidecar now verifies the unchanged `rb_erase` wrapper end to end for
+black-leaf deletion below the root, on either parent link. The splice borrows
+the callback table read-only and calls the verified parent-link helper; its
+returned empty hole and deficit context satisfy the general repair contract.
+The wrapper returns ownership of the detached node and a balanced root with
+consistent parents and exactly the in-order contents of the old context with
+the erased leaf removed. Its contract requires views of the static const dummy
+callback fields; initialization of these views at program startup is outside
+this local proof. The other splice cases still need wrapper integration.
+
+`rb_erase.c` includes the existing unchanged splice and repair extracts and adds
+the dummy callbacks, const table, and `rb_erase` definition verbatim from pinned
+`lib/rbtree.c`. All helper bodies and callback refinements are checked in this
+combined sidecar.
 
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is
