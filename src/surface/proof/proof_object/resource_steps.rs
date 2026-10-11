@@ -590,6 +590,13 @@ impl<'a> Proof<'a> {
                 None
             };
             let declaration = match &refusal {
+                // The kernel names the fact as its declaration spells it, in
+                // the kernel's own fact order; the surface body's list can
+                // hold the facts in another order.
+                crate::kernel::ResourceRewriteRefusal::BodyFactNotEstablished {
+                    spelling: Some(spelling),
+                    ..
+                } => Some(spelling.clone()),
                 crate::kernel::ResourceRewriteRefusal::BodyFactNotEstablished {
                     arm,
                     index,

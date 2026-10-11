@@ -2166,6 +2166,41 @@ fn execute_failure_trace_retains_checked_call_facts() {
     }
 }
 
+/// A parent without fields that holds a child with fields keeps a hidden
+/// record, and its fact list is not the surface body's. A refused fold names
+/// the fact it could not establish by the declaration's own spelling, in the
+/// summary and in the trailer alike.
+#[test]
+fn fold_over_a_hidden_record_names_the_failed_fact() {
+    let c = "struct cell { int32 value; }; struct pair { struct cell* a; int32 n; }; \
+             void clear(struct pair* p) { p->n = -1; }";
+    let source = "resource counted(c: struct cell*) { field v: int32; owns c->value; fact c->value == v; } \
+                  resource pair(p: struct pair*) { owns p->a; owns p->n; owns first: counted(p->a); \
+                  fact p->n == first.v; fact first.v >= 0; } \
+                  verifying \"f.c\"; void clear(struct pair* p) { owns x: pair(p); } by { \
+                  let { first: c } = unfold(x); execute(); let x = fold(pair(p), { first: c }); simp(); }";
+    let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+    let report = error.concise_report();
+    assert!(
+        report.contains("required body fact (declaration): p->n == first.v"),
+        "{report}"
+    );
+    assert!(!report.contains("first.v == first.v"), "{report}");
+}
+
+/// A resource's facts take no label, as a `requires` clause takes none, and
+/// the refusal says so rather than reporting a malformed proposition.
+#[test]
+fn a_labelled_resource_fact_is_refused_by_name() {
+    let source = "resource held(p: int32*) { owns *p; fact positive: *p > 0; }";
+    let error = verify_c0_sources(source, &[]).unwrap_err();
+    assert!(
+        error.message.contains("a `fact` clause takes no label"),
+        "{}",
+        error.message
+    );
+}
+
 #[test]
 fn fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources() {
     let c = "void f(int *p) { *p = 9; }";

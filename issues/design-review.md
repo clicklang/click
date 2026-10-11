@@ -94,7 +94,9 @@ which are hash-pinned in `design/charon-trial/parity.json`.
   where its proposition holds.
 - `requires` takes no label. Requirement labels were removed on 2026-09-23
   when proofs began citing a precondition by its proposition, and nothing
-  would read one. `invariant` takes a label, which names it in a failure.
+  would read one. A resource's `fact` takes none either: a refused fold
+  names the fact by its declaration. `ensures` and `invariant` take a
+  label, which names the claim in a failure.
 - A range at another width gets no form. Closed 2026-10-08 after an
   inventory by text search: no Click source names a second width for a
   range. Reading at another width happens in C (`(unsigned char*)(void*) q`,
