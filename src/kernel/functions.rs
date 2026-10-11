@@ -7487,32 +7487,7 @@ fn source_load_snapshot_for_proposition(
                 work.push(Work::Proposition(body));
             }
             Work::Proposition(_) => return Ok(None),
-            Work::Condition(
-                ConditionTerm::Bitvector32SignedLessThan(left, right)
-                | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-                | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-                | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-                | ConditionTerm::Bitvector32Equal(left, right)
-                | ConditionTerm::Bitvector64SignedLessThan(left, right)
-                | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-                | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-                | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-                | ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-                | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-                | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-                | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-                | ConditionTerm::Bitvector64Equal(left, right)
-                | ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-                | ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-                | ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-                | ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-                | ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
-                | ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-                | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-                | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-                | ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-                | ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right),
-            ) => {
+            Work::Condition(crate::kernel::binary_bitvector_condition!(left, right)) => {
                 work.push(Work::Bitvector(right));
                 work.push(Work::Bitvector(left));
             }

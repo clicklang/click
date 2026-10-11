@@ -1500,30 +1500,7 @@ fn hash_memory_blind_condition<H: std::hash::Hasher>(condition: &ConditionTerm, 
             std::hash::Hash::hash(right, hasher);
         }
         ConditionTerm::Variable(variable) => std::hash::Hash::hash(variable, hasher),
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right)
-        | ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
+        crate::kernel::binary_bitvector_condition!(left, right) => {
             hash_memory_blind_bitvector(left, hasher);
             hash_memory_blind_bitvector(right, hasher);
         }
@@ -1683,32 +1660,7 @@ fn collect_condition_memory_load_keys(
             left.for_each_bitvector_term(|term| collect_bitvector_memory_load_keys(term, keys));
             right.for_each_bitvector_term(|term| collect_bitvector_memory_load_keys(term, keys));
         }
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right)
-        | ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
-            collect_binary(left, right)
-        }
+        crate::kernel::binary_bitvector_condition!(left, right) => collect_binary(left, right),
         ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
             float_condition
                 .for_each_bitvector_term(|term| collect_bitvector_memory_load_keys(term, keys));
@@ -1954,32 +1906,8 @@ fn collect_condition_memory_loads(
             collect_algebraic_memory_loads(left, current_memory, loads, seen_integers)?;
             collect_algebraic_memory_loads(right, current_memory, loads, seen_integers)
         }
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right) => {
-            collect_binary(left, right)
-        }
-        ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right)
-        | ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
+        crate::kernel::binary_bitvector32_condition!(left, right) => collect_binary(left, right),
+        crate::kernel::binary_bitvector64_condition!(left, right) => {
             collect_bitvector_memory_loads(left, current_memory, loads, Some(8), seen_integers)?;
             collect_bitvector_memory_loads(right, current_memory, loads, Some(8), seen_integers)
         }

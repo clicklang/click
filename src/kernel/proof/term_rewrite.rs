@@ -578,30 +578,7 @@ fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut Carrier
             collect_integer_shared_carriers(right, variables, &mut seen);
         }
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right)
-        | ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
+        crate::kernel::binary_bitvector_condition!(left, right) => {
             collect_bitvector_carriers(left, variables);
             if variables.exhausted() {
                 return;

@@ -2132,30 +2132,7 @@ pub(crate) fn collect_condition_bitvector_variables(
                 variables.insert(*variable);
             }
         }
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right)
-        | ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
+        crate::kernel::binary_bitvector_condition!(left, right) => {
             collect_bitvector_variables(left, variables);
             collect_bitvector_variables(right, variables);
         }
@@ -3385,30 +3362,7 @@ fn collect_condition_capture_variables(
             }
             collect_capture_variables_in_algebraic_term(right, variables, integer_seen);
         }
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right)
-        | ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
+        crate::kernel::binary_bitvector_condition!(left, right) => {
             collect_bitvector_capture_variables_seen(left, variables, integer_seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
@@ -4173,30 +4127,7 @@ fn collect_condition_scope_summary(
             summary.merge(collect_algebraic_scope_summary(right, summaries));
             summary
         }
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right)
-        | ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
+        crate::kernel::binary_bitvector_condition!(left, right) => {
             let mut summary = collect_bitvector_scope_summary(left, summaries);
             if crate::instrumentation::checked_collection_exhausted() {
                 return IntegerScopeSummary::default();
@@ -4818,30 +4749,7 @@ fn collect_condition_binder_variables(
                 integer_seen,
             );
         }
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right)
-        | ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
+        crate::kernel::binary_bitvector_condition!(left, right) => {
             collect_bitvector_binder_variables_seen(
                 left,
                 integer_variables,

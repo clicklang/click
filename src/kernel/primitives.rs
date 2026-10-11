@@ -569,6 +569,55 @@ pub enum ConditionTerm {
     IntegerNotEqual(SharedIntegerTerm, SharedIntegerTerm),
 }
 
+/// Matches every two-operand 32-bit [`ConditionTerm`] (the comparisons and the
+/// overflow tests), binding the operands to `$left` and `$right`.
+macro_rules! binary_bitvector32_condition {
+    ($left:pat, $right:pat) => {
+        $crate::kernel::ConditionTerm::Bitvector32SignedLessThan($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32SignedLessEqual($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32SignedGreaterThan($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32SignedGreaterEqual($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32Equal($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32SignedAddOverflows($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32SignedSubtractOverflows($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32SignedMultiplyOverflows($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32SignedDivideOverflows($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32SignedShiftLeftOverflows($left, $right)
+    };
+}
+pub(crate) use binary_bitvector32_condition;
+
+/// Matches every two-operand 64-bit [`ConditionTerm`], signed and unsigned,
+/// binding the operands to `$left` and `$right`.
+macro_rules! binary_bitvector64_condition {
+    ($left:pat, $right:pat) => {
+        $crate::kernel::ConditionTerm::Bitvector64SignedLessThan($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64SignedLessEqual($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64SignedGreaterThan($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64SignedGreaterEqual($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64UnsignedLessThan($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64UnsignedLessEqual($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64UnsignedGreaterThan($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64UnsignedGreaterEqual($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64Equal($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64SignedAddOverflows($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64SignedSubtractOverflows($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64SignedMultiplyOverflows($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64SignedDivideOverflows($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64SignedShiftLeftOverflows($left, $right)
+    };
+}
+pub(crate) use binary_bitvector64_condition;
+
+/// Matches every two-operand bitvector [`ConditionTerm`] of either width.
+macro_rules! binary_bitvector_condition {
+    ($left:pat, $right:pat) => {
+        $crate::kernel::binary_bitvector32_condition!($left, $right)
+            | $crate::kernel::binary_bitvector64_condition!($left, $right)
+    };
+}
+pub(crate) use binary_bitvector_condition;
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Pointer {
     pub block: PointerBlock,
