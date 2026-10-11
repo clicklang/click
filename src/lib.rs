@@ -21,6 +21,11 @@
 // substructure through `Arc` without ever crossing a thread boundary.
 #![allow(clippy::arc_with_non_send_sync)]
 
+// The verifier allocates and frees persistent-map nodes and terms at a high
+// rate; glibc malloc and free were about a fifth of all verifier time.
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 pub mod cli;
 pub mod instrumentation;
 pub mod kernel;

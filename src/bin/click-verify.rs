@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
@@ -1172,14 +1173,25 @@ fn verifier_fingerprint() -> Result<&'static str, String> {
         .get_or_init(|| {
             let executable = env::current_exe()
                 .map_err(|error| format!("failed to locate the Click executable: {error}"))?;
-            let bytes = fs::read(&executable).map_err(|error| {
+            let failed = |error: std::io::Error| {
                 format!(
                     "failed to fingerprint Click executable `{}`: {error}",
                     executable.display()
                 )
-            })?;
+            };
+            // Stream the executable through the hasher: a debug or profiling
+            // build is hundreds of megabytes, and reading it whole made it
+            // the largest allocation of a directory verification.
+            let mut file = fs::File::open(&executable).map_err(failed)?;
             let mut hasher = DefaultHasher::new();
-            bytes.hash(&mut hasher);
+            let mut chunk = vec![0; 1 << 20];
+            loop {
+                let read = file.read(&mut chunk).map_err(failed)?;
+                if read == 0 {
+                    break;
+                }
+                hasher.write(&chunk[..read]);
+            }
             Ok(format!("{:016x}", hasher.finish()))
         })
         .as_deref()

@@ -26,6 +26,7 @@ charon = { git = "https://github.com/AeneasVerif/charon", rev = "5d6b812e5f77dbf
 flate2 = "1"
 imbl = "7"
 libc = "0.2"
+mimalloc = { version = "0.1", default-features = false }
 num-bigint = "0.4"
 num-traits = "0.2"
 serde = { version = "1", features = ["derive"] }

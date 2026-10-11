@@ -1013,16 +1013,29 @@ pub fn collect<R>(operation: impl FnOnce() -> R) -> (R, Vec<VerificationEvent>) 
     (result, events)
 }
 
+/// `CLICK_TIMINGS` is read once per process: these checks run on every
+/// measured operation, and `env::var_os` takes the environment lock and
+/// allocates each time (about an eighth of all verifier time on
+/// `examples/arena`).
+fn timings_requested() -> bool {
+    static REQUESTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *REQUESTED.get_or_init(|| std::env::var_os("CLICK_TIMINGS").is_some())
+}
+
+fn timing_starts_requested() -> bool {
+    static REQUESTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *REQUESTED.get_or_init(|| std::env::var_os("CLICK_TIMING_STARTS").is_some())
+}
+
 pub fn enabled() -> bool {
-    std::env::var_os("CLICK_TIMINGS").is_some()
+    timings_requested()
         || COLLECTORS.with(|collectors| !collectors.borrow().is_empty())
         || tactic_work_sink_installed()
         || TACTIC_WORK_LIMITS.with(|limits| !limits.borrow().is_empty())
 }
 
 fn operation_measurement_enabled() -> bool {
-    std::env::var_os("CLICK_TIMINGS").is_some()
-        || COLLECTORS.with(|collectors| !collectors.borrow().is_empty())
+    timings_requested() || COLLECTORS.with(|collectors| !collectors.borrow().is_empty())
 }
 
 /// Measures one named nested operation for profiler attribution without
@@ -1171,7 +1184,7 @@ impl Drop for VerificationPhase {
 }
 
 pub fn starts_enabled() -> bool {
-    std::env::var_os("CLICK_TIMING_STARTS").is_some()
+    timing_starts_requested()
         || COLLECTORS.with(|collectors| !collectors.borrow().is_empty())
         || tactic_work_sink_installed()
         || TACTIC_WORK_LIMITS.with(|limits| !limits.borrow().is_empty())
@@ -1247,7 +1260,7 @@ pub fn emit(mut event: VerificationEvent) {
             collector.push(event.clone());
         }
     });
-    if std::env::var_os("CLICK_TIMINGS").is_some() {
+    if timings_requested() {
         eprintln!("{}", render_legacy(&event));
     }
 }
