@@ -2605,6 +2605,60 @@ fn adler_native_vector_prefix_rejects_false_transitions() {
 }
 
 #[test]
-fn adler_small_native_count_byte_pointer_verifies() {
+fn adler_small_native_count_byte_addresses_and_observations_verify() {
     click::surface::verify_c0_sources(COUNT_BRIDGE, &[]).unwrap();
+}
+
+#[test]
+fn adler_count_byte_observations_reject_wrong_positions_and_missing_guards() {
+    for (before, after) in [
+        (
+            "== to_integer((int32)bytes[(int32)(uint32)count]) by",
+            "== to_integer((int32)bytes[(int32)(uint32)count + 1]) by",
+        ),
+        (
+            "== to_integer((int32)bytes[(int32)(uint32)count + lane]) by",
+            "== to_integer((int32)bytes[(int32)(uint32)count + lane + 1]) by",
+        ),
+        ("requires count <= 22204u64;", ""),
+        ("requires lane <= 3;", ""),
+    ] {
+        let changed = COUNT_BRIDGE.replacen(before, after, 1);
+        assert_ne!(changed, COUNT_BRIDGE, "{before}");
+        let error = click::surface::verify_c0_sources(&changed, &[])
+            .expect_err("different bytes and missing signed-index guards must be refused");
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: native byte observation tool agreement and complete claim audits"]
+fn adler_count_byte_observation_tools_expand_and_reverify() {
+    let p = Project::isolated("");
+    fs::write(p.root.join("borrow.click"), COUNT_BRIDGE).unwrap();
+    for command in ["verify", "profile"] {
+        assert_cli(&p, &[command]);
+    }
+    for name in [
+        "adler_count_byte_observation",
+        "adler_count_chunk_byte_observation",
+    ] {
+        let claim = format!("{name}.ensures_0");
+        let audit = Command::new(env!("CARGO_BIN_EXE_click"))
+            .args(["audit", "--claim", &claim])
+            .arg(p.root.join("borrow.click"))
+            .output()
+            .unwrap();
+        assert!(
+            audit.status.success(),
+            "{}",
+            String::from_utf8_lossy(&audit.stderr)
+        );
+        assert_cli(&p, &["expand", "--claim", &claim, "--in-place"]);
+    }
+    assert_cli(&p, &["verify"]);
 }

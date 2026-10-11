@@ -194,15 +194,26 @@ site or prove the complete four-byte checksum by themselves. The four-byte
 caller proof below supplies those premises; general initial states and
 preservation over larger nonempty vector batches remain open.
 
-## Native cursor and signed byte addresses
+## Native cursor and signed byte observations
 
 [count-bridge.click](count-bridge.click) checks that a native `uint64` count
 at most 22,208 denotes the same byte address as its signed index observation.
 The proof first establishes equality of their exact Integer values, then
 cites that equality to `normalize`. Both index widths remain intact; a
 truncated low word alone does not establish the address equality. This bridge
-supports reconstructing vector-loop byte positions. Constructor observations
-and checksum relations still have to be carried through the original loops.
+also proves that reads at those addresses have equal byte values and equal
+Integer observations. For a chunk beginning at a native count through 22,204,
+it connects each of its four positions to the signed specification index,
+with checked guards for the signed addition. The proof establishes native read
+equality before rewriting the Integer observation; address equality alone does
+not normalize the Integer loads. Complete claim audits, expansion and cold
+re-verification check both observation lemmas; mutations reject shifted byte
+positions and missing count or lane bounds. The original small-batch vector
+loop explicitly recovers all four constructor lanes from its shared subslice,
+then uses the checked byte-cast lemma to obtain their Integer observations at
+the constructor mark. These new constructor steps use direct normalization,
+explicit lemma applications and rewrites. Connecting that subslice to the input prefix and carrying
+both checksum residues through the original loops remains necessary.
 
 ## Native vector-prefix transitions
 
@@ -479,10 +490,14 @@ mathematical checksum specification in the [checksum assessment](../../rust-chec
 The constructor-state contracts for zero through four bytes provide exact
 result and byte-order checks. The shared getter proves exact packing, and the
 zero- through four-byte public entry points compose it with the constructor
-and computation. Bridge the two- and three-byte native results to the common
-specification, then extend that composition to those tails and the general loop.
+and computation. Extend that composition to larger inputs by carrying both
+prefix residues through the original nested loops, reductions, recombination
+and final tail.
 The general contract supplies induction and bounds rather than a checksum
-postcondition. All helper bodies remain checked
+postcondition. Full original-computation smart audits currently exhaust the
+standard ten-minute run bound before completing a site, although ordinary
+verification succeeds. Investigate that audit cost before extending the loop
+proof; the standalone byte-observation claims pass complete audits. All helper bodies remain checked
 alongside the computation. Then prove incremental processing, the unchanged
 C implementation, and equality under matched input and seed conditions.
 

@@ -64,7 +64,12 @@ including the original recombination offset and weights, and preservation of
 both residues through lane reductions. The constructor exports each lane’s
 exact mathematical entry-byte value. The small-count cursor bridge also proves
 equal byte addresses for the full native count and its checked signed index,
-using equality of exact values rather than low-bit truncation. One- and four-byte prefix lemmas preserve
+using equality of exact values rather than low-bit truncation. Source-proved
+read bridges connect the native count and all four positions in its chunk to
+the signed byte observations used by the common spec, with checked signed-index
+guards. The original small-batch vector loop also checks each constructor lane’s
+native and Integer value against its shared subslice. One- and four-byte prefix
+lemmas preserve
 the A residue against the common specification; a four-byte B prefix lemma
 checks the ordered weighted update under explicit index and nonnegative
 representative bounds. A joint native vector-prefix bridge now connects the
@@ -72,7 +77,11 @@ checked word additions and exact constructor byte observations to both common
 prefix residues. Its iterator adapter derives the prefix from stored remaining
 state and checks the four-byte advance and remaining-length bounds. Establishing
 and carrying these premises through the arbitrary-length computation’s nested
-loops and reductions remains incomplete.
+loops and reductions remains incomplete. Full original-computation smart audits
+currently exhaust the standard ten-minute run bound before completing a site,
+while ordinary verification succeeds. Investigate that audit cost before
+extending the loop proof; the standalone byte-observation claims pass complete
+audits and the new constructor-observation steps are explicit simple proofs.
 The unchanged Rust one- through four-byte computations prove both fields equal
 the shared specification on the entry byte snapshot, starting from A = 1 and
 B = 0. The four-byte bridge checks the native unsigned recombination and its
