@@ -540,7 +540,9 @@ pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
                 collect_c_expression_bitvector_variables(argument, variables);
             }
         }
-        CStatement::HeapAllocate { .. } => {}
+        CStatement::HeapAllocate { bytes, .. } => {
+            collect_c_expression_bitvector_variables(bytes, variables);
+        }
         CStatement::HeapFree { pointer } => {
             collect_c_expression_bitvector_variables(pointer, variables);
         }
