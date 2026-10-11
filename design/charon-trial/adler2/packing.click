@@ -1,7 +1,7 @@
 # The original checksum method packs two u16 fields into a u32.
 theorem adler_u16_observation(value: uint16) {
  ensures to_integer((uint32)value) == to_integer(value) by {
-  have (uint32)value <= 65535u32 by { simp(); }
+  have (uint32)value <= 65535u32;
   apply(uint32_to_integer_bounds((uint32)value));
   apply(uint32_less_equal_to_integer((uint32)value, 65535u32));
   # The promoted word and the narrow field retain the same checked carrier.
@@ -21,8 +21,8 @@ theorem adler_u16_observation(value: uint16) {
 
 theorem adler_pack_fields(a: uint16, b: uint16) {
  ensures to_integer(((uint32)b << 16) | (uint32)a) == 65536 * to_integer(b) + to_integer(a) by {
-  have (uint32)a <= 65535u32 by { simp(); }
-  have (uint32)b <= 65535u32 by { simp(); }
+  have (uint32)a <= 65535u32;
+  have (uint32)b <= 65535u32;
   apply(uint32_pack_u16_high_first_to_integer((uint32)a, (uint32)b));
   apply(adler_u16_observation(a));
   apply(adler_u16_observation(b));
