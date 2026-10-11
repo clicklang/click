@@ -230,8 +230,9 @@ empty hole fits the unchanged context at the same black height, and the return
 is null. Its mutations reject unchanged links and a non-null fixup return.
 
 `rbtree_erase_right_child.click` and `rbtree_erase_left_child.click` cover
-non-root one-child deletion for both parent links. They derive colors from
-red-black validity, return the exact blackened/reparented replacement and
+one-child deletion at the root and on both non-root parent links. They derive
+colors from red-black validity, return the exact blackened/reparented
+replacement and
 unchanged context, and prove whole-tree balance, parent consistency, in-order
 contents, and null fixup. `rbtree_erase_one_child.click` supplies the balance,
 local symmetry, and parent-consistency theorems. Mutation tests reject unchanged

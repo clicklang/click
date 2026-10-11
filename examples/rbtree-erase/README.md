@@ -41,8 +41,9 @@ height, so balance is preserved and the fixup return is null. It uses the same
 exclusive callback-table contract as the black-leaf sidecar.
 
 `rbtree_erase_right_child.click` and `rbtree_erase_left_child.click` cover
-non-root deletion with one nonempty child, for either child direction and either
-parent link. Neither contract assumes the erased node's or child's color.
+deletion with one nonempty child, for either child direction, either parent
+link, and deletion of the root.
+Neither contract assumes the erased node's or child's color.
 Validity implies that copying the erased node's parent/color word blackens the
 child. The proofs return that exact replacement model and the unchanged context,
 with whole-tree red-black validity, parent consistency, preserved child in-order
