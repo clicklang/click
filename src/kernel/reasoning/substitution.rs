@@ -7078,6 +7078,7 @@ pub(crate) fn substitute_pointer_variable_in_memory(
             // Carried unrewritten, for the reason given in
             // `substitute_bitvector_variable_in_memory_contents`.
             forgotten_from: memory.forgotten.forgotten_from,
+            join_inputs: memory.forgotten.join_inputs.clone(),
         }),
         heap: std::sync::Arc::new(CHeapMemory {
             live_allocations: memory

@@ -282,6 +282,14 @@ impl SnapshotLabels {
                 let value = self.legend_value(value);
                 format!("store {value} at address {address}")
             }
+            CMemoryDerivation::BranchJoin { incoming, .. } => {
+                let inputs = incoming
+                    .iter()
+                    .map(|memory| self.snapshot_name(memory.memory()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("join branch memories ({inputs})")
+            }
             CMemoryDerivation::CellsForgotten { .. } => {
                 "cached cells forgotten (not a program write)".into()
             }

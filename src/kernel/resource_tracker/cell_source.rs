@@ -140,6 +140,9 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
         first: PointerInRangeEvidence,
         last: PointerInRangeEvidence,
     },
+    JoinReadAgreement {
+        arms: Vec<(MemoryDagCell, MemoryDagCell)>,
+    },
     LoopHavocRanges {
         ranges: Vec<RangeDisjointFromPointerEvidence>,
     },
@@ -319,6 +322,9 @@ impl MemoryDagHopJustification {
         match self {
             Self::AssumptionDependent(_) => false,
             Self::SeededStores { hops } => hops.iter().all(Self::is_typed),
+            Self::JoinReadAgreement { arms } => arms
+                .iter()
+                .all(|(left, right)| left.has_only_typed_hops() && right.has_only_typed_hops()),
             _ => true,
         }
     }
@@ -537,6 +543,17 @@ impl MemoryDagHopJustification {
                         range,
                         assumptions,
                     )
+            }
+            Self::JoinReadAgreement { arms } => {
+                let CMemoryDerivation::BranchJoin { base, incoming } = derivation else {
+                    return false;
+                };
+                arms.len() == incoming.len()
+                    && arms.iter().zip(incoming).all(|((left, right), memory)| {
+                        left.node() == right.node()
+                            && left.checks_walk_from(base, pointer, bytes, assumptions)
+                            && right.checks_walk_from(memory, pointer, bytes, assumptions)
+                    })
             }
             Self::LoopHavocRanges { ranges } => {
                 let CMemoryDerivation::LoopHavoc {
@@ -1388,6 +1405,63 @@ fn memory_dag_cell_source_walk(
         });
         current = derivation.base().clone();
     }
+}
+
+/// Compare just the two paths back to their nearest common snapshot. Arena
+/// ids decrease on every edge, so walking the newer endpoint finds that
+/// common ancestor without inspecting its history. Every hop carries the
+/// same local typed certificate as an ordinary read-preservation query.
+pub(super) fn join_read_agreement(
+    base: &SharedCMemory,
+    incoming: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+    evidence: &super::step_effect::Evidence<'_>,
+) -> Option<(MemoryDagCell, MemoryDagCell)> {
+    let mut left = base.clone();
+    let mut right = incoming.clone();
+    let mut left_path = Vec::new();
+    let mut right_path = Vec::new();
+    while left != right {
+        crate::instrumentation::record_deterministic_work(1);
+        let (current, path) = if left.arena_id() > right.arena_id() {
+            (&mut left, &mut left_path)
+        } else {
+            (&mut right, &mut right_path)
+        };
+        let _lookup = CellLookupGuard::enter(current, pointer)?;
+        let derivation = current.derivation()?;
+        let super::step_effect::StepEffect::Separate(super::step_effect::Separation::Cell(
+            justification,
+        )) = super::step_effect::affects(
+            &derivation,
+            current,
+            super::Resource::Cell { pointer, bytes },
+            evidence,
+        )
+        else {
+            return None;
+        };
+        if !justification.is_typed() {
+            return None;
+        }
+        path.push(MemoryDagHop {
+            derived: current.clone(),
+            derivation: derivation.clone(),
+            justification,
+        });
+        *current = derivation.base().clone();
+    }
+    Some((
+        MemoryDagCell::Unwritten {
+            node: left,
+            path: left_path,
+        },
+        MemoryDagCell::Unwritten {
+            node: right,
+            path: right_path,
+        },
+    ))
 }
 
 #[cfg(test)]

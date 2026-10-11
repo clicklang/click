@@ -3591,7 +3591,12 @@ impl CMemory {
         sibling_memories: &[&CMemory],
         ledger: Option<&crate::kernel::loans::LoanLedger>,
     ) -> Result<Self, String> {
-        let diagnostic_base = self.clone();
+        let mut incoming = std::iter::once(&self)
+            .chain(sibling_memories.iter().copied())
+            .map(intern_c_memory_ref)
+            .collect::<Vec<_>>();
+        incoming.sort_by_key(SharedCMemory::arena_id);
+        incoming.dedup();
         let Some(first) = sibling_memories.first() else {
             return Err("an interface memory join has no sibling states".to_string());
         };
@@ -3850,6 +3855,13 @@ impl CMemory {
         // abstraction depend on which arm it was computed from, so arms that
         // forgot from different snapshots on the way could never rejoin.
         forgotten.forgotten_from = None;
+        forgotten.join_inputs = incoming
+            .iter()
+            .map(|memory| ForgottenFrom {
+                content_hash: c_memory_content_hash(memory.memory()),
+                arena_id: memory.arena_id(),
+            })
+            .collect();
         self.heap = std::sync::Arc::new(CHeapMemory {
             live_allocations,
             deallocated_allocations,
@@ -3863,12 +3875,12 @@ impl CMemory {
             pending_reallocations,
         });
         self.forget_zero_readings_under(forgotten_blocks.iter());
-        self.record_diagnostic_transform(
-            "join branch memories",
-            std::iter::once(diagnostic_base)
-                .chain(sibling_memories.iter().map(|memory| (*memory).clone()))
-                .collect(),
-            Vec::new(),
+        record_c_memory_derivation(
+            &mut self,
+            CMemoryDerivation::BranchJoin {
+                base: incoming[0].clone(),
+                incoming,
+            },
         );
         Ok(self)
     }
