@@ -199,13 +199,7 @@ fn path(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 ) -> CStatementExecutionPath {
-    CStatementExecutionPath {
-        loop_invariant_correspondence: Default::default(),
-        outcome,
-        facts,
-        obligations,
-        loan_evidence: empty_checked_loan_evidence_sequence(),
-    }
+    CStatementExecutionPath::new(outcome, facts, obligations)
 }
 fn expression_error(outcome: CExpressionOutcome) -> CStatementOutcome {
     match outcome {

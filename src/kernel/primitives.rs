@@ -10846,12 +10846,47 @@ pub(super) struct CStatementExecutionPath {
     pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
 }
 
+impl CStatementExecutionPath {
+    /// A path with no loop-invariant correspondence and no loan evidence,
+    /// which is every path not leaving a checked loop or a borrowing call.
+    pub(super) fn new(
+        outcome: CStatementOutcome,
+        facts: ExecutionFacts,
+        obligations: Vec<ProofObligation>,
+    ) -> Self {
+        Self {
+            loop_invariant_correspondence: Default::default(),
+            outcome,
+            facts,
+            obligations,
+            loan_evidence: super::loans::empty_checked_loan_evidence_sequence(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CFunctionPath {
     pub(super) outcome: CFunctionOutcome,
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
     pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
+}
+
+impl CFunctionPath {
+    /// A path with no loan evidence: every path not ending in a borrowing
+    /// call.
+    pub(super) fn new(
+        outcome: CFunctionOutcome,
+        facts: ExecutionFacts,
+        obligations: Vec<ProofObligation>,
+    ) -> Self {
+        Self {
+            outcome,
+            facts,
+            obligations,
+            loan_evidence: super::loans::empty_checked_loan_evidence_sequence(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
