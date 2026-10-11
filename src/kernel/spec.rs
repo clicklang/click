@@ -4338,19 +4338,7 @@ pub(super) fn integer_sequence_element_equality(
     left: &CValue,
     right: &CValue,
 ) -> Option<Proposition> {
-    if left.c_type() != right.c_type()
-        || !matches!(
-            left,
-            CValue::Int8(_)
-                | CValue::Int16(_)
-                | CValue::Int32(_)
-                | CValue::UInt8(_)
-                | CValue::UInt16(_)
-                | CValue::UInt32(_)
-                | CValue::Int64(_)
-                | CValue::UInt64(_)
-        )
-    {
+    if left.c_type() != right.c_type() || !matches!(left, crate::kernel::integer64_c_value!(_)) {
         return None;
     }
     c_value_comparison_proposition(left, CComparisonOperator::Equal, right)

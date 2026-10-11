@@ -771,16 +771,7 @@ impl<'a> Proof<'a> {
             _ => return Err(self.step_error("unsupported existential choice sort")),
         };
         let chosen_fact = match &chosen {
-            CValue::Int8(value)
-            | CValue::Int16(value)
-            | CValue::Int32(value)
-            | CValue::UInt8(value)
-            | CValue::UInt16(value)
-            | CValue::UInt32(value)
-            | CValue::Int64(value)
-            | CValue::UInt64(value)
-            | CValue::Int128(value)
-            | CValue::UInt128(value) => {
+            crate::kernel::integer_c_value!(value) => {
                 substitute_int32_variable_in_proposition(&body, var, value.clone())
             }
             CValue::Pointer(pointer) => crate::kernel::substitute_pointer_variable_in_proposition(
@@ -1206,19 +1197,9 @@ impl<'a> Proof<'a> {
         // body before substitution. Build the substituted body from the
         // selected requirement, preserving the original binder identity.
         let instantiated = match (&checked_source, chosen) {
-            (
-                Proposition::Exists { var, body, .. },
-                CValue::Int8(value)
-                | CValue::Int16(value)
-                | CValue::Int32(value)
-                | CValue::UInt8(value)
-                | CValue::UInt16(value)
-                | CValue::UInt32(value)
-                | CValue::Int64(value)
-                | CValue::UInt64(value)
-                | CValue::Int128(value)
-                | CValue::UInt128(value),
-            ) => substitute_int32_variable_in_proposition(body, *var, value.clone()),
+            (Proposition::Exists { var, body, .. }, crate::kernel::integer_c_value!(value)) => {
+                substitute_int32_variable_in_proposition(body, *var, value.clone())
+            }
             (Proposition::Exists { var, body, .. }, CValue::Pointer(pointer)) => {
                 crate::kernel::substitute_pointer_variable_in_proposition(
                     body,
