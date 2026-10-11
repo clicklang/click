@@ -113,6 +113,58 @@ introduce independent object identities throughout memory merely for uniformity.
 General replacement in the same storage will require an explicit object-generation
 and pointer-designation decision when that feature is selected.
 
+### Pointer designation: a confirmed shared gap
+
+The admission audit reproduced [a soundness defect](../bugs/pointer-arithmetic-crosses-scalar-subobject.md)
+in both C and C++: a pointer one past the first scalar member of a record can
+read the second member. The shared evaluator checks allocation/range bounds and
+finds the second member's cell at the same address. That is insufficient under
+either language's pointer rules. This turns the earlier access-domain audit
+obligation into mandatory implementation work for the existing profile.
+
+Preserve two semantic identities: the storage address used for aliasing and
+cell lookup, and the object/array designation used to justify access. A pointer
+value must carry or reference checked designation evidence that survives
+copying, storage/reload, casts, calls and snapshot transport. This cannot be
+recovered just from the numeric address, current read width, or whichever
+ownership range happens to contain the address.
+
+The bounded designation consists of the relevant object/array identity, element
+type and extent, position within that domain (including one-past), and the
+lifetime evidence needed for access. It may use shared immutable descriptors
+rather than expanding every pointer with a complete layout. Scalar members
+have a one-element domain; actual arrays retain their array domain. Taking a
+member address selects that member's domain without allocating new storage.
+Pointer arithmetic preserves the selected domain and checks its bounds.
+Dereference separately requires a position designating a live object, not its
+one-past endpoint.
+
+Address equality continues to support memory alias reasoning. It does not
+transport dereference validity between differently designated pointer values.
+The representation must preserve this distinction in equality/hashing and proof
+substitution; adding a field to `CPointerValue` while discarding it through
+`into_pointer()` or treating it like an ignored qualifier would not suffice.
+Pure memory observation at an address and executable typed dereference need
+different validity interfaces even when they share the same value observer.
+
+Input array extents must come from a checked declaration or explicit contract
+validity obligation that the caller discharges for the actual pointer domain.
+An ownership clause alone must not silently enlarge an already known member
+domain. The implementation audit must identify those obligations at modular
+boundaries before claiming general pointer-parameter coverage.
+
+For example, a helper reading `p[1]` may require a two-element input domain.
+Its caller cannot satisfy that requirement by combining ownership of two
+adjacent scalar fields and passing the first field's address. Actual two-element
+array storage can satisfy it. This distinction must survive resource splitting
+and rejoining, so the object-domain evidence belongs beside authority rather
+than being reconstructed from the resulting contiguous owned range.
+
+For byte representation, an admitted representation-view operation selects the
+bytes of one designated object under the selected language profile. It does
+not turn every byte of the enclosing allocation into one permissible array.
+This must use the same domain mechanism as ordinary typed pointers.
+
 ### Lifetime is not a single initialized flag
 
 Storage can exist before construction and after an object's lifetime. A scalar
@@ -239,6 +291,37 @@ An explicit reconstruction lemma can expose the shared law to users when useful.
 It must be derived from that law, not become an alternative per-helper memory
 model or a mandatory workaround for ordinary typed/byte consistency.
 
+### Implementation boundary for the uint32 bridge
+
+The shared observation interface must take the selected snapshot, address,
+observation kind and checked declared-object evidence. The observation kind
+includes width: a uint8 read and a uint32 read at the same address are not
+interchangeable terms. Execution additionally checks access designation,
+authority and definedness; logical term construction cannot discharge them.
+
+For a supported declared uint32 object, choose one canonical symbolic word for
+each relevant snapshot/object observation. Its four byte observations are
+projections of that word. A checked packing rule relates four known byte
+observations at that snapshot to the word, including after a modular call.
+Neither projection nor packing allocates storage or sets initialization bits.
+The explicit initialized-range effect supplies that independent evidence.
+
+Implement this through the shared load/representation layer, with the existing
+`canonical_form_of_load` and `LoadKind` boundary audited for width and snapshot
+identity. Keep an explicit checked rule when normalization alone cannot connect
+the observations. The rule's certificate must name the object declaration,
+target representation, relevant initialization evidence and exact observations;
+retained checking must not repeat a search over arbitrary ambient equalities.
+Reject forged widths, adjacent-object byte mixtures, stale snapshots, three-byte
+coverage and unsupported target/type evidence.
+
+This is the implementation contract, not a requirement to replace every existing
+load term immediately. Existing complete typed cells and direct byte-store
+normalization can remain efficient encodings if both reduce to the same law.
+First prove the relation in the shared C fixture, whose character-pointer rules
+already supply the source-language representation traversal. Claim C++ coverage
+only after its separate byte-access profile is settled.
+
 ## Contracts, proof entry and modular calls
 
 Keep four kinds of information separate: value propositions, initialized-range
@@ -324,6 +407,41 @@ extension or cannot justify an admitted pattern, report that boundary before
 expanding it. This is a source-semantics audit obligation, not a claim that the
 existing fixture has a reproduced defect.
 
+### Byte access requires an explicit source-profile choice
+
+The audit compared the imported `c++20` profile with
+[N4861 expressions](https://github.com/cplusplus/draft/blob/n4861/source/expressions.tex)
+and [N4861 basic types](https://github.com/cplusplus/draft/blob/n4861/source/basic.tex).
+The aliasing exemption in [basic.lval] allows `char`, `unsigned char` and
+`std::byte` access, but does not by itself supply an array of representation
+bytes to the pointer-arithmetic rules in [expr.add]. The trivially-copyable
+byte-copy guarantees in [basic.types] are a separate rule and do not justify
+every in-place cast-and-index sequence.
+
+The authors' [P1839R5 rationale](https://github.com/timuraudio/p1839/blob/main/P1839R5.md)
+explicitly identifies the object-representation pointer problem and limits that
+revision to reading; it excludes writing because of additional difficulties.
+The [committee tracking issue](https://github.com/cplusplus/papers/issues/592)
+records later revisions, including R7. That history is not evidence that the
+current pinned C++20 profile already includes a suitable read/write rule. Do
+not silently import a proposal or call it an adopted defect resolution without
+checking its exact wording and status.
+
+The source-profile choice is therefore explicit: either retain literal C++20
+coverage and pause the unchanged cast-and-index byte writer, or specify an
+additional bounded implementation contract for the pinned compiler. The latter
+would cover declared uint32 representation bytes, endian mapping, write/read
+validity and object-domain preservation, with its assumptions reported in the
+verification profile and included in artifact identity. Compiler execution
+probes can corroborate that contract, but are not a proof of a general C++
+standard guarantee. A `memcpy`-based source target is another standards-based
+route when that is the original program; it is not permission to rewrite the
+selected unchanged decoder.
+
+This choice blocks expansion of the byte-writer profile, not independent
+constructor/observer regression repairs. It does not change the existing
+decision to use native uint8 contracts with authenticated enum identities.
+
 ## Implementation assessment
 
 | Area | Current evidence | Remaining obligation |
@@ -350,14 +468,41 @@ The recent failures expose boundary inconsistencies rather than evidence that
 typed cells must be replaced: proof-entry naming could initialize raw output;
 copy checking lost useful separation context; execution byte reads and logical
 byte reads had different available relations. The output-initialization work
-changes the first two boundaries, but its CI also exposes constructor-input and
-returned-observer regressions: existing RAII proofs lose initialized input reads,
-and a composed observer loses its value relation. These are blockers to restore,
-recorded in the [constructor-input bug](../bugs/raw-construction-destination-hides-initialized-input.md)
-and [returned-observer bug](../bugs/returned-constructor-observer-loses-value-relation.md),
-not reasons to weaken existing contracts. The third is the concrete missing
-semantic bridge. The object/access-domain audit may expose further admission gaps; it
-should produce evidence or bounded refusals, not an advance claim of correctness.
+changes the first two boundaries, but its CI also exposed constructor-input and
+returned-observer regressions. The returned observer is repaired by retrying
+logical input naming with checked explicit separation facts; its unchanged
+ordinary, expanded and retained proofs and negative mutation checks pass. The
+[constructor-input bug](../bugs/raw-construction-destination-hides-initialized-input.md)
+remains: existing RAII proofs lose initialized input reads at the padding
+boundary. Neither repair may weaken existing contracts. The third inconsistency
+is the concrete missing semantic bridge. The object/access-domain audit also
+confirmed the pointer-designation defect above; it must be repaired before
+claiming the bounded model stable.
+
+### Audit ledger
+
+The following records the focused audit, not a certification of all C++ behavior.
+Source admission, execution and proof checking each have separate obligations.
+
+| Path reviewed | Evidence inspected | Result / required action |
+| --- | --- | --- |
+| Standard byte identity | `cpp/scalar.rs`, `cpp/validity.rs`, exporter cast checks and pinned-declaration tests | Nominal identity and scalar backing are checked; this does not establish traversal semantics |
+| Member address and arithmetic | `cpp/lowering.rs`, `CPointerValue`, `eval/operators.rs` and `eval/memory_loads.rs`; original C/C++ probes | Confirmed missing designation check; fix before claiming this bounded pointer model stable |
+| Construction return | `cpp/construction.rs` and the implemented construction design | Preserve value-only/copy-equivalent admission; kernel destination identity alone is insufficient for source return identity |
+| Entry initialization | Raw markers, naming, checked entry facts and the constructor regression | Keep raw output unwritten; do not infer complete storage separation from field owners with padding gaps |
+| Returned observer | Recorded proof trace and unchanged integration test | Input naming now uses already checked explicit full-range separation; ordinary, expanded, retained and negative checks pass, while padding remains unresolved |
+| Byte/word values | `eval/byte_view.rs`, declared scalar metadata and exact modular word refusal | Direct execution has a bounded encoding law; logical/modular observations still need the shared bridge above |
+| Rust availability | `rust/lowering/moves.rs` storage events and checked live/drop flags | Preserve value consumption independently of bytes and storage; a C++ move must not reuse Rust's consuming semantics |
+| Scalar initialization | Shared initialized declaration, conversion and const-freezing protocol | Retain the distinct initialization transition; ownership and a named logical cell cannot replace it |
+
+The constructor-padding question remains open at the implementation boundary.
+Splitting a raw marker into only value fields would make padding fall through
+the external-memory read path unless another checked guard protects it. Keeping
+the full marker while asserting separation from only the field owners is also
+invalid. A sound repair needs explicit object/extent/lifecycle evidence or a
+representation that separately protects padding and justifies the other input
+objects. The new designation work must establish that evidence; the audit does
+not authorize either shortcut.
 
 ## Stabilization work and exit criteria
 
@@ -371,6 +516,9 @@ conditions, not a promise of a fixed number of PRs.
    domain, lifecycle, initialization and authority are checked. Resolve missing
    evidence in the shared operation or narrow admission with a regression;
    surface any actual source-profile choice before proceeding past it.
+   The confirmed member-pointer defect requires checked designation across
+   arithmetic, loads, copies and calls; it cannot be closed by a documentation
+   note or a syntax-only rejection of the initial probe.
 2. **Unify the selected representation observations.** Implement the declared
    uint32 law once, with checked rules usable by execution, logical observations
    and modular calls. Preserve byte/pointer/type refusals and efficient lookup.
@@ -410,8 +558,11 @@ construction, initialization, resource and lifecycle regressions; use paired
 cross-language witnesses where the underlying operation is shared. Do not create
 duplicate tests merely to populate the table.
 
-This is a finite stabilization target: one known representation bridge, an audit
-of the existing boundaries, and correction of demonstrated inconsistencies.
+This is a finite stabilization target: the representation bridge, checked
+pointer designation for the admitted profile, an audit of the remaining
+boundaries, and correction of demonstrated inconsistencies. The audit established
+that pointer designation is a second concrete shared semantic gap; the earlier
+estimate of just one known bridge was incomplete.
 It is not a promise that all of C++ can subsequently be added without kernel
 changes. Ordinary helpers within this profile should require contracts, proofs
 or importer coverage. A feature that introduces a genuinely new object behavior,

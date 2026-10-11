@@ -18,13 +18,23 @@ profile, close demonstrated lifecycle/call-path inconsistencies, and validate
 the acceptance matrix before resuming the unchanged decoder proof. This is
 remaining work, not a claim that the consolidated model is implemented.
 
-First restore the reproduced PR 646 regressions in
-[constructor input reads](../bugs/raw-construction-destination-hides-initialized-input.md)
-and [returned composed observers](../bugs/returned-constructor-observer-loses-value-relation.md).
-They block the existing implementation baseline; the design does not count
-those failing integration proofs as delivered validation.
+The returned composed-observer regression is repaired: proof-entry input names
+now use already checked explicit separation facts, without initializing raw
+outputs. Ordinary, expanded and retained verification preserve the original
+value and frame claims. The PR 646
+[constructor-input regression](../bugs/raw-construction-destination-hides-initialized-input.md)
+remains a baseline blocker; field ownership does not establish separation from
+a raw destination's padding. The design does not count those failing RAII proofs
+as delivered validation.
 
-The immediate known semantic gap is the relation between modular byte-value
+The subsequent audit also reproduced a shared C/C++ soundness defect:
+[one-past member pointers can read sibling fields](../bugs/pointer-arithmetic-crosses-scalar-subobject.md).
+Checked pointer designation is now mandatory stabilization work, not merely an
+optional metadata cleanup. The design also records the concrete
+[byte-access source-profile choice](../design/cpp-object-model.md#byte-access-requires-an-explicit-source-profile-choice)
+that must be settled before expanding the cast-and-index byte writer.
+
+The other known semantic gap is the relation between modular byte-value
 postconditions and the caller's typed word. Preserve the existing typed-cell
 machinery; implement a shared representation law rather than a helper-specific
 decoder rule. The design also requires an admission audit for object/subobject

@@ -2008,6 +2008,13 @@ pub(super) fn initial_claim_context_with_caller_owner(
     // From here the entry facts only grow, so every context read of them
     // below extends one built context.
     let mut requirement_pure_facts = PureFactList::from(requirement_pure_facts);
+    state = materialize_checked_entry_input_cells(
+        state,
+        function_block.requires(),
+        parsed_function.parameters(),
+        &arguments,
+        &requirement_pure_facts.context(),
+    )?;
     for requirement in function_block.requires() {
         let Requirement::Resource(resource) = requirement else {
             continue;

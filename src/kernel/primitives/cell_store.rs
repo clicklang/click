@@ -242,6 +242,39 @@ impl IndexIntervals {
             None
         })
     }
+
+    /// Gaps restricted to `[start, end)`, seeking past unrelated holes.
+    pub(crate) fn gap_intervals_in(
+        &self,
+        start: u32,
+        end: u32,
+    ) -> impl Iterator<Item = (u32, u32)> + '_ {
+        let mut next = self
+            .interval_of(start)
+            .map_or(start, |(_, high)| high)
+            .min(end);
+        let mut intervals = self.intervals.range((next, 0)..(end, 0));
+        std::iter::from_fn(move || {
+            while next < end {
+                match intervals.next() {
+                    Some((low, high)) => {
+                        crate::instrumentation::record_deterministic_work(1);
+                        let gap = (next, (*low).min(end));
+                        next = next.max(*high);
+                        if gap.0 < gap.1 {
+                            return Some(gap);
+                        }
+                    }
+                    None => {
+                        let gap = (next, end);
+                        next = end;
+                        return Some(gap);
+                    }
+                }
+            }
+            None
+        })
+    }
 }
 
 /// How a run spells the load of each element in its source as the value the
@@ -550,6 +583,30 @@ impl CellRun {
         self.holes
             .gap_intervals(self.count)
             .flat_map(|(low, high)| low..high)
+    }
+
+    /// Live slots inside another run's spelled byte span. Only selected
+    /// intervals are enumerated when the runs have different strides.
+    pub(crate) fn live_intervals_in_slot_span_of(
+        &self,
+        other: &CellRun,
+    ) -> impl Iterator<Item = (u32, u32)> + '_ {
+        let (line, start, _) = self.slot_line_span();
+        let (other_line, low, high) = other.slot_line_span();
+        let width = i128::from(self.element_width);
+        let low = i128::from(low) - i128::from(start);
+        let high = i128::from(high) - i128::from(start);
+        let (first, end) = if line == other_line {
+            (
+                low.div_euclid(width) + i128::from(low.rem_euclid(width) != 0),
+                high.div_euclid(width) + 1,
+            )
+        } else {
+            (0, 0)
+        };
+        let first = first.clamp(0, i128::from(self.count)) as u32;
+        let end = end.clamp(0, i128::from(self.count)) as u32;
+        self.holes.gap_intervals_in(first, end)
     }
 
     /// Whether `other` is this run with possibly other holes: the same slots
@@ -1254,6 +1311,30 @@ impl CellStore {
             .runs
             .iter()
             .map(|key| self.runs.get(key).expect("a covering run is held"))
+            .collect()
+    }
+
+    /// Exact spelled-slot overlap for logical naming. Address equality is not
+    /// inferred here: a run preserves only cells at its own slot spellings.
+    pub(crate) fn runs_in_slot_span_of(&self, run: &CellRun) -> Vec<&CellRun> {
+        let (line, first, last) = run.slot_line_span();
+        let mut keys = std::collections::BTreeSet::new();
+        if let Some(((previous_line, _), segment)) =
+            self.span_cover.range(..=(line.clone(), first)).next_back()
+            && previous_line == &line
+            && first < segment.end
+        {
+            keys.extend(segment.runs.iter().cloned());
+        }
+        for (_, segment) in self.span_cover.range((line.clone(), first)..=(line, last)) {
+            crate::instrumentation::record_deterministic_work(1);
+            keys.extend(segment.runs.iter().cloned());
+        }
+        keys.into_iter()
+            .map(|key| {
+                crate::instrumentation::record_deterministic_work(1);
+                self.runs.get(&key).expect("a covering run is held")
+            })
             .collect()
     }
 

@@ -631,3 +631,233 @@ fn raw_output_overlap_respects_checked_input_separation() {
     assert!(!memory.has_initialized_bytes_under(&output, 4, &facts));
     assert!(memory.may_read_uninitialized_object_under(&input.offset_by_bytes(4), 1, &facts));
 }
+
+#[test]
+fn raw_padding_is_not_separated_by_field_ownership() {
+    let output = Pointer::symbolic(Variable(7433));
+    let input = Pointer::symbolic(Variable(7434));
+    let memory = CMemory::new().with_uninitialized_object(output.clone(), 16);
+    let owner = |base, width| {
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            base,
+            0u32.into(),
+            1u32.into(),
+            width,
+        ))
+    };
+    let fields = ResourceContext::new().unchecked_with_facts([
+        owner(output.clone(), 8),
+        owner(output.offset_by_bytes(8), 4),
+        owner(input.clone(), 4),
+    ]);
+    let fields =
+        PureFactContext::new().assume_proposition(Proposition::CResourceComposition(fields));
+    assert!(memory.may_read_uninitialized_object_under(&input, 4, &fields));
+    assert!(memory.may_read_uninitialized_object_under(&output.offset_by_bytes(12), 4, &fields));
+    assert!(!memory.has_initialized_bytes_under(&output.offset_by_bytes(12), 4, &fields));
+}
+
+#[test]
+fn checked_entry_naming_preserves_raw_output_and_scales_with_selected_input() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let external = |variable| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(variable)),
+    };
+    let output = external(7435);
+    let input = external(7436);
+    let mut costs = Vec::new();
+    for count in [16u32, 64, 256, 1024] {
+        let owner = |base, width, count: u32| {
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                base,
+                0u32.into(),
+                count.into(),
+                width,
+            ))
+        };
+        let mut facts = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                output.clone(),
+                0u32.into(),
+                1u32.into(),
+                4,
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                input.clone(),
+                0u32.into(),
+                count.into(),
+                4,
+            ))),
+        });
+        let mut memory = CMemory::new();
+        for index in 0..count {
+            let unrelated = external(7500 + u64::from(index));
+            let resources =
+                ResourceContext::new().unchecked_with_fact(owner(unrelated.clone(), 4, 1));
+            facts = facts.assume_proposition(Proposition::CResourceComposition(resources));
+            memory = memory.materialize_named_cell_under(
+                unrelated.clone(),
+                CValue::Int32(index.into()),
+                &PureFactContext::new(),
+            );
+        }
+        memory = memory
+            .with_named_cell_run(
+                external(10000),
+                4,
+                CType::Int32,
+                0,
+                count * count,
+                crate::kernel::intern_c_memory(CMemory::new()),
+            )
+            .unwrap_or_else(|_| panic!("unrelated named run"));
+        let memory = memory.with_uninitialized_object(output.clone(), 4);
+        let source = crate::kernel::intern_c_memory(memory.clone());
+        let (named, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            memory.with_proof_entry_cells_under(
+                input.clone(),
+                4,
+                CType::Int32,
+                0,
+                count,
+                source,
+                &facts,
+            )
+        });
+        assert!(matches!(named.load(&input), CExpressionOutcome::Value(_)));
+        assert!(matches!(
+            named.load(&input.offset_by_bytes(4 * (count - 1))),
+            CExpressionOutcome::Value(_)
+        ));
+        assert!(named.known_value(&output).is_none());
+        assert!(!named.has_initialized_bytes_under(&output, 4, &facts));
+        let output_named = named.clone().materialize_named_cell_under(
+            output.clone(),
+            CValue::Int32(7u32.into()),
+            &facts,
+        );
+        assert!(output_named.known_value(&output).is_none());
+        costs.push(cost);
+    }
+    assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+}
+
+#[test]
+fn checked_entry_naming_preserves_selected_cells_and_intersecting_runs() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let output = Pointer::symbolic(Variable(7437));
+    let input = Pointer::symbolic(Variable(7438));
+    let facts = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+            output.clone(),
+            0u32.into(),
+            1u32.into(),
+            4,
+        ))),
+        right: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+            input.clone(),
+            0u32.into(),
+            4u32.into(),
+            4,
+        ))),
+    });
+    for (shift, stride) in [(8, 4), (4, 8)] {
+        let memory = CMemory::new()
+            .with_named_cell_run(
+                input.offset_by_bytes(shift),
+                stride,
+                CType::Int32,
+                0,
+                1_000_000,
+                crate::kernel::intern_c_memory(CMemory::new()),
+            )
+            .unwrap_or_else(|_| panic!("existing run"))
+            .materialize_named_cell(input.clone(), CValue::Int32(9u32.into()))
+            .with_uninitialized_object(output.clone(), 4);
+        let selected_value = memory.load(&input.offset_by_bytes(shift));
+        let last_value = memory.load(&input.offset_by_bytes(12));
+        let source = crate::kernel::intern_c_memory(memory.clone());
+        let (named, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            memory.with_proof_entry_cells_under(
+                input.clone(),
+                4,
+                CType::Int32,
+                0,
+                4,
+                source,
+                &facts,
+            )
+        });
+        assert_eq!(
+            named.load(&input),
+            CExpressionOutcome::Value(CValue::Int32(9u32.into()))
+        );
+        assert_eq!(named.load(&input.offset_by_bytes(shift)), selected_value);
+        assert_eq!(named.load(&input.offset_by_bytes(12)), last_value);
+        assert!(
+            cost < 100,
+            "enumerated the remainder of the existing run: {cost}"
+        );
+        assert!(!named.has_initialized_bytes_under(&output, 4, &facts));
+    }
+}
+
+#[test]
+fn checked_entry_naming_ignores_run_holes_before_selected_start() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let input = Pointer::symbolic(Variable(7439));
+    let output = Pointer::symbolic(Variable(7440));
+    let first = 900_000u32;
+    let end = first + 4;
+    let selected = input.offset_by_bytes(first * 4);
+    let facts = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+            output.clone(),
+            0u32.into(),
+            1u32.into(),
+            4,
+        ))),
+        right: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+            input.clone(),
+            first.into(),
+            end.into(),
+            4,
+        ))),
+    });
+    let mut costs = Vec::new();
+    for holes in [16u32, 64, 256, 1024] {
+        let mut memory = CMemory::new()
+            .with_named_cell_run(
+                input.clone(),
+                4,
+                CType::Int32,
+                0,
+                1_000_000,
+                crate::kernel::intern_c_memory(CMemory::new()),
+            )
+            .unwrap_or_else(|_| panic!("existing run"));
+        for index in 0..holes {
+            memory = memory.without_cell(&input.offset_by_bytes(index * 8));
+        }
+        let memory = memory.with_uninitialized_object(output.clone(), 4);
+        let expected = memory.load(&selected);
+        let source = crate::kernel::intern_c_memory(memory.clone());
+        let (named, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            memory.with_proof_entry_cells_under(
+                input.clone(),
+                4,
+                CType::Int32,
+                first,
+                end,
+                source,
+                &facts,
+            )
+        });
+        assert_eq!(named.load(&selected), expected);
+        assert!(named.known_value(&input).is_none());
+        assert!(!named.has_initialized_bytes_under(&output, 4, &facts));
+        costs.push(cost);
+    }
+    assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+}

@@ -475,8 +475,13 @@ pub(in crate::surface) fn initial_call_state(
     // In particular, a resource such as `pointer[0..1]` must follow the
     // pointer value already present in the entry state, rather than deriving
     // a second pointer from the raw memory-load term for the pointer slot.
-    let memory =
-        materialize_symbolic_access_resource_cells(memory, requires, parameters, &arguments)?;
+    let memory = materialize_symbolic_access_resource_cells(
+        memory,
+        requires,
+        parameters,
+        &arguments,
+        &PureFactContext::new(),
+    )?;
     let state = state.with_memory(memory);
     let resources = resource_context_from_requirements(requires, parameters, &arguments, &state)?;
     let mut state =
@@ -634,9 +639,56 @@ fn reject_aggregate_parameter_storage_resource(
     Ok(())
 }
 
+/// Retry input naming after the kernel has checked the entry clause partition.
+/// The names retain the existing snapshot values; separation permits naming
+/// initialized inputs, and neither the names nor their DAG edges mark writes.
+pub(in crate::surface) fn materialize_checked_entry_input_cells(
+    state: CState,
+    requires: &[Requirement],
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+    assumptions: &PureFactContext,
+) -> Result<CState, ClickError> {
+    if !state.memory().has_uninitialized_object_footprints() {
+        return Ok(state);
+    }
+    let mut loadable_ranges = BTreeMap::new();
+    for requirement in requires {
+        if let Some((name, range)) = concrete_loadable_block(requirement, parameters, arguments)? {
+            loadable_ranges.insert(name, range);
+        }
+        if let Requirement::Resource(resource) = requirement {
+            for (name, range) in concrete_access_resource_blocks(resource, parameters, arguments)? {
+                loadable_ranges.insert(name, range);
+            }
+        }
+    }
+    let memory = memory_with_symbolic_loadable_cells_under(
+        state.memory().clone(),
+        &loadable_ranges,
+        assumptions,
+    );
+    let memory = materialize_symbolic_access_resource_cells(
+        memory,
+        requires,
+        parameters,
+        arguments,
+        assumptions,
+    )?;
+    Ok(state.with_memory(memory))
+}
+
 pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
+    memory: CMemory,
+    loadable_ranges: &BTreeMap<String, ConcreteMemoryRangeSeed>,
+) -> CMemory {
+    memory_with_symbolic_loadable_cells_under(memory, loadable_ranges, &PureFactContext::new())
+}
+
+fn memory_with_symbolic_loadable_cells_under(
     mut memory: CMemory,
     loadable_ranges: &BTreeMap<String, ConcreteMemoryRangeSeed>,
+    assumptions: &PureFactContext,
 ) -> CMemory {
     let base_memory = memory.clone();
     for range in loadable_ranges.values() {
@@ -662,7 +714,7 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
                             }
                             let value =
                                 symbolic_value_for_element(&base_memory, &pointer, element_type);
-                            memory.materialize_named_cell(pointer, value)
+                            memory.materialize_named_cell_under(pointer, value, assumptions)
                         },
                     );
                 }
@@ -678,13 +730,14 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
         // cells and leaving raw output footprints unwritten. Naming these
         // observations is not a C store.
         let count = range.bytes.checked_div(range.element_width).unwrap_or(0);
-        memory = memory.with_proof_entry_cells(
+        memory = memory.with_proof_entry_cells_under(
             range.base.clone(),
             range.element_width,
             element_type,
             0,
             count,
             crate::kernel::intern_c_memory(base_memory.clone()),
+            assumptions,
         );
     }
     memory
@@ -737,6 +790,7 @@ fn materialize_symbolic_access_resource_cells(
     requires: &[Requirement],
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
+    assumptions: &PureFactContext,
 ) -> Result<CMemory, ClickError> {
     for requirement in requires {
         let Requirement::Resource(resource) = requirement else {
@@ -750,12 +804,23 @@ fn materialize_symbolic_access_resource_cells(
             }
             ResourceClause::Named { .. } => {}
             ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment) => {
-                memory = materialize_access_segment_cells(memory, segment, parameters, arguments)?;
+                memory = materialize_access_segment_cells(
+                    memory,
+                    segment,
+                    parameters,
+                    arguments,
+                    assumptions,
+                )?;
             }
             ResourceClause::MemoryAggregate { segments, .. } => {
                 for segment in segments {
-                    memory =
-                        materialize_access_segment_cells(memory, segment, parameters, arguments)?;
+                    memory = materialize_access_segment_cells(
+                        memory,
+                        segment,
+                        parameters,
+                        arguments,
+                        assumptions,
+                    )?;
                 }
             }
             ResourceClause::Declared { .. }
@@ -1025,6 +1090,7 @@ fn materialize_access_segment_cells(
     segment: &ContractSegment,
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
+    assumptions: &PureFactContext,
 ) -> Result<CMemory, ClickError> {
     let state = CState::new().with_memory(memory.clone());
     let source_segment = segment;
@@ -1063,7 +1129,7 @@ fn materialize_access_segment_cells(
                         load_kind_of_element(element_type),
                     );
                     let value = symbolic_value_from_load(&pointer, element_type, load);
-                    memory.materialize_named_cell(pointer, value)
+                    memory.materialize_named_cell_under(pointer, value, assumptions)
                 },
             );
         }
@@ -1092,7 +1158,7 @@ fn materialize_access_segment_cells(
                             load_kind_of_element(element_type),
                         );
                         let value = symbolic_value_from_load(&pointer, element_type, load);
-                        memory.materialize_named_cell(pointer, value)
+                        memory.materialize_named_cell_under(pointer, value, assumptions)
                     },
                 );
             }
@@ -1105,13 +1171,14 @@ fn materialize_access_segment_cells(
     let source = crate::kernel::intern_c_memory(memory.clone());
     // One run for the segment's elements, spelled from the segment's own
     // base as each element's pointer is (see `memory_with_symbolic_loadable_cells`).
-    Ok(memory.with_proof_entry_cells(
+    Ok(memory.with_proof_entry_cells_under(
         segment.base.clone(),
         element_width,
         element_type,
         *start,
         *end,
         source,
+        assumptions,
     ))
 }
 
