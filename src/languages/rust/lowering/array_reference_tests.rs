@@ -45,7 +45,7 @@ fn charon_array_reference_assignments_preserve_bounded_storage_and_proof_work() 
                 "must execute a checked reference region write"
             );
             let sidecar = format!(
-                "verifying \"bounds.rs\"; uint32 {name}() {{ ensures result == 7u32; }} by {{ execute(); simp(); }}"
+                "verifying \"bounds.rs\"; fn {name}() -> u32 {{ ensures result == 7u32; }} by {{ execute(); simp(); }}"
             );
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
                 C0VerificationSession::new_program_prepared(&sidecar, &prepared)
@@ -90,7 +90,7 @@ fn charon_external_array_operations_keep_lowering_and_proof_work_bounded() {
                 .to_kernel_function();
             let (parameters, contract) = if family == "copy" {
                 (
-                    "uint32* target, const uint32* source".to_owned(),
+                    format!("target: &mut [u32; {count}], source: &[u32; {count}]"),
                     format!(
                         "views source[0..{count}]; ensures target[0] == old(source[0]); ensures target[{}] == old(source[{}]);",
                         count - 1,
@@ -99,7 +99,7 @@ fn charon_external_array_operations_keep_lowering_and_proof_work_bounded() {
                 )
             } else {
                 (
-                    "uint32* target, uint32 value".to_owned(),
+                    format!("target: &mut [u32; {count}], value: u32"),
                     format!(
                         "ensures target[0] == value; ensures target[{}] == value;",
                         count - 1
@@ -107,7 +107,7 @@ fn charon_external_array_operations_keep_lowering_and_proof_work_bounded() {
                 )
             };
             let sidecar = format!(
-                "verifying \"external.rs\"; void {name}({parameters}) {{ owns target[0..{count}]; {contract} }} by {{ execute(); simp(); }}"
+                "verifying \"external.rs\"; fn {name}({parameters}) {{ owns target[0..{count}]; {contract} }} by {{ execute(); simp(); }}"
             );
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
                 C0VerificationSession::new_program_prepared(&sidecar, &prepared)

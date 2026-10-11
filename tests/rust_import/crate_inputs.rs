@@ -34,14 +34,10 @@ fn rust_crate_locks_all_compiler_inputs_and_preserves_qualified_calls() {
     assert_eq!(functions.len(), 5);
     let names: std::collections::BTreeSet<_> = functions.iter().map(|f| &f.name).collect();
     assert_eq!(names.len(), 5);
-    let proof = "verifying \"src/lib.rs\";\nuint32 __rust_q_I4_demo_I4_left_I4_read(uint32 x) { ensures result == x; } by { execute(); simp(); }\nuint32 __rust_q_I4_demo_I5_right_I4_read(uint32 x) { ensures result == 7; } by { execute(); simp(); }\nuint32 __rust_q_I4_demo_I9_left_read() { ensures result == 99; } by { execute(); simp(); }";
-    let method = functions.iter().find(|f| f.name.contains("_T25_")).unwrap();
-    let proof = format!(
-        "{proof}\nuint32 {}(const struct __rust_q_I4_demo_I5_Value* self) {{ views self->n; ensures result == self->n; }} by {{ execute(); simp(); }}\nuint32 __rust_q_I4_demo_I5_entry(const struct __rust_q_I4_demo_I5_Value* v) {{ views v->n; ensures result == v->n; }} by {{ execute(); simp(); }}",
-        method.name
-    );
-    C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
-    fs::write(p.root.join("borrow.click"), &proof).unwrap();
+    assert!(functions.iter().any(|f| f.name.contains("_T25_")));
+    let proof = "verifying \"src/lib.rs\";\nfn demo::left::read(x: u32) -> u32 { ensures result == x; } by { execute(); simp(); }\nfn demo::right::read(x: u32) -> u32 { ensures result == 7; } by { execute(); simp(); }\nfn demo::left_read() -> u32 { ensures result == 99; } by { execute(); simp(); }\nimpl demo::Value { fn read(&self) -> u32 { views self.n; ensures result == self.n; } by { execute(); simp(); } }\nfn demo::entry(v: &demo::Value) -> u32 { views v.n; ensures result == v.n; } by { execute(); simp(); }";
+    C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
+    fs::write(p.root.join("borrow.click"), proof).unwrap();
     let cli = p.cli(&["verify"]);
     assert!(
         cli.status.success(),
@@ -179,22 +175,23 @@ fn charon_adler2_locked_crate_imports_compute_and_proves_constants() {
     })).unwrap()).unwrap();
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
-    let mut proof = String::from("verifying \"lib.rs\";\n");
-    for (suffix, ty, value) in [
-        ("_I3_MOD", "uint32", "65521u32"),
-        ("_I10_CHUNK_SIZE", "uint64", "22208u64"),
+    let mut proof = String::from("verifying \"lib.rs\";\nimpl adler2::Adler32 {\n");
+    for (suffix, name, ty, value) in [
+        ("_I3_MOD", "MOD", "u32", "65521u32"),
+        ("_I10_CHUNK_SIZE", "CHUNK_SIZE", "usize", "22208u64"),
     ] {
-        let initializer = prepared
-            .export()
-            .functions
-            .iter()
-            .find(|f| f.name.ends_with(suffix))
-            .unwrap();
+        assert!(
+            prepared
+                .export()
+                .functions
+                .iter()
+                .any(|f| f.name.ends_with(&format!("_I7_compute{suffix}")))
+        );
         proof.push_str(&format!(
-            "{ty} {}() {{ ensures result == {value}; }} by {{ execute(); simp(); }}\n",
-            initializer.name
+            "fn compute::{name}() -> {ty} {{ ensures result == {value}; }} by {{ execute(); simp(); }}\n"
         ));
     }
+    proof.push_str("}\n");
     assert!(
         prepared
             .export()
@@ -244,32 +241,19 @@ fn rust_crate_constructor_bodies_return_owned_field_values() {
     })).unwrap()).unwrap();
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
-    let record = "__rust_q_I4_demo_I5_inner_I5_Value";
-    let default = prepared
-        .export()
-        .functions
-        .iter()
-        .find(|f| f.name.ends_with("_default"))
-        .unwrap();
-    let new = prepared
-        .export()
-        .functions
-        .iter()
-        .find(|f| f.name.ends_with("_I3_new"))
-        .unwrap();
-    let constructors = format!(
-        "verifying \"lib.rs\"; struct {record} {}() {{ ensures result.a == 1u32; ensures result.b == 0u32; }} by {{ execute(); simp(); }}\nstruct {record} {}() {{ ensures result.a == 1u32; ensures result.b == 0u32; }} by {{ execute(); simp(); }}\nstruct {record} __rust_q_I4_demo_I4_make(uint32 x) {{ ensures result.a == x; ensures result.b == 7u32; }} by {{ execute(); simp(); }}",
-        default.name, new.name
-    );
+    let constructors = "verifying \"lib.rs\";
+        impl Default for demo::inner::Value { fn default() -> demo::inner::Value { ensures result.a == 1u32; ensures result.b == 0u32; } by { execute(); simp(); } }
+        impl demo::inner::Value { fn new() -> demo::inner::Value { ensures result.a == 1u32; ensures result.b == 0u32; } by { execute(); simp(); } }
+        fn demo::make(x: u32) -> demo::inner::Value { ensures result.a == x; ensures result.b == 7u32; } by { execute(); simp(); }";
     let proof = r#"
-        void __rust_q_I4_demo_I5_Token_drop(struct __rust_q_I4_demo_I5_Token* self) { owns self->n; ensures self->n == 9u32; } by { execute(); simp(); }
-        struct __rust_q_I4_demo_I5_Token __rust_q_I4_demo_I5_token() { ensures result.n == 4u32; } by { execute(); simp(); }
-        uint32 __rust_q_I4_demo_I11_token_entry() { ensures result == 4u32; } by { execute(); simp(); }
-        struct __rust_q_I4_demo_I6_Packet __rust_q_I4_demo_I6_packet(uint32 x) { ensures result.words[3] == x; } by { execute(); simp(); }
-        uint32 __rust_q_I4_demo_I12_packet_entry(uint32 x) { ensures result == x; } by { execute(); simp(); }
-        uint32 __rust_q_I4_demo_I5_entry() { ensures result == 1u32; } by { execute(); simp(); }
-        uint32 __rust_q_I4_demo_I6_second() { ensures result == 0u32; } by { execute(); simp(); }
-        uint32 __rust_q_I4_demo_I8_argument(uint32 x) { ensures result == x; } by { execute(); simp(); }
+        impl Drop for demo::Token { fn drop(&mut self) { owns self.n; ensures self.n == 9u32; } by { execute(); simp(); } }
+        fn demo::token() -> demo::Token { ensures result.n == 4u32; } by { execute(); simp(); }
+        fn demo::token_entry() -> u32 { ensures result == 4u32; } by { execute(); simp(); }
+        fn demo::packet(x: u32) -> demo::Packet { ensures result.words[3] == x; } by { execute(); simp(); }
+        fn demo::packet_entry(x: u32) -> u32 { ensures result == x; } by { execute(); simp(); }
+        fn demo::entry() -> u32 { ensures result == 1u32; } by { execute(); simp(); }
+        fn demo::second() -> u32 { ensures result == 0u32; } by { execute(); simp(); }
+        fn demo::argument(x: u32) -> u32 { ensures result == x; } by { execute(); simp(); }
     "#;
     let proof = format!("{constructors}\n{proof}");
     C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
@@ -328,24 +312,12 @@ fn charon_adler2_unchanged_constructor_returns_initialized_state() {
     })).unwrap()).unwrap();
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
-    let record = &prepared.export().records[0].name;
-    let default = prepared
-        .export()
-        .functions
-        .iter()
-        .find(|f| f.name.ends_with("_default"))
-        .unwrap();
-    let new = prepared
-        .export()
-        .functions
-        .iter()
-        .find(|f| f.name.ends_with("_I3_new"))
-        .unwrap();
-    let proof = format!(
-        "verifying \"lib.rs\"; struct {record} {}() {{ ensures result.a == 1; ensures result.b == 0; }} by {{ execute(); simp(); }} struct {record} {}() {{ ensures result.a == 1; ensures result.b == 0; }} by {{ execute(); simp(); }}",
-        default.name, new.name
+    assert_eq!(
+        prepared.export().records[0].name,
+        "__rust_q_I6_adler2_I7_Adler32"
     );
-    C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
+    let proof = "verifying \"lib.rs\"; impl Default for adler2::Adler32 { fn default() -> adler2::Adler32 { ensures result.a == 1; ensures result.b == 0; } by { execute(); simp(); } } impl adler2::Adler32 { fn new() -> adler2::Adler32 { ensures result.a == 1; ensures result.b == 0; } by { execute(); simp(); } }";
+    C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
     assert!(
         C0VerificationSession::new_program_prepared(
             &proof.replace("result.a == 1", "result.a == 0"),
@@ -353,7 +325,7 @@ fn charon_adler2_unchanged_constructor_returns_initialized_state() {
         )
         .is_err()
     );
-    fs::write(p.root.join("borrow.click"), &proof).unwrap();
+    fs::write(p.root.join("borrow.click"), proof).unwrap();
     let cli = p.cli(&["verify"]);
     assert!(
         cli.status.success(),
@@ -407,31 +379,29 @@ fn rust_crate_owned_operator_operands_copy_and_move_independently() {
     })).unwrap()).unwrap();
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
-    let packet = "__rust_q_I4_demo_I6_Packet";
-    let value = "__rust_q_I4_demo_I5_Value";
-    let operator = prepared
-        .export()
-        .functions
-        .iter()
-        .find(|f| f.name.contains("_add_assign_value_"))
-        .unwrap();
-    let mut clauses = String::from("owns self->words[0..4];");
+    assert!(
+        prepared
+            .export()
+            .functions
+            .iter()
+            .any(|f| f.name.contains("_add_assign_value_"))
+    );
+    let mut clauses = String::from("owns self.words[0..4];");
     for index in 0..4 {
-        clauses.push_str(&format!("requires self->words[{index}] <= 1000u32; requires other.words[{index}] <= 1000u32; ensures self->words[{index}] == old(self->words[{index}]) + other.words[{index}];"));
+        clauses.push_str(&format!("requires self.words[{index}] <= 1000u32; requires other.words[{index}] <= 1000u32; ensures self.words[{index}] == old(self.words[{index}]) + other.words[{index}];"));
     }
     let proof = format!(
         r#"verifying "lib.rs";
-        void {}(struct {packet}* self, struct {packet} other) {{ {clauses} }} by {{ execute(); simp(); }}
-        uint32 __rust_q_I4_demo_I5_entry(uint32 x) {{ requires x <= 1000u32; ensures result == x; }} by {{ execute(); simp(); }}
-        uint32 __rust_q_I4_demo_I7_consume(struct {value} value) {{ ensures result == 9u32; }} by {{ execute(); simp(); }}
-        uint32 __rust_q_I4_demo_I6_moving(uint32 x) {{ ensures result == 9u32; }} by {{ execute(); simp(); }}
-        uint32 __rust_q_I4_demo_I14_copy_parameter(struct {packet} packet) {{ ensures result == 9u32; }} by {{ execute(); simp(); }}
-        uint32 __rust_q_I4_demo_I11_independent(uint32 x) {{ ensures result == x; }} by {{ execute(); simp(); }}
-        void __rust_q_I4_demo_I5_Token_drop(struct __rust_q_I4_demo_I5_Token* self) {{ owns self->n; ensures self->n == 9u32; }} by {{ execute(); simp(); }}
-        uint32 __rust_q_I4_demo_I13_consume_token(struct __rust_q_I4_demo_I5_Token token) {{ ensures result == old(token.n); }} by {{ execute(); simp(); }}
-        uint32 __rust_q_I4_demo_I13_drop_argument(uint32 x) {{ ensures result == x; }} by {{ execute(); simp(); }}
-    "#,
-        operator.name
+        impl AddAssign<Self> for demo::Packet {{ fn add_assign(&mut self, other: demo::Packet) {{ {clauses} }} by {{ execute(); simp(); }} }}
+        fn demo::entry(x: u32) -> u32 {{ requires x <= 1000u32; ensures result == x; }} by {{ execute(); simp(); }}
+        fn demo::consume(value: demo::Value) -> u32 {{ ensures result == 9u32; }} by {{ execute(); simp(); }}
+        fn demo::moving(x: u32) -> u32 {{ ensures result == 9u32; }} by {{ execute(); simp(); }}
+        fn demo::copy_parameter(packet: demo::Packet) -> u32 {{ ensures result == 9u32; }} by {{ execute(); simp(); }}
+        fn demo::independent(x: u32) -> u32 {{ ensures result == x; }} by {{ execute(); simp(); }}
+        impl Drop for demo::Token {{ fn drop(&mut self) {{ owns self.n; ensures self.n == 9u32; }} by {{ execute(); simp(); }} }}
+        fn demo::consume_token(token: demo::Token) -> u32 {{ ensures result == old(token.n); }} by {{ execute(); simp(); }}
+        fn demo::drop_argument(x: u32) -> u32 {{ ensures result == x; }} by {{ execute(); simp(); }}
+    "#
     );
     C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
     assert!(
@@ -474,23 +444,23 @@ fn rust_crate_scalar_constants_execute_checked_initializers() {
     let mut proof = String::from("verifying \"lib.rs\";\n");
     for function in &prepared.export().functions {
         let (ty, value) = if function.name.contains("_I4_left_") {
-            ("uint32", "65521u32")
+            ("u32", "65521u32")
         } else if function.name.contains("_I5_right_") {
-            ("uint32", "7u32")
+            ("u32", "7u32")
         } else if function.name.contains("_I5_entry") {
-            ("uint64", "22208u64")
+            ("usize", "22208u64")
         } else if function.name.contains("_I4_wide") {
-            ("uint64", "4294967296u64")
+            ("usize", "4294967296u64")
         } else if function.name.contains("_I5_small") {
-            ("uint8", "20u8")
+            ("u8", "20u8")
         } else if function.name.contains("_I4_flag") {
             ("bool", "1")
         } else {
             panic!("unexpected imported function {}", function.name);
         };
         proof.push_str(&format!(
-            "{ty} {}() {{ ensures result == {value}; }} by {{ execute(); simp(); }}\n",
-            function.name
+            "fn {}() -> {ty} {{ ensures result == {value}; }} by {{ execute(); simp(); }}\n",
+            rust_path(&function.name)
         ));
     }
     assert_eq!(prepared.export().functions.len(), 12);
@@ -516,4 +486,19 @@ fn rust_crate_scalar_constants_execute_checked_initializers() {
     )
     .unwrap();
     assert!(load_import(&p.config()).is_err());
+}
+
+/// The Rust path of the item the importer names
+/// `__rust_q_I4_demo_I4_left_I3_MOD`: `demo::left::MOD`.
+fn rust_path(name: &str) -> String {
+    let mut rest = name.strip_prefix("__rust_q").unwrap();
+    let mut segments = Vec::new();
+    while let Some(tail) = rest.strip_prefix("_I") {
+        let (length, tail) = tail.split_once('_').unwrap();
+        let (segment, tail) = tail.split_at(length.parse().unwrap());
+        segments.push(segment);
+        rest = tail;
+    }
+    assert!(rest.is_empty(), "{name}");
+    segments.join("::")
 }
