@@ -678,7 +678,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                         // binder differs from the goal's independently lowered binder.
                         // Alpha-equivalence preserves the exact fact; use the indexed
                         // quantified lookup without invoking a derivation search.
-                        facts.contains(proposition) || facts.quantified_fact_available(proposition)
+                        facts.available(proposition) || facts.quantified_fact_available(proposition)
                     }
                     PropositionAssumptionContext::Pure => {
                         facts.pure_assumption_available(proposition)

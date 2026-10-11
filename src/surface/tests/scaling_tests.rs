@@ -2522,7 +2522,11 @@ fn exceptional_cleanup_chain_project(
     }
     c_source.push_str("    return result;\n}\n");
 
-    let mut click_source = String::from("verifying \"cleanup.c\";\n\n");
+    // These facts must not name x: result == x merges would then have to
+    // update their predicate signatures, making them relevant to each call.
+    let mut click_source = String::from(
+        "verifying \"cleanup.c\";\n\nfunction unrelated_fact(n: int32) -> int32 { n }\n\n",
+    );
     click_source.push_str(
         "int32 helper(int32 x) throws int32 {\n    ensures result == x;\n    exceptional ensures exception == 7;\n}\n\n",
     );
@@ -2538,7 +2542,10 @@ fn exceptional_cleanup_chain_project(
     }
     click_source.push_str("int32 cleanup_caller(int32 x) throws int32 {\n");
     for index in 0..unrelated_fact_count {
-        click_source.push_str(&format!("    requires x != {};\n", 10_000 + index));
+        click_source.push_str(&format!(
+            "    requires unrelated_fact({}) != 0;\n",
+            10_000 + index
+        ));
     }
     click_source.push_str("    ensures result == x;\n    exceptional ensures exception == 7;\n}\n");
     (c_source, click_source)
@@ -3628,9 +3635,9 @@ fn many_clause_bundle_grows_at_most_quadratically() {
     }
 }
 
-/// `simp` closes `x0 == xN` from the chain `x0 == x1`, ..., `x(N-1) == xN`
-/// in one step, with work linear in the chain; a query about two unrelated
-/// equal terms costs the same whatever chain sits beside it.
+/// `simp` closes a chain of equal opaque applications. Function arity stays
+/// fixed so the unrelated-query axis measures ambient facts independently
+/// of the cost of lowering a contract with more parameters.
 #[test]
 fn simp_equality_chain_is_linear_and_unrelated_queries_are_flat() {
     let simp_work = |sample: &ScalingSample| {
@@ -3642,23 +3649,21 @@ fn simp_equality_chain_is_linear_and_unrelated_queries_are_flat() {
             .sum::<usize>()
     };
     let sources = |size: usize, goal: &str| {
-        let c_parameters = (0..=size)
-            .map(|index| format!("int x{index}"))
-            .chain(["int y".into(), "int z".into(), "int w".into()])
-            .collect::<Vec<_>>()
-            .join(", ");
-        let parameters = (0..=size)
-            .map(|index| format!("int32 x{index}"))
-            .chain(["int32 y".into(), "int32 z".into(), "int32 w".into()])
-            .collect::<Vec<_>>()
-            .join(", ");
+        // Keep function arity fixed: otherwise claim lowering itself grows
+        // with the parameter list, obscuring the unrelated-fact lookup axis.
+        let parameters = "int32 x, int32 y, int32 z, int32 w";
         let requires = (0..size)
-            .map(|index| format!("    requires x{index} == x{};\n", index + 1))
+            .map(|index| {
+                format!(
+                    "    requires marker({index}, x) == marker({}, x);\n",
+                    index + 1
+                )
+            })
             .collect::<String>();
         (
-            format!("int chain({c_parameters}) {{\n    return 0;\n}}\n"),
+            format!("int chain({parameters}) {{\n    return 0;\n}}\n"),
             format!(
-                "verifying \"chain.c\";\n\nint32 chain({parameters}) {{\n{requires}    requires y == z;\n    requires z == w;\n    ensures {goal};\n}} by {{\n    execute();\n    simp();\n}}\n"
+                "verifying \"chain.c\";\n\nfunction marker(index: int32, x: int32) -> int32 {{ x }}\n\nint32 chain({parameters}) {{\n{requires}    requires y == z;\n    requires z == w;\n    ensures {goal};\n}} by {{\n    execute();\n    simp();\n}}\n"
             ),
         )
     };
@@ -3666,7 +3671,7 @@ fn simp_equality_chain_is_linear_and_unrelated_queries_are_flat() {
     let mut unrelated = Vec::new();
     for size in [4, 8, 16, 32] {
         for (goal, samples) in [
-            (format!("x0 == x{size}"), &mut chain),
+            (format!("marker(0, x) == marker({size}, x)"), &mut chain),
             ("y == w".to_string(), &mut unrelated),
         ] {
             let (c_source, click_source) = sources(size, &goal);

@@ -9539,6 +9539,7 @@ pub struct PureFactContext {
     /// terms. Appended on insertion; withdrawal rebuilds from exact equality
     /// indexes, preserving the remaining support in every fragment.
     pub(super) equality_graph: super::equality_graph::EqualityGraph,
+    pub(super) congruence_conditions: crate::persistent::PersistentMap<ConditionTerm, bool>,
     /// Exact defining equations for pointer-typed reads issued on this path,
     /// indexed by their load variable. Producer metadata certifies the C
     /// value's type; the equation supplies its snapshot and address. Both

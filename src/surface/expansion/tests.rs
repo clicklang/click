@@ -1176,8 +1176,7 @@ int32 caller() {
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("public call facts should compose through their receiving locals");
 
-    assert!(expanded.contains("first"), "{expanded}");
-    assert!(expanded.contains("second"), "{expanded}");
+    assert!(expanded.contains("assumption();"), "{expanded}");
     assert!(!expanded.contains("call-havoc"), "{expanded}");
     assert!(!expanded.contains("symbolic-pointer"), "{expanded}");
     verify_c0_sources(&expanded, &sources)

@@ -184,7 +184,7 @@ needle = "obtain (candidate: Integer) { candidate == candidate }"
 
 [[form]]
 id = "assumption"
-path = "mdtests/simple_tactics.md"
+path = "mdtests/assumption_uses_equality_congruence.md"
 needle = "assumption();"
 
 [[form]]

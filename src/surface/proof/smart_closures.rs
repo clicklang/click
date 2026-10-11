@@ -7196,14 +7196,12 @@ impl<'a> Proof<'a> {
                 .get(index + 1)
                 .is_some_and(|next| !matches!(next, ProofTactic::Assumption | ProofTactic::Simp));
             let retain_application = retain_application
-                || (pure_source
-                    && matches!(
-                        tactic,
-                        ProofTactic::Extract(_) | ProofTactic::ApplyTheorem(_)
-                    )
-                    && tactics.get(index + 1).is_some_and(|next| {
-                        !matches!(next, ProofTactic::Assumption | ProofTactic::Simp)
-                    }));
+                || (matches!(
+                    tactic,
+                    ProofTactic::Extract(_) | ProofTactic::ApplyTheorem(_)
+                ) && tactics.get(index + 1).is_some_and(|next| {
+                    !matches!(next, ProofTactic::Assumption | ProofTactic::Simp)
+                }));
             let before_application = retain_application.then(|| proof.clone());
             match tactic {
                 ProofTactic::ApplyInduction {

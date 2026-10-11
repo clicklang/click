@@ -90,6 +90,35 @@ query this closure, including contexts that defer broader search. In
 particular a fold needs no special rule to combine a read-address alias with
 another pointer alias nested in a packed parent/color equation.
 
+## Fact availability through congruence
+
+`PureFactContext::contains_known` is the semantic lookup used by proof-fact
+availability and `assumption`. Exact membership remains a separate operation
+for premise admission, withdrawal, and provenance checks. Lookup first checks
+the exact index, then asks the same scoped graph used by equality consumers.
+It performs no unfolding or implication search.
+
+Machine equality goals ask for class membership. Supported machine comparison
+facts (including false conditions) have typed application signatures annotated with
+their admitted truth value. A late operand equality updates those signatures
+through the existing parent-use index; queries never scan ambient facts.
+
+Machine-valued Click function applications also have congruence signatures.
+Their argument list uses shallow binary application nodes, preserving function
+identity, result width, argument order, C types, and array-reference snapshot
+identity. Int32, UInt32, UInt64 and pointer arguments use the existing scalar
+and complete-address classes. Other arguments, including binder-bearing
+algebraic and mathematical Integer expressions, currently retain exact opaque
+identity. Legacy applications without argument sorts also remain opaque. This
+does not introduce injectivity, arithmetic solving, memory permissions, or
+implicit equality between different snapshots.
+
+Condition truth follows scoped persistent graph forks. Its exact support is
+retained for rebuilding after withdrawal, replacement, or context restriction;
+sibling branches cannot import each other's facts or query registrations.
+Resource-index checkpoints apply value equalities only: comparison truth does
+not invalidate a memory index or extend its admitted-equality history.
+
 ## Current interface and trust boundary
 
 `kernel::equality_graph::EqualityGraph` is part of the **trusted kernel**.

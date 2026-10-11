@@ -537,7 +537,7 @@ mod certificate_tests {
         let file = parse(
             r#"
                 theorem reflexive(x: int32) {
-                    ensures x == x by auto;
+                    ensures x <= x by auto;
                 }
             "#,
         )

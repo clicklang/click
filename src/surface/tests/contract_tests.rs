@@ -1417,13 +1417,8 @@ fn outcome_simp_spells_a_call_postcondition_across_two_snapshots() {
         .split("int32 keep_x")
         .nth(1)
         .expect("the expanded source should retain the caller");
-    // Rewriting with the later fact leaves the earlier one as the exact
-    // goal, which closes by assumption.
-    let premise = "rewrite(at(statement(2).entry, p->x) == at(statement(1).entry, p->x));";
-    assert!(
-        caller_expansion.contains(premise),
-        "the outcome closer should cite the preserved field with one anchor per snapshot: {expanded}"
-    );
+    // The checked frame equation connects the snapshots in the shared graph.
+    assert!(caller_expansion.contains("assumption();"), "{expanded}");
     verify_c0_sources(&expanded, sources)
         .expect("the rewritten caller proof should verify normally");
 }

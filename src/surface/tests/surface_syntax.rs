@@ -2177,7 +2177,7 @@ fn pure_simp_after_unfold_exposes_an_explicit_certificate() {
     assert!(
         tactics
             .iter()
-            .any(|tactic| matches!(tactic, ProofTactic::Rewrite(_)))
+            .any(|tactic| matches!(tactic, ProofTactic::Assumption))
     );
 }
 
