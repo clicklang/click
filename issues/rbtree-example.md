@@ -50,7 +50,7 @@ red-leaf/nonempty-child sidecar now also covers arbitrary outer contexts.
 Deeper-successor mutation checks run nightly. All unlink-function exits are
 covered across the sidecars, completing chunk 11. Erase-color repair now covers
 repeated propagation followed by all black-sibling cases and red-sibling cases
-1/2 in either direction. Red-sibling cases 1/4 and 1/3/4 after propagation remain.
+1/2 and 1/4 in either direction. Red-sibling cases 1/3/4 after propagation remain.
 The C parent-link helper now verifies separately in `rbtree_change_child.click`
 for root, left, and right links. Its contract transfers the surrounding context
 to the new focus with the same model and preserves the old node's tag; three
@@ -1271,9 +1271,13 @@ sibling's opaque far subtree, and reparents its near node with arbitrary black
 children. The rotation and color flip return the exact balanced,
 parent-consistent root and unchanged in-order contents; every continuing edge
 still decreases the context. All 33 proofs, 362 expansion-audit sites, and eight
-rotation-link, parent/color, and cursor mutation checks pass. Red-sibling cases
-1/4 and 1/3/4
-after propagation remain. Depends on 11.
+rotation-link, parent/color, and cursor mutation checks pass.
+`rbtree_erase_color_flips_red_outer.click` adds red-sibling cases 1/4 in both
+directions after propagation. It admits nonempty focus, near, and far subtrees,
+including arbitrary children of the red far node. The two rotations retain the
+exact balanced root, consistent parent links, unchanged in-order contents, and
+strict context decrease on continuing iterations. Red-sibling cases 1/3/4 after
+propagation remain. Depends on 11.
 
 **Chunk 13. `____rb_erase_color`, right-sibling cases, and `rb_erase`.** The
 color-flip propagation proof already covers both orientations, including
@@ -1300,7 +1304,8 @@ cases 1 and 4 with a nonempty near subtree, the same exact-root guarantees,
 repeated propagation; `rbtree_erase_color_flips_rotations.click` adds mirrored
 cases 3 and 4 with nonempty subtrees. `rbtree_erase_color_flips_red_exit.click`
 adds mirrored red-sibling cases 1/2 after propagation with nonempty subtrees.
-Red-sibling cases 1/4 and 1/3/4 after propagation and the complete `rb_erase`
+`rbtree_erase_color_flips_red_outer.click` adds mirrored cases 1/4 after
+propagation. Red-sibling cases 1/3/4 and the complete `rb_erase`
 wrapper remain. Depends on 12.
 
 ### Augmented
