@@ -2497,3 +2497,109 @@ fn charon_adler2_serial_tails_reject_false_common_fields() {
         }
     }
 }
+
+const VECTOR_PREFIX: &str = include_str!("../../design/charon-trial/adler2/vector-prefix.click");
+
+fn vector_prefix_proof() -> String {
+    format!("{COMMON_ADLER_SPEC}\n{LANE_STATE}\n{VECTOR_PREFIX}")
+}
+
+#[test]
+fn adler_native_vector_prefix_transitions_match_common_fields() {
+    click::surface::verify_c0_sources(&vector_prefix_proof(), &[]).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: native vector-prefix tool agreement and expansion"]
+fn adler_native_vector_prefix_tools_expand_and_reverify() {
+    let p = Project::isolated("");
+    let source = vector_prefix_proof();
+    fs::write(p.root.join("borrow.click"), &source).unwrap();
+    for command in ["verify", "profile"] {
+        assert_cli(&p, &[command]);
+    }
+    let offset = source.find("have total - remaining <= 2147483643").unwrap();
+    let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
+    let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
+    let audit = Command::new(env!("CARGO_BIN_EXE_click"))
+        .args(["audit", "--start-at", &cursor, "--max-sites", "1"])
+        .arg(p.root.join("borrow.click"))
+        .output()
+        .unwrap();
+    assert!(
+        audit.status.success(),
+        "{}",
+        String::from_utf8_lossy(&audit.stderr)
+    );
+    for name in [
+        "adler_four_lane_prefix_step",
+        "adler_native_four_lane_prefix_step",
+        "adler_native_iterator_prefix_step",
+    ] {
+        let conclusions = if name == "adler_native_iterator_prefix_step" {
+            3
+        } else {
+            2
+        };
+        for index in 0..conclusions {
+            assert_cli(
+                &p,
+                &[
+                    "expand",
+                    "--claim",
+                    &format!("{name}.ensures_{index}"),
+                    "--in-place",
+                ],
+            );
+        }
+    }
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+#[ignore = "nightly: native vector-prefix byte, overflow, residue and cursor mutations"]
+fn adler_native_vector_prefix_rejects_false_transitions() {
+    for (before, after) in [
+        (
+            "requires to_integer(v0) == to_integer((int32)bytes[n]);",
+            "requires to_integer(v0) == to_integer((int32)bytes[n + 1]);",
+        ),
+        (
+            "requires to_integer(a0) + to_integer(v0) <= 4294967295;",
+            "",
+        ),
+        (
+            "requires to_integer(b0) + (to_integer(a0) + to_integer(v0)) <= 4294967295;",
+            "",
+        ),
+        (
+            "requires truncating_remainder(adler_lane_a(a, a0, a1, a2, a3), 65521) == adler_spec_a(bytes, n, a_seed);",
+            "",
+        ),
+        (
+            "requires 0 <= adler_lane_b(b, a1, a2, a3, b0, b1, b2, b3);",
+            "",
+        ),
+        (
+            "adler_spec_b(bytes, n + 4, a_seed, b_seed) by",
+            "adler_spec_b(bytes, n + 4, a_seed, b_seed + 1) by",
+        ),
+        (
+            "adler_spec_a(bytes, total - (remaining - 4), a_seed) by",
+            "adler_spec_a(bytes, total - (remaining - 3), a_seed) by",
+        ),
+        ("requires 4 <= remaining;", "requires 3 <= remaining;"),
+        ("requires remaining <= total;", ""),
+    ] {
+        let changed = VECTOR_PREFIX.replacen(before, after, 1);
+        assert_ne!(changed, VECTOR_PREFIX, "{before}");
+        let source = format!("{COMMON_ADLER_SPEC}\n{LANE_STATE}\n{changed}");
+        let error = click::surface::verify_c0_sources(&source, &[])
+            .expect_err("incorrect vector prefix or missing native guard must be refused");
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}

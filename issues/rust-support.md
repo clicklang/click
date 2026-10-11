@@ -65,8 +65,12 @@ both residues through lane reductions. The constructor exports each lane’s
 exact mathematical entry-byte value. One- and four-byte prefix lemmas preserve
 the A residue against the common specification; a four-byte B prefix lemma
 checks the ordered weighted update under explicit index and nonnegative
-representative bounds. Connecting those relations to the arbitrary-length
-computation’s nested loops remains incomplete.
+representative bounds. A joint native vector-prefix bridge now connects the
+checked word additions and exact constructor byte observations to both common
+prefix residues. Its iterator adapter derives the prefix from stored remaining
+state and checks the four-byte advance and remaining-length bounds. Establishing
+and carrying these premises through the arbitrary-length computation’s nested
+loops and reductions remains incomplete.
 The unchanged Rust one- through four-byte computations prove both fields equal
 the shared specification on the entry byte snapshot, starting from A = 1 and
 B = 0. The four-byte bridge checks the native unsigned recombination and its
