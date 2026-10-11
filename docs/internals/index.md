@@ -28,6 +28,7 @@ name differ, user-facing documentation uses the Surface Click name.
 
 ## Project direction
 
+- [C++ object model and shared memory semantics](https://github.com/clicklang/click/blob/master/design/cpp-object-model.md)
 - [Rbtree launch roadmap](roadmap.md)
 - [Supporting more languages: C++ first, Rust next](https://github.com/clicklang/click/blob/master/design/supporting-more-languages.md)
 

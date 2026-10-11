@@ -9,6 +9,28 @@ Bitcoin Core as a whole.
 
 ## Current remaining work
 
+**Current priority: stabilize the bounded object model before widening C++
+coverage.** The [consolidated object-model design](../design/cpp-object-model.md)
+owns the shared storage, object lifetime, initialization, representation and
+authority invariants. Its finite next steps are to audit evidence for currently
+admitted operations, unify typed/byte observations for the declared uint32
+profile, close demonstrated lifecycle/call-path inconsistencies, and validate
+the acceptance matrix before resuming the unchanged decoder proof. This is
+remaining work, not a claim that the consolidated model is implemented.
+
+First restore the reproduced PR 646 regressions in
+[constructor input reads](../bugs/raw-construction-destination-hides-initialized-input.md)
+and [returned composed observers](../bugs/returned-constructor-observer-loses-value-relation.md).
+They block the existing implementation baseline; the design does not count
+those failing integration proofs as delivered validation.
+
+The immediate known semantic gap is the relation between modular byte-value
+postconditions and the caller's typed word. Preserve the existing typed-cell
+machinery; implement a shared representation law rather than a helper-specific
+decoder rule. The design also requires an admission audit for object/subobject
+access and the selected C++ byte-traversal semantics. Any actual profile choice
+found by that audit should be raised before widening admission.
+
 The original design cleanup and selected fee arithmetic proofs are delivered.
 `GetFeePerK` is also verified on the unchanged pinned header: it delegates to
 `EvaluateFeeDown(1000)`, requires positive size and the Down result-fit profile,
@@ -24,8 +46,8 @@ below. The selected unchanged `SpanPopBack<int>` target and read/write callers
 are now verified through shared destination construction, trivial assignment
 and full-expression retirement.
 
-The remaining work needs a concrete source/contract selection or a semantic
-profile decision before implementation:
+After that stabilization milestone, the following broader work needs a concrete
+source/contract selection or a semantic profile decision before implementation:
 
 - **Further fee methods and construction.** The remaining `CFeeRate` methods
   involve embedded construction/assignment, aggregate returns, comparison-category
@@ -500,9 +522,11 @@ The next value prerequisite is the relation between specification byte reads and
 the declared uint32 representation after a modular call. The initialized caller
 can read its integer, and byte postconditions prove byte results, but those facts
 do not yet reconstruct the integer's value. Keep the exact little-endian word
-claim in `mdtests/modular_byte_output_word_value_requires_representation.md` while
-selecting that shared representation rule; do not substitute a safety claim for
-the decoder's value contract.
+claim in `mdtests/modular_byte_output_word_value_requires_representation.md` and
+implement the shared observation law specified by the
+[object-model design](../design/cpp-object-model.md#one-representation-consistent-observations).
+Turn that claim into a positive regression when the law is implemented; do not
+substitute a safety claim for the decoder's value contract.
 
 `ReadCompactSize` additionally brings stream failure and canonical
 encoding rules; do not bundle those decisions into this span slice.
@@ -692,6 +716,11 @@ still be validated. Preserve unchanged upstream source as the integration
 regression for every new slice.
 
 ## Delivered design consolidation
+
+This section records the earlier importer/scalar cleanup. The subsequent
+[object-model consolidation](../design/cpp-object-model.md) and its stabilization
+criteria are the current foundation work; delivery of this earlier cleanup does
+not establish completion of that work.
 
 The planned cleanup steps are delivered. Continue with the fee arithmetic
 milestone above, preserving unchanged-source proofs, hostile-artifact and false

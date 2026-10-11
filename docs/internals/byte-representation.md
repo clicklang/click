@@ -7,6 +7,13 @@ summary is in [Memory model](../concepts/memory-model.md#byte-view-of-integer-ce
 the verified demonstration is
 [`examples/byte-representation/`](https://github.com/clicklang/click/blob/master/examples/byte-representation/README.md).
 
+The [consolidated object-model design](https://github.com/clicklang/click/blob/master/design/cpp-object-model.md)
+specifies the target relationship between these rules, object lifetime and
+modular contracts. In particular, it proposes common guarded typed/byte
+observations for execution and specifications. That bridge is not yet
+implemented; the execution/specification distinction below describes current
+behavior.
+
 ## Selected profile
 
 Every rule below is stated for one profile. The C is C11 under the default

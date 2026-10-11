@@ -8,6 +8,11 @@ contains executable evidence, compiler versions, and reproduction commands.
 This design record predates the delivered C++ frontend; it does not itself
 implement a Rust frontend.
 
+The later [C++ object-model consolidation](cpp-object-model.md) owns the bounded
+shared object/representation target and its stabilization criteria. It preserves
+language-specific access, construction, move and cleanup rules over shared memory
+operations; it does not replace this record's compiler and resource rationale.
+
 The [stable-views record](../docs/internals/stable-views.md) and the completed
 [basic C++ example](../examples/basic-cpp/README.md) carry the implemented
 boundaries. This document owns the cross-language rationale and future

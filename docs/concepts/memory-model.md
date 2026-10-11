@@ -135,9 +135,13 @@ specification load reads a snapshot's cells without it.
 The following stay refused. A byte of a pointer cell has no view: its
 representation is opaque, so a one-byte read of a copied pointer fails as a
 load that does not fit the cell, and a one-byte write forgets the pointer
-rather than editing it. Several one-byte cells are never assembled into a
-wider integer load. A float or `_Bool` cell, a symbolic offset, and any byte
-order other than little-endian have no view either.
+rather than editing it. General assembly of byte cells into an arbitrary typed
+load is refused. The bounded exception is a declared automatic uint32 object:
+four initialized representation bytes can reconstruct its value in execution.
+The declaration supplies the type; a byte array, cast or requested load width
+does not. Specification byte observations do not yet provide this reconstruction
+relation after modular calls. A float or `_Bool` cell, a symbolic offset, and any
+byte order other than little-endian have no view either.
 `mdtests/byte_representation_buffer_byte_read.md` and
 `mdtests/byte_representation_byte_mutation.md` verify reads and a defined
 mutation through a `memcpy` buffer;
@@ -146,6 +150,10 @@ mutation through a `memcpy` buffer;
 refusals. The design record for representation copies, the byte view, and the
 reinterpretations that stay refused is
 [Byte representation](../internals/byte-representation.md).
+
+The [consolidated object-model design](https://github.com/clicklang/click/blob/master/design/cpp-object-model.md)
+defines the remaining work to make execution and specification observations
+consistent while keeping initialization, lifetime and access permission separate.
 
 ## Heap blocks and lifetimes
 

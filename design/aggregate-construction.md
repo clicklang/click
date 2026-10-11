@@ -2,6 +2,11 @@
 
 This records the implemented shared aggregate construction and return-destination
 contract.
+The [consolidated C++ object-model design](cpp-object-model.md) places these
+implemented operations in the shared storage, lifetime, initialization and
+representation model. It identifies remaining stabilization work; the bounded
+construction admission and delivered behavior below remain authoritative.
+
 The shared kernel supports a bounded complete-object construction return mode.
 Existing C aggregate returns remain field copies. C++ now admits bounded
 returned construction and forwarding under a body-validated copy-equivalence
