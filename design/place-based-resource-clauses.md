@@ -145,10 +145,10 @@ against C-shaped restatements of their signatures. The rule led to the three
 decisions below; Rust now requires source-language signatures and fields.
 
 **References were spelled as one-element ranges.** C++ `int& value` appeared in
-the sidecar as `int32* value` with `owns value[0..1];` and is read as
+the sidecar as `int32* value` with `owns value[0..1];` and was read as
 `value[0]` (`tests/fixtures/cpp-verification/branch-return`). A Rust `&mut T`
-or `&T` parameter used the same restatement. Decided: each language spells a place the way
-that language does.
+or `&T` parameter used the same restatement. Decided: each language spells a
+place the way that language does.
 
 | Source | Whole object | Field |
 | --- | --- | --- |
@@ -159,16 +159,16 @@ that language does.
 | Rust `&mut self` | `owns *self` | `owns self.value` |
 
 A C++ reference names its referent, so there is no separate slot and `owns c`
-is the object. This requires signatures in the
-source's own parameter names and types. Rust now uses `fn` signatures and
+is the object. This requires signatures in the source's own parameter names
+and types. Rust now uses `fn` signatures and
 `impl` blocks, with reference fields written as `p.f`.
 
 **Slices carried a separate length.** Rust `bytes: &[u8]` was restated as
 `const uint8* bytes, uint64 bytes_len`, and the clause is
 `views bytes[0..(int32)(uint32)bytes_len];` (`examples/rust-byte-sum`). A
 slice is one place whose length the reference carries. Rust now writes
-`bytes.len()` for that length and can say `views *bytes;` or `views bytes[..];` for the whole slice and keep the
-explicit range for a part of it. This is an addition, not a change to an
+`bytes.len()` for that length and can say `views *bytes;` or `views bytes[..];`
+for the whole slice and keep the explicit range for a part of it. This is an addition, not a change to an
 existing meaning.
 
 **"Padding that belongs to it alone" is language-specific.**
@@ -197,8 +197,8 @@ Decided 2026-10-07: references are a property of the parameter that the
 parser, the signature check and the printers all know. They are not a
 rewrite of the sidecar's text.
 
-At acceptance, both importers handed Click a C-shaped interface: `int& value` and
-`int* value` are the same `int32*` parameter, and the sidecar writes
+At acceptance, both importers handed Click a C-shaped interface: `int& value`
+and `int* value` were the same `int32*` parameter, and the sidecar wrote
 `value[0]` for the referent.
 
 1. **The interface records it.** A parameter of the imported function is
@@ -252,12 +252,12 @@ Items 1 to 4 are implemented. What building them established:
   `requires writable == readable`). Each such use was found by comparing the
   old text with the new and is written with `&`.
 
-Receivers are spelled `this`. Still to do: reference locals in C++ bodies,
-which proofs name through the lowered program.
+Receivers are spelled `this`. Scalar reference locals in C++ bodies use
+the carrying pointer described below; struct reference locals remain.
 
-Rust is not covered here. Its natural spelling changes the signature syntax
-as well (`bytes: &[u8]`, `&mut self`), a slice carries its length, and
-layout is the compiler's. It gets its own proposal.
+Rust uses `fn` signatures, `impl` blocks, `bytes: &[u8]`, and `&mut self`.
+A slice carries its length, and layout is the compiler's. The required
+spelling is described in `docs/reference/rust.md`.
 
 ### Reference locals
 
@@ -314,8 +314,8 @@ an accepted clause.
   (`bugs/a-symbolic-struct-count-range-is-not-usable.md`).
 - Done: step 6 for C++ reference parameters, as designed under "Reference
   parameters". Rust contracts use `fn` signatures and `impl` blocks,
-  with fields through references written `p.f`. C++ receivers and reference
-  locals remain.
+  with fields through references written `p.f`. Struct reference locals
+  in C++ remain.
 - `views *p` and `views p->inner` are accepted in a contract. They were
   refused outside a resource definition for no recorded reason.
 
