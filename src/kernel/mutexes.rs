@@ -29,7 +29,9 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::loans::{LoanHoldId, LoanLedger, LoanParticipantId, MutexUseBinding, MutexUseLoan};
+#[cfg(test)]
+use super::loans::MutexUseLoan;
+use super::loans::{LoanHoldId, LoanLedger, LoanParticipantId, MutexUseBinding};
 use crate::persistent::PersistentMap;
 
 use super::{CResource, CResourceFact, CState, ConditionTerm, Pointer, PureFactContext};
@@ -151,13 +153,6 @@ impl MutexInitializationId {
 }
 
 impl MutexInitialization {
-    fn identity(self, mutex: &Pointer) -> super::MutexIdentity {
-        super::MutexIdentity {
-            epoch: Some(self.0.0),
-            mutex: mutex.clone(),
-        }
-    }
-
     fn resource_fact(self, mutex: &Pointer) -> CResourceFact {
         self.0.description(mutex)
     }
@@ -988,6 +983,7 @@ impl MutexContext {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn state(&self) -> &CState {
         &self.state
     }
@@ -1210,7 +1206,7 @@ impl MutexContext {
 
     /// Checked adapter staged ahead of surface `mutex_use` call transport.
     /// The owner is removed here, rather than trusting a caller-supplied fact.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(super) fn lend_use(
         &self,
         mutex: &Pointer,
@@ -1315,7 +1311,7 @@ impl MutexContext {
 
     /// Staged synchronous helper adapter: reborrow this participant's use
     /// share without regaining the owner or changing the protected state.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(super) fn reborrow_use(
         &self,
         usage: MutexUseBinding,
@@ -1362,8 +1358,7 @@ impl MutexContext {
             loan,
         ))
     }
-
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(super) fn end_use_reborrow(
         &self,
         loan: &MutexUseLoan,
@@ -1407,7 +1402,7 @@ impl MutexContext {
 
     /// Recovery returns only the escrowed owner, after all shares and holds
     /// are back. No guarded payload or acquisition is manufactured here.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(super) fn recover_use(
         &self,
         loan: &MutexUseLoan,
@@ -1736,6 +1731,7 @@ impl MutexContext {
         })
     }
 
+    #[cfg(test)]
     pub(super) fn release(
         &self,
         guard: MutexGuard,

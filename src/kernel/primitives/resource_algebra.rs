@@ -4253,7 +4253,7 @@ impl ResourceContext {
     ///
     /// The reverse support index makes later removal proportional to the
     /// projections of this authority rather than the size of the context.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn unchecked_with_supported_facts(
         self,
         support: &CResourceFact,
@@ -4276,8 +4276,7 @@ impl ResourceContext {
             facts,
         )
     }
-
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn unchecked_with_supported_facts_from_entry(
         self,
         support_entry: ResourceEntryId,
@@ -4290,6 +4289,7 @@ impl ResourceContext {
         self.unchecked_with_supported_facts_from_occurrence(support_occurrence, support, facts)
     }
 
+    #[cfg(test)]
     pub(crate) fn unchecked_with_supported_facts_from_occurrence(
         mut self,
         support_occurrence: ResourceOccurrenceId,
@@ -4366,8 +4366,7 @@ impl ResourceContext {
         }
         (self, inserted)
     }
-
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn with_cached_supported_expansion(
         self,
         support: &CResourceFact,
@@ -4437,8 +4436,7 @@ impl ResourceContext {
         self.rekey_cached_support_entries(support);
         self
     }
-
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn cached_supported_expansion(
         &self,
         support: &CResourceFact,
@@ -4470,6 +4468,7 @@ impl ResourceContext {
             .collect()
     }
 
+    #[cfg(test)]
     fn cached_expansion_for_fact(
         &self,
         support: &CResourceFact,
@@ -4478,6 +4477,7 @@ impl ResourceContext {
             .map(|(_, expansion)| expansion)
     }
 
+    #[cfg(test)]
     fn cached_expansion_with_occurrence_for_fact(
         &self,
         support: &CResourceFact,

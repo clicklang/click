@@ -2,11 +2,10 @@
 use super::schema::{RustExport, SCHEMA, TARGET};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::fs::{self, OpenOptions};
-use std::io::{Read, Write};
+use std::fs;
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Clone, Debug)]
 pub struct PreparedRustImport {
@@ -236,7 +235,6 @@ fn decode(
     Ok(export)
 }
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
     match fs::symlink_metadata(path) {
         Ok(m) if !m.file_type().is_file() => {
             return Err("Rust output must be a regular file".into());
@@ -244,23 +242,7 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.to_string()),
         _ => {}
     }
-    let temp = path.with_file_name(format!(
-        ".click-rust-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    let result = (|| {
-        let mut f = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp)
-            .map_err(|e| e.to_string())?;
-        f.write_all(bytes).map_err(|e| e.to_string())?;
-        f.sync_all().map_err(|e| e.to_string())?;
-        fs::rename(&temp, path).map_err(|e| e.to_string())
-    })();
-    let _ = fs::remove_file(temp);
-    result
+    crate::cli::write_file_atomically(path, bytes)
 }
 pub fn refresh_import(path: &Path) -> Result<(), String> {
     let (c, bytes, root) = config(path)?;

@@ -1,4 +1,3 @@
-use std::env;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -30,13 +29,6 @@ use click::surface::{
 
 const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n\nExpansion is checked before output. With --in-place, the original is atomically replaced only after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
 
-fn main() {
-    if let Err(message) = entry() {
-        eprintln!("click-expand: {message}");
-        std::process::exit(1);
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Arguments {
     click_path: PathBuf,
@@ -55,10 +47,6 @@ enum Selection {
         column: Option<usize>,
     },
     Claim(String),
-}
-
-fn entry() -> Result<(), String> {
-    entry_with(env::args().skip(1))
 }
 
 pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
@@ -748,6 +736,7 @@ fn atomic_replace(path: &Path, contents: &[u8]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::env;
     use std::time::Duration;
 
     #[test]
@@ -1465,6 +1454,7 @@ mod output_context_tests {
     use super::*;
     use click::cli::CInput;
     use click::surface::verify_c0_sources;
+    use std::env;
 
     fn setup_source_bundle(sequence: u64) -> (PathBuf, PathBuf, PathBuf) {
         let directory = env::temp_dir().join(format!(
@@ -1563,6 +1553,7 @@ int32 identity(int32 x) {
 mod prepared_output_tests {
     use super::*;
     use click::languages::c::compiler_import::create_lock;
+    use std::env;
 
     fn setup_prepared(sequence: u64) -> PathBuf {
         // The import loader rejects symlinked root components, so the

@@ -29424,7 +29424,6 @@ fn evaluate_resource_type(
 /// Describes an authority clause for a checked proof rewrite. This evaluates
 /// the declared type but grants no ownership; only the authority rewrite
 /// checker may publish the returned candidate into a resource context.
-#[allow(dead_code)] // Contract lowering will call this once authority transport is enabled.
 pub(crate) fn evaluate_population_authority_candidate(
     entry: &CState,
     state: &CState,

@@ -165,14 +165,12 @@ pub(in crate::surface::proof) struct ExecutionProofConstants {
     pub(in crate::surface::proof) execution_start_facts: Arc<PureFactList>,
     /// Construction-time provenance aligned exactly with
     /// `execution_start_facts`. It is presentation metadata only.
-    #[allow(dead_code)]
     pub(in crate::surface::proof) entry_fact_origins: Arc<Vec<EntryFactOrigin>>,
     /// Bounded proof-local index of direct caller predicate requirements.
     /// This is presentation/planning metadata and is not proof authority.
     pub(in crate::surface::proof) caller_requirement_index: Arc<CallerRequirementIndex>,
     /// Exact ordinary caller whose entry requirement identities populate the
     /// proof-local index. Missing ownership makes source selection fail closed.
-    #[allow(dead_code)]
     pub(in crate::surface::proof) caller_source_owner: Option<CallerSourceOwnerId>,
     pub(in crate::surface::proof) function_entry_state: Option<CState>,
     /// The entry this proof was built from, handed on to the theorems it
@@ -181,7 +179,6 @@ pub(in crate::surface::proof) struct ExecutionProofConstants {
         Option<Arc<crate::surface::proof::ProofEntryContext>>,
     /// Immutable file-scoped lookup for exact ordinary callee source
     /// requirements. Descendant proof contexts share this Arc.
-    #[allow(dead_code)]
     pub(in crate::surface::proof) function_source_registry: Arc<FunctionSourceRegistry>,
     pub(in crate::surface::proof) grouped_contract: bool,
     /// The recorder for a selected expansion target written inside a `have`
@@ -233,7 +230,6 @@ pub(in crate::surface::proof) struct ExecutionProofContext<'a> {
 impl<'a> ExecutionProofContext<'a> {
     /// The immutable ordinary-callee source registry shared by this proof and
     /// all of its derived tactic contexts.
-    #[allow(dead_code)]
     pub(in crate::surface::proof) fn function_source_registry(
         &self,
     ) -> Arc<FunctionSourceRegistry> {

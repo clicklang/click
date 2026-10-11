@@ -226,8 +226,7 @@ pub(in crate::surface) fn segment_contains_pointer(
         true,
     ))
 }
-
-#[allow(dead_code)]
+#[cfg(test)]
 pub(in crate::surface) fn pointer_element_index_from_base(
     pointer: &Pointer,
     base: &Pointer,

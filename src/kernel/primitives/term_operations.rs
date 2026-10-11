@@ -3564,8 +3564,6 @@ impl Pointer {
             offset: PointerOffsetTerm::Constant(0),
         }
     }
-
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(in crate::kernel) fn has_symbolic_block(&self) -> bool {
         matches!(
             self.block,
@@ -3579,8 +3577,6 @@ impl Pointer {
     pub(in crate::kernel) fn blocks_proven_distinct(&self, other: &Self) -> bool {
         self.block.proven_distinct(&other.block)
     }
-
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(in crate::kernel) fn offset_by_int32_elements(&self, elements: Bitvector32Term) -> Self {
         self.offset_by_elements(elements, 4)
     }

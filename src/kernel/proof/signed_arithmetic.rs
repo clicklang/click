@@ -6,11 +6,6 @@
 //! `fact_reasoning` decision procedure remains in place while the surface
 //! migration is in progress.
 
-// This checker lands before its surface caller; suppress dead-code warnings
-// for the complete internal API until the planner integration tranche wires
-// these nodes into proof application.
-#![allow(dead_code)]
-
 use super::super::{Bitvector32Term, ConditionTerm, Proposition, Variable};
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
@@ -23,9 +18,10 @@ const SIGNED_MAX: i64 = i32::MAX as i64;
 /// int32.  Keeping the carrier on every result prevents a future widening or
 /// signedness extension from silently changing an existing certificate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// Future machine carriers are part of the typed boundary before their
-// checkers are enabled; keep the enum closed over those planned extensions.
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "planned carriers are part of the typed boundary before their checkers exist"
+)]
 pub(crate) enum SignedArithmeticCarrier {
     SignedInt32,
     SignedInt64,
@@ -349,7 +345,6 @@ pub(crate) struct SignedArithmeticInterval {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(dead_code)]
 pub(crate) enum SignedArithmeticComparison {
     LessThan,
     LessEqual,
@@ -386,11 +381,6 @@ enum CheckedBinaryOperator {
     BitwiseXor,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum CheckedUnaryOperator {
-    BitwiseNot,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum CheckedTerm {
     Atom(SignedArithmeticAtom),
@@ -398,10 +388,6 @@ enum CheckedTerm {
         operator: CheckedBinaryOperator,
         left: usize,
         right: usize,
-    },
-    Unary {
-        operator: CheckedUnaryOperator,
-        operand: usize,
     },
 }
 
@@ -434,12 +420,6 @@ impl TermArena {
             left,
             right,
         });
-        reference
-    }
-
-    fn unary(&mut self, operator: CheckedUnaryOperator, operand: usize) -> usize {
-        let reference = self.terms.len();
-        self.terms.push(CheckedTerm::Unary { operator, operand });
         reference
     }
 
@@ -493,19 +473,6 @@ impl TermArena {
                         pending.push((*left_right, *right_right, false));
                         pending.push((*left_left, *right_left, false));
                     }
-                    (
-                        CheckedTerm::Unary {
-                            operator: left_operator,
-                            operand: left_operand,
-                        },
-                        CheckedTerm::Unary {
-                            operator: right_operator,
-                            operand: right_operand,
-                        },
-                    ) if left_operator == right_operator => {
-                        pending.push((left, right, true));
-                        pending.push((*left_operand, *right_operand, false));
-                    }
                     _ => {
                         self.equivalence_cache.insert((left, right), false);
                         self.equivalence_cache.insert((right, left), false);
@@ -533,16 +500,6 @@ impl TermArena {
                                 *right_right,
                             )
                     }
-                    (
-                        CheckedTerm::Unary {
-                            operand: left_operand,
-                            ..
-                        },
-                        CheckedTerm::Unary {
-                            operand: right_operand,
-                            ..
-                        },
-                    ) => pair_is_equivalent(&self.equivalence_cache, *left_operand, *right_operand),
                     _ => false,
                 };
                 self.equivalence_cache.insert((left, right), equivalent);
@@ -589,16 +546,6 @@ impl TermArena {
                     pending.push((*left, actual_left));
                     pending.push((*right, actual_right));
                 }
-                (CheckedTerm::Unary { operator, operand }, actual) => {
-                    let Some((actual_operator, actual_operand)) = explicit_unary(*operator, actual)
-                    else {
-                        return false;
-                    };
-                    if *operator != actual_operator {
-                        return false;
-                    }
-                    pending.push((*operand, actual_operand));
-                }
             }
         }
         true
@@ -640,21 +587,8 @@ fn explicit_binary(
     Some((actual_operator, left, right))
 }
 
-fn explicit_unary(
-    operator: CheckedUnaryOperator,
-    term: &Bitvector32Term,
-) -> Option<(CheckedUnaryOperator, &Bitvector32Term)> {
-    match (operator, term) {
-        (CheckedUnaryOperator::BitwiseNot, Bitvector32Term::BitwiseNot(operand)) => {
-            Some((CheckedUnaryOperator::BitwiseNot, operand))
-        }
-        _ => None,
-    }
-}
-
 /// One topologically ordered local derivation node.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[allow(dead_code)]
 pub(crate) enum SignedArithmeticNode {
     Premise {
         index: usize,
@@ -838,13 +772,11 @@ pub(crate) struct SignedArithmeticCertificate {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(dead_code)]
 pub(crate) enum SignedArithmeticCheckError {
     InvalidPremise(usize),
     InvalidNodeReference(usize),
     UnsupportedCarrier,
     UnsupportedPremise(usize),
-    UnsupportedGoal,
     InvalidDefinedness(usize),
     InvalidOperator(usize),
     InvalidCoefficient(usize),
@@ -1700,6 +1632,7 @@ fn signed_atom_work(atom: &SignedArithmeticAtom) -> usize {
     })
 }
 
+#[cfg(test)]
 fn signed_term_work(root: &Bitvector32Term) -> usize {
     let mut units = 0usize;
     let mut pending = vec![root];
@@ -2044,23 +1977,6 @@ fn affine_term_bounds(
     }
 }
 
-fn affine_claim_from_interval_evidence(
-    nodes: &[SignedArithmeticNode],
-    checked: &[CheckedValue],
-    terms: &mut TermArena,
-    evidence: usize,
-    proposition: &Proposition,
-) -> Option<SignedArithmeticClaim> {
-    affine_claim_from_interval_evidence_refs(
-        nodes,
-        checked,
-        terms,
-        Some(evidence),
-        Some(evidence),
-        proposition,
-    )
-}
-
 fn affine_claim_from_interval_evidence_refs(
     nodes: &[SignedArithmeticNode],
     checked: &[CheckedValue],
@@ -2401,6 +2317,7 @@ fn contains_affine_machine_operation(root: &Bitvector32Term) -> bool {
     )
 }
 
+#[cfg(test)]
 fn is_opaque_atom(term: &Bitvector32Term) -> bool {
     SignedArithmeticAtom::from_term(term).is_some_and(|atom| atom.is_opaque_root())
 }

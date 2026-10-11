@@ -8415,8 +8415,6 @@ impl ClickError {
     pub(crate) fn diagnostic(&self) -> Option<&proof_diagnostics::ProofFailureDiagnostic> {
         self.diagnostic.as_deref()
     }
-
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(in crate::surface) fn unresolved_requirement(&self) -> Option<&UnresolvedRequirement> {
         self.unresolved_requirement.as_deref()
     }

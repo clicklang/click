@@ -6,7 +6,9 @@
 
 use super::*;
 use num_bigint::BigInt;
-use num_traits::{One, ToPrimitive, Zero};
+#[cfg(test)]
+use num_traits::ToPrimitive;
+use num_traits::{One, Zero};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
@@ -1019,7 +1021,7 @@ impl IntegerTerm {
     /// Apply the checked empty-range or one-element fold law when both
     /// endpoints are concrete. Symbolic and reversed ranges remain opaque;
     /// this helper never enumerates a range.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn range_fold_empty_or_step(
         index: &IntegerRangeFoldIndex,
         initial: &Self,

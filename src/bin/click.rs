@@ -1,24 +1,21 @@
 use std::env;
 
+#[path = "click/git.rs"]
+mod git;
 #[path = "click/version_dispatch.rs"]
 mod version_dispatch;
 #[path = "click/version_manager.rs"]
 mod version_manager;
 
 #[path = "click-audit.rs"]
-#[allow(dead_code)]
 mod audit;
 #[path = "click-expand.rs"]
-#[allow(dead_code)]
 mod expand;
 #[path = "click-import.rs"]
-#[allow(dead_code)]
 mod import;
 #[path = "click-profile.rs"]
-#[allow(dead_code)]
 mod profile;
 #[path = "click-verify.rs"]
-#[allow(dead_code)]
 mod verify;
 
 const USAGE: &str = "\
