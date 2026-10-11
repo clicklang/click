@@ -1282,8 +1282,9 @@ after propagation when the deficit is the right child, including nonempty
 focus and rotation subtrees. Its 34 proofs retain exact result, red-black,
 parent-consistency, and in-order guarantees.
 `rbtree_erase_color_flips_red_all.click` adds the mirrored left-deficit
-propagated 1/3/4 case with the same guarantees. The complete erase wrapper
-integration remains. Depends on 11.
+propagated 1/3/4 case with the same guarantees. Its coverage theorem removes
+the case-selection precondition from the repair contract. The complete erase
+wrapper integration remains. Depends on 11.
 
 **Chunk 13. `____rb_erase_color`, right-sibling cases, and `rb_erase`.** The
 color-flip propagation proof already covers both orientations, including
