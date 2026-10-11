@@ -4,14 +4,24 @@ pub(super) fn tokenize(
     source: &str,
     container: Option<&crate::source::SourceContainer>,
 ) -> Result<(Vec<Token>, Vec<SourcePosition>), ClickError> {
-    let chars: Vec<char> = source.chars().collect();
-    let char_positions = crate::source::character_positions_in(source, container);
+    // Sized once from the byte length, an upper bound on the characters:
+    // collecting from `chars()` regrows from a quarter of it, and each
+    // regrowth touches fresh pages.
+    let mut chars = Vec::with_capacity(source.len());
+    chars.extend(source.chars());
+    let mut cursor = crate::source::SourcePositionCursor::new(container);
+    let mut cursor_index = 0;
     let mut tokens = Vec::new();
     let mut positions = Vec::new();
     let mut index = 0;
 
     while let Some(ch) = chars.get(index).copied() {
-        let position = char_positions[index].clone();
+        // Each scan below only moves `index` forward.
+        for &passed in &chars[cursor_index..index] {
+            cursor.advance(passed);
+        }
+        cursor_index = index;
+        let position = cursor.position();
         let tokens_before = tokens.len();
         match ch {
             '#' => {

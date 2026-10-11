@@ -29,12 +29,12 @@ use click::surface::{
     program_prepared_project_summary, program_prepared_project_tactic_source_positions,
     selected_c_target, tactic_arm_containing_position, tactic_have_body_contains_position,
     tactic_line_has_multiple_starts, tactic_source_at_position, tactic_starts_on_line,
-    verify_c0_prepared_project, verify_c0_prepared_project_at,
-    verify_c0_prepared_project_functions, verify_c0_prepared_project_theorem, verify_c0_project,
+    verify_c0_prepared_project_at, verify_c0_prepared_project_functions,
+    verify_c0_prepared_project_theorem, verify_c0_prepared_project_with_summary, verify_c0_project,
     verify_c0_project_at, verify_c0_project_functions, verify_c0_project_theorem,
-    verify_program_prepared_project, verify_program_prepared_project_at,
+    verify_c0_project_with_summary, verify_program_prepared_project_at,
     verify_program_prepared_project_functions, verify_program_prepared_project_theorem,
-    verifying_source_paths, with_proof_trace,
+    verify_program_prepared_project_with_summary, verifying_source_paths, with_proof_trace,
 };
 
 const USAGE: &str = "\
@@ -1491,31 +1491,49 @@ fn verify_file_within_limits(
     let trace_target = trace_to
         .map(|target| resolve_trace_target(&click_source, line_offset, target))
         .transpose()?;
-    let summary = sidecar_summary(click_path, &project, &inputs, line_offset)?;
+    // An untraced run takes its summary from the verification's own
+    // resolution of the sources; a traced one summarizes separately.
+    let (summary, untraced) = match &trace_unit {
+        Some(_) => (
+            sidecar_summary(click_path, &project, &inputs, line_offset)?,
+            None,
+        ),
+        None => {
+            let summarized = match &inputs {
+                CInput::Bundle(sources) => {
+                    verify_c0_project_with_summary(&project, &source_refs(sources))
+                }
+                CInput::Prepared(imports) => {
+                    verify_c0_prepared_project_with_summary(&project, imports)
+                }
+                CInput::PreparedProgram(import) => {
+                    verify_program_prepared_project_with_summary(&project, import)
+                }
+            };
+            let (summary, verified) = summarized
+                .map_err(|error| located_click_message(error, click_path, &project, line_offset))?;
+            (summary, Some(verified))
+        }
+    };
     let (verified, successful_trace) = {
-        let run_selected = || match (&inputs, &trace_unit) {
-            (CInput::Bundle(sources), Some(TraceUnit::Function(function))) => {
+        let run_traced = |unit: &TraceUnit| match (&inputs, unit) {
+            (CInput::Bundle(sources), TraceUnit::Function(function)) => {
                 verify_c0_project_functions(&project, &source_refs(sources), [function.clone()])
             }
-            (CInput::Prepared(imports), Some(TraceUnit::Function(function))) => {
+            (CInput::Prepared(imports), TraceUnit::Function(function)) => {
                 verify_c0_prepared_project_functions(&project, imports, [function.clone()])
             }
-            (CInput::Bundle(sources), Some(TraceUnit::Theorem(theorem))) => {
+            (CInput::Bundle(sources), TraceUnit::Theorem(theorem)) => {
                 verify_c0_project_theorem(&project, &source_refs(sources), theorem)
             }
-            (CInput::Prepared(imports), Some(TraceUnit::Theorem(theorem))) => {
+            (CInput::Prepared(imports), TraceUnit::Theorem(theorem)) => {
                 verify_c0_prepared_project_theorem(&project, imports, theorem)
             }
-            (CInput::PreparedProgram(import), Some(TraceUnit::Function(function))) => {
+            (CInput::PreparedProgram(import), TraceUnit::Function(function)) => {
                 verify_program_prepared_project_functions(&project, import, [function.clone()])
             }
-            (CInput::PreparedProgram(import), Some(TraceUnit::Theorem(theorem))) => {
+            (CInput::PreparedProgram(import), TraceUnit::Theorem(theorem)) => {
                 verify_program_prepared_project_theorem(&project, import, theorem)
-            }
-            (CInput::Bundle(sources), None) => verify_c0_project(&project, &source_refs(sources)),
-            (CInput::Prepared(imports), None) => verify_c0_prepared_project(&project, imports),
-            (CInput::PreparedProgram(import), None) => {
-                verify_program_prepared_project(&project, import)
             }
         };
         let report = |error: ClickError| {
@@ -1531,7 +1549,7 @@ fn verify_file_within_limits(
         };
         match &trace_unit {
             Some(unit) => with_proof_trace(unit.name(), || {
-                let verified = run_selected().map_err(report)?;
+                let verified = run_traced(unit).map_err(report)?;
                 // The renderer asks for one step's location several times.
                 let source_locations = ProofSourceLocations::new(&project, &inputs);
                 let located = RefCell::new(HashMap::<
@@ -1588,7 +1606,8 @@ fn verify_file_within_limits(
                 );
                 Ok((verified, trace))
             }),
-            None => run_selected()
+            None => untraced
+                .expect("an untraced run verified with its summary")
                 .map(|verified| (verified, None))
                 .map_err(report),
         }
@@ -2516,6 +2535,34 @@ mod tests {
             costs[0], costs[1],
             "beyond resolution, the summary's work grew with the initializer: {costs:?}"
         );
+    }
+
+    /// An untraced run reports its external-dependency summary from the
+    /// verification's own resolution of the sources. Resolving validates every
+    /// declaration, the standard library's included, and once cost about a
+    /// tenth of a small run when the summary resolved the sources again.
+    #[test]
+    fn an_untraced_verification_resolves_its_sources_once() {
+        use click::instrumentation::{VerificationEvent, collect};
+        let (root, click_path) = temporary_project(
+            "one-resolution",
+            "int32 identity(int32 x) { return x; }\n",
+            "verifying \"program.c\";\n\
+             int32 identity(int32 x) {\n\
+                 ensures result == x;\n\
+             } by {\n\
+                 execute();\n\
+                 simp();\n\
+             }\n",
+        );
+        let (result, events) = collect(|| entry_with([click_path.display().to_string()]));
+        fs::remove_dir_all(&root).expect("temporary verification directory should be removable");
+        result.expect("the program verifies");
+        let resolutions = events
+            .iter()
+            .filter(|event| matches!(event, VerificationEvent::PhaseStarted("source resolution")))
+            .count();
+        assert_eq!(resolutions, 1);
     }
 
     /// The crash-containment bound is installed before the run loads its

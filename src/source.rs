@@ -81,34 +81,45 @@ impl fmt::Display for SourcePosition {
     }
 }
 
-/// Maps every character index of `source` to its one-based line and column.
-pub(crate) fn character_positions(source: &str) -> Vec<SourcePosition> {
-    character_positions_in(source, None)
+/// The position of one character at a time, front to back, without a table
+/// of every character's position: a scanner that asks only at token starts
+/// pays for the characters it passes, not for a position object each.
+pub(crate) struct SourcePositionCursor<'a> {
+    container: Option<&'a SourceContainer>,
+    line: usize,
+    column: usize,
+    origin: Option<Arc<SourceOrigin>>,
 }
 
-/// Maps every character index of `source` to its one-based line and column,
-/// with each position's origin in `container` when the source has one.
-pub(crate) fn character_positions_in(
-    source: &str,
-    container: Option<&SourceContainer>,
-) -> Vec<SourcePosition> {
-    let mut positions = Vec::with_capacity(source.chars().count());
-    let mut line = 1;
-    let mut column = 1;
-    let mut origin = container.map(|container| Arc::new(container.origin(line)));
-    for ch in source.chars() {
-        positions.push(SourcePosition {
-            line,
-            column,
-            origin: origin.clone(),
-        });
-        if ch == '\n' {
-            line += 1;
-            column = 1;
-            origin = container.map(|container| Arc::new(container.origin(line)));
-        } else {
-            column += 1;
+impl<'a> SourcePositionCursor<'a> {
+    pub(crate) fn new(container: Option<&'a SourceContainer>) -> Self {
+        Self {
+            container,
+            line: 1,
+            column: 1,
+            origin: container.map(|container| Arc::new(container.origin(1))),
         }
     }
-    positions
+
+    /// The position of the current character.
+    pub(crate) fn position(&self) -> SourcePosition {
+        SourcePosition {
+            line: self.line,
+            column: self.column,
+            origin: self.origin.clone(),
+        }
+    }
+
+    /// Moves past the current character, `ch`.
+    pub(crate) fn advance(&mut self, ch: char) {
+        if ch == '\n' {
+            self.line += 1;
+            self.column = 1;
+            self.origin = self
+                .container
+                .map(|container| Arc::new(container.origin(self.line)));
+        } else {
+            self.column += 1;
+        }
+    }
 }
