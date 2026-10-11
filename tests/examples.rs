@@ -1464,7 +1464,7 @@ fn run_example_project(project: &Path) -> Result<(), String> {
                                 ),
                                 CInput::PreparedProgram(import) => project_tactic_source_position(
                                     &click_project,
-                                    &ProgramInputs::Program(import),
+                                    &ProgramInputs::program(import),
                                     claim,
                                     source_index,
                                 ),

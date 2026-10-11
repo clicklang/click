@@ -1,8 +1,8 @@
 use super::validation::{combined_algebraic_type_definitions, standard_library_function_block};
 use super::*;
+use crate::languages::PreparedProgram;
 use crate::languages::c::compiler_import::PreparedCImport;
 use crate::languages::c::target::CTarget;
-use crate::languages::{PreparedProgram, PreparedProgramSource};
 use sha2::{Digest, Sha256};
 #[cfg(test)]
 use std::cell::Cell;
@@ -152,7 +152,14 @@ pub enum ProgramInputs<'a> {
     /// Compiler-prepared C imports.
     Prepared(&'a [PreparedCImport]),
     /// A prepared program of another language.
-    Program(&'a dyn PreparedProgramSource),
+    Program(PreparedProgram),
+}
+
+impl ProgramInputs<'_> {
+    /// The inputs of a prepared program of another language.
+    pub fn program(import: impl Into<PreparedProgram>) -> Self {
+        Self::Program(import.into())
+    }
 }
 
 impl<'a> CSourceContext<'a> {
@@ -259,10 +266,10 @@ impl<'a> CSourceContext<'a> {
         }
     }
 
-    pub(in crate::surface) fn program<P: PreparedProgramSource + ?Sized>(
-        import: &P,
+    pub(in crate::surface) fn program(
+        import: impl Into<PreparedProgram>,
     ) -> Result<Self, ClickError> {
-        let program = import.prepared_program();
+        let program = import.into();
         let program_execution = program.prepare_execution().map_err(ClickError::new)?;
         let model_accessors =
             super::diagnostics::ModelAccessorScope::enter(&program_execution.layouts);
@@ -392,7 +399,7 @@ impl<'a> CSourceContext<'a> {
         match inputs {
             ProgramInputs::Bundle(sources) => Ok(Self::bundle(sources)),
             ProgramInputs::Prepared(imports) => Ok(Self::prepared(imports)),
-            ProgramInputs::Program(import) => Self::program(*import),
+            ProgramInputs::Program(import) => Self::program(import),
         }
     }
 
@@ -1202,7 +1209,7 @@ pub fn verify_c0_prepared_project(
 /// ordinary verification never consults the source compiler.
 pub fn verify_program_prepared_project(
     project: &ClickProject,
-    import: &impl PreparedProgramSource,
+    import: impl Into<PreparedProgram>,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
         let sources = CSourceContext::program(import)?.with_click_project(project);
@@ -1624,9 +1631,9 @@ impl C0VerificationSession {
 
     pub fn new_program_prepared(
         click_source: &str,
-        import: &impl PreparedProgramSource,
+        import: impl Into<PreparedProgram>,
     ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
-        Self::start(None, click_source, &ProgramInputs::Program(import))
+        Self::start(None, click_source, &ProgramInputs::program(import))
     }
 
     /// Starts a reusable verification session over a loaded Click module graph.
@@ -1646,9 +1653,9 @@ impl C0VerificationSession {
 
     pub fn new_program_prepared_project(
         project: &ClickProject,
-        import: &impl PreparedProgramSource,
+        import: impl Into<PreparedProgram>,
     ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
-        Self::start_project(project, &ProgramInputs::Program(import))
+        Self::start_project(project, &ProgramInputs::program(import))
     }
 
     fn start_project(
@@ -1716,7 +1723,7 @@ impl C0VerificationSession {
                         _ => None,
                     },
                     prepared_program_import: match inputs {
-                        ProgramInputs::Program(import) => Some(import.prepared_program()),
+                        ProgramInputs::Program(import) => Some(import.clone()),
                         _ => None,
                     },
                     baseline_file,

@@ -11,8 +11,7 @@ pub mod rust;
 #[derive(Clone, Debug)]
 pub enum PreparedCompilerImport {
     C(Vec<c::compiler_import::PreparedCImport>),
-    Cpp(cpp::PreparedCppImport),
-    Rust(rust::PreparedRustImport),
+    Program(PreparedProgram),
 }
 
 fn import_language(config_path: &Path) -> Result<Option<String>, String> {
@@ -38,8 +37,10 @@ fn import_language(config_path: &Path) -> Result<Option<String>, String> {
 
 pub fn load_compiler_import(config_path: &Path) -> Result<PreparedCompilerImport, String> {
     match import_language(config_path)?.as_deref() {
-        Some("c++") => cpp::load_import(config_path).map(PreparedCompilerImport::Cpp),
-        Some("rust") => rust::load_import(config_path).map(PreparedCompilerImport::Rust),
+        Some("c++") => cpp::load_import(config_path)
+            .map(|import| PreparedCompilerImport::Program(import.into())),
+        Some("rust") => rust::load_import(config_path)
+            .map(|import| PreparedCompilerImport::Program(import.into())),
         Some(language) => Err(format!("unsupported compiler import language `{language}`")),
         None => c::compiler_import::load_imports(config_path).map(PreparedCompilerImport::C),
     }
@@ -91,22 +92,29 @@ impl PreparedProgram {
         }
     }
 }
-pub trait PreparedProgramSource {
-    fn prepared_program(&self) -> PreparedProgram;
-}
-impl PreparedProgramSource for PreparedProgram {
-    fn prepared_program(&self) -> PreparedProgram {
-        self.clone()
+impl From<&PreparedProgram> for PreparedProgram {
+    fn from(program: &PreparedProgram) -> Self {
+        program.clone()
     }
 }
-impl PreparedProgramSource for cpp::PreparedCppImport {
-    fn prepared_program(&self) -> PreparedProgram {
-        PreparedProgram::Cpp(self.clone())
+impl From<cpp::PreparedCppImport> for PreparedProgram {
+    fn from(import: cpp::PreparedCppImport) -> Self {
+        Self::Cpp(import)
     }
 }
-impl PreparedProgramSource for rust::PreparedRustImport {
-    fn prepared_program(&self) -> PreparedProgram {
-        PreparedProgram::Rust(self.clone())
+impl From<&cpp::PreparedCppImport> for PreparedProgram {
+    fn from(import: &cpp::PreparedCppImport) -> Self {
+        Self::Cpp(import.clone())
+    }
+}
+impl From<rust::PreparedRustImport> for PreparedProgram {
+    fn from(import: rust::PreparedRustImport) -> Self {
+        Self::Rust(import)
+    }
+}
+impl From<&rust::PreparedRustImport> for PreparedProgram {
+    fn from(import: &rust::PreparedRustImport) -> Self {
+        Self::Rust(import.clone())
     }
 }
 
