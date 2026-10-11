@@ -742,12 +742,13 @@ fn lower_spec_conjunction_left_spine_in(
                 algebraic_bindings,
                 budget,
             )? {
-                if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+                if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                     &left_path.facts,
                     &left_path.obligations,
                     &right_path.facts,
                     &right_path.obligations,
                     assumptions,
+                    &right_assumptions,
                 ) {
                     combined.push(SpecPropositionPath {
                         introductions: Vec::new(),
@@ -1069,13 +1070,16 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     algebraic_bindings,
                     budget,
                 )? {
-                    let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                        &left_path.facts,
-                        &left_path.obligations,
-                        &right_path.facts,
-                        &right_path.obligations,
-                        assumptions,
-                    ) else {
+                    let Some((facts, obligations)) =
+                        merge_execution_pure_facts_and_obligations_under(
+                            &left_path.facts,
+                            &left_path.obligations,
+                            &right_path.facts,
+                            &right_path.obligations,
+                            assumptions,
+                            &path_assumptions,
+                        )
+                    else {
                         continue;
                     };
                     let condition = match operator {
@@ -1202,13 +1206,16 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     algebraic_bindings,
                     budget,
                 )? {
-                    if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                        &left_path.facts,
-                        &left_path.obligations,
-                        &right_path.facts,
-                        &right_path.obligations,
-                        assumptions,
-                    ) {
+                    if let Some((facts, obligations)) =
+                        merge_execution_pure_facts_and_obligations_under(
+                            &left_path.facts,
+                            &left_path.obligations,
+                            &right_path.facts,
+                            &right_path.obligations,
+                            assumptions,
+                            &right_assumptions,
+                        )
+                    {
                         paths.push(SpecPropositionPath {
                             introductions: Vec::new(),
                             proposition: Proposition::And(
@@ -2078,13 +2085,16 @@ fn evaluate_spec_integer_expression_paths_in(
                     algebraic_bindings,
                     budget,
                 )? {
-                    let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                        &index_facts,
-                        &index_obligations,
-                        &initial_path.facts,
-                        &initial_path.obligations,
-                        assumptions,
-                    ) else {
+                    let Some((facts, obligations)) =
+                        merge_execution_pure_facts_and_obligations_under(
+                            &index_facts,
+                            &index_obligations,
+                            &initial_path.facts,
+                            &initial_path.obligations,
+                            assumptions,
+                            &index_assumptions,
+                        )
+                    else {
                         continue;
                     };
                     let body_assumptions =
@@ -2772,13 +2782,16 @@ fn evaluate_spec_integer_range_fold_indices_in(
                     algebraic_bindings,
                     budget,
                 )? {
-                    let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                        &start_path.facts,
-                        &start_path.obligations,
-                        &end_path.facts,
-                        &end_path.obligations,
-                        assumptions,
-                    ) else {
+                    let Some((facts, obligations)) =
+                        merge_execution_pure_facts_and_obligations_under(
+                            &start_path.facts,
+                            &start_path.obligations,
+                            &end_path.facts,
+                            &end_path.obligations,
+                            assumptions,
+                            &start_assumptions,
+                        )
+                    else {
                         continue;
                     };
                     // Each kind takes endpoints of its own type only.
@@ -2825,13 +2838,16 @@ fn evaluate_spec_integer_range_fold_indices_in(
                     algebraic_bindings,
                     budget,
                 )? {
-                    let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                        &start_path.facts,
-                        &start_path.obligations,
-                        &end_path.facts,
-                        &end_path.obligations,
-                        assumptions,
-                    ) else {
+                    let Some((facts, obligations)) =
+                        merge_execution_pure_facts_and_obligations_under(
+                            &start_path.facts,
+                            &start_path.obligations,
+                            &end_path.facts,
+                            &end_path.obligations,
+                            assumptions,
+                            &start_assumptions,
+                        )
+                    else {
                         continue;
                     };
                     result.push((
@@ -3279,12 +3295,13 @@ fn evaluate_integer_binary_paths_in(
             algebraic_bindings,
             budget,
         )? {
-            let Some((facts, mut obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, mut obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
                 &right_path.obligations,
                 assumptions,
+                &path_assumptions,
             ) else {
                 continue;
             };
@@ -3409,12 +3426,13 @@ fn lower_spec_algebraic_comparison_at_state_in(
             if left_path.value.algebraic_type != right_path.value.algebraic_type {
                 continue;
             }
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
                 &right_path.obligations,
                 assumptions,
+                &right_assumptions,
             ) else {
                 continue;
             };
@@ -3730,12 +3748,13 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                         },
                     )? {
                         if let Some((facts, obligations)) =
-                            merge_execution_pure_facts_and_obligations(
+                            merge_execution_pure_facts_and_obligations_under(
                                 &case_facts,
                                 &case_obligations,
                                 &body_path.facts,
                                 &body_path.obligations,
                                 assumptions,
+                                &body_assumptions,
                             )
                         {
                             result.push(SpecAlgebraicPath {
@@ -3777,12 +3796,13 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                         budget,
                     )? {
                         let Some((merged_facts, merged_obligations)) =
-                            merge_execution_pure_facts_and_obligations(
+                            merge_execution_pure_facts_and_obligations_under(
                                 &facts,
                                 &obligations,
                                 &field_path.facts,
                                 &field_path.obligations,
                                 assumptions,
+                                &path_assumptions,
                             )
                         else {
                             continue;
@@ -3833,12 +3853,13 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                         budget,
                     )? {
                         let Some((merged_facts, merged_obligations)) =
-                            merge_execution_pure_facts_and_obligations(
+                            merge_execution_pure_facts_and_obligations_under(
                                 &facts,
                                 &obligations,
                                 &argument_path.facts,
                                 &argument_path.obligations,
                                 assumptions,
+                                &path_assumptions,
                             )
                         else {
                             continue;
@@ -4140,12 +4161,13 @@ fn lower_spec_sequence_membership_at_state_in(
             {
                 continue;
             }
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &element_path.facts,
                 &element_path.obligations,
                 &sequence_path.facts,
                 &sequence_path.obligations,
                 assumptions,
+                &sequence_assumptions,
             ) else {
                 continue;
             };
@@ -4266,12 +4288,13 @@ fn lower_spec_sequence_comparison_at_state_in(
             ) {
                 continue;
             }
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
                 &right_path.obligations,
                 assumptions,
+                &right_assumptions,
             ) else {
                 continue;
             };
@@ -4382,12 +4405,13 @@ fn evaluate_spec_sequence_at_state_in(
                         budget,
                     )? {
                         let Some((merged_facts, merged_obligations)) =
-                            merge_execution_pure_facts_and_obligations(
+                            merge_execution_pure_facts_and_obligations_under(
                                 &facts,
                                 &obligations,
                                 &element_path.facts,
                                 &element_path.obligations,
                                 assumptions,
+                                &path_assumptions,
                             )
                         else {
                             continue;
@@ -4446,13 +4470,16 @@ fn evaluate_spec_sequence_at_state_in(
                     ) {
                         continue;
                     }
-                    let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                        &left_path.facts,
-                        &left_path.obligations,
-                        &right_path.facts,
-                        &right_path.obligations,
-                        assumptions,
-                    ) else {
+                    let Some((facts, obligations)) =
+                        merge_execution_pure_facts_and_obligations_under(
+                            &left_path.facts,
+                            &left_path.obligations,
+                            &right_path.facts,
+                            &right_path.obligations,
+                            assumptions,
+                            &right_assumptions,
+                        )
+                    else {
                         continue;
                     };
                     paths.push(SpecSequencePath {
@@ -5518,12 +5545,13 @@ fn evaluate_spec_values_at_state_in(
                 algebraic_bindings,
                 budget,
             )? {
-                let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+                let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                     &prefix.facts,
                     &prefix.obligations,
                     &value_path.facts,
                     &value_path.obligations,
                     assumptions,
+                    &path_assumptions,
                 ) else {
                     continue;
                 };
@@ -5702,12 +5730,13 @@ fn lower_spec_resource_relation_at_state_in(
             algebraic_bindings,
             budget,
         )? {
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_facts,
                 &left_obligations,
                 &right_facts,
                 &right_obligations,
                 assumptions,
+                &right_assumptions,
             ) else {
                 continue;
             };
@@ -6066,12 +6095,13 @@ fn lower_spec_disjunction_at_state_in(
             continue;
         }
         for right_path in right_paths {
-            if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
                 &right_path.obligations,
                 assumptions,
+                &right_assumptions,
             ) {
                 paths.push(SpecPropositionPath {
                     introductions: Vec::new(),
@@ -6140,12 +6170,13 @@ fn lower_spec_comparison_proposition_at_state_in(
         )?;
         right_path_count = right_path_count.saturating_add(right_paths.len());
         for right_path in right_paths {
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
                 &right_path.obligations,
                 assumptions,
+                &right_assumptions,
             ) else {
                 merge_failure_count = merge_failure_count.saturating_add(1);
                 continue;
@@ -6496,12 +6527,13 @@ fn evaluate_spec_add_chain_paths_in(
                 algebraic_bindings,
                 budget,
             )? {
-                let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+                let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                     &left_path.facts,
                     &left_path.obligations,
                     &right_path.facts,
                     &right_path.obligations,
                     assumptions,
+                    &right_assumptions,
                 ) else {
                     continue;
                 };
@@ -6751,12 +6783,13 @@ fn evaluate_resource_count_paths(
                 budget,
             )? {
                 let Some((merged_facts, merged_obligations)) =
-                    merge_execution_pure_facts_and_obligations(
+                    merge_execution_pure_facts_and_obligations_under(
                         &facts,
                         &obligations,
                         &argument_path.facts,
                         &argument_path.obligations,
                         assumptions,
+                        &path_assumptions,
                     )
                 else {
                     continue;
@@ -7323,12 +7356,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         budget,
                     )? {
                         if let Some((facts, obligations)) =
-                            merge_execution_pure_facts_and_obligations(
+                            merge_execution_pure_facts_and_obligations_under(
                                 &case_facts,
                                 &case_obligations,
                                 &body_path.facts,
                                 &body_path.obligations,
                                 assumptions,
+                                &body_assumptions,
                             )
                         {
                             paths.push(SpecExpressionPath {
@@ -7582,13 +7616,16 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     algebraic_bindings,
                     budget,
                 )? {
-                    if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                        &value_path.facts,
-                        &value_path.obligations,
-                        &body_path.facts,
-                        &body_path.obligations,
-                        assumptions,
-                    ) {
+                    if let Some((facts, obligations)) =
+                        merge_execution_pure_facts_and_obligations_under(
+                            &value_path.facts,
+                            &value_path.obligations,
+                            &body_path.facts,
+                            &body_path.obligations,
+                            assumptions,
+                            &body_assumptions,
+                        )
+                    {
                         paths.push(SpecExpressionPath {
                             value: body_path.value,
                             facts,
@@ -7749,12 +7786,13 @@ fn evaluate_spec_pure_function_application_paths_in(
                 budget,
             )? {
                 if let Some((merged_facts, merged_obligations)) =
-                    merge_execution_pure_facts_and_obligations(
+                    merge_execution_pure_facts_and_obligations_under(
                         &facts,
                         &obligations,
                         &argument_path.facts,
                         &argument_path.obligations,
                         assumptions,
+                        &path_assumptions,
                     )
                 {
                     let mut merged_values = values.clone();
@@ -8020,12 +8058,13 @@ fn evaluate_spec_pointer_offset_paths_in(
                 CValue::UInt64(elements) => (elements, true, true),
                 _ => continue,
             };
-            let Some((mut facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((mut facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &pointer_path.facts,
                 &pointer_path.obligations,
                 &element_path.facts,
                 &element_path.obligations,
                 assumptions,
+                &element_assumptions,
             ) else {
                 continue;
             };
@@ -8111,12 +8150,13 @@ fn evaluate_spec_add_paths_in(
             algebraic_bindings,
             budget,
         )? {
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
                 &right_path.obligations,
                 assumptions,
+                &right_assumptions,
             ) else {
                 continue;
             };
@@ -8168,12 +8208,13 @@ fn evaluate_spec_subtract_paths_in(
             algebraic_bindings,
             budget,
         )? {
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
                 &right_path.obligations,
                 assumptions,
+                &right_assumptions,
             ) else {
                 continue;
             };
@@ -8237,12 +8278,13 @@ fn evaluate_spec_scalar_binary_paths_in(
             algebraic_bindings,
             budget,
         )? {
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
                 &right_path.obligations,
                 assumptions,
+                &right_assumptions,
             ) else {
                 continue;
             };
@@ -8382,12 +8424,13 @@ fn evaluate_spec_if_paths_in(
         };
 
         for branch_path in branch_paths {
-            if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &condition_path.facts,
                 &condition_path.obligations,
                 &branch_path.facts,
                 &branch_path.obligations,
                 assumptions,
+                &branch_assumptions,
             ) {
                 paths.push(SpecExpressionPath {
                     value: branch_path.value,
@@ -8438,13 +8481,16 @@ fn evaluate_spec_range_fold_paths_in(
             let CValue::Int32(end) = end_path.value else {
                 continue;
             };
-            let Some((bound_facts, bound_obligations)) = merge_execution_pure_facts_and_obligations(
-                &start_path.facts,
-                &start_path.obligations,
-                &end_path.facts,
-                &end_path.obligations,
-                assumptions,
-            ) else {
+            let Some((bound_facts, bound_obligations)) =
+                merge_execution_pure_facts_and_obligations_under(
+                    &start_path.facts,
+                    &start_path.obligations,
+                    &end_path.facts,
+                    &end_path.obligations,
+                    assumptions,
+                    &start_assumptions,
+                )
+            else {
                 continue;
             };
             let bound_assumptions =
@@ -8457,12 +8503,13 @@ fn evaluate_spec_range_fold_paths_in(
                 algebraic_bindings,
                 budget,
             )? {
-                let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+                let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                     &bound_facts,
                     &bound_obligations,
                     &initial_path.facts,
                     &initial_path.obligations,
                     assumptions,
+                    &bound_assumptions,
                 ) else {
                     continue;
                 };
@@ -8532,12 +8579,13 @@ fn evaluate_spec_range_fold_body_path_in(
                     return Ok(None);
                 }
                 let Some((next_facts, next_obligations)) =
-                    merge_execution_pure_facts_and_obligations(
+                    merge_execution_pure_facts_and_obligations_under(
                         &facts,
                         &obligations,
                         &body_path.facts,
                         &body_path.obligations,
                         assumptions,
+                        &body_assumptions,
                     )
                 else {
                     return Ok(None);

@@ -1612,16 +1612,65 @@ pub(in crate::kernel) fn merge_execution_pure_facts_and_obligations(
     right_obligations: &[ProofObligation],
     assumptions: &PureFactContext,
 ) -> Option<(ExecutionFacts, Vec<ProofObligation>)> {
+    merge_execution_pure_facts_and_obligations_in(
+        left_facts,
+        left_obligations,
+        right_facts,
+        right_obligations,
+        assumptions,
+        None,
+    )
+}
+
+/// [`merge_execution_pure_facts_and_obligations`] for a caller that already
+/// built the left fragment's path context,
+/// `assumptions_with_path_context(assumptions, left_facts, left_obligations)`,
+/// to execute the right fragment under: the merge rechecks against that same
+/// context, so building it again is the same work twice.
+pub(in crate::kernel) fn merge_execution_pure_facts_and_obligations_under(
+    left_facts: &(impl ExecutionFactSource + ?Sized),
+    left_obligations: &[ProofObligation],
+    right_facts: &(impl ExecutionFactSource + ?Sized),
+    right_obligations: &[ProofObligation],
+    assumptions: &PureFactContext,
+    prefix_assumptions: &PureFactContext,
+) -> Option<(ExecutionFacts, Vec<ProofObligation>)> {
+    merge_execution_pure_facts_and_obligations_in(
+        left_facts,
+        left_obligations,
+        right_facts,
+        right_obligations,
+        assumptions,
+        Some(prefix_assumptions),
+    )
+}
+
+fn merge_execution_pure_facts_and_obligations_in(
+    left_facts: &(impl ExecutionFactSource + ?Sized),
+    left_obligations: &[ProofObligation],
+    right_facts: &(impl ExecutionFactSource + ?Sized),
+    right_obligations: &[ProofObligation],
+    assumptions: &PureFactContext,
+    prefix_assumptions: Option<&PureFactContext>,
+) -> Option<(ExecutionFacts, Vec<ProofObligation>)> {
     let facts = merge_facts(left_facts, right_facts, assumptions)?;
     // The right fragment was executed under the left fragment's path
     // context. Recheck its assumable obligations against that same context,
     // not against the older base assumptions. In particular, a verified call
     // can change a field that an entry-state branch constrained; checking a
     // post-call load guard against only the entry snapshot can incorrectly
-    // discard a valid successor path.
-    let prefix_assumptions =
-        assumptions_with_path_context(assumptions, left_facts, left_obligations);
-    let obligations = merge_obligations(left_obligations, right_obligations, &prefix_assumptions)?;
+    // discard a valid successor path. Only an assumable obligation reads the
+    // context, so a right fragment without one builds none.
+    let built;
+    let prefix_assumptions = match prefix_assumptions {
+        Some(prefix_assumptions) => prefix_assumptions,
+        None if right_obligations.iter().any(ProofObligation::is_assumable) => {
+            built = assumptions_with_path_context(assumptions, left_facts, left_obligations);
+            &built
+        }
+        None => assumptions,
+    };
+    let obligations = merge_obligations(left_obligations, right_obligations, prefix_assumptions)?;
     Some((facts, obligations))
 }
 
