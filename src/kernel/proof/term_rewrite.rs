@@ -12,6 +12,8 @@ use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(test)]
+mod algebraic_match_tests;
+#[cfg(test)]
 mod graph_condition_tests;
 #[cfg(test)]
 mod pointer_application_tests;
@@ -1368,6 +1370,15 @@ impl<'a> TermRewrite<'a> {
         self.integer_work_exhausted
     }
 
+    pub(crate) fn normalize_algebraic(term: &AlgebraicTerm) -> Option<AlgebraicTerm> {
+        if !term.is_well_formed() {
+            return None;
+        }
+        let mut rewrite = Self::empty();
+        let result = rewrite.algebraic(term);
+        (rewrite.refusal().is_none() && rewrite.changed).then_some(result)
+    }
+
     pub(crate) fn new(from: &'a AlgebraicTerm, to: &'a AlgebraicTerm) -> Self {
         let mut rewrite = Self::empty();
         rewrite.algebraic = Some((from, to));
@@ -2391,6 +2402,15 @@ impl<'a> TermRewrite<'a> {
                         body,
                     });
                 }
+                // A checked constructor determines the arm without proof search.
+                // Validate the whole match before discarding its other arms.
+                if matches!(scrutinee.node, AlgebraicTermNode::Constructor { .. })
+                    && term.is_well_formed()
+                    && let Some(value) =
+                        self.rewrite_algebraic_match_iota(&scrutinee, &rewritten_arms)
+                {
+                    return value;
+                }
                 AlgebraicTermNode::Match {
                     scrutinee: Box::new(scrutinee),
                     arms: rewritten_arms,
@@ -3141,6 +3161,72 @@ impl<'a> TermRewrite<'a> {
             &algebraic_replacements,
         );
         let value = field_rewrite.bits(&arm.body);
+        self.changed |= field_rewrite.changed;
+        field_rewrite.refusal_observed.set(true);
+        self.unsupported_integer_scope |= field_rewrite.unsupported_integer_scope;
+        self.integer_work_exhausted |= field_rewrite.integer_work_exhausted;
+        #[cfg(test)]
+        {
+            self.visits += field_rewrite.visits;
+        }
+        if self.unsupported_integer_scope || self.integer_work_exhausted {
+            return None;
+        }
+        self.changed = true;
+        Some(value)
+    }
+
+    fn rewrite_algebraic_match_iota(
+        &mut self,
+        scrutinee: &AlgebraicTerm,
+        arms: &[AlgebraicResultMatchArm],
+    ) -> Option<AlgebraicTerm> {
+        let fields = scrutinee.checked_constructor_fields()?;
+        let AlgebraicTermNode::Constructor { variant, .. } = &scrutinee.node else {
+            return None;
+        };
+        let arm = arms.iter().find(|arm| arm.variant == *variant)?;
+        let schema = scrutinee
+            .algebraic_type
+            .variants
+            .iter()
+            .find(|schema| schema.name == *variant)?;
+        if arm.bindings.len() != fields.len() {
+            return None;
+        }
+        let mut c_replacements = BTreeMap::new();
+        let mut integer_replacements = BTreeMap::new();
+        let mut algebraic_replacements = BTreeMap::new();
+        for ((binding, field), expected) in arm.bindings.iter().zip(fields).zip(&schema.fields) {
+            if field.value_type() != *expected {
+                return None;
+            }
+            let (carrier, variable) = typed_binding_variable(expected, binding)?;
+            let duplicate = match (carrier, field) {
+                (BindingCarrier::C, AlgebraicValue::C(value)) => {
+                    let replacement = typed_c_replacement(value)?;
+                    c_replacements.insert(variable, replacement).is_some()
+                }
+                (BindingCarrier::Integer, AlgebraicValue::Integer(value)) => integer_replacements
+                    .insert(variable, value.clone())
+                    .is_some(),
+                (BindingCarrier::Algebraic, AlgebraicValue::Algebraic(value)) => {
+                    algebraic_replacements
+                        .insert(variable, value.clone())
+                        .is_some()
+                }
+                _ => return None,
+            };
+            if duplicate {
+                return None;
+            }
+        }
+        let mut field_rewrite = TermRewrite::for_typed_variables(
+            &c_replacements,
+            &integer_replacements,
+            &algebraic_replacements,
+        );
+        let value = field_rewrite.algebraic(&arm.body);
         self.changed |= field_rewrite.changed;
         field_rewrite.refusal_observed.set(true);
         self.unsupported_integer_scope |= field_rewrite.unsupported_integer_scope;

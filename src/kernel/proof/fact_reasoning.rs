@@ -1,6 +1,20 @@
 use crate::kernel::*;
 
 pub(crate) fn normalizes_context_free(goal: &Proposition) -> bool {
+    if let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = goal {
+        let reduced_left = super::term_rewrite::TermRewrite::normalize_algebraic(left);
+        let reduced_right = super::term_rewrite::TermRewrite::normalize_algebraic(right);
+        if reduced_left.is_some() || reduced_right.is_some() {
+            return normalizes_context_free_reduced(&Proposition::Equal(
+                Term::Algebraic(reduced_left.unwrap_or_else(|| left.clone())),
+                Term::Algebraic(reduced_right.unwrap_or_else(|| right.clone())),
+            ));
+        }
+    }
+    normalizes_context_free_reduced(goal)
+}
+
+fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
     // A guarded proposition whose guard has no model, or a universal over
     // one, is context-free: `intro` exposes the guard and `contradiction`
     // closes it. This is a planning judgment only; lowering keeps such a
