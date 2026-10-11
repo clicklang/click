@@ -10,12 +10,45 @@ use std::sync::Arc;
 
 pub(crate) mod render;
 
+/// The history result retained while the failing proof's verification session
+/// is active. Formatting must not rerun the walk under a different session or
+/// bridging mode, nor recover the write width from a later arena.
+#[derive(Clone)]
+pub(crate) struct MemoryHistoryDiagnostic {
+    pub explanation: crate::kernel::resource_tracker::Explanation,
+    pub written_bytes: Option<u32>,
+}
+
+impl MemoryHistoryDiagnostic {
+    pub(crate) fn capture(explanation: crate::kernel::resource_tracker::Explanation) -> Self {
+        let written_bytes = explanation
+            .outcome
+            .blocking_step()
+            .and_then(|(at, _)| at)
+            .and_then(|at| at.snapshot().derivation())
+            .and_then(|derivation| match derivation.as_ref() {
+                crate::kernel::CMemoryDerivation::Store { value, .. } => {
+                    Some(value.c_type().byte_width())
+                }
+                _ => None,
+            });
+        Self {
+            explanation,
+            written_bytes,
+        }
+    }
+}
+
 /// A lazily inspectable proof state. Implementations retain a persistent proof
 /// handle rather than cloning the goal, environment, or derivation history.
 pub(crate) trait ProofDiagnosticState: Send + Sync {
     fn register_names(&self, _labels: &mut render::SnapshotLabels) {}
 
     fn failed_requirement(&self) -> Option<(&str, &Proposition)> {
+        None
+    }
+
+    fn memory_history(&self) -> Option<&MemoryHistoryDiagnostic> {
         None
     }
 
@@ -179,6 +212,15 @@ fn render_diagnostic_labeled(
     if let Some(goal) = diagnostic.kernel_goal() {
         rendered.push_str("\n  goal: ");
         rendered.push_str(&render::render_proposition_labeled(goal, labels));
+        if let Some(history) = diagnostic
+            .state
+            .as_ref()
+            .and_then(|state| state.memory_history())
+            && let Some(history) = render::render_memory_history_check(history, labels)
+        {
+            rendered.push_str("\n  ");
+            rendered.push_str(&history);
+        }
     }
     if summary.is_some() {
         let premises = diagnostic.premises(8);

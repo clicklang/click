@@ -771,6 +771,19 @@ fn write_c_lvalue_paths_for_initialization(
                 written_value.clone(),
                 authorized_range,
             ));
+            // The checked store establishes the complete pointer value at
+            // this exact snapshot. Retain its read equation so congruence
+            // can use a different, proven-equal address spelling without
+            // re-running store resolution at the subsequent read.
+            if let CValue::Pointer(stored) = &written_value {
+                facts.push(ExecutionPureFact::logical_read_equation(
+                    stored.pointer().clone(),
+                    Pointer::loaded_value(
+                        &crate::kernel::intern_c_memory_ref(state.memory()),
+                        &written_pointer,
+                    ),
+                ));
+            }
             refresh_scalar_local_after_memory_store(
                 &mut state,
                 &written_pointer,

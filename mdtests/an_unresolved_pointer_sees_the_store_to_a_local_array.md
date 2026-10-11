@@ -47,5 +47,5 @@ void v() {
 ```
 
 ```expect
-fail: the store to `a` may have written it, and nothing tells that address apart from this read.
+fail: the memory-history check could not establish that the store to `a` is separate from this read.
 ```
