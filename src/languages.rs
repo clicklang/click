@@ -67,8 +67,8 @@ pub enum PreparedProgram {
 impl PreparedProgram {
     pub(crate) fn prepare_execution(&self) -> Result<std::sync::Arc<PreparedExecution>, String> {
         match self {
-            Self::Cpp(import) => Ok(cpp::lower_import(import)?.prepared_execution()),
-            Self::Rust(import) => rust::prepare_execution(import),
+            Self::Cpp(import) => import.prepared_execution(),
+            Self::Rust(import) => import.prepared_execution(),
         }
     }
 
@@ -107,6 +107,24 @@ impl PreparedProgramSource for cpp::PreparedCppImport {
 impl PreparedProgramSource for rust::PreparedRustImport {
     fn prepared_program(&self) -> PreparedProgram {
         PreparedProgram::Rust(self.clone())
+    }
+}
+
+/// An import's lowered execution, computed on first use. Lowering depends
+/// only on the import, so every session over the same import shares it.
+#[derive(Debug, Default)]
+pub(crate) struct ExecutionCache(std::sync::OnceLock<std::sync::Arc<PreparedExecution>>);
+
+impl ExecutionCache {
+    pub(crate) fn get_or_lower(
+        &self,
+        lower: impl FnOnce() -> Result<std::sync::Arc<PreparedExecution>, String>,
+    ) -> Result<std::sync::Arc<PreparedExecution>, String> {
+        if let Some(execution) = self.0.get() {
+            return Ok(execution.clone());
+        }
+        let execution = lower()?;
+        Ok(self.0.get_or_init(|| execution).clone())
     }
 }
 
