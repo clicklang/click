@@ -155,7 +155,12 @@ between sign extensions of values known nonnegative is decided by the
 signed order. Step 9 is done the same day: a range with any 64-bit bound,
 a constant included, is wide, and the 32-bit conversion of a bound is gone;
 only a cast the contract writes, `bytes[0..(int32)length]`, makes a 64-bit
-bound a 32-bit one. What was learned along the way:
+bound a 32-bit one. Step 6 followed: an owned window `(bytes + index)[0..4]`
+or suffix `bytes[i..length]` is split from an owned wide range and rejoins it
+when the call returns. A window is restated at its root base,
+`bytes[index..index + 4]`, both to split the owner and to meet its
+neighbours again, and fragments of a wide request are chained from its start
+address as an `Int32` request's are. What was learned along the way:
 
 - A callee is given its ranges' guards on entry, `start <= end` among them,
   and the call did not prove that one: the planner places a range by its
