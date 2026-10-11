@@ -85,8 +85,11 @@ representative includes the deferred prefix-length times A-seed contribution,
 the original four lane weights and the `6*MOD` offset, and stays nonnegative.
 Initialization, native lane additions, exact input-byte observations, signed
 prefix subtraction safety and exact Integer prefix advances are checked.
-Transporting both residues through reductions and recombination and finishing
-the scalar tail
+A now passes through the original lane reductions and four scalar additions
+into its prefix residue before the tail. The native B seed product and
+addition prove the exact deferred prefix-length times seed contribution,
+including the exact length-cast observation. Transporting B through reductions
+and weighted recombination and finishing the scalar tail
 remain pending, as do the arbitrary-length computation’s nested loops. Full original-computation smart audits
 currently exhaust the standard ten-minute run bound before completing a site,
 while ordinary verification succeeds. This is an audit-tool limitation, not a
