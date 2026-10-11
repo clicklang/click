@@ -958,7 +958,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     *kind,
                 ),
                 Bitvector32Term::PointerAddress(pointer) => {
-                    Bitvector32Term::PointerAddress(Box::new(rewrite_pointer(pointer)))
+                    Bitvector32Term::pointer_address(rewrite_pointer(pointer))
                 }
                 Bitvector32Term::Variable(_) => {
                     rewrite_through_load_variable(term, &rewrite_pointer)
@@ -1730,12 +1730,10 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 }),
                 *kind,
             ),
-            Bitvector32Term::PointerAddress(pointer) => {
-                Bitvector32Term::PointerAddress(Box::new(Pointer {
-                    block: pointer.block.clone(),
-                    offset: rewrite_offset(&pointer.offset, from, to),
-                }))
-            }
+            Bitvector32Term::PointerAddress(pointer) => Bitvector32Term::pointer_address(Pointer {
+                block: pointer.block.clone(),
+                offset: rewrite_offset(&pointer.offset, from, to),
+            }),
             Bitvector32Term::Variable(_) => {
                 rewrite_through_load_variable(term, &|pointer| Pointer {
                     block: pointer.block.clone(),

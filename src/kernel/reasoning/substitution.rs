@@ -5247,9 +5247,9 @@ pub(crate) fn substitute_bitvector_variable(
             Box::new(substitute_bitvector_variable_in_pointer(pointer, from, to)),
             *kind,
         ),
-        Bitvector32Term::PointerAddress(pointer) => Bitvector32Term::PointerAddress(Box::new(
+        Bitvector32Term::PointerAddress(pointer) => Bitvector32Term::pointer_address(
             substitute_bitvector_variable_in_pointer(pointer, from, to),
-        )),
+        ),
         Bitvector32Term::IntegerToMachine { value, destination } => {
             Bitvector32Term::IntegerToMachine {
                 value: substitute_bitvector_variable_in_integer(value.as_ref(), from, to).into(),

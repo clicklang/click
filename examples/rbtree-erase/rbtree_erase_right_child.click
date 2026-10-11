@@ -27,7 +27,7 @@ resource erase_callbacks(augment: const struct rb_augment_callbacks*) {
     fact AugmentRotate(augment->rotate);
 }
 
-# A non-root node whose only child is on the right; colors follow from validity.
+# A node at any position whose only child is on the right; colors follow from validity.
 struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                     const struct rb_augment_callbacks* augment) {
     consumes tree: rb_at(node);
@@ -36,7 +36,6 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
     requires rb_left(tree.model) == RbTree::Empty;
     requires rb_right(tree.model) != RbTree::Empty;
     requires is_rb(tree.model) == 1;
-    requires up.model != Context::Top;
     requires ctx_rb(up.model, black_height(tree.model), rb_color(tree.model)) == 1;
     requires ctx_consistent(up.model, tree.model, 0) == 1;
     owns erase_callbacks(augment);
@@ -96,7 +95,55 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                         unfold(rb_reparent(RbTree::Node(cid, cp, Color::Black, cl, cr), parent)); normalize();
                     }
                     match up.model {
-                        Context::Top => { contradiction(up.model == Context::Top); },
+                        Context::Top => {
+                            have ctx_consistent(Context::Top, RbTree::Node(id, parent, color, left, right), 0) == 1 by {
+                                rewrite(Context::Top == up.model); assumption();
+                            }
+                            apply(ctx_consistent_top(RbTree::Node(id, parent, color, left, right), 0));
+                            apply(rb_parent_consistent_node_fixes_parent(id, parent, color, left, right, 0));
+                            apply(rb_parent_consistent_node_right(id, parent, color, left, right, 0));
+                            apply(rb_erase_child_keeps_parents(up.model, id, parent, color, left, right, right));
+                            have is_rb_root(plug(Context::Top, RbTree::Node(cid, parent, Color::Black, cl, cr))) == 1 by {
+                                rewrite(Context::Top == up.model);
+                                rewrite(RbTree::Node(cid, parent, Color::Black, cl, cr) == rb_reparent(rb_recolor(right, Color::Black), parent));
+                                assumption();
+                            }
+                            have ctx_consistent(Context::Top, RbTree::Node(cid, parent, Color::Black, cl, cr), 0) == 1 by {
+                                rewrite(Context::Top == up.model);
+                                rewrite(RbTree::Node(cid, parent, Color::Black, cl, cr) == rb_reparent(rb_recolor(right, Color::Black), parent));
+                                assumption();
+                            }
+                            unfold(up);
+                            unfold(erase_callbacks(augment));
+                            execute();
+                            fold(erase_callbacks(augment));
+                            have cid->__rb_parent_color == node->__rb_parent_color;
+                            have cid->__rb_parent_color == address(parent) + (cid->__rb_parent_color & 1);
+                            have address(parent) + (cid->__rb_parent_color & 1) == (cid->__rb_parent_color & 1) by {
+                                rewrite(parent == 0); normalize();
+                            }
+                            have cid->__rb_parent_color == (cid->__rb_parent_color & 1);
+                            let replacement = fold(rb_at(cid), {
+                                model: RbTree::Node(cid, parent, Color::Black, cl, cr)
+                            }, { left: child_left, right: child_right });
+                            let remaining = fold(ctx_at(cid, root), { model: Context::Top });
+                            have replacement.model == rb_erase_one_child_model(old(tree.model)) by {
+                                rewrite(old(tree.model) == RbTree::Node(id, parent, color, left, right));
+                                unfold(rb_right(RbTree::Node(id, parent, color, left, right)));
+                                unfold(rb_erase_one_child_model(RbTree::Node(id, parent, color, left, right)));
+                                rewrite(left == RbTree::Empty);
+                                unfold(rb_erase_root_child(RbTree::Node(id, parent, color, RbTree::Empty, right)));
+                                rewrite(rb_reparent(rb_recolor(right, Color::Black), parent) == RbTree::Node(cid, parent, Color::Black, cl, cr));
+                                simp();
+                            }
+                            have rb_inorder(replacement.model) == rb_inorder(rb_right(old(tree.model))) by {
+                                rewrite(old(tree.model) == RbTree::Node(id, parent, color, left, right));
+                                unfold(rb_right(RbTree::Node(id, parent, color, left, right)));
+                                rewrite(RbTree::Node(cid, parent, Color::Black, cl, cr) == rb_reparent(rb_recolor(right, Color::Black), parent));
+                                assumption();
+                            }
+                            simp();
+                        },
                         Context::Left(pid, gp, pc, sibling_model, above_model) => {
                             have ctx_consistent(Context::Left(pid, gp, pc, sibling_model, above_model), RbTree::Node(id, parent, color, left, right), 0) == 1 by {
                                 rewrite(Context::Left(pid, gp, pc, sibling_model, above_model) == up.model); assumption();

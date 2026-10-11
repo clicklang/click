@@ -41,8 +41,9 @@ height, so balance is preserved and the fixup return is null. It uses the same
 exclusive callback-table contract as the black-leaf sidecar.
 
 `rbtree_erase_right_child.click` and `rbtree_erase_left_child.click` cover
-non-root deletion with one nonempty child, for either child direction and either
-parent link. Neither contract assumes the erased node's or child's color.
+deletion with one nonempty child, for either child direction, either parent
+link, and deletion of the root.
+Neither contract assumes the erased node's or child's color.
 Validity implies that copying the erased node's parent/color word blackens the
 child. The proofs return that exact replacement model and the unchanged context,
 with whole-tree red-black validity, parent consistency, preserved child in-order
@@ -246,14 +247,16 @@ proof derives case coverage from the black-deficit invariant, so callers need
 no separate `erase_flips_red_all` precondition.
 
 The same sidecar now verifies the unchanged `rb_erase` wrapper end to end for
-black-leaf deletion below the root, on either parent link. The splice borrows
-the callback table read-only and calls the verified parent-link helper; its
-returned empty hole and deficit context satisfy the general repair contract.
+all leaf deletions: red or black leaves on either parent link, and the sole
+root. The splice borrows the callback table read-only and calls the verified
+parent-link helper. For a nonroot black leaf, its empty hole and deficit
+context satisfy the general repair contract; otherwise the wrapper refolds
+the already balanced tree without calling repair.
 The wrapper returns ownership of the detached node and a balanced root with
 consistent parents and exactly the in-order contents of the old context with
 the erased leaf removed. Its contract requires views of the static const dummy
 callback fields; initialization of these views at program startup is outside
-this local proof. The other splice cases still need wrapper integration.
+this local proof. Nodes with children still need wrapper integration.
 
 `rb_erase.c` includes the existing unchanged splice and repair extracts and adds
 the dummy callbacks, const table, and `rb_erase` definition verbatim from pinned
