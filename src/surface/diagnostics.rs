@@ -1326,6 +1326,20 @@ pub(super) fn describe_runtime_error(
                 )
             }
         }
+        crate::kernel::CRuntimeError::ContractResourceDiagnostic { reason, held, required, memory } => {
+            use crate::surface::proof_diagnostics::render::{SnapshotLabels, render_resource_fact_labeled};
+            let mut labels = SnapshotLabels::naming(parameters, arguments);
+            let mut message = format!("function contract could not be applied: {reason}");
+            if let Some(memory) = memory {
+                message.push_str(&format!("\n  argument read snapshot: {}", labels.snapshot_name(memory)));
+            }
+            if let Some(held) = held {
+                message.push_str(&format!("\n  held: {}", render_resource_fact_labeled(held, &mut labels)));
+            }
+            message.push_str(&format!("\n  required: {}", render_resource_fact_labeled(required, &mut labels)));
+            message.push_str(&labels.trace_legend());
+            message
+        }
         crate::kernel::CRuntimeError::FunctionContract(message) => {
             format!(
                 "function contract could not be applied: {}",

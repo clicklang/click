@@ -719,6 +719,21 @@ derivations.
 
 Whole-project termination is decided in two passes over one call graph, built
 once from the run's verified functions and the inline helpers they reach.
+For a function with complete checked execution evidence, call dependencies
+come from its retained checked statements. A branch proved unreachable adds
+no calls; a summarized statement, including a loop, conservatively adds every
+call in its syntax. Missing dependency evidence falls back to scanning the
+source body. Tactic dependencies and address-taken callback checks still apply.
+
+Dependencies are collected once when an execution artifact is finalized.
+Shared statement nodes are visited once across summary applications, using
+identity keys rather than structural hashes. Certified claims share the
+resulting immutable set; merging claims visits each distinct shared set once,
+without copying a growing call set at every execution step. The
+`checked_callee_summary_reuse_scales_with_input_not_product` and
+`checked_callee_claim_reuse_shares_the_dependency_set` regressions grow both
+dependency count and reuse count from 16 through 1,024 to guard this cost.
+
 `c_termination_height_plan` proposes a height per node — iterative Tarjan with
 an explicit stack, longest path over the condensation, cycle members sharing a
 height. `c_verified_function_termination_rules` then checks that proposal:
