@@ -1,14 +1,4 @@
-# Contracts for the unchanged constructor and single-byte public API.
-struct __rust_q_I6_adler2_I7_Adler32 __rust_q_I6_adler2_I7_Adler32_default() {
- ensures result.a == 1;
- ensures result.b == 0;
-} by { execute(); simp(); }
-
-struct __rust_q_I6_adler2_I7_Adler32 __rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I3_new() {
- ensures result.a == 1;
- ensures result.b == 0;
-} by { execute(); simp(); }
-
+# Single-byte public API fragment; the harness adds public-constructors.click.
 void __rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I11_write_slice(struct __rust_q_I6_adler2_I7_Adler32* self, const uint8* bytes, uint64 bytes_len) {
  requires bytes_len == 1u64;
  requires self->a == 1;

@@ -2118,14 +2118,20 @@ fn charon_adler2_checksum_tools_recheck_original_contract() {
 const PUBLIC_ONE_BYTE: &str =
     include_str!("../../design/charon-trial/adler2/public-one-byte.click");
 
+const PUBLIC_CONSTRUCTORS: &str =
+    include_str!("../../design/charon-trial/adler2/public-constructors.click");
+const PUBLIC_EMPTY: &str = include_str!("../../design/charon-trial/adler2/public-empty.click");
+const PUBLIC_FOUR_BYTE: &str =
+    include_str!("../../design/charon-trial/adler2/public-four-byte.click");
+
 fn public_one_byte_proof() -> String {
     format!(
-        "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_ONE_BYTE}",
+        "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{PUBLIC_ONE_BYTE}",
         compute_proof(SINGLE_BYTE_COMPUTE)
     )
 }
 
-fn verify_public_one_byte_unit(
+fn verify_public_checksum_unit(
     source: &str,
     prepared: &click::languages::rust::PreparedRustImport,
     name: &str,
@@ -2150,7 +2156,7 @@ fn charon_adler2_public_checksum_matches_one_byte_spec() {
         "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I11_write_slice",
         "__rust_q_I6_adler2_I13_adler32_slice",
     ] {
-        verify_public_one_byte_unit(&source, &prepared, name).unwrap();
+        verify_public_checksum_unit(&source, &prepared, name).unwrap();
     }
 }
 
@@ -2178,11 +2184,11 @@ fn charon_adler2_public_checksum_rejects_false_result_length_and_authority() {
         let contract = PUBLIC_ONE_BYTE.replacen(before, after, 1);
         assert_ne!(contract, PUBLIC_ONE_BYTE, "{before}");
         let source = format!(
-            "{}\n{PACKING}\n{CHECKSUM}\n{contract}",
+            "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{contract}",
             compute_proof(SINGLE_BYTE_COMPUTE)
         );
         let error =
-            verify_public_one_byte_unit(&source, &prepared, "__rust_q_I6_adler2_I13_adler32_slice")
+            verify_public_checksum_unit(&source, &prepared, "__rust_q_I6_adler2_I13_adler32_slice")
                 .expect_err("false public result or insufficient call authority must be refused");
         assert!(
             !error.message().contains("budget exhausted"),
@@ -2244,4 +2250,137 @@ fn charon_adler2_public_checksum_tools_recheck_original_contracts() {
         );
     }
     assert_cli(&p, &["verify"]);
+}
+
+fn public_boundary_proof(length: usize) -> String {
+    match length {
+        0 => format!(
+            "{HELPERS}\n{COMMON_ADLER_SPEC}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{PUBLIC_EMPTY}"
+        ),
+        4 => format!(
+            "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{PUBLIC_FOUR_BYTE}",
+            compute_proof(FOUR_BYTE_COMPUTE)
+        ),
+        _ => panic!("unsupported public boundary"),
+    }
+}
+
+#[test]
+fn charon_adler2_public_boundaries_match_empty_and_four_byte_spec() {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    for length in [0, 4] {
+        let source = public_boundary_proof(length);
+        for name in [
+            "__rust_q_I6_adler2_I7_Adler32_default",
+            "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I3_new",
+            "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I11_write_slice",
+            "__rust_q_I6_adler2_I13_adler32_slice",
+        ] {
+            verify_public_checksum_unit(&source, &prepared, name).unwrap();
+        }
+    }
+}
+
+#[test]
+fn charon_adler2_public_empty_needs_no_input_byte_authority() {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    let source = public_boundary_proof(0).replacen("views data[0..0];", "", 1);
+    verify_public_checksum_unit(&source, &prepared, "__rust_q_I6_adler2_I13_adler32_slice")
+        .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: empty/vector public checksum false claims and authority"]
+fn charon_adler2_public_boundaries_reject_false_result_extent_and_preservation() {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    for length in [0, 4] {
+        let original = public_boundary_proof(length);
+        let result = format!(
+            "ensures to_integer(result) == old(adler_spec_checksum(data, {length}, 1, 0));"
+        );
+        let mut mutations = vec![
+            (result.clone(), result.replace("));", ")) + 1;")),
+            (
+                format!("adler_spec_checksum(data, {length}, 1, 0)"),
+                format!("adler_spec_checksum(data, {length}, 0, 1)"),
+            ),
+            (
+                format!("requires data_len == {length}u64;"),
+                format!(
+                    "requires data_len == {}u64;",
+                    if length == 0 { 1 } else { 3 }
+                ),
+            ),
+        ];
+        if length == 4 {
+            mutations.push(("views data[0..4];".into(), "views data[0..3];".into()));
+            for i in 0..4 {
+                mutations.push((
+                    format!("ensures data[{i}] == old(data[{i}]);"),
+                    format!("ensures data[{i}] == old(data[{i}]) + 1;"),
+                ));
+            }
+        }
+        for (before, after) in mutations {
+            let source = original.replacen(&before, &after, 1);
+            assert_ne!(source, original, "{before}");
+            let error = verify_public_checksum_unit(
+                &source,
+                &prepared,
+                "__rust_q_I6_adler2_I13_adler32_slice",
+            )
+            .expect_err("incorrect public checksum, extent, or byte preservation must be refused");
+            assert!(
+                !error.message().contains("budget exhausted"),
+                "{}",
+                error.message()
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "nightly: complete empty/vector callees and public API tool agreement"]
+fn charon_adler2_public_boundaries_tools_check_all_original_bodies() {
+    let p = adler2_helpers_project();
+    for length in [0, 4] {
+        let source = public_boundary_proof(length);
+        fs::write(p.root.join("borrow.click"), &source).unwrap();
+        // Profile checks the complete assembly, including the original compute
+        // body; the focused ordinary tests only select the four API bodies.
+        assert_cli(&p, &["profile"]);
+        let needle =
+            format!("have to_integer(__rust_mir_0) == old(adler_spec_checksum(data, {length}");
+        let offset = source.find(&needle).unwrap();
+        let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
+        let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
+        let audit = Command::new(env!("CARGO_BIN_EXE_click"))
+            .args(["audit", "--start-at", &cursor, "--max-sites", "1"])
+            .arg(p.root.join("borrow.click"))
+            .output()
+            .unwrap();
+        assert!(
+            audit.status.success(),
+            "{}",
+            String::from_utf8_lossy(&audit.stderr)
+        );
+        for name in [
+            "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I11_write_slice",
+            "__rust_q_I6_adler2_I13_adler32_slice",
+        ] {
+            assert_cli(
+                &p,
+                &[
+                    "expand",
+                    "--claim",
+                    &format!("{name}.contract"),
+                    "--in-place",
+                ],
+            );
+        }
+        assert_cli(&p, &["verify"]);
+    }
 }

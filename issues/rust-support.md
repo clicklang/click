@@ -73,11 +73,13 @@ B = 0. The four-byte bridge checks the native unsigned recombination and its
 ordered B weights. The unchanged shared checksum getter proves the exact packed
 value for any two u16 fields, preserves both fields under shared views, and has
 a checked conditional bridge from the field specification to the packed
-specification. The unchanged one-byte `adler32_slice` entry point composes the
-constructor, mutable computation, and shared getter, proves the common packed
-specification from A = 1 and B = 0, and preserves its input byte. General-length
-correctness, broader public-entry-point composition, and implementation
-incremental correctness remain pending.
+specification. The unchanged `adler32_slice` entry point composes the constructor,
+mutable computation, and shared getter for zero, one, and four bytes, proves
+the common packed specification from A = 1 and B = 0, and preserves every
+input byte. The empty call needs no input-byte authority. The two- and
+three-byte native results still need bridges to the common field specification.
+General-length correctness, broader public-entry-point composition, and
+implementation incremental correctness remain pending.
 The independently locked, unchanged zlib one-byte path proves its packed result
 equal the same specification and preserves its input byte; its empty path also
 verifies. General-length C correctness and C/Rust result equality remain pending. The specification is not yet connected
