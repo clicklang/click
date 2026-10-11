@@ -868,7 +868,11 @@ of its arguments are concrete: the application remains a typed logical term
 until such an unfold step is requested. Likewise, `match` over an unknown
 algebraic value remains one symbolic match term; it does not split C execution
 paths. A match reduces directly only when its scrutinee is already a checked
-constructor.
+constructor. This includes algebraic-valued matches whose scrutinee becomes a
+constructor after `rewrite`: normalization selects the arm and substitutes its
+typed fields without capturing variables in nested matches. It does not unfold
+pure calls in that arm. See
+[`normalize_algebraic_match_after_rewrite.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_algebraic_match_after_rewrite.md).
 
 Theorems can be reused by explicit application:
 
