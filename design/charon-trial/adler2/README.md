@@ -548,10 +548,17 @@ empty prefix and preserved by the ordered four-byte update. The `n*a` term
 accounts for the original scalar contribution deferred until after the loop.
 A checked signed-count lemma transports its exact Integer advance, and the
 loop exit establishes both residues for the completed four-byte prefix.
-Reduction/recombination transport, the scalar tail, and the final checksum
-postconditions remain pending. Nightly mutations reject a duplicated lane
+A is also transported through the original lane reductions and four scalar
+lane additions, establishing its prefix residue before the tail. The proof
+uses the helper's native remainder equations and checked uint32 observations
+to connect the entry lane snapshot to the reduced values. The original B seed
+product and addition now prove the exact deferred `b + prefix_length*a` value,
+including preservation of the native length cast. B reduction/recombination
+transport, the scalar tail, and the final checksum postconditions remain
+pending. Nightly mutations reject a duplicated lane
 byte in the A transition, a changed completed-prefix A seed, an incorrect B
-byte weight, and an omitted B seed contribution.
+byte weight, an omitted B seed contribution, a duplicated A lane during scalar
+recombination, and a changed recombined-prefix A seed.
 
 The fixture is assembled with the existing helper bodies, recombination
 lemmas, iterator bounds, the common specification and lane-state lemmas,
