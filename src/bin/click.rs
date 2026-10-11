@@ -855,6 +855,53 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
     }
 
     #[test]
+    fn trace_shows_exact_checked_pointer_goal_after_rewrite() {
+        let directory = std::env::temp_dir().join(format!(
+            "click-trace-refined-pointer-goal-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let sidecar = directory.join("refined.click");
+        fs::write(
+            &sidecar,
+            r#"
+function tag(p: int32*) -> int32 { 0 }
+theorem bad(p: int32*, q: int32*) {
+    requires p == q;
+    ensures tag(p) == 1 by {
+        rewrite(p == q);
+        assumption();
+    }
+}
+"#,
+        )
+        .unwrap();
+        let ordinary = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(!ordinary.contains("checked goal:"), "{ordinary}");
+        let report = entry([
+            "verify".to_string(),
+            "--trace-proof".to_string(),
+            "bad".to_string(),
+            sidecar.display().to_string(),
+        ])
+        .unwrap_err();
+        assert!(report.contains("goal: tag(q) == 1"), "{report}");
+        assert_eq!(report.matches("checked goal:").count(), 1, "{report}");
+        let checked = report
+            .lines()
+            .find(|line| line.contains("checked goal:"))
+            .unwrap();
+        assert!(checked.contains("tag("), "{report}");
+        assert!(checked.contains("array-ref<int32>(snapshot#1,"), "{report}");
+        assert!(checked.contains("ptr<int32*>("), "{report}");
+        assert!(
+            report.contains("snapshot#1 = initial empty memory"),
+            "{report}"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn trace_accepts_an_exact_historical_call_guarantee() {
         let directory =
             std::env::temp_dir().join(format!("click-trace-call-guarantee-{}", std::process::id()));
