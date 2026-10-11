@@ -253,6 +253,7 @@ pub(in crate::surface) fn proposition_contains_resource_count(
         }
         ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
+        | ClickProposition::Initialized { .. }
         | ClickProposition::Loadable { .. } => false,
     }
 }
@@ -269,6 +270,9 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
         // Liveness of storage the body itself owns is stable under a loan:
         // a live loan over any of those bytes forbids freeing the
         // allocation. Liveness of anything else is not.
+        ClickProposition::Initialized { segment } => {
+            !owned_bases.iter().any(|base| **base == segment.base)
+        }
         ClickProposition::Loadable { segment } => {
             !owned_bases.iter().any(|base| **base == segment.base)
         }
@@ -472,6 +476,7 @@ pub(in crate::surface) fn collect_resource_count_families(
         }
         ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
+        | ClickProposition::Initialized { .. }
         | ClickProposition::Loadable { .. } => {}
     }
 }
@@ -507,6 +512,7 @@ pub(in crate::surface) fn collect_called_predicates(
         | ClickProposition::FloatClassification { .. }
         | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
+        | ClickProposition::Initialized { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => {}
     }
@@ -546,6 +552,9 @@ pub(in crate::surface) fn proposition_contains_old_expression(
         ClickProposition::Contains { parent, child } => {
             resource_subject_contains_old_expression(parent)
                 || resource_subject_contains_old_expression(child)
+        }
+        ClickProposition::Initialized { segment } => {
+            contract_segment_contains_old_expression(segment)
         }
         ClickProposition::Loadable { segment } => contract_segment_contains_old_expression(segment),
         ClickProposition::Defined { expression } => contains_old_expression(expression),
@@ -687,6 +696,9 @@ pub(in crate::surface) fn proposition_contains_at_expression(
         ClickProposition::Contains { parent, child } => {
             resource_subject_contains_at_expression(parent)
                 || resource_subject_contains_at_expression(child)
+        }
+        ClickProposition::Initialized { segment } => {
+            contract_segment_contains_at_expression(segment)
         }
         ClickProposition::Loadable { segment } => contract_segment_contains_at_expression(segment),
         ClickProposition::Defined { expression } => contains_at_expression(expression),
@@ -911,6 +923,9 @@ fn collect_click_function_calls_in_proposition_one(
         ClickProposition::Contains { parent, child } => {
             collect_click_function_calls_in_resource_subject(parent, calls);
             collect_click_function_calls_in_resource_subject(child, calls);
+        }
+        ClickProposition::Initialized { segment } => {
+            collect_click_function_calls_in_segment(segment, calls);
         }
         ClickProposition::Loadable { segment } => {
             collect_click_function_calls_in_segment(segment, calls);
@@ -1515,6 +1530,16 @@ fn validate_recursive_calls_in_proposition(
                 algebraic_definitions,
             )
         }
+        ClickProposition::Initialized { segment } => validate_recursive_calls_in_segment(
+            caller,
+            segment,
+            lower_bounds,
+            structural_subterms,
+            definitions,
+            function_calls,
+            measures,
+            algebraic_definitions,
+        ),
         ClickProposition::Loadable { segment } => validate_recursive_calls_in_segment(
             caller,
             segment,

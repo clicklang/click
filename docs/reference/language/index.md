@@ -2532,6 +2532,21 @@ or initialization. Pointer arithmetic after the cast counts bytes;
 origins, and reverse casts from bytes to wider object types are rejected. See
 [`contract_byte_pointer_casts.md`](https://github.com/clicklang/click/blob/master/mdtests/contract_byte_pointer_casts.md).
 
+A body-verified output helper can state `ensures initialized(p[0..4]);`
+separately from `owns p[0..4];` and byte-value postconditions. The initialization
+guarantee selects the byte-pointer parameter's entry value once, so reassignment
+of that parameter does not change the promised destination. Its proof starts
+with that output footprint unwritten and must establish every byte on every
+normal return. A modular call then records initialization of exactly that range;
+it does not allocate storage, supply permission, or assign particular byte values.
+
+The initial profile admits top-level postconditions on mutable `uint8*`
+parameters, with a nonnegative constant byte count and zero start. Conditional,
+symbolic-sized, exceptional, callback and external initialization guarantees remain refused.
+Proof observations of a fixed byte range use the selected current snapshot;
+an output guarantee is specific to its function's input buffer. See
+[`modular_byte_output_initialization.md`](https://github.com/clicklang/click/blob/master/mdtests/modular_byte_output_initialization.md).
+
 Contract expressions accept the unsigned narrowing cast `(uint32)x`, including
 `old((uint32)p->value)`. The operand must be
 a current scalar expression, including a pure-function call; put `old(...)`

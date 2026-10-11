@@ -3291,6 +3291,7 @@ pub(super) fn click_function_applications(
             }
             ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
+            | ClickProposition::Initialized { .. }
             | ClickProposition::Loadable { .. } => {}
         }
     }

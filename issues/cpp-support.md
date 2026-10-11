@@ -9,6 +9,38 @@ Bitcoin Core as a whole.
 
 ## Current remaining work
 
+**Current priority: stabilize the bounded object model before widening C++
+coverage.** The [consolidated object-model design](../design/cpp-object-model.md)
+owns the shared storage, object lifetime, initialization, representation and
+authority invariants. Its finite next steps are to audit evidence for currently
+admitted operations, unify typed/byte observations for the declared uint32
+profile, close demonstrated lifecycle/call-path inconsistencies, and validate
+the acceptance matrix before resuming the unchanged decoder proof. This is
+remaining work, not a claim that the consolidated model is implemented.
+
+The returned composed-observer regression is repaired: proof-entry input names
+now use already checked explicit separation facts, without initializing raw
+outputs. Ordinary, expanded and retained verification preserve the original
+value and frame claims. The PR 646
+[constructor-input regression](../bugs/raw-construction-destination-hides-initialized-input.md)
+remains a baseline blocker; field ownership does not establish separation from
+a raw destination's padding. The design does not count those failing RAII proofs
+as delivered validation.
+
+The subsequent audit also reproduced a shared C/C++ soundness defect:
+[one-past member pointers can read sibling fields](../bugs/pointer-arithmetic-crosses-scalar-subobject.md).
+Checked pointer designation is now mandatory stabilization work, not merely an
+optional metadata cleanup. The design also records the concrete
+[byte-access source-profile choice](../design/cpp-object-model.md#byte-access-requires-an-explicit-source-profile-choice)
+that must be settled before expanding the cast-and-index byte writer.
+
+The other known semantic gap is the relation between modular byte-value
+postconditions and the caller's typed word. Preserve the existing typed-cell
+machinery; implement a shared representation law rather than a helper-specific
+decoder rule. The design also requires an admission audit for object/subobject
+access and the selected C++ byte-traversal semantics. Any actual profile choice
+found by that audit should be raised before widening admission.
+
 The original design cleanup and selected fee arithmetic proofs are delivered.
 `GetFeePerK` is also verified on the unchanged pinned header: it delegates to
 `EvaluateFeeDown(1000)`, requires positive size and the Down result-fit profile,
@@ -24,8 +56,8 @@ below. The selected unchanged `SpanPopBack<int>` target and read/write callers
 are now verified through shared destination construction, trivial assignment
 and full-expression retirement.
 
-The remaining work needs a concrete source/contract selection or a semantic
-profile decision before implementation:
+After that stabilization milestone, the following broader work needs a concrete
+source/contract selection or a semantic profile decision before implementation:
 
 - **Further fee methods and construction.** The remaining `CFeeRate` methods
   involve embedded construction/assignment, aggregate returns, comparison-category
@@ -471,9 +503,8 @@ pointer field across parameter cleanup. Actual aggregate argument copies check
 source read permission and
 initialization before private callee storage is allocated.
 
-The next decoder prerequisite is initialization across ordinary modular
-output-buffer calls, below. Keep the bounded extent and explicit ownership
-profile while selecting that effect; span construction alone cannot establish it.
+Ordinary modular byte-output initialization is now supported below. Span
+construction alone still establishes neither backing initialization nor byte values.
 Byte alias access must be restricted to the actual pinned `std::byte` declaration;
 an arbitrary enum with the same underlying type does not gain that privilege.
 Automatic scalar declarations now create explicit ownership of their exact
@@ -484,12 +515,28 @@ retire the allocation owner. Caller scalar bindings are refreshed from memory
 after modular effects, rather than retaining stale pre-call values. The same
 allocation transition serves C, C++ and Rust.
 
-Another decoder prerequisite is initialization across ordinary modular
-output-buffer calls. A regular `owns` contract does not guarantee that an
-initially unwritten object becomes initialized, even when a value postcondition
-names its memory. Concrete checked stores and construction destinations already
-establish initialization separately. Preserve that distinction when selecting
-the ordinary output contract and its body-certified initialization effect.
+An ordinary helper can now state `ensures initialized(p[0..N]);` separately
+from `owns p[0..N]` and byte-value postconditions. The bounded profile freezes a
+mutable native byte-pointer parameter's input address and uses a constant byte
+count with zero start. Its proof-entry footprint stays unwritten while resources
+are named; incomplete writes, holes, no-op bodies and reads before writes are
+refused. Checked calls record initialization of exactly the guaranteed range,
+without allocating storage or assigning its byte values. Exceptional, conditional,
+callback and external initialization guarantees remain refused. Indexed runs
+combine adjacent symbolic writes and retain only common initialized bytes at a
+join; reset touches only overlapping runs. C and pinned `std::byte` caller checks
+cover ordinary, expanded and retained verification. Resource semantics version
+65 invalidates older retained proof artifacts.
+
+The next value prerequisite is the relation between specification byte reads and
+the declared uint32 representation after a modular call. The initialized caller
+can read its integer, and byte postconditions prove byte results, but those facts
+do not yet reconstruct the integer's value. Keep the exact little-endian word
+claim in `mdtests/modular_byte_output_word_value_requires_representation.md` and
+implement the shared observation law specified by the
+[object-model design](../design/cpp-object-model.md#one-representation-consistent-observations).
+Turn that claim into a positive regression when the law is implemented; do not
+substitute a safety claim for the decoder's value contract.
 
 `ReadCompactSize` additionally brings stream failure and canonical
 encoding rules; do not bundle those decisions into this span slice.
@@ -679,6 +726,11 @@ still be validated. Preserve unchanged upstream source as the integration
 regression for every new slice.
 
 ## Delivered design consolidation
+
+This section records the earlier importer/scalar cleanup. The subsequent
+[object-model consolidation](../design/cpp-object-model.md) and its stabilization
+criteria are the current foundation work; delivery of this earlier cleanup does
+not establish completion of that work.
 
 The planned cleanup steps are delivered. Continue with the fee arithmetic
 milestone above, preserving unchanged-source proofs, hostile-artifact and false

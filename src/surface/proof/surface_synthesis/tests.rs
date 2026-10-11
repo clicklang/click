@@ -1232,7 +1232,7 @@ fn quantified_loadability_uses_saved_snapshot() {
                 selector: actual,
                 proposition,
             } if actual == &selector
-                && matches!(proposition.as_ref(), ClickProposition::Loadable { .. })
+                && matches!(proposition.as_ref(), ClickProposition::Initialized { .. } | ClickProposition::Loadable { .. })
         ),
         "the loadability leaf must be read at the saved loop state: {spelled:?}"
     );

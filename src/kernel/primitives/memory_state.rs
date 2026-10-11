@@ -2626,12 +2626,28 @@ impl CMemory {
         self
     }
 
+    pub(crate) fn has_uninitialized_object_footprints(&self) -> bool {
+        !self.heap.uninitialized_objects.is_empty()
+    }
+
     /// A conservative overlap query over only potentially aliasing tracked
     /// objects. Different symbolic spellings do not establish separation.
+    #[cfg(test)]
     pub(in crate::kernel) fn may_read_uninitialized_object(
         &self,
         pointer: &Pointer,
         bytes: u32,
+    ) -> bool {
+        self.may_read_uninitialized_object_under(pointer, bytes, &PureFactContext::new())
+    }
+
+    /// Exclude only raw footprints whose separation from this read is checked
+    /// in its fact context. Initialization and ownership remain independent.
+    pub(in crate::kernel) fn may_read_uninitialized_object_under(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
     ) -> bool {
         if bytes == 0 {
             return false;
@@ -2653,7 +2669,7 @@ impl CMemory {
                 {
                     return at < end && start < read_end;
                 }
-                true
+                !assumptions.proves_stated_byte_separation(pointer, bytes, base, *size)
             },
         )
     }
@@ -4087,6 +4103,8 @@ impl CMemory {
     /// rather than approximated: displacing typed union views (the snapshot
     /// holds some) and marking a live heap cell initialized (an allocation
     /// may hold the range). Those fall back to the stores themselves.
+    // Kept for checking the store-equivalent run representation in kernel tests.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn with_seeded_cells(
         mut self,
         base: Pointer,
@@ -4125,6 +4143,170 @@ impl CMemory {
             source,
             RunValueMode::Load,
         )
+    }
+
+    /// Name initialized universal input cells without treating proof-entry
+    /// resource materialization as a C write. An output footprint marked
+    /// unwritten stays unwritten, independently of its ownership/liveness.
+    #[allow(clippy::too_many_arguments)]
+    #[cfg(test)]
+    pub(crate) fn with_proof_entry_cells(
+        self,
+        base: Pointer,
+        element_width: u32,
+        element_type: CType,
+        first: u32,
+        count: u32,
+        source: SharedCMemory,
+    ) -> Self {
+        self.with_proof_entry_cells_under(
+            base,
+            element_width,
+            element_type,
+            first,
+            count,
+            source,
+            &PureFactContext::new(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn with_proof_entry_cells_under(
+        self,
+        base: Pointer,
+        element_width: u32,
+        element_type: CType,
+        first: u32,
+        count: u32,
+        source: SharedCMemory,
+        assumptions: &PureFactContext,
+    ) -> Self {
+        if first >= count {
+            return self;
+        }
+        let Some(start) = first.checked_mul(element_width) else {
+            return self;
+        };
+        let Some(bytes) = (count - first).checked_mul(element_width) else {
+            return self;
+        };
+        if self.may_read_uninitialized_object_under(
+            &base.offset_by_bytes(start),
+            bytes,
+            assumptions,
+        ) {
+            return self;
+        }
+        // The full run has already been checked separate from raw outputs.
+        // Their presence elsewhere must not force enumeration of this input.
+        if !base.block.starts_with("local:")
+            && !matches!(base.block, PointerBlock::Heap(_))
+            && self.union_cells.is_empty()
+            && !AliasCandidates::of_block(&base.block)
+                .any_entry(&self.heap.live_allocations, |_, _| true)
+        {
+            self.with_proof_entry_run(base, element_width, element_type, first, count, source)
+        } else {
+            let mut memory = self;
+            let run = CellRun::new(
+                base,
+                element_width,
+                element_type,
+                count,
+                source,
+                IndexIntervals::default(),
+            );
+            for index in first..count {
+                let pointer = run.slot_pointer(index);
+                if !matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
+                    memory =
+                        memory.materialize_named_cell_under(pointer, run.value(index), assumptions);
+                }
+            }
+            memory
+        }
+    }
+
+    /// Install logical input names using only cells and runs on their spelled
+    /// span. The caller has checked separation from every raw output.
+    #[allow(clippy::too_many_arguments)]
+    fn with_proof_entry_run(
+        mut self,
+        base: Pointer,
+        element_width: u32,
+        element_type: CType,
+        first: u32,
+        count: u32,
+        source: SharedCMemory,
+    ) -> Self {
+        let mut holes = IndexIntervals::default();
+        holes.insert_range(0, first);
+        let probe = CellRun::new(
+            base.clone(),
+            element_width,
+            element_type,
+            count,
+            source,
+            holes,
+        );
+        let start = base.offset_by_bytes(first * element_width);
+        let bytes = (count - first) * element_width;
+        let selected = CellRun::new(
+            start.clone(),
+            element_width,
+            element_type,
+            count - first,
+            probe.source().clone(),
+            IndexIntervals::default(),
+        );
+        let mut holes = probe.holes().clone();
+        for (pointer, _) in self.cells.concrete_region_candidates(&start, bytes) {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(index) = probe.slot_index(pointer) {
+                holes.insert(index);
+            }
+        }
+        for run in self.cells.runs_in_slot_span_of(&selected) {
+            if run.element_width() == element_width
+                && let Some(delta) =
+                    run.base()
+                        .exact_element_delta_from_base(&base, element_width, None)
+                && delta.is_constant()
+            {
+                for (low, high) in run.live_intervals_in_slot_span_of(&selected) {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let low = (i128::from(low) + i128::from(delta.constant))
+                        .clamp(0, i128::from(count)) as u32;
+                    let high = (i128::from(high) + i128::from(delta.constant))
+                        .clamp(0, i128::from(count)) as u32;
+                    holes.insert_range(low, high);
+                }
+            } else {
+                for index in run
+                    .live_intervals_in_slot_span_of(&selected)
+                    .flat_map(|(low, high)| low..high)
+                {
+                    crate::instrumentation::record_deterministic_work(1);
+                    if let Some(slot) = probe.slot_index(&run.slot_pointer(index)) {
+                        holes.insert(slot);
+                    }
+                }
+            }
+        }
+        if holes.count() >= u64::from(count) {
+            return self;
+        }
+        let run = probe.with_holes(holes);
+        let derivation_base = intern_derivation_base(&mut self);
+        std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
+        record_c_memory_derivation(
+            &mut self,
+            CMemoryDerivation::CellsSeeded {
+                base: derivation_base,
+                run: std::sync::Arc::new(run),
+            },
+        );
+        self
     }
 
     /// [`Self::materialize_named_cell`] of each element `first..count` at
@@ -4957,11 +5139,20 @@ impl CMemory {
     /// projection. This is not a C write and cannot establish initialization.
     /// The conservative store edge keeps memory-DAG lookup connected without
     /// granting any new initialized-cell or allocation authority.
-    pub(crate) fn materialize_named_cell(mut self, pointer: Pointer, value: CValue) -> Self {
+    pub(crate) fn materialize_named_cell(self, pointer: Pointer, value: CValue) -> Self {
+        self.materialize_named_cell_under(pointer, value, &PureFactContext::new())
+    }
+
+    pub(crate) fn materialize_named_cell_under(
+        mut self,
+        pointer: Pointer,
+        value: CValue,
+        assumptions: &PureFactContext,
+    ) -> Self {
         if self.cells.contains_key(&pointer) {
             return self;
         }
-        if self.may_read_uninitialized_object(&pointer, value.byte_width())
+        if self.may_read_uninitialized_object_under(&pointer, value.byte_width(), assumptions)
             && !self.has_initialized_bytes_at(&pointer, value.byte_width())
         {
             return self;
@@ -5169,7 +5360,7 @@ impl CMemory {
     /// Whether the `byte_width` bytes at `pointer` are recorded initialized,
     /// whether or not a cached value for them survives (see
     /// [`InitializedBytes`]). A constant offset is covered by the run of its
-    /// block holding it; a symbolic offset by the same spelling.
+    /// block holding it; a symbolic offset by its indexed offset-family run.
     pub(in crate::kernel) fn has_initialized_bytes_at(
         &self,
         pointer: &Pointer,

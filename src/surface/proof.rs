@@ -1536,10 +1536,24 @@ pub(super) fn initial_claim_context_with_caller_owner(
             predicate_environment,
             click_function_environment,
         )?;
+        // Entry output footprints must use the same lowered interface as
+        // modular calls, before any resource cell is materialized.
+        let (requires, _, ensures, exceptional_ensures, mutable, claims, opaque, _, _) =
+            function_contract_summary(
+                function_block,
+                parsed_function,
+                predicate_environment,
+                click_function_environment,
+                resource_environment,
+            )?;
+        let entry_function = parsed_function
+            .to_kernel_function()
+            .with_contract(requires, ensures, mutable, claims, opaque)
+            .with_exceptional_ensures(exceptional_ensures);
         initial_call_state(
             function_block.requires(),
             parsed_function.parameters(),
-            &parsed_function.to_kernel_function(),
+            &entry_function,
             &authority_definitions,
         )?
     };
@@ -1994,6 +2008,13 @@ pub(super) fn initial_claim_context_with_caller_owner(
     // From here the entry facts only grow, so every context read of them
     // below extends one built context.
     let mut requirement_pure_facts = PureFactList::from(requirement_pure_facts);
+    state = materialize_checked_entry_input_cells(
+        state,
+        function_block.requires(),
+        parsed_function.parameters(),
+        &arguments,
+        &requirement_pure_facts.context(),
+    )?;
     for requirement in function_block.requires() {
         let Requirement::Resource(resource) = requirement else {
             continue;
@@ -2188,6 +2209,7 @@ fn collect_conjunctive_loadability_segments(
     segments: &mut Vec<ContractSegment>,
 ) {
     match proposition {
+        ClickProposition::Initialized { .. } => {}
         ClickProposition::Loadable { segment } => segments.push(segment.clone()),
         ClickProposition::And(left, right) => {
             collect_conjunctive_loadability_segments(left, segments);
@@ -2508,6 +2530,7 @@ fn click_proposition_mentions_defined(proposition: &ClickProposition) -> bool {
         | ClickProposition::FloatClassification { .. }
         | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
+        | ClickProposition::Initialized { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::PredicateCall { .. } => false,
     }

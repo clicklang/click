@@ -1848,6 +1848,51 @@ fn synthesize_surface_atomic_proposition(
             )?,
         });
     }
+    if let Proposition::CMemoryInitialized {
+        memory,
+        base,
+        bytes,
+    } = proposition
+    {
+        let ClickProposition::Loadable { segment } =
+            synthesize_exact_external_zero_based_byte_range(
+                base,
+                &Bitvector32Term::Constant(*bytes),
+                parameters,
+                arguments,
+                state,
+                bound_variables,
+            )
+            .ok()??
+        else {
+            return None;
+        };
+        let initialized = ClickProposition::Initialized { segment };
+        if state.memory() == memory {
+            return Some(initialized);
+        }
+        let at_entry = SYNTHESIS_ENTRY_STATE.with(|slot| {
+            slot.borrow()
+                .as_ref()
+                .is_some_and(|entry| entry.memory() == memory)
+        });
+        let selector = if at_entry {
+            SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Function,
+                kind: ProgramPointKind::Entry,
+            })
+        } else {
+            SYNTHESIS_SNAPSHOT_STATE.with(|slot| {
+                let slot = slot.borrow();
+                let (snapshot, selector) = slot.as_ref()?;
+                (snapshot.memory() == memory).then(|| selector.clone())
+            })?
+        };
+        return Some(ClickProposition::At {
+            selector,
+            proposition: Box::new(initialized),
+        });
+    }
     if let Proposition::CMemoryReadDefined {
         memory,
         pointer,
@@ -2915,12 +2960,13 @@ fn synthesize_surface_bitvector(
             if let PointerBlock::Concrete(block) = &kernel_pointer.block
                 && let Some(name) = block.strip_prefix("local:")
                 && kernel_pointer.offset == PointerOffsetTerm::Constant(0)
-                && state
-                    .locals()
-                    .scalar_object_type(name)
-                    .is_some_and(|ty| ty.pointee_type().is_none())
+                && state.locals().scalar_object_type(name).is_some_and(|ty| {
+                    ty.pointee_type().is_none()
+                        && crate::kernel::LoadKind::of_type(ty) == Some(*kind)
+                })
             {
-                // A memory-resident scalar local reads as its own name.
+                // A local names only a read of its declared type. A byte
+                // read at the same address must retain its byte meaning.
                 Some(ContractExpression::CFragment(CExpression::Variable(
                     name.to_string(),
                 )))

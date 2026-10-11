@@ -1694,6 +1694,47 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             budget,
             true,
         ),
+        SpecProposition::MemoryInitialized {
+            memory,
+            base,
+            bytes,
+        } => {
+            let selected = match memory {
+                SpecMemory::Current => state.memory(),
+                SpecMemory::FunctionEntry | SpecMemory::LoopEntry => {
+                    let Some(entry) = loop_entry_state else {
+                        return Ok(Vec::new());
+                    };
+                    entry.memory()
+                }
+                SpecMemory::Fixed(memory) => memory,
+            };
+            Ok(evaluate_spec_values_at_state_in(
+                state,
+                std::slice::from_ref(base),
+                loop_entry_state,
+                assumptions,
+                algebraic_bindings,
+                budget,
+            )?
+            .into_iter()
+            .filter_map(|path| {
+                let [CValue::Pointer(pointer)] = path.values.as_slice() else {
+                    return None;
+                };
+                Some(SpecPropositionPath {
+                    introductions: Vec::new(),
+                    proposition: Proposition::CMemoryInitialized {
+                        memory: selected.clone(),
+                        base: pointer.pointer().clone(),
+                        bytes: *bytes,
+                    },
+                    facts: path.facts,
+                    obligations: path.obligations,
+                })
+            })
+            .collect())
+        }
         SpecProposition::Defined(expression) => {
             let mut checked = SpecEvaluation::checked(budget);
             let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(

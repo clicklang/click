@@ -857,6 +857,7 @@ fn walk_written_expressions_in_proposition(
         }
         ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
+        | ClickProposition::Initialized { .. }
         | ClickProposition::Loadable { .. } => {}
     }
 }

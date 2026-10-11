@@ -92,6 +92,9 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
             parent: parent.clone(),
             child: child.clone(),
         }),
+        ClickProposition::Initialized { segment } => Ok(ClickProposition::Initialized {
+            segment: segment.clone(),
+        }),
         ClickProposition::Loadable { segment } => Ok(ClickProposition::Loadable {
             segment: segment.clone(),
         }),
@@ -367,6 +370,9 @@ fn substitute_click_proposition_nonlogical(
         ClickProposition::Contains { parent, child } => Ok(ClickProposition::Contains {
             parent: substitute_resource_subject(parent, substitutions)?,
             child: substitute_resource_subject(child, substitutions)?,
+        }),
+        ClickProposition::Initialized { segment } => Ok(ClickProposition::Initialized {
+            segment: substitute_contract_segment(segment, substitutions)?,
         }),
         ClickProposition::Loadable { segment } => Ok(ClickProposition::Loadable {
             segment: substitute_contract_segment(segment, substitutions)?,
@@ -751,6 +757,9 @@ fn collect_click_proposition_binding_names(
             collect_resource_subject_binding_names(parent, names);
             collect_resource_subject_binding_names(child, names);
         }
+        ClickProposition::Initialized { segment } => {
+            collect_contract_segment_binding_names(segment, names);
+        }
         ClickProposition::Loadable { segment } => {
             collect_contract_segment_binding_names(segment, names);
         }
@@ -1086,6 +1095,38 @@ fn rewrite_click_proposition_expression(
                 ClickProposition::Contains { parent, child },
                 parent_changed || child_changed,
             )
+        }
+        ClickProposition::Initialized { segment } => {
+            let ContractSegmentSurface::Range { base, start, end } = &segment.surface else {
+                return (proposition.clone(), false);
+            };
+            // Range bases retain a C fragment even when an equality names a
+            // matched model binding. Propose the same fragment substitution;
+            // the caller's kernel comparison still decides whether the names
+            // denote the checked pointer, including under shadowing.
+            let (base, changed) =
+                if contract_expression_as_c_fragment(source).as_ref() == Some(&segment.base) {
+                    (target.clone(), true)
+                } else {
+                    expression(base)
+                };
+            if !changed {
+                return (proposition.clone(), false);
+            }
+            let Some(lowered_base) = contract_expression_as_c_fragment(&base) else {
+                return (proposition.clone(), false);
+            };
+            // Keep the snapshot and both extents exactly as written. This is
+            // only a proposed presentation: finish_rewrite lowers it and asks
+            // the kernel to match its checked successor before retaining it.
+            let mut rewritten = segment.clone();
+            rewritten.base = lowered_base;
+            rewritten.surface = ContractSegmentSurface::Range {
+                base,
+                start: start.clone(),
+                end: end.clone(),
+            };
+            (ClickProposition::Initialized { segment: rewritten }, true)
         }
         ClickProposition::Loadable { segment } => {
             let ContractSegmentSurface::Range { base, start, end } = &segment.surface else {
@@ -2059,6 +2100,9 @@ fn apply_contract_let_expressions_inner(
             parent: apply_contract_lets_to_resource_subject(parent, bindings)?,
             child: apply_contract_lets_to_resource_subject(child, bindings)?,
         }),
+        ClickProposition::Initialized { segment } => Ok(ClickProposition::Initialized {
+            segment: apply_contract_lets_to_segment(segment, bindings)?,
+        }),
         ClickProposition::Loadable { segment } => Ok(ClickProposition::Loadable {
             segment: apply_contract_lets_to_segment(segment, bindings)?,
         }),
@@ -2612,6 +2656,9 @@ fn collect_click_proposition_referenced_names_one(
         ClickProposition::Contains { parent, child } => {
             collect_resource_subject_referenced_names(parent, names);
             collect_resource_subject_referenced_names(child, names);
+        }
+        ClickProposition::Initialized { segment } => {
+            names.extend(contract_segment_referenced_names(segment));
         }
         ClickProposition::Loadable { segment } => {
             names.extend(contract_segment_referenced_names(segment));

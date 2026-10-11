@@ -254,7 +254,12 @@ fn collect_proposition_bitvector_variables_one(
             collect_pointer_bitvector_variables(pointer, variables);
             collect_c_expression_outcome_bitvector_variables(outcome, variables);
         }
-        Proposition::CMemoryReadDefined {
+        Proposition::CMemoryInitialized {
+            memory,
+            base: pointer,
+            ..
+        }
+        | Proposition::CMemoryReadDefined {
             memory, pointer, ..
         }
         | Proposition::CMemoryCanStore {
@@ -818,6 +823,10 @@ pub(in crate::kernel) fn collect_spec_proposition_bitvector_variables(
         } => {
             collect_spec_resource_bitvector_variables(left, variables);
             collect_spec_resource_bitvector_variables(right, variables);
+        }
+        SpecProposition::MemoryInitialized { memory, base, .. } => {
+            collect_spec_memory_bitvector_variables(memory, variables);
+            collect_spec_expression_bitvector_variables(base, variables);
         }
         SpecProposition::MemoryLoadable {
             memory,
@@ -1515,6 +1524,10 @@ fn collect_spec_proposition_bound_identities(
         } => {
             collect_spec_resource_bound_identities(left, variables, integer_seen);
             collect_spec_resource_bound_identities(right, variables, integer_seen);
+        }
+        SpecProposition::MemoryInitialized { memory, base, .. } => {
+            collect_spec_memory_bound_identities(memory, variables, integer_seen);
+            collect_spec_integer_bound_expression(base, variables, integer_seen);
         }
         SpecProposition::MemoryLoadable {
             memory,

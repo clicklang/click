@@ -629,6 +629,11 @@ enum AlphaPropositionKey {
         pointer: AlphaPointerKey,
         value_type: CType,
     },
+    CMemoryInitialized {
+        memory: AlphaSnapshotKey,
+        base: AlphaPointerKey,
+        bytes: u32,
+    },
     CMemoryLoadable {
         memory: AlphaSnapshotKey,
         base: AlphaPointerKey,
@@ -3301,6 +3306,33 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
             bindings.snapshot_aware = prior_snapshot_aware;
             key?
         }
+        Proposition::CMemoryInitialized {
+            memory,
+            base,
+            bytes,
+        } => {
+            if !ALLOW_LOADS {
+                return None;
+            }
+            bindings.raw_snapshot_load_seen = true;
+            let prior_snapshot_aware = bindings.snapshot_aware;
+            bindings.snapshot_aware = true;
+            let key = (|| -> Option<AlphaPropositionKey> {
+                alpha_work_checkpoint(bindings, 1)?;
+                let snapshot = crate::kernel::intern_c_memory_ref(memory);
+                Some(AlphaPropositionKey::CMemoryInitialized {
+                    memory: AlphaSnapshotKey::new(&snapshot),
+                    base: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
+                        base,
+                        bindings,
+                        next_binder,
+                    )?,
+                    bytes: *bytes,
+                })
+            })();
+            bindings.snapshot_aware = prior_snapshot_aware;
+            key?
+        }
         Proposition::CMemoryLoadable {
             memory,
             base,
@@ -3553,7 +3585,9 @@ fn checked_proposition_contains_memory_loadability(proposition: &Proposition) ->
         return Err(());
     }
     match proposition {
-        Proposition::CMemoryLoadable { .. } | Proposition::CMemoryReadDefined { .. } => Ok(true),
+        Proposition::CMemoryLoadable { .. }
+        | Proposition::CMemoryReadDefined { .. }
+        | Proposition::CMemoryInitialized { .. } => Ok(true),
         Proposition::And(left, right)
         | Proposition::Or(left, right)
         | Proposition::Implies(left, right) => {

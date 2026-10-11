@@ -5910,6 +5910,29 @@ fn execute_verified_function_applications_with_suspension(
         {
             construction_return::initialize_summary(&mut post_state, &entry_contract_state);
         }
+        // Verified bodies (or tracked local proof dependencies) justify
+        // this effect. Body-less external assumptions reject it.
+        for (index, bytes) in interface
+            .initialization_outputs()
+            .expect("checked output profile")
+        {
+            if bytes == 0 {
+                continue;
+            }
+            let CValue::Pointer(pointer) = entry_contract_state
+                .locals()
+                .get(interface.parameters()[index].name())
+                .expect("bound output parameter")
+            else {
+                unreachable!("checked byte parameter");
+            };
+            post_state.set_memory(
+                post_state
+                    .memory
+                    .clone()
+                    .with_initialized_object(pointer.pointer(), bytes),
+            );
+        }
         // Construction initialization is part of this checked call effect,
         // so its endpoint must include the initialized value fields.
         if !worker_effects.is_empty() {
@@ -13471,6 +13494,7 @@ fn spec_proposition_supports_stateful_memory_refinement(proposition: &SpecPropos
         | SpecProposition::Predicate { .. }
         | SpecProposition::ResourceSeparate { .. }
         | SpecProposition::ResourceContains { .. }
+        | SpecProposition::MemoryInitialized { .. }
         | SpecProposition::MemoryLoadable { .. } => false,
     }
 }
@@ -14101,6 +14125,9 @@ fn spec_proposition_reads_current_parameter(
         } => {
             spec_resource_reads_current_parameter(left, parameter_name)
                 || spec_resource_reads_current_parameter(right, parameter_name)
+        }
+        SpecProposition::MemoryInitialized { base, .. } => {
+            spec_expression_reads_current_parameter(base, parameter_name)
         }
         SpecProposition::MemoryLoadable {
             memory,
@@ -14847,6 +14874,9 @@ fn spec_proposition_current_parameter_accesses(
         } => {
             spec_resource_current_parameter_accesses(left, parameter_name, reads, unknown_read);
             spec_resource_current_parameter_accesses(right, parameter_name, reads, unknown_read);
+        }
+        SpecProposition::MemoryInitialized { base, .. } => {
+            spec_expression_current_parameter_accesses(base, parameter_name, reads, unknown_read);
         }
         SpecProposition::MemoryLoadable {
             memory,
@@ -18685,7 +18715,12 @@ fn aggregate_argument_read_refusal(
                 },
             ));
         }
-        if aggregate_copy_reads_uninitialized(&state.memory, source.pointer(), layout) {
+        if aggregate_copy_reads_uninitialized_under(
+            &state.memory,
+            source.pointer(),
+            layout,
+            assumptions,
+        ) {
             return Some(CFunctionOutcome::UndefinedBehavior(
                 CUndefinedBehavior::UninitializedRead,
             ));
@@ -18706,6 +18741,15 @@ fn aggregate_copy_reads_uninitialized(
     source: &Pointer,
     layout: &CAggregateLayout,
 ) -> bool {
+    aggregate_copy_reads_uninitialized_under(memory, source, layout, &PureFactContext::new())
+}
+
+fn aggregate_copy_reads_uninitialized_under(
+    memory: &CMemory,
+    source: &Pointer,
+    layout: &CAggregateLayout,
+    assumptions: &PureFactContext,
+) -> bool {
     // Mirror the carried-field classification in `copy_aggregate_fields`: a
     // field type this copy cannot carry drops the destination cells instead
     // of leaving them readable, so it cannot go stale here.
@@ -18721,7 +18765,7 @@ fn aggregate_copy_reads_uninitialized(
             {
                 continue;
             }
-            if memory.may_read_uninitialized_object(&source_field, bytes)
+            if memory.may_read_uninitialized_object_under(&source_field, bytes, assumptions)
                 || memory.is_uninitialized_heap_address(
                     &source_field,
                     bytes,
@@ -18774,6 +18818,7 @@ fn aggregate_copy_reads_uninitialized(
                 memory,
                 &source.offset_by_bytes(element_offset),
                 element_type,
+                assumptions,
             ) {
                 return true;
             }
@@ -18804,7 +18849,12 @@ fn aggregate_copy_reads_uninitialized(
         }
         for field in union.fields() {
             let source_field = union_source.offset_by_bytes(field.offset_bytes());
-            if uninitialized_aggregate_copy_source_cell(memory, &source_field, field.c_type()) {
+            if uninitialized_aggregate_copy_source_cell(
+                memory,
+                &source_field,
+                field.c_type(),
+                assumptions,
+            ) {
                 return true;
             }
         }
@@ -18822,6 +18872,7 @@ fn uninitialized_aggregate_copy_source_cell(
     memory: &CMemory,
     source_field: &Pointer,
     element_type: CType,
+    assumptions: &PureFactContext,
 ) -> bool {
     if memory.known_value(source_field).is_some()
         || memory.has_initialized_bytes_at(source_field, element_type.byte_width())
@@ -18835,7 +18886,7 @@ fn uninitialized_aggregate_copy_source_cell(
     ) {
         return false;
     }
-    memory.may_read_uninitialized_object(source_field, element_type.byte_width())
+    memory.may_read_uninitialized_object_under(source_field, element_type.byte_width(), assumptions)
         || memory.is_uninitialized_heap_address(
             source_field,
             element_type.byte_width(),

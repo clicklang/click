@@ -2031,6 +2031,7 @@ fn proposition_supported_in_opaque_contract(proposition: &ClickProposition) -> b
     match proposition {
         ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
+        | ClickProposition::Initialized { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => true,
         ClickProposition::At { .. } => false,
@@ -3167,6 +3168,7 @@ impl AnnotationLowerer<'_> {
             | ClickProposition::FloatClassification { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
+            | ClickProposition::Initialized { .. }
             | ClickProposition::Loadable { .. }
             | ClickProposition::Defined { .. } => {
                 self.lower_atomic_proposition_to_spec(proposition, environment)
@@ -3859,6 +3861,45 @@ impl AnnotationLowerer<'_> {
                 parent: self.lower_resource_subject_to_spec(parent, environment)?,
                 child: self.lower_resource_subject_to_spec(child, environment)?,
             }),
+            ClickProposition::Initialized { segment } => {
+                if segment.state != ContractSegmentState::Current {
+                    return Err(
+                        "initialized currently requires the current memory snapshot".to_string()
+                    );
+                }
+                let constant = |expression: &CExpression| match expression {
+                    CExpression::Value(CValue::Int32(Bitvector32Term::Constant(value))) => {
+                        Some(*value)
+                    }
+                    _ => None,
+                };
+                if constant(&segment.start) != Some(0) {
+                    return Err(
+                        "initialized currently requires a fixed byte range starting at zero"
+                            .to_string(),
+                    );
+                }
+                let bytes = constant(&segment.end).ok_or_else(|| {
+                    "initialized currently requires a constant byte count".to_string()
+                })?;
+                if bytes > i32::MAX as u32
+                    || self.contract_segment_element_width(segment, environment) != 1
+                {
+                    return Err("initialized currently requires a byte-pointer range with a nonnegative constant count".to_string());
+                }
+                let base = self.lower_contract_segment_base_to_spec(&segment.base, environment)?;
+                Ok(SpecProposition::MemoryInitialized {
+                    memory: environment.current_memory.clone(),
+                    // An output guarantee selects the input buffer once. A
+                    // reassigned pointer parameter cannot change that target.
+                    base: if environment.function_contract {
+                        SpecExpression::LoopEntrySnapshot(Box::new(base))
+                    } else {
+                        base
+                    },
+                    bytes,
+                })
+            }
             ClickProposition::Loadable { segment } => {
                 let segment_environment = self.spec_segment_environment(segment, environment)?;
                 Ok(SpecProposition::MemoryLoadable {

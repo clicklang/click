@@ -812,6 +812,72 @@ impl CFunctionContractInterface {
         &self.contract_ensures
     }
 
+    /// Fixed, entry-bound byte output ranges. Unsupported initialization
+    /// shapes refuse modular application instead of silently losing an effect.
+    pub fn initialization_outputs(&self) -> Option<Vec<(usize, u32)>> {
+        fn contains(proposition: &SpecProposition) -> bool {
+            match proposition {
+                SpecProposition::MemoryInitialized { .. } => true,
+                SpecProposition::And(left, right)
+                | SpecProposition::Or(left, right)
+                | SpecProposition::Implies(left, right) => contains(left) || contains(right),
+                SpecProposition::Not(body)
+                | SpecProposition::ForAllInt32 { body, .. }
+                | SpecProposition::ForAllMachineInteger { body, .. }
+                | SpecProposition::ForAllInteger { body, .. }
+                | SpecProposition::ForAllAlgebraic { body, .. }
+                | SpecProposition::ForAllPointer { body, .. }
+                | SpecProposition::ExistsInt32 { body, .. }
+                | SpecProposition::ExistsMachineInteger { body, .. }
+                | SpecProposition::ExistsInteger { body, .. }
+                | SpecProposition::ExistsAlgebraic { body, .. }
+                | SpecProposition::ExistsPointer { body, .. } => contains(body),
+                _ => false,
+            }
+        }
+        if self.contract_requires.iter().any(contains)
+            || self.exceptional_ensures.iter().any(contains)
+        {
+            return None;
+        }
+        let mut outputs = Vec::new();
+        for ensure in &self.contract_ensures {
+            let SpecProposition::MemoryInitialized {
+                memory,
+                base,
+                bytes,
+            } = ensure
+            else {
+                if contains(ensure) {
+                    return None;
+                }
+                continue;
+            };
+            if *memory != SpecMemory::Current {
+                return None;
+            }
+            let SpecExpression::LoopEntrySnapshot(base) = base else {
+                return None;
+            };
+            let SpecExpression::CExpression(CExpression::Variable(name)) = base.as_ref() else {
+                return None;
+            };
+            let index = self
+                .parameters
+                .iter()
+                .position(|parameter| parameter.name() == name)?;
+            let parameter = &self.parameters[index];
+            if parameter.c_type() != CType::UInt8Pointer || parameter.pointee_constant {
+                return None;
+            }
+            outputs.push((index, *bytes));
+        }
+        if !outputs.is_empty() && !self.exceptional_signature.is_empty() {
+            return None;
+        }
+        Some(outputs)
+    }
+
     pub(crate) fn exceptional_ensures(&self) -> &[SpecProposition] {
         &self.exceptional_ensures
     }
@@ -837,7 +903,9 @@ impl CFunctionContractInterface {
     }
 
     pub fn opaque_contract_supported(&self) -> bool {
-        self.opaque_contract_supported && self.exceptional_signature.is_empty()
+        self.opaque_contract_supported
+            && self.exceptional_signature.is_empty()
+            && self.initialization_outputs().is_some()
     }
 
     /// Whether this interface is representable by a body-certified direct
@@ -2833,6 +2901,9 @@ impl CFunctionContract {
         (interface.opaque_contract_supported()
             && interface.aggregate_return_mode() == CAggregateReturnMode::Copy
             && interface.construction_parameter().is_none()
+            && interface
+                .initialization_outputs()
+                .is_some_and(|outputs| outputs.is_empty())
             && interface.resource_constructors().is_empty()
             && !name.is_empty())
         .then_some(Self {

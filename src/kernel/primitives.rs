@@ -2366,6 +2366,13 @@ pub enum SpecProposition {
         end: SpecExpression,
         element_width: u32,
     },
+    /// Every byte in the fixed range is initialized in the selected snapshot.
+    /// This states no byte values and grants no access permission.
+    MemoryInitialized {
+        memory: SpecMemory,
+        base: SpecExpression,
+        bytes: u32,
+    },
     Defined(SpecExpression),
 }
 
@@ -8377,6 +8384,13 @@ pub enum Proposition {
         bytes: Bitvector32Term,
         wide: bool,
     },
+    /// Every byte in this live fixed range has been initialized. Pure
+    /// snapshot evidence, separate from access permission and byte values.
+    CMemoryInitialized {
+        memory: CMemory,
+        base: Pointer,
+        bytes: u32,
+    },
     /// A typed read is valid in this snapshot, including initialization.
     /// This is a pure fact; it grants no resource access permission.
     CMemoryReadDefined {
@@ -8750,6 +8764,15 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
             base: base.clone(),
             bytes: bytes.clone(),
             wide: *wide,
+        },
+        Proposition::CMemoryInitialized {
+            memory,
+            base,
+            bytes,
+        } => Proposition::CMemoryInitialized {
+            memory: memory.clone(),
+            base: base.clone(),
+            bytes: *bytes,
         },
         Proposition::CMemoryReadDefined {
             memory,

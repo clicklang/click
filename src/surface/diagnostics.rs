@@ -2874,6 +2874,7 @@ pub(in crate::surface) fn describe_consumed_instance_field_read(
             ClickProposition::At { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
+            | ClickProposition::Initialized { .. }
             | ClickProposition::Loadable { .. } => {}
         }
     }
@@ -5947,6 +5948,9 @@ pub(super) fn describe_click_proposition(proposition: &ClickProposition) -> Stri
         ),
         ClickProposition::Loadable { segment } => {
             format!("viewable({})", describe_contract_segment(segment))
+        }
+        ClickProposition::Initialized { segment } => {
+            format!("initialized({})", describe_contract_segment(segment))
         }
         ClickProposition::Defined { expression } => {
             format!("defined({})", describe_contract_expression(expression))

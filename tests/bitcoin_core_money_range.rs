@@ -3543,3 +3543,20 @@ fn pinned_std_byte_reinterpretation_requires_original_storage_ownership() {
     }
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn pinned_std_byte_modular_output_initializes_storage_offline() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "byte-output-initialization",
+        "#include <span.h>\nvoid fill(std::byte* p) noexcept { *p = static_cast<std::byte>(120); *(p + 1) = static_cast<std::byte>(86); *(p + 2) = static_cast<std::byte>(52); *(p + 3) = static_cast<std::byte>(18); } std::byte probe() noexcept { unsigned int obj; std::byte* bytes = reinterpret_cast<std::byte*>(&obj); fill(bytes); return *bytes; }\n",
+        &["sysroot/usr/include/c++/12/cstddef"],
+    );
+    let source = "verifying \"span-probe.cpp\"; void fill(uint8* p) { owns p[0..4]; ensures initialized(p[0..4]); ensures p[0] == 120u8; ensures p[1] == 86u8; ensures p[2] == 52u8; ensures p[3] == 18u8; } by { execute(); simp(); } uint8 probe() { ensures result == 120u8; } by { execute(); simp(); }";
+    check_pinned_byte_proof(&root, &import, source);
+    let project = read_click_project(&root.join("byte.click"), source).unwrap();
+    let expanded_helper =
+        expand_program_prepared_project_claim_source_by_label(&project, &import, "fill.contract")
+            .unwrap();
+    check_pinned_byte_proof(&root, &import, &expanded_helper);
+    fs::remove_dir_all(root).unwrap();
+}

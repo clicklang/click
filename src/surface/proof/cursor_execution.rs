@@ -1238,7 +1238,8 @@ fn annotate_surface_at_snapshot(
 ) -> Result<ClickProposition, ClickError> {
     if matches!(
         surface,
-        ClickProposition::Loadable { .. }
+        ClickProposition::Initialized { .. }
+            | ClickProposition::Loadable { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
     ) {
@@ -1353,6 +1354,7 @@ fn annotate_surface_at_snapshot(
             }
             ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
+            | ClickProposition::Initialized { .. }
             | ClickProposition::Loadable { .. } => proposition.clone(),
         }
     }
@@ -1436,6 +1438,7 @@ pub(super) fn surface_snapshot_selector(surface: &ClickProposition) -> Option<Sn
         }
         ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
+        | ClickProposition::Initialized { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => None,
     }

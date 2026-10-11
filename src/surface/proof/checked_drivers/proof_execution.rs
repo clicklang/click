@@ -4964,6 +4964,7 @@ fn proof_case_is_stable_program_point_condition(proposition: &ClickProposition) 
             ClickProposition::Not(body) => stable(body, expression_is_stable),
             ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
+            | ClickProposition::Initialized { .. }
             | ClickProposition::Loadable { .. }
             | ClickProposition::ForAll { .. }
             | ClickProposition::Exists { .. }

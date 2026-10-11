@@ -286,6 +286,11 @@ impl PropositionSearch for PureFactContext {
                         .derive_forall_rule(proposition, *var, body, false)
                         .is_some_and(|rule| proposition_derivation(proposition, rule).check(self))
             }
+            Proposition::CMemoryInitialized {
+                memory,
+                base,
+                bytes,
+            } => self.proves_memory_initialized(memory, base, *bytes),
             Proposition::CMemoryReadDefined {
                 memory,
                 pointer,
@@ -515,7 +520,9 @@ impl PropositionSearch for PureFactContext {
                 fact,
                 Proposition::CMemoryReadDefined { .. } | Proposition::CMemoryLoadable { .. }
             ),
-            Proposition::CMemoryLoadable { .. } | Proposition::CMemoryCanStore { .. } => {
+            Proposition::CMemoryInitialized { .. }
+            | Proposition::CMemoryLoadable { .. }
+            | Proposition::CMemoryCanStore { .. } => {
                 matches!(fact, Proposition::CMemoryLoadable { .. })
             }
             Proposition::CResourceSeparate { .. } => {
@@ -529,7 +536,8 @@ impl PropositionSearch for PureFactContext {
         // from the same index keeps every answer while leaving facts about
         // other objects unvisited.
         let goal_base = match proposition {
-            Proposition::CMemoryLoadable { base, .. } => Some(base),
+            Proposition::CMemoryInitialized { base, .. }
+            | Proposition::CMemoryLoadable { base, .. } => Some(base),
             Proposition::CMemoryCanStore { pointer, .. } => Some(pointer),
             _ => None,
         };

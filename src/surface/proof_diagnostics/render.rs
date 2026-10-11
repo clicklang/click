@@ -613,6 +613,17 @@ impl Renderer<'_> {
                 self.pointer(pointer);
                 self.fmt(format_args!(", bytes={byte_width})"));
             }
+            Proposition::CMemoryInitialized {
+                memory,
+                base,
+                bytes,
+            } => {
+                self.push("initialized(");
+                self.memory(memory);
+                self.push(", pointer=");
+                self.pointer(base);
+                self.fmt(format_args!(", bytes={bytes})"));
+            }
             Proposition::CMemoryReadDefined {
                 memory, pointer, ..
             } => {

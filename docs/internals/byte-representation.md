@@ -7,6 +7,13 @@ summary is in [Memory model](../concepts/memory-model.md#byte-view-of-integer-ce
 the verified demonstration is
 [`examples/byte-representation/`](https://github.com/clicklang/click/blob/master/examples/byte-representation/README.md).
 
+The [consolidated object-model design](https://github.com/clicklang/click/blob/master/design/cpp-object-model.md)
+specifies the target relationship between these rules, object lifetime and
+modular contracts. In particular, it proposes common guarded typed/byte
+observations for execution and specifications. That bridge is not yet
+implemented; the execution/specification distinction below describes current
+behavior.
+
 ## Selected profile
 
 Every rule below is stated for one profile. The C is C11 under the default
@@ -171,6 +178,31 @@ uninitialized scalar filled through a concrete helper; its partial-write
 counterpart refuses the typed read. `byte_view_tests` also checks out-of-order
 and signed byte stores, symbolic masking, later byte updates, profile refusals
 and deterministic work beside unrelated memory.
+
+## Modular output initialization
+
+An ordinary helper can return `initialized(p[0..4])` separately from its
+`owns p[0..4]` resource and byte-value postconditions. The shared specification
+atom selects a memory snapshot, an address and a fixed byte extent. Checking
+it requires live storage and recorded writes covering every byte. Adjacent
+symbolic writes merge into interval runs within their indexed offset family.
+Coverage uses one predecessor lookup, rather than iterating the requested byte
+count or visiting unrelated memory. Resetting an initialization footprint splits
+only overlapping runs; branch intersection retains the commonly initialized bytes.
+
+The initial contract profile accepts top-level normal postconditions naming
+mutable native byte-pointer parameters, with zero start and a constant count.
+The address is frozen at function entry. Proof-entry setup marks that footprint
+unwritten before materializing resource cells, so a no-op helper or a partial
+write cannot certify the guarantee. The verified modular summary records
+initialization at the bound input address after its ordinary value havoc.
+It does not supply storage, ownership or byte values. External assumptions,
+callback contracts, conditional guarantees and exceptional outputs are refused.
+
+This effect makes an initially unwritten caller object readable. It does not
+reconstruct a typed word from specification byte-value equalities; the concrete
+store rule above and modular value reasoning remain separate. See
+[`modular_byte_output_initialization.md`](https://github.com/clicklang/click/blob/master/mdtests/modular_byte_output_initialization.md).
 
 ## Typed and byte views never contradict
 
