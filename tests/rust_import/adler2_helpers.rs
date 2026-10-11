@@ -532,9 +532,10 @@ fn recheck_helper_tools(index: usize, commands: &[&str], expand: bool) {
     let proof = helper_proof(index);
     let claim = [
         "adler2::algo::U32X4::from",
-        // Operator labels retain the importer's trait identity.
-        "__rust_q_I6_adler2_I4_algo_I5_U32X4_add_assign_value_35__rust_q_I6_adler2_I4_algo_I5_U32X4",
-        "__rust_q_I6_adler2_I4_algo_I5_U32X4_rem_assign_u32",
+        // An operator method is named in Rust's qualified form, which keeps
+        // its trait identity, or by the importer's name.
+        "<adler2::algo::U32X4 as AddAssign<adler2::algo::U32X4>>::add_assign",
+        "<adler2::algo::U32X4 as RemAssign<u32>>::rem_assign",
         "__rust_q_I6_adler2_I4_algo_I5_U32X4_mul_assign_u32",
     ][index];
     fs::write(p.root.join("borrow.click"), &proof).unwrap();
@@ -2449,7 +2450,7 @@ fn charon_adler2_public_checksum_tools_recheck_original_contracts() {
         String::from_utf8_lossy(&audit.stderr)
     );
     for name in [
-        "__rust_q_I6_adler2_I7_Adler32_default",
+        "<adler2::Adler32 as Default>::default",
         "adler2::Adler32::new",
         "adler2::Adler32::write_slice",
         "adler2::adler32_slice",

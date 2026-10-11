@@ -2585,7 +2585,7 @@ fn verify_c0_sources_in_context(
                     )));
                 }
                 record_sorry_admission(
-                    format!("{}.contract", function_block.signature.name()),
+                    function_block.contract_claim_label(),
                     source_path.to_string(),
                 );
                 continue;
@@ -2694,9 +2694,9 @@ fn verify_c0_sources_in_context(
         {
             for claim in claims {
                 let claim_label = if has_explicit_claims {
-                    function_claim_label(function_block.signature.name(), &claim)
+                    function_claim_label(&function_block, &claim)
                 } else {
-                    format!("{}.body_safety", function_block.signature.name())
+                    claim_labels::body_safety_label(function_block.signature.name())
                 };
                 let theorems = match claim.proof() {
                     SourceProof::Default | SourceProof::Tactic(SmartTactic::Auto) => {
@@ -2813,7 +2813,7 @@ fn verify_c0_sources_in_context(
                         parsed_function,
                         &resource_environment,
                         spec_definitions,
-                        &format!("{}.contract certification", function_block.signature.name()),
+                        &format!("{} certification", function_block.contract_claim_label()),
                         None,
                     )
                     .map_err(|error| error.at_declaration(function_block.signature.name()))?;
@@ -3367,7 +3367,7 @@ fn verify_c0_sources_in_context(
                                 .map_or("execution path".to_string(), |(path, _)| path.to_string()),
                             source_tactic_path: None,
                         },
-                        claim_label: format!("{}.contract", function_block.signature.name()),
+                        claim_label: function_block.contract_claim_label(),
                         reason: summary.clone(),
                         state: Some(Arc::new(state)),
                     };
@@ -8197,19 +8197,18 @@ pub(in crate::surface) fn resource_access_to_kernel(
     }
 }
 
+/// The label of `claim`, one of `function_block`'s claims or the implicit
+/// body-safety claim of a block without any
+/// ([`FunctionBlock::ensure_claim_label`]).
 pub(in crate::surface) fn function_claim_label(
-    function_name: &str,
+    function_block: &FunctionBlock,
     claim: &FunctionClaimRef<'_>,
 ) -> String {
     match claim {
-        FunctionClaimRef::Ensure(index, ensure) => match ensure.name() {
-            Some(name) => format!("{function_name}.{name}"),
-            None => format!("{function_name}.ensures_{index}"),
-        },
-        FunctionClaimRef::ExceptionalEnsure(index, ensure) => match ensure.name() {
-            Some(name) => format!("{function_name}.{name}"),
-            None => format!("{function_name}.exceptional_ensures_{index}"),
-        },
+        FunctionClaimRef::Ensure(index, _) => function_block.ensure_claim_label(*index),
+        FunctionClaimRef::ExceptionalEnsure(index, _) => {
+            function_block.exceptional_ensure_claim_label(*index)
+        }
     }
 }
 

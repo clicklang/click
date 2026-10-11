@@ -384,33 +384,7 @@ fn function_expansion_claim_by_label(
     function: &FunctionBlock,
     claim_label: &str,
 ) -> Option<CProofClaim> {
-    let name = function.signature().name();
-    if claim_label == format!("{name}.contract") && function.covering_proof().is_some() {
-        return Some(CProofClaim::Grouped);
-    }
-    for (clauses, prefix, claim) in [
-        (
-            function.ensures(),
-            "ensures",
-            CProofClaim::Ensure as fn(usize) -> CProofClaim,
-        ),
-        (
-            function.exceptional_ensures(),
-            "exceptional_ensures",
-            CProofClaim::ExceptionalEnsure as fn(usize) -> CProofClaim,
-        ),
-    ] {
-        for (index, ensure) in clauses.iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{name}.{prefix}_{index}"),
-                |label| format!("{name}.{label}"),
-            );
-            if label == claim_label {
-                return Some(claim(index));
-            }
-        }
-    }
-    None
+    function.claim_by_label(claim_label)
 }
 
 /// Expands one function claim selected by the same stable label used by
@@ -422,14 +396,8 @@ pub fn expand_c0_claim_source_by_label(
 ) -> Result<String, ClickError> {
     let file = parse_source_with_c_layouts(click_source, c_sources)?;
     for theorem in file.theorem_definitions() {
-        for (index, ensure) in theorem.ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{}.ensures_{index}", theorem.name()),
-                |name| format!("{}.{name}", theorem.name()),
-            );
-            if label == claim_label {
-                return expand_pure_theorem_source(click_source, c_sources, theorem.name(), index);
-            }
+        if let Some(index) = theorem.ensure_index_by_label(claim_label) {
+            return expand_pure_theorem_source(click_source, c_sources, theorem.name(), index);
         }
     }
     for function in proof_function_blocks(&file) {
@@ -467,14 +435,8 @@ pub fn expand_project_claim_source_by_label(
         if !file.theorem_is_selected(theorem.name()) {
             continue;
         }
-        for (index, ensure) in theorem.ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{}.ensures_{index}", theorem.name()),
-                |name| format!("{}.{name}", theorem.name()),
-            );
-            if label == claim_label {
-                return expand_project_pure_theorem_source(project, inputs, theorem.name(), index);
-            }
+        if let Some(index) = theorem.ensure_index_by_label(claim_label) {
+            return expand_project_pure_theorem_source(project, inputs, theorem.name(), index);
         }
     }
     for function in proof_function_blocks(&file) {
@@ -505,19 +467,13 @@ pub fn expand_c0_prepared_claim_source_by_label(
     let sources = CSourceContext::prepared(imports);
     let file = parse_source_with_c_layouts_context(click_source, &sources)?;
     for theorem in file.theorem_definitions() {
-        for (index, ensure) in theorem.ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{}.ensures_{index}", theorem.name()),
-                |name| format!("{}.{name}", theorem.name()),
+        if let Some(index) = theorem.ensure_index_by_label(claim_label) {
+            return expand_pure_theorem_source_context(
+                click_source,
+                &sources,
+                theorem.name(),
+                index,
             );
-            if label == claim_label {
-                return expand_pure_theorem_source_context(
-                    click_source,
-                    &sources,
-                    theorem.name(),
-                    index,
-                );
-            }
         }
     }
     for function in proof_function_blocks(&file) {
@@ -552,20 +508,9 @@ fn expand_program_prepared_claim_source_by_label_context(
     let file = parse_source_with_c_layouts_context(click_source, &sources)?;
     let claim_label = &*resolve_rust_claim_label(&file, claim_label);
     for theorem in file.theorem_definitions() {
-        for (index, ensure) in theorem.ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{}.ensures_{index}", theorem.name()),
-                |name| format!("{}.{name}", theorem.name()),
-            );
-            if label == claim_label {
-                let verified = verify_click_theorems_with_context(click_source, &sources)?;
-                return rewrite_verified_pure_theorem(
-                    click_source,
-                    &verified,
-                    theorem.name(),
-                    index,
-                );
-            }
+        if let Some(index) = theorem.ensure_index_by_label(claim_label) {
+            let verified = verify_click_theorems_with_context(click_source, &sources)?;
+            return rewrite_verified_pure_theorem(click_source, &verified, theorem.name(), index);
         }
     }
     for function in proof_function_blocks(&file) {
@@ -1930,6 +1875,18 @@ fn find_ensure_proof_edit(
     body_close: usize,
     wanted: usize,
 ) -> Result<ProofSourceEdit, ClickError> {
+    let clause = find_ensure_clause(tokens, body_open, body_close, wanted)?;
+    find_proof_edit_after(tokens, clause, body_close)
+}
+
+/// The keyword token of written `ensures`, `owns`, or `produces` clause
+/// `wanted`, counted together in source order.
+fn find_ensure_clause(
+    tokens: &[SourceToken],
+    body_open: usize,
+    body_close: usize,
+    wanted: usize,
+) -> Result<usize, ClickError> {
     let mut depth = 0;
     let mut found = 0;
     let mut index = body_open + 1;
@@ -1945,13 +1902,13 @@ fn find_ensure_proof_edit(
                         != Some("exceptional") =>
             {
                 if found == wanted {
-                    return find_proof_edit_after(tokens, index, body_close);
+                    return Ok(index);
                 }
                 found += 1;
             }
             "owns" | "produces" if depth == 0 => {
                 if found == wanted {
-                    return find_proof_edit_after(tokens, index, body_close);
+                    return Ok(index);
                 }
                 found += 1;
             }
@@ -1970,6 +1927,17 @@ fn find_exceptional_ensure_proof_edit(
     body_close: usize,
     wanted: usize,
 ) -> Result<ProofSourceEdit, ClickError> {
+    let clause = find_exceptional_ensure_clause(tokens, body_open, body_close, wanted)?;
+    find_proof_edit_after(tokens, clause + 1, body_close)
+}
+
+/// The `exceptional` token of written `exceptional ensures` clause `wanted`.
+fn find_exceptional_ensure_clause(
+    tokens: &[SourceToken],
+    body_open: usize,
+    body_close: usize,
+    wanted: usize,
+) -> Result<usize, ClickError> {
     let mut depth = 0;
     let mut found = 0;
     let mut index = body_open + 1;
@@ -1983,7 +1951,7 @@ fn find_exceptional_ensure_proof_edit(
                         == Some("ensures") =>
             {
                 if found == wanted {
-                    return find_proof_edit_after(tokens, index + 1, body_close);
+                    return Ok(index);
                 }
                 found += 1;
             }
@@ -2450,7 +2418,10 @@ impl ProofSite {
                 function_name,
                 loop_index,
                 phase,
-            } => format!("`{function_name}.loop({loop_index}).{phase}`"),
+            } => format!(
+                "`{}`",
+                claim_labels::loop_phase_claim_label(function_name, *loop_index, phase)
+            ),
         }
     }
 }
@@ -3086,6 +3057,296 @@ fn select_smart_tactic_file(
     Ok(smart_tactic_candidate(click_source, entry))
 }
 
+/// One claim a source location can name: the label `click expand --claim`
+/// and `click audit --claim` take, the function or theorem that owns it
+/// (the proof unit `click verify --trace-proof` traces), and where its
+/// clause or proof starts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceClaim {
+    pub label: String,
+    pub owner: String,
+    /// Where the claim's clause, or its proof when that is all the claim
+    /// writes, starts, in the Click source's own coordinates.
+    pub position: SourcePosition,
+}
+
+/// Why a source location names no single claim. `candidates` lists the
+/// claims the location could have meant, if any.
+#[derive(Clone, Debug)]
+pub struct ClaimLocationError {
+    pub reason: String,
+    pub candidates: Vec<SourceClaim>,
+}
+
+impl ClaimLocationError {
+    fn from_error(error: ClickError) -> Self {
+        Self {
+            reason: error.message().to_string(),
+            candidates: Vec::new(),
+        }
+    }
+}
+
+/// The claim whose clause or proof covers a source location of a sidecar
+/// (or, with `project`, of its entry module).
+///
+/// A claim covers the source from its clause's keyword through the end of
+/// its proof: an `ensures`, `owns`, or `produces` clause and its `by`, an
+/// `exceptional ensures` clause, a loop phase proof, a function's grouped
+/// proof, or a tactic's proof. A clause without its own proof that the
+/// grouped proof covers names the grouped proof, `f.contract`, which is the
+/// claim that proves it. With a column the location selects the innermost
+/// claim containing it; without one, the line must touch exactly one claim.
+pub fn claim_at(
+    project: Option<&ClickProject>,
+    click_source: &str,
+    inputs: &ProgramInputs<'_>,
+    line: usize,
+    column: Option<usize>,
+) -> Result<SourceClaim, ClaimLocationError> {
+    let sources = CSourceContext::of(inputs).map_err(ClaimLocationError::from_error)?;
+    let (click_source, file) = match project {
+        Some(project) => {
+            let sources = sources.with_click_project(project);
+            let click_source = project.entry_source().ok_or_else(|| {
+                ClaimLocationError::from_error(ClickError::new(format!(
+                    "missing entry module `{}`",
+                    project.entry()
+                )))
+            })?;
+            (
+                click_source,
+                resolve_click_project_context(project, &sources)
+                    .map_err(ClaimLocationError::from_error)?,
+            )
+        }
+        None => (
+            click_source,
+            parse_source_with_c_layouts_context(click_source, &sources)
+                .map_err(ClaimLocationError::from_error)?,
+        ),
+    };
+    let regions =
+        claim_source_regions(click_source, &file).map_err(ClaimLocationError::from_error)?;
+    select_claim_region(click_source, &regions, line, column)
+}
+
+/// One claim and the source it covers.
+struct ClaimRegion {
+    span: Range<usize>,
+    /// Where the claim is reported: its clause's start, or its proof's.
+    anchor: usize,
+    label: String,
+    owner: String,
+}
+
+/// Every claim of the source's selected theorems, functions, and tactics,
+/// with the source each covers. A claim whose source cannot be located is
+/// left out: it cannot be selected by location.
+fn claim_source_regions(
+    click_source: &str,
+    file: &ClickFile,
+) -> Result<Vec<ClaimRegion>, ClickError> {
+    let tokens = scan_source_tokens(click_source)?;
+    let declarations = declaration_source_index(&tokens)?;
+    let mut regions = Vec::new();
+    let clause_region = |clause: usize, edit: &ProofSourceEdit| {
+        let start = tokens[clause].span.start;
+        start..edit.span().end.max(start)
+    };
+    for theorem in file.theorem_definitions() {
+        if !file.theorem_is_selected(theorem.name()) {
+            continue;
+        }
+        let Some(source) = declarations.get(theorem.name()) else {
+            continue;
+        };
+        for index in 0..theorem.ensures().len() {
+            let Ok(clause) =
+                find_ensure_clause(&tokens, source.body_open, source.body_close, index)
+            else {
+                continue;
+            };
+            let Ok(edit) = find_proof_edit_after(&tokens, clause, source.body_close) else {
+                continue;
+            };
+            let span = clause_region(clause, &edit);
+            regions.push(ClaimRegion {
+                anchor: span.start,
+                span,
+                label: theorem.ensure_claim_label(index),
+                owner: theorem.name().to_string(),
+            });
+        }
+    }
+    for function_block in proof_function_blocks(file) {
+        if function_block.is_external() {
+            continue;
+        }
+        let function_name = function_block.signature().name();
+        let Some(function) = declarations
+            .get(function_name)
+            .or_else(|| declarations.get(&rust_inherent_method_in_its_type_module(function_name)?))
+            .copied()
+        else {
+            continue;
+        };
+        let owner = function_name.to_string();
+        for clause in function_block.structural_clauses() {
+            let CodeRegion::Loop(loop_index) = clause.region() else {
+                continue;
+            };
+            for phase in ["initialize", "preserve"] {
+                if let Ok((_, Some(span), _)) =
+                    find_loop_phase_proof_span(&tokens, &function, *loop_index, phase)
+                {
+                    regions.push(ClaimRegion {
+                        anchor: span.start,
+                        span,
+                        label: claim_labels::loop_phase_claim_label(
+                            function_name,
+                            *loop_index,
+                            phase,
+                        ),
+                        owner: owner.clone(),
+                    });
+                }
+            }
+        }
+        if function_block.grouped_proof().is_some()
+            && let Ok(span) = find_grouped_proof_span(&tokens, &function)
+        {
+            regions.push(ClaimRegion {
+                anchor: span.start,
+                span,
+                label: function_block.contract_claim_label(),
+                owner: owner.clone(),
+            });
+        }
+        // A claim the grouped proof covers is proved there, so its clause
+        // names that proof.
+        let label =
+            |claim: CProofClaim| function_block.claim_label(covering_claim(function_block, claim));
+        let mut written = None;
+        for index in 0..function_block.ensures().len() {
+            // The members of a flattened aggregate clause share their
+            // written clause, its label, and its proof.
+            let source = function_block.ensure_source_clause(index);
+            if written.replace(source) == Some(source) {
+                continue;
+            }
+            let Ok(clause) =
+                find_ensure_clause(&tokens, function.body_open, function.body_close, source)
+            else {
+                continue;
+            };
+            let Ok(edit) = find_proof_edit_after(&tokens, clause, function.body_close) else {
+                continue;
+            };
+            let span = clause_region(clause, &edit);
+            regions.push(ClaimRegion {
+                anchor: span.start,
+                span,
+                label: label(CProofClaim::Ensure(index)),
+                owner: owner.clone(),
+            });
+        }
+        for index in 0..function_block.exceptional_ensures().len() {
+            let Ok(clause) = find_exceptional_ensure_clause(
+                &tokens,
+                function.body_open,
+                function.body_close,
+                index,
+            ) else {
+                continue;
+            };
+            let Ok(edit) = find_proof_edit_after(&tokens, clause + 1, function.body_close) else {
+                continue;
+            };
+            let span = clause_region(clause, &edit);
+            regions.push(ClaimRegion {
+                anchor: span.start,
+                span,
+                label: label(CProofClaim::ExceptionalEnsure(index)),
+                owner: owner.clone(),
+            });
+        }
+    }
+    Ok(regions)
+}
+
+/// The one claim a location selects among `regions`: with a column, the
+/// innermost claim containing it; without one, the only claim (by label)
+/// whose source touches the line.
+fn select_claim_region(
+    click_source: &str,
+    regions: &[ClaimRegion],
+    line: usize,
+    column: Option<usize>,
+) -> Result<SourceClaim, ClaimLocationError> {
+    let claim = |region: &ClaimRegion| SourceClaim {
+        label: region.label.clone(),
+        owner: region.owner.clone(),
+        position: position_at_offset(click_source, region.anchor),
+    };
+    let line_start =
+        offset_at_position(click_source, line, 1).map_err(ClaimLocationError::from_error)?;
+    let line_end = click_source[line_start..]
+        .find('\n')
+        .map_or(click_source.len(), |newline| line_start + newline);
+    let on_line = || {
+        let mut touching: Vec<&ClaimRegion> = Vec::new();
+        for region in regions
+            .iter()
+            .filter(|region| region.span.start <= line_end && region.span.end > line_start)
+        {
+            if touching.iter().all(|seen| seen.label != region.label) {
+                touching.push(region);
+            }
+        }
+        touching
+    };
+    match column {
+        Some(column) => {
+            let wanted = offset_at_position(click_source, line, column)
+                .map_err(ClaimLocationError::from_error)?;
+            // Claims do not overlap in written source; should two, the
+            // shorter is the more specific.
+            if let Some(region) = regions
+                .iter()
+                .filter(|region| region.span.contains(&wanted))
+                .min_by_key(|region| region.span.end - region.span.start)
+            {
+                return Ok(claim(region));
+            }
+            let touching = on_line();
+            Err(ClaimLocationError {
+                reason: if touching.is_empty() {
+                    "no claim's clause or proof contains this location".to_string()
+                } else {
+                    "no claim's clause or proof contains this location; the claims on this line are:"
+                        .to_string()
+                },
+                candidates: touching.into_iter().map(claim).collect(),
+            })
+        }
+        None => match on_line().as_slice() {
+            [] => Err(ClaimLocationError {
+                reason: "no claim's clause or proof covers this line".to_string(),
+                candidates: Vec::new(),
+            }),
+            [only] => Ok(claim(only)),
+            several => Err(ClaimLocationError {
+                reason: format!(
+                    "{} claims cover this line; add the column of one of them:",
+                    several.len()
+                ),
+                candidates: several.iter().map(|region| claim(region)).collect(),
+            }),
+        },
+    }
+}
+
 fn smart_tactic_candidate(click_source: &str, entry: &SourceTacticEntry) -> SmartTacticCandidate {
     SmartTacticCandidate {
         claim_label: entry.claim_label.clone(),
@@ -3441,10 +3702,7 @@ fn source_tactic_entries(
             }
             let edit =
                 find_ensure_proof_edit(&tokens, source.body_open, source.body_close, ensure_index)?;
-            let label = ensure.name().map_or_else(
-                || format!("{}.ensures_{ensure_index}", theorem.name()),
-                |name| format!("{}.{name}", theorem.name()),
-            );
+            let label = theorem.ensure_claim_label(ensure_index);
             let site = ProofSite::TheoremEnsure {
                 theorem_name: theorem.name().to_string(),
                 ensure_index,
@@ -3493,7 +3751,7 @@ fn source_tactic_entries(
                             loop_index: *loop_index,
                             phase,
                         },
-                        &format!("{function_name}.loop({loop_index}).{phase}"),
+                        &claim_labels::loop_phase_claim_label(function_name, *loop_index, phase),
                         &mut entries,
                     )?;
                 }
@@ -3519,7 +3777,7 @@ fn source_tactic_entries(
                     function_name: function_name.to_string(),
                     claim: CProofClaim::Grouped,
                 },
-                &format!("{function_name}.contract"),
+                &function_block.contract_claim_label(),
                 &mut entries,
             )?;
         }
@@ -3529,10 +3787,7 @@ fn source_tactic_entries(
             }
             let claim = CProofClaim::Ensure(index);
             let edit = find_claim_proof_edit(&tokens, &function, function_block, claim)?;
-            let label = ensure.name().map_or_else(
-                || format!("{function_name}.ensures_{index}"),
-                |name| format!("{function_name}.{name}"),
-            );
+            let label = function_block.ensure_claim_label(index);
             proof_tactic_entries(
                 &tokens,
                 &edit,
@@ -3551,10 +3806,7 @@ fn source_tactic_entries(
             }
             let claim = CProofClaim::ExceptionalEnsure(index);
             let edit = find_claim_proof_edit(&tokens, &function, function_block, claim)?;
-            let label = ensure.name().map_or_else(
-                || format!("{function_name}.exceptional_ensures_{index}"),
-                |name| format!("{function_name}.{name}"),
-            );
+            let label = function_block.exceptional_ensure_claim_label(index);
             proof_tactic_entries(
                 &tokens,
                 &edit,
@@ -4204,14 +4456,10 @@ fn c0_tactic_source_positions_file(
         }
         let source = find_theorem(&tokens, theorem.name())?;
         for (ensure_index, ensure) in theorem.ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{}.ensures_{ensure_index}", theorem.name()),
-                |name| format!("{}.{name}", theorem.name()),
-            );
             let execution_claim = theorem.executes.is_some()
                 && ensure_index == 0
-                && claim_label == format!("{}.contract", theorem.name());
-            if label != claim_label && !execution_claim {
+                && claim_label == claim_labels::contract_claim_label(theorem.name());
+            if theorem.ensure_claim_label(ensure_index) != claim_label && !execution_claim {
                 continue;
             }
             let edit =
@@ -4231,7 +4479,7 @@ fn c0_tactic_source_positions_file(
         }
     }
     for tactic in file.tactic_definitions() {
-        if claim_label != format!("{}.contract", tactic.name()) {
+        if claim_label != tactic.function_block().contract_claim_label() {
             continue;
         }
         let function = find_tactic(&tokens, tactic.name())?;
@@ -4259,12 +4507,8 @@ fn c0_tactic_source_positions_file(
                 )));
             }
         }
-        if let Some(rest) = claim_label
-            .strip_prefix(function_name)
-            .and_then(|rest| rest.strip_prefix(".loop("))
-            && let Some((loop_index, phase)) = rest.split_once(").")
-            && matches!(phase, "initialize" | "preserve")
-            && let Ok(loop_index) = loop_index.parse::<usize>()
+        if let Some((loop_index, phase)) =
+            claim_labels::parse_loop_phase_claim_label(function_name, claim_label)
             && let Some(clause) = function_block
                 .structural_clauses()
                 .iter()
@@ -4286,37 +4530,19 @@ fn c0_tactic_source_positions_file(
                 claim_label,
             );
         }
-        let selected = if claim_label == format!("{function_name}.contract") {
-            function_block
-                .covering_proof()
-                .map(|proof| (CProofClaim::Grouped, proof))
-        } else {
-            function_block
-                .ensures()
-                .iter()
-                .enumerate()
-                .find_map(|(index, ensure)| {
-                    let label = ensure.name().map_or_else(
-                        || format!("{function_name}.ensures_{index}"),
-                        |name| format!("{function_name}.{name}"),
-                    );
-                    (label == claim_label).then_some((CProofClaim::Ensure(index), ensure.proof()))
-                })
-                .or_else(|| {
-                    function_block
-                        .exceptional_ensures()
-                        .iter()
-                        .enumerate()
-                        .find_map(|(index, ensure)| {
-                            let label = ensure.name().map_or_else(
-                                || format!("{function_name}.exceptional_ensures_{index}"),
-                                |name| format!("{function_name}.{name}"),
-                            );
-                            (label == claim_label)
-                                .then_some((CProofClaim::ExceptionalEnsure(index), ensure.proof()))
-                        })
-                })
-        };
+        let selected = function_block
+            .claim_by_label(claim_label)
+            .and_then(|claim| match claim {
+                CProofClaim::Grouped => function_block.covering_proof().map(|proof| (claim, proof)),
+                CProofClaim::Ensure(index) => function_block
+                    .ensures()
+                    .get(index)
+                    .map(|ensure| (claim, ensure.proof())),
+                CProofClaim::ExceptionalEnsure(index) => function_block
+                    .exceptional_ensures()
+                    .get(index)
+                    .map(|ensure| (claim, ensure.proof())),
+            });
         let Some((claim, proof)) = selected else {
             continue;
         };
@@ -4461,7 +4687,7 @@ fn find_loop_phase_proof_span(
     )))
 }
 
-fn parse_source_with_c_layouts(
+pub(super) fn parse_source_with_c_layouts(
     click_source: &str,
     c_sources: &[(&str, &str)],
 ) -> Result<ClickFile, ClickError> {

@@ -1209,10 +1209,11 @@ fn multidimensional_local_array_field_expands_with_every_subscript() {
 }
 
 /// A `produces` clause naming a struct member is one ensure per field of
-/// that member, all sharing the proof the author wrote once. Every such
-/// claim resolves to that written clause: the locator used to count written
-/// clauses by claim index, so the later claims pointed past the last clause
-/// and `click audit` stopped with `could not locate source ensure 2`.
+/// that member, all sharing the proof the author wrote once. They are one
+/// claim, labelled by that written clause, and resolve to it: the locator
+/// used to count written clauses by claim index, so the later claims pointed
+/// past the last clause and `click audit` stopped with `could not locate
+/// source ensure 2`.
 #[test]
 fn flattened_aggregate_claims_resolve_to_their_written_clause() {
     let (click_source, c_sources) = mdtest_sources("mdtests/struct_aggregate_resources.md");
@@ -1220,29 +1221,39 @@ fn flattened_aggregate_claims_resolve_to_their_written_clause() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
+    let file = expansion::parse_source_with_c_layouts(&click_source, &c_sources).unwrap();
+    let write_inner = file
+        .function_blocks()
+        .iter()
+        .find(|block| block.signature().name() == "write_inner")
+        .unwrap();
+    let produced = (0..write_inner.ensures().len())
+        .filter(|index| write_inner.ensure_claim_label(*index) == "write_inner.produces_0")
+        .count();
+    assert!(produced >= 2, "the member should flatten to several claims");
+    assert_eq!(write_inner.ensure_claim_label(0), "write_inner.ensures_0");
     let sites = expansion::c0_smart_tactic_source_sites(&click_source, &c_sources).unwrap();
     let written = click_source
         .find("produces packet->inner by auto;")
         .expect("the fixture states the aggregate clause");
     let written = expansion::position_at_offset(&click_source, written);
-    let mut resolved = 0;
-    for site in sites
+    let produced_sites = sites
         .iter()
-        .filter(|site| site.claim_label.starts_with("write_inner.ensures_"))
-    {
-        let position = expansion::c0_tactic_source_position(
-            &click_source,
-            &c_sources,
-            &site.claim_label,
-            site.source_index,
-        )
-        .unwrap_or_else(|error| panic!("{}: {}", site.claim_label, error.message()));
-        if site.claim_label != "write_inner.ensures_0" {
-            assert_eq!(position.line, written.line, "{}", site.claim_label);
-            resolved += 1;
-        }
-    }
-    assert!(resolved >= 2, "the member should flatten to several claims");
+        .filter(|site| site.claim_label == "write_inner.produces_0")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        produced_sites.len(),
+        1,
+        "the written clause's one proof is one site"
+    );
+    let position = expansion::c0_tactic_source_position(
+        &click_source,
+        &c_sources,
+        "write_inner.produces_0",
+        produced_sites[0].source_index,
+    )
+    .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert_eq!(position.line, written.line);
 }
 
 /// A `simp()` closing an `initialize` script that several invariants share

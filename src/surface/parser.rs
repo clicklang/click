@@ -3,6 +3,7 @@ mod tokenizer;
 use tokenizer::tokenize;
 
 use super::*;
+use claim_labels::{ClaimClauseKind, flattened_claim_ids};
 
 #[derive(Clone, Debug)]
 pub(super) struct QualifiedCObject {
@@ -845,7 +846,9 @@ fn rust_signature_hint(parsed: &ParsedFunctionSignature) -> Option<String> {
     };
     let name = super::rust_names::rust_display_name(&signature.name)
         .unwrap_or_else(|| signature.name.clone());
-    if name.starts_with("__rust_q") {
+    // An importer name that is no path, or an operator method's qualified
+    // form, has no `fn` spelling.
+    if name.starts_with("__rust_q") || name.starts_with('<') {
         return None;
     }
     let mut parameters = Vec::new();
@@ -2639,6 +2642,7 @@ impl Parser {
         let mut contract_let_names = BTreeSet::new();
         let mut requires = Vec::new();
         let mut ensures = Vec::new();
+        let mut ensure_kinds = Vec::new();
         while self.peek() != Some(&Token::RBrace) {
             match self.peek_ident() {
                 Some("let") => {
@@ -2703,6 +2707,7 @@ impl Parser {
                         )
                         .map_err(|message| self.error(message))?,
                     );
+                    ensure_kinds.push(ClaimClauseKind::Owns);
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
@@ -2746,6 +2751,7 @@ impl Parser {
                     self.position += 1;
                     let resource = self.parse_owned_resource_binding()?;
                     let proof = self.parse_proof_clause_or_default()?;
+                    ensure_kinds.push(ClaimClauseKind::Produces);
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
@@ -2783,6 +2789,7 @@ impl Parser {
                     } else {
                         self.parse_ensure_clause()?
                     };
+                    ensure_kinds.push(ClaimClauseKind::Ensures);
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(ensure, &contract_lets)
                             .map_err(|message| self.error(message))?,
@@ -2814,10 +2821,17 @@ impl Parser {
             .into_iter()
             .flat_map(expand_aggregate_requirement)
             .collect();
+        let mut ensure_source_clauses = Vec::new();
         let ensures: Vec<EnsureClause> = ensures
             .into_iter()
-            .flat_map(expand_aggregate_ensure_clause)
+            .enumerate()
+            .flat_map(|(source, ensure)| {
+                let expanded = expand_aggregate_ensure_clause(ensure);
+                ensure_source_clauses.extend(std::iter::repeat_n(source, expanded.len()));
+                expanded
+            })
             .collect();
+        let ensure_claim_ids = flattened_claim_ids(&ensure_kinds, &ensure_source_clauses);
 
         Ok(TheoremDefinition {
             name,
@@ -2829,6 +2843,7 @@ impl Parser {
             }),
             requires,
             ensures,
+            ensure_claim_ids,
         })
     }
 
@@ -2906,6 +2921,9 @@ impl Parser {
         let mut decreases = None;
         let mut constructs = Vec::new();
         let mut ensures = Vec::new();
+        // The kind each written postcondition clause was written as, which
+        // its claim label counts it among.
+        let mut ensure_kinds = Vec::new();
         let mut exceptional_ensures = Vec::new();
         // A local of struct-pointer type is a memory base in this function's
         // proof just as a parameter is. The signature wins a shared spelling.
@@ -3044,6 +3062,7 @@ impl Parser {
                             ));
                         }
                         let proof = self.parse_proof_clause_or_default()?;
+                        ensure_kinds.push(ClaimClauseKind::Produces);
                         ensures.push(
                             apply_contract_lets_to_ensure_clause(
                                 EnsureClause {
@@ -3103,6 +3122,7 @@ impl Parser {
                         )
                         .map_err(|message| self.error(message))?,
                     );
+                    ensure_kinds.push(ClaimClauseKind::Owns);
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
@@ -3164,6 +3184,7 @@ impl Parser {
                         &parameter_names_in_order,
                         CalleeResourceBinderKind::Produced,
                     );
+                    ensure_kinds.push(ClaimClauseKind::Produces);
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
@@ -3199,6 +3220,7 @@ impl Parser {
                             ));
                         }
                     }
+                    ensure_kinds.push(ClaimClauseKind::Ensures);
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(ensure, &contract_lets)
                             .map_err(|message| self.error(message))?,
@@ -3364,6 +3386,7 @@ impl Parser {
                 expanded
             })
             .collect();
+        let ensure_claim_ids = flattened_claim_ids(&ensure_kinds, &ensure_source_clauses);
 
         let mut object_alignment_facts = Vec::new();
         for requirement in &requires {
@@ -3426,6 +3449,7 @@ impl Parser {
             ensures,
             exceptional_ensures,
             ensure_source_clauses,
+            ensure_claim_ids,
             grouped_proof,
             parameter_struct_casts,
             parameter_field_places,
