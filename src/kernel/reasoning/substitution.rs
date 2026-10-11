@@ -1055,7 +1055,24 @@ fn collect_c_value_bound_variables(value: &CValue, variables: &mut BTreeSet<Vari
         | CValue::UInt128(bits)
         | CValue::Float32(bits)
         | CValue::Float64(bits) => collect_bitvector_bound_variables(bits, variables),
-        CValue::Pointer(pointer) => collect_pointer_bound_variables(pointer, variables),
+        CValue::Pointer(pointer) => {
+            collect_pointer_bound_variables(pointer.pointer(), variables);
+            if let Some(designation) = pointer.designation() {
+                if let Some(variable) = designation.unresolved_variable() {
+                    variables.insert(variable);
+                }
+                for term in designation.pointer_terms() {
+                    collect_pointer_bound_variables(term, variables);
+                }
+                for term in designation.integer_terms() {
+                    collect_integer_bound_variables(term.as_ref(), variables);
+                    crate::kernel::prelude::collect_integer_capture_bitvector_variables(
+                        term.as_ref(),
+                        variables,
+                    );
+                }
+            }
+        }
         CValue::Void => {}
     }
 }
@@ -5722,9 +5739,54 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_value(
         CValue::UInt128(bits) => CValue::UInt128(substitute_bitvector_variable(bits, from, to)),
         CValue::Float32(bits) => CValue::Float32(substitute_bitvector_variable(bits, from, to)),
         CValue::Float64(bits) => CValue::Float64(substitute_bitvector_variable(bits, from, to)),
-        CValue::Pointer(pointer) => CValue::Pointer(pointer.clone().with_pointer(
-            substitute_bitvector_variable_in_pointer(pointer.pointer(), from, to),
-        )),
+        CValue::Pointer(pointer) => CValue::Pointer(
+            pointer
+                .clone()
+                .with_pointer(substitute_bitvector_variable_in_pointer(
+                    pointer.pointer(),
+                    from,
+                    to,
+                ))
+                .map_designation(|designation| match designation {
+                    PointerDesignation::Unresolved(variable) => {
+                        PointerDesignation::Unresolved(*variable)
+                    }
+                    PointerDesignation::Object {
+                        root,
+                        path,
+                        base,
+                        element_type,
+                        stride,
+                        count,
+                    } => PointerDesignation::Object {
+                        root: substitute_bitvector_variable_in_pointer(root, from, to),
+                        path: path
+                            .iter()
+                            .map(|selection| match selection {
+                                PointerDomainSelection::Member(name) => {
+                                    PointerDomainSelection::Member(name.clone())
+                                }
+                                PointerDomainSelection::Element(index) => {
+                                    PointerDomainSelection::Element(
+                                        substitute_bitvector_variable_in_integer(
+                                            index.as_ref(),
+                                            from,
+                                            to,
+                                        )
+                                        .into(),
+                                    )
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .into(),
+                        base: substitute_bitvector_variable_in_pointer(base, from, to),
+                        element_type: *element_type,
+                        stride: *stride,
+                        count: substitute_bitvector_variable_in_integer(count.as_ref(), from, to)
+                            .into(),
+                    },
+                }),
+        ),
     }
 }
 

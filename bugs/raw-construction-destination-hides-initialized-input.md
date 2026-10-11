@@ -15,9 +15,11 @@ MDTEST_FILTER=cpp_one_guard_unwind cargo nextest run --test mdtests
 CLICK_EXAMPLE=basic-cpp cargo nextest run --test examples -E 'test(example_projects)'
 ```
 
-The first command was reproduced locally. CI also reproduces the existing
+The current full local corpus also reproduces the existing
 `cpp_one_guard_unwind.md`, `cpp_two_guard_unwind.md`,
-`cpp_guard_unwind_before_second.md`, and `examples/basic-cpp/with_restore.click`
+`cpp_guard_unwind_before_second.md`, `cpp_single_guard_throw_step.md`, and
+`examples/basic-cpp/with_restore.click` failures at the same constructor input
+read. These account for all remaining local unit/import, Markdown and example
 failures. Preserve those original source patterns and contracts.
 
 The constructor has authority for its own value fields and the input slot. It

@@ -96,7 +96,10 @@ pub(crate) fn c_resources_directly_match(
                 "kernel",
                 "resource context equality",
                 "resource direct match: pointer value",
-                || pointers_match_for_resource_check(left, right, assumptions),
+                || {
+                    left.same_designation(right)
+                        && pointers_match_for_resource_check(left, right, assumptions)
+                },
             )
         }
         _ => false,
@@ -364,7 +367,8 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
                 CValue::Pointer(pointer) => CValue::Pointer(
                     pointer
                         .clone()
-                        .with_pointer(canonicalize_pointer_loads(pointer.pointer())),
+                        .with_pointer(canonicalize_pointer_loads(pointer.pointer()))
+                        .map_designation_pointers(canonicalize_pointer_loads),
                 ),
             };
             (key, value)
@@ -421,7 +425,8 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
             CValue::Pointer(pointer) => CValue::Pointer(
                 pointer
                     .clone()
-                    .with_pointer(canonicalize_pointer_loads(pointer.pointer())),
+                    .with_pointer(canonicalize_pointer_loads(pointer.pointer()))
+                    .map_designation_pointers(canonicalize_pointer_loads),
             ),
         };
         std::sync::Arc::make_mut(&mut canonical.union_cells).insert((key, *c_type), value);

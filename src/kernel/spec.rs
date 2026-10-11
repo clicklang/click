@@ -2477,7 +2477,17 @@ fn integer_carrier_in_bitvector(term: &Bitvector32Term, variable: Variable) -> b
 
 fn integer_carrier_in_c_value(value: &CValue, variable: Variable) -> bool {
     match value {
-        CValue::Pointer(pointer) => integer_carrier_in_pointer(pointer, variable),
+        CValue::Pointer(pointer) => {
+            integer_carrier_in_pointer(pointer.pointer(), variable)
+                || pointer.designation().is_some_and(|designation| {
+                    designation
+                        .pointer_terms()
+                        .any(|term| integer_carrier_in_pointer(term, variable))
+                        || designation
+                            .integer_terms()
+                            .any(|term| integer_carrier_in_integer(term.as_ref(), variable))
+                })
+        }
         CValue::Void => false,
         CValue::Int8(term) => integer_carrier_in_bitvector(term, variable),
         CValue::Bool(term)
@@ -3175,7 +3185,7 @@ fn rewrite_integer_match_typed_fields(
                         .insert(
                             *from,
                             crate::kernel::proof::term_rewrite::TypedCReplacement::Pointer(
-                                to.pointer().clone(),
+                                to.clone(),
                             ),
                         )
                         .is_some()

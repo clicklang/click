@@ -1175,7 +1175,8 @@ fn cell_value_is_exactly_load(
         }
         CValue::Pointer(value) => {
             let target = value.pointer();
-            target.block == pointer.block
+            value.designation().is_none()
+                && target.block == pointer.block
                 && matches!(
                     &target.offset,
                     crate::kernel::PointerOffsetTerm::Int32Scaled { value, .. }
@@ -10861,6 +10862,33 @@ pub(crate) fn old_reference_state<'a>(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn numeric_load_does_not_establish_pointer_designation() {
+        use crate::kernel::{CPointerValue, CType, Pointer, PointerDesignation, PointerOffsetTerm};
+        let slot = Pointer::symbolic(Variable(983_100));
+        let load = Bitvector32Term::Variable(Variable(983_101));
+        let address = Pointer {
+            block: slot.block.clone(),
+            offset: PointerOffsetTerm::Int32Scaled {
+                value: load.clone().into(),
+                byte_width: 4,
+            },
+        };
+        let pointer = CPointerValue::new(address, CType::Int32Pointer);
+        assert!(cell_value_is_exactly_load(
+            &CValue::Pointer(pointer.clone()),
+            &load,
+            &slot
+        ));
+        let designated =
+            pointer.with_designation(PointerDesignation::Unresolved(Variable(983_102)));
+        assert!(!cell_value_is_exactly_load(
+            &CValue::Pointer(designated),
+            &load,
+            &slot
+        ));
+    }
+
     #[test]
     fn balanced_unit_sum_domain_requires_all_three_original_domains() {
         use crate::kernel::ConditionTerm;

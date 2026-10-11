@@ -626,10 +626,17 @@ Transforming an existing value uses carrier-preserving operations:
 type. Pointer arithmetic, load naming, substitution and deep snapshot
 canonicalization must not reconstruct an existing value through the fresh
 `typed_pointer` constructor. Fresh allocations and genuinely new symbolic values
-still use that constructor. This preserves the current qualifiers; checked
-object/array designation is specified in the
-[object-model design](https://github.com/clicklang/click/blob/master/design/cpp-object-model.md#checked-pointer-designation-representation-and-implementation)
-and is not yet carried or enforced by these operations.
+still use that constructor. The carrier also retains an optional unresolved or
+explicit object/array designation. Full-value substitution transports that
+designation; address-only rewrites preserve it without treating address equality
+as object identity. Stored-value and resource comparisons require matching
+designations, while native pointer comparison still compares addresses. Explicit
+descriptors contain root/path, base, element type/stride and mathematical count;
+they are terms, not independent evidence of object validity or permission.
+Binder traversal, alpha keys and substitution include their dependencies.
+Resource semantics version 70 invalidates older retained artifacts. Native
+issuance, pointer-valued load transport and access enforcement remain pending in
+the [object-model design](https://github.com/clicklang/click/blob/master/design/cpp-object-model.md#checked-pointer-designation-representation-and-implementation).
 
 Copyable by-value structs are the first exception to that address-first
 boundary. C0 retains each leaf field name, byte offset, and kernel type in a

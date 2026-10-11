@@ -1154,6 +1154,27 @@ fn collect_c_value_bound_identities(
     match value {
         CValue::Void => {}
         CValue::Pointer(pointer) => {
+            if let Some(designation) = pointer.designation() {
+                for term in designation.integer_terms() {
+                    collect_shared_integer_bound_identities(term, variables, _integer_seen);
+                }
+                for term in designation.pointer_terms() {
+                    for bits in term.offset.scaled_values() {
+                        collect_bitvector_integer_variables(bits, variables);
+                    }
+                    if let PointerBlock::PureFunctionApplication(application) = &term.block
+                        && _integer_seen.pointers.insert(application.id())
+                    {
+                        for argument in application.arguments() {
+                            collect_pure_argument_bound_identities(
+                                argument,
+                                variables,
+                                _integer_seen,
+                            );
+                        }
+                    }
+                }
+            }
             if let PointerBlock::PureFunctionApplication(application) = &pointer.block
                 && _integer_seen.pointers.insert(application.id())
             {
@@ -2826,7 +2847,17 @@ fn collect_c_value_integer_variables(
         | CValue::Float64(value) => {
             collect_bitvector_integer_variables_seen(value, variables, seen)
         }
-        CValue::Pointer(_) => {}
+        CValue::Pointer(pointer) => {
+            collect_pointer_integer_variables(pointer.pointer(), variables, seen);
+            if let Some(designation) = pointer.designation() {
+                for term in designation.pointer_terms() {
+                    collect_pointer_integer_variables(term, variables, seen);
+                }
+                for term in designation.integer_terms() {
+                    collect_shared_integer_variables_seen(term, variables, seen);
+                }
+            }
+        }
     }
 }
 
@@ -3551,7 +3582,22 @@ fn collect_capture_variables_in_c_value(
             collect_bitvector_capture_variables_seen(bits, variables, integer_seen)
         }
         CValue::Pointer(pointer) => {
-            collect_pointer_capture_variables(pointer.pointer(), variables, integer_seen)
+            collect_pointer_capture_variables(pointer.pointer(), variables, integer_seen);
+            if let Some(designation) = pointer.designation() {
+                if let Some(variable) = designation.unresolved_variable() {
+                    variables.insert(variable);
+                }
+                for term in designation.pointer_terms() {
+                    collect_pointer_capture_variables(term, variables, integer_seen);
+                }
+                for term in designation.integer_terms() {
+                    collect_shared_integer_bitvector_capture_variables(
+                        term,
+                        variables,
+                        integer_seen,
+                    );
+                }
+            }
         }
     }
 }
@@ -4297,7 +4343,21 @@ fn collect_c_value_scope_summary(
         | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => collect_bitvector_scope_summary(term, summaries),
-        CValue::Pointer(pointer) => collect_pointer_scope_summary(pointer.pointer(), summaries),
+        CValue::Pointer(pointer) => {
+            let mut summary = collect_pointer_scope_summary(pointer.pointer(), summaries);
+            if let Some(designation) = pointer.designation() {
+                if let Some(variable) = designation.unresolved_variable() {
+                    summary.merge(IntegerScopeSummary::bitvector_variable(variable));
+                }
+                for term in designation.pointer_terms() {
+                    summary.merge(collect_pointer_scope_summary(term, summaries));
+                }
+                for term in designation.integer_terms() {
+                    summary.merge(collect_integer_scope_summary_shared(term, summaries));
+                }
+            }
+            summary
+        }
     }
 }
 
@@ -5044,12 +5104,32 @@ fn collect_binder_variables_in_c_value(
             bitvector_variables,
             integer_seen,
         ),
-        CValue::Pointer(pointer) => collect_pointer_binder_variables(
-            pointer.pointer(),
-            integer_variables,
-            bitvector_variables,
-            integer_seen,
-        ),
+        CValue::Pointer(pointer) => {
+            collect_pointer_binder_variables(
+                pointer.pointer(),
+                integer_variables,
+                bitvector_variables,
+                integer_seen,
+            );
+            if let Some(designation) = pointer.designation() {
+                for term in designation.pointer_terms() {
+                    collect_pointer_binder_variables(
+                        term,
+                        integer_variables,
+                        bitvector_variables,
+                        integer_seen,
+                    );
+                }
+                for term in designation.integer_terms() {
+                    collect_integer_binder_variables_shared(
+                        term,
+                        integer_variables,
+                        bitvector_variables,
+                        integer_seen,
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -5946,7 +6026,20 @@ pub(crate) fn collect_c_value_bitvector_variables(
         | CValue::UInt128(bits)
         | CValue::Float32(bits)
         | CValue::Float64(bits) => collect_bitvector_variables(bits, variables),
-        CValue::Pointer(pointer) => collect_pointer_bitvector_variables(pointer, variables),
+        CValue::Pointer(pointer) => {
+            collect_pointer_bitvector_variables(pointer.pointer(), variables);
+            if let Some(designation) = pointer.designation() {
+                if let Some(variable) = designation.unresolved_variable() {
+                    variables.insert(variable);
+                }
+                for term in designation.pointer_terms() {
+                    collect_pointer_bitvector_variables(term, variables);
+                }
+                for term in designation.integer_terms() {
+                    collect_shared_integer_variables(term, variables, &mut SeenTerms::default());
+                }
+            }
+        }
     }
 }
 

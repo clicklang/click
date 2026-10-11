@@ -597,7 +597,8 @@ pub(crate) struct LoadedPointerView {
 }
 
 /// A C pointer value carries both its raw address and the type through which
-/// the address is being viewed.  `Pointer` remains the untyped address
+/// the address is being viewed, plus an optional immutable object/array
+/// designation. `Pointer` remains the untyped address
 /// identity used by memory, aliasing, and provenance; pointer casts retag the
 /// value without changing that identity.
 ///
@@ -613,6 +614,74 @@ pub struct CPointerValue {
     c_type: CType,
     pointee_volatile: bool,
     pointee_constant: bool,
+    designation: Option<std::sync::Arc<PointerDesignation>>,
+}
+
+/// An immutable description of the object/array selected by a pointer value.
+/// These terms carry no proof of liveness, initialization, or access authority.
+/// The absent legacy designation is distinct from an unresolved C binder.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) enum PointerDesignation {
+    Unresolved(Variable),
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "checked native domain producers are the next implementation stage"
+        )
+    )]
+    Object {
+        root: Pointer,
+        path: std::sync::Arc<[PointerDomainSelection]>,
+        base: Pointer,
+        element_type: CType,
+        stride: u32,
+        count: SharedIntegerTerm,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "checked native domain producers are the next implementation stage"
+    )
+)]
+pub(crate) enum PointerDomainSelection {
+    Member(String),
+    Element(SharedIntegerTerm),
+}
+
+impl PointerDesignation {
+    pub(crate) fn pointer_terms(&self) -> impl Iterator<Item = &Pointer> {
+        match self {
+            Self::Unresolved(_) => [None, None],
+            Self::Object { root, base, .. } => [Some(root), Some(base)],
+        }
+        .into_iter()
+        .flatten()
+    }
+
+    pub(crate) fn integer_terms(&self) -> impl Iterator<Item = &SharedIntegerTerm> {
+        let (path, count) = match self {
+            Self::Unresolved(_) => (&[][..], None),
+            Self::Object { path, count, .. } => (path.as_ref(), Some(count)),
+        };
+        path.iter()
+            .filter_map(|selection| match selection {
+                PointerDomainSelection::Member(_) => None,
+                PointerDomainSelection::Element(index) => Some(index),
+            })
+            .chain(count)
+    }
+
+    pub(crate) fn unresolved_variable(&self) -> Option<Variable> {
+        match self {
+            Self::Unresolved(variable) => Some(*variable),
+            Self::Object { .. } => None,
+        }
+    }
 }
 
 impl CPointerValue {
@@ -626,6 +695,7 @@ impl CPointerValue {
             c_type,
             pointee_volatile: false,
             pointee_constant: false,
+            designation: None,
         }
     }
 
@@ -649,12 +719,65 @@ impl CPointerValue {
         self.pointee_constant
     }
 
+    pub(crate) fn designation(&self) -> Option<&PointerDesignation> {
+        self.designation.as_deref()
+    }
+
+    pub(crate) fn same_designation(&self, other: &Self) -> bool {
+        self.designation == other.designation
+    }
+
+    pub(crate) fn with_designation(mut self, designation: PointerDesignation) -> Self {
+        self.designation = Some(std::sync::Arc::new(designation));
+        self
+    }
+
+    pub(crate) fn with_designation_of(mut self, other: &Self) -> Self {
+        self.designation = other.designation.clone();
+        self
+    }
+
+    pub(crate) fn map_designation(
+        mut self,
+        map: impl FnOnce(&PointerDesignation) -> PointerDesignation,
+    ) -> Self {
+        if let Some(designation) = &self.designation {
+            let mapped = map(designation);
+            if mapped != **designation {
+                self.designation = Some(std::sync::Arc::new(mapped));
+            }
+        }
+        self
+    }
+
+    pub(crate) fn map_designation_pointers(self, mut map: impl FnMut(&Pointer) -> Pointer) -> Self {
+        self.map_designation(|designation| match designation {
+            PointerDesignation::Unresolved(variable) => PointerDesignation::Unresolved(*variable),
+            PointerDesignation::Object {
+                root,
+                path,
+                base,
+                element_type,
+                stride,
+                count,
+            } => PointerDesignation::Object {
+                root: map(root),
+                path: path.clone(),
+                base: map(base),
+                element_type: *element_type,
+                stride: *stride,
+                count: count.clone(),
+            },
+        })
+    }
+
     pub(crate) fn with_type(self, c_type: CType) -> Self {
         Self {
             pointer: self.pointer,
             c_type,
             pointee_volatile: self.pointee_volatile,
             pointee_constant: self.pointee_constant,
+            designation: self.designation,
         }
     }
 
@@ -687,10 +810,22 @@ impl CPointerValue {
 }
 
 impl CPointerValue {
-    /// Everything that is the value's identity: the address, the type it is
-    /// viewed through, and whether the pointee is volatile.
-    fn identity(&self) -> (&Pointer, &CType, bool) {
-        (&self.pointer, &self.c_type, self.pointee_volatile)
+    /// Full value identity includes designation as well as address and view.
+    /// Native pointer comparisons continue to compare the raw address.
+    fn identity(
+        &self,
+    ) -> (
+        &Pointer,
+        &CType,
+        bool,
+        &Option<std::sync::Arc<PointerDesignation>>,
+    ) {
+        (
+            &self.pointer,
+            &self.c_type,
+            self.pointee_volatile,
+            &self.designation,
+        )
     }
 }
 
@@ -704,7 +839,11 @@ impl Eq for CPointerValue {}
 
 impl std::hash::Hash for CPointerValue {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.identity().hash(state);
+        // Preserve legacy pointer hashes used by deterministic load names.
+        (&self.pointer, &self.c_type, self.pointee_volatile).hash(state);
+        if let Some(designation) = &self.designation {
+            designation.hash(state);
+        }
     }
 }
 
@@ -1962,8 +2101,14 @@ impl AlgebraicTerm {
             Algebraic(&'a AlgebraicTerm),
             Value(&'a CValue),
             Offset(&'a PointerOffsetTerm),
+            Pointer(&'a Pointer),
+            Integer(&'a IntegerTerm),
+            SharedInteger(&'a SharedIntegerTerm),
+            Argument(&'a PureFunctionArgument),
         }
         let mut pending = vec![Node::Algebraic(self)];
+        let mut integers = std::collections::BTreeSet::new();
+        let mut pointer_applications = std::collections::BTreeSet::new();
         while let Some(node) = pending.pop() {
             match node {
                 Node::Algebraic(term) => match &term.node {
@@ -2008,7 +2153,13 @@ impl AlgebraicTerm {
                 Node::Value(value) => match value {
                     CValue::Void => {}
                     CValue::Bool(v) => visit(v),
-                    CValue::Pointer(v) => pending.push(Node::Offset(&v.pointer().offset)),
+                    CValue::Pointer(v) => {
+                        pending.push(Node::Pointer(v.pointer()));
+                        if let Some(designation) = v.designation() {
+                            pending.extend(designation.pointer_terms().map(Node::Pointer));
+                            pending.extend(designation.integer_terms().map(Node::SharedInteger));
+                        }
+                    }
                     CValue::Int8(v) => visit(v),
                     CValue::Int16(v)
                     | CValue::UInt16(v)
@@ -2031,6 +2182,87 @@ impl AlgebraicTerm {
                     PointerOffsetTerm::Int32Scaled { value, .. }
                     | PointerOffsetTerm::Int64Scaled { value, .. } => visit(value),
                 },
+                Node::Pointer(pointer) => {
+                    crate::instrumentation::record_deterministic_work(1);
+                    pending.push(Node::Offset(&pointer.offset));
+                    if let PointerBlock::PureFunctionApplication(application) = &pointer.block
+                        && pointer_applications.insert(application.id())
+                    {
+                        pending.extend(application.arguments().iter().map(Node::Argument));
+                    }
+                }
+                Node::Argument(argument) => match argument {
+                    PureFunctionArgument::Value(value)
+                    | PureFunctionArgument::ArrayRef { pointer: value, .. } => {
+                        pending.push(Node::Value(value))
+                    }
+                    PureFunctionArgument::Integer(integer) => {
+                        pending.push(Node::SharedInteger(integer))
+                    }
+                    PureFunctionArgument::Algebraic(algebraic) => {
+                        pending.push(Node::Algebraic(algebraic))
+                    }
+                },
+                Node::SharedInteger(integer) => {
+                    crate::instrumentation::record_deterministic_work(1);
+                    if integers.insert(integer.id()) {
+                        pending.push(Node::Integer(integer.as_ref()));
+                    }
+                }
+                Node::Integer(integer) => {
+                    crate::instrumentation::record_deterministic_work(1);
+                    match integer {
+                        IntegerTerm::Constant(_) | IntegerTerm::Variable(_) => {}
+                        IntegerTerm::Machine(machine) => visit(machine.value()),
+                        IntegerTerm::Negate(value) => pending.push(Node::SharedInteger(value)),
+                        IntegerTerm::Add(left, right)
+                        | IntegerTerm::Subtract(left, right)
+                        | IntegerTerm::Multiply(left, right)
+                        | IntegerTerm::TruncatingQuotient(left, right)
+                        | IntegerTerm::TruncatingRemainder(left, right) => {
+                            pending.push(Node::SharedInteger(left));
+                            pending.push(Node::SharedInteger(right));
+                        }
+                        IntegerTerm::PureFunctionApplication(application) => {
+                            pending.extend(application.arguments().iter().map(Node::Argument));
+                        }
+                        IntegerTerm::AlgebraicMatch { scrutinee, arms } => {
+                            pending.push(Node::Algebraic(scrutinee));
+                            for arm in arms {
+                                pending.push(Node::SharedInteger(&arm.body));
+                                for binding in &arm.bindings {
+                                    pending.push(match binding {
+                                        AlgebraicValue::C(value) => Node::Value(value),
+                                        AlgebraicValue::Integer(integer) => Node::Integer(integer),
+                                        AlgebraicValue::Algebraic(algebraic) => {
+                                            Node::Algebraic(algebraic)
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                        IntegerTerm::RangeFold {
+                            index,
+                            initial,
+                            body,
+                            ..
+                        } => {
+                            match index {
+                                IntegerRangeFoldIndex::Int32 { start, end }
+                                | IntegerRangeFoldIndex::UInt64 { start, end } => {
+                                    visit(start.value());
+                                    visit(end.value());
+                                }
+                                IntegerRangeFoldIndex::Integer { start, end } => {
+                                    pending.push(Node::SharedInteger(start));
+                                    pending.push(Node::SharedInteger(end));
+                                }
+                            }
+                            pending.push(Node::SharedInteger(initial));
+                            pending.push(Node::SharedInteger(body));
+                        }
+                    }
+                }
             }
         }
     }

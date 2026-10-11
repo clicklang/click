@@ -2034,11 +2034,14 @@ pub(in crate::kernel) fn c_values_proven_equal_for_memory_resolution(
             bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
         }
         (CValue::Pointer(left), CValue::Pointer(right)) => {
-            pointers_proven_equal_for_memory_resolution(
-                left.pointer(),
-                right.pointer(),
-                assumptions,
-            )
+            // Equal addresses can still designate different subobjects. This
+            // query reconciles stored values, not merely byte-cell addresses.
+            left.same_designation(right)
+                && pointers_proven_equal_for_memory_resolution(
+                    left.pointer(),
+                    right.pointer(),
+                    assumptions,
+                )
         }
         _ => false,
     }
@@ -4774,4 +4777,133 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
         samples.iter().all(|(_, work)| *work <= baseline + 256),
         "interior alias framing scanned unrelated facts: {samples:?}"
     );
+}
+
+#[cfg(test)]
+mod pointer_designation_equality_tests {
+    use super::*;
+
+    fn selected(address: Pointer, member: &str, base: Pointer) -> CValue {
+        CValue::Pointer(
+            CPointerValue::new(address, CType::Int32Pointer).with_designation(
+                PointerDesignation::Object {
+                    root: Pointer::symbolic(Variable(983_000)),
+                    path: vec![PointerDomainSelection::Member(member.into())].into(),
+                    base,
+                    element_type: CType::Int32,
+                    stride: 4,
+                    count: IntegerTerm::constant_i64(1).into(),
+                },
+            ),
+        )
+    }
+
+    fn token(value: CValue) -> CResource {
+        CResource::Token {
+            name: "selected-pointer".into(),
+            arguments: vec![AlgebraicValue::C(value)].into(),
+        }
+    }
+
+    #[test]
+    fn address_equality_does_not_reconcile_pointer_designations() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let root = Pointer::symbolic(Variable(983_000));
+        let shared_address = root.offset_by_bytes(4);
+        let one_past = selected(shared_address.clone(), "first", root);
+        let sibling = selected(shared_address.clone(), "second", shared_address.clone());
+        let legacy = CValue::typed_pointer(shared_address.clone(), CType::Int32Pointer);
+        let unresolved = CValue::Pointer(
+            CPointerValue::new(shared_address, CType::Int32Pointer)
+                .with_designation(PointerDesignation::Unresolved(Variable(983_001))),
+        );
+        let facts = PureFactContext::new();
+        for other in [sibling, legacy, unresolved] {
+            // Native comparison still observes the equal addresses.
+            let comparison = crate::kernel::spec::c_value_comparison_proposition(
+                &one_past,
+                CComparisonOperator::Equal,
+                &other,
+            )
+            .unwrap();
+            assert!(crate::kernel::reasoning::solve_builtin_prop(&comparison));
+            assert!(!c_values_proven_equal_for_memory_resolution(
+                &one_past, &other, &facts
+            ));
+            assert!(
+                !crate::kernel::memory_provenance::resource_arguments_proven_equal(
+                    &AlgebraicValue::C(one_past.clone()),
+                    &AlgebraicValue::C(other.clone()),
+                    &facts,
+                )
+            );
+            let left = token(one_past.clone());
+            let right = token(other);
+            assert!(
+                !crate::kernel::memory_provenance::c_resources_directly_match(
+                    &left, &right, &facts
+                )
+            );
+            assert!(!crate::kernel::assumptions::resources_equal_ignoring_memories(&left, &right));
+        }
+        assert!(c_values_proven_equal_for_memory_resolution(
+            &one_past, &one_past, &facts
+        ));
+        let same = token(one_past);
+        assert!(crate::kernel::memory_provenance::c_resources_directly_match(&same, &same, &facts));
+    }
+
+    #[test]
+    fn stored_pointer_designations_distinguish_snapshots_without_distinguishing_cell_addresses() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let root = Pointer::symbolic(Variable(983_000));
+        let address = root.offset_by_bytes(4);
+        let first = selected(address.clone(), "first", root);
+        let second = selected(address.clone(), "second", address);
+        let slot = Pointer::symbolic(Variable(983_002));
+        let left = CMemory::new().store(slot.clone(), first.clone());
+        let right = CMemory::new().store(slot.clone(), second.clone());
+        assert_ne!(left, right);
+        assert!(!crate::kernel::memory_provenance::c_memories_canonically_equal(&left, &right));
+        assert_eq!(left.known_value(&slot), Some(first.clone()));
+        assert_eq!(right.known_value(&slot), Some(second.clone()));
+        let replaced = left.store(slot.clone(), second.clone());
+        assert_eq!(replaced.known_value(&slot), Some(second.clone()));
+    }
+
+    #[test]
+    fn pointer_designation_refusal_ignores_unrelated_equalities() {
+        let mut costs = Vec::new();
+        for count in [16u64, 128, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let root = Pointer::symbolic(Variable(983_000));
+            let address = root.offset_by_bytes(4);
+            let first = selected(address.clone(), "first", root);
+            let second = selected(address.clone(), "second", address);
+            let mut facts = PureFactContext::new();
+            for index in 0..count {
+                facts = facts.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        Pointer::symbolic(Variable(984_000 + index)),
+                        Pointer::symbolic(Variable(986_000 + index)),
+                    ),
+                    true,
+                );
+            }
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                assert!(!c_values_proven_equal_for_memory_resolution(
+                    &first, &second, &facts
+                ));
+                assert!(
+                    !crate::kernel::memory_provenance::c_resources_directly_match(
+                        &token(first),
+                        &token(second),
+                        &facts,
+                    )
+                );
+            });
+            costs.push(work);
+        }
+        assert!(costs.iter().all(|work| *work == costs[0]), "{costs:?}");
+    }
 }

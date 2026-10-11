@@ -723,6 +723,11 @@ fn call_passes_witness_child(
             let (CValue::Pointer(expected), CValue::Pointer(actual)) = (expected, actual) else {
                 continue 'children;
             };
+            // A child resource's argument is a complete pointer value;
+            // equal addresses alone do not identify the same designated child.
+            if !expected.same_designation(&actual) {
+                continue 'children;
+            }
             let expected = expected.pointer();
             let actual = actual.pointer();
             if expected != actual
@@ -5632,6 +5637,79 @@ mod ranking_member_tests {
             )
             .is_some(),
             "the exact fact still settles its own obligation"
+        );
+    }
+
+    #[test]
+    fn witness_child_requires_the_same_designation_for_every_resource_argument() {
+        let address = Pointer::symbolic(Variable(430_001));
+        let designated = |member: &str| {
+            CValue::Pointer(
+                CPointerValue::new(address.clone(), CType::Int32Pointer).with_designation(
+                    PointerDesignation::Object {
+                        root: address.clone(),
+                        path: vec![PointerDomainSelection::Member(member.into())].into(),
+                        base: address.clone(),
+                        element_type: CType::Int32,
+                        stride: 4,
+                        count: IntegerTerm::constant_i64(1).into(),
+                    },
+                ),
+            )
+        };
+        let first = designated("first");
+        let second = designated("second");
+        let witness = CValue::typed_pointer(
+            Pointer::symbolic(Variable(4_250_000_000)),
+            CType::Int32Pointer,
+        );
+        let definition = CCompositeResourceDefinition::new(
+            "tree_between",
+            vec![
+                CParameter::new("root", CType::Int32Pointer),
+                CParameter::new("end", CType::Int32Pointer),
+            ],
+            None,
+            true,
+            vec![],
+            vec![],
+        )
+        .with_witnesses(vec![CParameter::new("child", CType::Int32Pointer)]);
+        let arm = StructuralResourceArm {
+            guards: vec![],
+            guard_is_precondition: false,
+            children: vec![],
+            witness_children: vec![WitnessChildMeasure {
+                definition,
+                arguments: vec![
+                    CExpression::Variable("root".into()),
+                    CExpression::Variable("child".into()),
+                ],
+            }],
+        };
+        let measure = StructuralResourceMeasure {
+            arguments: vec![
+                CExpression::Value(first.clone()),
+                CExpression::Value(witness.clone()),
+            ],
+            arms: vec![],
+        };
+        let function = CFunction::new(CType::Void, "visit", vec![], CStatement::Skip);
+        let passes = |root| {
+            call_passes_witness_child(
+                &function,
+                &measure,
+                &arm,
+                &[
+                    CExpression::Value(root),
+                    CExpression::Value(witness.clone()),
+                ],
+            )
+        };
+        assert!(passes(first));
+        assert!(
+            !passes(second),
+            "an equal-address sibling cannot replace a designated child-resource argument"
         );
     }
 }

@@ -347,7 +347,8 @@ pub(super) fn resources_equal_ignoring_memories(left: &CResource, right: &CResou
             terms_equal_with_load_atoms(left, right, &load_atoms_equal_ignoring_memories)
         }
         (CValue::Pointer(left), CValue::Pointer(right)) => {
-            pointers_equal_ignoring_memories(left.pointer(), right.pointer())
+            left.same_designation(right)
+                && pointers_equal_ignoring_memories(left.pointer(), right.pointer())
         }
         _ => false,
     };

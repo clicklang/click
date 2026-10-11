@@ -46,8 +46,9 @@ point to a different object at the same address. [expr.add] permits formation
 of the one-past pointer, not dereference of it. C11 6.5.6p7-p8 has the
 corresponding one-element-array and one-past restrictions.
 
-`CPointerValue` carries a block/offset address and access type, but no retained
-object/array designation. C++ member-address lowering checks the member's
+`CPointerValue` now has object/array designation terms and domain-aware value
+identity, but native producers and checked consumers are not yet enabled.
+C++ member-address lowering checks the member's
 address, then common pointer arithmetic uses held ranges/allocation bounds.
 The subsequent load can find the sibling's typed cell at the resulting address.
 `src/kernel/eval/operators.rs`, `src/kernel/eval/memory_loads.rs` and

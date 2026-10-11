@@ -7,8 +7,8 @@
 use crate::kernel::LoadKind;
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, CType, CValue, IntegerComparisonOperator,
-    IntegerTerm, MachineIntegerType, PureFunctionArgument, SharedCMemory, SharedIntegerTerm, Sort,
-    Term,
+    IntegerTerm, MachineIntegerType, PointerDesignation, PointerDomainSelection,
+    PureFunctionArgument, SharedCMemory, SharedIntegerTerm, Sort, Term,
 };
 use crate::kernel::{
     Bitvector32Term, CComparisonOperator, CFloatBinaryOperator, CFloatClassification,
@@ -888,7 +888,27 @@ enum AlphaCValueKey {
         pointee_volatile: bool,
         pointee_constant: bool,
         pointer: AlphaPointerKey,
+        designation: Option<Box<AlphaPointerDesignationKey>>,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+enum AlphaPointerDesignationKey {
+    Unresolved(AlphaVariableKey),
+    Object {
+        root: AlphaPointerKey,
+        path: Vec<AlphaPointerSelectionKey>,
+        base: AlphaPointerKey,
+        element_type: CType,
+        stride: u32,
+        count: AlphaIntegerKey,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+enum AlphaPointerSelectionKey {
+    Member(String),
+    Element(AlphaIntegerKey),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -1872,6 +1892,53 @@ fn alpha_pointer_key_with_bindings<const ALLOW_LOADS: bool>(
     })
 }
 
+fn alpha_pointer_designation_key<const ALLOW_LOADS: bool>(
+    designation: &PointerDesignation,
+    bindings: &mut AlphaBindings,
+    next_binder: &mut usize,
+) -> Option<AlphaPointerDesignationKey> {
+    alpha_work_checkpoint(bindings, 1)?;
+    Some(match designation {
+        PointerDesignation::Unresolved(variable) => {
+            AlphaPointerDesignationKey::Unresolved(alpha_variable_key_with_bindings::<ALLOW_LOADS>(
+                *variable,
+                bindings,
+                &bindings.bitvector,
+            )?)
+        }
+        PointerDesignation::Object {
+            root,
+            path,
+            base,
+            element_type,
+            stride,
+            count,
+        } => {
+            let root = alpha_pointer_key_with_bindings::<ALLOW_LOADS>(root, bindings, next_binder)?;
+            let mut selected = Vec::with_capacity(path.len());
+            for selection in path.iter() {
+                alpha_work_checkpoint(bindings, 1)?;
+                selected.push(match selection {
+                    PointerDomainSelection::Member(name) => {
+                        AlphaPointerSelectionKey::Member(name.clone())
+                    }
+                    PointerDomainSelection::Element(index) => AlphaPointerSelectionKey::Element(
+                        alpha_integer_key_with_bindings(index, bindings, next_binder)?,
+                    ),
+                });
+            }
+            AlphaPointerDesignationKey::Object {
+                root,
+                path: selected,
+                base: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(base, bindings, next_binder)?,
+                element_type: *element_type,
+                stride: *stride,
+                count: alpha_integer_key_with_bindings(count, bindings, next_binder)?,
+            }
+        }
+    })
+}
+
 fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
     value: &CValue,
     bindings: &mut AlphaBindings,
@@ -1889,6 +1956,14 @@ fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
                 bindings,
                 next_binder,
             )?,
+            designation: match pointer.designation() {
+                Some(designation) => Some(Box::new(alpha_pointer_designation_key::<ALLOW_LOADS>(
+                    designation,
+                    bindings,
+                    next_binder,
+                )?)),
+                None => None,
+            },
         },
         other => {
             let (ty, term) = match other {

@@ -331,6 +331,24 @@ can use this argument. The destination's padding stays unwritten throughout.
    scalar `+0`, permitted one-past formation/comparison, array traversal and
    supported pointer representation copies. Audit C, C++ and Rust producers.
 
+The first step and the domain-term portion of step 2 are implemented. An optional
+shared descriptor distinguishes legacy absence, an unresolved C pointer binder,
+and an explicit root/path/base/element/stride/count term. Counts and array path
+selections are mathematical integers. Value identity, snapshot identity, alpha
+keys, dependency collection, full-value substitution and resource matching retain
+these terms; address-only substitution cannot replace them. Raw pointer comparison
+and storage keys remain address-based. Numeric load projection alone cannot
+manufacture a designated pointer value. Resource semantics version 70 invalidates
+older retained artifacts.
+
+This descriptor is syntax, not an authenticated object witness: its root address
+alone proves no object identity, lifetime, initialization or access authority.
+Native producers must select checked declaration/input evidence and compose with
+the caller's designation. They are not enabled by this checkpoint. The remaining
+step-2 work is pointer-valued load/address-domain pairing and its transport through
+source interfaces before steps 3–5 can enforce domains. Both the sibling-pointer
+and constructor-padding regressions remain open.
+
 Queries must use the selected domain/object and existing indexed evidence.
 Domain transport cannot scan sibling declarations, unrelated cells, the whole
 fact environment or snapshot history. Use shared immutable descriptors and

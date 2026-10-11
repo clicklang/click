@@ -12,6 +12,8 @@ use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(test)]
+mod designation_tests;
+#[cfg(test)]
 mod graph_condition_tests;
 #[cfg(test)]
 mod pointer_application_tests;
@@ -37,7 +39,7 @@ enum BindingCarrier {
 #[derive(Clone)]
 pub(crate) enum TypedCReplacement {
     Bitvector(Bitvector32Term),
-    Pointer(Pointer),
+    Pointer(CPointerValue),
 }
 
 struct TypedVariableReplacements<'a> {
@@ -126,12 +128,7 @@ fn c_value_variable(value: &CValue) -> Option<Variable> {
         | CValue::UInt64(Bitvector32Term::Variable(variable))
         | CValue::Float32(Bitvector32Term::Variable(variable))
         | CValue::Float64(Bitvector32Term::Variable(variable)) => Some(*variable),
-        CValue::Pointer(pointer) => match &pointer.block {
-            PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
-                Some(*variable)
-            }
-            _ => None,
-        },
+        CValue::Pointer(_) => c_value_declaration_variable(value),
         _ => None,
     }
 }
@@ -151,7 +148,7 @@ fn typed_c_replacement(value: &CValue) -> Option<TypedCReplacement> {
         | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => Some(TypedCReplacement::Bitvector(term.clone())),
-        CValue::Pointer(pointer) => Some(TypedCReplacement::Pointer(pointer.pointer().clone())),
+        CValue::Pointer(pointer) => Some(TypedCReplacement::Pointer(pointer.clone())),
         CValue::Void => None,
     }
 }
@@ -221,7 +218,13 @@ fn c_value_declaration_variable(value: &CValue) -> Option<Variable> {
         {
             match pointer.pointer().block {
                 PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
-                    Some(variable)
+                    match pointer.designation() {
+                        None => Some(variable),
+                        Some(PointerDesignation::Unresolved(domain)) if *domain == variable => {
+                            Some(variable)
+                        }
+                        _ => None,
+                    }
                 }
                 _ => unreachable!(),
             }
@@ -268,6 +271,14 @@ fn replace_binding_variable(
                     _ => PointerBlock::Symbolic(variable),
                 };
                 pointer.replace_pointer(replaced);
+                if matches!(
+                    pointer.designation(),
+                    Some(PointerDesignation::Unresolved(_))
+                ) {
+                    *pointer = pointer
+                        .clone()
+                        .with_designation(PointerDesignation::Unresolved(variable));
+                }
             }
             _ => {}
         },
@@ -463,7 +474,33 @@ fn collect_c_value_carriers(value: &CValue, variables: &mut CarrierVariables) {
         | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => collect_bitvector_carriers(term, variables),
-        CValue::Pointer(pointer) => collect_pointer_carriers(pointer, variables),
+        CValue::Pointer(pointer) => collect_c_pointer_carriers(pointer, variables),
+    }
+}
+
+fn collect_c_pointer_carriers(pointer: &CPointerValue, variables: &mut CarrierVariables) {
+    collect_pointer_carriers(pointer.pointer(), variables);
+    if let Some(designation) = pointer.designation() {
+        if !variables.visit() {
+            return;
+        }
+        if let PointerDesignation::Object { path, .. } = designation {
+            for _ in path.iter() {
+                if !variables.visit() {
+                    return;
+                }
+            }
+        }
+        if let Some(variable) = designation.unresolved_variable() {
+            variables.c.insert(variable);
+        }
+        for term in designation.pointer_terms() {
+            collect_pointer_carriers(term, variables);
+        }
+        let mut seen = BTreeSet::new();
+        for term in designation.integer_terms() {
+            collect_integer_shared_carriers(term, variables, &mut seen);
+        }
     }
 }
 
@@ -1275,8 +1312,8 @@ pub(crate) struct TermRewrite<'a> {
     bounded_uint64_indices: Option<std::collections::HashSet<Bitvector32Term>>,
     equality_graph: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     collected_conditions: Option<Vec<ConditionTerm>>,
-    integer_cache: HashMap<(u64, u64, bool), IntegerTerm>,
-    pointer_application_cache: HashMap<(u64, u64, bool), PointerBlock>,
+    integer_cache: HashMap<(u64, u64, bool, bool), IntegerTerm>,
+    pointer_application_cache: HashMap<(u64, u64, bool, bool), PointerBlock>,
     scope_renaming_max: u64,
     integer_body_summaries: HashMap<u64, crate::kernel::prelude::IntegerScopeSummary>,
     integer_variables: Option<IntegerVariableRewrite<'a>>,
@@ -1304,7 +1341,7 @@ pub(crate) struct TermRewrite<'a> {
     /// scope.  A changed address is re-minted as a load variable for the
     /// exact original snapshot, so a branching registry DAG stays shared
     /// instead of expanding into owned `MemoryLoad` trees at every parent.
-    registered_load_cache: HashMap<(Variable, u64), Variable>,
+    registered_load_cache: HashMap<(Variable, u64, bool), Variable>,
     /// A malformed registry cycle is rejected before recursive pointer
     /// expansion can consume unbounded work.
     registered_load_pointer_active: BTreeSet<Variable>,
@@ -1535,7 +1572,7 @@ impl<'a> TermRewrite<'a> {
             self.unsupported_integer_scope = true;
             return None;
         }
-        let cache_key = (variable, self.scope_id);
+        let cache_key = (variable, self.scope_id, self.raw_address_rewrite_enabled());
         if let Some(rewritten) = self.registered_load_cache.get(&cache_key) {
             let rewritten = *rewritten;
             self.registered_load_pointer_active.remove(&variable);
@@ -1979,6 +2016,14 @@ impl<'a> TermRewrite<'a> {
 
     fn checked_work_exhausted(&self) -> bool {
         self.integer_work_exhausted
+    }
+
+    /// Domain traversal disables address-only replacements. Memoized results
+    /// in that mode cannot be reused while rewriting executable addresses.
+    fn raw_address_rewrite_enabled(&self) -> bool {
+        self.pointer_exact.is_some()
+            || self.pointer_variable.is_some()
+            || self.pointer_offset_exact.is_some()
     }
 
     fn seed_fresh_allocator(&mut self) {
@@ -2500,6 +2545,46 @@ impl<'a> TermRewrite<'a> {
             CValue::Pointer(v) => {
                 let mut result = v.clone();
                 result.replace_pointer(self.pointer(v.pointer()));
+                // Typed C substitution replaces a complete pointer value.
+                // Address rewrites alone never select a replacement domain.
+                let binder = match v.designation() {
+                    Some(PointerDesignation::Unresolved(variable)) => Some(*variable),
+                    None => match v.pointer().block {
+                        PointerBlock::Symbolic(variable)
+                        | PointerBlock::FunctionSymbolic(variable) => Some(variable),
+                        _ => None,
+                    },
+                    Some(PointerDesignation::Object { .. }) => None,
+                };
+                if let Some(variable) = binder
+                    && !self.scope.c.contains_key(&variable)
+                    && let Some(replacements) = &self.typed_variables
+                    && let Some(TypedCReplacement::Pointer(replacement)) =
+                        replacements.c.get(&variable)
+                {
+                    self.changed = true;
+                    if matches!(v.pointer().block, PointerBlock::Symbolic(address) | PointerBlock::FunctionSymbolic(address) if address == variable)
+                    {
+                        result = replacement
+                            .clone()
+                            .with_type(v.c_type())
+                            .with_pointer(result.into_pointer())
+                            .with_pointee_volatile(
+                                v.pointee_volatile() || replacement.pointee_volatile(),
+                            )
+                            .with_pointee_constant(
+                                v.pointee_constant() || replacement.pointee_constant(),
+                            );
+                    } else {
+                        result = result.with_designation_of(replacement);
+                    }
+                } else if !(self.raw_address_rewrite_enabled()
+                    && self.scope.c.is_empty()
+                    && self.scope.integer.is_empty()
+                    && self.scope.algebraic.is_empty())
+                {
+                    result = result.map_designation(|designation| self.designation(designation));
+                }
                 CValue::Pointer(result)
             }
         };
@@ -2508,6 +2593,60 @@ impl<'a> TermRewrite<'a> {
         } else {
             result
         }
+    }
+    fn designation(&mut self, designation: &PointerDesignation) -> PointerDesignation {
+        self.visit();
+        // A raw-address replacement supplies no object identity evidence.
+        // Scope renaming and complete typed substitution still map all terms.
+        let pointer_exact = self.pointer_exact.take();
+        let pointer_variable = self.pointer_variable.take();
+        let pointer_offset_exact = self.pointer_offset_exact.take();
+        let result = match designation {
+            PointerDesignation::Unresolved(variable) => PointerDesignation::Unresolved(
+                self.scope.c.get(variable).copied().unwrap_or(*variable),
+            ),
+            PointerDesignation::Object {
+                root,
+                path,
+                base,
+                element_type,
+                stride,
+                count,
+            } => {
+                let mut selected = Vec::with_capacity(path.len());
+                for selection in path.iter() {
+                    if self.checked_work_exhausted() {
+                        break;
+                    }
+                    self.visit();
+                    selected.push(match selection {
+                        PointerDomainSelection::Member(name) => {
+                            PointerDomainSelection::Member(name.clone())
+                        }
+                        PointerDomainSelection::Element(index) => {
+                            PointerDomainSelection::Element(self.integer_shared(index).into())
+                        }
+                    });
+                }
+                let path = if selected == path.as_ref() {
+                    path.clone()
+                } else {
+                    selected.into()
+                };
+                PointerDesignation::Object {
+                    root: self.pointer(root),
+                    path,
+                    base: self.pointer(base),
+                    element_type: *element_type,
+                    stride: *stride,
+                    count: self.integer_shared(count).into(),
+                }
+            }
+        };
+        self.pointer_exact = pointer_exact;
+        self.pointer_variable = pointer_variable;
+        self.pointer_offset_exact = pointer_offset_exact;
+        result
     }
     pub(crate) fn integer(&mut self, v: &IntegerTerm) -> IntegerTerm {
         self.reserve_integer_variables_once(v);
@@ -2524,7 +2663,12 @@ impl<'a> TermRewrite<'a> {
         if self.checked_work_exhausted() {
             return exhausted_integer(shared.as_ref());
         }
-        let cache_key = (shared.id(), self.scope_key(), self.resolve_registered_loads);
+        let cache_key = (
+            shared.id(),
+            self.scope_key(),
+            self.resolve_registered_loads,
+            self.raw_address_rewrite_enabled(),
+        );
         if let Some(result) = self.integer_cache.get(&cache_key) {
             return result.clone();
         }
@@ -3445,7 +3589,7 @@ impl<'a> TermRewrite<'a> {
                         collect_bitvector_carriers(value, &mut variables)
                     }
                     TypedCReplacement::Pointer(pointer) => {
-                        collect_pointer_carriers(pointer, &mut variables);
+                        collect_c_pointer_carriers(pointer, &mut variables);
                     }
                 }
                 if variables.exhausted() {
@@ -3587,7 +3731,12 @@ impl<'a> TermRewrite<'a> {
             block: match &p.block {
                 PointerBlock::PureFunctionApplication(application) => {
                     self.charge_rewrite_work(1);
-                    let key = (application.id(), self.scope_id, self.source_disabled);
+                    let key = (
+                        application.id(),
+                        self.scope_id,
+                        self.source_disabled,
+                        self.raw_address_rewrite_enabled(),
+                    );
                     if let Some(result) = self.pointer_application_cache.get(&key) {
                         result.clone()
                     } else {
@@ -5104,7 +5253,10 @@ mod tests {
         assert_eq!(small_work, large_work);
 
         let mut c_replacements = BTreeMap::new();
-        c_replacements.insert(source, TypedCReplacement::Pointer(replacement.clone()));
+        c_replacements.insert(
+            source,
+            TypedCReplacement::Pointer(CPointerValue::new(replacement.clone(), CType::VoidPointer)),
+        );
         let empty_integer_replacements = BTreeMap::new();
         let empty_algebraic_replacements = BTreeMap::new();
         let mut typed_rewrite = TermRewrite::for_typed_variables(

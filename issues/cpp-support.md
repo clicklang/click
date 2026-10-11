@@ -55,7 +55,12 @@ optional metadata cleanup. The [implementation design](../design/cpp-object-mode
 now specifies separate address and semantic-value identities, domain-preserving
 transport, checked lvalue access and matching modular-call obligations. The first
 carrier-preservation prerequisite retains existing qualifiers through pointer
-transformations; domain issuance and enforcement remain pending. The design also
+transformations. The shared carrier now also represents unresolved or explicit
+object/array designations, with domain-aware value identity, full-value
+substitution, binder traversal and resource matching. Raw address equality
+cannot substitute a different designation. These are semantic term foundations:
+native domain issuance, pointer-valued load transport and access enforcement
+remain pending; neither recorded defect is fixed by this checkpoint. The design also
 records the concrete
 [byte-access source-profile choice](../design/cpp-object-model.md#byte-access-requires-an-explicit-source-profile-choice)
 that must be settled before expanding the cast-and-index byte writer.
