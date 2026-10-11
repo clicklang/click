@@ -2243,3 +2243,56 @@ fn fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources() {
         });
     }
 }
+
+/// Long checked paths retain their beginning, late target, and added facts.
+/// Multiple sizes exercise both former aggregate caps without timing thresholds.
+#[test]
+#[ignore = "nightly: complete 4096-tactic traces and deterministic lineage scaling take 10s locally"]
+fn long_theorem_traces_retain_every_step_and_reach_late_targets() {
+    for size in [512, 2048, 4096] {
+        let mut source = String::from(
+            "theorem long_trace(x: int32) {\n requires x == 0;\n ensures x == 0 by {\n",
+        );
+        for index in 0..size {
+            source.push_str(&format!(
+                " have x <= {index} by {{ rewrite(x == 0); normalize(); }}\n"
+            ));
+        }
+        source.push_str(" assumption();\n }\n}\n");
+        let project = ClickProject::new(
+            "entry.click",
+            [ClickModuleSource::new("entry.click", source, [])],
+        );
+        // Each outer tactic occupies one line; keep source lookup constant-time
+        // so this test measures trace retention/rendering, not repeated parsing.
+        let locate = |_: &str, path: &[usize]| {
+            let line = path[0] + 4;
+            Some((format!("tactic@{line}"), SourcePosition::new(line, 1)))
+        };
+        with_proof_trace("long_trace", || {
+            verify_c0_project_theorem(&project, &[], "long_trace").unwrap();
+            for target in [None, Some(SourcePosition::new(size + 4, 1))] {
+                let trace = accepted_proof_trace(
+                    &locate,
+                    &|_, _, _| None,
+                    &|_, _, _| false,
+                    target.as_ref(),
+                )
+                .unwrap();
+                let visits = crate::surface::proof_trace::lineage_visits();
+                assert!(
+                    visits <= size * 20,
+                    "{size} tactics walked {visits} lineage nodes"
+                );
+                assert_eq!(trace.matches(": have x <= ").count(), size);
+                assert!(trace.contains("tactic@4: have x <= 0"));
+                assert!(trace.ends_with(&format!("tactic@{}: assumption()", size + 4)));
+                assert!(!trace.contains("limit reached"));
+                assert!(!trace.contains("no recorded checked step"));
+                if size >= 2048 {
+                    assert!(trace.len() > 64 * 1024);
+                }
+            }
+        });
+    }
+}

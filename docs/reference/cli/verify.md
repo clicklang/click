@@ -67,7 +67,7 @@ rather than checking their proofs.
 | --- | --- |
 | `--work-limit UNITS` | Set the deterministic whole-run work budget independently for each selected sidecar, mdtest, or proof unit. The default is `50000000`. |
 | `--time-limit DURATION` | Set the wall-clock crash-containment bound independently for each selected sidecar, mdtest, or proof unit. The default is `10m`. This is not a verdict about the proof; see [Deterministic verdicts](#deterministic-verdicts). |
-| `--trace-proof PROOF` | Verify only this C function or pure theorem of one sidecar, selected by name, and, on a proof error, show checked steps on its failing path with added facts and changed resource counts. A sidecar cannot declare one name as both a C function and a theorem, so the name alone selects the proof. Theorems that the traced theorem cites stay assumptions, and no C function is verified for a theorem trace. If the script completes but contract certification fails, show the failed obligation and a bounded view of facts available to that check. Trace output is bounded. |
+| `--trace-proof PROOF` | Verify only this C function or pure theorem of one sidecar, selected by name, and, on a proof error, show checked steps on its failing path with added facts and changed resource counts. A sidecar cannot declare one name as both a C function and a theorem, so the name alone selects the proof. Theorems that the traced theorem cites stay assumptions, and no C function is verified for a theorem trace. If the script completes but contract certification fails, show the failed obligation and a bounded view of facts available to that check. Trace length and total output size are not capped; individual fact previews remain bounded. |
 | `--trace-to LINE[:COLUMN]` | Focus `--trace-proof` on a written tactic at this source location, including in a successful proof; the tactic may sit inside a proof `match` arm, an arm of a proof `if`, `cases` or `both`, or a loop's `preserve` body, whose trace is shown under the enclosing proof's path up to the `loop`. A target after a proof `if` or `cases` whose arms both check it is traced through the first arm. Without it, the trace follows the failing tactic. |
 | `--changed-since REVISION` | Select claims affected since a Git revision. Reuse requires a valid full-verification marker for the baseline and verifier binary. |
 | `--explain` | With `--changed-since`, print the incremental selection without verifying it. |
@@ -156,8 +156,16 @@ An `assumption()` failure on an existential goal suggests the
 focused proof context and changes to exact resource representations, using
 Click spelling where it represents the checked fact. It follows only the
 branch relevant to the selected tactic and does not print whole memory
-snapshots. It records up to
-2,048 checked steps and renders at most 64 KiB. The trace option requires one
+snapshots. It retains the complete checked path and does not cap the total
+number of steps or output bytes. Individual fact, resource, and label previews
+remain bounded. Traces are collected and rendered in memory, so memory use
+grows with the recorded trace. Redirect a long trace when useful:
+
+```sh
+click verify --trace-proof my_proof entry.click > trace.txt 2>&1
+```
+
+The trace option requires one
 C sidecar file and cannot be combined with location or incremental selection,
 or `--allow-sorry`. A trace run does not record a full verification baseline.
 

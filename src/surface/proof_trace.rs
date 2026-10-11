@@ -1,4 +1,4 @@
-//! Opt-in, bounded observations of checked proof steps for CLI diagnostics.
+//! Opt-in observations of checked proof steps for CLI diagnostics.
 //! The trace is diagnostic only; no recorded text participates in checking.
 
 use crate::kernel::ContractPathPreparationFailure;
@@ -8,11 +8,9 @@ use crate::source::SourcePosition;
 use crate::surface::proof_diagnostics::ProofDiagnosticState;
 use crate::surface::proof_diagnostics::render::{self, SnapshotLabels};
 use std::any::Any;
-use std::cell::RefCell;
-use std::collections::HashMap;
-
-pub(super) const MAX_STEPS: usize = 2048;
-const MAX_RENDER_BYTES: usize = 64 * 1024;
+use std::cell::{LazyCell, RefCell};
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 struct Capture {
     function: String,
@@ -22,7 +20,6 @@ struct Capture {
     bodies: HashMap<usize, TraceBody>,
     scope_parents: HashMap<usize, TraceScope>,
     retained_paths: Vec<TraceRetainedPath>,
-    limit_reached: bool,
 }
 
 struct TraceRetainedPath {
@@ -37,6 +34,32 @@ struct TraceRetainedPath {
     lineage: Vec<TracePathNode>,
     /// Retain the checked provenance chain until the CLI has rendered it.
     _retained: Box<dyn Any>,
+}
+
+/// Share a persistent proof path; walk it only if the report needs this scope.
+/// Eagerly copying the preceding path for every `have` takes quadratic storage.
+pub(super) type TraceLineage =
+    Rc<LazyCell<Vec<TracePathNode>, Box<dyn FnOnce() -> Vec<TracePathNode>>>>;
+
+pub(super) fn deferred_lineage(
+    build: impl FnOnce() -> Vec<TracePathNode> + 'static,
+) -> TraceLineage {
+    Rc::new(LazyCell::new(Box::new(build)))
+}
+
+#[cfg(test)]
+thread_local! {
+    static LINEAGE_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(super) fn record_lineage_visit() {
+    LINEAGE_VISITS.with(|visits| visits.set(visits.get() + 1));
+}
+
+#[cfg(test)]
+pub(super) fn lineage_visits() -> usize {
+    LINEAGE_VISITS.with(std::cell::Cell::get)
 }
 
 #[derive(Clone, Copy)]
@@ -58,7 +81,7 @@ pub(super) struct TraceJoin {
 }
 
 struct TraceScope {
-    lineage: Vec<TracePathNode>,
+    lineage: TraceLineage,
     _retained: Box<dyn Any>,
 }
 
@@ -204,9 +227,6 @@ impl ChildArgumentTrace {
 
     pub(super) fn append_to(&self, trace: &mut String, labels: &mut SnapshotLabels) {
         let comparison = self.render(labels);
-        if trace.len() + comparison.len() > MAX_RENDER_BYTES {
-            *trace = trace_text(trace, MAX_RENDER_BYTES.saturating_sub(comparison.len()));
-        }
         trace.push_str(&comparison);
     }
 
@@ -363,10 +383,6 @@ impl ProofDiagnosticState for CertificationTraceState {
         for fact in relevant {
             let description = render::render_proposition_labeled(fact, labels);
             let description = trace_text(&description, 512);
-            if output.len() + description.len() > MAX_RENDER_BYTES {
-                output.push_str("\n    … <trace output limit reached>");
-                break;
-            }
             output.push_str("\n    fact: ");
             output.push_str(&description);
         }
@@ -384,6 +400,8 @@ thread_local! {
 
 /// Scope tracing to one named function on the verification thread.
 pub fn with_proof_trace<R>(function: &str, verify: impl FnOnce() -> R) -> R {
+    #[cfg(test)]
+    LINEAGE_VISITS.with(|visits| visits.set(0));
     struct Restore(Option<Capture>);
     impl Drop for Restore {
         fn drop(&mut self) {
@@ -399,7 +417,6 @@ pub fn with_proof_trace<R>(function: &str, verify: impl FnOnce() -> R) -> R {
             bodies: HashMap::new(),
             scope_parents: HashMap::new(),
             retained_paths: Vec::new(),
-            limit_reached: false,
         }))
     });
     let _restore = Restore(prior);
@@ -420,11 +437,7 @@ pub(super) fn record(node: usize, step: TraceStep) {
     CAPTURE.with(|slot| {
         let mut slot = slot.borrow_mut();
         let Some(capture) = slot.as_mut() else { return };
-        if capture.steps.len() < MAX_STEPS {
-            capture.steps.insert(node, step);
-        } else {
-            capture.limit_reached = true;
-        }
+        capture.steps.insert(node, step);
     });
 }
 
@@ -432,11 +445,7 @@ pub(super) fn record_branch(node: usize, branch: TraceBranch) {
     CAPTURE.with(|slot| {
         let mut slot = slot.borrow_mut();
         let Some(capture) = slot.as_mut() else { return };
-        if capture.branches.len() < MAX_STEPS {
-            capture.branches.insert(node, branch);
-        } else {
-            capture.limit_reached = true;
-        }
+        capture.branches.insert(node, branch);
     });
 }
 
@@ -444,11 +453,7 @@ pub(super) fn record_join(node: usize, join: TraceJoin) {
     CAPTURE.with(|slot| {
         let mut slot = slot.borrow_mut();
         let Some(capture) = slot.as_mut() else { return };
-        if capture.joins.len() < MAX_STEPS {
-            capture.joins.insert(node, join);
-        } else {
-            capture.limit_reached = true;
-        }
+        capture.joins.insert(node, join);
     });
 }
 
@@ -468,26 +473,22 @@ pub(super) fn record_body(node: usize, body: TraceBody) {
     CAPTURE.with(|slot| {
         let mut slot = slot.borrow_mut();
         let Some(capture) = slot.as_mut() else { return };
-        if capture.bodies.len() < MAX_STEPS {
-            capture.bodies.insert(node, body);
-        } else {
-            capture.limit_reached = true;
-        }
+        capture.bodies.insert(node, body);
     });
 }
 
 thread_local! {
-    static LOOP_PARENT_LINEAGE: RefCell<Option<Vec<TracePathNode>>> = const { RefCell::new(None) };
+    static LOOP_PARENT_LINEAGE: RefCell<Option<TraceLineage>> = const { RefCell::new(None) };
 }
 
 /// Runs `verify` with `lineage`, the traced proof's path up to a `loop`
 /// tactic, on record as the parent of any loop phase proof it drives, so
 /// the phase's own trace can be rendered with that path above it.
 pub(crate) fn with_loop_parent_lineage<R>(
-    lineage: Option<Vec<TracePathNode>>,
+    lineage: Option<TraceLineage>,
     verify: impl FnOnce() -> R,
 ) -> R {
-    struct Restore(Option<Vec<TracePathNode>>);
+    struct Restore(Option<TraceLineage>);
     impl Drop for Restore {
         fn drop(&mut self) {
             LOOP_PARENT_LINEAGE.with(|slot| *slot.borrow_mut() = self.0.take());
@@ -500,29 +501,21 @@ pub(crate) fn with_loop_parent_lineage<R>(
 
 /// The traced path up to the `loop` tactic whose phase proof is being
 /// driven, if a trace is on and the tactic lies on one.
-pub(crate) fn loop_parent_lineage() -> Option<Vec<TracePathNode>> {
+pub(crate) fn loop_parent_lineage() -> Option<TraceLineage> {
     LOOP_PARENT_LINEAGE.with(|slot| slot.borrow().clone())
 }
 
-pub(super) fn register_scope(
-    root: usize,
-    parent_lineage: Vec<TracePathNode>,
-    retained: Box<dyn Any>,
-) {
+pub(super) fn register_scope(root: usize, parent_lineage: TraceLineage, retained: Box<dyn Any>) {
     CAPTURE.with(|slot| {
         let mut slot = slot.borrow_mut();
         let Some(capture) = slot.as_mut() else { return };
-        if capture.scope_parents.len() < MAX_STEPS {
-            capture.scope_parents.insert(
-                root,
-                TraceScope {
-                    lineage: parent_lineage,
-                    _retained: retained,
-                },
-            );
-        } else {
-            capture.limit_reached = true;
-        }
+        capture.scope_parents.insert(
+            root,
+            TraceScope {
+                lineage: parent_lineage,
+                _retained: retained,
+            },
+        );
     });
 }
 
@@ -559,19 +552,15 @@ fn record_retained_path(
     CAPTURE.with(|slot| {
         let mut slot = slot.borrow_mut();
         let Some(capture) = slot.as_mut() else { return };
-        if capture.retained_paths.len() < MAX_STEPS {
-            capture.retained_paths.push(TraceRetainedPath {
-                names,
-                claim: claim.to_owned(),
-                completed,
-                nested,
-                path_index,
-                lineage,
-                _retained: retained,
-            });
-        } else {
-            capture.limit_reached = true;
-        }
+        capture.retained_paths.push(TraceRetainedPath {
+            names,
+            claim: claim.to_owned(),
+            completed,
+            nested,
+            path_index,
+            lineage,
+            _retained: retained,
+        });
     });
 }
 
@@ -716,10 +705,11 @@ fn render_lineage(
 ) -> (String, bool) {
     let mut output = String::from("  proof trace (checked tactics and branch facts):");
     let mut segments = vec![lineage];
-    while segments.len() < MAX_STEPS {
-        let Some(root) = segments.last().and_then(|segment| segment.first()) else {
+    let mut roots = HashSet::new();
+    while let Some(root) = segments.last().and_then(|segment| segment.first()) {
+        if !roots.insert(root.node) {
             break;
-        };
+        }
         let Some(parent) = capture.scope_parents.get(&root.node) else {
             break;
         };
@@ -749,7 +739,7 @@ fn render_lineage(
         // which for a loop phase's path is the enclosing proof's step after
         // the loop; the phase's own segment still lies ahead and is where
         // the target is reached.
-        if done && !reached && index + 1 < segment_count && output.len() < MAX_RENDER_BYTES {
+        if done && !reached && index + 1 < segment_count {
             done = false;
             depth += 1;
             continue;
@@ -760,9 +750,6 @@ fn render_lineage(
     }
     if shown == 0 {
         output.push_str("\n    <no checked simple steps recorded on this path>");
-    }
-    if capture.limit_reached {
-        output.push_str("\n    … <trace step limit reached; later steps omitted>");
     }
     (output, reached)
 }
@@ -781,9 +768,6 @@ fn append_path(
     done: &mut bool,
     reached: &mut bool,
 ) -> usize {
-    if depth > 64 || *shown >= MAX_STEPS || output.len() >= MAX_RENDER_BYTES {
-        return depth;
-    }
     for path_node in lineage {
         if *done {
             break;
@@ -834,11 +818,6 @@ fn append_path(
                         labels,
                         &format!("{indent}  "),
                     );
-                    if output.len() + detail.len() > MAX_RENDER_BYTES {
-                        output.push_str("\n    … <trace output limit reached>");
-                        *done = true;
-                        break;
-                    }
                     output.push_str(&detail);
                     *shown += 1;
                     append_path(
@@ -864,11 +843,6 @@ fn append_path(
                             "\n{indent}  … {} more joined facts",
                             join.more_facts
                         ));
-                    }
-                    if output.len() + detail.len() > MAX_RENDER_BYTES {
-                        output.push_str("\n    … <trace output limit reached>");
-                        *done = true;
-                        break;
                     }
                     output.push_str(&detail);
                     *shown += 1;
@@ -974,10 +948,6 @@ fn append_path(
         } else {
             continue;
         }
-        if output.len() + detail.len() > MAX_RENDER_BYTES {
-            output.push_str("\n    … <trace output limit reached>");
-            break;
-        }
         output.push_str(&detail);
         *shown += 1;
         if let Some(target) = target {
@@ -1073,19 +1043,6 @@ pub(super) fn append_legend(trace: &mut String, labels: &mut SnapshotLabels) {
     if legend.is_empty() {
         return;
     }
-    let prefix = "… earlier trace text omitted to retain label definitions\n";
-    if trace.len() + legend.len() > MAX_RENDER_BYTES {
-        let keep = MAX_RENDER_BYTES.saturating_sub(legend.len() + prefix.len());
-        let mut start = trace.len().saturating_sub(keep);
-        while !trace.is_char_boundary(start) {
-            start += 1;
-        }
-        // Resume at a whole line rather than showing a severed expression.
-        if let Some(newline) = trace[start..].find('\n') {
-            start += newline + 1;
-        }
-        *trace = format!("{prefix}{}", &trace[start..]);
-    }
     trace.push_str(&legend);
 }
 
@@ -1106,14 +1063,15 @@ mod tests {
     use crate::kernel::{Bitvector32Term, CMemory, Pointer, PointerBlock, PointerOffsetTerm};
 
     #[test]
-    fn legend_truncation_resumes_at_a_line_boundary() {
+    fn legend_preserves_long_trace_and_line_boundaries() {
         let mut labels = SnapshotLabels::default();
         labels.pointer_value_name(&Pointer::null());
-        let mut text = "é".repeat(MAX_RENDER_BYTES);
+        let mut text = "é".repeat(64 * 1024);
         text.push_str("\nfailed child argument comparison\nrequired: value#1");
+        let original = text.clone();
         append_legend(&mut text, &mut labels);
-        assert!(text.starts_with("… earlier trace text omitted to retain label definitions\nfailed child argument comparison\n"));
-        assert!(text.len() <= MAX_RENDER_BYTES);
+        assert!(text.starts_with(&original));
+        assert!(text.contains("label definitions"));
     }
 
     // Identical source spellings must not hide distinct reads, and the
@@ -1167,16 +1125,17 @@ mod tests {
         assert!(comparison.contains("different snapshots alone do not establish unequal values"));
         assert!(!comparison.contains("Missing:"));
         let comparison = ChildArgumentTrace {
-            child: "λ".repeat(MAX_RENDER_BYTES),
+            child: "λ".repeat(64 * 1024),
             index: 0,
             actual: Pointer::null(),
             required: Pointer::null(),
             related: vec![],
             views: HashMap::new(),
         };
-        let mut long = "λ".repeat(MAX_RENDER_BYTES);
+        let mut long = "λ".repeat(64 * 1024);
+        let original = long.clone();
         comparison.append_to(&mut long, &mut labels);
-        assert!(long.len() <= MAX_RENDER_BYTES);
+        assert!(long.starts_with(&original));
         assert!(long.contains("failed child argument comparison"));
         assert!(long.contains("0 (null pointer)"));
     }
@@ -1383,10 +1342,12 @@ mod tests {
             record(3, step("\n    have body tactic 0: normalize".into()));
             register_scope(
                 2,
-                vec![TracePathNode {
-                    node: 1,
-                    selected_arm: None,
-                }],
+                deferred_lineage(|| {
+                    vec![TracePathNode {
+                        node: 1,
+                        selected_arm: None,
+                    }]
+                }),
                 Box::new(()),
             );
             let trace = render(

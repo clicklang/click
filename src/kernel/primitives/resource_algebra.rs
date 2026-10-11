@@ -1030,18 +1030,7 @@ fn collect_memory_load_work<'a>(
                         work.push(MemoryLoadFootprintWork::Term(left, depth + 1));
                         work.push(MemoryLoadFootprintWork::Term(right, depth + 1));
                     }
-                    Bitvector32Term::BitwiseNot(value)
-                    | Bitvector32Term::Float32Negate(value)
-                    | Bitvector32Term::Float64Negate(value)
-                    | Bitvector32Term::Int64From32(value)
-                    | Bitvector32Term::MachineIntegerCast { value, .. }
-                    | Bitvector32Term::Int64FromUInt32(value)
-                    | Bitvector32Term::UInt64From32(value)
-                    | Bitvector32Term::UInt32From64(value)
-                    | Bitvector32Term::UInt64FromInt32(value)
-                    | Bitvector32Term::UInt64FromInt64(value)
-                    | Bitvector32Term::Int64BitwiseNot(value)
-                    | Bitvector32Term::UInt64BitwiseNot(value) => {
+                    crate::kernel::unary_machine_term!(value) => {
                         work.push(MemoryLoadFootprintWork::Term(value, depth + 1));
                     }
                     Bitvector32Term::Constant(_)
@@ -3392,7 +3381,8 @@ impl ResourceContext {
                 CMemoryDerivation::LocalLifetimeEnded { block, .. } => {
                     dropped.extend(facts_in_block(&self, block));
                 }
-                CMemoryDerivation::LoopHavoc { .. }
+                CMemoryDerivation::BranchJoin { .. }
+                | CMemoryDerivation::LoopHavoc { .. }
                 | CMemoryDerivation::BlockDeclared { .. }
                 | CMemoryDerivation::HeapAllocated { .. }
                 | CMemoryDerivation::HeapAllocationPending { .. }
@@ -3431,6 +3421,7 @@ impl ResourceContext {
                 entries.with_value(*occurrence)
             });
         let ambiguous_event = match derivation {
+            CMemoryDerivation::BranchJoin { .. } => true,
             CMemoryDerivation::Store { pointer, .. } => memory_block_may_alias(&pointer.block),
             CMemoryDerivation::CellsSeeded { run, .. } => memory_block_may_alias(&run.base().block),
             CMemoryDerivation::CallHavoc { mutable_ranges, .. }
@@ -3555,7 +3546,8 @@ impl ResourceContext {
                     }
                 }
             }
-            CMemoryDerivation::LoopHavoc {
+            CMemoryDerivation::BranchJoin { .. }
+            | CMemoryDerivation::LoopHavoc {
                 mutable_ranges: None,
                 ..
             } => {

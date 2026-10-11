@@ -2718,11 +2718,7 @@ fn is_store_fact(condition: &ConditionTerm, value: bool) -> bool {
     load.2.reads_value(&value)
         && matches!(
             value,
-            CValue::Int8(recorded) | CValue::Int16(recorded)
-            | CValue::Int32(recorded)
-            | CValue::UInt8(recorded)
-            | CValue::UInt16(recorded)
-            | CValue::UInt32(recorded)
+            crate::kernel::integer32_c_value!(recorded)
                 if &recorded == stored
         )
 }

@@ -4495,17 +4495,7 @@ impl AnnotationLowerer<'_> {
                     .ok_or_else(|| {
                         "to_integer expects a signed or unsigned machine integer".to_string()
                     })?;
-                    let (CValue::Int8(bits)
-                    | CValue::Int16(bits)
-                    | CValue::Int32(bits)
-                    | CValue::UInt8(bits)
-                    | CValue::UInt16(bits)
-                    | CValue::UInt32(bits)
-                    | CValue::Int64(bits)
-                    | CValue::UInt64(bits)
-                    | CValue::Int128(bits)
-                    | CValue::UInt128(bits)) = value
-                    else {
+                    let (crate::kernel::integer_c_value!(bits)) = value else {
                         return Err(
                             "to_integer expects a signed or unsigned machine integer".into()
                         );

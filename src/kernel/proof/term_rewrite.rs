@@ -620,18 +620,7 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
             }
             collect_bitvector_carriers(right, variables);
         }
-        Bitvector32Term::BitwiseNot(value)
-        | Bitvector32Term::Int64BitwiseNot(value)
-        | Bitvector32Term::UInt64BitwiseNot(value)
-        | Bitvector32Term::Int64From32(value)
-        | Bitvector32Term::MachineIntegerCast { value, .. }
-        | Bitvector32Term::UInt64From32(value)
-        | Bitvector32Term::UInt32From64(value)
-        | Bitvector32Term::Int64FromUInt32(value)
-        | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value)
-        | Bitvector32Term::Float32Negate(value)
-        | Bitvector32Term::Float64Negate(value) => collect_bitvector_carriers(value, variables),
+        crate::kernel::unary_machine_term!(value) => collect_bitvector_carriers(value, variables),
         Bitvector32Term::If {
             condition,
             then_term,

@@ -487,15 +487,7 @@ fn synthesize_snapshot_local(term: &Bitvector32Term) -> Option<ContractExpressio
         let (name, _) = state.locals().object_values().find(|(_, value)| {
             matches!(
                 value,
-                CValue::Int8(local) | CValue::Int16(local)
-                    | CValue::Int32(local)
-                    | CValue::UInt8(local)
-                    | CValue::UInt16(local)
-                    | CValue::UInt32(local)
-                    | CValue::Int64(local)
-                    | CValue::UInt64(local)
-                    | CValue::Int128(local)
-                    | CValue::UInt128(local)
+                crate::kernel::integer_c_value!(local)
                     if local == term
             )
         })?;
@@ -641,18 +633,7 @@ fn bitvector_term_exceeds_depth_limit(root: &Bitvector32Term) -> bool {
                 pending.push((left, depth + 1));
                 pending.push((right, depth + 1));
             }
-            Bitvector32Term::BitwiseNot(value)
-            | Bitvector32Term::Float32Negate(value)
-            | Bitvector32Term::Float64Negate(value)
-            | Bitvector32Term::Int64From32(value)
-            | Bitvector32Term::MachineIntegerCast { value, .. }
-            | Bitvector32Term::Int64FromUInt32(value)
-            | Bitvector32Term::UInt64From32(value)
-            | Bitvector32Term::UInt32From64(value)
-            | Bitvector32Term::UInt64FromInt32(value)
-            | Bitvector32Term::UInt64FromInt64(value)
-            | Bitvector32Term::Int64BitwiseNot(value)
-            | Bitvector32Term::UInt64BitwiseNot(value) => {
+            crate::kernel::unary_machine_term!(value) => {
                 pending.push((value, depth + 1));
             }
             Bitvector32Term::If {
@@ -1774,13 +1755,7 @@ fn synthesize_surface_atomic_proposition(
                     )?));
                     index += 1;
                 }
-                Term::CValue(
-                    CValue::Int8(value)
-                    | CValue::Int16(value)
-                    | CValue::Int32(value)
-                    | CValue::UInt8(value)
-                    | CValue::UInt16(value),
-                ) => {
+                Term::CValue(crate::kernel::int_promoted_c_value!(value)) => {
                     call_arguments.push(synthesize_surface_bitvector(
                         value,
                         parameters,
@@ -3562,18 +3537,7 @@ pub(super) fn bitvector_term_is_load_free(term: &Bitvector32Term) -> bool {
                 pending.push(left);
                 pending.push(right);
             }
-            Bitvector32Term::BitwiseNot(value)
-            | Bitvector32Term::Int64BitwiseNot(value)
-            | Bitvector32Term::UInt64BitwiseNot(value)
-            | Bitvector32Term::Int64From32(value)
-            | Bitvector32Term::MachineIntegerCast { value, .. }
-            | Bitvector32Term::UInt64From32(value)
-            | Bitvector32Term::UInt32From64(value)
-            | Bitvector32Term::Int64FromUInt32(value)
-            | Bitvector32Term::UInt64FromInt32(value)
-            | Bitvector32Term::UInt64FromInt64(value)
-            | Bitvector32Term::Float32Negate(value)
-            | Bitvector32Term::Float64Negate(value) => pending.push(value),
+            crate::kernel::unary_machine_term!(value) => pending.push(value),
             Bitvector32Term::If {
                 then_term,
                 else_term,

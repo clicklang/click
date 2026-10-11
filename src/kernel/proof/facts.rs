@@ -2119,18 +2119,7 @@ fn collect_bitvector_atoms(term: &Bitvector32Term, atoms: &mut BTreeSet<Bitvecto
             collect_bitvector_atoms(left, atoms);
             collect_bitvector_atoms(right, atoms);
         }
-        Bitvector32Term::BitwiseNot(value)
-        | Bitvector32Term::Int64BitwiseNot(value)
-        | Bitvector32Term::UInt64BitwiseNot(value)
-        | Bitvector32Term::Int64From32(value)
-        | Bitvector32Term::MachineIntegerCast { value, .. }
-        | Bitvector32Term::UInt64From32(value)
-        | Bitvector32Term::UInt32From64(value)
-        | Bitvector32Term::Int64FromUInt32(value)
-        | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value)
-        | Bitvector32Term::Float32Negate(value)
-        | Bitvector32Term::Float64Negate(value) => collect_bitvector_atoms(value, atoms),
+        crate::kernel::unary_machine_term!(value) => collect_bitvector_atoms(value, atoms),
         Bitvector32Term::If {
             condition,
             then_term,
