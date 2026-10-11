@@ -1093,3 +1093,231 @@ fn truncating_integer_read_collection_is_linear_in_shared_nodes() {
         assert!(work <= depth + 2, "depth={depth}, work={work}");
     }
 }
+
+#[test]
+fn branch_join_preserves_uncached_reads_only_when_every_arm_agrees() {
+    for bytes in [4, 8] {
+        let cell = at(block("global:g"), 0);
+        let other = at(block("global:h"), 0);
+        let before = entry_memory();
+        let first = before.clone().store(other.clone(), one());
+        let second = before
+            .clone()
+            .store(other, CValue::Int32(Bitvector32Term::Constant(2)));
+        let joined = first
+            .clone()
+            .with_interface_memory_havoc(Variable(981001), &Default::default(), &[&first, &second])
+            .unwrap();
+        assert!(joined.known_value(&cell).is_none());
+        assert_eq!(
+            same(
+                Resource::Cell {
+                    pointer: &cell,
+                    bytes
+                },
+                &point(&joined),
+                &point(&before)
+            ),
+            Sameness::Same
+        );
+        // A partial overlap in any arm blocks the full-width read, including
+        // when that arm was not chosen as the join's derivation base.
+        let changed = second.store(
+            at(cell.block.clone(), i64::from(bytes - 1)),
+            CValue::UInt8(Bitvector32Term::Constant(9)),
+        );
+        let bad = first
+            .clone()
+            .with_interface_memory_havoc(Variable(981002), &Default::default(), &[&first, &changed])
+            .unwrap();
+        assert_ne!(
+            same(
+                Resource::Cell {
+                    pointer: &cell,
+                    bytes
+                },
+                &point(&bad),
+                &point(&before)
+            ),
+            Sameness::Same
+        );
+    }
+}
+
+#[test]
+fn branch_join_read_query_does_not_scan_unrelated_cached_cells() {
+    let mut samples = Vec::new();
+    for size in [16, 64, 256, 1024] {
+        let cell = at(block("global:g"), 0);
+        let mut before = entry_memory();
+        for index in 0..size {
+            before = before.store(at(block("global:unrelated"), index * 4), one());
+        }
+        let first = before.clone().store(at(block("global:h"), 0), one());
+        let second = before.clone().store(
+            at(block("global:h"), 0),
+            CValue::Int32(Bitvector32Term::Constant(2)),
+        );
+        let joined = first
+            .clone()
+            .with_interface_memory_havoc(Variable(981003), &Default::default(), &[&first, &second])
+            .unwrap();
+        // Warm only the common prefix. The query below must inspect the
+        // new branch delta, not repeat all of that prefix's work.
+        let expected = last_same_point(
+            Resource::Cell {
+                pointer: &cell,
+                bytes: 8,
+            },
+            &point(&before),
+        );
+        let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
+            last_same_point(
+                Resource::Cell {
+                    pointer: &cell,
+                    bytes: 8,
+                },
+                &point(&joined),
+            )
+        });
+        assert_eq!(answer, expected);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "selected read work: {samples:?}"
+    );
+}
+
+#[test]
+fn branch_join_identity_retains_inputs_through_read_projection() {
+    let cell = at(block("global:g"), 0);
+    let other = at(block("global:h"), 0);
+    let before = entry_memory();
+    let a = before.clone().store(other.clone(), one());
+    let b = before
+        .clone()
+        .store(other.clone(), CValue::Int32(Bitvector32Term::Constant(2)));
+    let unchanged = a
+        .clone()
+        .with_interface_memory_havoc(Variable(981010), &Default::default(), &[&a, &b])
+        .unwrap();
+    let c = a.store(
+        cell.clone(),
+        CValue::UInt64(Bitvector32Term::UInt64Constant(9)),
+    );
+    let d = b.store(
+        cell.clone(),
+        CValue::UInt64(Bitvector32Term::UInt64Constant(10)),
+    );
+    let changed = c
+        .clone()
+        .with_interface_memory_havoc(Variable(981010), &Default::default(), &[&c, &d])
+        .unwrap();
+    assert!(unchanged.known_value(&cell).is_none());
+    assert!(changed.known_value(&cell).is_none());
+    assert_ne!(unchanged, changed);
+    let project = |memory: &CMemory| {
+        crate::kernel::reasoning::memory_resolution::canonical_memory_for_pointer_load(
+            memory, &cell,
+        )
+    };
+    assert_ne!(
+        project(&unchanged),
+        project(&changed),
+        "a read projection must not erase the incoming histories"
+    );
+    assert!(
+        !crate::kernel::reasoning::memory_resolution::memories_match_for_pointer_load(
+            &unchanged, &changed, &cell
+        )
+    );
+}
+
+#[test]
+fn branch_join_typed_agreement_checks_alias_premises_and_access_width() {
+    let cell = at(block("global:g"), 0);
+    let alias = Pointer {
+        block: PointerBlock::Symbolic(Variable(981021)),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let before = entry_memory();
+    let left = intern_c_memory(before.clone().store(at(block("local:f:i"), 0), one()));
+    let right = intern_c_memory(before.store(alias.clone(), one()));
+    let bare = PureFactContext::new();
+    let separated = bare.clone().assume_condition(
+        ConditionTerm::pointer_equal(alias, at(cell.block.clone(), 8)),
+        true,
+    );
+    let query = |facts: &PureFactContext, bytes| {
+        cell_source::join_read_agreement(
+            &left,
+            &right,
+            &cell,
+            bytes,
+            &step_effect::Evidence {
+                assumptions: facts,
+                cross_loop_havoc: false,
+            },
+        )
+    };
+    assert!(query(&bare, 8).is_none());
+    let (a, b) = query(&separated, 8).expect("an alias eight bytes away misses the tag");
+    assert!(a.checks_walk_from(&left, &cell, 8, &separated));
+    assert!(b.checks_walk_from(&right, &cell, 8, &separated));
+    assert!(
+        !b.checks_walk_from(&right, &cell, 8, &bare),
+        "the retained alias premise must be checked"
+    );
+    assert!(
+        query(&separated, 16).is_none(),
+        "the same write overlaps a wider read"
+    );
+}
+
+#[test]
+fn branch_join_nested_naming_work_tracks_new_branches() {
+    let cell = at(block("global:g"), 0);
+    let mut memory = entry_memory();
+    let expected = last_same_point(
+        Resource::Cell {
+            pointer: &cell,
+            bytes: 8,
+        },
+        &point(&memory),
+    );
+    let mut samples = Vec::new();
+    for index in 0..32 {
+        let left = memory.clone().store(
+            at(block("global:h"), 0),
+            CValue::Int32(Bitvector32Term::Constant(index * 2)),
+        );
+        let right = memory.clone().store(
+            at(block("global:h"), 0),
+            CValue::Int32(Bitvector32Term::Constant(index * 2 + 1)),
+        );
+        memory = left
+            .clone()
+            .with_interface_memory_havoc(
+                Variable(981030 + u64::from(index)),
+                &Default::default(),
+                &[&left, &right],
+            )
+            .unwrap();
+        let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
+            last_same_point(
+                Resource::Cell {
+                    pointer: &cell,
+                    bytes: 8,
+                },
+                &point(&memory),
+            )
+        });
+        assert_eq!(answer, expected);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "each new branch should pay only for its own two arms: {samples:?}"
+    );
+}

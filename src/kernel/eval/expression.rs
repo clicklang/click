@@ -716,19 +716,13 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
 
     match (target_type, value) {
         (CType::Bool, CValue::Bool(value)) => Some(CValue::Bool(value)),
-        (
-            CType::Bool,
-            CValue::Int8(value)
-            | CValue::Int16(value)
-            | CValue::Int32(value)
-            | CValue::UInt8(value)
-            | CValue::UInt16(value)
-            | CValue::UInt32(value),
-        ) => Some(CValue::Bool(Bitvector32Term::if_then_else(
-            ConditionTerm::equal(value, Bitvector32Term::Constant(0)),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
-        ))),
+        (CType::Bool, crate::kernel::integer32_c_value!(value)) => {
+            Some(CValue::Bool(Bitvector32Term::if_then_else(
+                ConditionTerm::equal(value, Bitvector32Term::Constant(0)),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(1),
+            )))
+        }
         (CType::Bool, CValue::Int64(value)) => Some(CValue::Bool(Bitvector32Term::if_then_else(
             ConditionTerm::int64_equal(value, Bitvector32Term::Int64Constant(0)),
             Bitvector32Term::Constant(0),
@@ -802,14 +796,7 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
             )?;
             Some(CValue::Int32(Bitvector32Term::uint32_from_64(value)))
         }
-        (
-            CType::UInt32,
-            CValue::Int8(value)
-            | CValue::Int16(value)
-            | CValue::Int32(value)
-            | CValue::UInt8(value)
-            | CValue::UInt16(value),
-        ) => Some(CValue::UInt32(value)),
+        (CType::UInt32, crate::kernel::int_promoted_c_value!(value)) => Some(CValue::UInt32(value)),
         (CType::Int8, CValue::Int32(value) | CValue::Int16(value)) => {
             add_signed_narrowing_obligations(
                 obligations,
@@ -928,14 +915,9 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
             )))
         }
         (CType::Int64, CValue::Int64(value)) => Some(CValue::Int64(value)),
-        (
-            CType::Int64,
-            CValue::Int8(value)
-            | CValue::Int16(value)
-            | CValue::Int32(value)
-            | CValue::UInt8(value)
-            | CValue::UInt16(value),
-        ) => Some(CValue::Int64(Bitvector32Term::int64_from_32(value))),
+        (CType::Int64, crate::kernel::int_promoted_c_value!(value)) => {
+            Some(CValue::Int64(Bitvector32Term::int64_from_32(value)))
+        }
         (CType::Int64, CValue::UInt32(value)) => {
             Some(CValue::Int64(Bitvector32Term::int64_from_uint32(value)))
         }
@@ -943,14 +925,9 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
         (CType::UInt64, CValue::Int64(value)) => {
             Some(CValue::UInt64(Bitvector32Term::uint64_from_int64(value)))
         }
-        (
-            CType::UInt64,
-            CValue::Int8(value)
-            | CValue::Int16(value)
-            | CValue::Int32(value)
-            | CValue::UInt8(value)
-            | CValue::UInt16(value),
-        ) => Some(CValue::UInt64(Bitvector32Term::uint64_from_int32(value))),
+        (CType::UInt64, crate::kernel::int_promoted_c_value!(value)) => {
+            Some(CValue::UInt64(Bitvector32Term::uint64_from_int32(value)))
+        }
         (CType::UInt64, CValue::UInt32(value)) => {
             Some(CValue::UInt64(Bitvector32Term::uint64_from_32(value)))
         }
@@ -976,14 +953,7 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
         }
         (
             target @ (CType::Float32 | CType::Float64),
-            value @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)
-            | CValue::Int64(_)
-            | CValue::UInt64(_)),
+            value @ (crate::kernel::integer64_c_value!(_)),
         ) => integer_to_float_value(value, target),
         (
             target @ (CType::Int8

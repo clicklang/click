@@ -103,7 +103,7 @@ fn reject_compute(contract: &str, before: &str, after: &str) {
     let p = adler2_helpers_project();
     let prepared = load_import(&p.config()).unwrap();
     let changed = contract.replacen(before, after, 1);
-    assert_ne!(changed, contract, "missing mutation: {before}");
+    assert!(changed != contract, "missing mutation: {before}");
     let invalid = compute_proof(&changed);
     let offset = invalid.find("execute_until(assignment(b, 0))").unwrap();
     let line = invalid[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
@@ -1281,8 +1281,8 @@ fn charon_adler2_three_byte_compute_tools_recheck_original_contract() {
 fn charon_adler2_four_byte_compute_rejects_false_stored_iterator_observations() {
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "have ((__rust_mir_62_remaining as u32) as i32) == 4 by",
-        "have ((__rust_mir_62_remaining as u32) as i32) == 8 by",
+        "have ((__rust_mir_62_remaining as u32) as i32) == 4",
+        "have ((__rust_mir_62_remaining as u32) as i32) == 8",
     );
     reject_compute(
         FOUR_BYTE_COMPUTE,
@@ -1381,8 +1381,8 @@ fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
     );
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "# Both actual helper results satisfy the ceiling at next()'s new state.\n   have ((__rust_mir_62_remaining as u32) as i32) == at(lane_head, ((__rust_mir_62_remaining as u32) as i32)) - 4 by",
-        "# Both actual helper results satisfy the ceiling at next()'s new state.\n   have ((__rust_mir_62_remaining as u32) as i32) == at(lane_head, ((__rust_mir_62_remaining as u32) as i32)) by",
+        "# Both actual helper results satisfy the ceiling at next()'s new state.\n       have ((__rust_mir_62_remaining as u32) as i32) == at(lane_head, ((__rust_mir_62_remaining as u32) as i32)) - 4",
+        "# Both actual helper results satisfy the ceiling at next()'s new state.\n       have ((__rust_mir_62_remaining as u32) as i32) == at(lane_head, ((__rust_mir_62_remaining as u32) as i32))",
     );
 }
 
@@ -1423,7 +1423,7 @@ fn charon_adler2_small_batch_compute_rejects_missing_view_and_full_outer_batch()
     reject_compute(SMALL_BATCH_COMPUTE, " views *bytes;", "");
     reject_compute(
         SMALL_BATCH_COMPUTE,
-        " requires bytes.len() <= 22207u64;\n requires bytes.len() < 22208u64;",
+        " requires bytes.len() <= 22207u64;\n     requires bytes.len() < 22208u64;",
         " requires bytes.len() <= 22208u64;",
     );
 }

@@ -10,7 +10,6 @@
 //! observes the one release store. Any other order is refused at the call.
 //! The trusted runtime statement is `src/languages/c/modeled_pthread_spec.md`.
 
-use super::loans::empty_checked_loan_evidence_sequence;
 use super::prelude::*;
 use crate::languages::c::thread_runtime::{
     ATOMIC_INIT_NAME, ATOMIC_INIT_PAYLOAD_BINDER_ID, ATOMIC_LOAD_NAME, ATOMIC_STORE_NAME,
@@ -24,13 +23,7 @@ const MEMORY_ORDER_RELEASE: i64 = 3;
 const FLAG_BYTES: u32 = 4;
 
 fn path(outcome: CStatementOutcome) -> CStatementExecutionPath {
-    CStatementExecutionPath {
-        loop_invariant_correspondence: Default::default(),
-        outcome,
-        facts: Vec::new().into(),
-        obligations: Vec::new(),
-        loan_evidence: empty_checked_loan_evidence_sequence(),
-    }
+    CStatementExecutionPath::new(outcome, Vec::new().into(), Vec::new())
 }
 
 fn refusal(message: impl Into<String>) -> CStatementOutcome {
@@ -212,13 +205,7 @@ pub(super) fn execute_publication_paths(
                     }
                 }
             };
-            paths.push(CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome,
-                facts,
-                obligations,
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            });
+            paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
         }
     }
     budget.check_path_width(paths.len())?;

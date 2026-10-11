@@ -7938,14 +7938,13 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_theorem_application() {
             .cloned()
             .zip(selected.iter().cloned())
             .collect::<Vec<_>>();
-        let recorded = recorded_int32_le_and_not_lt_implies_equality_pairs(
-            &restricted_derivation,
-            &restricted_pairs,
-        )
-        .expect("the typed equality evidence should recover both Surface premises");
-        let planned = plan_recorded_int32_le_and_not_lt_implies_equality_for_context(
-            &kernel_equality,
-            &recorded,
+        let (less_equal, not_less_than) = restricted_derivation
+            .int32_le_and_not_lt_implies_equality_premises()
+            .expect("the typed equality evidence should name both premises");
+        let recorded = recorded_premise_pairs([less_equal, not_less_than], &restricted_pairs, true)
+            .expect("the typed equality evidence should recover both Surface premises");
+        let planned = for_context(
+            plan_explicit_le_and_not_lt_implies_eq(&kernel_equality, &recorded),
             true,
         )
         .expect("the typed equality evidence should select the named theorem");

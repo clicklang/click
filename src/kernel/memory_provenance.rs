@@ -2772,11 +2772,7 @@ impl LoadCellWalks {
             matches!(
                 cell.resolved_value(pointer, kind),
                 Some(
-                    CValue::Int8(value) | CValue::Int16(value)
-                        | CValue::Int32(value)
-                        | CValue::UInt8(value)
-                        | CValue::UInt16(value)
-                        | CValue::UInt32(value)
+                    crate::kernel::integer32_c_value!(value)
                 ) if &value == other
             )
         };
@@ -3038,12 +3034,7 @@ pub(crate) fn resolve_load_along_memory_derivations(
         let cell = memory_dag_cell_source(memory, pointer, bytes, assumptions, true)?;
         if let Some(value) = cell.resolved_value(pointer, kind) {
             return match value {
-                CValue::Int8(value)
-                | CValue::Int16(value)
-                | CValue::Int32(value)
-                | CValue::UInt8(value)
-                | CValue::UInt16(value)
-                | CValue::UInt32(value) => Some(value),
+                crate::kernel::integer32_c_value!(value) => Some(value),
                 _ => None,
             };
         }
@@ -3114,7 +3105,7 @@ pub(crate) fn explicit_atomic_equality_from_memory_derivations(
             matches!(
                 memory_dag_cell_source(memory, pointer, bytes, assumptions, true)
                     .and_then(|cell| cell.resolved_value(pointer, *kind)),
-                Some(CValue::Int8(resolved) | CValue::Int16(resolved) | CValue::Int32(resolved) | CValue::UInt8(resolved) | CValue::UInt16(resolved) | CValue::UInt32(resolved))
+                Some(crate::kernel::integer32_c_value!(resolved))
                     if resolved == *value
             )
         };
@@ -3898,18 +3889,7 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &Bitvector32Term) -> bo
                     pending.push(Node::Term(right, depth + 1));
                     pending.push(Node::Term(left, depth + 1));
                 }
-                Bitvector32Term::BitwiseNot(value)
-                | Bitvector32Term::Int64From32(value)
-                | Bitvector32Term::MachineIntegerCast { value, .. }
-                | Bitvector32Term::Int64FromUInt32(value)
-                | Bitvector32Term::UInt64From32(value)
-                | Bitvector32Term::UInt32From64(value)
-                | Bitvector32Term::UInt64FromInt32(value)
-                | Bitvector32Term::UInt64FromInt64(value)
-                | Bitvector32Term::Int64BitwiseNot(value)
-                | Bitvector32Term::UInt64BitwiseNot(value)
-                | Bitvector32Term::Float32Negate(value)
-                | Bitvector32Term::Float64Negate(value) => {
+                crate::kernel::unary_machine_term!(value) => {
                     pending.push(Node::Term(value, depth + 1));
                 }
                 Bitvector32Term::If {
@@ -4048,18 +4028,7 @@ fn cell_integer_for_read(
         return None;
     }
     match cell {
-        CValue::Int8(value)
-        | CValue::Int16(value)
-        | CValue::Int32(value)
-        | CValue::UInt8(value)
-        | CValue::UInt16(value)
-        | CValue::UInt32(value)
-        | CValue::Int64(value)
-        | CValue::UInt64(value)
-            if &value != load =>
-        {
-            Some(value)
-        }
+        crate::kernel::integer64_c_value!(value) if &value != load => Some(value),
         _ => None,
     }
 }

@@ -3401,13 +3401,7 @@ mod tests {
         ];
         for outcome in outcomes {
             let paths = eval::paths_after_scope_exit(
-                vec![CStatementExecutionPath {
-                    outcome,
-                    facts: vec![].into(),
-                    obligations: vec![],
-                    loop_invariant_correspondence: Default::default(),
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                }],
+                vec![CStatementExecutionPath::new(outcome, vec![].into(), vec![])],
                 &["holder".into()],
             );
             assert!(matches!(

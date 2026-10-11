@@ -376,7 +376,6 @@ mod tests {
 
     #[test]
     fn integer_cast_identity_checks_legacy_conversions_and_rejects_wrong_carriers() {
-        use crate::kernel::CValue;
         let types = [Ty::Int32, Ty::UInt32, Ty::Int64, Ty::UInt64];
         let value = Bitvector32Term::Variable(Variable(168_001));
         for source in types {
@@ -386,14 +385,7 @@ mod tests {
                     .convert_modulo_value(source.value_from_term(value.clone()))
                     .unwrap();
                 let converted = match converted {
-                    CValue::Int8(v)
-                    | CValue::UInt8(v)
-                    | CValue::Int16(v)
-                    | CValue::UInt16(v)
-                    | CValue::Int32(v)
-                    | CValue::UInt32(v)
-                    | CValue::Int64(v)
-                    | CValue::UInt64(v) => v,
+                    crate::kernel::integer64_c_value!(v) => v,
                     _ => panic!("wrong carrier"),
                 };
                 let observed = IntegerTerm::from_machine(destination, converted.clone()).unwrap();

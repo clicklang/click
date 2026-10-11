@@ -335,16 +335,7 @@ impl MachineIntegerType {
         // legacy expression. Wide operands cannot reinterpret word nodes.
         if source.format().bits() == 128 || self.format().bits() == 128 {
             let term = match value {
-                CValue::Int8(term)
-                | CValue::UInt8(term)
-                | CValue::Int16(term)
-                | CValue::UInt16(term)
-                | CValue::Int32(term)
-                | CValue::UInt32(term)
-                | CValue::Int64(term)
-                | CValue::UInt64(term)
-                | CValue::Int128(term)
-                | CValue::UInt128(term) => term,
+                crate::kernel::integer_c_value!(term) => term,
                 _ => return None,
             };
             if !source.accepts_cast_operand(&term) {
@@ -361,16 +352,7 @@ impl MachineIntegerType {
             return Some(value);
         }
         let term = match value {
-            CValue::Int8(term)
-            | CValue::UInt8(term)
-            | CValue::Int16(term)
-            | CValue::UInt16(term)
-            | CValue::Int32(term)
-            | CValue::UInt32(term)
-            | CValue::Int64(term)
-            | CValue::UInt64(term)
-            | CValue::Int128(term)
-            | CValue::UInt128(term) => term,
+            crate::kernel::integer_c_value!(term) => term,
             _ => return None,
         };
         let source_format = source.format();
@@ -535,16 +517,7 @@ impl MachineIntegerType {
             return None;
         }
         let term = match value {
-            CValue::Int8(term)
-            | CValue::UInt8(term)
-            | CValue::Int16(term)
-            | CValue::UInt16(term)
-            | CValue::Int32(term)
-            | CValue::UInt32(term)
-            | CValue::Int64(term)
-            | CValue::UInt64(term)
-            | CValue::Int128(term)
-            | CValue::UInt128(term) => term,
+            crate::kernel::integer_c_value!(term) => term,
             _ => return None,
         };
         self.constant_from_term(term)
@@ -830,14 +803,7 @@ mod tests {
                         expected -= &modulus;
                     }
                     let term = match actual {
-                        CValue::Int8(t)
-                        | CValue::UInt8(t)
-                        | CValue::Int16(t)
-                        | CValue::UInt16(t)
-                        | CValue::Int32(t)
-                        | CValue::UInt32(t)
-                        | CValue::Int64(t)
-                        | CValue::UInt64(t) => t,
+                        crate::kernel::integer64_c_value!(t) => t,
                         _ => unreachable!(),
                     };
                     let observed = match (
