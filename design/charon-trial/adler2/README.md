@@ -18,7 +18,8 @@ These sidecars are the last ones written in the C-shaped spelling, with
 importer names such as `__rust_q_I6_adler2_I4_algo_I5_U32X4` and `->`. A new
 or touched sidecar here uses Rust syntax (`docs/reference/rust.md`,
 "Signatures in Rust syntax"): `fn` signatures, `impl` blocks, paths such as
-`adler2::algo::U32X4`, `bytes.len()` and `p.f`. When the last one is
+`adler2::algo::U32X4`, `bytes.len()` and `p.f`. It also takes the short proof forms,
+`have P;` and `by T(args);`. When the last one is
 converted, Click refuses the C-shaped spelling for a Rust source
 (`issues/design-review.md`, A4).
 

@@ -69,13 +69,10 @@ rulings are under "Decided and closed".
 
 ## C. Tactics
 
-### C1. Short proof forms where they are not yet used
-
-A `have` or `ensures` proved by a one-step block uses the brace-less form
-(`by T(args);`, `by simp;`), and `have P by simp;` is `have P;`. The
-examples, the standard library and the mdtests use it. Left in the long
-spelling are the Rust examples and the sidecars under `design/charon-trial`,
-which are hash-pinned in `design/charon-trial/parity.json`.
+Nothing is open. C1, the short proof forms (`by T(args);`, `by simp;`,
+`have P;`), is used everywhere except the five hash-pinned originals under
+`design/charon-trial`, `into-slices/sum.click` (a byte-for-byte copy of one
+of them), and the Adler sidecars, which take it as they are touched.
 
 ## Decided and closed, for the record
 

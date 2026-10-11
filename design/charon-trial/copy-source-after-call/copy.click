@@ -9,7 +9,7 @@ fn copy_source_after_call::caller(value: u32) -> u32 {
  ensures result == value;
  } by {
  execute_until(assignment(__rust_mir_14, 0));
- have target._0[0] == value by { simp(); }
+ have target._0[0] == value;
  execute();
  simp();
 }

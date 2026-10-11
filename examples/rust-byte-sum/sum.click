@@ -15,9 +15,7 @@ fn sum(bytes: &[u8]) -> i32 {
             i <= 0u64;
         } simp();
     }
-    have to_integer(total) == 0 by {
-        simp();
-    }
+    have to_integer(total) == 0;
     have to_integer(total) == prefix(bytes, i) by {
         arithmetic() using {
             to_integer(total) == 0;
@@ -58,9 +56,7 @@ fn sum(bytes: &[u8]) -> i32 {
                     bytes.len() <= 9223372036854775807u64;
                 }
             }
-            have 0 <= (int32)bytes[i] and 255 >= (int32)bytes[i] by {
-                simp();
-            }
+            have 0 <= (int32)bytes[i] and 255 >= (int32)bytes[i];
             have 0 <= to_integer((int32)bytes[i]) by {
                 apply(int32_less_equal_to_integer(0, (int32)bytes[i])) using {
                     0 <= (int32)bytes[i];
@@ -162,9 +158,7 @@ fn sum(bytes: &[u8]) -> i32 {
             }
             execute_until(assignment(i, 1));
             step();
-            have i <= bytes.len() by {
-                simp();
-            }
+            have i <= bytes.len();
             step(); step(); step();
             close_invariants();
         }
