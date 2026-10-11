@@ -29,7 +29,7 @@ fn write_read(bytes: &mut [u8], index: usize, value: u8) -> u8 {
     ensures bytes[index] == value;
 } by {
     execute();
-    have result == bytes[index] by { simp(); }
+    have result == bytes[index];
     simp();
 }
 

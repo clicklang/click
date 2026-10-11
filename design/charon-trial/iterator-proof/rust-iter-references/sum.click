@@ -10,7 +10,7 @@ fn sum(bytes: &[u8]) -> i32 {
     ensures to_integer(result) == old(prefix(bytes, bytes.len()));
 } by {
     execute_until(loop(0));
-    have iter_remaining == bytes.len() by { simp(); }
+    have iter_remaining == bytes.len();
     have bytes.len() - iter_remaining == 0u64 by {
         rewrite(iter_remaining == bytes.len()); simp();
     }
@@ -19,9 +19,7 @@ fn sum(bytes: &[u8]) -> i32 {
             bytes.len() - iter_remaining <= 0u64;
         } simp();
     }
-    have to_integer(total) == 0 by {
-        simp();
-    }
+    have to_integer(total) == 0;
     have to_integer(total) == prefix(bytes, bytes.len() - iter_remaining) by {
         arithmetic() using {
             to_integer(total) == 0;
@@ -38,7 +36,7 @@ fn sum(bytes: &[u8]) -> i32 {
         invariant to_integer(total) == prefix(bytes, bytes.len() - iter_remaining);
         preserve by {
             mark iteration;
-            have 0u64 < iter_remaining by { simp(); }
+            have 0u64 < iter_remaining;
             have bytes.len() - iter_remaining < bytes.len() by {
                 arithmetic() using { 0u64 < iter_remaining; iter_remaining <= bytes.len(); }
             }
@@ -97,8 +95,8 @@ fn sum(bytes: &[u8]) -> i32 {
             execute_until(read(0));
             let loaded_byte = step();
             mark loaded;
-            have 0 <= (int32)loaded_byte and 255 >= (int32)loaded_byte by { simp(); }
-            have at(iteration, bytes[(bytes.len() - iter_remaining)]) == loaded_byte by { simp(); }
+            have 0 <= (int32)loaded_byte and 255 >= (int32)loaded_byte;
+            have at(iteration, bytes[(bytes.len() - iter_remaining)]) == loaded_byte;
             have at(iteration, to_integer((int32)bytes[(bytes.len() - iter_remaining)])) == to_integer((int32)loaded_byte) by {
                 rewrite(at(iteration, bytes[(bytes.len() - iter_remaining)]) == loaded_byte);
                 normalize();
@@ -156,7 +154,7 @@ fn sum(bytes: &[u8]) -> i32 {
             }
             mark addition;
             execute_until(assignment(total, 1)); step();
-            have to_integer(total) == at(addition, to_integer(total + (int32)loaded_byte)) by { simp(); }
+            have to_integer(total) == at(addition, to_integer(total + (int32)loaded_byte));
             execute_until(back_edge());
             have iter_remaining <= bytes.len() by {
                 arithmetic() using {
