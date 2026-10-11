@@ -622,7 +622,7 @@ fn verify_click_file_theorems_with_environment(
     let predicate_definitions = combined_predicate_definitions(file)?;
     let click_function_definitions = combined_click_function_definitions(file)?;
     let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
-        .with_contracts(file.contract_definitions());
+        .with_contracts(file.contract_definitions(), &file.c_function_names);
     let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
         &click_function_definitions,
         &combined_algebraic_type_definitions(file)?,
@@ -706,7 +706,7 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
     let click_function_definitions = combined_click_function_definitions(&file)?;
     let resource_definitions = combined_resource_definitions(&file)?;
     let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
-        .with_contracts(file.contract_definitions());
+        .with_contracts(file.contract_definitions(), &file.c_function_names);
     let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
         &click_function_definitions,
         &combined_algebraic_type_definitions(&file)?,
@@ -728,7 +728,10 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
         .flat_map(|theorem| contract_refinement_targets(&file, theorem.name()))
         .collect::<BTreeSet<_>>();
     for target in refinement_targets {
-        let Some(function) = function_environment.get_function(&target).cloned() else {
+        let Some(function) = function_environment
+            .get_function(file.c_function_names.get(&target).unwrap_or(&target))
+            .cloned()
+        else {
             continue;
         };
         if let Some(hypothesis) = crate::kernel::c_recursive_function_contract_hypothesis(function)
@@ -760,7 +763,7 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
     let click_function_definitions = combined_click_function_definitions(&file)?;
     let resource_definitions = combined_resource_definitions(&file)?;
     let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
-        .with_contracts(file.contract_definitions());
+        .with_contracts(file.contract_definitions(), &file.c_function_names);
     let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
         &click_function_definitions,
         &combined_algebraic_type_definitions(&file)?,
@@ -778,7 +781,10 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
     )?
     .with_byte_order(file.selected_c_target().byte_order());
     for target in contract_refinement_targets(&file, theorem_name) {
-        let Some(function) = function_environment.get_function(&target).cloned() else {
+        let Some(function) = function_environment
+            .get_function(file.c_function_names.get(&target).unwrap_or(&target))
+            .cloned()
+        else {
             continue;
         };
         if let Some(hypothesis) = crate::kernel::c_recursive_function_contract_hypothesis(function)
@@ -2242,7 +2248,7 @@ fn verify_c0_sources_in_context(
             &unselected_theorem_definitions,
         );
         let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
-            .with_contracts(file.contract_definitions());
+            .with_contracts(file.contract_definitions(), &file.c_function_names);
         let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
             &click_function_definitions,
             &combined_algebraic_type_definitions(&file)?,
@@ -5365,6 +5371,7 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
             local_struct_pointers.insert(
                 function.source_name().to_string(),
                 parser::FunctionLocals {
+                    execution_name: Some(function.name().to_string()),
                     struct_pointers: function.local_struct_pointers().clone(),
                     references: function.local_references().clone(),
                 },
@@ -5713,6 +5720,7 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
             // definitions sharing one source spelling leave no layouts rather
             // than guessing between them.
             let locals = parser::FunctionLocals {
+                execution_name: Some(function.name().to_string()),
                 struct_pointers: function.local_struct_pointers().clone(),
                 references: function.local_references().clone(),
             };
