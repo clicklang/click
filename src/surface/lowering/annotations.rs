@@ -5640,6 +5640,23 @@ impl AnnotationLowerer<'_> {
                         variant: arm.variant.clone(),
                         bindings: arm.bindings.clone(),
                         binding_types: variant.fields.clone(),
+                        binding_variables: arm
+                            .bindings
+                            .iter()
+                            .zip(&variant.fields)
+                            .map(|(binding, ty)| {
+                                if ty == &AlgebraicValueType::Integer {
+                                    match body_environment.integer_values.get(binding) {
+                                        Some(crate::kernel::SpecIntegerExpression::Term(
+                                            crate::kernel::IntegerTerm::Variable(variable),
+                                        )) => Some(*variable),
+                                        _ => None,
+                                    }
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect(),
                         body: Box::new(body),
                     });
                 }
