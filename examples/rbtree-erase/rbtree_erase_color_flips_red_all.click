@@ -1108,13 +1108,445 @@ void rb_set_parent(struct rb_node* rb, struct rb_node* p) {
 contract void AugmentRotate(struct rb_node* old, struct rb_node* new) {
     requires new != 0; ensures 1 == 1;
 }
+theorem erase_color_not_black(c: Color) {
+    requires not(c == Color::Black);
+    ensures c == Color::Red by {
+        induct(c) as ih {
+            Color::Red => {
+                normalize();
+            }
+            Color::Black => {
+                have Color::Black == Color::Black by normalize();
+                contradiction(Color::Black == Color::Black);
+            }
+        }
+    }
+}
+
+theorem erase_red_near_left(id: struct rb_node*, above: struct rb_node*, pc: Color, sid: struct rb_node*, sp: struct rb_node*, near: RbTree, far: RbTree, up: Context, height: Nat) {
+    requires rb_root_black(near) == 1;
+    requires black_height(near) == Nat::Succ(height);
+    ensures erase_flips_red_all(Context::Left(id, above, pc, RbTree::Node(sid, sp, Color::Red, near, far), up)) == 1 by {
+        induct(near) as ih {
+            RbTree::Empty => {
+                have Nat::Zero == Nat::Succ(height) by {
+                    unfold(black_height(RbTree::Empty));
+                    rewrite(Nat::Zero == black_height(RbTree::Empty));
+                    assumption();
+                }
+                have not(Nat::Zero == Nat::Succ(height)) by normalize();
+                contradiction(Nat::Zero == Nat::Succ(height));
+            }
+            RbTree::Node(nid, np, nc, nl, nr) => {
+                apply(outer_black_node_color(nid, np, nc, nl, nr));
+                unfold(erase_flips_red_all(Context::Left(id, above, pc, RbTree::Node(sid, sp, Color::Red, RbTree::Node(nid, np, nc, nl, nr), far), up)));
+                normalize() using {
+                    nc == Color::Black;
+                }
+            }
+        }
+    }
+}
+
+theorem erase_frame_left(id: struct rb_node*, above: struct rb_node*, pc: Color, sibling: RbTree, up: Context, height: Nat) {
+    requires is_rb(sibling) == 1;
+    requires black_height(sibling) == Nat::Succ(height);
+    requires erase_flips_red_all(up) == 1;
+    ensures erase_flips_red_all(Context::Left(id, above, pc, sibling, up)) == 1 by {
+        induct(sibling) as ih {
+            RbTree::Empty => {
+                have Nat::Zero == Nat::Succ(height) by {
+                    unfold(black_height(RbTree::Empty));
+                    rewrite(Nat::Zero == black_height(RbTree::Empty));
+                    assumption();
+                }
+                have not(Nat::Zero == Nat::Succ(height)) by normalize();
+                contradiction(Nat::Zero == Nat::Succ(height));
+            }
+            RbTree::Node(sid, sp, sc, l, r) => {
+                if sc == Color::Black {
+                    if pc == Color::Black {
+                        unfold(erase_flips_red_all(Context::Left(id, above, pc, RbTree::Node(sid, sp, sc, l, r), up)));
+                        if rb_root_black(l) == 1 {
+                            if rb_root_black(r) == 1 {
+                                rewrite(sc == Color::Black);
+                                rewrite(pc == Color::Black);
+                                rewrite(erase_flips_red_all(up) == 1);
+                                normalize() using {
+                                    sc == Color::Black;
+                                    pc == Color::Black;
+                                    erase_flips_red_all(up) == 1;
+                                    rb_root_black(l) == 1;
+                                    rb_root_black(r) == 1;
+                                }
+                            }
+                            else {
+                                rewrite(sc == Color::Black);
+                                rewrite(pc == Color::Black);
+                                rewrite(erase_flips_red_all(up) == 1);
+                                normalize() using {
+                                    sc == Color::Black;
+                                    pc == Color::Black;
+                                    erase_flips_red_all(up) == 1;
+                                    rb_root_black(l) == 1;
+                                    not(rb_root_black(r) == 1);
+                                }
+                            }
+                        }
+                        else {
+                            if rb_root_black(r) == 1 {
+                                rewrite(sc == Color::Black);
+                                rewrite(pc == Color::Black);
+                                rewrite(erase_flips_red_all(up) == 1);
+                                normalize() using {
+                                    sc == Color::Black;
+                                    pc == Color::Black;
+                                    erase_flips_red_all(up) == 1;
+                                    not(rb_root_black(l) == 1);
+                                    rb_root_black(r) == 1;
+                                }
+                            }
+                            else {
+                                rewrite(sc == Color::Black);
+                                rewrite(pc == Color::Black);
+                                rewrite(erase_flips_red_all(up) == 1);
+                                normalize() using {
+                                    sc == Color::Black;
+                                    pc == Color::Black;
+                                    erase_flips_red_all(up) == 1;
+                                    not(rb_root_black(l) == 1);
+                                    not(rb_root_black(r) == 1);
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        apply(erase_color_not_black(pc));
+                        unfold(erase_flips_red_all(Context::Left(id, above, pc, RbTree::Node(sid, sp, sc, l, r), up)));
+                        if rb_root_black(l) == 1 {
+                            if rb_root_black(r) == 1 {
+                                rewrite(sc == Color::Black);
+                                rewrite(pc == Color::Red);
+                                normalize() using {
+                                    sc == Color::Black;
+                                    pc == Color::Red;
+                                    rb_root_black(l) == 1;
+                                    rb_root_black(r) == 1;
+                                }
+                            }
+                            else {
+                                rewrite(sc == Color::Black);
+                                rewrite(pc == Color::Red);
+                                normalize() using {
+                                    sc == Color::Black;
+                                    pc == Color::Red;
+                                    rb_root_black(l) == 1;
+                                    not(rb_root_black(r) == 1);
+                                }
+                            }
+                        }
+                        else {
+                            if rb_root_black(r) == 1 {
+                                rewrite(sc == Color::Black);
+                                rewrite(pc == Color::Red);
+                                normalize() using {
+                                    sc == Color::Black;
+                                    pc == Color::Red;
+                                    not(rb_root_black(l) == 1);
+                                    rb_root_black(r) == 1;
+                                }
+                            }
+                            else {
+                                rewrite(sc == Color::Black);
+                                rewrite(pc == Color::Red);
+                                normalize() using {
+                                    sc == Color::Black;
+                                    pc == Color::Red;
+                                    not(rb_root_black(l) == 1);
+                                    not(rb_root_black(r) == 1);
+                                }
+                            }
+                        }
+                    }
+                }
+                else {
+                    apply(erase_color_not_black(sc));
+                    have is_rb(RbTree::Node(sid, sp, Color::Red, l, r)) == 1 by {
+                        rewrite(Color::Red == sc);
+                        assumption();
+                    }
+                    apply(is_rb_red_node_children_are_black(sid, sp, l, r));
+                    apply(is_rb_red_node_right_child_is_black(sid, sp, l, r));
+                    apply(is_rb_node_black_heights(sid, sp, Color::Red, l, r));
+                    apply(black_height_red_node(sid, sp, l, r));
+                    have black_height(l) == Nat::Succ(height) by {
+                        rewrite(black_height(l) == black_height(RbTree::Node(sid, sp, Color::Red, l, r)));
+                        rewrite(Color::Red == sc);
+                        assumption();
+                    }
+                    apply(erase_red_near_left(id, above, pc, sid, sp, l, r, up, height));
+                    rewrite(sc == Color::Red);
+                    assumption();
+                }
+            }
+        }
+    }
+}
+
+theorem erase_red_near_right(id: struct rb_node*, above: struct rb_node*, pc: Color, sid: struct rb_node*, sp: struct rb_node*, near: RbTree, far: RbTree, up: Context, height: Nat) {
+    requires rb_root_black(near) == 1;
+    requires black_height(near) == Nat::Succ(height);
+    ensures erase_flips_red_all(Context::Right(id, above, pc, RbTree::Node(sid, sp, Color::Red, far, near), up)) == 1 by {
+        induct(near) as ih {
+            RbTree::Empty => {
+                have Nat::Zero == Nat::Succ(height) by {
+                    unfold(black_height(RbTree::Empty));
+                    rewrite(Nat::Zero == black_height(RbTree::Empty));
+                    assumption();
+                }
+                have not(Nat::Zero == Nat::Succ(height)) by normalize();
+                contradiction(Nat::Zero == Nat::Succ(height));
+            }
+            RbTree::Node(nid, np, nc, nl, nr) => {
+                apply(outer_black_node_color(nid, np, nc, nl, nr));
+                unfold(erase_flips_red_all(Context::Right(id, above, pc, RbTree::Node(sid, sp, Color::Red, far, RbTree::Node(nid, np, nc, nl, nr)), up)));
+                normalize() using {
+                    nc == Color::Black;
+                }
+            }
+        }
+    }
+}
+
+theorem erase_frame_right(id: struct rb_node*, above: struct rb_node*, pc: Color, sibling: RbTree, up: Context, height: Nat) {
+    requires is_rb(sibling) == 1;
+    requires black_height(sibling) == Nat::Succ(height);
+    requires erase_flips_red_all(up) == 1;
+    ensures erase_flips_red_all(Context::Right(id, above, pc, sibling, up)) == 1 by {
+        induct(sibling) as ih {
+            RbTree::Empty => {
+                have Nat::Zero == Nat::Succ(height) by {
+                    unfold(black_height(RbTree::Empty));
+                    rewrite(Nat::Zero == black_height(RbTree::Empty));
+                    assumption();
+                }
+                have not(Nat::Zero == Nat::Succ(height)) by normalize();
+                contradiction(Nat::Zero == Nat::Succ(height));
+            }
+            RbTree::Node(sid, sp, sc, l, r) => {
+                if sc == Color::Black {
+                    if pc == Color::Black {
+                        unfold(erase_flips_red_all(Context::Right(id, above, pc, RbTree::Node(sid, sp, sc, l, r), up)));
+                        if rb_root_black(l) == 1 {
+                            if rb_root_black(r) == 1 {
+                                rewrite(sc == Color::Black);
+                                rewrite(pc == Color::Black);
+                                rewrite(erase_flips_red_all(up) == 1);
+                                normalize() using {
+                                    sc == Color::Black;
+                                    pc == Color::Black;
+                                    erase_flips_red_all(up) == 1;
+                                    rb_root_black(l) == 1;
+                                    rb_root_black(r) == 1;
+                                }
+                            }
+                            else {
+                                rewrite(sc == Color::Black);
+                                rewrite(pc == Color::Black);
+                                rewrite(erase_flips_red_all(up) == 1);
+                                normalize() using {
+                                    sc == Color::Black;
+                                    pc == Color::Black;
+                                    erase_flips_red_all(up) == 1;
+                                    rb_root_black(l) == 1;
+                                    not(rb_root_black(r) == 1);
+                                }
+                            }
+                        }
+                        else {
+                            if rb_root_black(r) == 1 {
+                                rewrite(sc == Color::Black);
+                                rewrite(pc == Color::Black);
+                                rewrite(erase_flips_red_all(up) == 1);
+                                normalize() using {
+                                    sc == Color::Black;
+                                    pc == Color::Black;
+                                    erase_flips_red_all(up) == 1;
+                                    not(rb_root_black(l) == 1);
+                                    rb_root_black(r) == 1;
+                                }
+                            }
+                            else {
+                                rewrite(sc == Color::Black);
+                                rewrite(pc == Color::Black);
+                                rewrite(erase_flips_red_all(up) == 1);
+                                normalize() using {
+                                    sc == Color::Black;
+                                    pc == Color::Black;
+                                    erase_flips_red_all(up) == 1;
+                                    not(rb_root_black(l) == 1);
+                                    not(rb_root_black(r) == 1);
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        apply(erase_color_not_black(pc));
+                        unfold(erase_flips_red_all(Context::Right(id, above, pc, RbTree::Node(sid, sp, sc, l, r), up)));
+                        if rb_root_black(l) == 1 {
+                            if rb_root_black(r) == 1 {
+                                rewrite(sc == Color::Black);
+                                rewrite(pc == Color::Red);
+                                normalize() using {
+                                    sc == Color::Black;
+                                    pc == Color::Red;
+                                    rb_root_black(l) == 1;
+                                    rb_root_black(r) == 1;
+                                }
+                            }
+                            else {
+                                rewrite(sc == Color::Black);
+                                rewrite(pc == Color::Red);
+                                normalize() using {
+                                    sc == Color::Black;
+                                    pc == Color::Red;
+                                    rb_root_black(l) == 1;
+                                    not(rb_root_black(r) == 1);
+                                }
+                            }
+                        }
+                        else {
+                            if rb_root_black(r) == 1 {
+                                rewrite(sc == Color::Black);
+                                rewrite(pc == Color::Red);
+                                normalize() using {
+                                    sc == Color::Black;
+                                    pc == Color::Red;
+                                    not(rb_root_black(l) == 1);
+                                    rb_root_black(r) == 1;
+                                }
+                            }
+                            else {
+                                rewrite(sc == Color::Black);
+                                rewrite(pc == Color::Red);
+                                normalize() using {
+                                    sc == Color::Black;
+                                    pc == Color::Red;
+                                    not(rb_root_black(l) == 1);
+                                    not(rb_root_black(r) == 1);
+                                }
+                            }
+                        }
+                    }
+                }
+                else {
+                    apply(erase_color_not_black(sc));
+                    have is_rb(RbTree::Node(sid, sp, Color::Red, l, r)) == 1 by {
+                        rewrite(Color::Red == sc);
+                        assumption();
+                    }
+                    apply(is_rb_red_node_children_are_black(sid, sp, l, r));
+                    apply(is_rb_red_node_right_child_is_black(sid, sp, l, r));
+                    apply(is_rb_node_black_heights(sid, sp, Color::Red, l, r));
+                    apply(black_height_red_node(sid, sp, l, r));
+                    have black_height(r) == Nat::Succ(height) by {
+                        rewrite(black_height(r) == black_height(l));
+                        rewrite(black_height(l) == black_height(RbTree::Node(sid, sp, Color::Red, l, r)));
+                        rewrite(Color::Red == sc);
+                        assumption();
+                    }
+                    apply(erase_red_near_right(id, above, pc, sid, sp, r, l, up, height));
+                    rewrite(sc == Color::Red);
+                    assumption();
+                }
+            }
+        }
+    }
+}
+
+theorem erase_flips_red_all_covers_deficit(ctx: Context, height: Nat, focus_color: Color) {
+    requires ctx_rb(ctx, Nat::Succ(height), focus_color) == 1;
+    ensures erase_flips_red_all(ctx) == 1 by {
+        induct(ctx) as ih {
+            Context::Top => {
+                unfold(erase_flips_red_all(Context::Top));
+                normalize();
+            }
+            Context::Left(id, above, pc, sibling, up) => {
+                apply(ctx_rb_left_sibling(id, above, pc, sibling, up, Nat::Succ(height), focus_color));
+                apply(ctx_rb_left_height(id, above, pc, sibling, up, Nat::Succ(height), focus_color));
+                have black_height(sibling) == Nat::Succ(height) by {
+                    rewrite(Nat::Succ(height) == black_height(sibling));
+                    normalize();
+                }
+                apply(ctx_rb_left_up(id, above, pc, sibling, up, Nat::Succ(height), focus_color));
+                if pc == Color::Black {
+                    apply(frame_black_height_black(Nat::Succ(height)));
+                    have ctx_rb(up, Nat::Succ(Nat::Succ(height)), Color::Black) == 1 by {
+                        rewrite(Nat::Succ(Nat::Succ(height)) == frame_black_height(Color::Black, Nat::Succ(height)));
+                        rewrite(Color::Black == pc);
+                        assumption();
+                    }
+                    apply(ih(up, Nat::Succ(height), Color::Black));
+                    apply(erase_frame_left(id, above, pc, sibling, up, height));
+                    assumption();
+                }
+                else {
+                    apply(erase_color_not_black(pc));
+                    apply(frame_black_height_red(Nat::Succ(height)));
+                    have ctx_rb(up, Nat::Succ(height), Color::Red) == 1 by {
+                        rewrite(Nat::Succ(height) == frame_black_height(Color::Red, Nat::Succ(height)));
+                        rewrite(Color::Red == pc);
+                        assumption();
+                    }
+                    apply(ih(up, height, Color::Red));
+                    apply(erase_frame_left(id, above, pc, sibling, up, height));
+                    assumption();
+                }
+            }
+            Context::Right(id, above, pc, sibling, up) => {
+                apply(ctx_rb_right_sibling(id, above, pc, sibling, up, Nat::Succ(height), focus_color));
+                apply(ctx_rb_right_height(id, above, pc, sibling, up, Nat::Succ(height), focus_color));
+                have black_height(sibling) == Nat::Succ(height) by {
+                    rewrite(Nat::Succ(height) == black_height(sibling));
+                    normalize();
+                }
+                apply(ctx_rb_right_up(id, above, pc, sibling, up, Nat::Succ(height), focus_color));
+                if pc == Color::Black {
+                    apply(frame_black_height_black(Nat::Succ(height)));
+                    have ctx_rb(up, Nat::Succ(Nat::Succ(height)), Color::Black) == 1 by {
+                        rewrite(Nat::Succ(Nat::Succ(height)) == frame_black_height(Color::Black, Nat::Succ(height)));
+                        rewrite(Color::Black == pc);
+                        assumption();
+                    }
+                    apply(ih(up, Nat::Succ(height), Color::Black));
+                    apply(erase_frame_right(id, above, pc, sibling, up, height));
+                    assumption();
+                }
+                else {
+                    apply(erase_color_not_black(pc));
+                    apply(frame_black_height_red(Nat::Succ(height)));
+                    have ctx_rb(up, Nat::Succ(height), Color::Red) == 1 by {
+                        rewrite(Nat::Succ(height) == frame_black_height(Color::Red, Nat::Succ(height)));
+                        rewrite(Color::Red == pc);
+                        assumption();
+                    }
+                    apply(ih(up, height, Color::Red));
+                    apply(erase_frame_right(id, above, pc, sibling, up, height));
+                    assumption();
+                }
+            }
+        }
+    }
+}
+
+
 void ____rb_erase_color(struct rb_node* parent, struct rb_root* root,
 void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
     consumes c: ctx_at(0, root);
     requires AugmentRotate(augment_rotate);
     requires c.model != Context::Top;
     requires ctx_node_is(c.model, parent) == 1;
-    requires erase_flips_red_all(c.model) == 1;
     requires ctx_rb(c.model, Nat::Succ(black_height(RbTree::Empty)), Color::Black) == 1;
     requires rb_tree_parent_consistent(plug(c.model, RbTree::Empty)) == 1;
     produces whole: rb_root_at(root);
@@ -1123,6 +1555,11 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
     ensures rb_tree_parent_consistent(whole.model) == 1;
     ensures rb_inorder(whole.model) == rb_inorder(plug(old(c.model), RbTree::Empty));
 } by {
+    unfold(black_height(RbTree::Empty));
+    have ctx_rb(c.model, Nat::Succ(Nat::Zero), Color::Black) == 1 by {
+        rewrite(Nat::Zero == black_height(RbTree::Empty)); assumption();
+    }
+    apply(erase_flips_red_all_covers_deficit(c.model, Nat::Zero, Color::Black));
     have c.model == ctx_reroot(c.model, parent) by {
         apply(ctx_reroot_fixed(c.model, parent)) using { ctx_node_is(c.model, parent) == 1; }
         assumption();
