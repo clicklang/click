@@ -34,10 +34,13 @@ sha2 = "0.10"
 tar = "0.4.45"
 tempfile = "3"
 
-# Keep filename/line backtraces without duplicating full type and variable
-# debug information in every worktree. The test profile inherits this setting.
+# No debug information: every test executable links all of Click, and line
+# tables alone made each one about 60% larger. Panic and assertion messages
+# still name their file and line, and backtraces name every function; for
+# file/line in backtraces, rebuild with CARGO_PROFILE_DEV_DEBUG=line-tables-only
+# and CARGO_PROFILE_TEST_DEBUG=line-tables-only. The test profile inherits this.
 [profile.dev]
-debug = "line-tables-only"
+debug = false
 
 # An optimized build that keeps symbols and debug info, for sampling
 # profilers (`scripts/profile-samply.sh`). Verification timing is judged in
