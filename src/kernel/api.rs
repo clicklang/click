@@ -1658,7 +1658,10 @@ fn abstract_c_state_for_join_across_with_policy(
                 .iter()
                 .map(|sibling| &sibling.memory)
                 .collect::<Vec<_>>();
-            let memory = abstract_state
+            // Record the checked arm, not the scratch memory whose marker
+            // union above differs depending on which arm is being abstracted.
+            // The join itself already unions every incoming arm's blocks.
+            let memory = state
                 .memory
                 .clone()
                 .with_interface_memory_havoc_preserving_loans(
