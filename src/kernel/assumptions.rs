@@ -4930,12 +4930,12 @@ impl PureFactContext {
     }
 
     /// The composition law, asked on demand: the first held composition with
-    /// two distinct owned members of one block that it separates, `left`
+    /// two distinct owned members of the selected blocks, `left`
     /// accepting the first, `right` the second, and `admit` the pair
-    /// (`ResourceContext::separated_owned_members_in_block`). Only a
-    /// same-block pair has such members. Each composition asks its members
-    /// of that block, so the query costs the members it reads and never
-    /// their pairs, and nothing is stated into this context beforehand.
+    /// (`ResourceContext::separated_owned_members_in_block` and its bounded
+    /// cross-block counterpart). The cross-block query reads only the two
+    /// indexed buckets and tests at most four selected pairs; nothing is
+    /// stated into this context beforehand.
     pub(in crate::kernel) fn composition_separated_members<'a>(
         &'a self,
         left_block: &PointerBlock,
@@ -4944,13 +4944,19 @@ impl PureFactContext {
         right: impl Fn(&CMemoryRange) -> bool,
         admit: impl Fn(&CMemoryRange, &CMemoryRange) -> bool,
     ) -> Option<(&'a ResourceContext, &'a CMemoryRange, &'a CMemoryRange)> {
-        if left_block != right_block {
-            return None;
-        }
         self.resource_compositions.iter().find_map(|resources| {
-            resources
-                .separated_owned_members_in_block(left_block, &left, &right, &admit)
-                .map(|(left, right)| (resources, left, right))
+            let selected = if left_block == right_block {
+                resources.separated_owned_members_in_block(left_block, &left, &right, &admit)
+            } else {
+                resources.separated_owned_members_across_blocks(
+                    left_block,
+                    right_block,
+                    &left,
+                    &right,
+                    &admit,
+                )
+            };
+            selected.map(|(left, right)| (resources, left, right))
         })
     }
 

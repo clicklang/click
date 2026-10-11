@@ -465,7 +465,8 @@ pub(in crate::kernel) fn collect_c_expression_bitvector_variables(
         | CExpression::FloatClassification { expression, .. } => {
             collect_c_expression_bitvector_variables(expression, variables)
         }
-        CExpression::AddressOf(body)
+        CExpression::MemberAddress { object: body, .. }
+        | CExpression::AddressOf(body)
         | CExpression::CheckedObjectAddress(body)
         | CExpression::Not(body)
         | CExpression::Load(body) => {
@@ -1333,6 +1334,9 @@ fn collect_c_expression_bound_identities(
         }
         CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
         CExpression::Cast { expression, .. }
+        | CExpression::MemberAddress {
+            object: expression, ..
+        }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::AddressOf(expression)
@@ -5646,7 +5650,9 @@ fn memory_entry_count(memory: &CMemory) -> usize {
         + memory.union_cells.len()
         + memory.heap.uninitialized_objects.len()
         + memory.heap.object_input_domains.len()
+        + memory.heap.scalar_input_domains.len()
         + memory.heap.initialized.as_map().len()
+        + memory.heap.pending_reallocations.len()
 }
 
 fn add_counts(counts: &mut VariableCounts, mentioned: BTreeSet<Variable>, sign: i64) {
@@ -5726,6 +5732,33 @@ fn cell_variables(pointer: &Pointer, value: &CValue) -> BTreeSet<Variable> {
     variables
 }
 
+fn collect_pending_reallocation_variables(
+    base: &Pointer,
+    pending: &CPendingReallocation,
+    variables: &mut BTreeSet<Variable>,
+) {
+    crate::instrumentation::record_deterministic_work(pending.copied_cells.len());
+    collect_pointer_bitvector_variables(base, variables);
+    collect_c_value_bitvector_variables(&CValue::Pointer(pending.old_pointer.clone()), variables);
+    collect_bitvector_variables(&pending.old_bytes, variables);
+    if let Some(prefix) = &pending.zeroed_prefix {
+        collect_bitvector_variables(prefix, variables);
+    }
+    for (offset, value) in &pending.copied_cells {
+        collect_pointer_offset_bitvector_variables(offset, variables);
+        collect_c_value_bitvector_variables(value, variables);
+    }
+}
+
+fn pending_reallocation_variables(
+    base: &Pointer,
+    pending: &CPendingReallocation,
+) -> BTreeSet<Variable> {
+    let mut variables = BTreeSet::new();
+    collect_pending_reallocation_variables(base, pending, &mut variables);
+    variables
+}
+
 /// Counts a run's variables in or out: as one entry when its
 /// representatives stand for it, and otherwise as one entry per live slot.
 /// Either way the variables counted are exactly the run's
@@ -5796,6 +5829,7 @@ fn counts_whole(memory: &CMemory, whole: WholeCount) -> VariableCounts {
         .keys()
         .chain(memory.heap.initialized.as_map().keys())
         .chain(memory.heap.object_input_domains.keys())
+        .chain(memory.heap.scalar_input_domains.keys())
     {
         add_counts(&mut counts, object_address_variables(pointer), 1);
     }
@@ -5807,6 +5841,13 @@ fn counts_whole(memory: &CMemory, whole: WholeCount) -> VariableCounts {
     }
     for ((pointer, _), value) in memory.union_cells.iter() {
         add_counts(&mut counts, cell_variables(pointer, value), 1);
+    }
+    for (base, pending) in memory.heap.pending_reallocations.iter() {
+        add_counts(
+            &mut counts,
+            pending_reallocation_variables(base, pending),
+            1,
+        );
     }
     counts
 }
@@ -5861,6 +5902,19 @@ fn counts_from_base(
             add_counts(&mut counts, object_address_variables(pointer), 1);
         }
     }
+    for change in base
+        .heap
+        .scalar_input_domains
+        .diff(&memory.heap.scalar_input_domains)
+    {
+        let pointer = change.key();
+        if base.heap.scalar_input_domains.contains_key(pointer) {
+            add_counts(&mut counts, object_address_variables(pointer), -1);
+        }
+        if memory.heap.scalar_input_domains.contains_key(pointer) {
+            add_counts(&mut counts, object_address_variables(pointer), 1);
+        }
+    }
     for change in base.cells.concrete().diff(memory.cells.concrete()) {
         let pointer = change.key();
         if let Some(value) = base.cells.concrete().get(pointer) {
@@ -5890,6 +5944,27 @@ fn counts_from_base(
         }
         if let Some(value) = memory.union_cells.get(key) {
             add_counts(&mut counts, cell_variables(&key.0, value), 1);
+        }
+    }
+    for change in base
+        .heap
+        .pending_reallocations
+        .diff(&memory.heap.pending_reallocations)
+    {
+        let pointer = change.key();
+        if let Some(pending) = base.heap.pending_reallocations.get(pointer) {
+            add_counts(
+                &mut counts,
+                pending_reallocation_variables(pointer, pending),
+                -1,
+            );
+        }
+        if let Some(pending) = memory.heap.pending_reallocations.get(pointer) {
+            add_counts(
+                &mut counts,
+                pending_reallocation_variables(pointer, pending),
+                1,
+            );
         }
     }
     counts
@@ -5989,6 +6064,7 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
         .keys()
         .chain(memory.heap.initialized.as_map().keys())
         .chain(memory.heap.object_input_domains.keys())
+        .chain(memory.heap.scalar_input_domains.keys())
     {
         collect_pointer_bitvector_variables(pointer, variables);
     }
@@ -6004,6 +6080,9 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
     for ((pointer, _), value) in memory.union_cells.iter() {
         collect_pointer_bitvector_variables(pointer, variables);
         collect_c_value_bitvector_variables(value, variables);
+    }
+    for (base, pending) in memory.heap.pending_reallocations.iter() {
+        collect_pending_reallocation_variables(base, pending, variables);
     }
 }
 
@@ -6029,6 +6108,17 @@ pub(crate) fn collect_c_value_bitvector_variables(
         CValue::Pointer(pointer) => {
             collect_pointer_bitvector_variables(pointer.pointer(), variables);
             if let Some(designation) = pointer.designation() {
+                // Match scalar MemoryLoad collection: its retained snapshot
+                // participates in whole-memory variable/connection queries,
+                // while the lexical collectors above inspect only addresses.
+                if let PointerDesignation::Loaded(identity) = designation {
+                    collect_shared_memory_bitvector_variables(identity.memory(), variables);
+                    collect_stored_load_connection_variables(
+                        identity.memory(),
+                        identity.address(),
+                        variables,
+                    );
+                }
                 if let Some(variable) = designation.unresolved_variable() {
                     variables.insert(variable);
                 }

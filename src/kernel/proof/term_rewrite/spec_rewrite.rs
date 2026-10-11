@@ -397,6 +397,9 @@ fn collect_spec_c_expression_carriers(expression: &CExpression, variables: &mut 
         CExpression::Value(value) => collect_c_value_carriers(value, variables),
         CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
         CExpression::Cast { expression, .. }
+        | CExpression::MemberAddress {
+            object: expression, ..
+        }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::AddressOf(expression)
@@ -1644,6 +1647,10 @@ impl<'a> TermRewrite<'a> {
             } => CExpression::FloatClassification {
                 expression: Box::new(self.rewrite_c_expression(expression)?),
                 classification: *classification,
+            },
+            CExpression::MemberAddress { object, selection } => CExpression::MemberAddress {
+                object: Box::new(self.rewrite_c_expression(object)?),
+                selection: selection.clone(),
             },
             CExpression::AddressOf(value) => {
                 CExpression::AddressOf(Box::new(self.rewrite_c_expression(value)?))

@@ -237,14 +237,37 @@ fn struct_pointer_place<'a>(
             pointee_constant,
             ..
         } => {
-            let (base, offset_bytes) = strip_byte_offsets(pointer)?;
-            let (base, fields) = struct_pointer_place(base, scope)?;
-            let field = field_at(fields, offset_bytes, *value_type, *pointee_constant)?;
+            let (base, field) =
+                selected_field_place(pointer, *value_type, *pointee_constant, scope)?;
             let fields = scope.structs.get(field.pointee_struct.as_ref()?)?;
             Some((describe_field_place(&base, &field.name), fields))
         }
         _ => None,
     }
+}
+
+/// Preserve the existing field spelling for native checked selections as well
+/// as legacy byte-offset expressions. Printing does not replace either term.
+fn selected_field_place<'a>(
+    pointer: &CExpression,
+    value_type: CType,
+    pointee_constant: bool,
+    scope: &'a PlaceScope,
+) -> Option<(String, &'a crate::surface::FieldPlace)> {
+    if let CExpression::MemberAddress { object, selection } = pointer {
+        let (base, fields) = struct_pointer_place(object, scope)?;
+        let path = selection.path.join(".");
+        let field = fields.iter().find(|field| {
+            field.name == path
+                && field.value_type == value_type
+                && field.pointee_constant == pointee_constant
+        })?;
+        return Some((base, field));
+    }
+    let (base, offset_bytes) = strip_byte_offsets(pointer)?;
+    let (base, fields) = struct_pointer_place(base, scope)?;
+    let field = field_at(fields, offset_bytes, value_type, pointee_constant)?;
+    Some((base, field))
 }
 
 /// A typed read through `pointer`, as a sidecar writes it, when `pointer`
@@ -266,8 +289,7 @@ fn describe_read_through_parameter(
                 .then(|| syntax::referent_of_carrier(variable).map(str::to_string))
                 .flatten();
         }
-        let (base, fields) = struct_pointer_place(base, scope)?;
-        let field = field_at(fields, offset_bytes, value_type, pointee_constant)?;
+        let (base, field) = selected_field_place(pointer, value_type, pointee_constant, scope)?;
         Some(describe_field_place(&base, &field.name))
     })
 }
@@ -4720,6 +4742,12 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
         CExpression::AddressOf(target) => format!("&{}", describe_c_expression(target)),
         CExpression::CheckedObjectAddress(target) => {
             format!("address of live object `{}`", describe_c_expression(target))
+        }
+        CExpression::MemberAddress { object, selection } => {
+            format!(
+                "&{}",
+                describe_field_place(&describe_c_expression(object), &selection.path.join("."))
+            )
         }
         CExpression::PointerOffsetBytes { pointer, bytes } => {
             format!("byte_offset({}, {bytes})", describe_c_expression(pointer))

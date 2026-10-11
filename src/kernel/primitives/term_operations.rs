@@ -3220,14 +3220,6 @@ impl CValue {
         Self::Pointer(CPointerValue::new(pointer, c_type))
     }
 
-    pub(crate) fn typed_pointer_with_pointee_volatile(
-        pointer: Pointer,
-        c_type: CType,
-        pointee_volatile: bool,
-    ) -> Self {
-        Self::Pointer(CPointerValue::new(pointer, c_type).with_pointee_volatile(pointee_volatile))
-    }
-
     pub(crate) fn typed_pointer_with_pointee_constant(
         pointer: Pointer,
         c_type: CType,
@@ -3323,7 +3315,7 @@ impl CLValue {
     }
 
     pub(in crate::kernel) fn memory_with_volatile(
-        pointer: Pointer,
+        pointer: CPointerValue,
         value_type: CType,
         volatile: bool,
     ) -> Self {
@@ -3331,7 +3323,7 @@ impl CLValue {
     }
 
     pub(in crate::kernel) fn memory_with_qualifiers(
-        pointer: Pointer,
+        pointer: CPointerValue,
         value_type: CType,
         volatile: bool,
         pointee_volatile: bool,
@@ -3382,7 +3374,34 @@ impl CLValue {
                 let pointer = state.locals.slot(name)?.clone();
                 state.memory.has_block(&pointer.block).then_some(pointer)
             }
-            CLValueStorage::Memory { pointer } => Some(pointer.clone()),
+            CLValueStorage::Memory { pointer } => Some(pointer.pointer().clone()),
+        }
+    }
+
+    /// Form an address value without discarding a memory lvalue's designation.
+    /// A declared scalar local selects its retained declaration; memory lvalues
+    /// preserve the incoming selection. Neither operation grants access.
+    pub(in crate::kernel) fn pointer_value(
+        &self,
+        state: &CState,
+        pointer_type: CType,
+    ) -> Option<CPointerValue> {
+        match &self.storage {
+            CLValueStorage::Local { .. } => self.pointer(state).map(|pointer| {
+                if let CLValueStorage::Local { name } = &self.storage
+                    && let Some(CLocalBinding::AggregateObject { layout, .. }) =
+                        state.locals.binding(name)
+                    && let Some(value) = state.memory.declared_aggregate_pointer(&pointer, layout)
+                {
+                    return value.with_type(pointer_type);
+                }
+                state
+                    .memory
+                    .declared_scalar_pointer(&pointer, self.value_type)
+                    .unwrap_or_else(|| CPointerValue::new(pointer, pointer_type))
+                    .with_type(pointer_type)
+            }),
+            CLValueStorage::Memory { pointer } => Some(pointer.clone().with_type(pointer_type)),
         }
     }
 }
@@ -3490,9 +3509,9 @@ impl Pointer {
     /// ordinary C pointer values keep their existing representation.
     pub(crate) fn loaded_value(memory: &SharedCMemory, address: &Pointer) -> Self {
         Self {
-            block: PointerBlock::LoadedPointer(crate::kernel::eval::pointer_load_identity(
-                memory, address,
-            )),
+            block: PointerBlock::LoadedPointer(
+                PointerLoadIdentity::new(memory.clone(), address.clone()).id(),
+            ),
             offset: PointerOffsetTerm::Constant(0),
         }
     }

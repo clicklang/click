@@ -1739,7 +1739,10 @@ fn c_expression_steps_for_mode(expression: &CExpression, lvalue: bool) -> usize 
             CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
                 pending.push((target, true))
             }
-            CExpression::PointerOffsetBytes { pointer, .. }
+            CExpression::MemberAddress {
+                object: pointer, ..
+            }
+            | CExpression::PointerOffsetBytes { pointer, .. }
             | CExpression::Not(pointer)
             | CExpression::BitwiseNot(pointer) => pending.push((pointer, false)),
             CExpression::LessThan(left, right)

@@ -2282,9 +2282,13 @@ fn modular_byte_postcondition_does_not_name_the_whole_scalar() {
             error.message()
         );
         let trace = error.trace_context_report().expect("failure trace");
-        assert!(trace.contains("bytes[0] == 120"), "{trace}");
-        assert!(!trace.contains("obj) == 120"), "{trace}");
-        assert!(trace.contains("bytes[3] == 18"), "{trace}");
+        // Checked facts retain their snapshot and load kind in the current
+        // trace format. Each byte must remain a byte read, never a read of obj.
+        assert_eq!(trace.matches("read<UInt8>").count(), 4, "{trace}");
+        assert!(trace.contains("pointer=bytes), 120)"), "{trace}");
+        assert!(trace.contains(" = bytes + 3 bytes"), "{trace}");
+        assert!(trace.contains(", 18) is true"), "{trace}");
+        assert!(!trace.contains("pointer=obj)"), "{trace}");
     });
 }
 

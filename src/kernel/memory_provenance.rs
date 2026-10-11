@@ -97,7 +97,7 @@ pub(crate) fn c_resources_directly_match(
                 "resource context equality",
                 "resource direct match: pointer value",
                 || {
-                    left.same_designation(right)
+                    pointer_designations_proven_equal(left, right, assumptions)
                         && pointers_match_for_resource_check(left, right, assumptions)
                 },
             )
@@ -2478,6 +2478,7 @@ fn pointer_read_stored_value(
     // this one endpoint. The ambient decision walk keeps its cheap rule.
     max_hops?;
     pointer_value_at_stopping_store(&cell, &address, kind, bytes, assumptions)
+        .map(CPointerValue::into_pointer)
 }
 
 /// Recover only the complete typed value at the selected stopping store.
@@ -2490,7 +2491,7 @@ fn pointer_value_at_stopping_store(
     kind: LoadKind,
     bytes: u32,
     assumptions: &PureFactContext,
-) -> Option<Pointer> {
+) -> Option<CPointerValue> {
     let step = cell.node().derivation()?;
     let CMemoryDerivation::Store {
         pointer: write,
@@ -2511,7 +2512,162 @@ fn pointer_value_at_stopping_store(
             address,
             assumptions,
         ))
-    .then(|| stored.pointer().clone())
+    .then(|| stored.clone())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+struct LoadedPointerDesignationMemoScope {
+    assumptions: u64,
+    generation: u64,
+    bridging: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+struct LoadedPointerDesignationMemoKey {
+    scope: LoadedPointerDesignationMemoScope,
+    origin: PointerLoadIdentity,
+}
+
+thread_local! {
+    // Sharing the result handle avoids cloning one descriptor for every
+    // intermediate origin in a copied-value chain.
+    static LOADED_POINTER_DESIGNATIONS_MEMO: std::cell::RefCell<
+        std::collections::HashMap<LoadedPointerDesignationMemoKey, std::sync::Arc<Option<PointerDesignation>>>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+fn loaded_pointer_designation_memo_scope(
+    assumptions: &PureFactContext,
+) -> Option<LoadedPointerDesignationMemoScope> {
+    // The ambient resolution memo uses the same restrictions. Nested cell
+    // lookups and explicit checking can prune different paths, so they do
+    // not share normalization answers with ordinary top-level checking.
+    if !crate::kernel::api::memory_dag_cell_lookup_depth_is_zero()
+        || crate::kernel::api::explicit_dag_check_active()
+    {
+        return None;
+    }
+    Some(LoadedPointerDesignationMemoScope {
+        assumptions: crate::kernel::assumptions::ambient_assumptions_memo_id(assumptions)?,
+        generation: crate::kernel::primitives::c_memory_derivation_generation(),
+        bridging: crate::kernel::api::extended_dag_bridging_active(),
+    })
+}
+
+/// Resolve only a loaded designation's own complete pointer cell. The raw
+/// address carried by the loaded pointer is never an input to this operation.
+/// Each iteration consumes a recorded store/frame path or follows the older
+/// load retained in that store; repeated origins stop instead of inventing a
+/// fixed-point value. Existing cell-walk memoization indexes the selected cell.
+fn resolve_loaded_pointer_designation(
+    mut designation: Option<PointerDesignation>,
+    assumptions: &PureFactContext,
+) -> Option<PointerDesignation> {
+    let scope = loaded_pointer_designation_memo_scope(assumptions);
+    let epoch_before = crate::kernel::assumptions::incomplete_reasoning_epoch();
+    let mut complete = true;
+    let mut visited = BTreeSet::new();
+    while let Some(PointerDesignation::Loaded(origin)) = &designation {
+        if !visited.insert(origin.clone()) || resolution_interrupted() {
+            complete = false;
+            break;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(scope) = scope {
+            let key = LoadedPointerDesignationMemoKey {
+                scope,
+                origin: origin.clone(),
+            };
+            if let Some(result) =
+                LOADED_POINTER_DESIGNATIONS_MEMO.with(|memo| memo.borrow().get(&key).cloned())
+            {
+                designation = result.as_ref().clone();
+                break;
+            }
+        }
+        let memory = canonical_load_projection_source(origin.memory(), origin.address())
+            .unwrap_or_else(|| origin.memory().clone());
+        let Some(cell) = memory_dag_cell_source(
+            &memory,
+            origin.address(),
+            C_POINTER_BYTE_WIDTH,
+            assumptions,
+            true,
+        ) else {
+            break;
+        };
+        let stored = match cell.resolved_value(origin.address(), LoadKind::Bits32) {
+            Some(CValue::Pointer(value)) => Some(value),
+            // Integer/partial cells cannot supply an object designation.
+            Some(_) => None,
+            None => pointer_value_at_stopping_store(
+                &cell,
+                origin.address(),
+                LoadKind::Bits32,
+                C_POINTER_BYTE_WIDTH,
+                assumptions,
+            ),
+        };
+        if let Some(stored) = stored {
+            designation = stored.designation().cloned();
+        } else {
+            // A checked frame also preserves an unknown complete value. Keep
+            // the exact cell at the reached snapshot, rather than treating
+            // unknown as an absent legacy designation.
+            designation = Some(PointerDesignation::Loaded(PointerLoadIdentity::new(
+                cell.node().clone(),
+                origin.address().clone(),
+            )));
+            break;
+        }
+    }
+    // Cache only a complete computation in this exact proof namespace. An
+    // unknown terminal is kept as Loaded, and the DAG generation prevents
+    // that conservative answer from hiding subsequently recorded evidence.
+    if let Some(scope) = scope
+        && !visited.is_empty()
+        && complete
+        && !resolution_interrupted()
+        && crate::kernel::assumptions::incomplete_reasoning_epoch() == epoch_before
+    {
+        let result = std::sync::Arc::new(designation.clone());
+        LOADED_POINTER_DESIGNATIONS_MEMO.with(|memo| {
+            let mut memo = memo.borrow_mut();
+            if memo.len() + visited.len() >= DAG_LOAD_EQUALITY_MEMO_LIMIT {
+                memo.clear();
+            }
+            for origin in visited {
+                memo.insert(
+                    LoadedPointerDesignationMemoKey { scope, origin },
+                    result.clone(),
+                );
+            }
+        });
+    }
+    designation
+}
+
+pub(in crate::kernel) fn loaded_pointer_designations_equal(
+    left: Option<PointerDesignation>,
+    right: Option<PointerDesignation>,
+    assumptions: &PureFactContext,
+) -> bool {
+    let left = resolve_loaded_pointer_designation(left, assumptions);
+    let right = resolve_loaded_pointer_designation(right, assumptions);
+    if left == right {
+        return true;
+    }
+    match (&left, &right) {
+        (Some(PointerDesignation::Loaded(left)), Some(PointerDesignation::Loaded(right))) => {
+            left.memory().arena_id() == right.memory().arena_id()
+                && pointers_proven_equal_for_memory_resolution(
+                    left.address(),
+                    right.address(),
+                    assumptions,
+                )
+        }
+        _ => false,
+    }
 }
 
 /// Whether a pointer-valued load resolves through the recorded memory DAG to
@@ -3244,18 +3400,14 @@ pub(crate) fn write_access_is_disjoint_from_load(
     if overlap == AccessByteOverlap::Overlaps {
         return false;
     }
-    (overlap == AccessByteOverlap::Separate
+    // Symbolic blocks can denote arbitrary interior addresses. Their address
+    // inequality alone supplies no byte gap; use the offset ladder only in
+    // shared block coordinates, and check both complete spans in range facts.
+    (write.block == read.block
+        && overlap == AccessByteOverlap::Separate
         && pointers_proven_distinct_for_memory_resolution(write, read, assumptions))
-        || assumptions.ranges_directly_disjoint_from_access(
-            &[CMemoryRange::new_with_element_width(
-                write.clone(),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
-                write_bytes,
-            )],
-            read,
-            read_bytes,
-        )
+        || typed_store_separated_ranges_evidence(write, write_bytes, read, read_bytes, assumptions)
+            .is_some()
 }
 
 fn c_memory_load_is_directly_unchanged(
@@ -3851,6 +4003,7 @@ pub(crate) fn atomic_canonicalization_term_visits() -> usize {
 }
 
 pub(crate) fn clear_provenance_memos() {
+    LOADED_POINTER_DESIGNATIONS_MEMO.with(|memo| memo.borrow_mut().clear());
     DAG_LOAD_EQUALITY_POSITIVE_MEMO.with(|memo| memo.borrow_mut().clear());
     DAG_LOAD_EQUALITY_UNPROVEN_MEMO.with(|memo| memo.borrow_mut().clear());
 }
@@ -7461,7 +7614,7 @@ mod pointer_store_endpoint_tests {
             let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
                 pointer_value_at_stopping_store(&cell, &address, LoadKind::Bits32, 8, &context)
             });
-            assert_eq!(value, Some(stored.clone()));
+            assert_eq!(value.map(CPointerValue::into_pointer), Some(stored.clone()));
             samples.push(work);
             for (kind, bytes) in [
                 (LoadKind::Bits32, 4),
@@ -7516,7 +7669,7 @@ mod pointer_store_endpoint_tests {
                     8,
                     &context
                 ),
-                Some(Pointer::null())
+                Some(CPointerValue::new(Pointer::null(), CType::Int32Pointer))
             );
             assert_ne!(
                 pointer_value_at_stopping_store(
@@ -7526,7 +7679,7 @@ mod pointer_store_endpoint_tests {
                     8,
                     &context
                 ),
-                Some(stored)
+                Some(CPointerValue::new(stored, CType::Int32Pointer))
             );
             for offset in [0, 4, 32] {
                 let changed = endpoint(memory.clone().store(
@@ -7584,3 +7737,6 @@ mod wide_range_reader_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod pointer_designation_tests;

@@ -33,6 +33,113 @@ pub(in crate::surface) fn construction_result_resource(
     )))
 }
 
+/// Retain typed access separately from the clause's byte permission and
+/// snapshot loadability. The bounded constructor profile admits one scalar
+/// at a direct parameter; a raw pointer signature alone contributes nothing.
+pub(in crate::surface) fn scalar_object_inputs_for_contract(
+    requires: &[Requirement],
+    parameters: &[syntax::C0Parameter],
+    function: &CFunction,
+) -> Result<Vec<crate::kernel::CScalarObjectInput>, ClickError> {
+    let mut inputs = function
+        .contract_interface()
+        .scalar_object_inputs()
+        .iter()
+        .map(|input| (input.parameter_index, input.element_type))
+        .collect::<BTreeMap<_, _>>();
+    let Some((destination, _)) = function.contract_interface().construction_parameter() else {
+        return Ok(function
+            .contract_interface()
+            .scalar_object_inputs()
+            .to_vec());
+    };
+    fn parameter_root(expression: &CExpression) -> Option<&str> {
+        match expression {
+            CExpression::Variable(name) => Some(name),
+            CExpression::Add(pointer, _)
+            | CExpression::Subtract(pointer, _)
+            | CExpression::Cast {
+                expression: pointer,
+                ..
+            }
+            | CExpression::PointerOffsetBytes { pointer, .. } => parameter_root(pointer),
+            _ => None,
+        }
+    }
+    fn visit(
+        resource: &ResourceClause,
+        parameters: &[syntax::C0Parameter],
+        destination: usize,
+        guarded: bool,
+        inputs: &mut BTreeMap<usize, CType>,
+    ) -> Result<(), ClickError> {
+        let segments: &[ContractSegment] = match resource {
+            ResourceClause::OwnMemory(segment) | ResourceClause::ViewMemory(segment) => {
+                std::slice::from_ref(segment)
+            }
+            ResourceClause::MemoryAggregate { segments, .. } => segments,
+            ResourceClause::Named { resource, .. } => {
+                return visit(resource, parameters, destination, guarded, inputs);
+            }
+            ResourceClause::Conditional { resource, .. }
+            | ResourceClause::Quantified { resource, .. } => {
+                return visit(resource, parameters, destination, true, inputs);
+            }
+            ResourceClause::Declared { .. } | ResourceClause::Iterated(_) => return Ok(()),
+        };
+        for segment in segments {
+            let Some(parameter_index) = parameter_root(&segment.base).and_then(|name| {
+                parameters
+                    .iter()
+                    .position(|parameter| parameter.name() == name)
+            }) else {
+                continue;
+            };
+            if parameter_index == destination {
+                continue;
+            }
+            let parameter = &parameters[parameter_index];
+            let element_type = contract_segment_element_type(parameters, segment);
+            let exact_bound = |expression: &CExpression, expected| matches!(expression, CExpression::Value(CValue::Int32(Bitvector32Term::Constant(value))) if *value == expected);
+            if guarded
+                || !matches!(segment.base, CExpression::Variable(_))
+                || !exact_bound(&segment.start, 0)
+                || !exact_bound(&segment.end, 1)
+                || parameter.pointee_struct_layout().is_some()
+                || !matches!(element_type, CType::Int32 | CType::Int64)
+                || parameter.to_kernel_parameter().c_type().pointee_type() != Some(element_type)
+            {
+                return Err(ClickError::new(
+                    "constructor scalar input requires an unconditional direct int32 or int64 parameter cell at [0..1]",
+                ));
+            }
+            if inputs
+                .insert(parameter_index, element_type)
+                .is_some_and(|held| held != element_type)
+            {
+                return Err(ClickError::new(
+                    "conflicting constructor scalar input types",
+                ));
+            }
+        }
+        Ok(())
+    }
+    for requirement in requires {
+        if let Requirement::Resource(resource) = requirement {
+            visit(resource, parameters, destination, false, &mut inputs)?;
+        }
+    }
+    Ok(inputs
+        .into_iter()
+        .map(
+            |(parameter_index, element_type)| crate::kernel::CScalarObjectInput {
+                parameter_index,
+                element_type,
+            },
+        )
+        .collect())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct ConcreteMemoryRangeSeed {
     pub(in crate::surface) base: Pointer,
@@ -131,6 +238,13 @@ pub(in crate::surface) fn initial_call_state(
     function: &CFunction,
     composite_definitions: &[CCompositeResourceDefinition],
 ) -> Result<(CState, Vec<CExpression>), ClickError> {
+    let input_function =
+        function
+            .clone()
+            .with_scalar_object_inputs(scalar_object_inputs_for_contract(
+                requires, parameters, function,
+            )?);
+    let function = &input_function;
     if parameters.len() as u64 >= POINTER_ARGUMENT_VARIABLE_BASE {
         return Err(ClickError::new(
             "function parameter variable namespace exhausted",
@@ -438,6 +552,14 @@ pub(in crate::surface) fn initial_call_state(
     // Native construction requires this selected structural object. Keep that
     // entry requirement separate from raw storage and field permissions; calls
     // must discharge it against the caller's declaration or retained input.
+    // Issue native argument domains after destination setup, which replaces
+    // the constructor address spelling. Never erase the selected descriptor.
+    state = crate::kernel::assume_scalar_object_inputs(
+        state,
+        function.contract_interface(),
+        &mut arguments,
+    )
+    .map_err(ClickError::new)?;
     state = crate::kernel::c_state_with_construction_contract_input(state, function, &arguments)
         .map_err(ClickError::new)?;
     if parameters
@@ -3249,6 +3371,7 @@ pub(in crate::surface) fn contract_segment_element_width_with_pointer_types(
                 local_element(left, types).or_else(|| local_element(right, types))
             }
             CExpression::Subtract(left, _) => local_element(left, types),
+            CExpression::MemberAddress { selection, .. } => Some(selection.value_type),
             CExpression::PointerOffsetBytes { pointer, .. } => local_element(pointer, types),
             _ => None,
         }
@@ -3339,6 +3462,7 @@ fn contract_expression_element_type(
     expression: &CExpression,
 ) -> Option<CType> {
     match expression {
+        CExpression::MemberAddress { selection, .. } => Some(selection.value_type),
         CExpression::Value(value) => value.c_type().pointee_type(),
         CExpression::Cast { target_type, .. } => target_type.pointee_type(),
         CExpression::Variable(name) => parameters
@@ -3371,6 +3495,7 @@ pub(in crate::surface) fn contract_expression_element_width(
     expression: &CExpression,
 ) -> Option<u32> {
     match expression {
+        CExpression::MemberAddress { selection, .. } => Some(selection.value_type.byte_width()),
         CExpression::Value(value) => value.c_type().pointee_type().map(CType::byte_width),
         CExpression::Cast { target_type, .. } => target_type.pointee_type().map(CType::byte_width),
         CExpression::Variable(name) => parameters
@@ -3621,6 +3746,67 @@ pub(in crate::surface) fn lower_resource_reference_arguments(
 #[cfg(test)]
 mod input_identity_tests {
     use super::*;
+
+    #[test]
+    fn constructor_scalar_requirements_come_from_exact_typed_clauses() {
+        let parsed =
+            syntax::parse_function("void ctor(int* destination, int* slot) { return; }").unwrap();
+        let raw = parsed.to_kernel_function();
+        let function = raw.clone().with_construction_parameter(
+            0,
+            crate::kernel::CAggregateLayout::new(
+                4,
+                4,
+                vec![crate::kernel::CAggregateField::new(
+                    "value",
+                    0,
+                    CType::Int32,
+                )],
+            ),
+        );
+        assert!(
+            scalar_object_inputs_for_contract(&[], parsed.parameters(), &function)
+                .unwrap()
+                .is_empty()
+        );
+        let file = crate::surface::parser::parse(
+            "void ctor(int32* destination, int32* slot) { owns slot[0..1]; } by { execute(); }",
+        )
+        .unwrap();
+        let requires = file.function_blocks()[0].requires();
+        assert!(
+            scalar_object_inputs_for_contract(requires, parsed.parameters(), &raw)
+                .unwrap()
+                .is_empty()
+        );
+        let inputs =
+            scalar_object_inputs_for_contract(requires, parsed.parameters(), &function).unwrap();
+        assert_eq!(
+            inputs,
+            vec![crate::kernel::CScalarObjectInput {
+                parameter_index: 1,
+                element_type: CType::Int32
+            }]
+        );
+        let native = raw.with_scalar_object_inputs(inputs.clone());
+        assert_eq!(
+            scalar_object_inputs_for_contract(&[], parsed.parameters(), &native).unwrap(),
+            inputs
+        );
+        let file = crate::surface::parser::parse(
+            "void ctor(int32* destination, int32* slot) { owns slot[0..2]; } by { execute(); }",
+        )
+        .unwrap();
+        assert!(
+            scalar_object_inputs_for_contract(
+                file.function_blocks()[0].requires(),
+                parsed.parameters(),
+                &function
+            )
+            .is_err()
+        );
+    }
+
     #[test]
     fn input_pointer_places_are_exact_and_do_not_scan_unrelated_functions() {
         let selected = input_scope("certificate-selected");

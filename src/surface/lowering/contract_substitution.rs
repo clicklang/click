@@ -3009,6 +3009,9 @@ pub(in crate::surface) fn c_unary_with_operand(
         CExpression::Cast { expression, .. }
         | CExpression::AddressOf(expression)
         | CExpression::CheckedObjectAddress(expression)
+        | CExpression::MemberAddress {
+            object: expression, ..
+        }
         | CExpression::Load(expression) => **expression = operand,
         CExpression::PointerOffsetBytes { pointer, .. }
         | CExpression::TypedLoad { pointer, .. } => **pointer = operand,
@@ -3613,6 +3616,10 @@ pub(in crate::surface) fn substitute_c_fragment_in(
         CExpression::CheckedObjectAddress(body) => Ok(CExpression::CheckedObjectAddress(Box::new(
             substitute_c_fragment_in(body, substitutions)?,
         ))),
+        CExpression::MemberAddress { object, selection } => Ok(CExpression::MemberAddress {
+            object: Box::new(substitute_c_fragment_in(object, substitutions)?),
+            selection: selection.clone(),
+        }),
         CExpression::PointerOffsetBytes { pointer, bytes } => Ok(CExpression::PointerOffsetBytes {
             pointer: Box::new(substitute_c_fragment_in(pointer, substitutions)?),
             bytes: *bytes,

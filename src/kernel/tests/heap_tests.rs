@@ -1330,6 +1330,122 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
 }
 
 #[test]
+fn realloc_preserves_a_stored_pointer_designation_until_its_outcome() {
+    use crate::kernel::primitives::PointerDesignation;
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let context = PureFactContext::new();
+    let allocated = successful_heap_allocation_state();
+    let Some(CValue::Pointer(old)) = allocated.locals().get("p") else {
+        panic!("a heap pointer")
+    };
+    let old = old.clone().with_designation(PointerDesignation::Object {
+        root: old.pointer().clone(),
+        base: old.pointer().clone(),
+        path: std::sync::Arc::from([]),
+        element_type: CType::Int32,
+        stride: 4,
+        count: IntegerTerm::constant_i64(4).into(),
+    });
+    let slot = CMemory::global_pointer("realloc_saved_pointer");
+    let slot_value = CPointerValue::new(slot.clone(), CType::Int32PointerPointer).with_designation(
+        PointerDesignation::Object {
+            root: slot.clone(),
+            base: slot.clone(),
+            path: std::sync::Arc::from([]),
+            element_type: CType::Int32Pointer,
+            stride: 8,
+            count: IntegerTerm::constant_i64(1).into(),
+        },
+    );
+    let token = CResourceFact::own_allocation_value(old.clone(), 16);
+    let resources = allocated
+        .resources()
+        .clone()
+        .without_fact(
+            &CResourceFact::own_allocation(old.pointer().clone(), 16),
+            &context,
+        )
+        .unwrap()
+        .unchecked_with_fact(token.clone())
+        .unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(slot.clone(), 0u32.into(), 1u32.into(), 8),
+        ));
+    let memory = allocated
+        .memory()
+        .clone()
+        .with_declared_scalar_block(slot.block.clone(), 8, CType::Int32Pointer)
+        .store(slot.clone(), CValue::Pointer(old.clone()));
+    let state = allocated
+        .with_memory(memory)
+        .with_resource_context(resources)
+        .with_local("p", CValue::Pointer(old.clone()))
+        .with_local("saved", CValue::Pointer(slot_value))
+        .with_local("q", CValue::pointer(Pointer::null()));
+    let statement = c_call_assign(
+        "q",
+        "realloc",
+        vec![c_load(c_variable("saved")), c_int32_literal(8)],
+    );
+    let execute = |state: &CState| {
+        execute_c_statement_paths(
+            state,
+            &statement,
+            &context,
+            &CExecutionEnvironment::new(),
+            CExecutionSemantics::EXECUTE_BODIES,
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap()
+    };
+    let wrong = old
+        .clone()
+        .with_designation(PointerDesignation::Unresolved(Variable(98_999)));
+    let forged = state
+        .clone()
+        .with_memory(state.memory().clone().store(slot, CValue::Pointer(wrong)));
+    let forged_paths = execute(&forged);
+    assert!(
+        matches!(
+            forged_paths[0].outcome,
+            CStatementOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+        ),
+        "a different designation must not consume the allocation token: {forged_paths:?}"
+    );
+    let paths = execute(&state);
+    let CStatementOutcome::Normal(pending) = &paths[0].outcome else {
+        panic!("a designated stored pointer should enter pending realloc: {paths:?}")
+    };
+    let Some(CValue::Pointer(result)) = pending.locals().get("q") else {
+        panic!("a pending pointer")
+    };
+    assert_eq!(
+        pending
+            .memory()
+            .heap
+            .pending_reallocations
+            .get(result)
+            .unwrap()
+            .old_pointer,
+        old
+    );
+    for succeeds in [false, true] {
+        let assumptions = context.clone().assume_condition(
+            pointer_is_null_condition(result.pointer().clone()),
+            !succeeds,
+        );
+        let resolved = resolve_pending_heap_allocations(pending, &assumptions);
+        assert_eq!(resolved.resources().facts().contains(&token), !succeeds);
+        assert_eq!(
+            resolved
+                .memory()
+                .is_deallocated_heap_address(old.pointer(), &context),
+            succeeds
+        );
+    }
+}
+
+#[test]
 fn free_null_needs_no_allocation_resources() {
     let state = CState::new().with_local("p", CValue::pointer(Pointer::null()));
     let paths = execute_c_statement_paths(

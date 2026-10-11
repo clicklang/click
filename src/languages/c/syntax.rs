@@ -1982,6 +1982,8 @@ impl ParsedType {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct C0StructLayout {
+    /// Present only when a checked C++ semantic import supplies the declaration.
+    declaration_identity: Option<std::sync::Arc<crate::kernel::CppRecordDeclarationIdentity>>,
     fields: BTreeMap<String, C0StructField>,
     /// Leaf fields used when a struct value is copied through the kernel.
     /// Embedded struct fields are flattened here while preserving their
@@ -4008,6 +4010,7 @@ impl C0StructLayout {
             previous_end = previous_end.max(end);
         }
         Ok(Self {
+            declaration_identity: None,
             fields: named_fields,
             aggregate_fields,
             aggregate_unions: Vec::new(),
@@ -4080,6 +4083,14 @@ impl C0StructLayout {
                 .collect(),
         )
         .with_records(self.aggregate_records.clone())
+        .with_declaration_identity(self.declaration_identity.clone())
+    }
+
+    pub(crate) fn with_cpp_declaration_identity(mut self, import: &str, declaration: &str) -> Self {
+        self.declaration_identity = Some(std::sync::Arc::new(
+            crate::kernel::CppRecordDeclarationIdentity::new(import, declaration),
+        ));
+        self
     }
 
     fn aggregate_fields(&self) -> &[C0AggregateField] {
@@ -6699,24 +6710,30 @@ fn append_nested_records(
 ) {
     let parent = u32::try_from(records.len()).expect("record boundary count fits u32");
     crate::instrumentation::record_deterministic_work(1);
-    records.push(crate::kernel::CAggregateRecord::new(
-        prefix,
-        base_offset,
-        nested.size_bytes,
-        nested.alignment_bytes,
-        None,
-    ));
+    records.push(
+        crate::kernel::CAggregateRecord::new(
+            prefix,
+            base_offset,
+            nested.size_bytes,
+            nested.alignment_bytes,
+            None,
+        )
+        .with_declaration_identity(nested.declaration_identity.clone()),
+    );
     for record in &nested.aggregate_records {
         crate::instrumentation::record_deterministic_work(1);
-        records.push(crate::kernel::CAggregateRecord::new(
-            format!("{prefix}.{}", record.name()),
-            base_offset
-                .checked_add(record.offset_bytes())
-                .expect("validated embedded record offset"),
-            record.size_bytes(),
-            record.alignment_bytes(),
-            Some(record.parent().map_or(parent, |index| parent + 1 + index)),
-        ));
+        records.push(
+            crate::kernel::CAggregateRecord::new(
+                format!("{prefix}.{}", record.name()),
+                base_offset
+                    .checked_add(record.offset_bytes())
+                    .expect("validated embedded record offset"),
+                record.size_bytes(),
+                record.alignment_bytes(),
+                Some(record.parent().map_or(parent, |index| parent + 1 + index)),
+            )
+            .with_declaration_identity(record.declaration_identity().cloned()),
+        );
     }
 }
 
@@ -11019,6 +11036,7 @@ impl Parser {
             .insert(
                 name.clone(),
                 C0StructLayout {
+                    declaration_identity: None,
                     fields,
                     aggregate_fields,
                     aggregate_unions,
@@ -21954,6 +21972,65 @@ mod scope_metadata_tests {
         .unwrap()
         .to_kernel_aggregate_layout();
         assert_eq!(accepted.records()[0].offset_bytes(), 8);
+    }
+
+    #[test]
+    fn explicit_native_record_identity_survives_nested_layout_conversion() {
+        let fields = vec![("value".into(), C0Type::Int32, 0, 4)];
+        let structural = C0StructLayout::from_explicit_fields(fields, 8, 4).unwrap();
+        assert!(
+            structural
+                .to_kernel_aggregate_layout()
+                .declaration_identity()
+                .is_none()
+        );
+        let child = structural
+            .clone()
+            .with_cpp_declaration_identity("import", "c:@S@Child");
+        let make_parent = |name: &str, nested: &C0StructLayout| {
+            C0StructLayout::from_explicit_fields_with_structs(
+                vec![(
+                    name.into(),
+                    C0Type::Int32,
+                    Some("nested".into()),
+                    0,
+                    nested.size_bytes(),
+                )],
+                nested.size_bytes(),
+                nested.alignment_bytes(),
+                &BTreeMap::from([("nested".into(), nested.clone())]),
+            )
+            .unwrap()
+        };
+        let parent =
+            make_parent("child", &child).with_cpp_declaration_identity("import", "c:@S@Parent");
+        let grandparent = make_parent("parent", &parent)
+            .with_cpp_declaration_identity("import", "c:@S@Grandparent");
+        let kernel = grandparent.to_kernel_aggregate_layout();
+        assert_eq!(
+            kernel.records()[0].declaration_identity(),
+            parent.declaration_identity.as_ref()
+        );
+        assert_eq!(
+            kernel.records()[1].declaration_identity(),
+            child.declaration_identity.as_ref()
+        );
+        assert_eq!(
+            kernel.declaration_identity(),
+            grandparent.declaration_identity.as_ref()
+        );
+        assert_ne!(child, structural);
+        assert_ne!(
+            child.to_kernel_aggregate_layout(),
+            structural.to_kernel_aggregate_layout()
+        );
+        let other = child
+            .clone()
+            .with_cpp_declaration_identity("other-import", "c:@S@Child");
+        assert_ne!(
+            child.to_kernel_aggregate_layout(),
+            other.to_kernel_aggregate_layout()
+        );
     }
 
     #[test]

@@ -2083,6 +2083,7 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet
         }
         CExpression::AddressOf(inner)
         | CExpression::CheckedObjectAddress(inner)
+        | CExpression::MemberAddress { object: inner, .. }
         | CExpression::PointerOffsetBytes { pointer: inner, .. }
         | CExpression::Not(inner)
         | CExpression::BitwiseNot(inner)

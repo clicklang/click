@@ -14,6 +14,11 @@ use std::sync::Arc;
 #[cfg(test)]
 mod aggregate_return_tests;
 mod construction_return;
+mod constructor_input;
+#[cfg(test)]
+mod scalar_object_tests;
+
+pub(crate) use constructor_input::assume_scalar_object_inputs;
 
 fn execute_c_function_body_paths(
     state: &CState,
@@ -13640,6 +13645,7 @@ fn spec_pure_function_argument_supports_stateful_memory_refinement(
 
 fn c_expression_supports_stateful_memory_refinement(expression: &CExpression) -> bool {
     match expression {
+        CExpression::MemberAddress { .. } => false,
         CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => true,
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
@@ -13905,7 +13911,8 @@ pub(super) fn c_expression_is_state_independent(expression: &CExpression) -> boo
         | CExpression::BitwiseXor(left, right) => {
             c_expression_is_state_independent(left) && c_expression_is_state_independent(right)
         }
-        CExpression::AddressOf(_)
+        CExpression::MemberAddress { .. }
+        | CExpression::AddressOf(_)
         | CExpression::CheckedObjectAddress(_)
         | CExpression::Load(_)
         | CExpression::TypedLoad { .. }
@@ -14235,6 +14242,9 @@ fn c_expression_mentions_variable(expression: &CExpression, name: &str) -> bool 
         CExpression::Variable(variable) => variable == name,
         CExpression::Value(_) | CExpression::FunctionAddress(_) => false,
         CExpression::Cast { expression, .. }
+        | CExpression::MemberAddress {
+            object: expression, ..
+        }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::AddressOf(expression)
@@ -14286,7 +14296,11 @@ fn c_expression_mentions_variable(expression: &CExpression, name: &str) -> bool 
 
 fn c_expression_takes_address_of_variable(expression: &CExpression, name: &str) -> bool {
     match expression {
-        CExpression::AddressOf(expression) | CExpression::CheckedObjectAddress(expression) => {
+        CExpression::MemberAddress {
+            object: expression, ..
+        }
+        | CExpression::AddressOf(expression)
+        | CExpression::CheckedObjectAddress(expression) => {
             c_expression_mentions_variable(expression, name)
         }
         CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => false,
@@ -14441,6 +14455,9 @@ fn c_expression_uses_object_address(expression: &CExpression, name: &str) -> boo
         }
 
         CExpression::Cast { expression, .. }
+        | CExpression::MemberAddress {
+            object: expression, ..
+        }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::PointerOffsetBytes {
@@ -16687,6 +16704,9 @@ fn collect_c_memory_read_expressions(statement: &CStatement, reads: &mut Vec<CEx
         match expression {
             CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
             CExpression::Cast { expression, .. }
+            | CExpression::MemberAddress {
+                object: expression, ..
+            }
             | CExpression::FloatNegate(expression)
             | CExpression::FloatClassification { expression, .. }
             | CExpression::PointerOffsetBytes {
@@ -16860,6 +16880,9 @@ fn c_expression_mentions_pointer_parameter(
         CExpression::Value(_) | CExpression::FunctionAddress(_) => false,
         CExpression::Variable(name) => pointer_parameters.contains(name),
         CExpression::Cast { expression, .. }
+        | CExpression::MemberAddress {
+            object: expression, ..
+        }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::AddressOf(expression)
@@ -17133,6 +17156,7 @@ pub(in crate::kernel) fn bind_c_function_arguments(
             );
         }
     }
+    constructor_input::bind(caller_state, function.contract_interface(), &callee_state)?;
     construction_return::bind(
         caller_state,
         function.contract_interface(),
@@ -17241,6 +17265,7 @@ fn bind_c_contract_arguments(
             parameter.pointee_is_constant(),
         );
     }
+    constructor_input::bind(caller_state, interface, &callee_state)?;
     construction_return::bind(caller_state, interface, &mut callee_state)?;
     Some(callee_state)
 }
@@ -29603,6 +29628,7 @@ fn resolve_retained_aggregate_fields(
         | CExpression::FloatClassification {
             expression: inner, ..
         }
+        | CExpression::MemberAddress { object: inner, .. }
         | CExpression::FloatNegate(inner)
         | CExpression::Not(inner)
         | CExpression::BitwiseNot(inner)

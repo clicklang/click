@@ -1253,6 +1253,116 @@ fn pointer_values_preserve_their_exact_c_types_without_changing_address_identity
 }
 
 #[test]
+fn address_of_dereference_preserves_the_complete_pointer_without_accessing_storage() {
+    let base = Pointer::symbolic(Variable(438_001));
+    let address = base.offset_by_bytes(4);
+    let object = PointerDesignation::Object {
+        root: base.clone(),
+        path: vec![PointerDomainSelection::Member("value".into())].into(),
+        base,
+        element_type: CType::Int32,
+        stride: 4,
+        count: IntegerTerm::constant_i64(1).into(),
+    };
+    // This address is one past the described scalar. Forming &*p must retain
+    // its descriptor without executing a read or granting access to storage.
+    for designation in [
+        None,
+        Some(PointerDesignation::Unresolved(Variable(438_002))),
+        Some(object),
+    ] {
+        let mut pointer = CPointerValue::new(address.clone(), CType::Int32Pointer)
+            .with_pointee_volatile(true)
+            .with_pointee_constant(true);
+        if let Some(designation) = designation {
+            pointer = pointer.with_designation(designation);
+        }
+        let mut state = CState::new();
+        state.locals.set_typed_with_all_qualifiers(
+            "p",
+            CValue::Pointer(pointer.clone()),
+            CType::Int32Pointer,
+            false,
+            true,
+            false,
+            true,
+        );
+        let expression = CExpression::AddressOf(Box::new(CExpression::Load(Box::new(
+            CExpression::Variable("p".into()),
+        ))));
+        let paths = evaluate_c_expression_paths(
+            &state,
+            &expression,
+            &PureFactContext::new(),
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("address formation must have one path");
+        };
+        assert_eq!(
+            path.outcome,
+            CExpressionOutcome::Value(CValue::Pointer(pointer))
+        );
+        assert!(path.facts.is_empty());
+        assert!(path.obligations.is_empty());
+    }
+}
+
+#[test]
+fn memory_lvalues_retain_pointer_designation_and_independent_access_qualifiers() {
+    let pointer = CPointerValue::new(
+        Pointer::symbolic(Variable(438_003)),
+        CType::Int32PointerPointer,
+    )
+    .with_pointee_constant(true)
+    .with_designation(PointerDesignation::Unresolved(Variable(438_004)));
+    let expression = CExpression::TypedLoad {
+        pointer: Box::new(CExpression::Value(CValue::Pointer(pointer.clone()))),
+        value_type: CType::Int32Pointer,
+        volatile: true,
+        pointee_constant: true,
+        source: Default::default(),
+    };
+    let state = CState::new();
+    let paths = evaluate_c_lvalue_paths(
+        &state,
+        &expression,
+        &PureFactContext::new(),
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap();
+    let [path] = paths.as_slice() else {
+        panic!("typed lvalue formation must have one path");
+    };
+    let CLValueOutcome::LValue(lvalue) = &path.outcome else {
+        panic!("expected memory lvalue");
+    };
+    assert_eq!(
+        lvalue.storage,
+        CLValueStorage::Memory {
+            pointer: pointer.clone()
+        }
+    );
+    assert!(lvalue.is_volatile());
+    assert!(lvalue.is_constant());
+    assert!(lvalue.pointee_is_constant());
+    assert_eq!(lvalue.pointer(&state).as_ref(), Some(pointer.pointer()));
+
+    let paths = evaluate_c_expression_paths(
+        &state,
+        &CExpression::AddressOf(Box::new(expression)),
+        &PureFactContext::new(),
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        paths[0].outcome,
+        CExpressionOutcome::Value(CValue::Pointer(pointer.with_pointee_volatile(true)))
+    );
+}
+
+#[test]
 fn pointer_transformations_preserve_access_qualifiers() {
     let address = Pointer {
         block: "qualified-object".into(),

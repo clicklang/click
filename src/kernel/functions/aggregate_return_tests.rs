@@ -116,6 +116,117 @@ fn selection_layouts() -> (CAggregateLayout, CAggregateLayout) {
 }
 
 #[test]
+fn absent_native_record_identity_preserves_legacy_structural_hashes() {
+    use std::hash::{Hash, Hasher};
+    fn hash(value: &impl Hash) -> u64 {
+        let mut state = std::collections::hash_map::DefaultHasher::new();
+        value.hash(&mut state);
+        state.finish()
+    }
+    let (parent, child) = selection_layouts();
+    for record in parent.records() {
+        assert_eq!(
+            hash(record),
+            hash(&(
+                record.name(),
+                record.offset_bytes(),
+                record.size_bytes(),
+                record.alignment_bytes(),
+                record.parent(),
+            )),
+        );
+    }
+    for layout in [&parent, &child] {
+        assert_eq!(
+            hash(layout),
+            hash(&(
+                layout.size_bytes(),
+                layout.alignment_bytes(),
+                layout.fields(),
+                layout.unions(),
+                layout.records(),
+            )),
+        );
+    }
+    let identified = child
+        .clone()
+        .with_declaration_identity(Some(std::sync::Arc::new(
+            CppRecordDeclarationIdentity::new("import", "c:@S@Child"),
+        )));
+    assert_ne!(hash(&child), hash(&identified));
+    assert_eq!(hash(&identified), hash(&identified.clone()));
+}
+
+#[test]
+fn constructor_binding_requires_the_native_record_declaration_identity() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let identity = |import, declaration| {
+        Some(std::sync::Arc::new(CppRecordDeclarationIdentity::new(
+            import,
+            declaration,
+        )))
+    };
+    let (parent, child) = selection_layouts();
+    let child = child.with_declaration_identity(identity("locked-import", "c:@S@Child"));
+    let parent = parent
+        .clone()
+        .with_records(
+            parent
+                .records()
+                .iter()
+                .cloned()
+                .map(|record| {
+                    record.with_declaration_identity(child.declaration_identity().cloned())
+                })
+                .collect(),
+        )
+        .with_declaration_identity(identity("locked-import", "c:@S@Parent"));
+    let paths = execute_c_statement_paths(
+        &CState::new(),
+        &c_allocate_aggregate_destination("parent", parent),
+        &PureFactContext::new(),
+        &CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap();
+    let CStatementOutcome::Normal(caller) = &paths[0].outcome else {
+        panic!("parent allocation");
+    };
+    let at = caller.locals.slot("parent").unwrap().offset_by_bytes(8);
+    let bind = |layout| {
+        let function = c_function(
+            CType::Void,
+            "construct_child",
+            vec![c_parameter("destination", CType::Int32Pointer)],
+            c_skip(),
+        )
+        .with_construction_parameter(0, layout);
+        let values = [CValue::typed_pointer(at.clone(), CType::Int32Pointer)];
+        (
+            bind_c_function_arguments(caller, &function, &values).is_some(),
+            bind_c_contract_arguments(caller, function.contract_interface(), &values, None)
+                .is_some(),
+        )
+    };
+    assert_eq!(bind(child.clone()), (true, true));
+    for wrong in [
+        identity("locked-import", "c:@S@OtherChild"),
+        identity("other-import", "c:@S@Child"),
+        None,
+    ] {
+        let wrong = child.clone().with_declaration_identity(wrong);
+        assert_ne!(child, wrong);
+        assert_eq!(bind(wrong), (false, false));
+    }
+    assert!(!caller.memory.has_initialized_bytes_under(
+        &at.offset_by_bytes(4),
+        4,
+        &PureFactContext::new(),
+    ));
+}
+
+#[test]
 fn constructor_binding_requires_complete_or_explicit_child_designation() {
     let _session = crate::kernel::VerificationSession::enter();
     let (parent, child) = selection_layouts();

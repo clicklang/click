@@ -17,6 +17,353 @@ fn value(pointer: Pointer, designation: PointerDesignation) -> CPointerValue {
 }
 
 #[test]
+fn loaded_designation_retains_exact_origin_through_rewrites_and_casts() {
+    let _session = VerificationSession::enter();
+    let variable = Variable(410_070);
+    let cell = Pointer::symbolic(variable);
+    let snapshot = intern_c_memory(CMemory::new());
+    let origin = PointerLoadIdentity::new(snapshot.clone(), cell.clone());
+    let input = value(cell.clone(), PointerDesignation::Loaded(origin.clone()));
+    assert_eq!(
+        origin,
+        PointerLoadIdentity::new(snapshot.clone(), cell.clone())
+    );
+    assert_eq!(
+        origin.id(),
+        Pointer::loaded_value(&snapshot, &cell)
+            .as_loaded_value()
+            .unwrap()
+            .identity
+    );
+    let other = PointerLoadIdentity::new(
+        intern_c_memory(CMemory::new().with_block(PointerBlock::from("global:other"), 8)),
+        cell.clone(),
+    );
+    assert_ne!(origin, other);
+    assert_ne!(origin.cmp(&other), std::cmp::Ordering::Equal);
+    let hash = |identity: &PointerLoadIdentity| {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        identity.hash(&mut hasher);
+        hasher.finish()
+    };
+    assert_ne!(hash(&origin), hash(&other));
+    assert_ne!(
+        origin,
+        PointerLoadIdentity::new(snapshot.clone(), cell.offset_by_bytes(8))
+    );
+    let view = input
+        .clone()
+        .with_type(CType::UInt8Pointer)
+        .with_pointer(cell.offset_by_bytes(4));
+    assert!(std::ptr::eq(
+        input.designation().unwrap(),
+        view.designation().unwrap()
+    ));
+    assert_eq!(
+        c_value_declaration_variable(&CValue::Pointer(input.clone())),
+        None
+    );
+
+    let target = Pointer::symbolic(Variable(410_071));
+    let mut raw = TermRewrite::for_pointer_exact(&cell, &target);
+    let CValue::Pointer(result) = raw.value(&CValue::Pointer(input.clone())) else {
+        panic!()
+    };
+    assert_eq!(raw.refusal(), None);
+    assert_eq!(result.pointer(), &target);
+    assert!(std::ptr::eq(
+        input.designation().unwrap(),
+        result.designation().unwrap()
+    ));
+    drop(raw);
+
+    let replacement = value(
+        target.clone(),
+        object(target.clone(), "member", IntegerTerm::constant_i64(1)),
+    );
+    let replacements = BTreeMap::from([(variable, TypedCReplacement::Pointer(replacement))]);
+    let empty_integer = BTreeMap::new();
+    let empty_algebraic = BTreeMap::new();
+    let mut typed =
+        TermRewrite::for_typed_variables(&replacements, &empty_integer, &empty_algebraic);
+    let CValue::Pointer(result) = typed.value(&CValue::Pointer(input)) else {
+        panic!()
+    };
+    assert_eq!(typed.refusal(), None);
+    let Some(PointerDesignation::Loaded(mapped)) = result.designation() else {
+        panic!()
+    };
+    assert_eq!(mapped.memory().arena_id(), snapshot.arena_id());
+    assert_eq!(mapped.address(), &target);
+    assert_eq!(mapped, &PointerLoadIdentity::new(snapshot, target));
+}
+
+#[test]
+fn loaded_designation_snapshot_variables_follow_scalar_load_substitution_and_collection() {
+    let _session = VerificationSession::enter();
+    let variable = Variable(410_072);
+    let slot = Pointer {
+        block: PointerBlock::from("global:slot"),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let memory = CMemory::new().with_block(slot.block.clone(), 8).store(
+        slot.clone(),
+        CValue::Int32(Bitvector32Term::Variable(variable)),
+    );
+    let snapshot = intern_c_memory(memory);
+    let cell = Pointer {
+        block: slot.block.clone(),
+        offset: PointerOffsetTerm::Int32Scaled {
+            value: Box::new(Bitvector32Term::Variable(variable)),
+            byte_width: 8,
+        },
+    };
+    let input = CValue::Pointer(value(
+        Pointer::null(),
+        PointerDesignation::Loaded(PointerLoadIdentity::new(snapshot.clone(), cell.clone())),
+    ));
+    let scalar = Bitvector32Term::MemoryLoad(snapshot, Box::new(cell), LoadKind::Bits32);
+    let mut actual = BTreeSet::new();
+    let mut expected = BTreeSet::new();
+    crate::kernel::prelude::collect_c_value_bitvector_variables(&input, &mut actual);
+    crate::kernel::prelude::collect_bitvector_variables(&scalar, &mut expected);
+    assert_eq!(actual, expected);
+    assert!(actual.contains(&variable));
+    let target = Bitvector32Term::Constant(2);
+    let mapped =
+        crate::kernel::prelude::substitute_bitvector_variable_in_c_value(&input, variable, &target);
+    let mapped_scalar =
+        crate::kernel::prelude::substitute_bitvector_variable(&scalar, variable, &target);
+    let CValue::Pointer(mapped) = mapped else {
+        panic!()
+    };
+    let Some(PointerDesignation::Loaded(mapped)) = mapped.designation() else {
+        panic!()
+    };
+    let Bitvector32Term::MemoryLoad(expected_memory, expected_address, _) = mapped_scalar else {
+        panic!()
+    };
+    assert_eq!(mapped.memory().arena_id(), expected_memory.arena_id());
+    assert_eq!(mapped.address(), expected_address.as_ref());
+    assert_eq!(mapped.memory().memory().known_value(&slot), Some(int32(2)));
+    assert_eq!(
+        mapped,
+        &PointerLoadIdentity::new(expected_memory, *expected_address)
+    );
+}
+
+#[test]
+fn loaded_designation_alpha_keys_rename_cells_but_retain_defining_snapshots() {
+    let _session = VerificationSession::enter();
+    let snapshot = intern_c_memory(CMemory::new());
+    let later = intern_c_memory(CMemory::new().with_block(PointerBlock::from("global:later"), 8));
+    let quantified = |variable, memory: SharedCMemory| Proposition::ForAll {
+        var: variable,
+        sort: Sort::CPointer(CType::Int32Pointer),
+        body: Box::new(Proposition::Predicate {
+            name: "loaded_designation".into(),
+            arguments: vec![Term::CValue(CValue::Pointer(value(
+                Pointer::null(),
+                PointerDesignation::Loaded(PointerLoadIdentity::new(
+                    memory,
+                    Pointer::symbolic(variable),
+                )),
+            )))],
+        }),
+    };
+    let a = quantified(Variable(410_073), snapshot.clone());
+    let b = quantified(Variable(410_074), snapshot);
+    let c = quantified(Variable(410_074), later);
+    assert!(crate::kernel::proof::fact_keys::propositions_are_alpha_equal(&a, &b));
+    assert!(!crate::kernel::proof::fact_keys::propositions_are_alpha_equal(&a, &c));
+}
+
+#[test]
+fn loaded_designation_origin_keys_do_not_compare_unrelated_snapshot_contents() {
+    let _session = VerificationSession::enter();
+    let cell = Pointer::symbolic(Variable(410_075));
+    let mut samples = Vec::new();
+    for size in [16u64, 64, 256, 1024] {
+        let base = Pointer {
+            block: PointerBlock::from("global:origin_key_noise"),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let mut memory = CMemory::new().with_block(base.block.clone(), (size as u32 + 1) * 8);
+        for index in 0..size {
+            memory = memory.store(
+                base.offset_by_bytes(index as u32 * 8),
+                CValue::UInt64(Bitvector32Term::UInt64Constant(index)),
+            );
+        }
+        let left = PointerLoadIdentity::new(intern_c_memory(memory.clone()), cell.clone());
+        let right = PointerLoadIdentity::new(
+            intern_c_memory(memory.store(base.offset_by_bytes(size as u32 * 8), int32(1))),
+            cell.clone(),
+        );
+        let same = left.clone();
+        let ((), work) = crate::persistent::measure_persistent_work(|| {
+            assert_eq!(left, same);
+            assert_ne!(left, right);
+            assert_ne!(left.cmp(&right), std::cmp::Ordering::Equal);
+            let mut left_hash = std::collections::hash_map::DefaultHasher::new();
+            let mut same_hash = std::collections::hash_map::DefaultHasher::new();
+            left.hash(&mut left_hash);
+            same.hash(&mut same_hash);
+            assert_eq!(left_hash.finish(), same_hash.finish());
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= 8),
+        "origin keys visited snapshot maps: {samples:?}"
+    );
+}
+
+#[test]
+fn loaded_designation_content_hash_is_stable_without_equating_distinct_arenas() {
+    let cell = Pointer {
+        block: PointerBlock::from("global:stable_load_origin"),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let create = || {
+        let _session = VerificationSession::enter();
+        let memory = CMemory::new().with_block(cell.block.clone(), 8);
+        PointerLoadIdentity::new(intern_c_memory(memory), cell.clone())
+    };
+    let first = create();
+    let second = create();
+    // These operations inspect only retained immutable handles. They never
+    // decode an old session's interned raw-address name in the new registry.
+    assert_ne!(first.memory().arena_id(), second.memory().arena_id());
+    assert_ne!(first, second);
+    let hash = |identity: &PointerLoadIdentity| {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        identity.hash(&mut hasher);
+        hasher.finish()
+    };
+    assert_eq!(hash(&first), hash(&second));
+    let first = value(Pointer::null(), PointerDesignation::Loaded(first));
+    let second = value(Pointer::null(), PointerDesignation::Loaded(second));
+    assert_ne!(first, second);
+    let carrier_hash = |value: &CPointerValue| {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        value.hash(&mut hasher);
+        hasher.finish()
+    };
+    assert_eq!(carrier_hash(&first), carrier_hash(&second));
+}
+
+#[test]
+fn loaded_pointer_pair_substitution_rewrites_one_defining_load_and_preserves_displacement() {
+    let _session = VerificationSession::enter();
+    let binder = Variable(410_076);
+    let base = Pointer {
+        block: PointerBlock::from("global:paired_load_cells"),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let memory = CMemory::new().with_block(base.block.clone(), 64);
+    let cell = Pointer {
+        block: base.block.clone(),
+        offset: PointerOffsetTerm::Int32Scaled {
+            value: Box::new(Bitvector32Term::Variable(binder)),
+            byte_width: 8,
+        },
+    };
+    let read = |cell: &Pointer| {
+        let load = Bitvector32Term::MemoryLoad(
+            intern_c_memory_ref(&memory),
+            Box::new(cell.clone()),
+            LoadKind::Bits32,
+        );
+        let (variable, _) = crate::kernel::eval::load_variable_for_term(&load).unwrap();
+        let Bitvector32Term::MemoryLoad(memory, cell, _) =
+            crate::kernel::eval::registered_load_term_for_variable(&variable).unwrap()
+        else {
+            panic!()
+        };
+        let identity = PointerLoadIdentity::new(memory, *cell);
+        (variable, identity)
+    };
+    let (variable, identity) = read(&cell);
+    let replacement = Bitvector32Term::Constant(2);
+    let target_cell = crate::kernel::prelude::substitute_bitvector_variable_in_pointer(
+        &cell,
+        binder,
+        &replacement,
+    );
+    let (target_variable, target_identity) = read(&target_cell);
+    assert_ne!(variable, target_variable);
+    for pointer in [
+        Pointer::symbolic(variable).offset_by_bytes(4),
+        Pointer::loaded(base.block.clone(), Bitvector32Term::Variable(variable), 4)
+            .offset_by_bytes(4),
+        Pointer::loaded_value(identity.memory(), identity.address()).offset_by_bytes(4),
+    ] {
+        let input = CValue::Pointer(value(pointer, PointerDesignation::Loaded(identity.clone())));
+        let mapped = crate::kernel::prelude::substitute_bitvector_variable_in_c_value(
+            &input,
+            binder,
+            &replacement,
+        );
+        let CValue::Pointer(mapped) = mapped else {
+            panic!()
+        };
+        assert_eq!(
+            mapped.designation(),
+            Some(&PointerDesignation::Loaded(target_identity.clone()))
+        );
+        let CValue::Pointer(original) = input else {
+            panic!()
+        };
+        match &original.pointer().block {
+            PointerBlock::Symbolic(_) => {
+                assert_eq!(
+                    mapped.pointer(),
+                    &Pointer::symbolic(target_variable).offset_by_bytes(4)
+                );
+            }
+            PointerBlock::LoadedPointer(_) => {
+                assert_eq!(
+                    mapped.pointer(),
+                    &Pointer::loaded_value(target_identity.memory(), target_identity.address())
+                        .offset_by_bytes(4)
+                );
+            }
+            _ => {
+                assert_eq!(
+                    mapped.pointer(),
+                    &Pointer::loaded(
+                        base.block.clone(),
+                        Bitvector32Term::Variable(target_variable),
+                        4
+                    )
+                    .offset_by_bytes(4)
+                );
+            }
+        }
+    }
+    // A full typed binder substitution also updates the paired raw load.
+    let input = CValue::Pointer(value(
+        Pointer::symbolic(variable),
+        PointerDesignation::Loaded(identity),
+    ));
+    let replacements = BTreeMap::from([(binder, TypedCReplacement::Bitvector(replacement))]);
+    let empty_integer = BTreeMap::new();
+    let empty_algebraic = BTreeMap::new();
+    let mut rewrite =
+        TermRewrite::for_typed_variables(&replacements, &empty_integer, &empty_algebraic);
+    let CValue::Pointer(mapped) = rewrite.value(&input) else {
+        panic!()
+    };
+    assert_eq!(rewrite.refusal(), None);
+    assert_eq!(mapped.pointer(), &Pointer::symbolic(target_variable));
+    assert_eq!(
+        mapped.designation(),
+        Some(&PointerDesignation::Loaded(target_identity))
+    );
+}
+
+#[test]
 fn designation_is_full_value_identity_and_shared_across_address_and_view_changes() {
     let p = Pointer::symbolic(Variable(410_001));
     let first = value(

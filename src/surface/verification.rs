@@ -594,12 +594,14 @@ pub fn verify_click_theorems(click_source: &str) -> Result<Vec<VerifiedPureTheor
 pub(in crate::surface) fn verify_click_file_theorems(
     file: &ClickFile,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
-    verify_click_file_theorems_with_environment(file, None)
+    let resources = ResourceEnvironment::new(&combined_resource_definitions(file)?);
+    verify_click_file_theorems_with_environment(file, None, &resources)
 }
 
 fn verify_click_file_theorems_with_environment(
     file: &ClickFile,
     function_environment: Option<&CExecutionEnvironment>,
+    resource_environment: &ResourceEnvironment,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     let predicate_definitions = combined_predicate_definitions(file)?;
     let click_function_definitions = combined_click_function_definitions(file)?;
@@ -618,7 +620,7 @@ fn verify_click_file_theorems_with_environment(
         &predicate_environment,
         &click_function_environment,
         function_environment,
-        &ResourceEnvironment::new(&combined_resource_definitions(file)?),
+        resource_environment,
         function_source_registry,
     )
 }
@@ -721,7 +723,11 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
             function_environment = function_environment.with_verified_function_rule(hypothesis);
         }
     }
-    verify_click_file_theorems_with_environment(&file, Some(&function_environment))
+    verify_click_file_theorems_with_environment(
+        &file,
+        Some(&function_environment),
+        &resource_environment,
+    )
 }
 
 pub(in crate::surface) fn verify_click_project_theorem(
@@ -768,7 +774,16 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
         &click_function_definitions,
         &combined_algebraic_type_definitions(&file)?,
     );
-    let resource_environment = ResourceEnvironment::new(&resource_definitions);
+    // Expansion and selected theorem checking retain the same imported
+    // layouts as full verification. Named reference contracts need those
+    // declarations before the shared one-call wrapper is prepared.
+    let source = project
+        .entry_source()
+        .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
+    let (struct_layouts, _, _, _, _, _, _) =
+        parse_c_layouts_for_target(source, sources, file.selected_c_target())?;
+    let resource_environment =
+        ResourceEnvironment::with_struct_layouts(&resource_definitions, &struct_layouts);
     let external_and_user_function_blocks = combined_external_function_blocks(&file)?;
     let mut function_environment = build_function_environment(
         &parsed_sources,
@@ -7107,6 +7122,49 @@ pub(in crate::surface) fn external_c0_function(
     .with_return_reference(function_block.signature().returns_reference())
 }
 
+/// A named contract's explicit native reference inputs are part of its
+/// interface. Pointer signatures alone supply no object requirement; record
+/// references additionally need the imported declaration's nominal layout.
+pub(in crate::surface) fn external_c0_function_with_reference_inputs(
+    function_block: &FunctionBlock,
+    resources: &ResourceEnvironment,
+) -> syntax::C0Function {
+    let parsed = external_c0_function(function_block);
+    let mut scalars = Vec::new();
+    let mut aggregates = Vec::new();
+    for (parameter_index, parameter) in function_block.signature().parameters().iter().enumerate() {
+        if !parameter.is_reference() {
+            continue;
+        }
+        if let Some(name) = parameter.struct_name() {
+            if let Some(layout) = resources.struct_layouts().get(name) {
+                let layout = layout.to_kernel_aggregate_layout();
+                if layout.declaration_identity().is_some() {
+                    aggregates.push(crate::kernel::CAggregateObjectInput {
+                        parameter_index,
+                        layout: std::sync::Arc::new(layout),
+                    });
+                }
+            }
+            continue;
+        }
+        let element_type = match parameter.c_type().to_kernel_type().pointee_type() {
+            Some(CType::Int32) => CType::Int32,
+            Some(CType::Int64) if parameter.pointee_is_constant() => CType::Int64,
+            _ => continue,
+        };
+        scalars.push(crate::kernel::CScalarObjectInput {
+            parameter_index,
+            element_type,
+        });
+    }
+    let function = parsed
+        .to_kernel_function()
+        .with_scalar_object_inputs(scalars)
+        .with_aggregate_object_inputs(aggregates);
+    parsed.with_prelowered_kernel_function(function)
+}
+
 pub(in crate::surface) fn build_function_environment(
     parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
     function_blocks: &[FunctionBlock],
@@ -7118,7 +7176,8 @@ pub(in crate::surface) fn build_function_environment(
     let mut environment = CExecutionEnvironment::new();
     for definition in contract_definitions {
         let function_block = definition.function_block();
-        let parsed_function = external_c0_function(function_block);
+        let parsed_function =
+            external_c0_function_with_reference_inputs(function_block, resource_environment);
         let InitialClaimContext {
             state, arguments, ..
         } = initial_claim_context_with_caller_owner(
@@ -7279,7 +7338,9 @@ pub(in crate::surface) fn build_function_environment(
         }
         let parsed_function = match prepared_interfaces.get(name) {
             Some(prepared) => (*prepared).clone(),
-            None => external_c0_function(function_block),
+            None => {
+                external_c0_function_with_reference_inputs(function_block, resource_environment)
+            }
         };
         let InitialClaimContext {
             state, arguments, ..

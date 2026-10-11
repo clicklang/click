@@ -895,6 +895,7 @@ enum AlphaCValueKey {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaPointerDesignationKey {
     Unresolved(AlphaVariableKey),
+    Loaded(AlphaSnapshotKey, AlphaPointerKey),
     Object {
         root: AlphaPointerKey,
         path: Vec<AlphaPointerSelectionKey>,
@@ -1906,6 +1907,17 @@ fn alpha_pointer_designation_key<const ALLOW_LOADS: bool>(
                 &bindings.bitvector,
             )?)
         }
+        // A designation's defining snapshot is semantic even in indexes
+        // that omit snapshots from numeric load candidates. Key equality
+        // never transports a domain between different reads.
+        PointerDesignation::Loaded(identity) => AlphaPointerDesignationKey::Loaded(
+            AlphaSnapshotKey::new(identity.memory()),
+            alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
+                identity.address(),
+                bindings,
+                next_binder,
+            )?,
+        ),
         PointerDesignation::Object {
             root,
             path,

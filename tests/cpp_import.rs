@@ -5,10 +5,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use click::cli::{CInput, parse_mdtest, read_c_inputs, read_click_project};
 use click::kernel::{
-    Bitvector32Term, CExpression, CFunctionOutcome, CMemory, CMemoryRange, CResourceFact, CState,
-    CStatement, CType, CUndefinedBehavior, Pointer, PointerOffsetTerm, Proposition,
-    PureFactContext, ResourceContext, c_typed_pointer_value, int32,
-    prove_symbolic_c_function_execution,
+    CExpression, CFunctionOutcome, CState, CStatement, CType, CUndefinedBehavior, Proposition,
+    PureFactContext, int32, prove_symbolic_c_function_execution,
 };
 use click::languages::cpp::{
     CppBinaryOperator, CppCallArgument, CppCleanup, CppExceptionBehavior, CppExpression,
@@ -3817,6 +3815,24 @@ fn contains_local_aggregate_pipeline(statement: &CStatement, local: &str) -> [bo
                 {
                     found[1] = true;
                 }
+                if let CExpression::MemberAddress { object, selection } = pointer
+                    && matches!(object.as_ref(), CExpression::Variable(name) if name == local)
+                    && selection.value_type() == *value_type
+                    && let [name] = selection.path()
+                    && let Some(field) = selection
+                        .layout()
+                        .fields()
+                        .iter()
+                        .find(|field| field.name() == name)
+                    && field.c_type() == *value_type
+                {
+                    if field.offset_bytes() == 0 && *value_type == CType::Int32Pointer {
+                        found[1] = true;
+                    }
+                    if field.offset_bytes() == 8 && *value_type == CType::Int32 {
+                        found[2] = true;
+                    }
+                }
                 if let CExpression::PointerOffsetBytes { pointer, bytes } = pointer
                     && matches!(pointer.as_ref(), CExpression::Variable(name) if name == local)
                 {
@@ -6075,23 +6091,64 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
             )
     ));
 
-    let pointer = Pointer {
-        block: "cpp-reference".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    // A native reference receives the complete address formed from a real
+    // scalar declaration. A typed numeric address alone supplies no referent.
+    let normal_state = |state: CState, statement: CStatement| {
+        let theorem = click::kernel::prove_c_statement_execution(state, statement)
+            .expect("checked scalar setup should execute");
+        let Proposition::CStatementExecutes {
+            outcome: click::kernel::CStatementOutcome::Normal(state),
+            ..
+        } = theorem.proposition()
+        else {
+            panic!(
+                "expected unconditional normal setup: {:?}",
+                theorem.proposition()
+            );
+        };
+        state.as_ref().clone()
     };
-    let resources =
-        ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
-            pointer.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
-        )));
-    let arguments = vec![c_typed_pointer_value(pointer.clone(), CType::Int32Pointer)];
+    let state = normal_state(
+        CState::new(),
+        click::kernel::c_declare_initialized(
+            "referent",
+            CType::Int32,
+            CExpression::Value(int32(41)),
+            false,
+            false,
+            false,
+            false,
+        ),
+    );
+    let address = click::kernel::prove_c_expression_evaluation(
+        state.clone(),
+        click::kernel::c_addr_of("referent"),
+    )
+    .expect("checked address formation should select the declared scalar");
+    let Proposition::CExpressionEvaluates {
+        outcome: click::kernel::CExpressionOutcome::Value(value),
+        ..
+    } = address.proposition()
+    else {
+        panic!(
+            "expected a declared scalar address: {:?}",
+            address.proposition()
+        );
+    };
+    let arguments = vec![CExpression::Value(value.clone())];
+    // This fixture checks the call's referent storage; its declaration's local
+    // name belongs to the setup frame, rather than the tested caller frame.
     let state = CState::new()
-        .with_memory(CMemory::new().store(pointer.clone(), int32(41)))
-        .with_resource_context(resources.clone());
-    let expected_state = CState::new()
-        .with_memory(CMemory::new().store(pointer.clone(), int32(42)))
-        .with_resource_context(resources.clone());
+        .with_memory(state.memory().clone())
+        .with_resource_context(state.resources().clone());
+    let expected_state = normal_state(
+        state.clone(),
+        click::kernel::c_typed_store(
+            arguments[0].clone(),
+            CExpression::Value(int32(42)),
+            CType::Int32,
+        ),
+    );
     let theorem = prove_symbolic_c_function_execution(
         state.clone(),
         function.clone(),
@@ -6102,7 +6159,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CFunctionExecutes {
-            state: Box::new(state),
+            state: Box::new(state.clone()),
             function: Box::new(function.clone()),
             arguments: arguments.clone(),
             outcome: CFunctionOutcome::Return {
@@ -6112,9 +6169,14 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
         }
     );
 
-    let max_state = CState::new()
-        .with_memory(CMemory::new().store(pointer, int32(i32::MAX as u32)))
-        .with_resource_context(resources);
+    let max_state = normal_state(
+        state,
+        click::kernel::c_typed_store(
+            arguments[0].clone(),
+            CExpression::Value(int32(i32::MAX as u32)),
+            CType::Int32,
+        ),
+    );
     let overflow = prove_symbolic_c_function_execution(
         max_state.clone(),
         function.clone(),
@@ -13199,6 +13261,36 @@ fn nested_record_project(selected: &str) -> Project {
 }
 
 #[test]
+fn cpp_native_record_layouts_retain_distinct_declarations_with_equal_geometry() {
+    let source = "struct First { int value; };\nstruct Second { int value; };\nint read_pair(First& first, Second& second) noexcept { return first.value + second.value; }\n";
+    let project = Project::with_fixture("pair.cpp", "read_pair", source);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let lowered = lower_import(&import).unwrap();
+    let first = &lowered.record_layouts()["First"];
+    let second = &lowered.record_layouts()["Second"];
+    assert_eq!(first.fields(), second.fields());
+    assert_eq!(first.size_bytes(), second.size_bytes());
+    assert_eq!(first.alignment_bytes(), second.alignment_bytes());
+    assert_ne!(
+        first, second,
+        "equal geometry does not identify a native record"
+    );
+
+    let other = Project::with_fixture("pair.cpp", "read_pair", source);
+    refresh_import(&other.config()).unwrap();
+    let other_import = load_import(&other.config()).unwrap();
+    assert_ne!(import.identity(), other_import.identity());
+    let other = lower_import(&other_import).unwrap();
+    assert_eq!(first.fields(), other.record_layouts()["First"].fields());
+    assert_ne!(
+        first,
+        &other.record_layouts()["First"],
+        "separate locked imports do not establish nominal equivalence"
+    );
+}
+
+#[test]
 fn nested_record_declarations_preserve_layout_identity_and_offline_field_frames() {
     use click::languages::cpp::CppType;
     for (selected, sidecar) in [
@@ -15364,6 +15456,26 @@ theorem read_application() executes read(const struct State& state) {
         .verify_at_project(&expanded, position.line, position.column)
         .unwrap();
     let path = project.directory.join("hostile.click");
+    // A raw pointer target has no native reference requirement. The wrapper
+    // cannot strengthen that target from read's own imported signature.
+    let (native, target_and_theorem) = source.split_once("contract int32 PositiveRead").unwrap();
+    let weaker = format!(
+        "{native}contract int32 PositiveRead{}",
+        target_and_theorem
+            .replace("const struct State& state", "const struct State* state")
+            .replace("state.child.value", "state->child.value")
+    );
+    fs::write(&path, &weaker).unwrap();
+    let error =
+        verify_program_prepared_project(&read_click_project(&path, &weaker).unwrap(), &import)
+            .unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("could not bind arguments for read"),
+        "{}",
+        error.message()
+    );
     let hostile = source.replace("requires state.child.value == 2;", "");
     fs::write(&path, &hostile).unwrap();
     assert!(

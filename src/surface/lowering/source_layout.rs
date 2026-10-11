@@ -145,7 +145,10 @@ fn expression_reads(expression: &CExpression) -> bool {
             | CExpression::FloatClassification { expression, .. }
             | CExpression::Not(expression)
             | CExpression::BitwiseNot(expression) => pending.push((expression, true)),
-            CExpression::PointerOffsetBytes { pointer, .. } => pending.push((pointer, true)),
+            CExpression::PointerOffsetBytes { pointer, .. }
+            | CExpression::MemberAddress {
+                object: pointer, ..
+            } => pending.push((pointer, true)),
             CExpression::Conditional {
                 condition,
                 then_branch,
@@ -976,7 +979,10 @@ pub(in crate::surface) fn collect_c_expression_referenced_names(
         | CExpression::Load(expression) => {
             collect_c_expression_referenced_names(expression, names);
         }
-        CExpression::PointerOffsetBytes { pointer, .. } => {
+        CExpression::MemberAddress {
+            object: pointer, ..
+        }
+        | CExpression::PointerOffsetBytes { pointer, .. } => {
             collect_c_expression_referenced_names(pointer, names);
         }
         CExpression::TypedLoad { pointer, .. } => {

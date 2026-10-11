@@ -243,6 +243,9 @@ impl Names {
                 pointer: expression,
                 ..
             }
+            | MemberAddress {
+                object: expression, ..
+            }
             | FloatNegate(expression)
             | AddressOf(expression)
             | CheckedObjectAddress(expression)

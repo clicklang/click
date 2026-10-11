@@ -107,6 +107,17 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         })
         .collect::<BTreeMap<_, _>>();
     let layouts = super::interface::prepare_layouts(import)?;
+    // One checked kernel definition per native record for the imported graph.
+    // Member selectors and interface requirements share immutable indexes.
+    let kernel_layouts = layouts
+        .iter()
+        .map(|(name, layout)| {
+            (
+                name.clone(),
+                std::sync::Arc::new(layout.to_kernel_aggregate_layout()),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
     let function = lower_function(
         import,
         &import.export().function,
@@ -114,12 +125,23 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         &records,
         &constants,
         &layouts,
+        &kernel_layouts,
     )?;
     let reachable_functions = import
         .export()
         .reachable_functions
         .iter()
-        .map(|source| lower_function(import, source, &names, &records, &constants, &layouts))
+        .map(|source| {
+            lower_function(
+                import,
+                source,
+                &names,
+                &records,
+                &constants,
+                &layouts,
+                &kernel_layouts,
+            )
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let library_contracts = super::standard_library::contracts(import.export(), &names)?;
     let execution = std::sync::Arc::new(super::interface::prepare(
@@ -145,6 +167,7 @@ fn lower_function(
     records: &super::schema::RecordIndex<'_>,
     constants: &BTreeMap<&str, &CppConstant>,
     layouts: &BTreeMap<String, crate::languages::c::syntax::C0StructLayout>,
+    kernel_layouts: &BTreeMap<String, std::sync::Arc<CAggregateLayout>>,
 ) -> Result<CFunction, String> {
     let mut declared_places = Vec::new();
     collect_declared_places(&source.body, &mut declared_places);
@@ -203,7 +226,7 @@ fn lower_function(
         places,
         records,
         constants,
-        layouts,
+        kernel_layouts,
         next_load_occurrence: 0,
         return_capture_name: return_capture_name(source),
         nested_capture_name: fresh_internal_name(source, "__click_cpp_nested_value"),
@@ -233,7 +256,52 @@ fn lower_function(
         parameters,
         body,
     )
-    .with_return_pointee_constant(return_constant);
+    .with_return_pointee_constant(return_constant)
+    .with_scalar_object_inputs(
+        source
+            .parameters
+            .iter()
+            .enumerate()
+            .filter_map(|(parameter_index, parameter)| {
+                let CppType::LvalueReference { pointee } = &parameter.value_type else {
+                    return None;
+                };
+                let element_type = if is_mutable_int32(pointee) || is_const_int32(pointee) {
+                    CType::Int32
+                } else if is_const_int64(pointee) {
+                    CType::Int64
+                } else {
+                    // Record references need their own nominal object boundary.
+                    return None;
+                };
+                Some(crate::kernel::CScalarObjectInput {
+                    parameter_index,
+                    element_type,
+                })
+            })
+            .collect(),
+    );
+    function = function.with_aggregate_object_inputs(
+        source
+            .parameters
+            .iter()
+            .enumerate()
+            .filter_map(|(parameter_index, parameter)| {
+                let CppType::LvalueReference { pointee } = &parameter.value_type else {
+                    return None;
+                };
+                let CppType::Record { name, .. } = pointee.as_ref() else {
+                    return None;
+                };
+                Some(context.record_layout_arc(name).map(|layout| {
+                    crate::kernel::CAggregateObjectInput {
+                        parameter_index,
+                        layout,
+                    }
+                }))
+            })
+            .collect::<Result<Vec<_>, String>>()?,
+    );
     if let CppFunctionKind::Constructor { record_name, .. } = &source.function_kind {
         function = function.with_construction_parameter(0, context.record_layout(record_name)?);
     }
@@ -376,7 +444,7 @@ struct LoweringContext<'a> {
     places: BTreeMap<&'a str, &'a CppPlace>,
     records: &'a super::schema::RecordIndex<'a>,
     constants: &'a BTreeMap<&'a str, &'a CppConstant>,
-    layouts: &'a BTreeMap<String, crate::languages::c::syntax::C0StructLayout>,
+    kernel_layouts: &'a BTreeMap<String, std::sync::Arc<CAggregateLayout>>,
     next_load_occurrence: u32,
     return_capture_name: String,
     nested_capture_name: String,
@@ -543,13 +611,13 @@ impl LoweringContext<'_> {
                         .map(|field| {
                             Ok((
                                 field.declaration_id.clone(),
-                                field.offset_bytes,
+                                field.name.clone(),
                                 cpp_scalar_kernel_type(&field.value_type)?,
                             ))
                         })
                         .collect::<Result<Vec<_>, String>>()?;
                     let mut result = c_declare_aggregate(local.name.clone(), layout);
-                    for (initializer, (declaration_id, offset, value_type)) in
+                    for (initializer, (declaration_id, member_name, value_type)) in
                         fields.iter().zip(members)
                     {
                         if initializer.field.declaration_id != declaration_id {
@@ -557,8 +625,16 @@ impl LoweringContext<'_> {
                                 "C++ aggregate initializer for `{name}` is out of declaration order"
                             ));
                         }
-                        let pointer =
-                            c_pointer_offset_bytes(c_variable(local.name.clone()), offset);
+                        let pointer = CExpression::MemberAddress {
+                            object: Box::new(c_variable(local.name.clone())),
+                            selection: std::sync::Arc::new(
+                                crate::kernel::CAggregateMemberSelection {
+                                    layout: self.record_layout_arc(name)?,
+                                    path: vec![member_name].into(),
+                                    value_type,
+                                },
+                            ),
+                        };
                         let value = self.lower_expression(&initializer.value)?;
                         result = c_seq(result, c_typed_store(pointer, value, value_type));
                     }
@@ -625,7 +701,7 @@ impl LoweringContext<'_> {
                 ..
             } => {
                 let place = self.place(object)?;
-                let (_, offset) = self.records.resolve_path(
+                let (value_type, _) = self.records.resolve_path(
                     &place.value_type,
                     object
                         .projections
@@ -633,10 +709,21 @@ impl LoweringContext<'_> {
                         .map(super::schema::CppProjection::as_ref)
                         .chain(std::iter::once(super::schema::ProjectionRef::Field(field))),
                 )?;
-                let destination = c_cast(
-                    c_pointer_offset_bytes(c_variable(self.variable_name(object)), offset),
-                    CType::Int32Pointer,
-                );
+                let mut path: Vec<_> = object
+                    .projections
+                    .iter()
+                    .map(|projection| match projection.as_ref() {
+                        super::schema::ProjectionRef::Field(field) => field.name.clone(),
+                        super::schema::ProjectionRef::Base(_) => "base".into(),
+                    })
+                    .collect();
+                path.push(field.name.clone());
+                let destination = self.lower_member_address(
+                    place,
+                    c_variable(self.variable_name(object)),
+                    path,
+                    value_type,
+                )?;
                 let mut lowered = vec![destination];
                 lowered.extend(self.lower_call_arguments(arguments)?);
                 Ok(c_call(
@@ -1588,22 +1675,73 @@ impl LoweringContext<'_> {
         }
     }
 
-    fn record_layout(&self, name: &str) -> Result<CAggregateLayout, String> {
-        self.layouts
+    fn record_layout_arc(&self, name: &str) -> Result<std::sync::Arc<CAggregateLayout>, String> {
+        self.kernel_layouts
             .get(name)
-            .map(crate::languages::c::syntax::C0StructLayout::to_kernel_aggregate_layout)
+            .cloned()
             .ok_or_else(|| format!("C++ lowering found no checked layout for `{name}`"))
+    }
+
+    fn record_layout(&self, name: &str) -> Result<CAggregateLayout, String> {
+        self.record_layout_arc(name)
+            .map(|layout| layout.as_ref().clone())
     }
 
     fn lower_place(&self, place: &CppPlaceReference) -> Result<CExpression, String> {
         let root = self.place(place)?;
-        let (_, offset) = self
+        let (value_type, offset) = self
             .records
             .resolve_path(&root.value_type, &place.projections)?;
+        if !place.projections.is_empty() {
+            let path = place
+                .projections
+                .iter()
+                .map(|projection| match projection.as_ref() {
+                    super::schema::ProjectionRef::Field(field) => field.name.clone(),
+                    super::schema::ProjectionRef::Base(_) => "base".into(),
+                })
+                .collect();
+            return self.lower_member_address(
+                root,
+                c_variable(self.variable_name(place)),
+                path,
+                value_type,
+            );
+        }
         Ok(c_pointer_offset_bytes(
             c_variable(self.variable_name(place)),
             offset,
         ))
+    }
+
+    fn lower_member_address(
+        &self,
+        root: &CppPlace,
+        object: CExpression,
+        path: Vec<String>,
+        value_type: &CppType,
+    ) -> Result<CExpression, String> {
+        let root_type = match &root.value_type {
+            CppType::LvalueReference { pointee } => pointee.as_ref(),
+            value => value,
+        };
+        let CppType::Record { name, .. } = root_type else {
+            return Err("member address requires a record root".into());
+        };
+        let value_type = match value_type {
+            CppType::Record { name, .. } => {
+                CType::UInt8Array(self.record_layout(name)?.size_bytes())
+            }
+            value => cpp_scalar_kernel_type(value)?,
+        };
+        Ok(CExpression::MemberAddress {
+            object: Box::new(object),
+            selection: std::sync::Arc::new(crate::kernel::CAggregateMemberSelection {
+                layout: self.record_layout_arc(name)?,
+                path: path.into(),
+                value_type,
+            }),
+        })
     }
 
     fn lower_typed_load(
@@ -1643,8 +1781,23 @@ impl LoweringContext<'_> {
                 .map(super::schema::CppProjection::as_ref)
                 .chain(std::iter::once(super::schema::ProjectionRef::Field(field))),
         )?;
+        let mut path: Vec<_> = object
+            .projections
+            .iter()
+            .map(|projection| match projection.as_ref() {
+                super::schema::ProjectionRef::Field(field) => field.name.clone(),
+                super::schema::ProjectionRef::Base(_) => "base".into(),
+            })
+            .collect();
+        path.push(field.name.clone());
+        let _ = offset; // Resolution authenticated the supplied declaration path.
         Ok((
-            c_pointer_offset_bytes(c_variable(self.variable_name(object)), offset),
+            self.lower_member_address(
+                place,
+                c_variable(self.variable_name(object)),
+                path,
+                value_type,
+            )?,
             cpp_scalar_kernel_type(value_type)?,
         ))
     }

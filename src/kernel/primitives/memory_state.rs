@@ -2649,6 +2649,278 @@ impl CMemory {
         !self.heap.uninitialized_objects.is_empty()
     }
 
+    /// The native entry rule may assume a scalar object only at the exact
+    /// domain selected by its interface. This creates neither storage nor a
+    /// readable value, and distinct input roots need not be disjoint.
+    pub(crate) fn with_scalar_input_domain(
+        mut self,
+        pointer: CPointerValue,
+        c_type: CType,
+    ) -> Result<Self, String> {
+        if !Self::is_complete_scalar_designation(&pointer, c_type) {
+            return Err("scalar input requires its complete scalar designation".into());
+        }
+        if let Some(held) = self.heap.scalar_input_domains.get(pointer.pointer()) {
+            return if *held == c_type {
+                Ok(self)
+            } else {
+                Err("conflicting scalar input types at the same address".into())
+            };
+        }
+        if self
+            .blocks
+            .get(&pointer.pointer().block)
+            .and_then(|block| block.declared_object.as_ref())
+            .is_some()
+            && !self.has_scalar_object_domain(&pointer, c_type)
+        {
+            return Err("scalar input conflicts with the declared object".into());
+        }
+        let diagnostic_base = self.clone();
+        Arc::make_mut(&mut self.heap)
+            .scalar_input_domains
+            .insert(pointer.pointer().clone(), c_type);
+        self.record_diagnostic_transform(
+            "scalar input domain",
+            vec![diagnostic_base],
+            vec![CValue::Pointer(pointer)],
+        );
+        Ok(self)
+    }
+
+    fn is_complete_scalar_designation(pointer: &CPointerValue, c_type: CType) -> bool {
+        let Some(PointerDesignation::Object {
+            root,
+            path,
+            base,
+            element_type,
+            stride,
+            count,
+        }) = pointer.designation()
+        else {
+            return false;
+        };
+        *element_type == c_type
+            && c_type.byte_width() > 0
+            && c_type.pointer_to().is_some()
+            && root == base
+            && base == pointer.pointer()
+            && path.is_empty()
+            && *stride == c_type.byte_width()
+            && *count == SharedIntegerTerm::from(IntegerTerm::constant_i64(1))
+    }
+
+    /// Authenticate the carried selection, rather than searching for a typed
+    /// cell at the requested numeric address. In particular, a one-past member
+    /// pointer cannot acquire a sibling's identity here.
+    pub(crate) fn has_scalar_object_domain(&self, pointer: &CPointerValue, c_type: CType) -> bool {
+        if !Self::is_complete_scalar_designation(pointer, c_type) {
+            return self
+                .checked_record_selection(pointer)
+                .is_some_and(|(_, path, selected)| !path.is_empty() && selected == c_type);
+        }
+        if !Self::is_complete_scalar_designation(pointer, c_type)
+            || self.is_ended_local_address(pointer.pointer())
+            || self.is_deallocated_heap_address(pointer.pointer(), &PureFactContext::new())
+            || pointer.is_null()
+        {
+            return false;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(declaration) = self
+            .blocks
+            .get(&pointer.pointer().block)
+            .and_then(|block| block.declared_object.as_ref())
+        {
+            return pointer.pointer().offset.as_const() == Some(0)
+                && matches!(declaration, CDeclaredObject::Scalar(held) if *held == c_type);
+        }
+        self.heap.scalar_input_domains.get(pointer.pointer()) == Some(&c_type)
+    }
+
+    /// Address formation for a declared scalar selects that declaration. This
+    /// helper is not used by casts, memory lookup or ownership acquisition.
+    pub(in crate::kernel) fn declared_scalar_pointer(
+        &self,
+        pointer: &Pointer,
+        c_type: CType,
+    ) -> Option<CPointerValue> {
+        let value = CPointerValue::new(pointer.clone(), c_type.pointer_to()?).with_designation(
+            PointerDesignation::Object {
+                root: pointer.clone(),
+                path: Arc::from([]),
+                base: pointer.clone(),
+                element_type: c_type,
+                stride: c_type.byte_width(),
+                count: IntegerTerm::constant_i64(1).into(),
+            },
+        );
+        self.has_scalar_object_domain(&value, c_type)
+            .then_some(value)
+    }
+
+    /// Authenticate a retained record-root/path descriptor against declarations
+    /// or admitted native input requirements. Address coincidence is insufficient.
+    fn checked_record_selection<'a>(
+        &'a self,
+        pointer: &CPointerValue,
+    ) -> Option<(&'a CAggregateLayout, Vec<String>, CType)> {
+        let PointerDesignation::Object {
+            root,
+            path,
+            base,
+            element_type,
+            stride,
+            count,
+        } = pointer.designation()?
+        else {
+            return None;
+        };
+        if base != pointer.pointer()
+            || *count != SharedIntegerTerm::from(IntegerTerm::constant_i64(1))
+            || self.is_ended_local_address(root)
+            || self.is_deallocated_heap_address(root, &PureFactContext::new())
+            || pointer.is_null()
+        {
+            return None;
+        }
+        let layout = match self
+            .blocks
+            .get(&root.block)
+            .and_then(|block| block.declared_object.as_ref())
+        {
+            Some(CDeclaredObject::Aggregate(layout)) if root.offset.as_const() == Some(0) => {
+                layout.as_ref()
+            }
+            Some(_) => return None,
+            None => self.heap.object_input_domains.get(root)?.as_ref(),
+        };
+        // This producer is scoped to the admitted native record hierarchy.
+        layout.declaration_identity()?;
+        let path = path
+            .iter()
+            .map(|selection| match selection {
+                PointerDomainSelection::Member(name) => Some(name.clone()),
+                PointerDomainSelection::Element(_) => None,
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let (offset, selected) = if path.is_empty() {
+            (0, CType::UInt8Array(layout.size_bytes()))
+        } else {
+            layout.member_at_path(&path)?
+        };
+        if *element_type != selected
+            || *stride != selected.byte_width()
+            || selected.byte_width() == 0
+            || *base != root.offset_by_bytes(offset)
+        {
+            return None;
+        }
+        Some((layout, path, selected))
+    }
+
+    pub(crate) fn has_aggregate_object_domain(
+        &self,
+        pointer: &CPointerValue,
+        expected: &CAggregateLayout,
+    ) -> bool {
+        self.checked_record_selection(pointer)
+            .is_some_and(|(layout, path, selected)| {
+                selected == CType::UInt8Array(expected.size_bytes())
+                    && layout.selects_layout_path(&path, expected)
+            })
+    }
+
+    /// Issue a root descriptor at an actual aggregate declaration/address
+    /// producer, never when a cast or byte lookup happens to find its block.
+    pub(in crate::kernel) fn declared_aggregate_pointer(
+        &self,
+        address: &Pointer,
+        layout: &CAggregateLayout,
+    ) -> Option<CPointerValue> {
+        let value = Self::aggregate_input_pointer(address.clone(), layout, CType::UInt8Pointer);
+        self.has_aggregate_object_domain(&value, layout)
+            .then_some(value)
+    }
+
+    pub(in crate::kernel) fn aggregate_input_pointer(
+        address: Pointer,
+        layout: &CAggregateLayout,
+        pointer_type: CType,
+    ) -> CPointerValue {
+        CPointerValue::new(address.clone(), pointer_type).with_designation(
+            PointerDesignation::Object {
+                root: address.clone(),
+                path: Arc::from([]),
+                base: address,
+                element_type: CType::UInt8Array(layout.size_bytes()),
+                stride: layout.size_bytes(),
+                count: IntegerTerm::constant_i64(1).into(),
+            },
+        )
+    }
+
+    pub(in crate::kernel) fn checked_member_pointer(
+        &self,
+        object: &CPointerValue,
+        selection: &CAggregateMemberSelection,
+    ) -> Option<CPointerValue> {
+        if !self.has_aggregate_object_domain(object, &selection.layout) {
+            return None;
+        }
+        let (offset, value_type) = selection.layout.member_at_path(&selection.path)?;
+        if value_type != selection.value_type {
+            return None;
+        }
+        let PointerDesignation::Object { root, path, .. } = object.designation()? else {
+            return None;
+        };
+        let mut selected_path = path.to_vec();
+        selected_path.extend(
+            selection
+                .path
+                .iter()
+                .cloned()
+                .map(PointerDomainSelection::Member),
+        );
+        let address = object.pointer().offset_by_bytes(offset);
+        Some(
+            object
+                .clone()
+                .with_pointer(address.clone())
+                .with_type(value_type.pointer_to().unwrap_or(CType::Int32Pointer))
+                .with_designation(PointerDesignation::Object {
+                    root: root.clone(),
+                    path: selected_path.into(),
+                    base: address,
+                    element_type: value_type,
+                    stride: value_type.byte_width(),
+                    count: IntegerTerm::constant_i64(1).into(),
+                }),
+        )
+    }
+
+    pub(in crate::kernel) fn map_scalar_input_domains(
+        &self,
+        mut rewrite: impl FnMut(&Pointer) -> Pointer,
+    ) -> SnapshotMap<Pointer, CType> {
+        let mut mapped = SnapshotMap::<Pointer, CType>::default();
+        let mut conflicts = BTreeSet::new();
+        for (pointer, c_type) in self.heap.scalar_input_domains.iter() {
+            let pointer = rewrite(pointer);
+            if conflicts.contains(&pointer) {
+                continue;
+            }
+            if mapped.get(&pointer).is_some_and(|held| held != c_type) {
+                mapped.remove(&pointer);
+                conflicts.insert(pointer);
+            } else {
+                mapped.insert(pointer, *c_type);
+            }
+        }
+        mapped
+    }
+
     /// Adds only a source contract's interface-entry object requirement.
     /// Actual calls discharge it against declarations or a retained requirement;
     /// raw markers and selecting a return destination never issue this fact.
@@ -2788,8 +3060,65 @@ impl CMemory {
                     return at < end && start < read_end;
                 }
                 !assumptions.proves_stated_byte_separation(pointer, bytes, base, *size)
+                    && !self.scalar_input_excludes_object_padding(
+                        pointer,
+                        bytes,
+                        base,
+                        *size,
+                        assumptions,
+                    )
             },
         )
+    }
+
+    /// In the admitted non-overlapping C++ object hierarchy, a scalar object
+    /// inside a constructing record must be one of its declared value fields.
+    /// Thus a checked scalar input separated from every field is outside the
+    /// whole record. This is not a rule about arbitrary byte ownership: both
+    /// object witnesses are required, and the record's padding stays raw.
+    fn scalar_input_excludes_object_padding(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        base: &Pointer,
+        size: u32,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        let Some(scalar_type) = self.heap.scalar_input_domains.get(pointer) else {
+            return false;
+        };
+        if scalar_type.byte_width() != bytes {
+            return false;
+        }
+        let Some(layout) = self.heap.object_input_domains.get(base) else {
+            return false;
+        };
+        if layout.declaration_identity().is_none()
+            || layout.size_bytes() != size
+            || !layout.unions().is_empty()
+            || layout.fields().is_empty()
+        {
+            return false;
+        }
+        let mut previous_end = 0;
+        layout.fields().iter().all(|field| {
+            crate::instrumentation::record_deterministic_work(1);
+            let width = field.c_type().byte_width();
+            let Some(end) = field.offset_bytes().checked_add(width) else {
+                return false;
+            };
+            if width == 0 || field.offset_bytes() < previous_end || end > size {
+                return false;
+            }
+            previous_end = end;
+            crate::kernel::memory_provenance::write_access_is_disjoint_from_load(
+                &base.offset_by_bytes(field.offset_bytes()),
+                width,
+                pointer,
+                bytes,
+                assumptions,
+            )
+        })
     }
 
     pub(in crate::kernel) fn with_block_or_read_only(
@@ -2888,6 +3217,90 @@ impl CMemory {
         memory
     }
 
+    /// Object input requirements assert a live referent independently of any
+    /// byte permission. Retiring storage therefore drops every requirement it
+    /// may reach, including an unowned input under another pointer spelling.
+    /// Only complete byte separation preserves a requirement; address
+    /// inequality or the absence of a definite alias is insufficient.
+    fn retire_object_input_domains(
+        &mut self,
+        allocation: &Pointer,
+        bytes: &Bitvector32Term,
+        assumptions: &PureFactContext,
+    ) {
+        // Known block declarations currently come only from automatic objects
+        // and fresh automatic by-value copies. A valid heap retirement cannot
+        // end those objects; exact aliases are also removed by free's block
+        // retirement. Heap/unknown input validity lives in these maps instead.
+        // A future declared heap-object producer must supply allocation/lifetime
+        // evidence here rather than relying on this automatic-storage boundary.
+        let candidates = AliasCandidates::of_block(&allocation.block);
+        let separate = |root: &Pointer, width: u32| {
+            if root.blocks_proven_distinct(allocation) {
+                return true;
+            }
+            if pointers_proven_equal_for_memory_resolution(allocation, root, assumptions) {
+                return false;
+            }
+            if let Some(bytes) = bytes.as_const().and_then(|bytes| u32::try_from(bytes).ok()) {
+                return crate::kernel::memory_provenance::write_access_is_disjoint_from_load(
+                    allocation,
+                    bytes,
+                    root,
+                    width,
+                    assumptions,
+                );
+            }
+            // Symbolic allocation extents still admit explicit complete-range
+            // separation. Query only the selected block pair and composition
+            // members, without scanning unrelated assumptions.
+            let retired = CMemoryRange::new_with_element_width(
+                allocation.clone(),
+                0u32.into(),
+                bytes.clone(),
+                1,
+            );
+            let selected =
+                CMemoryRange::new_with_element_width(root.clone(), 0u32.into(), 1u32.into(), width);
+            // Keep symbolic extents exact: the general resource-containment
+            // prover can search unrelated containment facts on a miss. This
+            // bounded retirement rule conservatively drops other shapes.
+            let covers = |held: &CMemoryRange, requested: &CMemoryRange| held == requested;
+            if let Some((proposition, _, _)) = assumptions
+                .memory_separation_candidates(&allocation.block, &root.block)
+                .find(|(_, left, right)| {
+                    ((covers(left, &retired) && covers(right, &selected))
+                        || (covers(right, &retired) && covers(left, &selected)))
+                        && !assumptions.memory_ranges_overlap_after_base_equality(left, right)
+                })
+            {
+                crate::kernel::record_implicit_reasoning_provenance(assumptions, proposition);
+                return true;
+            }
+            let Some((resources, _, _)) = assumptions.composition_separated_members(
+                &allocation.block,
+                &root.block,
+                |held| covers(held, &retired),
+                |held| covers(held, &selected),
+                |left, right| !assumptions.memory_ranges_overlap_after_base_equality(left, right),
+            ) else {
+                return false;
+            };
+            crate::kernel::record_implicit_reasoning_provenance(
+                assumptions,
+                &Proposition::CResourceComposition(resources.clone()),
+            );
+            true
+        };
+        let heap = Arc::make_mut(&mut self.heap);
+        candidates.retain_map(&mut heap.scalar_input_domains, |root, c_type| {
+            separate(root, c_type.byte_width())
+        });
+        candidates.retain_map(&mut heap.object_input_domains, |root, layout| {
+            separate(root, layout.size_bytes())
+        });
+    }
+
     pub(in crate::kernel) fn free_heap_block(
         mut self,
         pointer: &Pointer,
@@ -2958,6 +3371,7 @@ impl CMemory {
         });
         heap.initialized
             .retain_candidates(&candidates, |cell, _| !freed_within(cell));
+        self.retire_object_input_domains(pointer, &bytes, assumptions);
         // Cached values go with the storage, union views as well as cells:
         // nothing may answer a load of freed bytes, under any spelling.
         self.forget_cached_values(
@@ -3304,6 +3718,7 @@ impl CMemory {
         });
         heap.initialized
             .retain_candidates(&candidates, |candidate, _| !retired_cell(candidate));
+        self.retire_object_input_domains(base, bytes, assumptions);
         self.forget_cached_values(
             ForgetScope::candidates(&candidates),
             |candidate, _| {
@@ -3370,7 +3785,7 @@ impl CMemory {
     pub(in crate::kernel) fn with_pending_heap_reallocation(
         mut self,
         base: Pointer,
-        old_pointer: Pointer,
+        old_pointer: CPointerValue,
         old_bytes: Bitvector32Term,
         zeroed_prefix: Option<Bitvector32Term>,
         copied_cells: Vec<(PointerOffsetTerm, CValue)>,
@@ -3394,7 +3809,7 @@ impl CMemory {
             vec![diagnostic_base],
             vec![
                 CValue::pointer(base.clone()),
-                CValue::pointer(old_pointer.clone()),
+                CValue::Pointer(old_pointer.clone()),
                 CValue::Int32(old_bytes.clone()),
             ],
         );
@@ -3785,6 +4200,13 @@ impl CMemory {
         .map_err(|base| {
             format!("interface arms disagree on unwritten object extent at {base:?}")
         })?;
+        let scalar_input_domains = first.heap.scalar_input_domains.clone();
+        if others
+            .iter()
+            .any(|memory| memory.heap.scalar_input_domains != scalar_input_domains)
+        {
+            return Err("interface arms disagree on scalar input domains".into());
+        }
         let object_input_domains = first.heap.object_input_domains.clone();
         if others
             .iter()
@@ -3998,6 +4420,7 @@ impl CMemory {
             uninitialized_allocations,
             uninitialized_objects,
             object_input_domains,
+            scalar_input_domains,
             initialized,
             zeroed_allocations,
             zeroed_prefix_allocations,
@@ -6669,18 +7092,24 @@ impl CMemory {
         pointee_byte_width: u32,
         value_type: CType,
     ) -> CValue {
-        CValue::typed_pointer(
+        if let Some(CValue::Pointer(value)) = self.known_value(pointer)
+            && value.designation().is_some()
+        {
+            return CValue::Pointer(value.with_type(value_type));
+        }
+        let snapshot = crate::kernel::intern_c_memory(self.clone());
+        CValue::Pointer(CPointerValue::new(
             Pointer::loaded(
                 pointer.block.clone(),
                 Bitvector32Term::MemoryLoad(
-                    crate::kernel::intern_c_memory(self.clone()),
+                    snapshot.clone(),
                     Box::new(pointer.clone()),
                     LoadKind::Bits32,
                 ),
                 i64::from(pointee_byte_width),
             ),
             value_type,
-        )
+        ))
     }
 }
 

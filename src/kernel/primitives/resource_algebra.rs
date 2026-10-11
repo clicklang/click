@@ -3926,6 +3926,63 @@ impl ResourceContext {
         None
     }
 
+    /// Select two distinct owned members from different indexed blocks.
+    /// Full access containment belongs to the caller's predicates; the
+    /// composition supplies separation only after the selected pair passes
+    /// `admit`. Views and string-literal ownership cannot supply this rule.
+    ///
+    /// Each bucket is visited once, retaining at most two matches per side
+    /// and checking at most four pairs. A later alternative after rejected
+    /// matches is conservatively left unproven, keeping arbitrary predicates
+    /// from turning a failed query into a Cartesian scan.
+    pub(in crate::kernel) fn separated_owned_members_across_blocks(
+        &self,
+        left_block: &PointerBlock,
+        right_block: &PointerBlock,
+        mut left: impl FnMut(&CMemoryRange) -> bool,
+        mut right: impl FnMut(&CMemoryRange) -> bool,
+        mut admit: impl FnMut(&CMemoryRange, &CMemoryRange) -> bool,
+    ) -> Option<(&CMemoryRange, &CMemoryRange)> {
+        if left_block == right_block || string_literal_blocks_may_alias(left_block, right_block) {
+            return None;
+        }
+        let matching = |block: &PointerBlock, accepts: &mut dyn FnMut(&CMemoryRange) -> bool| {
+            crate::instrumentation::record_deterministic_work(1);
+            self.storage
+                .index
+                .owned_memory_by_block
+                .get(block)
+                .into_iter()
+                .flat_map(ResourceEntryIds::iter)
+                .filter_map(|entry| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    self.fact(*entry)
+                        .memory_own_range()
+                        .map(|range| (*entry, range))
+                })
+                .filter(|(_, range)| accepts(range))
+                .take(2)
+                .collect::<Vec<_>>()
+        };
+        let lefts = matching(left_block, &mut left);
+        if lefts.is_empty() {
+            return None;
+        }
+        let rights = matching(right_block, &mut right);
+        for (left_entry, left_range) in &lefts {
+            for (right_entry, right_range) in &rights {
+                if left_entry == right_entry {
+                    continue;
+                }
+                crate::instrumentation::record_deterministic_work(1);
+                if admit(left_range, right_range) {
+                    return Some((left_range, right_range));
+                }
+            }
+        }
+        None
+    }
+
     /// Whether two distinct owned members of one block that the composition
     /// law separates have their first elements at `left` and `right`: the
     /// anchor form of [`Self::separated_owned_members_in_block`], read from
@@ -9475,10 +9532,19 @@ impl CResourceFact {
     }
 
     pub fn own_allocation(base: Pointer, bytes: impl Into<Bitvector32Term>) -> Self {
+        Self::own_allocation_value(CPointerValue::new(base, CType::Int32Pointer), bytes)
+    }
+
+    /// The allocation token is a value-indexed resource. Consuming it must
+    /// retain the actual pointer carrier, including a stored load's identity.
+    pub(in crate::kernel) fn own_allocation_value(
+        base: CPointerValue,
+        bytes: impl Into<Bitvector32Term>,
+    ) -> Self {
         let bytes = bytes.into();
         Self::own_token(
             Self::ALLOCATION_RESOURCE_NAME.to_string(),
-            vec![CValue::pointer(base), int32(bytes)],
+            vec![CValue::Pointer(base), int32(bytes)],
         )
     }
 

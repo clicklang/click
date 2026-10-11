@@ -705,6 +705,16 @@ impl CStringLiteral {
     }
 }
 
+impl CScalarObjectInput {
+    pub fn parameter_index(&self) -> usize {
+        self.parameter_index
+    }
+
+    pub fn element_type(&self) -> CType {
+        self.element_type
+    }
+}
+
 impl CFunctionContractInterface {
     pub(crate) fn new(return_type: CType, parameters: Vec<CParameter>) -> Self {
         Self {
@@ -713,6 +723,8 @@ impl CFunctionContractInterface {
             return_aggregate_layout: None,
             aggregate_return_mode: CAggregateReturnMode::Copy,
             construction_parameter: None,
+            scalar_object_inputs: Vec::new(),
+            aggregate_object_inputs: Vec::new(),
             exceptional_signature: CExceptionalSignature::None,
             parameters,
             proof_parameters: Default::default(),
@@ -757,6 +769,14 @@ impl CFunctionContractInterface {
         self.construction_parameter
             .as_ref()
             .map(|(index, layout)| (*index, layout))
+    }
+
+    pub fn scalar_object_inputs(&self) -> &[CScalarObjectInput] {
+        &self.scalar_object_inputs
+    }
+
+    pub fn aggregate_object_inputs(&self) -> &[CAggregateObjectInput] {
+        &self.aggregate_object_inputs
     }
 
     pub fn parameters(&self) -> &[CParameter] {
@@ -980,6 +1000,8 @@ impl CFunctionContractInterface {
             && self.return_aggregate_layout == other.return_aggregate_layout
             && self.aggregate_return_mode == other.aggregate_return_mode
             && self.construction_parameter == other.construction_parameter
+            && self.scalar_object_inputs == other.scalar_object_inputs
+            && self.aggregate_object_inputs == other.aggregate_object_inputs
             && self.exceptional_signature == other.exceptional_signature
             && self.parameters == other.parameters
             && self.proof_parameters == other.proof_parameters
@@ -1014,6 +1036,8 @@ impl CFunctionContractInterface {
             && self.return_aggregate_layout == other.return_aggregate_layout
             && self.aggregate_return_mode == other.aggregate_return_mode
             && self.construction_parameter == other.construction_parameter
+            && self.scalar_object_inputs == other.scalar_object_inputs
+            && self.aggregate_object_inputs == other.aggregate_object_inputs
             && self.exceptional_signature == other.exceptional_signature
             && self.parameters.len() == other.parameters.len()
             && self
@@ -1364,6 +1388,21 @@ impl CFunction {
     /// Checked summaries retain the initialization established by the body.
     pub fn with_construction_parameter(mut self, index: usize, layout: CAggregateLayout) -> Self {
         self.contract_interface.construction_parameter = Some((index, layout));
+        self
+    }
+
+    /// Source lowering supplies these requirements from native references or
+    /// explicit typed clauses, never from a raw pointer parameter alone.
+    pub(crate) fn with_scalar_object_inputs(mut self, inputs: Vec<CScalarObjectInput>) -> Self {
+        self.contract_interface.scalar_object_inputs = inputs;
+        self
+    }
+
+    pub(crate) fn with_aggregate_object_inputs(
+        mut self,
+        inputs: Vec<CAggregateObjectInput>,
+    ) -> Self {
+        self.contract_interface.aggregate_object_inputs = inputs;
         self
     }
 

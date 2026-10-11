@@ -573,7 +573,8 @@ fn write_c_lvalue_paths_for_initialization(
             }])
         }
         CLValueStorage::Memory { pointer } => {
-            let pointer = resolve_local_pointer_alias(state, &pointer, &effective_assumptions);
+            let pointer =
+                resolve_local_pointer_alias(state, pointer.pointer(), &effective_assumptions);
             if state.pending_thread_create.is_some() && !is_external_memory_pointer(&pointer) {
                 return Ok(vec![CStatementExecutionPath {
                     loop_invariant_correspondence: Default::default(),
@@ -1545,9 +1546,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
 
         let effective_assumptions =
             assumptions_with_path_context(assumptions, &facts, &obligations);
-        let old_pointer = match old_value {
-            CValue::Pointer(pointer) => pointer.into_pointer(),
-            CValue::Int32(bits) if bits.as_const() == Some(0) => Pointer::null(),
+        let old_value = match old_value {
+            CValue::Pointer(pointer) => pointer,
+            CValue::Int32(bits) if bits.as_const() == Some(0) => {
+                CPointerValue::new(Pointer::null(), CType::Int32Pointer)
+            }
             _ => {
                 paths.push(CStatementExecutionPath {
                     loop_invariant_correspondence: Default::default(),
@@ -1560,6 +1563,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 continue;
             }
         };
+        let old_pointer = old_value.pointer().clone();
 
         // C specifies realloc(NULL, size) as an allocation. Reuse the
         // existing pending-allocation machinery so a later null check can
@@ -1761,7 +1765,8 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 }
             };
 
-            let allocation = CResourceFact::own_allocation(old_pointer.clone(), old_bytes.clone());
+            let allocation =
+                CResourceFact::own_allocation_value(old_value.clone(), old_bytes.clone());
             let Some(resources) = state
                 .resources
                 .clone()
@@ -1970,7 +1975,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 )
                 .with_pending_heap_reallocation(
                     pending_pointer.clone(),
-                    old_pointer.clone(),
+                    old_value.clone(),
                     old_bytes.clone(),
                     zeroed_prefix,
                     copied_cells
@@ -2183,7 +2188,7 @@ fn execute_c_heap_free_paths(
             bytes.clone(),
             1,
         );
-        let allocation = CResourceFact::own_allocation(pointer.pointer().clone(), bytes.clone());
+        let allocation = CResourceFact::own_allocation_value(pointer.clone(), bytes.clone());
         let Some(resources) = state
             .resources
             .clone()
@@ -2351,7 +2356,7 @@ pub(crate) fn resolve_pending_heap_allocations(
                 }
             }
             if !is_null {
-                let old_allocation = CResourceFact::own_allocation(
+                let old_allocation = CResourceFact::own_allocation_value(
                     pending_reallocation.old_pointer,
                     pending_reallocation.old_bytes.clone(),
                 );

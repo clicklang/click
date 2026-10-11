@@ -2574,7 +2574,7 @@ impl<'a> TermRewrite<'a> {
                         | PointerBlock::FunctionSymbolic(variable) => Some(variable),
                         _ => None,
                     },
-                    Some(PointerDesignation::Object { .. }) => None,
+                    Some(PointerDesignation::Object { .. } | PointerDesignation::Loaded(_)) => None,
                 };
                 if let Some(variable) = binder
                     && !self.scope.c.contains_key(&variable)
@@ -2604,6 +2604,9 @@ impl<'a> TermRewrite<'a> {
                     && self.scope.algebraic.is_empty())
                 {
                     result = result.map_designation(|designation| self.designation(designation));
+                    if !self.checked_work_exhausted() && !self.raw_address_rewrite_enabled() {
+                        result = crate::kernel::eval::transport_pointer_load_pair(v, result);
+                    }
                 }
                 CValue::Pointer(result)
             }
@@ -2625,6 +2628,21 @@ impl<'a> TermRewrite<'a> {
             PointerDesignation::Unresolved(variable) => PointerDesignation::Unresolved(
                 self.scope.c.get(variable).copied().unwrap_or(*variable),
             ),
+            // As with MemoryLoad, this lexical rewrite treats retained
+            // snapshots as opaque and maps the defining address payload.
+            PointerDesignation::Loaded(identity) => {
+                let address = self.pointer(identity.address());
+                let memory = if address == *identity.address() {
+                    identity.memory().clone()
+                } else {
+                    crate::kernel::reasoning::canonical_load_projection_source(
+                        identity.memory(),
+                        identity.address(),
+                    )
+                    .unwrap_or_else(|| identity.memory().clone())
+                };
+                PointerDesignation::Loaded(PointerLoadIdentity::new(memory, address))
+            }
             PointerDesignation::Object {
                 root,
                 path,

@@ -293,6 +293,18 @@ pub(super) fn verify_execution_theorem(
         )
     };
     let parsed = crate::surface::verification::external_c0_function(&block).with_proof_body(body);
+    // The wrapper may rename parameters, but calls forward them in the
+    // already-checked order. Retain the target contract's actual requirements
+    // rather than deriving stronger inputs from the callee's signature.
+    let target_interface = environment
+        .get_function_contract(target_name)
+        .ok_or_else(|| error("the target contract has no lowered interface"))?
+        .interface();
+    let function = parsed
+        .to_kernel_function()
+        .with_scalar_object_inputs(target_interface.scalar_object_inputs().to_vec())
+        .with_aggregate_object_inputs(target_interface.aggregate_object_inputs().to_vec());
+    let parsed = parsed.with_prelowered_kernel_function(function);
     let claims = function_claims(&block);
     let verified = prove_claims_by_grouped_script(
         None,

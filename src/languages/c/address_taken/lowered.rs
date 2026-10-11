@@ -129,7 +129,9 @@ pub(super) fn summarize(function: &CFunction, summary: &mut AddressTakenSummary)
                 }
             }
             CExpression::FunctionAddress(_) => {}
-            CExpression::AddressOf(value) | CExpression::CheckedObjectAddress(value) => {
+            CExpression::MemberAddress { object: value, .. }
+            | CExpression::AddressOf(value)
+            | CExpression::CheckedObjectAddress(value) => {
                 expressions.push((value, true));
             }
             CExpression::Cast {

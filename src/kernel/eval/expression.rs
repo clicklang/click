@@ -1320,6 +1320,19 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
             };
             vec![CExpressionPath {
                 outcome: if state.memory.has_block(&pointer.block) {
+                    if let Some(CLocalBinding::AggregateObject { layout, .. }) =
+                        state.locals.binding(name)
+                        && let Some(value) =
+                            state.memory.declared_aggregate_pointer(&pointer, layout)
+                    {
+                        return Ok(vec![CExpressionPath {
+                            outcome: CExpressionOutcome::Value(CValue::Pointer(
+                                value.with_pointee_constant(pointee_constant),
+                            )),
+                            facts: Vec::new().into(),
+                            obligations: Vec::new(),
+                        }]);
+                    }
                     CExpressionOutcome::Value(CValue::typed_pointer_with_pointee_constant(
                         pointer,
                         if state.locals.is_aggregate_object(name) {
@@ -1397,6 +1410,24 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
         )?,
         CExpression::AddressOf(target) => {
             address_of_lvalue_paths(state, target, assumptions, budget)?
+        }
+        CExpression::MemberAddress { object, selection } => {
+            let mut paths = evaluate_c_expression_paths(state, object, assumptions, budget)?;
+            for path in &mut paths {
+                if let CExpressionOutcome::Value(value) = &path.outcome {
+                    path.outcome = match value {
+                        CValue::Pointer(pointer) => state
+                            .memory()
+                            .checked_member_pointer(pointer, selection)
+                            .map(|pointer| CExpressionOutcome::Value(CValue::Pointer(pointer)))
+                            .unwrap_or(CExpressionOutcome::UndefinedBehavior(
+                                CUndefinedBehavior::InvalidMemory,
+                            )),
+                        _ => CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    };
+                }
+            }
+            paths
         }
         CExpression::CheckedObjectAddress(target) => {
             let width = c_expression_lvalue_type(state, target)
@@ -2022,7 +2053,13 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                     pointee_constant,
                 }) => CLValueOutcome::LValue(
                     CLValue::memory_with_qualifiers(
-                        slot.clone(),
+                        // Some value types have no represented address view;
+                        // they remain readable lvalues, while address-of still
+                        // rejects them via pointer_to below.
+                        CPointerValue::new(
+                            slot.clone(),
+                            c_type.pointer_to().unwrap_or(CType::VoidPointer),
+                        ),
                         *c_type,
                         *volatile,
                         *pointee_volatile,
@@ -2059,7 +2096,7 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                     CExpressionOutcome::Value(CValue::Pointer(pointer)) => CLValuePath {
                         outcome: CLValueOutcome::LValue(
                             CLValue::memory_with_volatile(
-                                pointer.pointer().clone(),
+                                pointer.clone(),
                                 value_type,
                                 pointer.pointee_volatile(),
                             )
@@ -2102,7 +2139,7 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                     CExpressionOutcome::Value(CValue::Pointer(pointer)) => CLValuePath {
                         outcome: CLValueOutcome::LValue(
                             CLValue::memory_with_volatile(
-                                pointer.pointer().clone(),
+                                pointer.clone(),
                                 *value_type,
                                 *volatile || pointer.pointee_volatile(),
                             )
@@ -2145,7 +2182,7 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                     CExpressionOutcome::Value(CValue::Pointer(pointer)) => CLValuePath {
                         outcome: CLValueOutcome::LValue(
                             CLValue::memory_with_volatile(
-                                pointer.pointer().clone(),
+                                pointer.clone(),
                                 value_type,
                                 pointer.pointee_volatile(),
                             )
@@ -2331,6 +2368,9 @@ fn read_c_lvalue_paths_without_ranges(
                 }]
             }
             CLValueStorage::Memory { pointer } => {
+                // Cell lookup and byte authority remain address-based. Retain
+                // the complete value in the lvalue for checked accesses.
+                let pointer = pointer.pointer();
                 if state
                     .memory
                     .heap
@@ -2454,7 +2494,7 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
     for lvalue_path in evaluate_c_lvalue_paths(state, target, assumptions, budget)? {
         paths.push(match lvalue_path.outcome {
             CLValueOutcome::LValue(lvalue) => match lvalue.pointer(state) {
-                Some(pointer) => {
+                Some(_) => {
                     // A struct object is stored as its byte array; its
                     // address is a struct pointer, which the C0 front end
                     // spells with the int32-pointer placeholder. Alignment
@@ -2474,16 +2514,16 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                     };
                     match pointer_type {
                         Some(pointer_type) => {
+                            let pointer = lvalue
+                                .pointer_value(state, pointer_type)
+                                .expect("the lvalue storage address was checked above");
                             let facts = lvalue_path.facts;
                             CExpressionPath {
-                                outcome: CExpressionOutcome::Value(
-                                    CValue::typed_pointer_with_pointee_volatile(
-                                        pointer,
-                                        pointer_type,
-                                        lvalue.is_volatile(),
-                                    )
-                                    .with_pointer_pointee_constant(lvalue.is_constant()),
-                                ),
+                                outcome: CExpressionOutcome::Value(CValue::Pointer(
+                                    pointer
+                                        .with_pointee_volatile(lvalue.is_volatile())
+                                        .with_pointee_constant(lvalue.is_constant()),
+                                )),
                                 facts,
                                 obligations: lvalue_path.obligations,
                             }
@@ -2563,6 +2603,7 @@ pub(in crate::kernel) fn c_expression_pointee_type(
         CExpression::PointerOffsetBytes { pointer, .. } => {
             c_expression_pointee_type(state, pointer)
         }
+        CExpression::MemberAddress { selection, .. } => Some(selection.value_type),
         CExpression::TypedLoad { value_type, .. } => match value_type {
             CType::Int32Array(_) => Some(CType::Int32),
             CType::UInt8Array(_) => Some(CType::UInt8),

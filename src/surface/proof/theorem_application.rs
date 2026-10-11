@@ -1139,6 +1139,7 @@ fn pointer_element_width_for_c_expression(
 ) -> Option<u32> {
     match expression {
         CExpression::Variable(name) => known.get(name).copied(),
+        CExpression::MemberAddress { selection, .. } => Some(selection.value_type.byte_width()),
         CExpression::Add(left, right) => pointer_element_width_for_c_expression(left, known)
             .or_else(|| pointer_element_width_for_c_expression(right, known)),
         CExpression::Subtract(left, _)

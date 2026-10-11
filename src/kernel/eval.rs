@@ -56,6 +56,8 @@ pub(crate) use memory_loads::canonical_term;
 pub(crate) use memory_loads::canonicalized_offset_index_term;
 pub(crate) use memory_loads::check_canonical_at_creation;
 #[cfg(test)]
+pub(crate) use memory_loads::clear_load_canonicalization_caches;
+#[cfg(test)]
 pub(crate) use memory_loads::count_canonical_at_creation_violations;
 #[cfg(test)]
 pub(in crate::kernel) use memory_loads::declare_load_access_width;
@@ -84,11 +86,11 @@ pub(crate) use memory_loads::registered_load_bytes_for_variable;
 pub(crate) use memory_loads::registered_load_for_variable;
 pub(crate) use memory_loads::registered_load_origin_for_variable;
 pub(crate) use memory_loads::terms_have_same_canonical_form;
+pub(crate) use memory_loads::transport_pointer_load_pair;
 pub(crate) use memory_loads::viewed_as_memory_load;
 pub(crate) use memory_loads::{
     LoadRegistryState, begin_load_origin_epoch, capture_load_variable_registry,
-    clear_load_canonicalization_caches, clear_load_variable_registry,
-    restore_load_variable_registry,
+    clear_load_variable_registry, restore_load_variable_registry,
 };
 pub(in crate::kernel) use memory_loads::{
     cached_symbolic_storage_cell_value, declare_symbolic_array_access_widths,

@@ -38,8 +38,11 @@ full extents including padding, and alignment alongside flattened scalar fields.
 Constructor binding now checks a declared complete layout or explicit child
 boundary against the selected layout. Symbolic entry carries the same structural
 requirement separately from raw storage, without fixing the containing allocation
-size. Nominal identity and scalar-input designation remain unresolved, so the
-original RAII blocker remains.
+size. C++ declarations and child boundaries now retain their nominal import identity.
+Native scalar and record references, receivers, and the bounded constructor scalar
+input profile retain separate validity requirements, checked both at symbolic entry
+and actual calls. Native member selection preserves the enclosing root and explicit
+path. The unchanged RAII proofs remain the integration acceptance gate.
 Keep object-validity facts separate from permissions and initialization. Audit
 which native interfaces supply those facts and check them at calls; explicit
 raw-storage requirements are needed only where native guarantees are insufficient.
@@ -58,9 +61,13 @@ carrier-preservation prerequisite retains existing qualifiers through pointer
 transformations. The shared carrier now also represents unresolved or explicit
 object/array designations, with domain-aware value identity, full-value
 substitution, binder traversal and resource matching. Raw address equality
-cannot substitute a different designation. These are semantic term foundations:
-native domain issuance, pointer-valued load transport and access enforcement
-remain pending; neither recorded defect is fixed by this checkpoint. The design also
+cannot substitute a different designation. Native scalar declaration and record/member producers now authenticate these
+terms, and exact complete pointer stores and reloads preserve them. Loaded-value
+origins retain their defining snapshot and cell through paired substitution and
+checked memory transport. Activation remains bounded: unknown legacy loads do not
+acquire object evidence. Modular full-pointer output effects, array/global
+producers, and general pointer arithmetic/access enforcement remain pending.
+The sibling-pointer defect remains open. The design also
 records the concrete
 [byte-access source-profile choice](../design/cpp-object-model.md#byte-access-requires-an-explicit-source-profile-choice)
 that must be settled before expanding the cast-and-index byte writer.

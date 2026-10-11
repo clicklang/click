@@ -131,7 +131,8 @@ pub(super) fn prepare_layouts(
             record.alignment_bytes,
             &layouts,
         )
-        .map_err(|error| format!("invalid C++ record layout for `{}`: {error}", record.name))?;
+        .map_err(|error| format!("invalid C++ record layout for `{}`: {error}", record.name))?
+        .with_cpp_declaration_identity(import.identity(), &record.declaration_id);
         if layouts.insert(record.name.clone(), layout).is_some() {
             return Err(format!("duplicate C++ record name `{}`", record.name));
         }

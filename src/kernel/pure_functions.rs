@@ -267,6 +267,9 @@ fn collect_c_expression_reads(expression: &CExpression, bound: &[String], reads:
         | FloatClassification { expression, .. }
         | AddressOf(expression)
         | CheckedObjectAddress(expression)
+        | MemberAddress {
+            object: expression, ..
+        }
         | PointerOffsetBytes {
             pointer: expression,
             ..

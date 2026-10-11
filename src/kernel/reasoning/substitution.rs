@@ -1058,6 +1058,9 @@ fn collect_c_value_bound_variables(value: &CValue, variables: &mut BTreeSet<Vari
         CValue::Pointer(pointer) => {
             collect_pointer_bound_variables(pointer.pointer(), variables);
             if let Some(designation) = pointer.designation() {
+                if let PointerDesignation::Loaded(identity) = designation {
+                    collect_memory_bitvector_variables(identity.memory(), variables);
+                }
                 if let Some(variable) = designation.unresolved_variable() {
                     variables.insert(variable);
                 }
@@ -1111,7 +1114,8 @@ fn collect_c_expression_bound_variables(
         | CExpression::FloatClassification { expression, .. } => {
             collect_c_expression_bound_variables(expression, variables);
         }
-        CExpression::AddressOf(body)
+        CExpression::MemberAddress { object: body, .. }
+        | CExpression::AddressOf(body)
         | CExpression::CheckedObjectAddress(body)
         | CExpression::Not(body)
         | CExpression::Load(body)
@@ -1524,12 +1528,26 @@ fn collect_pointer_bound_variables(pointer: &Pointer, variables: &mut BTreeSet<V
 }
 
 fn collect_memory_bound_variables(memory: &CMemory, variables: &mut BTreeSet<Variable>) {
+    for (base, pending) in memory.heap.pending_reallocations.iter() {
+        crate::instrumentation::record_deterministic_work(pending.copied_cells.len());
+        collect_pointer_bound_variables(base, variables);
+        collect_c_value_bound_variables(&CValue::Pointer(pending.old_pointer.clone()), variables);
+        collect_bitvector_bound_variables(&pending.old_bytes, variables);
+        if let Some(prefix) = &pending.zeroed_prefix {
+            collect_bitvector_bound_variables(prefix, variables);
+        }
+        for (offset, value) in &pending.copied_cells {
+            collect_pointer_offset_bound_variables(offset, variables);
+            collect_c_value_bound_variables(value, variables);
+        }
+    }
     for pointer in memory
         .heap
         .uninitialized_objects
         .keys()
         .chain(memory.heap.initialized.as_map().keys())
         .chain(memory.heap.object_input_domains.keys())
+        .chain(memory.heap.scalar_input_domains.keys())
     {
         collect_pointer_bound_variables(pointer, variables);
     }
@@ -3053,6 +3071,12 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
         CExpression::FloatNegate(expression) => CExpression::FloatNegate(Box::new(
             substitute_bitvector_variable_in_c_expression(expression, from, to),
         )),
+        CExpression::MemberAddress { object, selection } => CExpression::MemberAddress {
+            object: Box::new(substitute_bitvector_variable_in_c_expression(
+                object, from, to,
+            )),
+            selection: selection.clone(),
+        },
         CExpression::AddressOf(body) => CExpression::AddressOf(Box::new(
             substitute_bitvector_variable_in_c_expression(body, from, to),
         )),
@@ -5627,6 +5651,9 @@ fn substitute_bitvector_variable_in_memory_contents(
             object_input_domains: memory.map_object_input_domains(|base| {
                 substitute_bitvector_variable_in_pointer(base, from, to)
             }),
+            scalar_input_domains: memory.map_scalar_input_domains(|base| {
+                substitute_bitvector_variable_in_pointer(base, from, to)
+            }),
             uninitialized_objects: memory
                 .heap
                 .uninitialized_objects
@@ -5675,14 +5702,17 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .pending_reallocations
                 .iter()
                 .map(|(base, pending)| {
+                    let CValue::Pointer(old_pointer) = substitute_bitvector_variable_in_c_value(
+                        &CValue::Pointer(pending.old_pointer.clone()),
+                        from,
+                        to,
+                    ) else {
+                        unreachable!("pointer substitution preserves its carrier")
+                    };
                     (
                         substitute_bitvector_variable_in_pointer(base, from, to),
                         CPendingReallocation {
-                            old_pointer: substitute_bitvector_variable_in_pointer(
-                                &pending.old_pointer,
-                                from,
-                                to,
-                            ),
+                            old_pointer,
                             old_bytes: substitute_bitvector_variable(&pending.old_bytes, from, to),
                             zeroed_prefix: pending
                                 .zeroed_prefix
@@ -5738,54 +5768,83 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_value(
         CValue::UInt128(bits) => CValue::UInt128(substitute_bitvector_variable(bits, from, to)),
         CValue::Float32(bits) => CValue::Float32(substitute_bitvector_variable(bits, from, to)),
         CValue::Float64(bits) => CValue::Float64(substitute_bitvector_variable(bits, from, to)),
-        CValue::Pointer(pointer) => CValue::Pointer(
-            pointer
-                .clone()
-                .with_pointer(substitute_bitvector_variable_in_pointer(
-                    pointer.pointer(),
-                    from,
-                    to,
-                ))
-                .map_designation(|designation| match designation {
-                    PointerDesignation::Unresolved(variable) => {
-                        PointerDesignation::Unresolved(*variable)
-                    }
-                    PointerDesignation::Object {
-                        root,
-                        path,
-                        base,
-                        element_type,
-                        stride,
-                        count,
-                    } => PointerDesignation::Object {
-                        root: substitute_bitvector_variable_in_pointer(root, from, to),
-                        path: path
-                            .iter()
-                            .map(|selection| match selection {
-                                PointerDomainSelection::Member(name) => {
-                                    PointerDomainSelection::Member(name.clone())
-                                }
-                                PointerDomainSelection::Element(index) => {
-                                    PointerDomainSelection::Element(
-                                        substitute_bitvector_variable_in_integer(
-                                            index.as_ref(),
-                                            from,
-                                            to,
+        CValue::Pointer(pointer) => {
+            CValue::Pointer(crate::kernel::eval::transport_pointer_load_pair(
+                pointer,
+                pointer
+                    .clone()
+                    .with_pointer(substitute_bitvector_variable_in_pointer(
+                        pointer.pointer(),
+                        from,
+                        to,
+                    ))
+                    .map_designation(|designation| match designation {
+                        PointerDesignation::Unresolved(variable) => {
+                            PointerDesignation::Unresolved(*variable)
+                        }
+                        // Follow the same snapshot substitution and DAG memo
+                        // used by a scalar MemoryLoad, then re-intern the pair.
+                        PointerDesignation::Loaded(identity) => {
+                            let address = substitute_bitvector_variable_in_pointer(
+                                identity.address(),
+                                from,
+                                to,
+                            );
+                            let memory = if address == *identity.address() {
+                                identity.memory().clone()
+                            } else {
+                                super::memory_resolution::canonical_load_projection_source(
+                                    identity.memory(),
+                                    identity.address(),
+                                )
+                                .unwrap_or_else(|| identity.memory().clone())
+                            };
+                            PointerDesignation::Loaded(PointerLoadIdentity::new(
+                                substitute_bitvector_variable_in_shared_memory(&memory, from, to),
+                                address,
+                            ))
+                        }
+                        PointerDesignation::Object {
+                            root,
+                            path,
+                            base,
+                            element_type,
+                            stride,
+                            count,
+                        } => PointerDesignation::Object {
+                            root: substitute_bitvector_variable_in_pointer(root, from, to),
+                            path: path
+                                .iter()
+                                .map(|selection| match selection {
+                                    PointerDomainSelection::Member(name) => {
+                                        PointerDomainSelection::Member(name.clone())
+                                    }
+                                    PointerDomainSelection::Element(index) => {
+                                        PointerDomainSelection::Element(
+                                            substitute_bitvector_variable_in_integer(
+                                                index.as_ref(),
+                                                from,
+                                                to,
+                                            )
+                                            .into(),
                                         )
-                                        .into(),
-                                    )
-                                }
-                            })
-                            .collect::<Vec<_>>()
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                                .into(),
+                            base: substitute_bitvector_variable_in_pointer(base, from, to),
+                            element_type: *element_type,
+                            stride: *stride,
+                            count: substitute_bitvector_variable_in_integer(
+                                count.as_ref(),
+                                from,
+                                to,
+                            )
                             .into(),
-                        base: substitute_bitvector_variable_in_pointer(base, from, to),
-                        element_type: *element_type,
-                        stride: *stride,
-                        count: substitute_bitvector_variable_in_integer(count.as_ref(), from, to)
-                            .into(),
-                    },
-                }),
-        ),
+                        },
+                    }),
+            ))
+        }
     }
 }
 
@@ -6390,6 +6449,12 @@ fn substitute_pointer_variable_in_c_expression(
         CExpression::FloatNegate(expression) => CExpression::FloatNegate(Box::new(
             substitute_pointer_variable_in_c_expression(expression, from, to),
         )),
+        CExpression::MemberAddress { object, selection } => CExpression::MemberAddress {
+            object: Box::new(substitute_pointer_variable_in_c_expression(
+                object, from, to,
+            )),
+            selection: selection.clone(),
+        },
         CExpression::AddressOf(body) => CExpression::AddressOf(Box::new(
             substitute_pointer_variable_in_c_expression(body, from, to),
         )),
@@ -7224,6 +7289,9 @@ pub(crate) fn substitute_pointer_variable_in_memory(
             object_input_domains: memory.map_object_input_domains(|base| {
                 substitute_pointer_variable_in_pointer(base, from, to)
             }),
+            scalar_input_domains: memory.map_scalar_input_domains(|base| {
+                substitute_pointer_variable_in_pointer(base, from, to)
+            }),
             uninitialized_objects: memory
                 .heap
                 .uninitialized_objects
@@ -7273,14 +7341,17 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                 .pending_reallocations
                 .iter()
                 .map(|(base, pending)| {
+                    let CValue::Pointer(old_pointer) = substitute_pointer_variable_in_c_value(
+                        &CValue::Pointer(pending.old_pointer.clone()),
+                        from,
+                        to,
+                    ) else {
+                        unreachable!("pointer substitution preserves its carrier")
+                    };
                     (
                         substitute_pointer_variable_in_pointer(base, from, to),
                         CPendingReallocation {
-                            old_pointer: substitute_pointer_variable_in_pointer(
-                                &pending.old_pointer,
-                                from,
-                                to,
-                            ),
+                            old_pointer,
                             old_bytes: pending.old_bytes.clone(),
                             zeroed_prefix: pending.zeroed_prefix.clone(),
                             initialized_prefix: pending.initialized_prefix.clone(),

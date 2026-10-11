@@ -1360,12 +1360,135 @@ fn cell_value_recorded_on_path(
     value_type.accepts(&value).then_some(value)
 }
 
+/// Preserve a complete designated pointer stored at this exact cell.
+/// Unknown legacy reads remain absent until checked symbolic carrier
+/// input/output effects can supply their designation together with the address.
+fn pointer_value_with_load_designation(
+    value: CPointerValue,
+    load: &Bitvector32Term,
+) -> CPointerValue {
+    if value.designation().is_none()
+        && value.c_type().is_object_pointer()
+        && let Bitvector32Term::MemoryLoad(memory, address, kind) = load
+        && let Some(CValue::Pointer(stored)) = memory.known_value(address)
+        && stored.designation().is_some()
+        && kind.reads_value(&CValue::Pointer(stored.clone()))
+    {
+        stored.with_type(value.c_type())
+    } else {
+        value
+    }
+}
+
+/// Keep a rewritten producer pair together. Only its exact defining read can
+/// update a raw load name; an unrelated address equation never qualifies.
+pub(crate) fn transport_pointer_load_pair(
+    before: &CPointerValue,
+    after: CPointerValue,
+) -> CPointerValue {
+    let (Some(PointerDesignation::Loaded(old)), Some(PointerDesignation::Loaded(new))) =
+        (before.designation(), after.designation())
+    else {
+        return after;
+    };
+    if old == new {
+        return after;
+    }
+    let registered_here = |variable: Variable| {
+        matches!(registered_load_term_for_variable(&variable),
+            Some(Bitvector32Term::MemoryLoad(memory, address, LoadKind::Bits32))
+                if memory.arena_id() == old.memory().arena_id() && address.as_ref() == old.address())
+    };
+    enum Spelling {
+        Symbolic,
+        Application,
+        Legacy(Variable),
+    }
+    let spelling = match &before.pointer().block {
+        PointerBlock::Symbolic(variable)
+            if registered_here(*variable) && after.pointer().block == before.pointer().block =>
+        {
+            Spelling::Symbolic
+        }
+        PointerBlock::LoadedPointer(identity)
+            if *identity == old.id() && after.pointer().block == before.pointer().block =>
+        {
+            Spelling::Application
+        }
+        block if *block == old.address().block => {
+            let mut pending = vec![&before.pointer().offset];
+            let mut found = None;
+            while let Some(offset) = pending.pop() {
+                match offset {
+                    PointerOffsetTerm::Add(left, right) => {
+                        pending.push(left);
+                        pending.push(right);
+                    }
+                    PointerOffsetTerm::Int32Scaled { value, .. } => {
+                        if let Bitvector32Term::Variable(variable) = value.as_ref()
+                            && registered_here(*variable)
+                        {
+                            found = Some(*variable);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let Some(variable) = found else {
+                return after;
+            };
+            Spelling::Legacy(variable)
+        }
+        _ => return after,
+    };
+    let load = Bitvector32Term::MemoryLoad(
+        new.memory().clone(),
+        Box::new(new.address().clone()),
+        LoadKind::Bits32,
+    );
+    let (variable, _) = load_variable_for_term(&load).expect("a paired read remains a memory load");
+    let definition = registered_load_term_for_variable(&variable)
+        .expect("a load name retains its defining read");
+    let mut pointer = after.pointer().clone();
+    match spelling {
+        Spelling::Symbolic => pointer.block = PointerBlock::Symbolic(variable),
+        Spelling::Application => {
+            let Bitvector32Term::MemoryLoad(memory, address, _) = &definition else {
+                unreachable!()
+            };
+            pointer.block = PointerBlock::LoadedPointer(pointer_load_identity(memory, address));
+        }
+        Spelling::Legacy(old_variable) => {
+            let from = Bitvector32Term::Variable(old_variable);
+            let to = Bitvector32Term::Variable(variable);
+            let term = Term::PointerOffset(pointer.offset);
+            let Term::PointerOffset(offset) =
+                crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&from, &to).term(&term)
+            else {
+                unreachable!()
+            };
+            pointer.offset = offset;
+            let Bitvector32Term::MemoryLoad(_, address, _) = &definition else {
+                unreachable!()
+            };
+            pointer.block = address.block.clone();
+        }
+    }
+    let Bitvector32Term::MemoryLoad(memory, address, _) = definition else {
+        unreachable!()
+    };
+    after
+        .with_pointer(pointer)
+        .with_designation(PointerDesignation::Loaded(PointerLoadIdentity::new(
+            memory, *address,
+        )))
+}
+
 /// Reinterprets an int cell's loaded value as a pointer without letting the
-/// load enter the offset: a loaded index never enters a pointer offset as a
-/// `MemoryLoad` term. The loaded value is bound to a fresh verification
-/// variable whose defining equation joins the path's fact stream, so the
-/// offset arithmetic downstream works over a small term and the snapshot
-/// stays proof-side, consulted only through the defining fact.
+/// load enter the offset. The address name retains its immutable defining
+/// read. Only an exact complete designated stored pointer supplies a carrier;
+/// unknown legacy reads keep their designation absent.
 fn canonicalized_pointer_value_from_int_cell(
     pointer: &Pointer,
     value: &CValue,
@@ -1420,7 +1543,9 @@ fn canonicalized_pointer_value_from_int_cell(
             i64::from(pointee_byte_width),
         )
     };
+    let mut value = CPointerValue::new(loaded.clone(), value_type);
     if let Some(load) = defining_load {
+        value = pointer_value_with_load_designation(value, &load);
         if matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity)
             && let Bitvector32Term::MemoryLoad(memory, address, _) = &load
         {
@@ -1437,7 +1562,7 @@ fn canonicalized_pointer_value_from_int_cell(
             (purpose == LoadPurpose::Program).then_some(&loaded),
         );
     }
-    Some(CValue::typed_pointer(loaded, value_type))
+    Some(CValue::Pointer(value))
 }
 
 fn should_use_symbolic_pointer_identity(
@@ -1672,6 +1797,10 @@ fn canonicalized_symbolic_load_value_with_identity(
             assumptions.register_pointer_read(&pointer, memory, address);
         }
     }
+    let value = pointer_value_with_load_designation(
+        pointer_value.clone().with_pointer(pointer.clone()),
+        &registered_load_term_for_variable(&fresh).expect("a load retains its defining term"),
+    );
     record_load_variable_defining_fact_with_source_and_pointer(
         fresh,
         load,
@@ -1679,15 +1808,11 @@ fn canonicalized_symbolic_load_value_with_identity(
         source,
         (purpose == LoadPurpose::Program).then_some(&pointer),
     );
-    Some(CValue::Pointer(pointer_value.clone().with_pointer(pointer)))
+    Some(CValue::Pointer(value))
 }
 
 const LOAD_VARIABLE_BASE: u64 = 1 << 40;
 const LOAD_VARIABLE_RANGE: u64 = 1 << 40;
-#[allow(
-    dead_code,
-    reason = "the typed load producer migrates after this identity foundation"
-)]
 const POINTER_LOAD_ID_RANGE: u64 = 1 << 40;
 
 /// The most load identities one verification session may mint. The registry
@@ -1915,6 +2040,9 @@ pub(crate) fn capture_load_variable_registry() -> LoadRegistryState {
 }
 
 pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
+    // A cached name is meaningful only beside the registry that defines it.
+    // Derived term/name caches are not part of the captured registry state.
+    clear_load_canonicalization_caches();
     POINTER_READ_OBSERVATIONS
         .with(|registry| *registry.borrow_mut() = state.pointer_observations.clone());
     WIDE_LOAD_OBSERVATIONS
@@ -1930,6 +2058,7 @@ pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
 }
 
 pub(crate) fn clear_load_variable_registry() {
+    clear_load_canonicalization_caches();
     POINTER_READ_OBSERVATIONS.with(|registry| registry.borrow_mut().clear());
     WIDE_LOAD_OBSERVATIONS.with(|registry| registry.borrow_mut().clear());
     crate::kernel::equality_graph::clear_logical_pointer_reads();
@@ -1996,10 +2125,6 @@ pub(crate) fn registered_load_kind_for_variable(variable: &Variable) -> Option<L
 /// Intern an eight-byte pointer load by its assumption-free defining
 /// snapshot and address. Hashing only chooses a candidate slot: a collision
 /// probes until the full key matches or an unused slot is found.
-#[allow(
-    dead_code,
-    reason = "the typed load producer migrates after this identity foundation"
-)]
 pub(crate) fn pointer_load_identity(memory: &SharedCMemory, address: &Pointer) -> PointerLoadId {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -4418,11 +4543,16 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
         let (variable, definition) = load_variable_for_term(&load)
             .expect("symbolic pointer cells must be backed by memory loads");
         let value = Pointer::symbolic(variable);
+        let value = pointer_value_with_load_designation(
+            CPointerValue::new(value, c_type),
+            &registered_load_term_for_variable(&variable)
+                .expect("a load retains its defining term"),
+        );
         if let Bitvector32Term::MemoryLoad(snapshot, address, _) = definition {
             crate::kernel::equality_graph::EqualityGraph::default()
-                .register_pointer_read_definition(&value, &snapshot, &address);
+                .register_pointer_read_definition(value.pointer(), &snapshot, &address);
         }
-        return Some(CValue::typed_pointer(value, c_type));
+        return Some(CValue::Pointer(value));
     }
     // The cell holds the load of this storage at its symbolic base, and a
     // term is canonical at creation: name the load as its load variable,
@@ -4452,6 +4582,175 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_pointer_loads_do_not_issue_designations_from_numeric_read_names() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = CMemory::new();
+        let context = PureFactContext::new();
+        let cell = Pointer::symbolic(Variable(92_320));
+        let mut facts = ExecutionFacts::new();
+        let CValue::Pointer(symbolic) = canonicalized_symbolic_load_value_with_identity(
+            &memory,
+            &cell,
+            CType::Int64Pointer,
+            &mut facts,
+            &context,
+            true,
+            None,
+            LoadPurpose::Logical,
+        )
+        .unwrap() else {
+            panic!()
+        };
+        assert!(symbolic.designation().is_none());
+        let load = registered_load_term_for_variable(
+            &typed_pointer_read_variable(symbolic.pointer()).unwrap(),
+        )
+        .unwrap();
+
+        let CValue::Pointer(storage) =
+            symbolic_storage_cell_value(&memory, &cell, CType::Int64Pointer, true).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(storage.designation(), symbolic.designation());
+        let CValue::Pointer(cached) = canonicalized_pointer_value_from_int_cell(
+            &cell,
+            &CValue::Int32(load.clone()),
+            CType::Int64Pointer,
+            &mut facts,
+            &context,
+            None,
+            LoadPurpose::Logical,
+        )
+        .unwrap() else {
+            panic!()
+        };
+        assert_eq!(cached.designation(), symbolic.designation());
+        let CValue::Pointer(unrecorded) =
+            symbolic_load_value_unrecorded(&memory, &cell, CType::Int64Pointer).unwrap()
+        else {
+            panic!()
+        };
+        assert!(unrecorded.designation().is_none());
+
+        let sibling_cell = Pointer::symbolic(Variable(92_321));
+        let CValue::Pointer(sibling) = canonicalized_symbolic_load_value_with_identity(
+            &memory,
+            &sibling_cell,
+            CType::Int64Pointer,
+            &mut facts,
+            &context,
+            true,
+            None,
+            LoadPurpose::Logical,
+        )
+        .unwrap() else {
+            panic!()
+        };
+        assert!(sibling.designation().is_none());
+        assert_ne!(symbolic.pointer(), sibling.pointer());
+        // Legacy address equality still supplies no authenticated Object.
+        let sibling = sibling.with_pointer(symbolic.pointer().clone());
+        assert_eq!(symbolic, sibling);
+    }
+
+    #[test]
+    fn designated_pointer_stores_reload_the_complete_carrier() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = Pointer {
+            block: PointerBlock::from("global:pointer_slot"),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let referent = Pointer::symbolic(Variable(92_322));
+        let stored = CPointerValue::new(referent.clone(), CType::Int64Pointer).with_designation(
+            PointerDesignation::Object {
+                root: referent.clone(),
+                base: referent,
+                path: vec![PointerDomainSelection::Member("array".into())].into(),
+                element_type: CType::Int64,
+                stride: 8,
+                count: IntegerTerm::constant_i64(4).into(),
+            },
+        );
+        let memory = CMemory::new()
+            .with_block(cell.block.clone(), 8)
+            .store(cell.clone(), CValue::Pointer(stored.clone()));
+        let context = PureFactContext::new();
+        assert_eq!(
+            symbolic_storage_cell_value(&memory, &cell, CType::Int64Pointer, true),
+            Some(CValue::Pointer(stored.clone()))
+        );
+        assert_eq!(
+            symbolic_load_value_unrecorded(&memory, &cell, CType::Int64Pointer),
+            Some(CValue::Pointer(stored.clone()))
+        );
+        let paths = evaluate_c_memory_load_paths(
+            &memory,
+            cell.clone(),
+            CType::Int64Pointer,
+            ExecutionFacts::new(),
+            Vec::new(),
+            &context,
+            true,
+            false,
+            None,
+            None,
+        );
+        assert_eq!(paths.len(), 1);
+        let CExpressionOutcome::Value(CValue::Pointer(reloaded)) = &paths[0].outcome else {
+            panic!()
+        };
+        assert_eq!(reloaded, &stored);
+        assert!(std::ptr::eq(
+            reloaded.designation().unwrap(),
+            stored.designation().unwrap()
+        ));
+        let paths = evaluate_spec_memory_load_paths(
+            &memory,
+            cell,
+            CType::Int64Pointer,
+            ExecutionFacts::new(),
+            Vec::new(),
+            &context,
+        );
+        assert_eq!(paths.len(), 1);
+        let CExpressionOutcome::Value(CValue::Pointer(reloaded)) = &paths[0].outcome else {
+            panic!()
+        };
+        assert_eq!(reloaded, &stored);
+    }
+
+    #[test]
+    fn load_registry_reset_and_restore_invalidate_cached_names() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = intern_c_memory(CMemory::new());
+        let load = |id| {
+            Bitvector32Term::MemoryLoad(
+                memory.clone(),
+                Box::new(Pointer::symbolic(Variable(id))),
+                LoadKind::Bits32,
+            )
+        };
+        let first = load(955_801);
+        let (variable, _) = load_variable_for_term(&first).unwrap();
+        assert!(registered_load_term_for_variable(&variable).is_some());
+        clear_load_variable_registry();
+        assert!(registered_load_term_for_variable(&variable).is_none());
+        let (variable, _) = load_variable_for_term(&first).unwrap();
+        assert_eq!(registered_load_term_for_variable(&variable), Some(first));
+        let saved = capture_load_variable_registry();
+        let later = load(955_802);
+        let (later_variable, _) = load_variable_for_term(&later).unwrap();
+        restore_load_variable_registry(&saved);
+        assert!(registered_load_term_for_variable(&later_variable).is_none());
+        let (later_variable, _) = load_variable_for_term(&later).unwrap();
+        assert_eq!(
+            registered_load_term_for_variable(&later_variable),
+            Some(later)
+        );
+    }
 
     #[test]
     fn logical_cached_pointer_read_carries_its_current_cell_equation() {
@@ -4507,21 +4806,23 @@ mod tests {
             };
             assert_eq!(
                 path.outcome,
-                CExpressionOutcome::Value(CValue::typed_pointer(
-                    cached.clone(),
-                    CType::Int64Pointer
-                ))
+                CExpressionOutcome::Value(CValue::Pointer(pointer_value_with_load_designation(
+                    CPointerValue::new(cached.clone(), CType::Int64Pointer),
+                    &registered_load_term_for_variable(&variable).unwrap(),
+                )))
             );
+            let CExpressionOutcome::Value(CValue::Pointer(value)) = &path.outcome else {
+                panic!("one pointer-valued read")
+            };
             assert!(path.obligations.is_empty());
             assert_eq!(path.facts.len(), 1);
             assert!(!path.facts.has_path_conditions());
             let required = Pointer::loaded_value(&intern_c_memory_ref(&memory), &alias);
             let equal = |facts: &PureFactContext| {
                 crate::kernel::resource_arguments_proven_equal(
-                    &AlgebraicValue::C(CValue::typed_pointer(model.clone(), CType::Int64Pointer)),
-                    &AlgebraicValue::C(CValue::typed_pointer(
-                        required.clone(),
-                        CType::Int64Pointer,
+                    &AlgebraicValue::C(CValue::Pointer(value.clone().with_pointer(model.clone()))),
+                    &AlgebraicValue::C(CValue::Pointer(
+                        value.clone().with_pointer(required.clone()),
                     )),
                     facts,
                 )
@@ -4675,7 +4976,7 @@ mod tests {
         };
         let arguments_equal = |facts: &PureFactContext| {
             crate::kernel::resource_arguments_proven_equal(
-                &AlgebraicValue::C(CValue::typed_pointer(model.clone(), CType::Int64Pointer)),
+                &AlgebraicValue::C(CValue::Pointer(value.clone().with_pointer(model.clone()))),
                 &AlgebraicValue::C(CValue::Pointer(value.clone())),
                 facts,
             )

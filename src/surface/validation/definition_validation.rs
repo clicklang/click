@@ -2587,7 +2587,10 @@ fn collect_resource_fact_reads_from_c_expression(
             collect_resource_fact_reads_from_c_expression(else_branch, reads);
         }
         CExpression::AddressOf(_) | CExpression::CheckedObjectAddress(_) => {}
-        CExpression::PointerOffsetBytes { pointer, .. } => {
+        CExpression::MemberAddress {
+            object: pointer, ..
+        }
+        | CExpression::PointerOffsetBytes { pointer, .. } => {
             collect_resource_fact_reads_from_c_expression(pointer, reads);
         }
         CExpression::Load(pointer) => {

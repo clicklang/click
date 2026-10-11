@@ -331,23 +331,50 @@ can use this argument. The destination's padding stays unwritten throughout.
    scalar `+0`, permitted one-past formation/comparison, array traversal and
    supported pointer representation copies. Audit C, C++ and Rust producers.
 
-The first step and the domain-term portion of step 2 are implemented. An optional
-shared descriptor distinguishes legacy absence, an unresolved C pointer binder,
+The carrier, lvalue and load-pair foundations are implemented, with bounded
+native input and member selection. The optional shared descriptor distinguishes
+legacy absence, an unresolved pointer binder, an immutable loaded-value origin,
 and an explicit root/path/base/element/stride/count term. Counts and array path
 selections are mathematical integers. Value identity, snapshot identity, alpha
 keys, dependency collection, full-value substitution and resource matching retain
 these terms; address-only substitution cannot replace them. Raw pointer comparison
-and storage keys remain address-based. Numeric load projection alone cannot
-manufacture a designated pointer value. Resource semantics version 70 invalidates
+and storage keys remain address-based. Resource semantics version 71 invalidates
 older retained artifacts.
 
-This descriptor is syntax, not an authenticated object witness: its root address
-alone proves no object identity, lifetime, initialization or access authority.
-Native producers must select checked declaration/input evidence and compose with
-the caller's designation. They are not enabled by this checkpoint. The remaining
-step-2 work is pointer-valued load/address-domain pairing and its transport through
-source interfaces before steps 3–5 can enforce domains. Both the sibling-pointer
-and constructor-padding regressions remain open.
+This descriptor is syntax, not an authenticated object witness. Declared scalar
+address formation and native record/member selection authenticate the declaration
+or retained input requirement before issuing an object descriptor. C++ layouts
+retain a nominal token from the locked import identity and validated declaration
+USR; equal geometry alone cannot substitute a different declaration. A member
+retains its enclosing root and explicit path, including an offset-zero child.
+Cast or offset arithmetic cannot turn that path into a sibling selection.
+
+The admitted int32 and const-int64 references, native record references and
+receivers have matching symbolic-entry and actual-call requirements. The bounded constructor profile also retains
+typed scalar validity from an unconditional direct int32/int64 input cell clause.
+Requirements are part of the semantic interface and survive annotated contract
+reconstruction. They grant neither ownership nor initialization. A missing or
+unauthenticated descriptor refuses these calls; an address equation cannot repair
+it. Retirement drops input witnesses that may overlap freed storage unless
+complete separation is checked. Automatic declaration evidence remains tied to
+its own lifetime; these inputs never manufacture a declaration or allocation. Geometry matching is indexed and memoizes fully checked selected-layout
+matches; lifetime and current-memory authentication remain separate checks.
+
+**Producer activation remains bounded.** Existing unprofiled unknown pointer
+loads retain legacy absence. Exact known pointer stores and reloads preserve the
+complete carrier. An immutable loaded-value origin can transport a designated
+value through its own checked complete cell and memory history, but a registry
+name, cell extent or pointer type is not evidence about the referent. The origin
+and raw loaded address must be rewritten as a pair. Resolution memoizes shared
+copy prefixes within the exact assumption and memory-history scope.
+
+Do not enable designated unknown outputs globally before modular contracts can
+certify full pointer-value effects. Existing address-only postconditions do not
+promise designation preservation. An unknown summary output therefore cannot
+satisfy a new native object-input requirement. Ordinary C/C++ pointer arithmetic
+and access enforcement, array/global producers and the broader result-effect
+migration remain open; this bounded path does not close the sibling-pointer bug.
+The unchanged constructor-padding proofs remain the integration acceptance gate.
 
 Queries must use the selected domain/object and existing indexed evidence.
 Domain transport cannot scan sibling declarations, unrelated cells, the whole
@@ -700,24 +727,24 @@ not authorize either shortcut.
 The `Restore` regression cannot be repaired just by passing more ownership
 facts to the raw-footprint query. Its input integer is separate from the two
 owned fields, but that partition says nothing about the four padding bytes.
-The constructor binder checks structural destination selection, alignment, live
-storage containment and field permissions. It now requires a declared complete
-layout or explicit child boundary, or the matching structural requirement of an
-enclosing symbolic constructor proof. It does not yet establish nominal object
-identity or a scalar input's typed designation. Contract certification repeats
-that binder; it does not supply the missing scalar object-validity premise.
+The constructor binder checks destination selection, alignment, live storage
+containment and field permissions. It requires a nominal declared complete layout
+or explicit child boundary, or the matching input requirement of an enclosing
+symbolic proof. Scalar inputs and native record references now carry separate
+object-validity requirements with the same actual-call checks. Contract
+certification uses these same binders; it cannot invent an input object.
 
 Complete automatic aggregate declarations now retain their layout in the shared
 block declaration metadata. Ordinary aggregate declarations, raw destination
 allocations, by-value parameter copies and actual copy-result allocations issue
 that evidence. Synthetic symbolic result blocks and constructor proof-entry raw
 markers do not. The metadata participates in snapshot identity and joins;
-resource semantics version 70 invalidates older retained artifacts. This step
-preserves the existing scalar declaration behavior and grants no new access.
-The retained aggregate metadata is structural layout; it is not nominal C++
-class identity. Explicit embedded-record boundaries retain parent relationships,
-root-relative offsets, full extents including padding, and alignment. They do
-not establish active lifetime or distinguish a C++ base from a data member.
+resource semantics version 71 invalidates older retained artifacts. This metadata
+grants no access. C++ declarations and explicit child boundaries now additionally
+retain their checked nominal identity. Embedded-record boundaries retain parent
+relationships, root-relative offsets, full extents including padding, and
+alignment. Layout metadata alone does not establish active lifetime or authorize
+base-class-specific operations.
 
 The implementation sequence is:
 
@@ -737,17 +764,16 @@ The implementation sequence is:
    or an explicit child boundary and its projected layout. Indexed lookup limits
    work to the selected block, candidate boundaries and selected child contents.
    Nominal C++ identity and pointer designation remain separate obligations.
-3. Carry checked input designation through pointers and modular calls. A scalar
+3. **Bounded input/member path implemented:** carry checked input designation
+   through pointers and modular calls. A scalar
    input cannot acquire a live integer object merely by pointing into padding.
    This is the same domain boundary required by the sibling-pointer defect,
    not a constructor-only exception to the memory-read rules.
-4. **Structural entry requirement delivered; scalar validity pending:** source
-   entry lowering records the interface-selected constructor object as an input
-   domain separate from raw storage. Calls must discharge that structural
-   requirement from declarations or retained input domains. It does not fix the
-   unknown extent of a constructor's containing allocation. Scalar-input validity
-   must still be represented with matching call obligations. Selection and
-   initialization completion remain separate transitions.
+4. **Matching entry/call requirements implemented:** source entry records native
+   scalar and aggregate object inputs separately from raw storage. Calls discharge
+   those requirements from authenticated declarations or retained input domains.
+   They do not fix the unknown extent of a constructor's containing allocation.
+   Selection and initialization completion remain separate transitions.
 5. Use those checked facts to decide the input read while retaining the full raw
    footprint and unwritten padding. Re-run the original constructor and RAII
    proofs and the hostile padding, sibling, alias and no-op cases before closing
@@ -780,19 +806,20 @@ or permission.
 The shared model does not require a new keyword for each internal fact. Native
 operations should supply checked evidence, and ordinary contracts should retain
 their existing spelling where that spelling already expresses the requirement.
-The current implementation nevertheless loses information needed to do this:
+The bounded input/member implementation retains the following evidence; the
+remaining paths still need their own admission and call checks:
 
 | Current path | Evidence retained now | Remaining obligation |
 | --- | --- | --- |
-| C++ reference parameters (`cpp/lowering.rs::lower_parameter`) | Pointer carrier and pointee qualifiers; source reference identity remains in importer lowering | Retain the admitted reference/access requirement in the shared interface and check its referent at calls |
+| C++ scalar/record reference parameters and receivers | Separate semantic input requirements; matching symbolic-entry, body, summary and certification checks; nominal record identity and explicit member paths | Extend only with checked evidence for additional source profiles and full pointer-result effects |
 | Rust reference parameters (`rust/lowering.rs::lower_function`) | Pointer carrier, qualifiers and source reference/array/slice information in lowering | Carry the applicable Rust referent guarantees to shared checking without treating raw pointers as references |
 | C and C++ raw pointer parameters | Pointer value and access type | Do not infer a live pointee merely from the signature; a pointer may be null or one-past when the function does not dereference it |
-| Memory `owns`/`views` clauses (`surface/lowering/resource_lowering.rs`) | Permission, range guards and snapshot-relative loadability propositions | Loadability is represented by address and byte extent, not a retained typed object or array designation |
+| Memory `owns`/`views` clauses (`surface/lowering/resource_lowering.rs`) | Permission, range guards and snapshot-relative loadability; bounded constructor direct int32/int64 cell clauses also retain a separately checked scalar input requirement | General ranges, byte ownership and successful loads do not establish an object or array designation |
 | By-value aggregate parameters (`kernel/functions.rs`) | A fresh copied destination with its declared layout | Check the source value against its actual object and preserve nested boundaries; do not use the requested layout to create source evidence |
-| Constructor body entry and binding | Separate structural input-domain requirement; checked complete or embedded layout selection, raw footprint, alignment and field permissions | Establish nominal identity and scalar-input designation; keep those checks distinct from initialized padding |
+| Constructor body entry and binding | Separate nominal record and scalar input requirements; checked complete/embedded selection, raw footprint, alignment and field permissions | Keep validity, permission and initialization separate; validate the unchanged RAII acceptance cases |
 
-This audit describes missing evidence, not new assumptions that callers already
-satisfy. `with_contract_interface_argument_views` also supplies broad views for
+The pending parts of this audit describe missing evidence, not assumptions that
+callers already satisfy. `with_contract_interface_argument_views` also supplies broad views for
 evaluating contract expressions; those evaluation views are not evidence that
 an arbitrary typed pointee exists. Neither those views nor a cast can establish
 object validity.
@@ -806,9 +833,10 @@ construction phases and limited uses outside an object's lifetime also need
 operation-specific treatment rather than a universal fully-constructed premise
 on every reference carrier.
 
-The next interface change should preserve the native requirement as internal
-metadata, check it at calls, and use the same requirement at symbolic body entry.
-It must cover body-independent summaries as well as direct execution. A native
+The bounded interface now preserves native requirements as internal metadata,
+checks them at calls, and uses the same requirements at symbolic body entry.
+This includes body-independent summaries and direct execution; later profiles
+must preserve that parity. A native
 source signature, an explicitly checked contract requirement, or a justified
 object operation may supply evidence; the prover may not invent it from a
 successful typed cell lookup. Existing contract spelling should be reused only

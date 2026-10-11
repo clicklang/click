@@ -1336,19 +1336,19 @@ fn a_pointer_substitution_rewrites_the_one_symbolic_array_element_it_names() {
             .get(&at(index * i64::from(width)))
             .expect("every element holds a cell")
     };
-    let named = match element(&memory, 50) {
-        CValue::Pointer(pointer) => match pointer.pointer().block {
-            PointerBlock::Symbolic(variable) => variable,
-            ref other => panic!("an element points into its own symbolic block, not {other:?}"),
-        },
-        other => panic!("an element holds a pointer, not {other:?}"),
+    let CValue::Pointer(original) = element(&memory, 50) else {
+        panic!("an element holds a pointer")
+    };
+    let named = match original.pointer().block {
+        PointerBlock::Symbolic(variable) => variable,
+        ref other => panic!("an element points into its own symbolic block, not {other:?}"),
     };
     let target = CMemory::global_pointer("target");
     let substituted =
         crate::kernel::reasoning::substitute_pointer_variable_in_memory(&memory, named, &target);
     assert_eq!(
         element(&substituted, 50),
-        CValue::typed_pointer(target, CType::Int32Pointer)
+        CValue::Pointer(original.with_pointer(target))
     );
     for index in [0, 1, 49, 51, 99] {
         assert_eq!(element(&substituted, index), element(&memory, index));

@@ -2851,6 +2851,7 @@ fn validate_pointer_cast_operands(
         | CExpression::BitwiseNot(inner)
         | CExpression::Load(inner)
         | CExpression::TypedLoad { pointer: inner, .. }
+        | CExpression::MemberAddress { object: inner, .. }
         | CExpression::PointerOffsetBytes { pointer: inner, .. } => {
             validate_pointer_cast_operands(inner, variables, context)
         }
@@ -2992,7 +2993,8 @@ fn infer_c_expression_type(
         .then_some(C0Type::Int32),
         CExpression::AddressOf(_)
         | CExpression::CheckedObjectAddress(_)
-        | CExpression::FunctionAddress(_) => None,
+        | CExpression::FunctionAddress(_)
+        | CExpression::MemberAddress { .. } => None,
         CExpression::PointerOffsetBytes { pointer, .. } => {
             infer_c_expression_type(pointer, variables)
         }

@@ -11,7 +11,7 @@ pub(crate) mod api;
 /// artifacts.  This is deliberately separate from source and compiler
 /// identities: changing the authority interpretation must invalidate an old
 /// certificate even when its inputs are byte-identical.
-pub const RESOURCE_SEMANTICS_VERSION: u32 = 70;
+pub const RESOURCE_SEMANTICS_VERSION: u32 = 71;
 
 pub(crate) mod assumptions;
 mod equality_graph;
@@ -30,6 +30,7 @@ mod resource_description;
 mod thread_confinement;
 pub(crate) use functions::ResourceBodyClauseRecord;
 pub(crate) use functions::TacticApplicationRefusal;
+pub(crate) use functions::assume_scalar_object_inputs;
 pub(crate) use functions::interface_join_instance_fields;
 #[cfg(test)]
 pub(crate) use functions::rewrite_resource_instance;
@@ -321,10 +322,10 @@ impl VerificationSession {
             eval::clear_load_variable_registry();
             model_fields::clear_model_field_registry();
             primitives::clear_block_alignment_registry();
+            primitives::clear_aggregate_selection_matches();
             primitives::clear_never_address_taken_locals();
             pure_functions::clear_pure_function_definitions();
             fold_read_summary::clear_fold_read_summaries();
-            eval::clear_load_canonicalization_caches();
             memory_provenance::clear_canonical_form_caches();
             memory_provenance::clear_provenance_memos();
             reasoning::memory_resolution::clear_canonical_memory_cache();
@@ -394,9 +395,9 @@ impl VerificationSession {
         eval::restore_load_variable_registry(&state.loads);
         model_fields::restore_model_field_registry(&state.model_fields);
         primitives::restore_block_registries(&state.blocks);
+        primitives::clear_aggregate_selection_matches();
         pure_functions::restore_pure_function_definitions(&state.pure_functions);
         fold_read_summary::restore_fold_read_summaries(&state.fold_reads);
-        eval::clear_load_canonicalization_caches();
         memory_provenance::clear_canonical_form_caches();
         memory_provenance::clear_provenance_memos();
         reasoning::memory_resolution::clear_canonical_memory_cache();

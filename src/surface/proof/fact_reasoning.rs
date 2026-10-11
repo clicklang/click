@@ -482,6 +482,9 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut Vec<Stri
             | CExpression::FloatClassification { expression, .. }
             | CExpression::AddressOf(expression)
             | CExpression::CheckedObjectAddress(expression)
+            | CExpression::MemberAddress {
+                object: expression, ..
+            }
             | CExpression::PointerOffsetBytes {
                 pointer: expression,
                 ..

@@ -97,6 +97,10 @@ fn substitute_c_expression_variables(
             .unwrap_or_else(|| expression.clone()),
         AddressOf(body) => AddressOf(unary(body)),
         CheckedObjectAddress(body) => CheckedObjectAddress(unary(body)),
+        MemberAddress { object, selection } => MemberAddress {
+            object: unary(object),
+            selection: selection.clone(),
+        },
         PointerOffsetBytes { pointer, bytes } => PointerOffsetBytes {
             pointer: unary(pointer),
             bytes: *bytes,
@@ -1021,7 +1025,11 @@ fn expression_takes_address_of(expression: &CExpression, name: &str) -> bool {
         AddressOf(body) | CheckedObjectAddress(body) => {
             matches!(body.as_ref(), Variable(target) if target == name) || inner(body)
         }
-        PointerOffsetBytes { pointer, .. } | TypedLoad { pointer, .. } => inner(pointer),
+        MemberAddress {
+            object: pointer, ..
+        }
+        | PointerOffsetBytes { pointer, .. }
+        | TypedLoad { pointer, .. } => inner(pointer),
         Not(body) | BitwiseNot(body) | Load(body) => inner(body),
         LessThan(left, right)
         | LessEqual(left, right)
@@ -1056,6 +1064,9 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet
         | FloatClassification { expression, .. }
         | AddressOf(expression)
         | CheckedObjectAddress(expression)
+        | MemberAddress {
+            object: expression, ..
+        }
         | PointerOffsetBytes {
             pointer: expression,
             ..
@@ -2041,6 +2052,11 @@ fn termination_measure_display(measure: &CExpression) -> String {
             termination_measure_display(index)
         ),
         Cast { expression, .. } => termination_measure_display(expression),
+        MemberAddress { object, selection } => format!(
+            "&({})->{}",
+            termination_measure_display(object),
+            selection.path.join(".")
+        ),
         Conditional { .. } | FloatNegate(_) | FloatClassification { .. } | Value(_) => {
             "…".to_string()
         }
@@ -2697,7 +2713,8 @@ fn c_ranking_measure_term_unfolded(
         | FunctionAddress(_)
         | AddressOf(_)
         | CheckedObjectAddress(_)
-        | PointerOffsetBytes { .. } => Err(
+        | PointerOffsetBytes { .. }
+        | MemberAddress { .. } => Err(
             "termination measures may only use scalar int32 or unsigned integer expressions".into(),
         ),
         Load(_) | TypedLoad { .. } | Index(_, _) => {
@@ -3758,6 +3775,9 @@ fn expression_function_addresses(expression: &CExpression, taken: &mut BTreeSet<
         | FloatClassification { expression, .. }
         | AddressOf(expression)
         | CheckedObjectAddress(expression)
+        | MemberAddress {
+            object: expression, ..
+        }
         | PointerOffsetBytes {
             pointer: expression,
             ..

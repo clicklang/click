@@ -1154,7 +1154,19 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
     {
         function = function.with_construction_parameter(index, layout.clone());
     }
+    let scalar_object_inputs = scalar_object_inputs_for_contract(
+        function_block.requires(),
+        parsed_function.parameters(),
+        &parsed_kernel_function,
+    )?;
     let mut function = function
+        .with_scalar_object_inputs(scalar_object_inputs)
+        .with_aggregate_object_inputs(
+            parsed_kernel_function
+                .contract_interface()
+                .aggregate_object_inputs()
+                .to_vec(),
+        )
         .with_global_variables(parsed_kernel_function.global_variables().to_vec())
         .with_global_arrays(parsed_kernel_function.global_arrays().to_vec())
         .with_global_aggregates(parsed_kernel_function.global_aggregates().to_vec())
@@ -7040,6 +7052,7 @@ impl AnnotationLowerer<'_> {
                 CType::UInt8Array(_) => Some(CType::UInt8),
                 value_type => value_type.pointee_type(),
             },
+            CExpression::MemberAddress { selection, .. } => Some(selection.value_type),
             CExpression::PointerOffsetBytes { pointer, .. } => {
                 self.c_expression_array_element_type(pointer, environment)
             }
@@ -7111,6 +7124,7 @@ impl AnnotationLowerer<'_> {
                 CType::UInt8Array(_) => Some(1),
                 value_type => value_type.pointee_type().map(CType::byte_width),
             },
+            CExpression::MemberAddress { selection, .. } => Some(selection.value_type.byte_width()),
             CExpression::PointerOffsetBytes { pointer, .. } => {
                 self.c_expression_array_element_width(pointer, environment)
             }

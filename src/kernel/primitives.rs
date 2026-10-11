@@ -581,6 +581,68 @@ pub struct Pointer {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct PointerLoadId(pub(crate) u64);
 
+/// The immutable defining snapshot and cell of a pointer-valued load. The
+/// retained origin is its meaning; the interned name is only an address-graph
+/// handle and is never consulted to recover or change a designation.
+#[derive(Clone, Debug)]
+pub(crate) struct PointerLoadIdentity {
+    id: PointerLoadId,
+    memory: SharedCMemory,
+    address: Pointer,
+}
+
+impl PointerLoadIdentity {
+    pub(crate) fn new(memory: SharedCMemory, address: Pointer) -> Self {
+        let id = crate::kernel::eval::pointer_load_identity(&memory, &address);
+        Self {
+            id,
+            memory,
+            address,
+        }
+    }
+
+    pub(crate) fn id(&self) -> PointerLoadId {
+        self.id
+    }
+
+    pub(crate) fn memory(&self) -> &SharedCMemory {
+        &self.memory
+    }
+
+    pub(crate) fn address(&self) -> &Pointer {
+        &self.address
+    }
+}
+
+impl PartialEq for PointerLoadIdentity {
+    fn eq(&self, other: &Self) -> bool {
+        self.memory.arena_id() == other.memory.arena_id() && self.address == other.address
+    }
+}
+
+impl Eq for PointerLoadIdentity {}
+
+impl std::hash::Hash for PointerLoadIdentity {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Content hashes are cached and stable across fresh arenas. Different
+        // exact origins may legally collide; equality still checks arena ids.
+        self.memory.hash(state);
+        self.address.hash(state);
+    }
+}
+
+impl Ord for PointerLoadIdentity {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.memory.arena_id(), &self.address).cmp(&(other.memory.arena_id(), &other.address))
+    }
+}
+
+impl PartialOrd for PointerLoadIdentity {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 /// Semantic decoder for an opaque pointer value read from memory. The
 /// displacement belongs to later pointer arithmetic, not to the identity of
 /// the load or to the storage address that held the value.
@@ -623,13 +685,10 @@ pub struct CPointerValue {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(crate) enum PointerDesignation {
     Unresolved(Variable),
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "checked native domain producers are the next implementation stage"
-        )
-    )]
+    /// Unknown referent paired with the exact read that supplies its address.
+    /// This grants no access authority and cannot be resolved by numeric
+    /// equality of the loaded address.
+    Loaded(PointerLoadIdentity),
     Object {
         root: Pointer,
         path: std::sync::Arc<[PointerDomainSelection]>,
@@ -657,6 +716,7 @@ impl PointerDesignation {
     pub(crate) fn pointer_terms(&self) -> impl Iterator<Item = &Pointer> {
         match self {
             Self::Unresolved(_) => [None, None],
+            Self::Loaded(identity) => [Some(identity.address()), None],
             Self::Object { root, base, .. } => [Some(root), Some(base)],
         }
         .into_iter()
@@ -665,7 +725,7 @@ impl PointerDesignation {
 
     pub(crate) fn integer_terms(&self) -> impl Iterator<Item = &SharedIntegerTerm> {
         let (path, count) = match self {
-            Self::Unresolved(_) => (&[][..], None),
+            Self::Unresolved(_) | Self::Loaded(_) => (&[][..], None),
             Self::Object { path, count, .. } => (path.as_ref(), Some(count)),
         };
         path.iter()
@@ -679,7 +739,7 @@ impl PointerDesignation {
     pub(crate) fn unresolved_variable(&self) -> Option<Variable> {
         match self {
             Self::Unresolved(variable) => Some(*variable),
-            Self::Object { .. } => None,
+            Self::Object { .. } | Self::Loaded(_) => None,
         }
     }
 }
@@ -753,6 +813,9 @@ impl CPointerValue {
     pub(crate) fn map_designation_pointers(self, mut map: impl FnMut(&Pointer) -> Pointer) -> Self {
         self.map_designation(|designation| match designation {
             PointerDesignation::Unresolved(variable) => PointerDesignation::Unresolved(*variable),
+            PointerDesignation::Loaded(identity) => PointerDesignation::Loaded(
+                PointerLoadIdentity::new(identity.memory().clone(), map(identity.address())),
+            ),
             PointerDesignation::Object {
                 root,
                 path,
@@ -1390,7 +1453,7 @@ pub struct CLValue {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(super) enum CLValueStorage {
     Local { name: String },
-    Memory { pointer: Pointer },
+    Memory { pointer: CPointerValue },
 }
 
 /// The language-specific integer rule at an explicit kernel cast boundary.
@@ -1488,6 +1551,165 @@ pub enum CExpression {
         source: CExpressionLoadSource,
     },
     Index(Box<CExpression>, Box<CExpression>),
+    /// Checked native member selection. The layout/path come from resolved
+    /// declarations; evaluation must authenticate the incoming object domain.
+    MemberAddress {
+        object: Box<CExpression>,
+        selection: Arc<CAggregateMemberSelection>,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub struct CAggregateMemberSelection {
+    pub(crate) layout: Arc<CAggregateLayout>,
+    pub(crate) path: Arc<[String]>,
+    pub(crate) value_type: CType,
+}
+
+impl CAggregateMemberSelection {
+    pub fn layout(&self) -> &CAggregateLayout {
+        &self.layout
+    }
+    pub fn path(&self) -> &[String] {
+        &self.path
+    }
+    pub fn value_type(&self) -> CType {
+        self.value_type
+    }
+}
+
+impl PartialEq for CAggregateMemberSelection {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path
+            && self.value_type == other.value_type
+            && self.layout.definition_hash() == other.layout.definition_hash()
+            && self.layout.selects_layout_path(&[], &other.layout)
+    }
+}
+impl Eq for CAggregateMemberSelection {}
+impl Hash for CAggregateMemberSelection {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.layout.definition_hash().hash(state);
+        self.path.hash(state);
+        self.value_type.hash(state);
+    }
+}
+impl Ord for CAggregateMemberSelection {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let order = self
+            .path
+            .cmp(&other.path)
+            .then_with(|| self.value_type.cmp(&other.value_type))
+            .then_with(|| {
+                self.layout
+                    .definition_hash()
+                    .cmp(&other.layout.definition_hash())
+            });
+        if order != std::cmp::Ordering::Equal {
+            return order;
+        }
+        if self.layout.selects_layout_path(&[], &other.layout) {
+            return std::cmp::Ordering::Equal;
+        }
+        // A content digest only narrows a key comparison. Collision handling
+        // retains exact structural ordering; the digest is never evidence.
+        self.layout.cmp(&other.layout)
+    }
+}
+impl PartialOrd for CAggregateMemberSelection {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[cfg(test)]
+mod aggregate_member_key_tests {
+    use super::*;
+
+    fn layout() -> CAggregateLayout {
+        CAggregateLayout::new(
+            8,
+            4,
+            vec![CAggregateField::new("selected", 0, CType::Int32)],
+        )
+        .with_declaration_identity(Some(Arc::new(CppRecordDeclarationIdentity::new(
+            "key-test", "Root",
+        ))))
+    }
+
+    fn key(layout: CAggregateLayout) -> CAggregateMemberSelection {
+        CAggregateMemberSelection {
+            layout: Arc::new(layout),
+            path: vec!["selected".into()].into(),
+            value_type: CType::Int32,
+        }
+    }
+
+    #[test]
+    fn member_key_cache_tracks_definition_mutations_and_checks_hash_collisions_exactly() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let original = layout();
+        let original_key = key(original.clone());
+        assert_eq!(original_key, key(original.clone()));
+        let nested = original
+            .clone()
+            .with_records(vec![CAggregateRecord::new("nested", 4, 4, 4, None)]);
+        assert_ne!(original_key, key(nested));
+        let other = original.clone().with_declaration_identity(Some(Arc::new(
+            CppRecordDeclarationIdentity::new("key-test", "Other"),
+        )));
+        assert_ne!(original_key, key(other.clone()));
+        // Simulate a content-hash collision. A matching digest grants neither
+        // semantic key equality nor an authenticated layout selection.
+        let mut collision = other;
+        let index = Arc::make_mut(&mut collision.index.0);
+        index.definition_hash = OnceLock::new();
+        index
+            .definition_hash
+            .set(original.definition_hash())
+            .unwrap();
+        let collision_key = key(collision);
+        assert_ne!(original_key, collision_key);
+        assert_ne!(original_key.cmp(&collision_key), std::cmp::Ordering::Equal);
+        assert!(!original.selects_layout_path(&[], &collision_key.layout));
+        let hash = |value: &CAggregateMemberSelection| {
+            let mut state = std::collections::hash_map::DefaultHasher::new();
+            value.hash(&mut state);
+            state.finish()
+        };
+        assert_eq!(hash(&original_key), hash(&collision_key));
+
+        let unwarmed = layout().with_records(vec![CAggregateRecord::new("nested", 4, 4, 4, None)]);
+        let selection = Arc::new(key(unwarmed));
+        let address = CMemory::frame_local_pointer(96, "member-key");
+        let memory =
+            CMemory::new().with_declared_aggregate_block(address.block.clone(), &selection.layout);
+        let object = memory
+            .declared_aggregate_pointer(&address, &selection.layout)
+            .unwrap();
+        let member = memory.checked_member_pointer(&object, &selection).unwrap();
+        let mut state = CState::new();
+        state.set_memory(memory);
+        let proposition = Proposition::CExpressionEvaluates {
+            state: Box::new(state),
+            expression: CExpression::MemberAddress {
+                object: Box::new(CExpression::Value(CValue::Pointer(object))),
+                selection: selection.clone(),
+            },
+            outcome: CExpressionOutcome::Value(CValue::Pointer(member)),
+        };
+        let fingerprint = |proposition: &Proposition| {
+            let mut state = std::collections::hash_map::DefaultHasher::new();
+            proposition.hash(&mut state);
+            state.finish()
+        };
+        assert!(selection.layout.index.0.definition_hash.get().is_none());
+        let before = fingerprint(&proposition);
+        let same = proposition.clone();
+        selection.layout.definition_hash();
+        assert_eq!(proposition, same);
+        assert_eq!(before, fingerprint(&same));
+    }
 }
 
 /// Optional source provenance attached to a typed load. Two expressions that
@@ -3405,17 +3627,53 @@ impl CAggregateInitializer {
     }
 }
 
+/// A native record declaration in one authenticated C++ semantic import.
+/// The importer supplies the validated Clang USR, never a flattened field name.
+/// Equal USRs from different imports deliberately do not establish nominal
+/// equivalence. This identity supplies no initialization or access authority.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) struct CppRecordDeclarationIdentity {
+    import: Arc<str>,
+    declaration: Arc<str>,
+}
+
+impl CppRecordDeclarationIdentity {
+    pub(crate) fn new(import: &str, declaration: &str) -> Self {
+        Self {
+            import: import.into(),
+            declaration: declaration.into(),
+        }
+    }
+}
+
 /// One explicitly declared embedded record, including its padding. Coordinates
 /// are relative to the complete layout; `parent` names an earlier record in
 /// its pre-order list, or the complete layout when absent. This is structural
-/// metadata, not nominal type identity, initialization or access authority.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+/// metadata; an optional native identity is retained separately and supplies
+/// neither initialization nor access authority.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct CAggregateRecord {
     name: String,
     offset_bytes: u32,
     size_bytes: u32,
     alignment_bytes: u32,
     parent: Option<u32>,
+    declaration_identity: Option<Arc<CppRecordDeclarationIdentity>>,
+}
+
+impl std::hash::Hash for CAggregateRecord {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Preserve the original structural hash when no native token exists.
+        self.name.hash(state);
+        self.offset_bytes.hash(state);
+        self.size_bytes.hash(state);
+        self.alignment_bytes.hash(state);
+        self.parent.hash(state);
+        if let Some(identity) = &self.declaration_identity {
+            "cpp_record_declaration".hash(state);
+            identity.hash(state);
+        }
+    }
 }
 
 impl CAggregateRecord {
@@ -3432,7 +3690,20 @@ impl CAggregateRecord {
             size_bytes,
             alignment_bytes,
             parent,
+            declaration_identity: None,
         }
+    }
+
+    pub(crate) fn with_declaration_identity(
+        mut self,
+        identity: Option<Arc<CppRecordDeclarationIdentity>>,
+    ) -> Self {
+        self.declaration_identity = identity;
+        self
+    }
+
+    pub(crate) fn declaration_identity(&self) -> Option<&Arc<CppRecordDeclarationIdentity>> {
+        self.declaration_identity.as_ref()
     }
 
     pub fn name(&self) -> &str {
@@ -3452,14 +3723,32 @@ impl CAggregateRecord {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct CAggregateLayout {
     size_bytes: u32,
     alignment_bytes: u32,
     fields: Vec<CAggregateField>,
     unions: Vec<CAggregateUnion>,
     records: Vec<CAggregateRecord>,
+    declaration_identity: Option<Arc<CppRecordDeclarationIdentity>>,
     index: CAggregateLayoutCache,
+}
+
+impl std::hash::Hash for CAggregateLayout {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // The derived index contributes no hash. Extend the previous field
+        // sequence only when nominal metadata is present, retaining legacy
+        // C/Rust snapshot and load names when the feature is absent.
+        self.size_bytes.hash(state);
+        self.alignment_bytes.hash(state);
+        self.fields.hash(state);
+        self.unions.hash(state);
+        self.records.hash(state);
+        if let Some(identity) = &self.declaration_identity {
+            "cpp_record_declaration".hash(state);
+            identity.hash(state);
+        }
+    }
 }
 
 /// A derived, immutable query cache, excluded from semantic comparisons. All
@@ -3469,7 +3758,7 @@ pub struct CAggregateLayout {
 #[derive(Clone, Debug)]
 struct CAggregateLayoutCache(Arc<CAggregateLayoutIndex>);
 
-#[derive(Debug)]
+#[derive(Clone)]
 struct CAggregateLayoutIndex {
     fields: Arc<BTreeMap<String, usize>>,
     unions: Arc<BTreeMap<String, usize>>,
@@ -3477,6 +3766,24 @@ struct CAggregateLayoutIndex {
     records_at: BTreeMap<u32, Vec<usize>>,
     unique_leaves: bool,
     unique_paths: bool,
+    definition_hash: OnceLock<u64>,
+}
+
+impl std::fmt::Debug for CAggregateLayoutIndex {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Proposition's atomic payload hash uses Debug. Memo warmth must not
+        // alter an equal proposition's identity; keep the immutable index
+        // rendering and omit only the derived digest cell.
+        formatter
+            .debug_struct("CAggregateLayoutIndex")
+            .field("fields", &self.fields)
+            .field("unions", &self.unions)
+            .field("records", &self.records)
+            .field("records_at", &self.records_at)
+            .field("unique_leaves", &self.unique_leaves)
+            .field("unique_paths", &self.unique_paths)
+            .finish()
+    }
 }
 
 impl PartialEq for CAggregateLayoutCache {
@@ -3519,6 +3826,7 @@ impl CAggregateLayoutCache {
             records_at: BTreeMap::new(),
             unique_leaves: unique_paths,
             unique_paths,
+            definition_hash: OnceLock::new(),
         }))
     }
 
@@ -3538,8 +3846,20 @@ impl CAggregateLayoutCache {
             records_at: offsets,
             unique_leaves: self.0.unique_leaves,
             unique_paths,
+            definition_hash: OnceLock::new(),
         }))
     }
+}
+
+// Successful layout comparisons only: immutable definition handles are retained
+// with the numeric keys so allocator address reuse cannot validate a new layout.
+// The cache carries no pointer, lifetime, permission or initialization evidence.
+thread_local! {
+    static AGGREGATE_SELECTION_MATCHES: std::cell::RefCell<BTreeMap<(usize, String, usize), (Arc<CAggregateLayoutIndex>, Arc<CAggregateLayoutIndex>)>> = const { std::cell::RefCell::new(BTreeMap::new()) };
+}
+
+pub(super) fn clear_aggregate_selection_matches() {
+    AGGREGATE_SELECTION_MATCHES.with(|matches| matches.borrow_mut().clear());
 }
 
 impl CAggregateLayout {
@@ -3561,8 +3881,50 @@ impl CAggregateLayout {
             fields,
             unions,
             records: Vec::new(),
+            declaration_identity: None,
             index,
         }
+    }
+
+    pub(crate) fn with_declaration_identity(
+        mut self,
+        identity: Option<Arc<CppRecordDeclarationIdentity>>,
+    ) -> Self {
+        // Nominal metadata is part of the definition identity used by checked
+        // selection memoization, although the derived indexes stay unchanged.
+        let mut index = (*self.index.0).clone();
+        index.definition_hash = OnceLock::new();
+        self.index = CAggregateLayoutCache(Arc::new(index));
+        self.declaration_identity = identity;
+        if self.declaration_identity.is_some() {
+            self.definition_hash();
+        }
+        self
+    }
+
+    /// Hashing member-expression keys must not rehash an unrelated record.
+    /// This immutable digest covers the legacy semantic layout hash exactly;
+    /// selection still requires an exact checked shape/nominal comparison.
+    fn definition_hash(&self) -> u64 {
+        *self.index.0.definition_hash.get_or_init(|| {
+            crate::instrumentation::record_deterministic_work(
+                1 + self.fields.len()
+                    + self.unions.len()
+                    + self.records.len()
+                    + self
+                        .unions
+                        .iter()
+                        .map(|union| union.fields.len())
+                        .sum::<usize>(),
+            );
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            self.hash(&mut hasher);
+            hasher.finish()
+        })
+    }
+
+    pub(crate) fn declaration_identity(&self) -> Option<&Arc<CppRecordDeclarationIdentity>> {
+        self.declaration_identity.as_ref()
     }
 
     pub fn size_bytes(&self) -> u32 {
@@ -3629,9 +3991,97 @@ impl CAggregateLayout {
         &self.records
     }
 
-    /// Exact structural selection from a complete declaration. Nominal native
-    /// identity remains frontend evidence. Only explicit boundary nodes can
-    /// select children; the name indexes merely project that selected node.
+    /// Follow explicitly supplied declaration selections, never infer a member
+    /// path from an address or from a dotted scalar leaf alone.
+    pub(in crate::kernel) fn member_at_path(&self, path: &[String]) -> Option<(u32, CType)> {
+        if !self.index.0.unique_paths {
+            return None;
+        }
+        let mut prefix = String::new();
+        let mut parent = None;
+        for (position, member) in path.iter().enumerate() {
+            crate::instrumentation::record_deterministic_work(1);
+            if member.is_empty() || member.contains('.') || member.contains('[') {
+                return None;
+            }
+            if !prefix.is_empty() {
+                prefix.push('.');
+            }
+            prefix.push_str(member);
+            if let Some(index) = self.index.0.records.get(&prefix) {
+                let record = &self.records[*index];
+                if record.parent != parent {
+                    return None;
+                }
+                if position + 1 == path.len() {
+                    return Some((record.offset_bytes, CType::UInt8Array(record.size_bytes)));
+                }
+                parent = Some(*index as u32);
+            } else if position + 1 == path.len() {
+                let field = &self.fields[*self.index.0.fields.get(&prefix)?];
+                return field
+                    .c_type
+                    .pointer_to()
+                    .map(|_| (field.offset_bytes, field.c_type));
+            } else {
+                return None;
+            }
+        }
+        None
+    }
+
+    pub(in crate::kernel) fn selects_layout_path(&self, path: &[String], expected: &Self) -> bool {
+        if path.is_empty() && Arc::ptr_eq(&self.index.0, &expected.index.0) {
+            return true;
+        }
+        let selected = if path.is_empty() {
+            None
+        } else {
+            let Some((_, CType::UInt8Array(_))) = self.member_at_path(path) else {
+                return false;
+            };
+            Some(
+                *self
+                    .index
+                    .0
+                    .records
+                    .get(&path.join("."))
+                    .expect("selected explicit record"),
+            )
+        };
+        let key = (
+            Arc::as_ptr(&self.index.0) as usize,
+            path.join("."),
+            Arc::as_ptr(&expected.index.0) as usize,
+        );
+        if AGGREGATE_SELECTION_MATCHES.with(|matches| matches.borrow().contains_key(&key)) {
+            return true;
+        }
+        // First admission compares the selected shape. Repeated accesses index
+        // only their explicit path; current pointer/lifetime authentication is
+        // deliberately outside this geometry-only memo.
+        let valid = match selected {
+            Some(index) => self.record_matches_layout(index, expected),
+            None => {
+                crate::instrumentation::record_deterministic_work(
+                    self.fields.len() + self.unions.len() + self.records.len(),
+                );
+                self == expected
+            }
+        };
+        if valid {
+            AGGREGATE_SELECTION_MATCHES.with(|matches| {
+                matches
+                    .borrow_mut()
+                    .insert(key, (self.index.0.clone(), expected.index.0.clone()));
+            });
+        }
+        valid
+    }
+
+    /// Exact selection from a complete declaration, including any retained
+    /// native identity. Only explicit boundary nodes can select children; the
+    /// name indexes merely project that selected node.
     pub(in crate::kernel) fn selects_layout_at(&self, offset: u32, expected: &Self) -> bool {
         if offset == 0 && self == expected {
             return true;
@@ -3648,6 +4098,7 @@ impl CAggregateLayout {
         let record = &self.records[selected];
         if record.size_bytes != expected.size_bytes
             || record.alignment_bytes != expected.alignment_bytes
+            || record.declaration_identity() != expected.declaration_identity()
             || !self.index.0.unique_paths
             || !expected.index.0.unique_paths
         {
@@ -3716,6 +4167,7 @@ impl CAggregateLayout {
             if held.offset_bytes.checked_sub(record.offset_bytes) != Some(child.offset_bytes)
                 || held.size_bytes != child.size_bytes
                 || held.alignment_bytes != child.alignment_bytes
+                || held.declaration_identity != child.declaration_identity
                 || held.parent.map(|index| index as usize) != parent
             {
                 return false;
@@ -3725,13 +4177,29 @@ impl CAggregateLayout {
     }
 }
 
+/// A single scalar referent required by an admitted native reference or an
+/// explicit typed constructor access clause. This is independent of byte
+/// permission and initialization, and must be checked for the actual value.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct CScalarObjectInput {
+    pub(crate) parameter_index: usize,
+    pub(crate) element_type: CType,
+}
+
+/// Native record-reference validity, independent of storage permissions/init.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct CAggregateObjectInput {
+    pub(crate) parameter_index: usize,
+    pub(crate) layout: Arc<CAggregateLayout>,
+}
+
 /// The body-independent interface shared by every way Click can apply a
 /// function contract.
 ///
 /// A [`CFunction`] keeps the implementation body and storage alongside this
 /// value, but all typed call parameters/result metadata, proof binders,
 /// logical clauses, normalized resource terms, effect information, and source
-/// provenance live here.  Keeping this carrier separate from the body is
+/// provenance live here. Keeping this carrier separate from the body is
 /// important for opaque calls: applying a checked summary must not implicitly
 /// execute (or even inspect) the concrete body.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -3741,6 +4209,8 @@ pub struct CFunctionContractInterface {
     pub(crate) return_aggregate_layout: Option<CAggregateLayout>,
     pub(crate) aggregate_return_mode: CAggregateReturnMode,
     pub(crate) construction_parameter: Option<(usize, CAggregateLayout)>,
+    pub(crate) scalar_object_inputs: Vec<CScalarObjectInput>,
+    pub(crate) aggregate_object_inputs: Vec<CAggregateObjectInput>,
     pub(crate) exceptional_signature: CExceptionalSignature,
     pub(crate) parameters: Vec<CParameter>,
     /// Explicit resource-instance binders introduced by a named contract.
@@ -5573,7 +6043,7 @@ impl PartialOrd for CMemory {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(super) struct CPendingReallocation {
-    pub(super) old_pointer: Pointer,
+    pub(super) old_pointer: CPointerValue,
     pub(super) old_bytes: Bitvector32Term,
     /// Bytes at the start of the new block that retain calloc's guaranteed
     /// zero value. A prefix equal to the new allocation size means the whole
@@ -5611,6 +6081,9 @@ pub(super) struct CHeapMemory {
     /// Interface-entry structural object requirements, independent of raw
     /// footprints, allocation extent, initialization and access authority.
     pub(super) object_input_domains: SnapshotMap<Pointer, Arc<CAggregateLayout>>,
+    /// Scalar native-interface requirements. Lookup is usable only with the
+    /// matching complete pointer designation, never an address alone.
+    pub(super) scalar_input_domains: SnapshotMap<Pointer, CType>,
     /// Bytes of storage with an initialization history — fresh heap
     /// allocations and automatic (`local:`) objects — that a C store has
     /// initialized, whether or not their cached value survives. A store the
@@ -5655,6 +6128,10 @@ impl std::hash::Hash for CHeapMemory {
             "uninitialized_objects".hash(state);
             self.uninitialized_objects.hash(state);
         }
+        if !self.scalar_input_domains.is_empty() {
+            "scalar_input_domains".hash(state);
+            self.scalar_input_domains.hash(state);
+        }
         if !self.object_input_domains.is_empty() {
             "object_input_domains".hash(state);
             self.object_input_domains.hash(state);
@@ -5685,6 +6162,9 @@ impl CHeapMemory {
             && self
                 .object_input_domains
                 .eq_relative_to(&other.object_input_domains, &base.object_input_domains)
+            && self
+                .scalar_input_domains
+                .eq_relative_to(&other.scalar_input_domains, &base.scalar_input_domains)
             && self
                 .initialized
                 .eq_relative_to(&other.initialized, &base.initialized)
@@ -5718,6 +6198,7 @@ impl CHeapMemory {
             && self.uninitialized_allocations == other.uninitialized_allocations
             && self.uninitialized_objects == other.uninitialized_objects
             && self.object_input_domains == other.object_input_domains
+            && self.scalar_input_domains == other.scalar_input_domains
             && self.zeroed_allocations == other.zeroed_allocations
             && self.zeroed_prefix_allocations == other.zeroed_prefix_allocations
             && self.zeroed_pending_allocations == other.zeroed_pending_allocations

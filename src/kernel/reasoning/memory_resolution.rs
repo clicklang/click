@@ -11,6 +11,7 @@ pub(in crate::kernel) enum ResolutionQuery {
     PointerDistinct(Pointer, Pointer),
     CommonBaseDistinct(Pointer, Pointer),
     PointerEqual(Pointer, Pointer),
+    PointerDesignationEqual(Option<PointerDesignation>, Option<PointerDesignation>),
     OffsetEqual(PointerOffsetTerm, PointerOffsetTerm),
     BitvectorEqual(Bitvector32Term, Bitvector32Term),
     SnapshotsMatch(SharedCMemory, SharedCMemory, Pointer),
@@ -124,6 +125,12 @@ pub(in crate::kernel) fn resolution_interrupted() -> bool {
 enum ResolutionQueryKey {
     PointerDistinct(u64, bool, Pointer, Pointer),
     PointerEqual(u64, bool, Pointer, Pointer),
+    PointerDesignationEqual(
+        u64,
+        bool,
+        Option<PointerDesignation>,
+        Option<PointerDesignation>,
+    ),
     PointerOffsetEqual(u64, bool, PointerOffsetTerm, PointerOffsetTerm),
     BitvectorEqual(u64, bool, Bitvector32Term, Bitvector32Term),
 }
@@ -2068,6 +2075,42 @@ pub(in crate::kernel) fn int32_values_proven_equal_for_memory_resolution(
         || bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
 }
 
+/// Compare the semantic designation of two pointer values. An address equation
+/// cannot answer this question. A loaded designation can be transported only
+/// with its complete pointer cell along the checked memory history.
+pub(in crate::kernel) fn pointer_designations_proven_equal(
+    left: &CPointerValue,
+    right: &CPointerValue,
+    assumptions: &PureFactContext,
+) -> bool {
+    if left.same_designation(right) {
+        return true;
+    }
+    if !matches!(left.designation(), Some(PointerDesignation::Loaded(_)))
+        && !matches!(right.designation(), Some(PointerDesignation::Loaded(_)))
+    {
+        return false;
+    }
+    let left = left.designation().cloned();
+    let right = right.designation().cloned();
+    let key = resolution_query_memo_id(assumptions).map(|(id, bridging)| {
+        ResolutionQueryKey::PointerDesignationEqual(id, bridging, left.clone(), right.clone())
+    });
+    memoized_resolution_query(key, || {
+        let Some(_guard) = ResolutionQueryGuard::enter(ResolutionQuery::PointerDesignationEqual(
+            left.clone(),
+            right.clone(),
+        )) else {
+            return false;
+        };
+        crate::kernel::memory_provenance::loaded_pointer_designations_equal(
+            left,
+            right,
+            assumptions,
+        )
+    })
+}
+
 pub(in crate::kernel) fn c_values_proven_equal_for_memory_resolution(
     left: &CValue,
     right: &CValue,
@@ -2094,7 +2137,7 @@ pub(in crate::kernel) fn c_values_proven_equal_for_memory_resolution(
         (CValue::Pointer(left), CValue::Pointer(right)) => {
             // Equal addresses can still designate different subobjects. This
             // query reconciles stored values, not merely byte-cell addresses.
-            left.same_designation(right)
+            pointer_designations_proven_equal(left, right, assumptions)
                 && pointers_proven_equal_for_memory_resolution(
                     left.pointer(),
                     right.pointer(),
