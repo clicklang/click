@@ -64,7 +64,12 @@ including the original recombination offset and weights, and preservation of
 both residues through lane reductions. The constructor exports each lane’s
 exact mathematical entry-byte value. The small-count cursor bridge also proves
 equal byte addresses for the full native count and its checked signed index,
-using equality of exact values rather than low-bit truncation. One- and four-byte prefix lemmas preserve
+using equality of exact values rather than low-bit truncation. Source-proved
+read bridges connect the native count and all four positions in its chunk to
+the signed byte observations used by the common spec, with checked signed-index
+guards. The original small-batch vector loop also checks each constructor lane’s
+native and Integer value against its shared subslice. One- and four-byte prefix
+lemmas preserve
 the A residue against the common specification; a four-byte B prefix lemma
 checks the ordered weighted update under explicit index and nonnegative
 representative bounds. A joint native vector-prefix bridge now connects the

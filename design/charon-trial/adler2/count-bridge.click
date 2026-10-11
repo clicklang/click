@@ -122,3 +122,37 @@ theorem adler_count_byte_pointer(base: const uint8*, count: uint64) {
   normalize() using { to_integer((int32)(uint32)count) == to_integer(count); }
  }
 }
+
+# Read equality first, then transport the native byte into the Integer spec.
+theorem adler_count_byte_observation(bytes: uint8[], count: uint64) {
+ requires count <= 22208u64;
+ ensures to_integer((int32)bytes[count]) == to_integer((int32)bytes[(int32)(uint32)count]) by {
+  apply(adler_count_byte_pointer(bytes, count)) using { count <= 22208u64; }
+  have bytes[count] == bytes[(int32)(uint32)count] by {
+   simp() using { bytes + count == bytes + (int32)(uint32)count; }
+  }
+  rewrite(bytes[count] == bytes[(int32)(uint32)count]);
+  normalize();
+ }
+}
+theorem adler_count_chunk_byte_observation(bytes: uint8[], count: uint64, lane: int32) {
+ requires count <= 22204u64;
+ requires 0 <= lane;
+ requires lane <= 3;
+ ensures to_integer((int32)(bytes + count)[lane]) == to_integer((int32)bytes[(int32)(uint32)count + lane]) by {
+  have count <= 22208u64 by { normalize() using { count <= 22204u64; } }
+  apply(adler_count_byte_pointer(bytes, count)) using { count <= 22208u64; }
+  apply(adler_count_bounds(count)) using { count <= 22208u64; }
+  have (int32)(uint32)count <= 22204 by { simp(); }
+  have defined((int32)(uint32)count + lane) by { simp(); }
+  have bytes + count + lane == bytes + ((int32)(uint32)count + lane) by {
+   rewrite(bytes + count == bytes + (int32)(uint32)count);
+   normalize() using { defined((int32)(uint32)count + lane); }
+  }
+  have (bytes + count)[lane] == bytes[(int32)(uint32)count + lane] by {
+   simp() using { bytes + count + lane == bytes + ((int32)(uint32)count + lane); }
+  }
+  rewrite((bytes + count)[lane] == bytes[(int32)(uint32)count + lane]);
+  normalize();
+ }
+}
