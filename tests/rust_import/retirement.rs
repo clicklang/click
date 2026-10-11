@@ -77,9 +77,9 @@ fn rust_import_pure_theorem_claim_labels_expand_and_reverify() {
         .unwrap();
         assert_ne!(expanded, source);
         C0VerificationSession::new_program_prepared(&expanded, &prepared).unwrap();
-        let expanded = click::surface::expand_program_prepared_project_claim_source_by_label(
+        let expanded = click::surface::expand_project_claim_source_by_label(
             &project_for(&source),
-            &prepared,
+            &click::surface::ProgramInputs::Program(&prepared),
             label,
         )
         .unwrap();
@@ -96,10 +96,10 @@ fn rust_import_pure_theorem_claim_labels_expand_and_reverify() {
         .is_err()
     );
     assert!(
-        click::surface::expand_program_prepared_project_claim_source_by_label(
+        click::surface::expand_project_claim_source_by_label(
             &project_for(&invalid),
-            &prepared,
-            "mixed.ensures_0",
+            &click::surface::ProgramInputs::Program(&prepared),
+            "mixed.ensures_0"
         )
         .is_err()
     );

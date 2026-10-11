@@ -453,9 +453,9 @@ fn rbtree_insert_whole_claim_expansion_verifies() {
         "rbtree insert whole-claim expansion",
         "click-rbtree-expansion".to_string(),
         move || {
-            let expanded = click::surface::expand_c0_project_claim_source_by_label(
+            let expanded = click::surface::expand_project_claim_source_by_label(
                 &project,
-                &source_refs(&c_sources),
+                &ProgramInputs::Bundle(source_refs(&c_sources)),
                 "__rb_insert.contract",
             )?;
             assert_ne!(expanded, source);
@@ -636,9 +636,9 @@ fn rbtree_erase_successor_explicit_closers_preserve_ownership() {
         "successor closer expansion",
         "click-successor-expansion".into(),
         move || {
-            let expanded = click::surface::expand_c0_project_tactic_source_at(
+            let expanded = click::surface::expand_project_tactic_source_at(
                 &project,
-                &source_refs(&c_sources),
+                &ProgramInputs::Bundle(source_refs(&c_sources)),
                 line + 1,
                 column,
             )?;

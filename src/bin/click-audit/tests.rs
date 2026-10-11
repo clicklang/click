@@ -1,5 +1,8 @@
 use super::*;
-use click::surface::verify_c0_sources;
+use click::surface::{
+    c0_smart_tactic_source_sites, c0_tactic_source_position, verify_c0_sources,
+    verify_c0_sources_at,
+};
 
 /// A site cap covering the whole claim must not re-run it for each site.
 #[test]

@@ -9,20 +9,12 @@ use click::cli::{
     read_mdtest, read_mdtest_project_if_needed, source_refs,
 };
 use click::surface::{
-    ClickProject, SmartTacticCandidate, SmartTacticSelectionError,
-    c0_prepared_project_select_smart_tactic, c0_prepared_select_smart_tactic,
-    c0_prepared_tactic_source_position, c0_project_select_smart_tactic, c0_select_smart_tactic,
-    c0_tactic_source_position, expand_c0_claim_source_by_label,
-    expand_c0_prepared_claim_source_by_label, expand_c0_prepared_project_claim_source_by_label,
-    expand_c0_prepared_project_tactic_source_at, expand_c0_prepared_tactic_source_at,
-    expand_c0_project_claim_source_by_label, expand_c0_project_tactic_source_at,
+    ClickProject, SmartTacticCandidate, SmartTacticSelectionError, expand_c0_claim_source_by_label,
+    expand_c0_prepared_claim_source_by_label, expand_c0_prepared_tactic_source_at,
     expand_c0_tactic_source_at, expand_program_prepared_claim_source_by_label,
-    expand_program_prepared_project_claim_source_by_label,
-    expand_program_prepared_project_tactic_source_at, expand_program_prepared_tactic_source_at,
-    map_verifying_source_paths, program_prepared_project_select_smart_tactic,
-    program_prepared_select_smart_tactic, program_prepared_tactic_source_position,
-    project_tactic_source_position, verify_c0_prepared_sources_at, verify_c0_sources_at,
-    verify_program_prepared_sources_at, verify_project_at,
+    expand_program_prepared_tactic_source_at, expand_project_claim_source_by_label,
+    expand_project_tactic_source_at, map_verifying_source_paths, project_select_smart_tactic,
+    project_tactic_source_position, tactic_source_position, verify_project_at, verify_sources_at,
 };
 
 const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n\nExpansion is checked before output. With --in-place, the original is atomically replaced only after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
@@ -445,70 +437,40 @@ fn expand_selection(
                 .map_err(|error| report.describe(*line, *column, error))?;
             let claim = selected.claim_label;
             let (line, column) = (&selected.position.line, &selected.position.column);
-            let expanded = match inputs {
-                CInput::Bundle(sources) => match project {
-                    Some(project) => expand_c0_project_tactic_source_at(
-                        project,
-                        &source_refs(sources),
-                        *line,
-                        *column,
-                    ),
-                    None => expand_c0_tactic_source_at(
-                        click_source,
-                        &source_refs(sources),
-                        *line,
-                        *column,
-                    ),
-                },
-                CInput::Prepared(imports) => match project {
-                    Some(project) => expand_c0_prepared_project_tactic_source_at(
-                        project, imports, *line, *column,
-                    ),
-                    None => {
-                        expand_c0_prepared_tactic_source_at(click_source, imports, *line, *column)
-                    }
-                },
-                CInput::PreparedProgram(import) => match project {
-                    Some(project) => expand_program_prepared_project_tactic_source_at(
-                        project, import, *line, *column,
-                    ),
-                    None => expand_program_prepared_tactic_source_at(
-                        click_source,
-                        import,
-                        *line,
-                        *column,
-                    ),
-                },
+            let expanded = match (project, inputs) {
+                (Some(project), _) => expand_project_tactic_source_at(
+                    project,
+                    &inputs.program_inputs(),
+                    *line,
+                    *column,
+                ),
+                (None, CInput::Bundle(sources)) => {
+                    expand_c0_tactic_source_at(click_source, &source_refs(sources), *line, *column)
+                }
+                (None, CInput::Prepared(imports)) => {
+                    expand_c0_prepared_tactic_source_at(click_source, imports, *line, *column)
+                }
+                (None, CInput::PreparedProgram(import)) => {
+                    expand_program_prepared_tactic_source_at(click_source, import, *line, *column)
+                }
             }
             .map_err(|error| error.report())?;
             Ok((claim, expanded))
         }
         Selection::Claim(claim) => {
-            let expanded = match inputs {
-                CInput::Bundle(sources) => match project {
-                    Some(project) => expand_c0_project_claim_source_by_label(
-                        project,
-                        &source_refs(sources),
-                        claim,
-                    ),
-                    None => {
-                        expand_c0_claim_source_by_label(click_source, &source_refs(sources), claim)
-                    }
-                },
-                CInput::Prepared(imports) => match project {
-                    Some(project) => {
-                        expand_c0_prepared_project_claim_source_by_label(project, imports, claim)
-                    }
-                    None => expand_c0_prepared_claim_source_by_label(click_source, imports, claim),
-                },
-                CInput::PreparedProgram(import) => match project {
-                    Some(project) => expand_program_prepared_project_claim_source_by_label(
-                        project, import, claim,
-                    ),
-                    None => {
-                        expand_program_prepared_claim_source_by_label(click_source, import, claim)
-                    }
-                },
+            let expanded = match (project, inputs) {
+                (Some(project), _) => {
+                    expand_project_claim_source_by_label(project, &inputs.program_inputs(), claim)
+                }
+                (None, CInput::Bundle(sources)) => {
+                    expand_c0_claim_source_by_label(click_source, &source_refs(sources), claim)
+                }
+                (None, CInput::Prepared(imports)) => {
+                    expand_c0_prepared_claim_source_by_label(click_source, imports, claim)
+                }
+                (None, CInput::PreparedProgram(import)) => {
+                    expand_program_prepared_claim_source_by_label(click_source, import, claim)
+                }
             }
             .map_err(|error| error.report())?;
             Ok((claim.clone(), expanded))
@@ -584,25 +546,16 @@ fn select_smart_tactic(
     line: usize,
     column: Option<usize>,
 ) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
-    match inputs {
-        CInput::Bundle(sources) => match project {
-            Some(project) => {
-                c0_project_select_smart_tactic(project, &source_refs(sources), line, column)
-            }
-            None => c0_select_smart_tactic(click_source, &source_refs(sources), line, column),
-        },
-        CInput::Prepared(imports) => match project {
-            Some(project) => {
-                c0_prepared_project_select_smart_tactic(project, imports, line, column)
-            }
-            None => c0_prepared_select_smart_tactic(click_source, imports, line, column),
-        },
-        CInput::PreparedProgram(import) => match project {
-            Some(project) => {
-                program_prepared_project_select_smart_tactic(project, import, line, column)
-            }
-            None => program_prepared_select_smart_tactic(click_source, import, line, column),
-        },
+    match (project, inputs) {
+        (Some(project), _) => {
+            project_select_smart_tactic(project, &inputs.program_inputs(), line, column)
+        }
+        (None, inputs) => click::surface::select_smart_tactic(
+            click_source,
+            &inputs.program_inputs(),
+            line,
+            column,
+        ),
     }
 }
 
@@ -618,15 +571,7 @@ fn verify_expansion(
             (Some(project), _) => {
                 project_tactic_source_position(project, &inputs.program_inputs(), claim, 0)
             }
-            (None, CInput::Bundle(sources)) => {
-                c0_tactic_source_position(expanded, &source_refs(sources), claim, 0)
-            }
-            (None, CInput::Prepared(imports)) => {
-                c0_prepared_tactic_source_position(expanded, imports, claim, 0)
-            }
-            (None, CInput::PreparedProgram(import)) => {
-                program_prepared_tactic_source_position(expanded, import, claim, 0)
-            }
+            (None, inputs) => tactic_source_position(expanded, &inputs.program_inputs(), claim, 0),
         }
         .map_err(|error| error.report())?;
         let result = match (&rewritten, inputs) {
@@ -636,18 +581,12 @@ fn verify_expansion(
                 position.line,
                 position.column,
             ),
-            (None, CInput::Bundle(sources)) => verify_c0_sources_at(
+            (None, inputs) => verify_sources_at(
                 expanded,
-                &source_refs(sources),
+                &inputs.program_inputs(),
                 position.line,
                 position.column,
             ),
-            (None, CInput::Prepared(imports)) => {
-                verify_c0_prepared_sources_at(expanded, imports, position.line, position.column)
-            }
-            (None, CInput::PreparedProgram(import)) => {
-                verify_program_prepared_sources_at(expanded, import, position.line, position.column)
-            }
         };
         result
             .map(|_| ())
@@ -701,6 +640,7 @@ fn atomic_replace(path: &Path, contents: &[u8]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use click::surface::c0_tactic_source_position;
     use std::env;
     use std::time::Duration;
 

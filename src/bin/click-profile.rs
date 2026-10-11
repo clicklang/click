@@ -10,11 +10,10 @@ use click::cli::{
 };
 use click::instrumentation::{self, ActiveVerificationWork, TacticEvent, VerificationEvent};
 use click::surface::{
-    ClickProject, SourcePosition, c0_prepared_smart_tactic_source_sites,
-    c0_prepared_tactic_source_position, c0_smart_tactic_source_sites, c0_tactic_source_position,
-    program_prepared_smart_tactic_source_sites, program_prepared_tactic_source_position,
-    project_smart_tactic_source_sites, project_tactic_source_position, verify_c0_prepared_project,
-    verify_c0_project, verify_c0_sources, verify_program_prepared_project,
+    ClickProject, SourcePosition, project_smart_tactic_source_sites,
+    project_tactic_source_position, smart_tactic_source_sites, tactic_source_position,
+    verify_c0_prepared_project, verify_c0_project, verify_c0_sources,
+    verify_program_prepared_project,
 };
 
 /// The crash-containment bound per profiled project; see
@@ -620,14 +619,8 @@ fn count_smart_source_sites(
                 (Some(project), inputs) => {
                     project_smart_tactic_source_sites(project, &inputs.program_inputs())
                 }
-                (None, CInput::Bundle(c_sources)) => {
-                    c0_smart_tactic_source_sites(&source.click_source, &source_refs(c_sources))
-                }
-                (None, CInput::Prepared(imports)) => {
-                    c0_prepared_smart_tactic_source_sites(&source.click_source, imports)
-                }
-                (None, CInput::PreparedProgram(import)) => {
-                    program_prepared_smart_tactic_source_sites(&source.click_source, import)
+                (None, inputs) => {
+                    smart_tactic_source_sites(&source.click_source, &inputs.program_inputs())
                 }
             }
             .map_err(|error| {
@@ -1580,21 +1573,9 @@ fn resolve_source_positions(
                 &key.claim,
                 key.source_index,
             ),
-            (None, CInput::Bundle(c_sources)) => c0_tactic_source_position(
+            (None, inputs) => tactic_source_position(
                 &source.click_source,
-                &source_refs(c_sources),
-                &key.claim,
-                key.source_index,
-            ),
-            (None, CInput::Prepared(imports)) => c0_prepared_tactic_source_position(
-                &source.click_source,
-                imports,
-                &key.claim,
-                key.source_index,
-            ),
-            (None, CInput::PreparedProgram(import)) => program_prepared_tactic_source_position(
-                &source.click_source,
-                import,
+                &inputs.program_inputs(),
                 &key.claim,
                 key.source_index,
             ),

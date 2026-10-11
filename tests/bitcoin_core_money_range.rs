@@ -9,9 +9,9 @@ use click::cli::read_click_project;
 use click::instrumentation::{self, VerificationEvent};
 use click::languages::cpp::{PreparedCppImport, load_import, refresh_import};
 use click::surface::{
-    C0VerificationSession, expand_program_prepared_project_claim_source_by_label,
-    expand_program_prepared_project_tactic_source_at, project_smart_tactic_source_sites,
-    project_tactic_source_position, verify_program_prepared_project,
+    C0VerificationSession, expand_project_claim_source_by_label, expand_project_tactic_source_at,
+    project_smart_tactic_source_sites, project_tactic_source_position,
+    verify_program_prepared_project,
 };
 use sha2::{Digest, Sha256};
 
@@ -338,9 +338,9 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             phase,
             Some(RoundingPhase::FullExpansion | RoundingPhase::Tools)
         ) {
-            let expanded = expand_program_prepared_project_claim_source_by_label(
+            let expanded = expand_project_claim_source_by_label(
                 &project,
-                &import,
+                &ProgramInputs::Program(&import),
                 &format!("{root_name}.ensures_0"),
             )
             .unwrap();
@@ -452,9 +452,9 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             first.source_index,
         )
         .unwrap();
-        let expanded = expand_program_prepared_project_tactic_source_at(
+        let expanded = expand_project_tactic_source_at(
             &project,
-            &import,
+            &ProgramInputs::Program(&import),
             position.line,
             position.column,
         )
@@ -501,9 +501,12 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
 
     if evaluation_caller && phase == Some(RoundingPhase::Tools) {
         let label = format!("{}.ensures_0", selected.replace("::", "_"));
-        let expanded =
-            expand_program_prepared_project_claim_source_by_label(&project, &import, &label)
-                .unwrap();
+        let expanded = expand_project_claim_source_by_label(
+            &project,
+            &ProgramInputs::Program(&import),
+            &label,
+        )
+        .unwrap();
         verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
     }
     if evaluation_caller
@@ -518,9 +521,9 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         } else {
             "false"
         };
-        let expanded = expand_program_prepared_project_claim_source_by_label(
+        let expanded = expand_project_claim_source_by_label(
             &project,
-            &import,
+            &ProgramInputs::Program(&import),
             &format!("FeeFrac_EvaluateFee__bool_{instance}.ensures_0"),
         )
         .unwrap();
@@ -827,9 +830,9 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         }
     }
     if bounded_div && phase == Some(RoundingPhase::FullExpansion) {
-        let expanded = expand_program_prepared_project_claim_source_by_label(
+        let expanded = expand_project_claim_source_by_label(
             &project,
-            &import,
+            &ProgramInputs::Program(&import),
             "FeeFrac_Div.ensures_0",
         )
         .unwrap();
@@ -1162,9 +1165,12 @@ fn pinned_std_byte_values_verify_with_native_integer_contracts_offline() {
     fs::write(&path, source).unwrap();
     let project = read_click_project(&path, source).unwrap();
     verify_program_prepared_project(&project, &import).unwrap();
-    let expanded =
-        expand_program_prepared_project_claim_source_by_label(&project, &import, "probe.contract")
-            .unwrap();
+    let expanded = expand_project_claim_source_by_label(
+        &project,
+        &ProgramInputs::Program(&import),
+        "probe.contract",
+    )
+    .unwrap();
     let rewritten = project.with_entry_source(expanded.clone());
     verify_program_prepared_project(&rewritten, &import).unwrap();
     let (session, _) =
@@ -1561,9 +1567,9 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
         );
     }
     let mut session_checks = Vec::new();
-    let expanded_contract = expand_program_prepared_project_claim_source_by_label(
+    let expanded_contract = expand_project_claim_source_by_label(
         &project,
-        &imported,
+        &ProgramInputs::Program(&imported),
         "MoneyRange.contract",
     )
     .expect("the documented claim expansion must use the locked upstream import");
@@ -1591,9 +1597,9 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
         )
         .expect("the profiler must resolve the same upstream tactic location");
         assert_eq!(profiled_position, position);
-        let expanded = expand_program_prepared_project_tactic_source_at(
+        let expanded = expand_project_tactic_source_at(
             &project,
-            &imported,
+            &ProgramInputs::Program(&imported),
             position.line,
             position.column,
         )
@@ -3117,9 +3123,9 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
 
     // Expansion runs against the same contracts, and writes back only the
     // sidecar: the catalog stays Click's.
-    let expanded = expand_program_prepared_project_claim_source_by_label(
+    let expanded = expand_project_claim_source_by_label(
         &parsed,
-        &import,
+        &ProgramInputs::Program(&import),
         &format!("{pop_back}.contract"),
     )
     .unwrap_or_else(|error| panic!("{}", error.message()));
@@ -3316,9 +3322,12 @@ fn check_pinned_byte_proof(root: &Path, import: &PreparedCppImport, source: &str
     fs::write(root.join("byte.click"), source).unwrap();
     let project = read_click_project(&root.join("byte.click"), source).unwrap();
     verify_program_prepared_project(&project, import).unwrap();
-    let expanded =
-        expand_program_prepared_project_claim_source_by_label(&project, import, "probe.contract")
-            .unwrap();
+    let expanded = expand_project_claim_source_by_label(
+        &project,
+        &ProgramInputs::Program(import),
+        "probe.contract",
+    )
+    .unwrap();
     let rewritten = project.with_entry_source(expanded.clone());
     verify_program_prepared_project(&rewritten, import).unwrap();
     let (session, _) =

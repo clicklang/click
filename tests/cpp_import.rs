@@ -17,8 +17,8 @@ use click::languages::cpp::{
     lower_import, refresh_import,
 };
 use click::surface::{
-    C0VerificationSession, VerifiedClaim, expand_program_prepared_project_claim_source_by_label,
-    expand_program_prepared_project_tactic_source_at, project_smart_tactic_source_sites,
+    C0VerificationSession, VerifiedClaim, expand_project_claim_source_by_label,
+    expand_project_tactic_source_at, project_smart_tactic_source_sites,
     project_tactic_source_position, verify_program_prepared_project,
 };
 
@@ -86,9 +86,9 @@ int32 probe() { ensures result == 11; } by { execute(); simp(); }
     if tools {
         let parsed =
             read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
-        let expanded = expand_program_prepared_project_claim_source_by_label(
+        let expanded = expand_project_claim_source_by_label(
             &parsed,
-            &import,
+            &ProgramInputs::Program(&import),
             "probe.contract",
         )
         .unwrap();
@@ -194,9 +194,9 @@ int32 probe(struct View& input) {
     if tools {
         let parsed =
             read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
-        let expanded = expand_program_prepared_project_claim_source_by_label(
+        let expanded = expand_project_claim_source_by_label(
             &parsed,
-            &import,
+            &ProgramInputs::Program(&import),
             "probe.contract",
         )
         .unwrap();
@@ -291,9 +291,12 @@ struct View copy(const struct View& input) {
 "#;
     check_arithmetic_sidecar(&project, &import, proof);
     let whole = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
-    let expanded =
-        expand_program_prepared_project_claim_source_by_label(&whole, &import, "copy.contract")
-            .unwrap();
+    let expanded = expand_project_claim_source_by_label(
+        &whole,
+        &ProgramInputs::Program(&import),
+        "copy.contract",
+    )
+    .unwrap();
     verify_program_prepared_project(&whole.with_entry_source(expanded), &import).unwrap();
     for invalid in [
         proof.replace(" views input.data;", ""),
@@ -430,7 +433,8 @@ int32 probe(int32 input) {
     let parsed = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
     for label in ["Node_constructor.contract", "probe.contract"] {
         let expanded =
-            expand_program_prepared_project_claim_source_by_label(&parsed, &import, label).unwrap();
+            expand_project_claim_source_by_label(&parsed, &ProgramInputs::Program(&import), label)
+                .unwrap();
         verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
     }
     for invalid in [
@@ -1405,15 +1409,15 @@ int32& probe(int32& value) { views value; ensures &result == &value; ensures res
     )
     .unwrap();
     for expanded in [
-        click::surface::expand_program_prepared_project_claim_source_by_label(
+        click::surface::expand_project_claim_source_by_label(
             &parsed,
-            &import,
+            &ProgramInputs::Program(&import),
             "probe.contract",
         )
         .unwrap(),
-        expand_program_prepared_project_tactic_source_at(
+        expand_project_tactic_source_at(
             &parsed,
-            &import,
+            &ProgramInputs::Program(&import),
             position.line,
             position.column,
         )
@@ -2129,9 +2133,9 @@ fn scalar_int32_profile_propagates_a_modular_throw_past_a_normal_call_continuati
     let click_project = read_click_project(&sidecar, sidecar_source).unwrap();
     verify_program_prepared_project(&click_project, &prepared)
         .expect("the caller must preserve the helper's exceptional exit");
-    let expanded = expand_program_prepared_project_claim_source_by_label(
+    let expanded = expand_project_claim_source_by_label(
         &click_project,
-        &prepared,
+        &ProgramInputs::Program(&prepared),
         "caller.exceptional_ensures_0",
     )
     .expect("expand the caller's exceptional proof");
@@ -2223,9 +2227,9 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
     let click_project = read_click_project(&sidecar, sidecar_source).unwrap();
     verify_program_prepared_project(&click_project, &prepared)
         .expect("a caught modular throw should satisfy a nonthrowing caller signature");
-    let expanded = expand_program_prepared_project_claim_source_by_label(
+    let expanded = expand_project_claim_source_by_label(
         &click_project,
-        &prepared,
+        &ProgramInputs::Program(&prepared),
         "caller.ensures_0",
     )
     .expect("expand the handler proof");
@@ -2361,9 +2365,9 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
     let click_project = read_click_project(&sidecar, sidecar_source).unwrap();
     verify_program_prepared_project(&click_project, &prepared)
         .expect("the mixed conditional cleanup join should verify");
-    let expanded = expand_program_prepared_project_claim_source_by_label(
+    let expanded = expand_project_claim_source_by_label(
         &click_project,
-        &prepared,
+        &ProgramInputs::Program(&prepared),
         "caller.contract",
     )
     .expect("expand the mixed outcome proof");
@@ -2458,9 +2462,12 @@ int32 caller(bool fail) { ensures result == 7; }
     fs::write(&sidecar, source).unwrap();
     let parsed = read_click_project(&sidecar, source).unwrap();
     verify_program_prepared_project(&parsed, &import).unwrap();
-    let expanded =
-        expand_program_prepared_project_claim_source_by_label(&parsed, &import, "caller.ensures_0")
-            .unwrap();
+    let expanded = expand_project_claim_source_by_label(
+        &parsed,
+        &ProgramInputs::Program(&import),
+        "caller.ensures_0",
+    )
+    .unwrap();
     let rewritten = parsed.with_entry_source(expanded.clone());
     verify_program_prepared_project(&rewritten, &import).unwrap();
     let (session, _) =
@@ -3517,9 +3524,9 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
         0,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         execute.line,
         execute.column,
     )
@@ -3618,9 +3625,9 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
         0,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         execute.line,
         execute.column,
     )
@@ -3913,9 +3920,9 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
         0,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         execute.line,
         execute.column,
     )
@@ -4022,9 +4029,9 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
         0,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         execute.line,
         execute.column,
     )
@@ -4167,9 +4174,9 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
         0,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         execute.line,
         execute.column,
     )
@@ -4271,9 +4278,9 @@ fn record_reference_member_loads_and_stores_verify_offline() {
         0,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         execute.line,
         execute.column,
     )
@@ -4371,9 +4378,9 @@ fn brace_initialized_local_aggregate_verifies_offline() {
         0,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         execute.line,
         execute.column,
     )
@@ -4515,9 +4522,9 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
         0,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         execute.line,
         execute.column,
     )
@@ -4656,9 +4663,9 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
         0,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         execute.line,
         execute.column,
     )
@@ -4775,9 +4782,9 @@ fn every_return_after_construction_runs_the_checked_destructor() {
         0,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         execute.line,
         execute.column,
     )
@@ -4849,9 +4856,9 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
         0,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         execute.line,
         execute.column,
     )
@@ -4951,9 +4958,9 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
         0,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         execute.line,
         execute.column,
     )
@@ -5063,9 +5070,9 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
         0,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         execute.line,
         execute.column,
     )
@@ -5191,9 +5198,9 @@ fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
         0,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         execute.line,
         execute.column,
     )
@@ -5346,9 +5353,9 @@ fn overlapping_scope_destroys_inner_before_outer_on_every_exit() {
         0,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         execute.line,
         execute.column,
     )
@@ -5469,9 +5476,9 @@ fn conditional_construction_cleans_up_only_the_constructed_arm() {
         "verify cleanup on constructed paths without calling the destructor on the skipped path",
     );
 
-    let expanded = expand_program_prepared_project_claim_source_by_label(
+    let expanded = expand_project_claim_source_by_label(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         "conditional_restore.contract",
     )
     .expect("fully expand the proof across the conditional lifetime");
@@ -5912,9 +5919,9 @@ fn cpp_profile_expansion_and_audit_session_share_the_locked_input() {
         0,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &click_project,
-        &import,
+        &ProgramInputs::Program(&import),
         execute.line,
         execute.column,
     )
@@ -6701,9 +6708,9 @@ fn ordinary_value_methods_import_with_const_receiver_and_mixed_width_fields() {
             site.source_index,
         )
         .unwrap();
-        let expanded = expand_program_prepared_project_tactic_source_at(
+        let expanded = expand_project_tactic_source_at(
             &parsed,
-            &import,
+            &ProgramInputs::Program(&import),
             site.line,
             site.column,
         )
@@ -6806,9 +6813,9 @@ fn check_sidecar_tactic(
         first.source_index,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &parsed,
-        import,
+        &ProgramInputs::Program(import),
         position.line,
         position.column,
     )
@@ -12763,9 +12770,9 @@ ensures round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_i
     fs::write(&path, &proof).unwrap();
     let parsed = read_click_project(&path, &proof).unwrap();
     if !rejections {
-        let expanded = expand_program_prepared_project_claim_source_by_label(
+        let expanded = expand_project_claim_source_by_label(
             &parsed,
-            &import,
+            &ProgramInputs::Program(&import),
             "rounded.ensures_0",
         )
         .unwrap();
@@ -15315,9 +15322,9 @@ theorem read_application() executes read(const struct State& state) {
         first.source_index,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &parsed,
-        &import,
+        &ProgramInputs::Program(&import),
         position.line,
         position.column,
     )
@@ -15906,9 +15913,9 @@ fn cpp_expansion_writes_a_branch_over_a_reference_by_its_referent_offline() {
         first.source_index,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &parsed,
-        &import,
+        &ProgramInputs::Program(&import),
         position.line,
         position.column,
     )
@@ -15945,9 +15952,9 @@ fn cpp_expansion_writes_a_branch_over_a_struct_reference_by_its_field_offline() 
         first.source_index,
     )
     .unwrap();
-    let expanded = expand_program_prepared_project_tactic_source_at(
+    let expanded = expand_project_tactic_source_at(
         &parsed,
-        &import,
+        &ProgramInputs::Program(&import),
         position.line,
         position.column,
     )
@@ -16489,7 +16496,8 @@ uint64 probe(int32* backing, uint64 count) {
         "probe.contract",
     ] {
         let expanded =
-            expand_program_prepared_project_claim_source_by_label(&parsed, &import, label).unwrap();
+            expand_project_claim_source_by_label(&parsed, &ProgramInputs::Program(&import), label)
+                .unwrap();
         verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
     }
     let original: serde_json::Value =
@@ -16583,9 +16591,12 @@ int32 probe(int32 input) {
 "#;
     check_arithmetic_sidecar(&project, &import, proof);
     let parsed = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
-    let expanded =
-        expand_program_prepared_project_claim_source_by_label(&parsed, &import, "probe.contract")
-            .unwrap();
+    let expanded = expand_project_claim_source_by_label(
+        &parsed,
+        &ProgramInputs::Program(&import),
+        "probe.contract",
+    )
+    .unwrap();
     verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
 }
 
@@ -16645,9 +16656,9 @@ uint64 probe(int32* backing, uint64 count) {
 "#;
     check_arithmetic_sidecar(&project, &import, proof);
     let parsed = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
-    let expanded = expand_program_prepared_project_claim_source_by_label(
+    let expanded = expand_project_claim_source_by_label(
         &parsed,
-        &import,
+        &ProgramInputs::Program(&import),
         "Descriptor_constructor.contract",
     )
     .unwrap();
@@ -16739,9 +16750,12 @@ uint64 probe(int32* p, uint64 n) {
         return;
     }
     let whole = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
-    let expanded =
-        expand_program_prepared_project_claim_source_by_label(&whole, &import, "probe.contract")
-            .unwrap();
+    let expanded = expand_project_claim_source_by_label(
+        &whole,
+        &ProgramInputs::Program(&import),
+        "probe.contract",
+    )
+    .unwrap();
     verify_program_prepared_project(&whole.with_entry_source(expanded), &import).unwrap();
     let (session, _) =
         C0VerificationSession::new_program_prepared_project(&whole, &import).unwrap();
@@ -16897,9 +16911,12 @@ uint64 probe(struct View& view, uint64 n) {
         return;
     }
     let whole = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
-    let expanded =
-        expand_program_prepared_project_claim_source_by_label(&whole, &import, "probe.contract")
-            .unwrap();
+    let expanded = expand_project_claim_source_by_label(
+        &whole,
+        &ProgramInputs::Program(&import),
+        "probe.contract",
+    )
+    .unwrap();
     verify_program_prepared_project(&whole.with_entry_source(expanded), &import).unwrap();
     let (session, _) =
         C0VerificationSession::new_program_prepared_project(&whole, &import).unwrap();

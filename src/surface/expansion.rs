@@ -291,16 +291,16 @@ pub fn expand_c0_claim_source(
     Ok(splice_source(click_source, &tokens, span, &replacement))
 }
 
-fn expand_c0_project_claim_source(
+fn expand_project_claim_source(
     project: &ClickProject,
-    c_sources: &[(&str, &str)],
+    inputs: &ProgramInputs<'_>,
     function_name: &str,
     claim: CProofClaim,
 ) -> Result<String, ClickError> {
     let click_source = project
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    let sources = CSourceContext::bundle(c_sources).with_click_project(project);
+    let sources = CSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     let tokens = scan_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
@@ -314,59 +314,7 @@ fn expand_c0_project_claim_source(
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
-    let verified = verify_project_at(
-        project,
-        &ProgramInputs::Bundle(c_sources.to_vec()),
-        target.line,
-        target.column,
-    )?;
-    let theorem = select_expansion_theorem(&verified, function_name, claim)?;
-    let replacement = claim_expansion_source(theorem)?;
-    let span = edit.span();
-    let replacement = indent_replacement(click_source, span.start, &replacement);
-    let replacement = match edit {
-        ProofSourceEdit::Explicit(_) => replacement,
-        ProofSourceEdit::DefaultTerminator { .. } => {
-            let separator = click_source[..span.start]
-                .chars()
-                .next_back()
-                .is_some_and(|character| !character.is_whitespace());
-            format!("{}{replacement}", if separator { " " } else { "" })
-        }
-        ProofSourceEdit::OmittedLoopPhase { .. } => unreachable!(),
-    };
-    Ok(splice_source(click_source, &tokens, span, &replacement))
-}
-
-fn expand_c0_prepared_project_claim_source(
-    project: &ClickProject,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
-    function_name: &str,
-    claim: CProofClaim,
-) -> Result<String, ClickError> {
-    let click_source = project
-        .entry_source()
-        .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    let sources = CSourceContext::prepared(imports).with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    let tokens = scan_source_tokens(click_source)?;
-    let function = find_function(&tokens, function_name)?;
-    let function_block = proof_function_blocks(&file)
-        .find(|function| function.signature().name() == function_name)
-        .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
-    let claim = covering_claim(function_block, claim);
-    let edit = if claim == CProofClaim::Grouped {
-        find_grouped_proof_edit(&tokens, &function, function_block)?
-    } else {
-        find_claim_proof_edit(&tokens, &function, function_block, claim)?
-    };
-    let target = position_at_offset(click_source, edit.selector());
-    let verified = verify_project_at(
-        project,
-        &ProgramInputs::Prepared(imports),
-        target.line,
-        target.column,
-    )?;
+    let verified = verify_project_at(project, inputs, target.line, target.column)?;
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
     let replacement = claim_expansion_source(theorem)?;
     let span = edit.span();
@@ -405,8 +353,12 @@ fn expand_c0_prepared_claim_source(
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
-    let verified =
-        verify_c0_prepared_sources_at(click_source, imports, target.line, target.column)?;
+    let verified = verify_sources_at(
+        click_source,
+        &ProgramInputs::Prepared(imports),
+        target.line,
+        target.column,
+    )?;
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
     let replacement = claim_expansion_source(theorem)?;
     let span = edit.span();
@@ -495,16 +447,22 @@ pub fn expand_c0_claim_source_by_label(
     )))
 }
 
-pub fn expand_c0_project_claim_source_by_label(
+pub fn expand_project_claim_source_by_label(
     project: &ClickProject,
-    c_sources: &[(&str, &str)],
+    inputs: &ProgramInputs<'_>,
     claim_label: &str,
 ) -> Result<String, ClickError> {
     project
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    let sources = CSourceContext::bundle(c_sources).with_click_project(project);
+    let sources = CSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
+    let compiler_imported = matches!(inputs, ProgramInputs::Program(_));
+    let claim_label = &*if compiler_imported {
+        resolve_rust_claim_label(&file, claim_label)
+    } else {
+        claim_label.into()
+    };
     for theorem in file.theorem_definitions() {
         if !file.theorem_is_selected(theorem.name()) {
             continue;
@@ -515,27 +473,27 @@ pub fn expand_c0_project_claim_source_by_label(
                 |name| format!("{}.{name}", theorem.name()),
             );
             if label == claim_label {
-                return expand_project_pure_theorem_source(
-                    project,
-                    c_sources,
-                    theorem.name(),
-                    index,
-                );
+                return expand_project_pure_theorem_source(project, inputs, theorem.name(), index);
             }
         }
     }
     for function in proof_function_blocks(&file) {
         if let Some(claim) = function_expansion_claim_by_label(function, claim_label) {
-            return expand_c0_project_claim_source(
+            return expand_project_claim_source(
                 project,
-                c_sources,
+                inputs,
                 function.signature().name(),
                 claim,
             );
         }
     }
     Err(ClickError::new(format!(
-        "could not locate function claim `{claim_label}`"
+        "could not locate {}function claim `{claim_label}`",
+        if compiler_imported {
+            "compiler-imported "
+        } else {
+            ""
+        }
     )))
 }
 
@@ -577,102 +535,30 @@ pub fn expand_c0_prepared_claim_source_by_label(
     )))
 }
 
-pub fn expand_c0_prepared_project_claim_source_by_label(
-    project: &ClickProject,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
-    claim_label: &str,
-) -> Result<String, ClickError> {
-    let sources = CSourceContext::prepared(imports).with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    for theorem in file.theorem_definitions() {
-        if !file.theorem_is_selected(theorem.name()) {
-            continue;
-        }
-        for (index, ensure) in theorem.ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{}.ensures_{index}", theorem.name()),
-                |name| format!("{}.{name}", theorem.name()),
-            );
-            if label == claim_label {
-                return expand_prepared_project_pure_theorem_source(
-                    project,
-                    imports,
-                    theorem.name(),
-                    index,
-                );
-            }
-        }
-    }
-    for function in proof_function_blocks(&file) {
-        if let Some(claim) = function_expansion_claim_by_label(function, claim_label) {
-            return expand_c0_prepared_project_claim_source(
-                project,
-                imports,
-                function.signature().name(),
-                claim,
-            );
-        }
-    }
-    Err(ClickError::new(format!(
-        "could not locate function claim `{claim_label}`"
-    )))
-}
-
 pub fn expand_program_prepared_claim_source_by_label(
     click_source: &str,
     import: &impl crate::languages::PreparedProgramSource,
     claim_label: &str,
 ) -> Result<String, ClickError> {
-    expand_program_prepared_claim_source_by_label_context(None, click_source, import, claim_label)
-}
-
-pub fn expand_program_prepared_project_claim_source_by_label(
-    project: &ClickProject,
-    import: &impl crate::languages::PreparedProgramSource,
-    claim_label: &str,
-) -> Result<String, ClickError> {
-    let click_source = project
-        .entry_source()
-        .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    expand_program_prepared_claim_source_by_label_context(
-        Some(project),
-        click_source,
-        import,
-        claim_label,
-    )
+    expand_program_prepared_claim_source_by_label_context(click_source, import, claim_label)
 }
 
 fn expand_program_prepared_claim_source_by_label_context(
-    project: Option<&ClickProject>,
     click_source: &str,
     import: &impl crate::languages::PreparedProgramSource,
     claim_label: &str,
 ) -> Result<String, ClickError> {
-    let sources = match project {
-        Some(project) => CSourceContext::program(import)?.with_click_project(project),
-        None => CSourceContext::program(import)?,
-    };
-    let file = match project {
-        Some(project) => resolve_click_project_context(project, &sources)?,
-        None => parse_source_with_c_layouts_context(click_source, &sources)?,
-    };
+    let sources = CSourceContext::program(import)?;
+    let file = parse_source_with_c_layouts_context(click_source, &sources)?;
     let claim_label = &*resolve_rust_claim_label(&file, claim_label);
     for theorem in file.theorem_definitions() {
-        if project.is_some() && !file.theorem_is_selected(theorem.name()) {
-            continue;
-        }
         for (index, ensure) in theorem.ensures().iter().enumerate() {
             let label = ensure.name().map_or_else(
                 || format!("{}.ensures_{index}", theorem.name()),
                 |name| format!("{}.{name}", theorem.name()),
             );
             if label == claim_label {
-                let verified = match project {
-                    Some(project) => {
-                        verify_click_project_theorem_context(project, &sources, theorem.name())?
-                    }
-                    None => verify_click_theorems_with_context(click_source, &sources)?,
-                };
+                let verified = verify_click_theorems_with_context(click_source, &sources)?;
                 return rewrite_verified_pure_theorem(
                     click_source,
                     &verified,
@@ -685,7 +571,6 @@ fn expand_program_prepared_claim_source_by_label_context(
     for function in proof_function_blocks(&file) {
         if let Some(claim) = function_expansion_claim_by_label(function, claim_label) {
             return expand_program_prepared_claim_source_context(
-                project,
                 click_source,
                 import,
                 function.signature().name(),
@@ -699,20 +584,13 @@ fn expand_program_prepared_claim_source_by_label_context(
 }
 
 fn expand_program_prepared_claim_source_context(
-    project: Option<&ClickProject>,
     click_source: &str,
-    import: &impl crate::languages::PreparedProgramSource,
+    import: &dyn crate::languages::PreparedProgramSource,
     function_name: &str,
     claim: CProofClaim,
 ) -> Result<String, ClickError> {
-    let sources = match project {
-        Some(project) => CSourceContext::program(import)?.with_click_project(project),
-        None => CSourceContext::program(import)?,
-    };
-    let file = match project {
-        Some(project) => resolve_click_project_context(project, &sources)?,
-        None => parse_source_with_c_layouts_context(click_source, &sources)?,
-    };
+    let sources = CSourceContext::program(import)?;
+    let file = parse_source_with_c_layouts_context(click_source, &sources)?;
     let tokens = scan_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
     let function_block = proof_function_blocks(&file)
@@ -725,17 +603,12 @@ fn expand_program_prepared_claim_source_context(
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
-    let verified = match project {
-        Some(project) => verify_project_at(
-            project,
-            &ProgramInputs::Program(import),
-            target.line,
-            target.column,
-        )?,
-        None => {
-            verify_program_prepared_sources_at(click_source, import, target.line, target.column)?
-        }
-    };
+    let verified = verify_sources_at(
+        click_source,
+        &ProgramInputs::Program(import),
+        target.line,
+        target.column,
+    )?;
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
     let replacement = claim_expansion_source(theorem)?;
     let span = edit.span();
@@ -771,29 +644,18 @@ pub struct SmartTacticSourceSite {
     pub position: SourcePosition,
 }
 
-/// Inventories every source-selectable smart tactic without running proofs.
 pub fn c0_smart_tactic_source_sites(
     click_source: &str,
     c_sources: &[(&str, &str)],
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
-    let sources = CSourceContext::bundle(c_sources);
-    c0_smart_tactic_source_sites_context(click_source, &sources)
+    smart_tactic_source_sites(click_source, &ProgramInputs::Bundle(c_sources.to_vec()))
 }
 
-pub fn c0_prepared_smart_tactic_source_sites(
+pub fn smart_tactic_source_sites(
     click_source: &str,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
+    inputs: &ProgramInputs<'_>,
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
-    let sources = CSourceContext::prepared(imports);
-    c0_smart_tactic_source_sites_context(click_source, &sources)
-}
-
-pub fn program_prepared_smart_tactic_source_sites(
-    click_source: &str,
-    import: &impl crate::languages::PreparedProgramSource,
-) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
-    let sources = CSourceContext::program(import)?;
-    c0_smart_tactic_source_sites_context(click_source, &sources)
+    c0_smart_tactic_source_sites_context(click_source, &CSourceContext::of(inputs)?)
 }
 
 pub fn project_smart_tactic_source_sites(
@@ -1045,16 +907,35 @@ pub fn expand_c0_tactic_source_at(
     expand_c0_tactic_source_at_context(None, click_source, c_sources, line, column)
 }
 
-pub fn expand_c0_project_tactic_source_at(
+pub fn expand_project_tactic_source_at(
     project: &ClickProject,
-    c_sources: &[(&str, &str)],
+    inputs: &ProgramInputs<'_>,
     line: usize,
     column: usize,
 ) -> Result<String, ClickError> {
     let click_source = project
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    expand_c0_tactic_source_at_context(Some(project), click_source, c_sources, line, column)
+    let project = Some(project);
+    match inputs {
+        ProgramInputs::Bundle(c_sources) => {
+            expand_c0_tactic_source_at_context(project, click_source, c_sources, line, column)
+        }
+        ProgramInputs::Prepared(imports) => expand_c0_prepared_tactic_source_at_context(
+            project,
+            click_source,
+            imports,
+            line,
+            column,
+        ),
+        ProgramInputs::Program(import) => expand_program_prepared_tactic_source_at_context(
+            project,
+            click_source,
+            *import,
+            line,
+            column,
+        ),
+    }
 }
 
 fn expand_c0_tactic_source_at_context(
@@ -1077,7 +958,12 @@ fn expand_c0_tactic_source_at_context(
     } = &selected.site
     {
         return if let Some(project) = project {
-            expand_project_pure_theorem_source(project, c_sources, theorem_name, *ensure_index)
+            expand_project_pure_theorem_source(
+                project,
+                &ProgramInputs::Bundle(c_sources.to_vec()),
+                theorem_name,
+                *ensure_index,
+            )
         } else {
             expand_pure_theorem_source(click_source, c_sources, theorem_name, *ensure_index)
         };
@@ -1091,7 +977,12 @@ fn expand_c0_tactic_source_at_context(
     ) = (&selected.site, &selected.edit)
     {
         return if let Some(project) = project {
-            expand_c0_project_claim_source(project, c_sources, function_name, *claim)
+            expand_project_claim_source(
+                project,
+                &ProgramInputs::Bundle(c_sources.to_vec()),
+                function_name,
+                *claim,
+            )
         } else {
             expand_c0_claim_source(click_source, c_sources, function_name, *claim)
         };
@@ -1103,9 +994,9 @@ fn expand_c0_tactic_source_at_context(
     let replacement_tactics = match &selected.edit {
         TacticSourceEdit::Partial(_) | TacticSourceEdit::PartialProofClause(_) => {
             if let Some(project) = project {
-                super::proof::capture_c0_project_tactic_expansion(
+                super::proof::capture_project_tactic_expansion(
                     project,
-                    c_sources,
+                    &ProgramInputs::Bundle(c_sources.to_vec()),
                     selected.site.clone(),
                     selected.source_index,
                     &selected.nested,
@@ -1122,9 +1013,9 @@ fn expand_c0_tactic_source_at_context(
         }
         TacticSourceEdit::WholeProof(_) => {
             if let Some(project) = project {
-                super::proof::capture_c0_project_proof_site_expansion(
+                super::proof::capture_project_proof_site_expansion(
                     project,
-                    c_sources,
+                    &ProgramInputs::Bundle(c_sources.to_vec()),
                     selected.site.clone(),
                 )?
             } else {
@@ -1136,51 +1027,7 @@ fn expand_c0_tactic_source_at_context(
             }
         }
     };
-    let (span, replacement) = match selected.edit.clone() {
-        TacticSourceEdit::Partial(span) => (
-            selected.replaced_span(span),
-            super::printing::format_partial_tactic_sequence(&replacement_tactics),
-        ),
-        TacticSourceEdit::PartialProofClause(span) => {
-            let certificate =
-                ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
-                    ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
-                        error.message()
-                    ))
-                })?;
-            (
-                span,
-                super::printing::format_proof_certificate(&certificate),
-            )
-        }
-        TacticSourceEdit::WholeProof(edit) => {
-            let certificate =
-                ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
-                    ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
-                        error.message()
-                    ))
-                })?;
-            let replacement = super::printing::format_proof_certificate(&certificate);
-            let span = edit.span().clone();
-            let replacement = match edit {
-                ProofSourceEdit::Explicit(_) => replacement,
-                ProofSourceEdit::DefaultTerminator { .. } => {
-                    let separator = click_source[..span.start]
-                        .chars()
-                        .next_back()
-                        .is_some_and(|character| !character.is_whitespace());
-                    format!("{}{replacement}", if separator { " " } else { "" })
-                }
-                ProofSourceEdit::OmittedLoopPhase { phase, .. } => {
-                    let replacement = replacement.replace('\n', "\n    ");
-                    format!("    {phase} {replacement}\n")
-                }
-            };
-            (span, replacement)
-        }
-    };
+    let (span, replacement) = selected.replacement(click_source, &replacement_tactics)?;
     // A tactic that contributed no step is removed, but a `by { ... }` block
     // must hold at least one tactic. When it is the only tactic of its
     // block, the block keeps `assumption();`, the step a phase with nothing
@@ -1256,18 +1103,6 @@ pub fn expand_c0_prepared_tactic_source_at(
     expand_c0_prepared_tactic_source_at_context(None, click_source, imports, line, column)
 }
 
-pub fn expand_c0_prepared_project_tactic_source_at(
-    project: &ClickProject,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
-    line: usize,
-    column: usize,
-) -> Result<String, ClickError> {
-    let click_source = project
-        .entry_source()
-        .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    expand_c0_prepared_tactic_source_at_context(Some(project), click_source, imports, line, column)
-}
-
 pub fn expand_program_prepared_tactic_source_at(
     click_source: &str,
     import: &impl crate::languages::PreparedProgramSource,
@@ -1277,28 +1112,10 @@ pub fn expand_program_prepared_tactic_source_at(
     expand_program_prepared_tactic_source_at_context(None, click_source, import, line, column)
 }
 
-pub fn expand_program_prepared_project_tactic_source_at(
-    project: &ClickProject,
-    import: &impl crate::languages::PreparedProgramSource,
-    line: usize,
-    column: usize,
-) -> Result<String, ClickError> {
-    let click_source = project
-        .entry_source()
-        .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    expand_program_prepared_tactic_source_at_context(
-        Some(project),
-        click_source,
-        import,
-        line,
-        column,
-    )
-}
-
 fn expand_program_prepared_tactic_source_at_context(
     project: Option<&ClickProject>,
     click_source: &str,
-    import: &impl crate::languages::PreparedProgramSource,
+    import: &dyn crate::languages::PreparedProgramSource,
     line: usize,
     column: usize,
 ) -> Result<String, ClickError> {
@@ -1330,13 +1147,20 @@ fn expand_program_prepared_tactic_source_at_context(
         TacticSourceEdit::WholeProof(_),
     ) = (&selected.site, &selected.edit)
     {
-        return expand_program_prepared_claim_source_context(
-            project,
-            click_source,
-            import,
-            function_name,
-            *claim,
-        );
+        return match project {
+            Some(project) => expand_project_claim_source(
+                project,
+                &ProgramInputs::Program(import),
+                function_name,
+                *claim,
+            ),
+            None => expand_program_prepared_claim_source_context(
+                click_source,
+                import,
+                function_name,
+                *claim,
+            ),
+        };
     }
     let block = selected.function_block.as_ref();
     let _reference_result_source = super::diagnostics::ReferenceResultSourceScope::enter(
@@ -1346,17 +1170,17 @@ fn expand_program_prepared_tactic_source_at_context(
     let replacement_tactics = match &selected.edit {
         TacticSourceEdit::Partial(_) | TacticSourceEdit::PartialProofClause(_) => {
             if let Some(project) = project {
-                super::proof::capture_program_prepared_project_tactic_expansion(
+                super::proof::capture_project_tactic_expansion(
                     project,
-                    import,
+                    &ProgramInputs::Program(import),
                     selected.site.clone(),
                     selected.source_index,
                     &selected.nested,
                 )?
             } else {
-                super::proof::capture_program_prepared_tactic_expansion(
+                super::proof::capture_prepared_tactic_expansion(
                     click_source,
-                    import,
+                    &sources,
                     selected.site.clone(),
                     selected.source_index,
                     &selected.nested,
@@ -1365,64 +1189,21 @@ fn expand_program_prepared_tactic_source_at_context(
         }
         TacticSourceEdit::WholeProof(_) => {
             if let Some(project) = project {
-                super::proof::capture_program_prepared_project_proof_site_expansion(
+                super::proof::capture_project_proof_site_expansion(
                     project,
-                    import,
+                    &ProgramInputs::Program(import),
                     selected.site.clone(),
                 )?
             } else {
-                super::proof::capture_program_prepared_proof_site_expansion(
+                super::proof::capture_prepared_proof_site_expansion(
                     click_source,
-                    import,
+                    &sources,
                     selected.site.clone(),
                 )?
             }
         }
     };
-    let (span, replacement) = match selected.edit.clone() {
-        TacticSourceEdit::Partial(span) => (
-            selected.replaced_span(span),
-            super::printing::format_partial_tactic_sequence(&replacement_tactics),
-        ),
-        TacticSourceEdit::PartialProofClause(span) => {
-            let certificate =
-                ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
-                    ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
-                        error.message()
-                    ))
-                })?;
-            (
-                span,
-                super::printing::format_proof_certificate(&certificate),
-            )
-        }
-        TacticSourceEdit::WholeProof(edit) => {
-            let certificate =
-                ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
-                    ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
-                        error.message()
-                    ))
-                })?;
-            let replacement = super::printing::format_proof_certificate(&certificate);
-            let span = edit.span().clone();
-            let replacement = match edit {
-                ProofSourceEdit::Explicit(_) => replacement,
-                ProofSourceEdit::DefaultTerminator { .. } => {
-                    let separator = click_source[..span.start]
-                        .chars()
-                        .next_back()
-                        .is_some_and(|character| !character.is_whitespace());
-                    format!("{}{replacement}", if separator { " " } else { "" })
-                }
-                ProofSourceEdit::OmittedLoopPhase { phase, .. } => {
-                    format!("    {phase} {}\n", replacement.replace('\n', "\n    "))
-                }
-            };
-            (span, replacement)
-        }
-    };
+    let (span, replacement) = selected.replacement(click_source, &replacement_tactics)?;
     let expanded = splice_source(
         click_source,
         &scan_source_tokens(click_source)?,
@@ -1453,9 +1234,9 @@ fn expand_c0_prepared_tactic_source_at_context(
     } = &selected.site
     {
         return if let Some(project) = project {
-            expand_prepared_project_pure_theorem_source(
+            expand_project_pure_theorem_source(
                 project,
-                imports,
+                &ProgramInputs::Prepared(imports),
                 theorem_name,
                 *ensure_index,
             )
@@ -1472,7 +1253,12 @@ fn expand_c0_prepared_tactic_source_at_context(
     ) = (&selected.site, &selected.edit)
     {
         return if let Some(project) = project {
-            expand_c0_prepared_project_claim_source(project, imports, function_name, *claim)
+            expand_project_claim_source(
+                project,
+                &ProgramInputs::Prepared(imports),
+                function_name,
+                *claim,
+            )
         } else {
             expand_c0_prepared_claim_source(click_source, imports, function_name, *claim)
         };
@@ -1484,17 +1270,17 @@ fn expand_c0_prepared_tactic_source_at_context(
     let replacement_tactics = match &selected.edit {
         TacticSourceEdit::Partial(_) | TacticSourceEdit::PartialProofClause(_) => {
             if let Some(project) = project {
-                super::proof::capture_c0_prepared_project_tactic_expansion(
+                super::proof::capture_project_tactic_expansion(
                     project,
-                    imports,
+                    &ProgramInputs::Prepared(imports),
                     selected.site.clone(),
                     selected.source_index,
                     &selected.nested,
                 )?
             } else {
-                super::proof::capture_c0_prepared_tactic_expansion(
+                super::proof::capture_prepared_tactic_expansion(
                     click_source,
-                    imports,
+                    &sources,
                     selected.site.clone(),
                     selected.source_index,
                     &selected.nested,
@@ -1503,64 +1289,21 @@ fn expand_c0_prepared_tactic_source_at_context(
         }
         TacticSourceEdit::WholeProof(_) => {
             if let Some(project) = project {
-                super::proof::capture_c0_prepared_project_proof_site_expansion(
+                super::proof::capture_project_proof_site_expansion(
                     project,
-                    imports,
+                    &ProgramInputs::Prepared(imports),
                     selected.site.clone(),
                 )?
             } else {
-                super::proof::capture_c0_prepared_proof_site_expansion(
+                super::proof::capture_prepared_proof_site_expansion(
                     click_source,
-                    imports,
+                    &sources,
                     selected.site.clone(),
                 )?
             }
         }
     };
-    let (span, replacement) = match selected.edit.clone() {
-        TacticSourceEdit::Partial(span) => (
-            selected.replaced_span(span),
-            super::printing::format_partial_tactic_sequence(&replacement_tactics),
-        ),
-        TacticSourceEdit::PartialProofClause(span) => {
-            let certificate =
-                ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
-                    ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
-                        error.message()
-                    ))
-                })?;
-            (
-                span,
-                super::printing::format_proof_certificate(&certificate),
-            )
-        }
-        TacticSourceEdit::WholeProof(edit) => {
-            let certificate =
-                ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
-                    ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
-                        error.message()
-                    ))
-                })?;
-            let replacement = super::printing::format_proof_certificate(&certificate);
-            let span = edit.span().clone();
-            let replacement = match edit {
-                ProofSourceEdit::Explicit(_) => replacement,
-                ProofSourceEdit::DefaultTerminator { .. } => {
-                    let separator = click_source[..span.start]
-                        .chars()
-                        .next_back()
-                        .is_some_and(|character| !character.is_whitespace());
-                    format!("{}{replacement}", if separator { " " } else { "" })
-                }
-                ProofSourceEdit::OmittedLoopPhase { phase, .. } => {
-                    format!("    {phase} {}\n", replacement.replace('\n', "\n    "))
-                }
-            };
-            (span, replacement)
-        }
-    };
+    let (span, replacement) = selected.replacement(click_source, &replacement_tactics)?;
     let expanded = splice_source(
         click_source,
         &scan_source_tokens(click_source)?,
@@ -1600,27 +1343,15 @@ fn expand_pure_theorem_source(
 
 fn expand_project_pure_theorem_source(
     project: &ClickProject,
-    c_sources: &[(&str, &str)],
+    inputs: &ProgramInputs<'_>,
     theorem_name: &str,
     ensure_index: usize,
 ) -> Result<String, ClickError> {
     let click_source = project
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    let verified = verify_click_project_theorem(project, c_sources, theorem_name)?;
-    rewrite_verified_pure_theorem(click_source, &verified, theorem_name, ensure_index)
-}
-
-fn expand_prepared_project_pure_theorem_source(
-    project: &ClickProject,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
-    theorem_name: &str,
-    ensure_index: usize,
-) -> Result<String, ClickError> {
-    let click_source = project
-        .entry_source()
-        .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    let verified = verify_click_prepared_project_theorem(project, imports, theorem_name)?;
+    let sources = CSourceContext::of(inputs)?.with_click_project(project);
+    let verified = verify_click_project_theorem_context(project, &sources, theorem_name)?;
     rewrite_verified_pure_theorem(click_source, &verified, theorem_name, ensure_index)
 }
 
@@ -2829,20 +2560,12 @@ pub fn expand_project_tactics_source_at(
     )
 }
 
-pub fn expand_c0_prepared_tactics_source_at(
+pub fn expand_tactics_source_at(
     source: &str,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
+    inputs: &ProgramInputs<'_>,
     positions: &[SourcePosition],
 ) -> Result<SelectedTacticExpansion, ClickError> {
-    expand_selected_tactics_context(None, source, &CSourceContext::prepared(imports), positions)
-}
-
-pub fn expand_program_prepared_tactics_source_at(
-    source: &str,
-    import: &impl crate::languages::PreparedProgramSource,
-    positions: &[SourcePosition],
-) -> Result<SelectedTacticExpansion, ClickError> {
-    expand_selected_tactics_context(None, source, &CSourceContext::program(import)?, positions)
+    expand_selected_tactics_context(None, source, &CSourceContext::of(inputs)?, positions)
 }
 
 fn expand_selected_tactics_context(
@@ -3174,6 +2897,50 @@ fn expand_selected_tactics_context(
 }
 
 impl LocatedSourceTactic {
+    /// The span this tactic's expansion replaces and its rendered
+    /// replacement text.
+    fn replacement(
+        &self,
+        click_source: &str,
+        replacement_tactics: &[ProofTactic],
+    ) -> Result<(Range<usize>, String), ClickError> {
+        let certificate = || {
+            ProofCertificate::from_proof_tactics(replacement_tactics)
+                .map(|certificate| super::printing::format_proof_certificate(&certificate))
+                .map_err(|error| {
+                    ClickError::new(format!(
+                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
+                        error.message()
+                    ))
+                })
+        };
+        Ok(match self.edit.clone() {
+            TacticSourceEdit::Partial(span) => (
+                self.replaced_span(span),
+                super::printing::format_partial_tactic_sequence(replacement_tactics),
+            ),
+            TacticSourceEdit::PartialProofClause(span) => (span, certificate()?),
+            TacticSourceEdit::WholeProof(edit) => {
+                let replacement = certificate()?;
+                let span = edit.span().clone();
+                let replacement = match edit {
+                    ProofSourceEdit::Explicit(_) => replacement,
+                    ProofSourceEdit::DefaultTerminator { .. } => {
+                        let separator = click_source[..span.start]
+                            .chars()
+                            .next_back()
+                            .is_some_and(|character| !character.is_whitespace());
+                        format!("{}{replacement}", if separator { " " } else { "" })
+                    }
+                    ProofSourceEdit::OmittedLoopPhase { phase, .. } => {
+                        format!("    {phase} {}\n", replacement.replace('\n', "\n    "))
+                    }
+                };
+                (span, replacement)
+            }
+        })
+    }
+
     /// `span` widened back to the tactic a recorded
     /// [`note_expansion_replaces_from`] names, if any.
     fn replaced_span(&self, span: Range<usize>) -> Range<usize> {
@@ -3267,81 +3034,42 @@ pub fn c0_select_smart_tactic(
     line: usize,
     column: Option<usize>,
 ) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
-    let sources = CSourceContext::bundle(c_sources);
-    let file = parse_source_with_c_layouts_context(click_source, &sources)
-        .map_err(SmartTacticSelectionError::from_error)?;
-    select_smart_tactic_file(click_source, &file, line, column)
+    select_smart_tactic(
+        click_source,
+        &ProgramInputs::Bundle(c_sources.to_vec()),
+        line,
+        column,
+    )
 }
 
-pub fn c0_prepared_select_smart_tactic(
+pub fn select_smart_tactic(
     click_source: &str,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
+    inputs: &ProgramInputs<'_>,
     line: usize,
     column: Option<usize>,
 ) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
-    let sources = CSourceContext::prepared(imports);
+    let sources = CSourceContext::of(inputs).map_err(SmartTacticSelectionError::from_error)?;
     let file = parse_source_with_c_layouts_context(click_source, &sources)
         .map_err(SmartTacticSelectionError::from_error)?;
     select_smart_tactic_file(click_source, &file, line, column)
 }
 
-pub fn program_prepared_select_smart_tactic(
-    click_source: &str,
-    import: &impl crate::languages::PreparedProgramSource,
-    line: usize,
-    column: Option<usize>,
-) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
-    let sources = CSourceContext::program(import).map_err(SmartTacticSelectionError::from_error)?;
-    let file = parse_source_with_c_layouts_context(click_source, &sources)
-        .map_err(SmartTacticSelectionError::from_error)?;
-    select_smart_tactic_file(click_source, &file, line, column)
-}
-
-pub fn c0_project_select_smart_tactic(
+pub fn project_select_smart_tactic(
     project: &ClickProject,
-    c_sources: &[(&str, &str)],
+    inputs: &ProgramInputs<'_>,
     line: usize,
     column: Option<usize>,
 ) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
-    let sources = CSourceContext::bundle(c_sources).with_click_project(project);
-    select_project_smart_tactic(project, &sources, line, column)
-}
-
-pub fn c0_prepared_project_select_smart_tactic(
-    project: &ClickProject,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
-    line: usize,
-    column: Option<usize>,
-) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
-    let sources = CSourceContext::prepared(imports).with_click_project(project);
-    select_project_smart_tactic(project, &sources, line, column)
-}
-
-pub fn program_prepared_project_select_smart_tactic(
-    project: &ClickProject,
-    import: &impl crate::languages::PreparedProgramSource,
-    line: usize,
-    column: Option<usize>,
-) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
-    let sources = CSourceContext::program(import)
+    let sources = CSourceContext::of(inputs)
         .map_err(SmartTacticSelectionError::from_error)?
         .with_click_project(project);
-    select_project_smart_tactic(project, &sources, line, column)
-}
-
-fn select_project_smart_tactic(
-    project: &ClickProject,
-    sources: &CSourceContext<'_>,
-    line: usize,
-    column: Option<usize>,
-) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
     let click_source = project.entry_source().ok_or_else(|| {
         SmartTacticSelectionError::from_error(ClickError::new(format!(
             "missing entry module `{}`",
             project.entry()
         )))
     })?;
-    let file = resolve_click_project_context(project, sources)
+    let file = resolve_click_project_context(project, &sources)
         .map_err(SmartTacticSelectionError::from_error)?;
     select_smart_tactic_file(click_source, &file, line, column)
 }
@@ -4288,27 +4016,21 @@ pub fn c0_tactic_source_position(
     claim_label: &str,
     source_index: usize,
 ) -> Result<SourcePosition, ClickError> {
-    let sources = CSourceContext::bundle(c_sources);
-    c0_tactic_source_position_context(&sources, click_source, claim_label, source_index)
+    tactic_source_position(
+        click_source,
+        &ProgramInputs::Bundle(c_sources.to_vec()),
+        claim_label,
+        source_index,
+    )
 }
 
-pub fn c0_prepared_tactic_source_position(
+pub fn tactic_source_position(
     click_source: &str,
-    imports: &[crate::languages::c::compiler_import::PreparedCImport],
+    inputs: &ProgramInputs<'_>,
     claim_label: &str,
     source_index: usize,
 ) -> Result<SourcePosition, ClickError> {
-    let sources = CSourceContext::prepared(imports);
-    c0_tactic_source_position_context(&sources, click_source, claim_label, source_index)
-}
-
-pub fn program_prepared_tactic_source_position(
-    click_source: &str,
-    import: &impl crate::languages::PreparedProgramSource,
-    claim_label: &str,
-    source_index: usize,
-) -> Result<SourcePosition, ClickError> {
-    let sources = CSourceContext::program(import)?;
+    let sources = CSourceContext::of(inputs)?;
     c0_tactic_source_position_context(&sources, click_source, claim_label, source_index)
 }
 
