@@ -1,3 +1,4 @@
+use click::surface::ProgramInputs;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -24,19 +25,12 @@ use click::surface::rust_display_name;
 use click::surface::verify_c0_sources;
 use click::surface::{
     ClickError, ClickErrorKind, ClickProject, VerifiedCTheorem, accepted_proof_trace,
-    c0_incremental_selection, c0_prepared_project_selected_proof_names,
-    c0_prepared_project_summary, c0_prepared_project_tactic_source_positions,
-    c0_project_selected_proof_names, c0_project_summary, c0_project_tactic_source_positions,
-    nested_tactic_source_position, program_prepared_project_selected_proof_names,
-    program_prepared_project_summary, program_prepared_project_tactic_source_positions,
-    selected_c_target, tactic_arm_containing_position, tactic_have_body_contains_position,
+    c0_incremental_selection, nested_tactic_source_position, project_selected_proof_names,
+    project_summary, project_tactic_source_positions, selected_c_target,
+    tactic_arm_containing_position, tactic_have_body_contains_position,
     tactic_line_has_multiple_starts, tactic_source_at_position, tactic_starts_on_line,
-    verify_c0_prepared_project_at, verify_c0_prepared_project_functions,
-    verify_c0_prepared_project_theorem, verify_c0_prepared_project_with_summary, verify_c0_project,
-    verify_c0_project_at, verify_c0_project_functions, verify_c0_project_theorem,
-    verify_c0_project_with_summary, verify_program_prepared_project_at,
-    verify_program_prepared_project_functions, verify_program_prepared_project_theorem,
-    verify_program_prepared_project_with_summary, verifying_source_paths, with_proof_trace,
+    verify_c0_project, verify_project_at, verify_project_functions, verify_project_theorem,
+    verify_project_with_summary, verifying_source_paths, with_proof_trace,
 };
 
 const USAGE: &str = "\
@@ -495,7 +489,7 @@ fn verify_changed_sidecar(
     }
     let (selected, reused) = if full_rebuild {
         (
-            c0_project_selected_proof_names(&project, &refs)
+            project_selected_proof_names(&project, &ProgramInputs::Bundle(refs.to_vec()))
                 .map_err(|error| located_click_message(error, sidecar, &project, 0))?,
             Vec::new(),
         )
@@ -514,7 +508,7 @@ fn verify_changed_sidecar(
         reasons
             .push("sidecar or one of its declared C sources is absent at the baseline".to_string());
         (
-            c0_project_selected_proof_names(&project, &refs)
+            project_selected_proof_names(&project, &ProgramInputs::Bundle(refs.to_vec()))
                 .map_err(|error| located_click_message(error, sidecar, &project, 0))?,
             Vec::new(),
         )
@@ -536,13 +530,17 @@ fn verify_changed_sidecar(
     }
     let summary = {
         let _phase = VerificationPhase::new("external dependency summary");
-        c0_project_summary(&project, &refs)
+        project_summary(&project, &ProgramInputs::Bundle(refs.to_vec()))
             .map_err(|error| located_click_message(error, sidecar, &project, 0))?
     };
     let verified_theorems = if full_rebuild {
         verify_c0_project(&project, &refs)
     } else {
-        verify_c0_project_functions(&project, &refs, selected.clone())
+        verify_project_functions(
+            &project,
+            &ProgramInputs::Bundle(refs.to_vec()),
+            selected.clone(),
+        )
     }
     .map_err(|error| proof_error_report(&error, sidecar, false, &project, &inputs, 0, None))?;
     print_external_dependencies(&summary.external_dependencies, &verified_theorems);
@@ -824,16 +822,8 @@ fn trace_unit(
     project: &ClickProject,
     inputs: &CInput,
 ) -> Result<TraceUnit, String> {
-    let names = match inputs {
-        CInput::Bundle(sources) => c0_project_selected_proof_names(project, &source_refs(sources))
-            .map_err(click_message)?,
-        CInput::Prepared(imports) => {
-            c0_prepared_project_selected_proof_names(project, imports).map_err(click_message)?
-        }
-        CInput::PreparedProgram(import) => {
-            program_prepared_project_selected_proof_names(project, import).map_err(click_message)?
-        }
-    };
+    let names =
+        project_selected_proof_names(project, &inputs.program_inputs()).map_err(click_message)?;
     // A Rust item is named by its path, `quad::walk`, or by the name the
     // importer gives it.
     let selects = |kind: &str, name: &str| {
@@ -956,18 +946,9 @@ impl<'a> ProofSourceLocations<'a> {
         let source_index = *path.first()?;
         let key = claim.to_owned();
         if !self.outer.borrow().contains_key(&key) {
-            let outer = match self.inputs {
-                CInput::Bundle(sources) => {
-                    c0_project_tactic_source_positions(self.project, &source_refs(sources), claim)
-                }
-                CInput::Prepared(imports) => {
-                    c0_prepared_project_tactic_source_positions(self.project, imports, claim)
-                }
-                CInput::PreparedProgram(import) => {
-                    program_prepared_project_tactic_source_positions(self.project, import, claim)
-                }
-            }
-            .ok();
+            let outer =
+                project_tactic_source_positions(self.project, &self.inputs.program_inputs(), claim)
+                    .ok();
             self.outer.borrow_mut().insert(key.clone(), outer);
         }
         let outer = self
@@ -1369,14 +1350,8 @@ fn sidecar_summary(
     line_offset: usize,
 ) -> Result<click::surface::CProjectSummary, String> {
     let _phase = VerificationPhase::new("external dependency summary");
-    match inputs {
-        CInput::Bundle(sources) => c0_project_summary(project, &source_refs(sources))
-            .map_err(|error| located_click_message(error, click_path, project, line_offset)),
-        CInput::Prepared(imports) => c0_prepared_project_summary(project, imports)
-            .map_err(|error| located_click_message(error, click_path, project, line_offset)),
-        CInput::PreparedProgram(import) => program_prepared_project_summary(project, import)
-            .map_err(|error| located_click_message(error, click_path, project, line_offset)),
-    }
+    project_summary(project, &inputs.program_inputs())
+        .map_err(|error| located_click_message(error, click_path, project, line_offset))
 }
 
 fn verify_file_within_limits(
@@ -1418,41 +1393,19 @@ fn verify_file_within_limits(
             None,
         ),
         None => {
-            let summarized = match &inputs {
-                CInput::Bundle(sources) => {
-                    verify_c0_project_with_summary(&project, &source_refs(sources))
-                }
-                CInput::Prepared(imports) => {
-                    verify_c0_prepared_project_with_summary(&project, imports)
-                }
-                CInput::PreparedProgram(import) => {
-                    verify_program_prepared_project_with_summary(&project, import)
-                }
-            };
+            let summarized = verify_project_with_summary(&project, &inputs.program_inputs());
             let (summary, verified) = summarized
                 .map_err(|error| located_click_message(error, click_path, &project, line_offset))?;
             (summary, Some(verified))
         }
     };
     let (verified, successful_trace) = {
-        let run_traced = |unit: &TraceUnit| match (&inputs, unit) {
-            (CInput::Bundle(sources), TraceUnit::Function(function)) => {
-                verify_c0_project_functions(&project, &source_refs(sources), [function.clone()])
+        let run_traced = |unit: &TraceUnit| match unit {
+            TraceUnit::Function(function) => {
+                verify_project_functions(&project, &inputs.program_inputs(), [function.clone()])
             }
-            (CInput::Prepared(imports), TraceUnit::Function(function)) => {
-                verify_c0_prepared_project_functions(&project, imports, [function.clone()])
-            }
-            (CInput::Bundle(sources), TraceUnit::Theorem(theorem)) => {
-                verify_c0_project_theorem(&project, &source_refs(sources), theorem)
-            }
-            (CInput::Prepared(imports), TraceUnit::Theorem(theorem)) => {
-                verify_c0_prepared_project_theorem(&project, imports, theorem)
-            }
-            (CInput::PreparedProgram(import), TraceUnit::Function(function)) => {
-                verify_program_prepared_project_functions(&project, import, [function.clone()])
-            }
-            (CInput::PreparedProgram(import), TraceUnit::Theorem(theorem)) => {
-                verify_program_prepared_project_theorem(&project, import, theorem)
+            TraceUnit::Theorem(theorem) => {
+                verify_project_theorem(&project, &inputs.program_inputs(), theorem)
             }
         };
         let report = |error: ClickError| {
@@ -1619,29 +1572,11 @@ fn verify_location_within_limits(
     } = target;
     let summary = {
         let _phase = VerificationPhase::new("external dependency summary");
-        match &inputs {
-            CInput::Bundle(sources) => c0_project_summary(&project, &source_refs(sources))
-                .map_err(|error| located_click_message(error, click_path, &project, line_offset))?,
-            CInput::Prepared(imports) => c0_prepared_project_summary(&project, imports)
-                .map_err(|error| located_click_message(error, click_path, &project, line_offset))?,
-            CInput::PreparedProgram(import) => program_prepared_project_summary(&project, import)
-                .map_err(|error| {
-                located_click_message(error, click_path, &project, line_offset)
-            })?,
-        }
+        project_summary(&project, &inputs.program_inputs())
+            .map_err(|error| located_click_message(error, click_path, &project, line_offset))?
     };
     let verified = {
-        let result = match &inputs {
-            CInput::Bundle(sources) => {
-                verify_c0_project_at(&project, &source_refs(sources), line, column)
-            }
-            CInput::Prepared(imports) => {
-                verify_c0_prepared_project_at(&project, imports, line, column)
-            }
-            CInput::PreparedProgram(import) => {
-                verify_program_prepared_project_at(&project, import, line, column)
-            }
-        };
+        let result = verify_project_at(&project, &inputs.program_inputs(), line, column);
         result.map_err(|error| {
             proof_error_report(
                 &error,
@@ -1975,9 +1910,9 @@ mod tests {
             panic!("expected C fixture")
         };
         let report = with_proof_trace("scan", || {
-            let error = verify_c0_project_functions(
+            let error = verify_project_functions(
                 &loaded.project,
-                &source_refs(sources),
+                &ProgramInputs::Bundle(source_refs(sources)),
                 ["scan".to_owned()],
             )
             .expect_err("both preservation arms remain unfinished");
@@ -2420,8 +2355,9 @@ mod tests {
             // Warm the process-wide caches so both sizes are measured alike.
             click::surface::c0_project_function_names(&project, &refs)
                 .expect("the sources resolve");
-            let ((summary, summary_events), summary_work) =
-                measure_deterministic_work(|| collect(|| c0_project_summary(&project, &refs)));
+            let ((summary, summary_events), summary_work) = measure_deterministic_work(|| {
+                collect(|| project_summary(&project, &ProgramInputs::Bundle(refs.to_vec())))
+            });
             let (resolution, resolution_work) = measure_deterministic_work(|| {
                 click::surface::c0_project_function_names(&project, &refs)
             });

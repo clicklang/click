@@ -144,12 +144,17 @@ fn authority_conditional_release_expansion_roundtrips_every_smart_site() {
         runtime: None,
     });
     let c = [("conditional_release.c", C)];
-    let sites = c0_project_smart_tactic_source_sites(&project, &c).unwrap();
+    let sites =
+        project_smart_tactic_source_sites(&project, &ProgramInputs::Bundle(c.to_vec())).unwrap();
     assert!(!sites.is_empty());
     for site in sites {
-        let position =
-            c0_project_tactic_source_position(&project, &c, &site.claim_label, site.source_index)
-                .unwrap();
+        let position = project_tactic_source_position(
+            &project,
+            &ProgramInputs::Bundle(c.to_vec()),
+            &site.claim_label,
+            site.source_index,
+        )
+        .unwrap();
         let expanded =
             expand_c0_project_tactic_source_at(&project, &c, position.line, position.column)
                 .unwrap();
@@ -188,12 +193,17 @@ fn authority_borrowed_member_handoff_expands_every_smart_site() {
         runtime: None,
     });
     verify_c0_project(&project, &c).expect("the original handoff proof verifies");
-    let sites = c0_project_smart_tactic_source_sites(&project, &c).unwrap();
+    let sites =
+        project_smart_tactic_source_sites(&project, &ProgramInputs::Bundle(c.to_vec())).unwrap();
     assert!(!sites.is_empty());
     for site in sites {
-        let position =
-            c0_project_tactic_source_position(&project, &c, &site.claim_label, site.source_index)
-                .unwrap();
+        let position = project_tactic_source_position(
+            &project,
+            &ProgramInputs::Bundle(c.to_vec()),
+            &site.claim_label,
+            site.source_index,
+        )
+        .unwrap();
         let expanded =
             expand_c0_project_tactic_source_at(&project, &c, position.line, position.column)
                 .unwrap();
@@ -266,16 +276,16 @@ fn authority_nonterminal_detach_keeps_folded_named_output_once() {
     crate::instrumentation::with_default_tactic_limits(|| {
         let project = project_for(source);
         verify_c0_project(&project, &c).expect("the original named-output proof verifies");
-        let sites = c0_project_smart_tactic_source_sites(&project, &c)
+        let sites = project_smart_tactic_source_sites(&project, &ProgramInputs::Bundle(c.to_vec()))
             .unwrap()
             .into_iter()
             .filter(|site| site.claim_label == "parent_detach.contract")
             .collect::<Vec<_>>();
         assert!(!sites.is_empty());
         for site in sites {
-            let position = c0_project_tactic_source_position(
+            let position = project_tactic_source_position(
                 &project,
-                &c,
+                &ProgramInputs::Bundle(c.to_vec()),
                 &site.claim_label,
                 site.source_index,
             )

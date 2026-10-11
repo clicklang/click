@@ -629,6 +629,15 @@ impl CInput {
     pub fn is_prepared(&self) -> bool {
         matches!(self, Self::Prepared(_) | Self::PreparedProgram(_))
     }
+
+    /// These inputs as the verifier's entry points take them.
+    pub fn program_inputs(&self) -> crate::surface::ProgramInputs<'_> {
+        match self {
+            Self::Bundle(sources) => crate::surface::ProgramInputs::Bundle(source_refs(sources)),
+            Self::Prepared(imports) => crate::surface::ProgramInputs::Prepared(imports),
+            Self::PreparedProgram(import) => crate::surface::ProgramInputs::Program(import),
+        }
+    }
 }
 
 pub fn read_c_inputs(sidecar: &Path, click_source: &str) -> Result<CInput, String> {

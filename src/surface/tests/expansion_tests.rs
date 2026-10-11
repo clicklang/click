@@ -169,12 +169,15 @@ fn selected_tactic_batch_uses_the_project_entry_scope() {
         "unit.click",
         [ClickModuleSource::new("unit.click", source, [])],
     );
-    let sites = c0_project_smart_tactic_source_sites(&project, &c).unwrap();
+    let sites =
+        project_smart_tactic_source_sites(&project, &ProgramInputs::Bundle(c.to_vec())).unwrap();
     let positions = sites[1..3]
         .iter()
         .map(|site| site.position.clone())
         .collect::<Vec<_>>();
-    let expanded = expand_c0_project_tactics_source_at(&project, &c, &positions).unwrap();
+    let expanded =
+        expand_project_tactics_source_at(&project, &ProgramInputs::Bundle(c.to_vec()), &positions)
+            .unwrap();
     assert!(expanded.source.contains("execute();"));
     verify_c0_project(&project.with_entry_source(expanded.source), &c).unwrap();
 }
@@ -15832,12 +15835,14 @@ fn authority_population_certification_expands_every_smart_site() {
     };
     let project = project_for(source);
     verify_c0_project(&project, &c_sources).expect("the population certification proof verifies");
-    let sites = c0_project_smart_tactic_source_sites(&project, &c_sources).unwrap();
+    let sites =
+        project_smart_tactic_source_sites(&project, &ProgramInputs::Bundle(c_sources.to_vec()))
+            .unwrap();
     assert!(!sites.is_empty());
     for site in sites {
-        let position = c0_project_tactic_source_position(
+        let position = project_tactic_source_position(
             &project,
-            &c_sources,
+            &ProgramInputs::Bundle(c_sources.to_vec()),
             &site.claim_label,
             site.source_index,
         )
@@ -15886,12 +15891,14 @@ fn authority_callback_count_refinement_expands_every_smart_site() {
     };
     let project = project_for(source);
     verify_c0_project(&project, &c_sources).expect("the callback Count refinement verifies");
-    let sites = c0_project_smart_tactic_source_sites(&project, &c_sources).unwrap();
+    let sites =
+        project_smart_tactic_source_sites(&project, &ProgramInputs::Bundle(c_sources.to_vec()))
+            .unwrap();
     assert!(!sites.is_empty());
     for site in sites {
-        let position = c0_project_tactic_source_position(
+        let position = project_tactic_source_position(
             &project,
-            &c_sources,
+            &ProgramInputs::Bundle(c_sources.to_vec()),
             &site.claim_label,
             site.source_index,
         )
@@ -16038,10 +16045,16 @@ void caller(struct parent* p, struct child* kid) {
     let project = project_for(source);
     verify_c0_project(&project, &c)
         .expect("a named parent's actual field identity survives the unrelated call");
-    for site in c0_project_smart_tactic_source_sites(&project, &c).unwrap() {
-        let position =
-            c0_project_tactic_source_position(&project, &c, &site.claim_label, site.source_index)
-                .unwrap();
+    for site in
+        project_smart_tactic_source_sites(&project, &ProgramInputs::Bundle(c.to_vec())).unwrap()
+    {
+        let position = project_tactic_source_position(
+            &project,
+            &ProgramInputs::Bundle(c.to_vec()),
+            &site.claim_label,
+            site.source_index,
+        )
+        .unwrap();
         let expanded =
             expand_c0_project_tactic_source_at(&project, &c, position.line, position.column)
                 .unwrap();
@@ -16622,9 +16635,9 @@ fn check_counted_pthread_whole_claim_expansion(fixture: &str, claim: &str) {
         );
         let (result, planning) =
             crate::surface::proof::count_planning_statement_transitions(|| {
-                verify_c0_project_at(
+                verify_project_at(
                     &project_for(&expanded),
-                    &sources,
+                    &ProgramInputs::Bundle(sources.to_vec()),
                     position.line,
                     position.column,
                 )

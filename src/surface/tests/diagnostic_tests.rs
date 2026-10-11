@@ -1438,7 +1438,13 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
     );
     let c = [("f.c", "int f(void) { return 1; }")];
     let locate = |claim: &str, path: &[usize]| {
-        let outer = c0_project_tactic_source_position(&project, &c, claim, path[0]).ok()?;
+        let outer = project_tactic_source_position(
+            &project,
+            &ProgramInputs::Bundle(c.to_vec()),
+            claim,
+            path[0],
+        )
+        .ok()?;
         let position = if path.len() == 1 {
             outer
         } else {
@@ -1453,7 +1459,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
             .flatten()
     };
     with_proof_trace("good", || {
-        verify_c0_project_theorem(&project, &c, "good").unwrap();
+        verify_project_theorem(&project, &ProgramInputs::Bundle(c.to_vec()), "good").unwrap();
         let trace = accepted_proof_trace(&locate, &arm, &|_, _, _| false, None).unwrap();
         assert_eq!(
             trace,
@@ -1461,7 +1467,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         );
     });
     with_proof_trace("split", || {
-        verify_c0_project_theorem(&project, &c, "split").unwrap();
+        verify_project_theorem(&project, &ProgramInputs::Bundle(c.to_vec()), "split").unwrap();
         let whole = accepted_proof_trace(&locate, &arm, &|_, _, _| false, None).unwrap();
         assert!(whole.ends_with("\ntactic@12: cases"), "{whole}");
         let right = accepted_proof_trace(
@@ -1480,7 +1486,8 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         assert!(!right.contains("x == 1"), "{right}");
     });
     // The theorem that fails reports the tactic it wrote.
-    let error = verify_c0_project_theorem(&project, &c, "unproved").unwrap_err();
+    let error = verify_project_theorem(&project, &ProgramInputs::Bundle(c.to_vec()), "unproved")
+        .unwrap_err();
     assert_eq!(
         error.proof_source_site(),
         Some(("unproved.ensures_0", &[0][..]))
@@ -2270,7 +2277,8 @@ fn long_theorem_traces_retain_every_step_and_reach_late_targets() {
             Some((format!("tactic@{line}"), SourcePosition::new(line, 1)))
         };
         with_proof_trace("long_trace", || {
-            verify_c0_project_theorem(&project, &[], "long_trace").unwrap();
+            verify_project_theorem(&project, &ProgramInputs::Bundle(Vec::new()), "long_trace")
+                .unwrap();
             for target in [None, Some(SourcePosition::new(size + 4, 1))] {
                 let trace = accepted_proof_trace(
                     &locate,

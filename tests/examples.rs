@@ -1,3 +1,4 @@
+use click::surface::ProgramInputs;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -12,10 +13,8 @@ use click::cli::{
 use click::instrumentation::{self, ArtifactReuseRejection};
 use click::languages::refresh_compiler_import;
 use click::surface::{
-    c0_prepared_project_tactic_source_position, c0_project_tactic_source_position,
-    c0_tactic_source_position, program_prepared_project_tactic_source_position,
-    verify_c0_prepared_project, verify_c0_project, verify_c0_sources,
-    verify_program_prepared_project,
+    c0_tactic_source_position, project_tactic_source_position, verify_c0_prepared_project,
+    verify_c0_project, verify_c0_sources, verify_program_prepared_project,
 };
 
 #[path = "support/limits.rs"]
@@ -1451,28 +1450,24 @@ fn run_example_project(project: &Path) -> Result<(), String> {
                                         source_index,
                                     )
                                 }
-                                CInput::Bundle(c_sources) => c0_project_tactic_source_position(
+                                CInput::Bundle(c_sources) => project_tactic_source_position(
                                     &click_project,
-                                    &source_refs(c_sources),
+                                    &ProgramInputs::Bundle(source_refs(c_sources)),
                                     claim,
                                     source_index,
                                 ),
-                                CInput::Prepared(imports) => {
-                                    c0_prepared_project_tactic_source_position(
-                                        &click_project,
-                                        imports,
-                                        claim,
-                                        source_index,
-                                    )
-                                }
-                                CInput::PreparedProgram(import) => {
-                                    program_prepared_project_tactic_source_position(
-                                        &click_project,
-                                        import,
-                                        claim,
-                                        source_index,
-                                    )
-                                }
+                                CInput::Prepared(imports) => project_tactic_source_position(
+                                    &click_project,
+                                    &ProgramInputs::Prepared(imports),
+                                    claim,
+                                    source_index,
+                                ),
+                                CInput::PreparedProgram(import) => project_tactic_source_position(
+                                    &click_project,
+                                    &ProgramInputs::Program(import),
+                                    claim,
+                                    source_index,
+                                ),
                             }
                             .ok()
                             .map(|position| (position.line, position.column))
