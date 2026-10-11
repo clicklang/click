@@ -68,7 +68,7 @@ theorem adler_bounded_count_lower(count: uint64, low: int32) {
  ensures low <= (int32)(uint32)count by {
   apply(adler_bounded_count(count));
   apply(int32_less_equal_to_integer(0, low));
-  have low <= 2147483647 by { normalize(); }
+  have low <= 2147483647 by normalize();
   apply(int32_less_equal_to_integer(low, 2147483647));
   have to_integer((uint64)low) == to_integer(low) by {
    arithmetic_certificate rules {
@@ -95,7 +95,7 @@ theorem adler_bounded_count_upper(count: uint64, high: int32) {
  ensures (int32)(uint32)count <= high by {
   apply(adler_bounded_count(count));
   apply(int32_less_equal_to_integer(0, high));
-  have high <= 2147483647 by { normalize(); }
+  have high <= 2147483647 by normalize();
   apply(int32_less_equal_to_integer(high, 2147483647));
   have to_integer((uint64)high) == to_integer(high) by {
    arithmetic_certificate rules {
@@ -122,7 +122,7 @@ theorem adler_bounded_count_native_lower(count: uint64, low: int32) {
  ensures (uint64)low <= count by {
   apply(adler_bounded_count(count));
   apply(int32_less_equal_to_integer(0, low));
-  have low <= 2147483647 by { normalize(); }
+  have low <= 2147483647 by normalize();
   apply(int32_less_equal_to_integer(low, 2147483647));
   have to_integer((uint64)low) == to_integer(low) by {
    arithmetic_certificate rules {

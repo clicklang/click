@@ -179,7 +179,7 @@ fn reduce(value: u32) -> u32 {
 
 New sidecars use this form. The older C-shaped spelling of the same
 declaration, `uint32 add_byte(uint32 sum, uint8 byte)`, is still accepted
-until the last sidecars in `design/charon-trial/adler2` are converted. The
+pending the parser refusal tracked in `issues/adler-syntax.md`. The
 parameter and return types are the integer and float types, `bool`, `()`,
 and a struct by name; `usize` and `isize` are 64 bits. `expr as T` takes a
 scalar type and binds as in Rust, tighter than a binary operator.
