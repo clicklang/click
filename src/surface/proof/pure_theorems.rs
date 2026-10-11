@@ -2086,7 +2086,7 @@ fn verify_contract_refinement_theorem(
     })?;
     let refinement = match (concrete_target, source_contract) {
         (Some(target), None) => {
-            c_function_contract_refinement_context(function_environment, name, target).ok_or_else(
+            c_function_contract_refinement_context(function_environment, name, spec_definitions.predicates.function_execution_name(target)).ok_or_else(
                 || {
                     ClickError::new(format!(
                         "`{claim_label}`: `{target}` is not a verified or external function compatible with contract `{name}`"
@@ -4045,7 +4045,7 @@ mod tests {
     fn verify_standard_declaration(source: &str) -> Result<(), ClickError> {
         let file = crate::surface::parser::parse_file_items(source)?;
         let predicate_environment = PredicateEnvironment::new(file.predicate_definitions())
-            .with_contracts(file.contract_definitions());
+            .with_contracts(file.contract_definitions(), &file.c_function_names);
         let click_function_environment =
             ClickFunctionEnvironment::new(file.click_function_definitions());
         let spec_definitions =

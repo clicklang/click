@@ -5145,3 +5145,30 @@ fn integer_cast_identity_round_trips_and_cannot_establish_an_unrelated_integer_e
     );
     assert!(verify_click_theorems(source).is_err());
 }
+
+#[test]
+fn inline_callback_identity_rejects_ambiguous_translation_units() {
+    let source = r#"
+        verifying "alpha.c";
+        verifying "beta.c";
+        contract int32 One() { ensures result == 1; }
+        int32 callback() { ensures result == 1; } by { execute(); normalize(); }
+        theorem callback_contract() {
+            ensures One(&callback) by { unfold(One); simp(); }
+        }
+    "#;
+    let inputs = [
+        ("alpha.c", "static inline int callback(void) { return 1; }"),
+        ("beta.c", "static inline int callback(void) { return 2; }"),
+    ];
+    let file = parse_c0_click_file(source, &inputs).unwrap();
+    assert!(!file.c_function_names.contains_key("callback"));
+    let error = verify_c0_sources(source, &inputs).unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("not a verified or external function compatible with contract `One`"),
+        "{}",
+        error.message()
+    );
+}

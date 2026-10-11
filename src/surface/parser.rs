@@ -84,10 +84,12 @@ pub(super) fn parse(source: &str) -> Result<ClickFile, ClickError> {
         .parse_file()
 }
 
-/// What a function's proof needs to know about its automatic locals that
-/// only the source language's front end can say.
+/// Source-language metadata for one function: its execution identity and the
+/// automatic-local layouts a sidecar cannot infer from its signature.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(in crate::surface) struct FunctionLocals {
+    /// Exact C execution identity; absent when the source spelling is ambiguous.
+    pub(in crate::surface) execution_name: Option<String>,
     /// The struct name of each local of struct-pointer type.
     pub(in crate::surface) struct_pointers: BTreeMap<String, String>,
     /// The locals of reference type, which a proof names by their referent
@@ -1230,6 +1232,16 @@ impl Parser {
         }
         self.position = end;
         let file = ClickFile {
+            c_function_names: std::sync::Arc::new(
+                self.local_struct_pointers_by_function
+                    .iter()
+                    .filter_map(|(source, info)| {
+                        info.execution_name
+                            .as_ref()
+                            .map(|target| (source.clone(), target.clone()))
+                    })
+                    .collect(),
+            ),
             imports,
             verifying_sources,
             c_target,

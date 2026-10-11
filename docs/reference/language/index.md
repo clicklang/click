@@ -1180,6 +1180,13 @@ route for a target contract with proof parameters, which `unfold(Name)` refuses.
 The [modeled-instance variant](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_concrete_model.md)
 carries a tree instance through the same two maps.
 
+A concrete `static inline` callback uses its ordinary source spelling in both
+forms of refinement theorem. The contract fact refers to the same
+translation-unit-local function as a C initializer or call. If multiple
+translation units define that spelling, Click does not choose one or identify
+their function pointers. The [inline callback regression](https://github.com/clicklang/click/blob/master/mdtests/c_contract_inline_callback.md)
+checks both refinement forms and a static const callback table.
+
 ### Automatic formation at `&f`
 
 Passing `&f` where a named contract is required does not always need such a

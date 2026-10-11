@@ -434,6 +434,8 @@ fn check_verification_deadline() -> Result<(), ClickError> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClickFile {
+    /// Unique source spelling to C execution identity, shared by specification lowering.
+    c_function_names: std::sync::Arc<BTreeMap<String, String>>,
     imports: Vec<ImportDeclaration>,
     verifying_sources: Vec<String>,
     /// The C implementation target this file selects with a `target`
@@ -5996,6 +5998,7 @@ impl<'a> SpecDefinitions<'a> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PredicateEnvironment {
+    c_function_names: std::sync::Arc<BTreeMap<String, String>>,
     definitions: BTreeMap<String, PredicateDefinition>,
     resource_state_dependent: BTreeSet<String>,
     contract_signatures: BTreeMap<String, C0Type>,
@@ -6037,12 +6040,18 @@ impl PredicateEnvironment {
                 .iter()
                 .map(|definition| (definition.name().to_string(), definition.clone()))
                 .collect(),
+            c_function_names: Default::default(),
             contract_signatures: BTreeMap::new(),
             contract_definitions: BTreeMap::new(),
         }
     }
 
-    fn with_contracts(mut self, definitions: &[ContractDefinition]) -> Self {
+    fn with_contracts(
+        mut self,
+        definitions: &[ContractDefinition],
+        names: &std::sync::Arc<BTreeMap<String, String>>,
+    ) -> Self {
+        self.c_function_names = names.clone();
         self.contract_signatures = definitions
             .iter()
             .map(|definition| {
@@ -6061,6 +6070,12 @@ impl PredicateEnvironment {
 
     fn get(&self, name: &str) -> Option<&PredicateDefinition> {
         self.definitions.get(name)
+    }
+
+    fn function_execution_name<'a>(&'a self, source: &'a str) -> &'a str {
+        self.c_function_names
+            .get(source)
+            .map_or(source, String::as_str)
     }
 
     fn contract_signature(&self, name: &str) -> Option<C0Type> {
