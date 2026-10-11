@@ -2201,6 +2201,15 @@ impl Parser {
                 }
                 Some("fact") => {
                     self.position += 1;
+                    // Nothing names a resource's fact: a fold that cannot
+                    // establish one prints the fact itself.
+                    if matches!(self.peek(), Some(Token::Ident(_)))
+                        && self.peek_next() == Some(&Token::Colon)
+                    {
+                        return Err(self.error(
+                            "a `fact` clause takes no label; a failed fold names the fact by its proposition",
+                        ));
+                    }
                     let fact = self.parse_proposition()?;
                     self.note_child_field_equation(&fact);
                     facts.push(fact);
@@ -2211,12 +2220,12 @@ impl Parser {
                 }
                 Some(name) => {
                     return Err(self.error(format!(
-                        "expected `contains`, `owns`, `views`, `fact`, `forall`, or `let` in resource body, got `{name}`"
+                        "expected `owns`, `views`, `fact`, `forall`, or `let` in resource body, got `{name}`"
                     )));
                 }
                 None => {
                     return Err(self.error(
-                        "expected `contains`, `owns`, `views`, `fact`, `forall`, or `let` in resource body, got end of input",
+                        "expected `owns`, `views`, `fact`, `forall`, or `let` in resource body, got end of input",
                     ));
                 }
             }
