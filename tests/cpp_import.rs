@@ -8018,6 +8018,28 @@ fn single_base_layouts_preserve_nominal_subobjects_and_verify_offline() {
         assert_eq!(subobject.size_bytes, base.size_bytes);
     }
     assert_eq!(identities.len(), 2);
+    let lowered = lower_import(&import).unwrap();
+    let boundaries: Vec<_> = lowered.record_layouts()["Envelope"]
+        .records()
+        .iter()
+        .map(|record| {
+            (
+                record.name(),
+                record.offset_bytes(),
+                record.size_bytes(),
+                record.parent(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        boundaries,
+        vec![
+            ("left", 0, 16, None),
+            ("left.base", 0, 16, Some(0)),
+            ("right", 16, 16, None),
+            ("right.base", 16, 16, Some(2)),
+        ]
+    );
     fs::remove_file(&project.exporter).unwrap();
     check_return_call_sidecar(
         &project,
@@ -13209,6 +13231,28 @@ fn nested_record_declarations_preserve_layout_identity_and_offline_field_frames(
         assert_eq!(
             (leaf.size_bytes, pair.size_bytes, outer.size_bytes),
             (16, 40, 48)
+        );
+        let lowered = lower_import(&import).unwrap();
+        let boundaries: Vec<_> = lowered.record_layouts()["FeeEnvelope"]
+            .records()
+            .iter()
+            .map(|record| {
+                (
+                    record.name(),
+                    record.offset_bytes(),
+                    record.size_bytes(),
+                    record.alignment_bytes(),
+                    record.parent(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            boundaries,
+            vec![
+                ("state", 0, 40, 8, None),
+                ("state.left", 0, 16, 8, Some(0)),
+                ("state.right", 16, 16, 8, Some(0)),
+            ]
         );
         assert_eq!(
             pair.fields

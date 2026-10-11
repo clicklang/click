@@ -61,9 +61,46 @@ fn assert_declared_aggregate(memory: &CMemory, pointer: &Pointer, expected: &CAg
 }
 
 #[test]
+fn aggregate_record_boundary_parentage_is_explicit_and_checked() {
+    let base = CAggregateLayout::new(16, 4, vec![]);
+    let nested = base.clone().with_records(vec![
+        CAggregateRecord::new("outer", 0, 16, 4, None),
+        CAggregateRecord::new("outer.middle", 0, 8, 4, Some(0)),
+        CAggregateRecord::new("outer.middle.leaf", 0, 4, 4, Some(1)),
+    ]);
+    assert_eq!(
+        nested
+            .records()
+            .iter()
+            .map(CAggregateRecord::parent)
+            .collect::<Vec<_>>(),
+        vec![None, Some(0), Some(1)]
+    );
+    assert!(
+        nested
+            .records()
+            .iter()
+            .all(|record| record.offset_bytes() == 0)
+    );
+    assert_ne!(nested, base);
+    for records in [
+        vec![CAggregateRecord::new("bad", 12, 8, 4, None)],
+        vec![CAggregateRecord::new("bad", 2, 4, 4, None)],
+        vec![CAggregateRecord::new("bad", 0, 4, 4, Some(0))],
+        vec![
+            CAggregateRecord::new("a", 0, 8, 4, None),
+            CAggregateRecord::new("b", 8, 8, 4, None),
+            CAggregateRecord::new("a.late", 0, 4, 4, Some(0)),
+        ],
+    ] {
+        assert!(std::panic::catch_unwind(|| base.clone().with_records(records)).is_err());
+    }
+}
+
+#[test]
 fn aggregate_declaration_survives_value_changes_without_initializing_padding() {
     let _session = crate::kernel::VerificationSession::enter();
-    let layout = node_layout();
+    let layout = node_layout().with_records(vec![CAggregateRecord::new("tail", 8, 8, 4, None)]);
     let initial = CState::new().with_population_creation_tracking();
     let paths = execute_c_statement_paths(
         &initial,
@@ -137,6 +174,23 @@ fn aggregate_declaration_survives_value_changes_without_initializing_padding() {
         ));
     }
     assert!(joined.known_value(&at).is_none());
+
+    let flat = declared
+        .memory
+        .clone()
+        .with_declared_aggregate_block(at.block.clone(), &node_layout());
+    assert!(
+        declared
+            .memory
+            .clone()
+            .with_interface_memory_havoc(
+                Variable(874_006),
+                &BTreeSet::new(),
+                &[&declared.memory, &flat]
+            )
+            .is_err(),
+        "flattened-equivalent declarations retain incompatible boundaries"
+    );
 
     let incompatible = CAggregateLayout::new(
         16,
@@ -276,6 +330,11 @@ fn aggregate_declarations_do_not_expand_unrelated_snapshot_hashing() {
             4,
             (0..64)
                 .map(|index| CAggregateField::new(format!("field{index}"), index * 4, CType::Int32))
+                .collect(),
+        )
+        .with_records(
+            (0..64)
+                .map(|index| CAggregateRecord::new(format!("record{index}"), index * 4, 4, 4, None))
                 .collect(),
         );
         for index in 0..count {

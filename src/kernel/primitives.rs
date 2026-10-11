@@ -3142,12 +3142,60 @@ impl CAggregateInitializer {
     }
 }
 
+/// One explicitly declared embedded record, including its padding. Coordinates
+/// are relative to the complete layout; `parent` names an earlier record in
+/// its pre-order list, or the complete layout when absent. This is structural
+/// metadata, not nominal type identity, initialization or access authority.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct CAggregateRecord {
+    name: String,
+    offset_bytes: u32,
+    size_bytes: u32,
+    alignment_bytes: u32,
+    parent: Option<u32>,
+}
+
+impl CAggregateRecord {
+    pub fn new(
+        name: impl Into<String>,
+        offset_bytes: u32,
+        size_bytes: u32,
+        alignment_bytes: u32,
+        parent: Option<u32>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            offset_bytes,
+            size_bytes,
+            alignment_bytes,
+            parent,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn offset_bytes(&self) -> u32 {
+        self.offset_bytes
+    }
+    pub fn size_bytes(&self) -> u32 {
+        self.size_bytes
+    }
+    pub fn alignment_bytes(&self) -> u32 {
+        self.alignment_bytes
+    }
+    pub fn parent(&self) -> Option<u32> {
+        self.parent
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CAggregateLayout {
     pub(super) size_bytes: u32,
     pub(super) alignment_bytes: u32,
     pub(super) fields: Vec<CAggregateField>,
     pub(super) unions: Vec<CAggregateUnion>,
+    records: Vec<CAggregateRecord>,
 }
 
 impl CAggregateLayout {
@@ -3158,6 +3206,7 @@ impl CAggregateLayout {
             alignment_bytes,
             fields,
             unions: Vec::new(),
+            records: Vec::new(),
         }
     }
 
@@ -3173,6 +3222,7 @@ impl CAggregateLayout {
             alignment_bytes,
             fields,
             unions,
+            records: Vec::new(),
         }
     }
 
@@ -3190,6 +3240,53 @@ impl CAggregateLayout {
 
     pub fn unions(&self) -> &[CAggregateUnion] {
         &self.unions
+    }
+
+    /// Retains explicitly supplied boundaries; leaf names never create them.
+    pub fn with_records(mut self, records: Vec<CAggregateRecord>) -> Self {
+        let mut ancestors = Vec::new();
+        for (index, record) in records.iter().enumerate() {
+            crate::instrumentation::record_deterministic_work(1);
+            while ancestors.last().copied() != record.parent {
+                assert!(ancestors.pop().is_some(), "record list must be pre-order");
+                crate::instrumentation::record_deterministic_work(1);
+            }
+            let (start, size, alignment) = match record.parent {
+                Some(parent) => {
+                    assert!(
+                        (parent as usize) < index,
+                        "record parent must precede its child"
+                    );
+                    let parent = &records[parent as usize];
+                    (
+                        parent.offset_bytes,
+                        parent.size_bytes,
+                        parent.alignment_bytes,
+                    )
+                }
+                None => (0, self.size_bytes, self.alignment_bytes),
+            };
+            assert!(record.alignment_bytes.is_power_of_two());
+            assert!(record.size_bytes.is_multiple_of(record.alignment_bytes));
+            assert!(alignment >= record.alignment_bytes);
+            assert!(record.offset_bytes.is_multiple_of(record.alignment_bytes));
+            assert!(record.offset_bytes >= start);
+            assert!(
+                record
+                    .offset_bytes
+                    .checked_add(record.size_bytes)
+                    .is_some_and(|end| start
+                        .checked_add(size)
+                        .is_some_and(|parent_end| end <= parent_end))
+            );
+            ancestors.push(u32::try_from(index).expect("record boundary count fits u32"));
+        }
+        self.records = records;
+        self
+    }
+
+    pub fn records(&self) -> &[CAggregateRecord] {
+        &self.records
     }
 }
 

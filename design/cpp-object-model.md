@@ -521,10 +521,12 @@ block declaration metadata. Ordinary aggregate declarations, raw destination
 allocations, by-value parameter copies and actual copy-result allocations issue
 that evidence. Synthetic symbolic result blocks and constructor proof-entry raw
 markers do not. The metadata participates in snapshot identity and joins;
-resource semantics version 66 invalidates older retained artifacts. This step
+resource semantics version 67 invalidates older retained artifacts. This step
 preserves the existing scalar declaration behavior and grants no new access.
 The retained aggregate metadata is structural layout; it is not nominal C++
-class identity or a record of declared nested subobjects.
+class identity. Explicit embedded-record boundaries retain parent relationships,
+root-relative offsets, full extents including padding, and alignment. They do
+not establish active lifetime or distinguish a C++ base from a data member.
 
 The implementation sequence is:
 
@@ -534,11 +536,14 @@ The implementation sequence is:
    supply this metadata. Raw footprint markers, ownership, and selection of a
    desired construction destination must not manufacture it. Stores and value
    havoc preserve it; incompatible declarations cannot be combined at a join.
-2. Retain explicit declared subobject boundaries through lowering. The current
-   `CAggregateLayout` flattens nested records to scalar leaves; matching those
-   leaves or fitting inside a parent allocation is not evidence that a child
-   object of the requested type exists there. Constructor binding must select
-   the actual complete object or declared child, preserving its parent identity.
+2. **Boundary metadata delivered; admission still pending:** preserve explicit
+   embedded-record boundaries alongside flattened scalar leaves through shared
+   C layout lowering, including imported C++ records. The flat pre-order list
+   records parent indices and complete-object-relative extents; it is derived
+   from declarations, never dotted leaf names. Matching scalar leaves or fitting
+   inside a parent allocation is not evidence that a child of the requested
+   type exists there. Constructor binding must still select the actual complete
+   object or declared child and preserve its identity.
 3. Carry checked input designation through pointers and modular calls. A scalar
    input cannot acquire a live integer object merely by pointing into padding.
    This is the same domain boundary required by the sibling-pointer defect,
@@ -574,6 +579,47 @@ guarantee. If an interface genuinely needs a new validity precondition, report
 it and update the contract openly; do not describe a proof under a stronger
 precondition as the old theorem. Never infer initialization just from validity
 or permission.
+
+### Native interface audit and surface syntax
+
+The shared model does not require a new keyword for each internal fact. Native
+operations should supply checked evidence, and ordinary contracts should retain
+their existing spelling where that spelling already expresses the requirement.
+The current implementation nevertheless loses information needed to do this:
+
+| Current path | Evidence retained now | Remaining obligation |
+| --- | --- | --- |
+| C++ reference parameters (`cpp/lowering.rs::lower_parameter`) | Pointer carrier and pointee qualifiers; source reference identity remains in importer lowering | Retain the admitted reference/access requirement in the shared interface and check its referent at calls |
+| Rust reference parameters (`rust/lowering.rs::lower_function`) | Pointer carrier, qualifiers and source reference/array/slice information in lowering | Carry the applicable Rust referent guarantees to shared checking without treating raw pointers as references |
+| C and C++ raw pointer parameters | Pointer value and access type | Do not infer a live pointee merely from the signature; a pointer may be null or one-past when the function does not dereference it |
+| Memory `owns`/`views` clauses (`surface/lowering/resource_lowering.rs`) | Permission, range guards and snapshot-relative loadability propositions | Loadability is represented by address and byte extent, not a retained typed object or array designation |
+| By-value aggregate parameters (`kernel/functions.rs`) | A fresh copied destination with its declared layout | Check the source value against its actual object and preserve nested boundaries; do not use the requested layout to create source evidence |
+| Constructor body entry and binding | Raw footprint, selected layout, alignment, field permissions and storage containment | Match the actual selected object and input domains at calls and symbolic entry; retain unknown containing allocation extent |
+
+This audit describes missing evidence, not new assumptions that callers already
+satisfy. `with_contract_interface_argument_views` also supplies broad views for
+evaluating contract expressions; those evaluation views are not evidence that
+an arbitrary typed pointee exists. Neither those views nor a cast can establish
+object validity.
+
+Reference syntax must not be used as a blanket initialization rule. C++ can bind
+a reference to an uninitialized scalar; the later read still needs an
+initialization check. Rust references carry the validity requirements of their
+referent type, and a type such as `MaybeUninit<T>` deliberately differs from `T`.
+That distinction does not imply initialized padding in either language. C++
+construction phases and limited uses outside an object's lifetime also need
+operation-specific treatment rather than a universal fully-constructed premise
+on every reference carrier.
+
+The next interface change should preserve the native requirement as internal
+metadata, check it at calls, and use the same requirement at symbolic body entry.
+It must cover body-independent summaries as well as direct execution. A native
+source signature, an explicitly checked contract requirement, or a justified
+object operation may supply evidence; the prover may not invent it from a
+successful typed cell lookup. Existing contract spelling should be reused only
+where its documented meaning supports that requirement. Explicit raw-storage
+predicates or operations remain possible if a concrete interface cannot express
+what is needed; no new reserved keyword is selected by this design.
 
 ## Stabilization work and exit criteria
 

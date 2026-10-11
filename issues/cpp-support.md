@@ -33,12 +33,16 @@ input designation at calls. Field ownership alone cannot repair this failure;
 adding a full-storage separation precondition would change the original contract.
 Complete automatic aggregate declarations now retain their layouts independently
 of values and initialization, including by-value copies and allocated return
-objects. This is the first prerequisite only: nested-object boundaries and
-input designation are not yet checked, and the original RAII blocker remains.
+objects. Explicit embedded-record boundaries now retain parent relationships,
+full extents including padding, and alignment alongside flattened scalar fields.
+These are structural prerequisites: constructor selection and input designation
+are not yet checked against them, and the original RAII blocker remains.
 Keep object-validity facts separate from permissions and initialization. Audit
 which native interfaces supply those facts and check them at calls; explicit
 raw-storage requirements are needed only where native guarantees are insufficient.
-No new precondition has been silently added to the existing constructor contracts.
+The [native-interface audit](../design/cpp-object-model.md#native-interface-audit-and-surface-syntax)
+identifies where reference and typed-object evidence is lost during lowering.
+No new keyword or precondition has been added to the existing constructor contracts.
 
 The subsequent audit also reproduced a shared C/C++ soundness defect:
 [one-past member pointers can read sibling fields](../bugs/pointer-arithmetic-crosses-scalar-subobject.md).

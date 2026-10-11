@@ -11032,6 +11032,112 @@ fn c0_syntax_rejects_multiple_unsequenced_expression_calls() {
 }
 
 #[test]
+fn c0_nested_record_boundaries_preserve_padding_parents_and_array_elements() {
+    let function = syntax::parse_function(
+        r#"
+        struct leaf { uint8 tag; int32 value; };
+        struct middle { struct leaf child; int32 tail; };
+        struct outer { uint8 lead; struct middle first; struct leaf second[2][2]; int32 last; };
+        struct outer copy(struct outer value) { return value; }
+    "#,
+    )
+    .unwrap()
+    .to_kernel_function();
+    let layout = function.return_aggregate_layout().unwrap();
+    let boundaries: Vec<_> = layout
+        .records()
+        .iter()
+        .map(|record| {
+            (
+                record.name(),
+                record.offset_bytes(),
+                record.size_bytes(),
+                record.alignment_bytes(),
+                record.parent(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        boundaries,
+        vec![
+            ("first", 4, 12, 4, None),
+            ("first.child", 4, 8, 4, Some(0)),
+            ("second[0][0]", 16, 8, 4, None),
+            ("second[0][1]", 24, 8, 4, None),
+            ("second[1][0]", 32, 8, 4, None),
+            ("second[1][1]", 40, 8, 4, None),
+        ]
+    );
+    assert_eq!(layout.size_bytes(), 52);
+    assert_eq!(function.parameters()[0].aggregate_layout(), Some(layout));
+    let flat = crate::kernel::CAggregateLayout::with_unions(
+        layout.size_bytes(),
+        layout.alignment_bytes(),
+        layout.fields().to_vec(),
+        layout.unions().to_vec(),
+    );
+    assert!(
+        flat.records().is_empty(),
+        "dotted leaves never invent boundaries"
+    );
+    assert_ne!(
+        &flat, layout,
+        "flattened-equivalent layouts retain different declarations"
+    );
+}
+
+#[test]
+fn c0_record_boundaries_are_structural_and_conservative_around_unions() {
+    fn layout(record_name: &str) -> crate::kernel::CAggregateLayout {
+        let source = format!(
+            "struct {record_name} {{ uint8 tag; int32 value; }}; struct wrapper {{ struct {record_name} child; }}; struct wrapper copy(struct wrapper input) {{ return input; }}"
+        );
+        syntax::parse_function(&source)
+            .unwrap()
+            .to_kernel_function()
+            .return_aggregate_layout()
+            .unwrap()
+            .clone()
+    }
+    assert_eq!(
+        layout("left_type"),
+        layout("right_type"),
+        "source type names are not nominal kernel identity"
+    );
+    let function = syntax::parse_function(
+        r#"
+        union payload { int32 number; int32* pointer; };
+        struct packet { union payload payload; int32 tag; };
+        struct wrapper { struct packet child; int32 last; };
+        struct wrapper copy(struct wrapper value) { return value; }
+    "#,
+    )
+    .unwrap()
+    .to_kernel_function();
+    let layout = function.return_aggregate_layout().unwrap();
+    assert_eq!(layout.records().len(), 1);
+    assert_eq!(layout.records()[0].size_bytes(), 16);
+    assert_eq!(layout.records()[0].alignment_bytes(), 8);
+    assert_eq!(layout.unions().len(), 1);
+    assert_eq!(layout.unions()[0].name(), "child.payload");
+    assert_eq!(layout.unions()[0].offset_bytes(), 0);
+    assert_eq!(layout.unions()[0].size_bytes(), 8);
+}
+
+#[test]
+fn c0_record_boundary_lowering_preserves_existing_zero_array_rejection() {
+    let error = syntax::parse_function(
+        r#"
+        struct empty { uint8 bytes[0]; };
+        struct wrapper { struct empty child; int32 value; };
+        struct wrapper copy(struct wrapper input) { return input; }
+    "#,
+    )
+    .unwrap_err();
+    assert!(error.message().contains("positive length"));
+}
+
+#[test]
 fn c0_struct_union_fields_are_copyable_by_value_without_flattening_overlap() {
     let parsed = syntax::parse_functions(
         r#"

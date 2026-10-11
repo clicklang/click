@@ -1991,6 +1991,9 @@ pub struct C0StructLayout {
     /// fields. Flattening union members into `aggregate_fields` would make a
     /// by-value copy overwrite one member with another.
     aggregate_unions: Vec<C0AggregateUnion>,
+    /// Explicit embedded-record boundaries, in pre-order with root-relative
+    /// coordinates. These do not come from the flattened leaf names.
+    aggregate_records: Vec<crate::kernel::CAggregateRecord>,
     size_bytes: u32,
     alignment_bytes: u32,
 }
@@ -3877,6 +3880,7 @@ impl C0StructLayout {
         }
         let mut named_fields = BTreeMap::new();
         let mut aggregate_fields = Vec::with_capacity(fields.len());
+        let mut aggregate_records = Vec::new();
         let mut previous_end = 0u32;
         for (name, c_type, struct_name, offset_bytes, byte_width) in fields {
             let nested = struct_name
@@ -3971,6 +3975,17 @@ impl C0StructLayout {
                 );
             }
             if let Some(layout) = nested {
+                if aggregate_records
+                    .len()
+                    .saturating_add(1 + layout.aggregate_records.len())
+                    > MAX_EXPLICIT_LAYOUT_LEAVES
+                {
+                    return Err(
+                        "explicit struct layout exceeds the materialized record budget (65536)"
+                            .into(),
+                    );
+                }
+                append_nested_records(&mut aggregate_records, &name, offset_bytes, layout);
                 for field in &layout.aggregate_fields {
                     crate::instrumentation::record_deterministic_work(1);
                     aggregate_fields.push(C0AggregateField {
@@ -3996,6 +4011,7 @@ impl C0StructLayout {
             fields: named_fields,
             aggregate_fields,
             aggregate_unions: Vec::new(),
+            aggregate_records,
             size_bytes,
             alignment_bytes,
         })
@@ -4015,6 +4031,11 @@ impl C0StructLayout {
 
     pub fn alignment_bytes(&self) -> u32 {
         self.alignment_bytes
+    }
+
+    /// Explicit embedded records in pre-order, with complete-layout offsets.
+    pub fn records(&self) -> &[crate::kernel::CAggregateRecord] {
+        &self.aggregate_records
     }
 
     pub(crate) fn to_kernel_aggregate_layout(&self) -> crate::kernel::CAggregateLayout {
@@ -4058,6 +4079,7 @@ impl C0StructLayout {
                 })
                 .collect(),
         )
+        .with_records(self.aggregate_records.clone())
     }
 
     fn aggregate_fields(&self) -> &[C0AggregateField] {
@@ -6669,11 +6691,44 @@ fn zero_initializer_value(c_type: C0Type) -> C0Expression {
     }
 }
 
+fn append_nested_records(
+    records: &mut Vec<crate::kernel::CAggregateRecord>,
+    prefix: &str,
+    base_offset: u32,
+    nested: &C0StructLayout,
+) {
+    let parent = u32::try_from(records.len()).expect("record boundary count fits u32");
+    crate::instrumentation::record_deterministic_work(1);
+    records.push(crate::kernel::CAggregateRecord::new(
+        prefix,
+        base_offset,
+        nested.size_bytes,
+        nested.alignment_bytes,
+        None,
+    ));
+    for record in &nested.aggregate_records {
+        crate::instrumentation::record_deterministic_work(1);
+        records.push(crate::kernel::CAggregateRecord::new(
+            format!("{prefix}.{}", record.name()),
+            base_offset
+                .checked_add(record.offset_bytes())
+                .expect("validated embedded record offset"),
+            record.size_bytes(),
+            record.alignment_bytes(),
+            Some(record.parent().map_or(parent, |index| parent + 1 + index)),
+        ));
+    }
+}
+
 fn flatten_aggregate_layout(
     fields: &BTreeMap<String, C0StructField>,
     structs: &BTreeMap<String, C0StructLayout>,
     unions: &BTreeMap<String, C0UnionLayout>,
-) -> (Vec<C0AggregateField>, Vec<C0AggregateUnion>) {
+) -> (
+    Vec<C0AggregateField>,
+    Vec<C0AggregateUnion>,
+    Vec<crate::kernel::CAggregateRecord>,
+) {
     fn row_major_index_path(flat_index: u32, shape: &[u32]) -> String {
         let mut remaining = flat_index;
         let mut indexes = vec![0; shape.len()];
@@ -6725,6 +6780,7 @@ fn flatten_aggregate_layout(
 
     let mut aggregate_fields = Vec::new();
     let mut aggregate_unions = Vec::new();
+    let mut aggregate_records = Vec::new();
     for (field_name, field) in fields {
         if field.c_type == C0Type::Int32
             && let Some(nested_name) = field.struct_name.as_ref()
@@ -6733,6 +6789,12 @@ fn flatten_aggregate_layout(
             let nested_layout = structs
                 .get(nested_name)
                 .expect("embedded struct field has a parsed layout");
+            append_nested_records(
+                &mut aggregate_records,
+                field_name,
+                field.offset_bytes,
+                nested_layout,
+            );
             append_nested_fields(
                 &mut aggregate_fields,
                 field_name,
@@ -6767,6 +6829,12 @@ fn flatten_aggregate_layout(
                     )
                     .expect("validated embedded struct array field offset");
                 let index_path = row_major_index_path(flat_index, shape);
+                append_nested_records(
+                    &mut aggregate_records,
+                    &format!("{field_name}{index_path}"),
+                    element_offset,
+                    nested_layout,
+                );
                 append_nested_fields(
                     &mut aggregate_fields,
                     &format!("{field_name}{index_path}"),
@@ -6807,7 +6875,7 @@ fn flatten_aggregate_layout(
             });
         }
     }
-    (aggregate_fields, aggregate_unions)
+    (aggregate_fields, aggregate_unions, aggregate_records)
 }
 
 fn struct_value_type(layout: &C0StructLayout) -> C0Type {
@@ -10944,7 +11012,7 @@ impl Parser {
         }
         let size_bytes = align_up(offset_bytes, struct_alignment)
             .ok_or_else(|| self.error_here(format!("struct `{name}` layout is too large")))?;
-        let (aggregate_fields, aggregate_unions) =
+        let (aggregate_fields, aggregate_unions, aggregate_records) =
             flatten_aggregate_layout(&fields, &self.structs, &self.unions);
         if self
             .structs
@@ -10954,6 +11022,7 @@ impl Parser {
                     fields,
                     aggregate_fields,
                     aggregate_unions,
+                    aggregate_records,
                     size_bytes,
                     alignment_bytes: struct_alignment,
                 },
@@ -21842,7 +21911,43 @@ mod scope_metadata_tests {
     use super::*;
 
     #[test]
-    fn explicit_embedded_layout_work_tracks_materialized_leaves() {
+    fn explicit_embedded_record_geometry_rejects_before_kernel_conversion() {
+        let child =
+            C0StructLayout::from_explicit_fields(vec![("wide".into(), C0Type::Int64, 0, 8)], 8, 8)
+                .unwrap();
+        let structs = BTreeMap::from([("child".into(), child)]);
+        for (offset, width, size, alignment) in
+            [(4, 8, 16, 8), (0, 4, 8, 8), (0, 8, 8, 4), (8, 8, 8, 8)]
+        {
+            assert!(
+                C0StructLayout::from_explicit_fields_with_structs(
+                    vec![(
+                        "nested".into(),
+                        C0Type::Int32,
+                        Some("child".into()),
+                        offset,
+                        width
+                    )],
+                    size,
+                    alignment,
+                    &structs
+                )
+                .is_err()
+            );
+        }
+        let accepted = C0StructLayout::from_explicit_fields_with_structs(
+            vec![("nested".into(), C0Type::Int32, Some("child".into()), 8, 8)],
+            16,
+            8,
+            &structs,
+        )
+        .unwrap()
+        .to_kernel_aggregate_layout();
+        assert_eq!(accepted.records()[0].offset_bytes(), 8);
+    }
+
+    #[test]
+    fn explicit_embedded_layout_work_tracks_materialized_leaves_and_records() {
         for size in [8u32, 32, 128, 256] {
             let (layouts, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut layouts = BTreeMap::new();
@@ -21868,6 +21973,9 @@ mod scope_metadata_tests {
                     )
                     .unwrap();
                     assert_eq!(layout.aggregate_fields.len(), index as usize + 1);
+                    assert_eq!(layout.aggregate_records.len(), index as usize);
+                    let kernel = layout.to_kernel_aggregate_layout();
+                    assert_eq!(kernel.records().len(), index as usize);
                     assert_eq!(
                         layout.aggregate_fields.last().unwrap().offset_bytes,
                         index * 4
@@ -21877,7 +21985,9 @@ mod scope_metadata_tests {
                 layouts
             });
             assert_eq!(layouts.len(), size as usize);
-            assert_eq!(work, (size * (size - 1) / 2) as usize);
+            // Each selected child contributes its leaves and boundaries once;
+            // kernel conversion validates each selected boundary once again.
+            assert_eq!(work, (3 * size * (size - 1) / 2) as usize);
         }
     }
 
