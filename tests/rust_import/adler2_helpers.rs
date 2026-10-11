@@ -1544,6 +1544,32 @@ fn charon_adler2_small_batch_compute_rejects_false_recombined_prefix_a() {
 }
 
 #[test]
+#[ignore = "nightly: original B reduction and weighted scalar recombination rejections"]
+fn charon_adler2_small_batch_compute_rejects_false_recombined_prefix_b() {
+    let total = "(int32)(uint32)(bytes_len - bytes_len % 4u64)";
+    let a_seed = "to_integer(at(vector_prefix, a))";
+    let b_seed = "to_integer(at(vector_prefix, b))";
+    let weighted = "to_integer(at(weighted_b, b_vec._0[3])) * 4 + (65521 - to_integer(at(weighted_b, a_vec._0[3]))) * 3";
+    reject_compute(
+        SMALL_BATCH_COMPUTE,
+        &format!("have to_integer(b_vec._0[3]) == {weighted} by"),
+        &format!(
+            "have to_integer(b_vec._0[3]) == {} by",
+            weighted.replace(" * 3", " * 2")
+        ),
+    );
+    reject_compute(
+        SMALL_BATCH_COMPUTE,
+        &format!(
+            "have truncating_remainder(to_integer(b), 65521) == adler_spec_b(bytes, {total}, {a_seed}, {b_seed}) by"
+        ),
+        &format!(
+            "have truncating_remainder(to_integer(b), 65521) == adler_spec_b(bytes, {total}, {a_seed}, {b_seed} + 1) by"
+        ),
+    );
+}
+
+#[test]
 #[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_batch_compute_requires_canonical_a() {
     reject_compute(

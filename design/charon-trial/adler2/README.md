@@ -553,12 +553,17 @@ lane additions, establishing its prefix residue before the tail. The proof
 uses the helper's native remainder equations and checked uint32 observations
 to connect the entry lane snapshot to the reduced values. The original B seed
 product and addition now prove the exact deferred `b + prefix_length*a` value,
-including preservation of the native length cast. B reduction/recombination
-transport, the scalar tail, and the final checksum postconditions remain
-pending. Nightly mutations reject a duplicated lane
+including preservation of the native length cast. B also passes through the
+scalar and lane reductions, all three ordered lane corrections and the four
+scalar additions. The reduction proof preserves the nonnegative representative;
+native subtraction, multiplication, addition and store checkpoints connect the
+actual weighted values to the common B prefix residue. Both scalar residues
+are established before the tail. The scalar tail and final checksum
+postconditions remain pending. Nightly mutations reject a duplicated lane
 byte in the A transition, a changed completed-prefix A seed, an incorrect B
 byte weight, an omitted B seed contribution, a duplicated A lane during scalar
-recombination, and a changed recombined-prefix A seed.
+recombination, changed recombined-prefix seeds, and an incorrect native B lane
+correction weight.
 
 The fixture is assembled with the existing helper bodies, recombination
 lemmas, iterator bounds, the common specification and lane-state lemmas,

@@ -88,8 +88,10 @@ prefix subtraction safety and exact Integer prefix advances are checked.
 A now passes through the original lane reductions and four scalar additions
 into its prefix residue before the tail. The native B seed product and
 addition prove the exact deferred prefix-length times seed contribution,
-including the exact length-cast observation. Transporting B through reductions
-and weighted recombination and finishing the scalar tail
+including the exact length-cast observation. B also passes through the scalar
+and lane reductions, ordered weighted corrections and four scalar additions,
+with checked native subtraction, multiplication, addition and store bridges.
+Both prefix residues hold before the tail. Finishing the scalar tail
 remain pending, as do the arbitrary-length computation’s nested loops. Full original-computation smart audits
 currently exhaust the standard ten-minute run bound before completing a site,
 while ordinary verification succeeds. This is an audit-tool limitation, not a
