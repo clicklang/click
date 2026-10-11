@@ -65,7 +65,7 @@ pub use memory_state::CallKeptRanges;
 pub(crate) use memory_state::{
     BlockRegistriesState, block_is_never_address_taken_local, capture_block_registries,
     clear_block_alignment_registry, clear_never_address_taken_locals,
-    register_aggregate_argument_source, register_block_alignment,
+    never_address_taken_locals_key, register_aggregate_argument_source, register_block_alignment,
     registered_aggregate_argument_source, registered_block_alignment,
     registered_block_alignment_charged, restore_block_registries, set_never_address_taken_locals,
     withdraw_never_address_taken_locals,
@@ -6576,6 +6576,8 @@ pub struct ResourceContext {
     /// Derived trusted-kernel index. It never supplies ownership evidence.
     memory_equalities: std::sync::Mutex<memory_equality_index::MemoryPairings>,
     pub(super) storage: std::sync::Arc<ResourceContextStorage>,
+    pub(super) observable_projection:
+        std::sync::Arc<std::sync::Mutex<Option<ObservableResourceProjection>>>,
     /// Checked dependency bundles for resource occurrences that are views of
     /// an active stable loan.  This is deliberately separate from the
     /// resource algebra's support graph: equal resource terms can have
@@ -6589,6 +6591,7 @@ impl Clone for ResourceContext {
         Self {
             instance_consumptions: self.instance_consumptions.clone(),
             storage: self.storage.clone(),
+            observable_projection: self.observable_projection.clone(),
             loan_dependencies: self.loan_dependencies.clone(),
             memory_equalities: std::sync::Mutex::new(
                 self.memory_equalities
@@ -6732,6 +6735,13 @@ pub(super) struct ResourceMemoryIntervalNode {
     pub(super) start: u32,
 }
 
+#[derive(Clone)]
+pub(super) struct ObservableResourceProjection {
+    registry: std::sync::Arc<()>,
+    source: std::sync::Arc<ResourceContextStorage>,
+    projected: std::sync::Arc<ResourceContextStorage>,
+}
+
 #[derive(Clone, Default)]
 pub(super) struct ResourceContextStorage {
     /// Stable ordinals preserve insertion order without shifting surviving
@@ -6787,6 +6797,11 @@ pub(super) struct ResourceContextStorage {
     /// whose multiplicity or representation changed.
     pub(super) origin: std::sync::Arc<()>,
     pub(super) history: Option<std::sync::Arc<ResourceContextChange>>,
+    /// A scratch observable projection's unfiltered input and addressability
+    /// registry. Used only to compare admissions; the projection's live exact
+    /// index still decides which changed facts it actually supplies.
+    pub(super) observable_projection_source:
+        Option<(std::sync::Arc<()>, std::sync::Arc<ResourceContextStorage>)>,
     /// Legacy callers that explicitly enumerate every fact pay the
     /// output-sized materialization once per immutable snapshot.
     pub(super) materialized: std::sync::OnceLock<Vec<CResourceFact>>,
@@ -6806,6 +6821,8 @@ pub(super) struct ResourceContextChange {
     pub(super) depth: usize,
     /// Exact occurrence delta for derived indexes; metadata changes use None.
     pub(super) entry_delta: Option<(ResourceEntryId, bool)>,
+    /// An expansion-cache edit preserves entry ordinals and authority.
+    pub(super) metadata_only: bool,
     pub(super) fact: CResourceFact,
     pub(super) parent: Option<std::sync::Arc<ResourceContextChange>>,
 }

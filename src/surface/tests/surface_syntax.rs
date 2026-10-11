@@ -2592,6 +2592,54 @@ fn proof_source_printing_preserves_proposition_precedence() {
     parser::parse(&proof_source).expect("printed quantified proof source should parse");
 }
 
+#[test]
+fn proof_source_printing_preserves_long_sum_association_without_nested_prefixes() {
+    for size in [8, 16, 32, 64] {
+        let sum = std::iter::repeat_n("a", size)
+            .collect::<Vec<_>>()
+            .join(" + ");
+        let source = format!(
+            "theorem sum(a: Integer) {{ ensures a == a by {{ have {sum} == {size} * a by {{ arithmetic(); }} assumption(); }} }}"
+        );
+        let file = parse(&source).unwrap();
+        let proof = file.theorem_definitions()[0].ensures()[0].proof();
+        let SourceProof::Script(tactics) = proof else {
+            panic!("expected sum proof");
+        };
+        let printed = super::printing::format_partial_tactic_sequence(tactics);
+        let reparsed = parse(&format!(
+            "theorem sum(a: Integer) {{ ensures a == a by {{ {printed} }} }}"
+        ))
+        .expect("flat source sums must remain parseable after printing");
+        assert_eq!(
+            reparsed.theorem_definitions()[0].ensures()[0].proof(),
+            proof
+        );
+        assert!(printed.len() < source.len() + 64, "{printed}");
+    }
+    // C addition may overflow at an intermediate result. In particular the
+    // right-associated operand must not be folded into the left spine.
+    let source = "int32 sum(int32 a, int32 b, int32 c) { ensures result == a; } by { have a + (b + c) == (a + b) + c by { assumption(); } }";
+    let file = parse(source).unwrap();
+    let proof = file.function_blocks()[0].grouped_proof().unwrap();
+    let SourceProof::Script(tactics) = proof else {
+        panic!("expected C sum proof");
+    };
+    let printed = super::printing::format_partial_tactic_sequence(tactics);
+    assert!(
+        printed.contains("(a + (b + c)) == (a + b + c)"),
+        "{printed}"
+    );
+    let reparsed = parse(&format!(
+        "int32 sum(int32 a, int32 b, int32 c) {{ ensures result == a; }} by {{ {printed} }}"
+    ))
+    .unwrap();
+    assert_eq!(
+        reparsed.function_blocks()[0].grouped_proof().unwrap(),
+        proof
+    );
+}
+
 /// A quantifier is a proof step, not a normalization.
 ///
 /// From the kernel-search cleanup: `normalize` no longer closes a

@@ -5600,29 +5600,23 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
 }
 
 fn describe_add_contract_expression(expression: &ContractExpression) -> String {
-    enum Frame<'a> {
-        Visit(&'a ContractExpression),
-        Build,
+    // The parser already associates a flat sum to the left. Walk only that
+    // spine: reassociating the right operand could change C overflow or
+    // pointer arithmetic, even though it is harmless for mathematical Integers.
+    // Append once rather than copying every growing prefix of a long sum.
+    let mut left = expression;
+    let mut rights = Vec::new();
+    while let ContractExpression::Add(first, second) = left {
+        rights.push(second.as_ref());
+        left = first;
     }
-
-    let mut frames = vec![Frame::Visit(expression)];
-    let mut rendered = Vec::new();
-    while let Some(frame) = frames.pop() {
-        match frame {
-            Frame::Visit(ContractExpression::Add(left, right)) => {
-                frames.push(Frame::Build);
-                frames.push(Frame::Visit(right));
-                frames.push(Frame::Visit(left));
-            }
-            Frame::Visit(expression) => rendered.push(describe_contract_expression(expression)),
-            Frame::Build => {
-                let right = rendered.pop().expect("rendered addition right operand");
-                let left = rendered.pop().expect("rendered addition left operand");
-                rendered.push(format!("({left} + {right})"));
-            }
-        }
+    let mut output = format!("({}", describe_contract_expression(left));
+    for right in rights.into_iter().rev() {
+        output.push_str(" + ");
+        output.push_str(&describe_contract_expression(right));
     }
-    rendered.pop().expect("rendered addition expression")
+    output.push(')');
+    output
 }
 
 /// Keep generated let bindings source-printable for long left-associated
