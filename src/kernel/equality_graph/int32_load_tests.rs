@@ -195,6 +195,45 @@ fn int32_load_registration_can_follow_a_later_width_declaration() {
 }
 
 #[test]
+fn exact_load_registration_preserves_storage_width_and_widens_at_destination() {
+    for changed_snapshot in [false, true] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let before = memory();
+        let source = load(&before, &address(1), 2);
+        let integer = load(&before, &address(3), 4);
+        let wide = load(&before, &address(2), 8);
+        let destination = if changed_snapshot {
+            intern_c_memory(
+                before
+                    .memory()
+                    .clone()
+                    .store(address(9), CValue::Int32(Bitvector32Term::Constant(17))),
+            )
+        } else {
+            before.clone()
+        };
+        let renamed = load(&destination, &address(2), 2);
+        for (term, bytes) in [(&source, 2), (&integer, 4), (&wide, 8), (&renamed, 8)] {
+            let Bitvector32Term::Variable(variable) = term else {
+                panic!("registered load")
+            };
+            assert_eq!(
+                crate::kernel::registered_load_bytes_for_variable(variable),
+                Some(bytes),
+            );
+        }
+        if !changed_snapshot {
+            assert_eq!(renamed, wide);
+        }
+        let mut graph = EqualityGraph::default();
+        graph.add_int32_equality(&var(1), &var(3));
+        graph.add_int32_equality(&var(2), &var(3));
+        assert!(!graph.are_int32_equal(&integer, &source));
+        assert!(!graph.are_int32_equal(&integer, &renamed));
+    }
+}
+
+#[test]
 fn int32_load_late_merge_and_fork_work_scales_with_affected_applications() {
     for size in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();

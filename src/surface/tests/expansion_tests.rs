@@ -8351,21 +8351,18 @@ fn restricted_simp_rewrites_pointer_aliases_inside_memory_loads() {
         .unwrap();
     let expanded_have = &expanded[expanded_have_start..expanded_have_end];
     assert!(
-        expanded_have.contains("rewrite(alias == original);"),
-        "{expanded_have}"
-    );
-    assert!(
         expanded_have.contains("rewrite(index == 0);"),
         "{expanded_have}"
     );
-    assert!(
-        expanded_have.contains("rewrite(value == original[0]);"),
-        "{expanded_have}"
-    );
-    assert!(expanded_have.contains("normalize();"), "{expanded_have}");
+    // Entry load naming already shares checked pointer aliases. After the
+    // explicit index rewrite, the scalar fact closes by semantic assumption.
+    assert!(expanded_have.contains("assumption();"), "{expanded_have}");
     assert!(!expanded_have.contains("derive using"), "{expanded_have}");
     verify_c0_sources(&expanded, &sources)
         .expect("expanded pointer-alias certificate should check");
+    let without_alias = expanded.replacen("requires alias == original;", "", 1);
+    verify_c0_sources(&without_alias, &sources)
+        .expect_err("expanded pointer-alias transport must require the checked address equality");
 }
 
 #[test]

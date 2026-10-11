@@ -2955,14 +2955,15 @@ fn direct_condition_transport_uses_relative_separate_range() {
             Bitvector32Term::Constant(1),
         )],
     };
+    let relative_upper = Proposition::ConditionIs(
+        ConditionTerm::signed_less_than(
+            data_index_from_owner.clone(),
+            Bitvector32Term::add(data_index_from_owner.clone(), Bitvector32Term::Constant(2)),
+        ),
+        true,
+    );
     let without_nonnegative = PureFactContext::new()
-        .assume_condition(
-            ConditionTerm::signed_less_than(
-                data_index_from_owner.clone(),
-                Bitvector32Term::add(data_index_from_owner.clone(), Bitvector32Term::Constant(2)),
-            ),
-            true,
-        )
+        .assume_proposition(relative_upper.clone())
         .assume_proposition(Proposition::CResourceSeparate {
             left: Box::new(CResource::Memory(CMemoryRange::new(
                 owner.clone(),
@@ -2995,10 +2996,11 @@ fn direct_condition_transport_uses_relative_separate_range() {
         .expect("relative exact separation should directly frame the data load");
     let (premises, target) = c_condition_fact_transport_parts(&theorem, &fact)
         .expect("transport theorem must retain its explicit source");
-    // Two more premises than the separation and the effect: the nonnegativity
-    // of each index, which is what makes the restated start the real delta.
-    assert_eq!(premises.len(), 4);
+    // The complete membership keeps its strict upper bound alongside the
+    // separation, effect, and nonnegative indices that establish the real delta.
+    assert_eq!(premises.len(), 5);
     assert!(premises.contains(&&effect));
+    assert!(premises.contains(&&relative_upper));
     assert!(
         premises
             .iter()

@@ -3896,16 +3896,17 @@ pub(crate) fn load_variable_for_cell(
 /// the snapshot identity carried by an existing defining fact.  Keeping this
 /// narrow helper separate makes the selected snapshot explicit and avoids
 /// traversing or rewriting any of its contents.
+/// The supplied width is an existing storage observation, even when the
+/// value uses a wider bitvector container. Preserve it and widen only for an
+/// authenticated destination observation.
 pub(crate) fn load_variable_for_exact_cell(
     memory: &SharedCMemory,
     pointer: &Pointer,
     kind: LoadKind,
     bytes: u32,
 ) -> Variable {
-    let bytes = rewritten_address_access_width(memory, pointer)
-        .map_or(bytes.max(kind.byte_width()), |known| {
-            bytes.max(kind.byte_width()).max(known)
-        });
+    let bytes =
+        rewritten_address_access_width(memory, pointer).map_or(bytes, |known| bytes.max(known));
     record_load_access_width(memory, pointer, bytes);
     mint_load_variable_identity(memory, pointer, kind, memory, bytes)
 }
