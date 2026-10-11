@@ -2941,3 +2941,143 @@ fn a_declaration_position_skips_uses_inside_bodies() {
     assert_eq!(position("f"), Some((9, 3)));
     assert_eq!(position("missing"), None);
 }
+
+#[test]
+fn shared_tactic_index_preserves_trace_locations() {
+    let fixtures = [
+        "by { step(); step(); }\nby {\n step();\n}\n",
+        "# αβ\nby { have exists (x: int32) { x == x }; have 0 == 0 by { simp(); } }\n",
+        "by { if (exists (x: int32) { x == x }) { step(); } else { simp(); } step(); }",
+        "by { branch ensuring { true } then { step(); } else { simp(); } }",
+        "by { both { step(); } and { simp(); } }",
+        "by { have \"αβ\" == \"αβ\" by { simp(); } step(); }",
+        "by { cases { true => { step(); } exists (x: int32) { x == x } => { simp(); } false => { assumption(); } } }",
+        "by { outcomes { threw => { step(); } returned => { simp(); } } }",
+        "by { open(resource) { have true by { assumption(); } } }",
+        "by { let { slot: child } = unfold(parent); match x { A => { step(); } B => { simp(); } } }",
+    ];
+    for source in fixtures {
+        let index = SourceTacticIndex::new(source).unwrap();
+        let mut positions = Vec::new();
+        for line in 0..=source.lines().count() + 2 {
+            let expected = tactic_starts_on_line(source, line).unwrap();
+            assert_eq!(index.tactic_starts_on_line(line), expected, "{source}");
+            positions.extend(expected);
+        }
+        for position in &positions {
+            assert_eq!(
+                index.tactic_line_has_multiple_starts(position).unwrap(),
+                tactic_line_has_multiple_starts(source, position).unwrap(),
+                "{source} {position:?}"
+            );
+            assert_eq!(
+                index.tactic_source_at_position(position).unwrap(),
+                tactic_source_at_position(source, position).unwrap()
+            );
+            for target in &positions {
+                assert_eq!(
+                    index
+                        .tactic_arm_containing_position(position, target)
+                        .unwrap(),
+                    tactic_arm_containing_position(source, position, target).unwrap(),
+                    "{source} {position:?} {target:?}"
+                );
+                assert_eq!(
+                    index
+                        .tactic_have_body_contains_position(position, target)
+                        .unwrap(),
+                    tactic_have_body_contains_position(source, position, target).unwrap()
+                );
+            }
+        }
+        for position in [
+            SourcePosition::new(0, 1),
+            SourcePosition::new(1, 0),
+            SourcePosition::new(999, 1),
+            SourcePosition::new(1, 999),
+        ] {
+            assert_eq!(
+                index.tactic_source_at_position(&position).is_err(),
+                tactic_source_at_position(source, &position).is_err()
+            );
+        }
+    }
+    for (source, path) in [
+        (
+            "have true by { open(resource) { have true by { assumption(); } } }",
+            vec![0, 0, 0],
+        ),
+        (
+            "if true { both { step(); } and { simp(); } } else { step(); }",
+            vec![0, 0, 1, 0],
+        ),
+        (
+            "cases { true => { step(); } false => { simp(); } }",
+            vec![1, 0],
+        ),
+    ] {
+        let outer = SourcePosition::new(1, 1);
+        assert_eq!(
+            SourceTacticIndex::new(source)
+                .unwrap()
+                .nested_tactic_source_position(&outer, &path)
+                .unwrap(),
+            nested_tactic_source_position(source, &outer, &path).unwrap()
+        );
+    }
+}
+
+#[test]
+fn shared_tactic_index_scales_with_source_and_queries() {
+    for layout in ["lines", "long-line", "unrelated", "nested"] {
+        let mut measurements = Vec::new();
+        for size in [16, 64, 256] {
+            let separator = if layout == "long-line" { " " } else { "\n" };
+            let (source, paths) = if layout == "nested" {
+                (
+                    format!(
+                        "by {{ {}step();{} }}",
+                        "have true by { ".repeat(size),
+                        " }".repeat(size)
+                    ),
+                    vec![vec![0; size]],
+                )
+            } else {
+                let padding = if layout == "unrelated" {
+                    format!("# {}\n", "unrelated ".repeat(size * 8))
+                } else {
+                    String::new()
+                };
+                (
+                    format!(
+                        "{padding}by {{ have true by {{ {} }} }}",
+                        format!("have true by {{ simp(); }}{separator}").repeat(size)
+                    ),
+                    (0..size).map(|child| vec![child, 0]).collect(),
+                )
+            };
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let index = SourceTacticIndex::new(&source).unwrap();
+                let outer = position_at_offset(&source, source.find("have").unwrap());
+                for path in &paths {
+                    let position = index.nested_tactic_source_position(&outer, path).unwrap();
+                    assert!(
+                        index
+                            .tactic_source_at_position(&position)
+                            .unwrap()
+                            .ends_with("();")
+                    );
+                    index.tactic_line_has_multiple_starts(&position).unwrap();
+                }
+            });
+            assert!(
+                work <= source.len() * 10 + size * 30,
+                "{layout} {size}: {work}"
+            );
+            measurements.push(work);
+        }
+        for pair in measurements.windows(2) {
+            assert!(pair[1] <= pair[0] * 5, "{layout}: {measurements:?}");
+        }
+    }
+}

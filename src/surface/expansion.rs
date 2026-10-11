@@ -1,3 +1,6 @@
+mod source_index;
+pub use source_index::SourceTacticIndex;
+
 use std::ops::Range;
 use std::sync::Arc;
 

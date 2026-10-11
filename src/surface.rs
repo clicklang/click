@@ -120,11 +120,11 @@ pub use crate::source::SourceContainer;
 use checking::*;
 pub use expansion::{
     CProofClaim, ClickImportSite, SelectedTacticExpansion, SmartTacticCandidate,
-    SmartTacticSelectionError, SmartTacticSourceSite, SourcePosition, c0_select_smart_tactic,
-    c0_smart_tactic_source_sites, c0_tactic_source_position, click_declaration_source_position,
-    click_import_sites, expand_c0_claim_source, expand_c0_claim_source_by_label,
-    expand_c0_prepared_claim_source_by_label, expand_c0_prepared_tactic_source_at,
-    expand_c0_tactic_source_at, expand_c0_tactics_source_at,
+    SmartTacticSelectionError, SmartTacticSourceSite, SourcePosition, SourceTacticIndex,
+    c0_select_smart_tactic, c0_smart_tactic_source_sites, c0_tactic_source_position,
+    click_declaration_source_position, click_import_sites, expand_c0_claim_source,
+    expand_c0_claim_source_by_label, expand_c0_prepared_claim_source_by_label,
+    expand_c0_prepared_tactic_source_at, expand_c0_tactic_source_at, expand_c0_tactics_source_at,
     expand_program_prepared_claim_source_by_label, expand_program_prepared_tactic_source_at,
     expand_project_claim_source_by_label, expand_project_tactic_source_at,
     expand_project_tactics_source_at, expand_tactics_source_at, map_verifying_source_paths,

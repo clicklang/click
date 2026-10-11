@@ -1,5 +1,5 @@
 use click::surface::ProgramInputs;
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::env;
@@ -24,13 +24,12 @@ use click::surface::rust_display_name;
 #[cfg(test)]
 use click::surface::verify_c0_sources;
 use click::surface::{
-    ClickError, ClickErrorKind, ClickProject, VerifiedCTheorem, accepted_proof_trace,
-    c0_incremental_selection, nested_tactic_source_position, project_selected_proof_names,
-    project_summary, project_tactic_source_positions, selected_c_target,
-    tactic_arm_containing_position, tactic_have_body_contains_position,
-    tactic_line_has_multiple_starts, tactic_source_at_position, tactic_starts_on_line,
-    verify_c0_project, verify_project_at, verify_project_functions, verify_project_theorem,
-    verify_project_with_summary, verifying_source_paths, with_proof_trace,
+    ClickError, ClickErrorKind, ClickProject, SourceTacticIndex, VerifiedCTheorem,
+    accepted_proof_trace, c0_incremental_selection, project_selected_proof_names, project_summary,
+    project_tactic_source_positions, selected_c_target, tactic_line_has_multiple_starts,
+    tactic_source_at_position, tactic_starts_on_line, verify_c0_project, verify_project_at,
+    verify_project_functions, verify_project_theorem, verify_project_with_summary,
+    verifying_source_paths, with_proof_trace,
 };
 
 const USAGE: &str = "\
@@ -725,9 +724,11 @@ fn proof_error_report(
                 return cached.clone();
             }
             let label = error.proof_claim_label().and_then(|claim| {
-                let source = project.entry_source()?;
-                let position = source_locations.position(claim, path, source)?;
-                let multiple = tactic_line_has_multiple_starts(source, &position).unwrap_or(true);
+                let position = source_locations.position(claim, path)?;
+                let multiple = source_locations
+                    .source_index()?
+                    .tactic_line_has_multiple_starts(&position)
+                    .unwrap_or(true);
                 let line = position.line + line_offset;
                 let label = if multiple {
                     format!("tactic@{line}:{}", position.column)
@@ -740,24 +741,26 @@ fn proof_error_report(
             label
         };
         let branch_arm = |path: &[usize], target: &click::surface::SourcePosition| {
-            let source = project.entry_source()?;
             let claim = error.proof_claim_label()?;
-            let branch = source_locations.position(claim, path, source)?;
-            tactic_arm_containing_position(source, &branch, target)
+            let branch = source_locations.position(claim, path)?;
+            source_locations
+                .source_index()?
+                .tactic_arm_containing_position(&branch, target)
                 .ok()
                 .flatten()
         };
         let have_body_contains = |path: &[usize], target: &click::surface::SourcePosition| {
-            let Some(source) = project.entry_source() else {
-                return false;
-            };
             let Some(claim) = error.proof_claim_label() else {
                 return false;
             };
-            let Some(have) = source_locations.position(claim, path, source) else {
+            let Some(have) = source_locations.position(claim, path) else {
                 return false;
             };
-            tactic_have_body_contains_position(source, &have, target).unwrap_or(false)
+            source_locations.source_index().is_some_and(|index| {
+                index
+                    .tactic_have_body_contains_position(&have, target)
+                    .unwrap_or(false)
+            })
         };
         if let Some(trace) = error.trace_context_report_with_tactic_locations(
             &tactic_location,
@@ -914,9 +917,9 @@ fn proof_source_position_for_path(
     path: &[usize],
     project: &ClickProject,
     inputs: &CInput,
-    source: &str,
+    _source: &str,
 ) -> Option<click::surface::SourcePosition> {
-    ProofSourceLocations::new(project, inputs).position(claim, path, source)
+    ProofSourceLocations::new(project, inputs).position(claim, path)
 }
 
 /// Resolve a claim's enclosing tactic locations together. A trace walks
@@ -925,6 +928,7 @@ fn proof_source_position_for_path(
 struct ProofSourceLocations<'a> {
     project: &'a ClickProject,
     inputs: &'a CInput,
+    index: OnceCell<Option<SourceTacticIndex<'a>>>,
     outer: RefCell<HashMap<String, Option<Vec<click::surface::SourcePosition>>>>,
 }
 
@@ -933,16 +937,22 @@ impl<'a> ProofSourceLocations<'a> {
         Self {
             project,
             inputs,
+            index: OnceCell::new(),
             outer: RefCell::new(HashMap::new()),
         }
     }
 
-    fn position(
-        &self,
-        claim: &str,
-        path: &[usize],
-        source: &str,
-    ) -> Option<click::surface::SourcePosition> {
+    fn source_index(&self) -> Option<&SourceTacticIndex<'a>> {
+        self.index
+            .get_or_init(|| {
+                self.project
+                    .entry_source()
+                    .and_then(|source| SourceTacticIndex::new(source).ok())
+            })
+            .as_ref()
+    }
+
+    fn position(&self, claim: &str, path: &[usize]) -> Option<click::surface::SourcePosition> {
         let source_index = *path.first()?;
         let key = claim.to_owned();
         if !self.outer.borrow().contains_key(&key) {
@@ -961,7 +971,9 @@ impl<'a> ProofSourceLocations<'a> {
         if path.len() == 1 {
             Some(outer)
         } else {
-            nested_tactic_source_position(source, &outer, &path[1..]).ok()
+            self.source_index()?
+                .nested_tactic_source_position(&outer, &path[1..])
+                .ok()
         }
     }
 }
@@ -1434,9 +1446,11 @@ fn verify_file_within_limits(
                         return cached.clone();
                     }
                     let label = (|| {
-                        let source = project.entry_source()?;
-                        let position = source_locations.position(claim, path, source)?;
-                        let multiple = tactic_line_has_multiple_starts(source, &position).ok()?;
+                        let position = source_locations.position(claim, path)?;
+                        let multiple = source_locations
+                            .source_index()?
+                            .tactic_line_has_multiple_starts(&position)
+                            .ok()?;
                         let line = position.line + line_offset;
                         let label = if multiple {
                             format!("tactic@{line}:{}", position.column)
@@ -1449,21 +1463,23 @@ fn verify_file_within_limits(
                     label
                 };
                 let arm = |claim: &str, path: &[usize], target: &click::surface::SourcePosition| {
-                    let source = project.entry_source()?;
-                    let branch = source_locations.position(claim, path, source)?;
-                    tactic_arm_containing_position(source, &branch, target)
+                    let branch = source_locations.position(claim, path)?;
+                    source_locations
+                        .source_index()?
+                        .tactic_arm_containing_position(&branch, target)
                         .ok()
                         .flatten()
                 };
                 let body =
                     |claim: &str, path: &[usize], target: &click::surface::SourcePosition| {
-                        let Some(source) = project.entry_source() else {
+                        let Some(have) = source_locations.position(claim, path) else {
                             return false;
                         };
-                        let Some(have) = source_locations.position(claim, path, source) else {
-                            return false;
-                        };
-                        tactic_have_body_contains_position(source, &have, target).unwrap_or(false)
+                        source_locations.source_index().is_some_and(|index| {
+                            index
+                                .tactic_have_body_contains_position(&have, target)
+                                .unwrap_or(false)
+                        })
                     };
                 let trace = accepted_proof_trace(&locate, &arm, &body, trace_target.as_ref()).map(
                     |mut trace| {
@@ -1671,6 +1687,7 @@ mod tests {
     #[test]
     fn trace_source_locations_resolve_each_claim_once() {
         let mut cold_work = Vec::new();
+        let mut rendered_work = Vec::new();
         for size in [16, 64, 256] {
             let source = format!(
                 "verifying \"program.c\";\nvoid sample() {{ ensures 1 == 1; }} by {{\n{}\nexecute(); simp();\n}}",
@@ -1680,24 +1697,16 @@ mod tests {
             let target = load_target_inputs(&path, Some(&root)).unwrap();
             let locations = ProofSourceLocations::new(&target.project, &target.inputs);
             let (first, work) = click::instrumentation::measure_deterministic_work(|| {
-                locations.position("sample.contract", &[0], &source)
+                locations.position("sample.contract", &[0])
             });
             assert!(first.is_some());
             cold_work.push(work);
             let (_, repeated_work) = click::instrumentation::measure_deterministic_work(|| {
                 for index in 0..size {
-                    assert!(
-                        locations
-                            .position("sample.contract", &[index], &source)
-                            .is_some()
-                    );
+                    assert!(locations.position("sample.contract", &[index]).is_some());
                 }
                 for index in [size + 100, usize::MAX] {
-                    assert!(
-                        locations
-                            .position("sample.contract", &[index], &source)
-                            .is_none()
-                    );
+                    assert!(locations.position("sample.contract", &[index]).is_none());
                 }
             });
             assert_eq!(locations.outer.borrow().len(), 1);
@@ -1705,7 +1714,24 @@ mod tests {
                 repeated_work, 0,
                 "cached valid and missing indices must not resolve again"
             );
+            let (_, work) = click::instrumentation::measure_deterministic_work(|| {
+                for index in 0..size {
+                    let position = locations.position("sample.contract", &[index, 0]).unwrap();
+                    locations
+                        .source_index()
+                        .unwrap()
+                        .tactic_line_has_multiple_starts(&position)
+                        .unwrap();
+                }
+            });
+            rendered_work.push(work);
             fs::remove_dir_all(root).unwrap();
+        }
+        for pair in rendered_work.windows(2) {
+            assert!(
+                pair[1] <= pair[0] * 5,
+                "nested trace rendering must share its index: {rendered_work:?}"
+            );
         }
         for pair in cold_work.windows(2) {
             assert!(

@@ -47,7 +47,10 @@ locations together and reuse that result for every step, including missing
 indices. Computing their line and character columns uses one source walk;
 reparsing the project or rescanning a long line for each location is not
 acceptable. The CLI cache and batch-position regressions cover 16, 64, and
-256 locations.
+256 locations. Rendering also shares one lexical source index for nested paths,
+line ambiguity, and target containment. Matching delimiters skip nested bodies,
+and direct tactic ranges are cached by body rather than rebuilt per child.
+Regressions cover siblings, long lines, deep nesting, and unrelated source text.
 
 ## Proof size and speed targets
 
