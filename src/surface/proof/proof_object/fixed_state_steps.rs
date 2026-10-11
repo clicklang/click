@@ -482,7 +482,7 @@ impl<'a> Proof<'a> {
         }
         let complete = self
             .goal()
-            .is_some_and(|goal| facts.pure_assumption_available(goal));
+            .is_some_and(|goal| facts.introduced_goal_available(goal));
         Ok(self.checked_fact_transition(
             self.state().locals().clone(),
             facts,
@@ -535,7 +535,7 @@ impl<'a> Proof<'a> {
         )?;
         let complete = self
             .goal()
-            .is_some_and(|goal| checked.facts.pure_assumption_available(goal));
+            .is_some_and(|goal| checked.facts.introduced_goal_available(goal));
         Ok(self.checked_fact_transition(
             self.state().locals().clone(),
             checked.facts,
@@ -594,7 +594,7 @@ impl<'a> Proof<'a> {
         )?;
         let complete = self
             .goal()
-            .is_some_and(|goal| checked.facts.pure_assumption_available(goal));
+            .is_some_and(|goal| checked.facts.introduced_goal_available(goal));
         Ok(self.checked_execution_transition(
             checked.facts,
             complete,

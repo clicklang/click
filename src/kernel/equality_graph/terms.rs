@@ -13,6 +13,8 @@ use super::{AffineOffset, MachineAtom, Pointer, PointerBlock, PointerOffsetTerm,
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::sync::Arc;
 
+mod congruence;
+
 /// These tags keep signed division and wider integer operations distinct.
 /// Congruence does not establish C/Rust arithmetic definedness.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -77,6 +79,11 @@ pub(super) fn uint64_read(
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Node {
+    Apply(u64, u64),
+    Function(crate::kernel::SharedPureApplication, bool, usize),
+    ArgumentTag(congruence::ArgumentTag),
+    OpaqueArgument(crate::kernel::SharedPureApplication),
+    Condition(congruence::ConditionKind, u64, u64),
     UInt64(MachineAtom),
     UInt64Binary(UInt64Binary, u64, u64),
     UInt64Address(u64),
@@ -99,6 +106,8 @@ enum Node {
 // current class roots. Constructor and width remain part of every signature.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Application {
+    Apply(u64, u64),
+    Condition(congruence::ConditionKind, u64, u64),
     UInt64Binary(UInt64Binary, u64, u64),
     UInt64Address(u64),
     UInt64Read((u32, u32), u64),
@@ -118,7 +127,9 @@ enum Application {
 impl Application {
     fn operands(self) -> impl Iterator<Item = u64> {
         match self {
-            Self::Add(left, right)
+            Self::Apply(left, right)
+            | Self::Condition(_, left, right)
+            | Self::Add(left, right)
             | Self::UInt64Binary(_, left, right)
             | Self::Int32Add(left, right)
             | Self::Int32Binary(_, left, right)
@@ -137,6 +148,10 @@ impl Application {
 
     fn signature(self, classes: &TermClasses) -> Self {
         match self {
+            Self::Apply(left, right) => Self::Apply(classes.root(left), classes.root(right)),
+            Self::Condition(kind, left, right) => {
+                Self::Condition(kind, classes.root(left), classes.root(right))
+            }
             Self::UInt64Binary(op, left, right) => {
                 Self::UInt64Binary(op, classes.root(left), classes.root(right))
             }
@@ -188,6 +203,10 @@ impl Clone for RootLookupCache {
 
 #[derive(Clone, Default)]
 pub(super) struct TermClasses {
+    condition_kinds: PersistentSet<(congruence::ConditionKind, bool)>,
+    // Truth is an annotation of a condition class, not a union between all
+    // true facts. Unrelated order facts must not create value equivalences.
+    condition_truth: PersistentMap<u64, u8>,
     origin: Arc<()>,
     // Completeness metadata for affine interval consumers, not equality facts.
     // Propagates once per affected class/application through indexed uses.
@@ -680,6 +699,10 @@ impl TermClasses {
         }
         let id = self.nodes.len() as u64;
         let application = match &node {
+            Node::Apply(left, right) => Some(Application::Apply(*left, *right)),
+            Node::Condition(kind, left, right) => {
+                Some(Application::Condition(*kind, *left, *right))
+            }
             Node::UInt64Binary(op, left, right) => {
                 Some(Application::UInt64Binary(*op, *left, *right))
             }
@@ -772,44 +795,7 @@ impl TermClasses {
     }
 
     fn intern_uint64(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {
-        use crate::kernel::Bitvector32Term as T;
-        enum Work<'a> {
-            Term(&'a T),
-            Binary(UInt64Binary),
-        }
-        let mut pending = vec![Work::Term(term)];
-        let mut values = Vec::new();
-        while let Some(work) = pending.pop() {
-            crate::instrumentation::record_deterministic_work(1);
-            let node = match work {
-                Work::Binary(op) => {
-                    let right = values.pop().expect("right uint64 operand");
-                    let left = values.pop().expect("left uint64 operand");
-                    Node::UInt64Binary(op, left, right)
-                }
-                Work::Term(term) => {
-                    if let Some((op, left, right)) = uint64_binary(term) {
-                        pending.push(Work::Binary(op));
-                        pending.push(Work::Term(right));
-                        pending.push(Work::Term(left));
-                        continue;
-                    }
-                    if let Some((memory, pointer)) = uint64_read(term) {
-                        let address = self.address(pointer.block, pointer.offset).0;
-                        Node::UInt64Read(memory.read_identity(), address)
-                    } else if let T::PointerAddress(pointer) = term {
-                        Node::UInt64Address(
-                            self.address(pointer.block.clone(), pointer.offset.clone())
-                                .0,
-                        )
-                    } else {
-                        Node::UInt64(MachineAtom::uint64(term.clone()))
-                    }
-                }
-            };
-            values.push(self.intern_node(node));
-        }
-        values.pop().expect("uint64 term")
+        self.intern_machine(term, true)
     }
 
     pub(super) fn are_uint64_equal(
@@ -835,58 +821,8 @@ impl TermClasses {
     }
 
     fn intern_int32(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {
-        use crate::kernel::Bitvector32Term;
-        // Canonicalize once, then walk only the supported constructor. Repeated
-        // canonicalization of every subtree would make nested sums quadratic.
         let term = crate::kernel::canonical_term(term);
-        enum Work<'a> {
-            Term(&'a Bitvector32Term),
-            Add,
-            Binary(Int32Binary),
-        }
-        let mut pending = vec![Work::Term(&term)];
-        let mut values = Vec::new();
-        while let Some(work) = pending.pop() {
-            let node = match work {
-                Work::Term(Bitvector32Term::Add(left, right)) => {
-                    crate::instrumentation::record_deterministic_work(1);
-                    pending.push(Work::Add);
-                    pending.push(Work::Term(right));
-                    pending.push(Work::Term(left));
-                    continue;
-                }
-                Work::Term(
-                    term @ (Bitvector32Term::UnsignedDivide(left, right)
-                    | Bitvector32Term::UnsignedRemainder(left, right)
-                    | Bitvector32Term::BitwiseXor(left, right)),
-                ) => {
-                    crate::instrumentation::record_deterministic_work(1);
-                    let op = match term {
-                        Bitvector32Term::UnsignedDivide(..) => Int32Binary::UnsignedDivide,
-                        Bitvector32Term::UnsignedRemainder(..) => Int32Binary::UnsignedRemainder,
-                        Bitvector32Term::BitwiseXor(..) => Int32Binary::BitwiseXor,
-                        _ => unreachable!(),
-                    };
-                    pending.push(Work::Binary(op));
-                    pending.push(Work::Term(right));
-                    pending.push(Work::Term(left));
-                    continue;
-                }
-                Work::Binary(op) => {
-                    let right = values.pop().expect("right int32 operand");
-                    let left = values.pop().expect("left int32 operand");
-                    Node::Int32Binary(op, left, right)
-                }
-                Work::Term(term) => Node::Int32(MachineAtom::int32(term.clone())),
-                Work::Add => {
-                    let right = values.pop().expect("right int32 operand");
-                    let left = values.pop().expect("left int32 operand");
-                    Node::Int32Add(left, right)
-                }
-            };
-            values.push(self.intern_node(node));
-        }
-        values.pop().expect("int32 term")
+        self.intern_machine(&term, false)
     }
 
     pub(super) fn are_int32_equal(
@@ -904,7 +840,8 @@ impl TermClasses {
         // still need registration because their definitions can join classes.
         let opaque = |term: &Bitvector32Term| {
             let supported = |term: &Bitvector32Term| match term {
-                Bitvector32Term::Add(..)
+                Bitvector32Term::ClickFunctionApplication { .. }
+                | Bitvector32Term::Add(..)
                 | Bitvector32Term::MemoryLoad(..)
                 | Bitvector32Term::UnsignedDivide(..)
                 | Bitvector32Term::UnsignedRemainder(..)
@@ -935,8 +872,17 @@ impl TermClasses {
             }
         }
         if let (Some(left), Some(right)) = (left_atom, right_atom) {
+            // Predicate signatures may register operands without equating any
+            // values. Distinct opaque atoms cannot meet in that graph.
+            if !self.has_equivalences() {
+                return false;
+            }
             return match (self.nodes.get(&left), self.nodes.get(&right)) {
-                (Some(left), Some(right)) => left == right || self.root(*left) == self.root(*right),
+                (Some(left), Some(right)) => {
+                    left == right
+                        || ((self.parents.contains_key(left) || self.parents.contains_key(right))
+                            && self.root(*left) == self.root(*right))
+                }
                 _ => false,
             };
         }
@@ -1128,6 +1074,11 @@ impl TermClasses {
             self.merge_storage_addresses(moved, kept);
             self.merge_additive_addresses(moved, kept);
             self.merge_alignment_witnesses(moved, kept);
+            if let Some(truth) = self.condition_truth.get(&moved).copied() {
+                let kept_truth = self.condition_truth.get(&kept).copied().unwrap_or(0);
+                self.condition_truth.remove(&moved);
+                self.condition_truth.insert(kept, kept_truth | truth);
+            }
             self.parents.insert(moved, kept);
             self.history = Some(Arc::new(MergeHistory {
                 depth: self.history.as_ref().map_or(1, |node| node.depth + 1),
