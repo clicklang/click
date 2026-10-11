@@ -493,7 +493,7 @@ pub fn expand_c0_prepared_claim_source_by_label(
 
 pub fn expand_program_prepared_claim_source_by_label(
     click_source: &str,
-    import: &impl crate::languages::PreparedProgramSource,
+    import: impl Into<crate::languages::PreparedProgram>,
     claim_label: &str,
 ) -> Result<String, ClickError> {
     expand_program_prepared_claim_source_by_label_context(click_source, import, claim_label)
@@ -501,10 +501,11 @@ pub fn expand_program_prepared_claim_source_by_label(
 
 fn expand_program_prepared_claim_source_by_label_context(
     click_source: &str,
-    import: &impl crate::languages::PreparedProgramSource,
+    import: impl Into<crate::languages::PreparedProgram>,
     claim_label: &str,
 ) -> Result<String, ClickError> {
-    let sources = CSourceContext::program(import)?;
+    let import = import.into();
+    let sources = CSourceContext::program(&import)?;
     let file = parse_source_with_c_layouts_context(click_source, &sources)?;
     let claim_label = &*resolve_rust_claim_label(&file, claim_label);
     for theorem in file.theorem_definitions() {
@@ -517,7 +518,7 @@ fn expand_program_prepared_claim_source_by_label_context(
         if let Some(claim) = function_expansion_claim_by_label(function, claim_label) {
             return expand_program_prepared_claim_source_context(
                 click_source,
-                import,
+                &import,
                 function.signature().name(),
                 claim,
             );
@@ -530,7 +531,7 @@ fn expand_program_prepared_claim_source_by_label_context(
 
 fn expand_program_prepared_claim_source_context(
     click_source: &str,
-    import: &dyn crate::languages::PreparedProgramSource,
+    import: &crate::languages::PreparedProgram,
     function_name: &str,
     claim: CProofClaim,
 ) -> Result<String, ClickError> {
@@ -550,7 +551,7 @@ fn expand_program_prepared_claim_source_context(
     let target = position_at_offset(click_source, edit.selector());
     let verified = verify_sources_at(
         click_source,
-        &ProgramInputs::Program(import),
+        &ProgramInputs::program(import),
         target.line,
         target.column,
     )?;
@@ -876,7 +877,7 @@ pub fn expand_project_tactic_source_at(
         ProgramInputs::Program(import) => expand_program_prepared_tactic_source_at_context(
             project,
             click_source,
-            *import,
+            import,
             line,
             column,
         ),
@@ -1050,17 +1051,23 @@ pub fn expand_c0_prepared_tactic_source_at(
 
 pub fn expand_program_prepared_tactic_source_at(
     click_source: &str,
-    import: &impl crate::languages::PreparedProgramSource,
+    import: impl Into<crate::languages::PreparedProgram>,
     line: usize,
     column: usize,
 ) -> Result<String, ClickError> {
-    expand_program_prepared_tactic_source_at_context(None, click_source, import, line, column)
+    expand_program_prepared_tactic_source_at_context(
+        None,
+        click_source,
+        &import.into(),
+        line,
+        column,
+    )
 }
 
 fn expand_program_prepared_tactic_source_at_context(
     project: Option<&ClickProject>,
     click_source: &str,
-    import: &dyn crate::languages::PreparedProgramSource,
+    import: &crate::languages::PreparedProgram,
     line: usize,
     column: usize,
 ) -> Result<String, ClickError> {
@@ -1095,7 +1102,7 @@ fn expand_program_prepared_tactic_source_at_context(
         return match project {
             Some(project) => expand_project_claim_source(
                 project,
-                &ProgramInputs::Program(import),
+                &ProgramInputs::program(import),
                 function_name,
                 *claim,
             ),
@@ -1117,7 +1124,7 @@ fn expand_program_prepared_tactic_source_at_context(
             if let Some(project) = project {
                 super::proof::capture_project_tactic_expansion(
                     project,
-                    &ProgramInputs::Program(import),
+                    &ProgramInputs::program(import),
                     selected.site.clone(),
                     selected.source_index,
                     &selected.nested,
@@ -1136,7 +1143,7 @@ fn expand_program_prepared_tactic_source_at_context(
             if let Some(project) = project {
                 super::proof::capture_project_proof_site_expansion(
                     project,
-                    &ProgramInputs::Program(import),
+                    &ProgramInputs::program(import),
                     selected.site.clone(),
                 )?
             } else {
@@ -3565,7 +3572,7 @@ fn rust_trait_argument_suffix(header: &[SourceToken], impl_type: &str) -> Option
     if segments.is_empty() {
         return None;
     }
-    let name = super::parser::rust_path_name(&segments);
+    let name = crate::languages::rust::names::path_name(&segments);
     let name = name.as_str();
     let name = if name == "Self" { impl_type } else { name };
     let scalar = matches!(name, "i32" | "u8" | "u16" | "u32" | "usize" | "bool");
@@ -3601,7 +3608,7 @@ fn declaration_source_index(
                 if let Some(open) = (index..tokens.len()).find(|at| tokens[*at].text == "{") {
                     let close = matching_delimiter(tokens, open, "{", "}")?;
                     let path = rust_path_ending_at(tokens, open - 1);
-                    let impl_type = super::parser::rust_path_name(&path);
+                    let impl_type = crate::languages::rust::names::path_name(&path);
                     let inherent = tokens[index..open].iter().all(|token| token.text != "for");
                     let module = (inherent && path.len() > 1).then(|| {
                         path[..path.len() - 1]
@@ -3625,8 +3632,8 @@ fn declaration_source_index(
                         let path = rust_path_ending_at(tokens, before);
                         match &impl_block {
                             // A method's own name, and an item inside it.
-                            Some(_) => super::parser::rust_method_path_name(&path),
-                            None => super::parser::rust_path_name(&path),
+                            Some(_) => crate::languages::rust::names::method_path_name(&path),
+                            None => crate::languages::rust::names::path_name(&path),
                         }
                     });
                 }
@@ -3640,7 +3647,7 @@ fn declaration_source_index(
                             format!("{impl_type}_{name}_{suffix}")
                         }
                         Some((impl_type, module, None, _)) => {
-                            super::parser::rust_inherent_method_name(
+                            crate::languages::rust::names::inherent_method_name(
                                 module.as_deref(),
                                 impl_type,
                                 &name,
@@ -4455,7 +4462,7 @@ fn resolve_rust_claim_label<'a>(
     if let Some((function, rest)) = claim_label.split_once('.')
         && function.contains("::")
         && let Some(block) = file.function_blocks().iter().find(|block| {
-            super::rust_names::rust_display_name(block.signature().name()).as_deref()
+            crate::languages::rust::names::rust_display_name(block.signature().name()).as_deref()
                 == Some(function)
         })
     {

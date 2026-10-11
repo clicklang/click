@@ -109,7 +109,7 @@ fn reject_compute(contract: &str, before: &str, after: &str) {
     let line = invalid[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let error = click::surface::verify_sources_at(
         &invalid,
-        &click::surface::ProgramInputs::Program(&prepared),
+        &click::surface::ProgramInputs::program(&prepared),
         line,
         2,
     )
@@ -628,7 +628,7 @@ fn charon_adler2_helpers_live_refresh_proves_original_bodies() {
     refresh_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(
         helper_library(),
-        &load_import(&p.config()).unwrap(),
+        load_import(&p.config()).unwrap(),
     )
     .unwrap();
 }
@@ -1043,7 +1043,7 @@ fn reject_empty_compute(before: &str, after: &str) {
     let line = invalid[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let error = click::surface::verify_sources_at(
         &invalid,
-        &click::surface::ProgramInputs::Program(&prepared),
+        &click::surface::ProgramInputs::program(&prepared),
         line,
         2,
     )
@@ -1078,7 +1078,7 @@ fn charon_adler2_empty_compute_rejects_missing_ownership() {
 #[ignore = "nightly: complete original computation boundary proof"]
 fn charon_adler2_empty_compute_proves_original_body_and_rejects_false_outputs() {
     let p = adler2_helpers_project();
-    C0VerificationSession::new_program_prepared(HELPERS, &load_import(&p.config()).unwrap())
+    C0VerificationSession::new_program_prepared(HELPERS, load_import(&p.config()).unwrap())
         .unwrap();
     reject_empty_compute("ensures self.a == 1;", "ensures self.a == 2;");
     reject_empty_compute("ensures self.b == 0;", "ensures self.b == 1;");
@@ -1140,7 +1140,7 @@ fn charon_adler2_single_byte_compute_proves_original_body_and_rejects_false_outp
     let p = compute_project(SINGLE_BYTE_COMPUTE);
     C0VerificationSession::new_program_prepared(
         &compute_proof(SINGLE_BYTE_COMPUTE),
-        &load_import(&p.config()).unwrap(),
+        load_import(&p.config()).unwrap(),
     )
     .unwrap();
     for field in ["a", "b"] {
@@ -1238,7 +1238,7 @@ fn check_short_tail_compute(contract: &str, bytes: usize) {
     let p = compute_project(contract);
     C0VerificationSession::new_program_prepared(
         &compute_proof(contract),
-        &load_import(&p.config()).unwrap(),
+        load_import(&p.config()).unwrap(),
     )
     .unwrap();
     for field in ["a", "b"] {
@@ -1333,7 +1333,7 @@ fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_output
     let p = compute_project(FOUR_BYTE_COMPUTE);
     C0VerificationSession::new_program_prepared(
         &compute_proof(FOUR_BYTE_COMPUTE),
-        &load_import(&p.config()).unwrap(),
+        load_import(&p.config()).unwrap(),
     )
     .unwrap();
     for field in ["a", "b"] {
@@ -1477,7 +1477,7 @@ fn charon_adler2_small_batch_compute_proves_original_body() {
     let p = compute_project(SMALL_BATCH_COMPUTE);
     C0VerificationSession::new_program_prepared(
         &compute_proof(SMALL_BATCH_COMPUTE),
-        &load_import(&p.config()).unwrap(),
+        load_import(&p.config()).unwrap(),
     )
     .unwrap();
 }
@@ -2077,7 +2077,7 @@ fn charon_adler2_general_compute_proves_original_body() {
     let p = compute_project(GENERAL_COMPUTE);
     C0VerificationSession::new_program_prepared(
         &compute_proof(GENERAL_COMPUTE),
-        &load_import(&p.config()).unwrap(),
+        load_import(&p.config()).unwrap(),
     )
     .unwrap();
 }
@@ -2352,7 +2352,7 @@ fn verify_public_checksum_unit(
     let column = prefix.rsplit('\n').next().unwrap().len() + 1;
     click::surface::verify_sources_at(
         source,
-        &click::surface::ProgramInputs::Program(prepared),
+        &click::surface::ProgramInputs::program(prepared),
         line,
         column,
     )
@@ -2420,7 +2420,7 @@ fn charon_adler2_public_checksum_checks_all_original_callee_bodies() {
     let p = adler2_helpers_project();
     C0VerificationSession::new_program_prepared(
         &public_one_byte_proof(),
-        &load_import(&p.config()).unwrap(),
+        load_import(&p.config()).unwrap(),
     )
     .unwrap();
 }

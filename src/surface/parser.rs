@@ -297,56 +297,6 @@ fn is_builtin_tactic_spelling(name: &str) -> bool {
         })
 }
 
-/// The name the Rust importer gives the item at a path of two or more
-/// segments, `quad::walk` or `adler2::algo::U32X4`: `__rust_q` and each
-/// segment with its length, `__rust_q_I4_quad_I4_walk`
-/// (`qualified_record_name` in `src/languages/rust/charon.rs`). A single
-/// segment is the name itself.
-pub(in crate::surface) fn rust_path_name(segments: &[&str]) -> String {
-    match segments {
-        [name] => (*name).to_string(),
-        _ => segments
-            .iter()
-            .fold("__rust_q".to_string(), |encoded, segment| {
-                format!("{encoded}_I{}_{segment}", segment.len())
-            }),
-    }
-}
-
-/// The name of an inherent method of the type named `impl_type`, whose
-/// `impl` block is in the type's own module. A type named by a path has
-/// the importer's qualified method name, its module, then `_T` and the
-/// type, then the method (`qualified_function_name`); any other is
-/// `Type_method`.
-pub(in crate::surface) fn rust_inherent_method_name(
-    impl_module: Option<&str>,
-    impl_type: &str,
-    method: &str,
-) -> String {
-    // An item inside the method, `compute::LIMIT`, arrives with its path
-    // segments already written after the method's own name
-    // ([`rust_method_path_name`]); the length the importer writes is the
-    // method's alone.
-    let (own, inside) = method.split_at(method.find("_I").unwrap_or(method.len()));
-    match impl_module {
-        Some(module) => format!(
-            "{module}_T{}_{impl_type}_I{}_{own}{inside}",
-            impl_type.len(),
-            own.len()
-        ),
-        None => format!("{impl_type}_{method}"),
-    }
-}
-
-/// A method's name as written in an `impl` block, `compute` or
-/// `compute::LIMIT`: the method's own name, then each further segment as
-/// the importer writes a path segment.
-pub(in crate::surface) fn rust_method_path_name(path: &[&str]) -> String {
-    path[1..].iter().fold(path[0].to_string(), |name, segment| {
-        format!("{name}_I{}_{segment}", segment.len())
-    })
-}
-
 /// The C0 type a Rust scalar type name denotes.
 fn rust_scalar_type(name: &str) -> Option<C0Type> {
     Some(match name {
@@ -846,7 +796,7 @@ fn rust_signature_hint(parsed: &ParsedFunctionSignature) -> Option<String> {
         .into_iter()
         .find(|name| rust_scalar_type(name) == Some(c_type))
     };
-    let name = super::rust_names::rust_display_name(&signature.name)
+    let name = crate::languages::rust::names::rust_display_name(&signature.name)
         .unwrap_or_else(|| signature.name.clone());
     // An importer name that is no path, or an operator method's qualified
     // form, has no `fn` spelling.
@@ -3667,9 +3617,13 @@ impl Parser {
         let name = if self.rust_impl_type.is_some() {
             // A method's own name; an item inside it, `compute::LIMIT`,
             // follows as the importer writes path segments.
-            rust_method_path_name(&path.iter().map(String::as_str).collect::<Vec<_>>())
+            crate::languages::rust::names::method_path_name(
+                &path.iter().map(String::as_str).collect::<Vec<_>>(),
+            )
         } else {
-            rust_path_name(&path.iter().map(String::as_str).collect::<Vec<_>>())
+            crate::languages::rust::names::path_name(
+                &path.iter().map(String::as_str).collect::<Vec<_>>(),
+            )
         };
         self.expect(Token::LParen)?;
         let mut parameters = Vec::new();
@@ -3802,7 +3756,7 @@ impl Parser {
         }
         self.expect(Token::LBrace)?;
         let segments: Vec<&str> = impl_path.iter().map(String::as_str).collect();
-        let impl_type = rust_path_name(&segments);
+        let impl_type = crate::languages::rust::names::path_name(&segments);
         // An inherent block is taken to be in its type's module.
         let impl_module = (inherent && segments.len() > 1).then(|| {
             segments[..segments.len() - 1]
@@ -3862,9 +3816,12 @@ impl Parser {
     #[inline(never)]
     fn rust_inherent_method(&self, impl_type: &str, method: &str) -> Result<String, ClickError> {
         let Some(module) = self.rust_impl_module.as_deref() else {
-            return Ok(rust_inherent_method_name(None, impl_type, method));
+            return Ok(crate::languages::rust::names::inherent_method_name(
+                None, impl_type, method,
+            ));
         };
-        let suffix = rust_inherent_method_name(Some(""), impl_type, method);
+        let suffix =
+            crate::languages::rust::names::inherent_method_name(Some(""), impl_type, method);
         let mut found = self
             .local_struct_pointers_by_function
             .keys()
@@ -3874,7 +3831,11 @@ impl Parser {
             (Some(_), Some(_)) => Err(self.error(format!(
                 "the import has more than one method `{method}` of this type"
             ))),
-            (None, _) => Ok(rust_inherent_method_name(Some(module), impl_type, method)),
+            (None, _) => Ok(crate::languages::rust::names::inherent_method_name(
+                Some(module),
+                impl_type,
+                method,
+            )),
         }
     }
 
@@ -3893,7 +3854,7 @@ impl Parser {
     #[inline(never)]
     fn expect_rust_path_name(&mut self, what: &str) -> Result<String, ClickError> {
         let path = self.expect_rust_path(what)?;
-        Ok(rust_path_name(
+        Ok(crate::languages::rust::names::path_name(
             &path.iter().map(String::as_str).collect::<Vec<_>>(),
         ))
     }
