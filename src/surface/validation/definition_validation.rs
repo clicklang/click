@@ -861,6 +861,7 @@ fn validate_contract_applications_in_proposition_one(
         | ClickProposition::FloatClassification { .. }
         | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
+        | ClickProposition::Initialized { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => Ok(()),
     }
@@ -1632,6 +1633,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
     match proposition {
         ClickProposition::Comparison { .. }
         | ClickProposition::FloatClassification { .. }
+        | ClickProposition::Initialized { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => {
             let source = describe_click_proposition(proposition);
@@ -1813,6 +1815,17 @@ fn collect_resource_fact_reads_from_proposition(
             )?;
             collect_resource_fact_reads_from_resource_subject(
                 child,
+                predicate_definitions,
+                click_function_definitions,
+                visited_predicates,
+                visited_functions,
+                reads,
+                resource_name,
+            )
+        }
+        ClickProposition::Initialized { segment } => {
+            collect_resource_fact_reads_from_contract_segment(
+                segment,
                 predicate_definitions,
                 click_function_definitions,
                 visited_predicates,

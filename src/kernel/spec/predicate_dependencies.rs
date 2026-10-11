@@ -76,6 +76,9 @@ pub(in crate::kernel) fn observes_resource_state(proposition: &SpecProposition) 
                         }));
                     }
                 }
+                SpecProposition::MemoryInitialized { base, .. } => {
+                    pending.push(Node::Expression(base))
+                }
                 SpecProposition::MemoryLoadable {
                     base, start, end, ..
                 } => {

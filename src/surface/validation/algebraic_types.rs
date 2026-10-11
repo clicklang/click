@@ -1458,6 +1458,7 @@ fn validate_algebraic_proposition_one(
         }
         ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
+        | ClickProposition::Initialized { .. }
         | ClickProposition::Loadable { .. } => Ok(()),
     }
 }
@@ -2881,6 +2882,7 @@ fn validate_generic_proposition_types(
         }
         ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
+        | ClickProposition::Initialized { .. }
         | ClickProposition::Loadable { .. } => Ok(()),
     }
 }

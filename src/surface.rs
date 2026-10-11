@@ -297,6 +297,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "in",
     "induct",
     "initialize",
+    "initialized",
     "instantiate",
     "int32",
     "int32_range",
@@ -428,6 +429,7 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "target",
     "theorem",
     "verifying",
+    "initialized",
     "viewable",
     "write",
 ];
@@ -1642,6 +1644,9 @@ pub enum ClickProposition {
     Loadable {
         segment: ContractSegment,
     },
+    Initialized {
+        segment: ContractSegment,
+    },
     Defined {
         expression: ContractExpression,
     },
@@ -1726,6 +1731,9 @@ fn clone_click_proposition_atom(proposition: &ClickProposition) -> ClickProposit
             child: child.clone(),
         },
         ClickProposition::Loadable { segment } => ClickProposition::Loadable {
+            segment: segment.clone(),
+        },
+        ClickProposition::Initialized { segment } => ClickProposition::Initialized {
             segment: segment.clone(),
         },
         ClickProposition::Defined { expression } => ClickProposition::Defined {
@@ -2303,7 +2311,7 @@ fn collect_current_proposition_variables(
                 collect_current_resource_subject_variables(left, names);
                 collect_current_resource_subject_variables(right, names);
             }
-            ClickProposition::Loadable { segment } => {
+            ClickProposition::Initialized { segment } | ClickProposition::Loadable { segment } => {
                 collect_current_segment_variables(segment, names);
             }
             ClickProposition::Defined { expression } => {
@@ -6242,6 +6250,7 @@ fn click_proposition_reads_memory(
         // predicates all observe the C state.
         ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
+        | ClickProposition::Initialized { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::At { .. }
         | ClickProposition::PredicateCall { .. } => true,

@@ -372,6 +372,14 @@ pub(in crate::surface) fn initial_call_state(
     // entry initialization unable to install its stable typed cells.
     let initial = CState::new().with_population_creation_tracking();
     let mut state = crate::kernel::initialize_c_function_globals(&initial, function);
+    for (index, bytes) in function.contract_interface().initialization_outputs()
+        .ok_or_else(|| ClickError::new("initialization postconditions require fixed entry-bound mutable byte-parameter ranges"))? {
+        if bytes == 0 { continue; }
+        let CExpression::Value(CValue::Pointer(pointer)) = &arguments[index] else {
+            return Err(ClickError::new("initialization output parameter is not a pointer"));
+        };
+        state = state.clone().with_memory(state.memory().clone().with_uninitialized_object(pointer.pointer().clone(), bytes));
+    }
     if function.contract_interface().aggregate_return_mode()
         == crate::kernel::CAggregateReturnMode::Construction
     {
@@ -654,7 +662,7 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
                             }
                             let value =
                                 symbolic_value_for_element(&base_memory, &pointer, element_type);
-                            memory.store(pointer, value)
+                            memory.materialize_named_cell(pointer, value)
                         },
                     );
                 }
@@ -666,12 +674,11 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
         let Some(element_type) = range.element_type else {
             continue;
         };
-        // Every whole element of the range, as one run: the cells it holds
-        // are exactly the stores of `symbolic_value_for_element` in element
-        // order, skipping elements that already hold a cell, at a cost that
-        // does not depend on how many elements there are.
+        // Name initialized input elements as one run, preserving existing
+        // cells and leaving raw output footprints unwritten. Naming these
+        // observations is not a C store.
         let count = range.bytes.checked_div(range.element_width).unwrap_or(0);
-        memory = memory.with_seeded_cells(
+        memory = memory.with_proof_entry_cells(
             range.base.clone(),
             range.element_width,
             element_type,
@@ -1056,7 +1063,7 @@ fn materialize_access_segment_cells(
                         load_kind_of_element(element_type),
                     );
                     let value = symbolic_value_from_load(&pointer, element_type, load);
-                    memory.store(pointer, value)
+                    memory.materialize_named_cell(pointer, value)
                 },
             );
         }
@@ -1085,7 +1092,7 @@ fn materialize_access_segment_cells(
                             load_kind_of_element(element_type),
                         );
                         let value = symbolic_value_from_load(&pointer, element_type, load);
-                        memory.store(pointer, value)
+                        memory.materialize_named_cell(pointer, value)
                     },
                 );
             }
@@ -1098,7 +1105,7 @@ fn materialize_access_segment_cells(
     let source = crate::kernel::intern_c_memory(memory.clone());
     // One run for the segment's elements, spelled from the segment's own
     // base as each element's pointer is (see `memory_with_symbolic_loadable_cells`).
-    Ok(memory.with_seeded_cells(
+    Ok(memory.with_proof_entry_cells(
         segment.base.clone(),
         element_width,
         element_type,
@@ -1360,6 +1367,7 @@ pub(in crate::surface) fn requirement_definedness_surfaces(
             | ClickProposition::RangeAny { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
+            | ClickProposition::Initialized { .. }
             | ClickProposition::Loadable { .. }
             | ClickProposition::Defined { .. }
             | ClickProposition::At { .. }

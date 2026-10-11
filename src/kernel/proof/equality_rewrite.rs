@@ -2126,6 +2126,18 @@ fn rewrite_atomic_proposition_by_exact_equality(
             parent: Box::new(rewrite_resource_term(parent)),
             child: Box::new(rewrite_resource_term(child)),
         },
+        Proposition::CMemoryInitialized {
+            memory,
+            base,
+            bytes,
+        } => Proposition::CMemoryInitialized {
+            memory: memory.clone(),
+            base: Pointer {
+                block: base.block.clone(),
+                offset: rewrite_offset_term(&base.offset, left, right),
+            },
+            bytes: *bytes,
+        },
         Proposition::CMemoryReadDefined {
             memory,
             pointer,

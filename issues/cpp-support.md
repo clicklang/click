@@ -471,9 +471,8 @@ pointer field across parameter cleanup. Actual aggregate argument copies check
 source read permission and
 initialization before private callee storage is allocated.
 
-The next decoder prerequisite is initialization across ordinary modular
-output-buffer calls, below. Keep the bounded extent and explicit ownership
-profile while selecting that effect; span construction alone cannot establish it.
+Ordinary modular byte-output initialization is now supported below. Span
+construction alone still establishes neither backing initialization nor byte values.
 Byte alias access must be restricted to the actual pinned `std::byte` declaration;
 an arbitrary enum with the same underlying type does not gain that privilege.
 Automatic scalar declarations now create explicit ownership of their exact
@@ -484,12 +483,26 @@ retire the allocation owner. Caller scalar bindings are refreshed from memory
 after modular effects, rather than retaining stale pre-call values. The same
 allocation transition serves C, C++ and Rust.
 
-Another decoder prerequisite is initialization across ordinary modular
-output-buffer calls. A regular `owns` contract does not guarantee that an
-initially unwritten object becomes initialized, even when a value postcondition
-names its memory. Concrete checked stores and construction destinations already
-establish initialization separately. Preserve that distinction when selecting
-the ordinary output contract and its body-certified initialization effect.
+An ordinary helper can now state `ensures initialized(p[0..N]);` separately
+from `owns p[0..N]` and byte-value postconditions. The bounded profile freezes a
+mutable native byte-pointer parameter's input address and uses a constant byte
+count with zero start. Its proof-entry footprint stays unwritten while resources
+are named; incomplete writes, holes, no-op bodies and reads before writes are
+refused. Checked calls record initialization of exactly the guaranteed range,
+without allocating storage or assigning its byte values. Exceptional, conditional,
+callback and external initialization guarantees remain refused. Indexed runs
+combine adjacent symbolic writes and retain only common initialized bytes at a
+join; reset touches only overlapping runs. C and pinned `std::byte` caller checks
+cover ordinary, expanded and retained verification. Resource semantics version
+65 invalidates older retained proof artifacts.
+
+The next value prerequisite is the relation between specification byte reads and
+the declared uint32 representation after a modular call. The initialized caller
+can read its integer, and byte postconditions prove byte results, but those facts
+do not yet reconstruct the integer's value. Keep the exact little-endian word
+claim in `mdtests/modular_byte_output_word_value_requires_representation.md` while
+selecting that shared representation rule; do not substitute a safety claim for
+the decoder's value contract.
 
 `ReadCompactSize` additionally brings stream failure and canonical
 encoding rules; do not bundle those decisions into this span slice.

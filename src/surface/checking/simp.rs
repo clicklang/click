@@ -368,6 +368,7 @@ pub(in crate::surface) fn simp_proposition(
         | Proposition::CFunctionPartiallySatisfiesSpecification { .. }
         | Proposition::CMemoryLoads { .. }
         | Proposition::CMemoryReadDefined { .. }
+        | Proposition::CMemoryInitialized { .. }
         | Proposition::CMemoryLoadable { .. }
         | Proposition::CMemoryCanStore { .. }
         | Proposition::CResourceSeparate { .. }

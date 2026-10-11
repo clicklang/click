@@ -812,6 +812,7 @@ fn surface_predicate_call_name(proposition: &ClickProposition) -> Option<&str> {
         | ClickProposition::FloatClassification { .. }
         | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
+        | ClickProposition::Initialized { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => None,
     }
@@ -1235,7 +1236,9 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
     }
     if matches!(
         target,
-        Proposition::CMemoryLoadable { .. } | Proposition::CMemoryReadDefined { .. }
+        Proposition::CMemoryLoadable { .. }
+            | Proposition::CMemoryReadDefined { .. }
+            | Proposition::CMemoryInitialized { .. }
     ) {
         return assumptions.derive_atomic_proposition(target).is_some();
     }

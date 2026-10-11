@@ -547,6 +547,7 @@ impl Names {
                 self.resource(parent);
                 self.resource(child);
             }
+            MemoryInitialized { base, .. } => self.expression(base),
             MemoryLoadable {
                 base, start, end, ..
             } => {

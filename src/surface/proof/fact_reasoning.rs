@@ -55,6 +55,7 @@ pub(super) fn is_direct_surface_lowering_fact(proposition: &Proposition) -> bool
     matches!(
         proposition,
         Proposition::CMemoryReadDefined { .. }
+            | Proposition::CMemoryInitialized { .. }
             | Proposition::CMemoryLoadable { .. }
             | Proposition::CMemoryCanStore { .. }
             | Proposition::CResourceSeparate { .. }

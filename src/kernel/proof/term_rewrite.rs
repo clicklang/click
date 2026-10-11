@@ -1048,7 +1048,8 @@ fn collect_integer_substitution_variables_with_carriers(
             // read carry the selected pointer and byte-count terms directly.  The
             // memory snapshot is intentionally opaque: only these expressions
             // participate in capture reservation.
-            Proposition::CMemoryReadDefined { pointer, .. } => {
+            Proposition::CMemoryReadDefined { pointer, .. }
+            | Proposition::CMemoryInitialized { base: pointer, .. } => {
                 collect_pointer_carriers(pointer, carriers);
             }
             Proposition::CMemoryLoadable { base, bytes, .. } => {
@@ -2237,6 +2238,26 @@ impl<'a> TermRewrite<'a> {
                     memory: memory.clone(),
                     pointer,
                     value_type: *value_type,
+                }
+            }
+            Proposition::CMemoryInitialized {
+                memory,
+                base: pointer,
+                bytes,
+            } => {
+                if !self.source_variables_reserved {
+                    let mut variables = self.new_carrier_variables();
+                    collect_pointer_carriers(pointer, &mut variables);
+                    self.reserve_source_variables(variables);
+                }
+                let pointer = self.pointer(pointer);
+                if self.checked_work_exhausted() {
+                    return exhausted_proposition();
+                }
+                Proposition::CMemoryInitialized {
+                    memory: memory.clone(),
+                    base: pointer,
+                    bytes: *bytes,
                 }
             }
             Proposition::Not(p) => {

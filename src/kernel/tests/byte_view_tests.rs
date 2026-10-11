@@ -479,3 +479,155 @@ fn containing_cell_lookup_work_is_independent_of_unrelated_cells() {
         "containing-cell lookup work grew with unrelated cells: {works:?}"
     );
 }
+
+#[test]
+fn initialized_range_checks_all_bytes_and_cannot_reuse_an_expired_snapshot() {
+    let base = Pointer {
+        block: "local:output".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let mut memory = CMemory::new().with_uninitialized_block(base.block.clone(), 4);
+    let facts = PureFactContext::new();
+    let claim = |memory: &CMemory, bytes| Proposition::CMemoryInitialized {
+        memory: memory.clone(),
+        base: base.clone(),
+        bytes,
+    };
+    assert!(!facts.proves(&claim(&memory, 4)));
+    for index in 0..3 {
+        memory = memory.store(base.offset_by_bytes(index), CValue::UInt8(index.into()));
+    }
+    assert!(facts.proves(&claim(&memory, 3)));
+    assert!(!facts.proves(&claim(&memory, 4)));
+    memory = memory.store(base.offset_by_bytes(3), CValue::UInt8(18.into()));
+    assert!(facts.proves(&claim(&memory, 4)));
+    let old = claim(&memory, 4);
+    let retired = memory.without_local_block(&base.block);
+    assert!(!facts.assume_proposition(old).proves(&claim(&retired, 4)));
+}
+
+#[test]
+fn initialized_range_work_is_independent_of_unrelated_memory() {
+    let mut samples = Vec::new();
+    for count in [8u32, 32, 128, 512] {
+        let base = Pointer {
+            block: "local:output".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let mut memory = CMemory::new()
+            .with_uninitialized_block(base.block.clone(), 4)
+            .store(base.clone(), CValue::UInt32(7.into()));
+        for index in 0..count {
+            let block: PointerBlock = format!("global:unrelated{index}").into();
+            memory = memory.with_block(block.clone(), 4).store(
+                Pointer {
+                    block,
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                CValue::UInt32(index.into()),
+            );
+        }
+        let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
+            PureFactContext::new().proves(&Proposition::CMemoryInitialized {
+                memory: memory.clone(),
+                base,
+                bytes: 4,
+            })
+        });
+        assert!(holds);
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn initialized_output_is_not_a_bodyless_external_guarantee() {
+    let function = c_function(
+        CType::Void,
+        "external_output",
+        vec![c_parameter("p", CType::UInt8Pointer)],
+        c_return(c_void_value()),
+    );
+    let claims = vec![
+        CFunctionContractClaim::body_safety(),
+        CFunctionContractClaim::ensure_proposition(0, 0),
+    ];
+    let ordinary = function.clone().with_contract(
+        vec![],
+        vec![SpecProposition::Comparison {
+            left: SpecExpression::CExpression(c_int32_literal(0)),
+            operator: CComparisonOperator::Equal,
+            right: SpecExpression::CExpression(c_int32_literal(0)),
+        }],
+        vec![],
+        claims.clone(),
+        true,
+    );
+    assert!(c_external_function_rule(ordinary).is_some());
+    let function = function.with_contract(
+        vec![],
+        vec![SpecProposition::MemoryInitialized {
+            memory: SpecMemory::Current,
+            base: SpecExpression::LoopEntrySnapshot(Box::new(SpecExpression::CExpression(
+                c_variable("p"),
+            ))),
+            bytes: 1,
+        }],
+        vec![],
+        claims,
+        true,
+    );
+    assert_eq!(
+        function.contract_interface().initialization_outputs(),
+        Some(vec![(0, 1)])
+    );
+    assert!(CFunctionContract::new("OutputCallback", function.clone()).is_none());
+    assert!(c_external_function_rule(function).is_none());
+}
+
+#[test]
+fn proof_entry_naming_preserves_a_large_unwritten_output_without_enumeration() {
+    let base = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(7430)),
+    };
+    let memory = CMemory::new().with_uninitialized_object(base.clone(), u32::MAX);
+    let source = crate::kernel::intern_c_memory(memory.clone());
+    let (named, work) = crate::instrumentation::measure_deterministic_work(|| {
+        memory.with_proof_entry_cells(base.clone(), 1, CType::UInt8, 0, u32::MAX, source)
+    });
+    assert!(named.known_value(&base).is_none());
+    assert!(!named.has_initialized_bytes_at(&base, 1));
+    assert!(
+        work < 20,
+        "unwritten output naming enumerated bytes: {work}"
+    );
+}
+
+#[test]
+fn raw_output_overlap_respects_checked_input_separation() {
+    let output = Pointer::symbolic(Variable(7431));
+    let input = Pointer::symbolic(Variable(7432));
+    let memory = CMemory::new().with_uninitialized_object(output.clone(), 4);
+    let facts = PureFactContext::new();
+    assert!(memory.may_read_uninitialized_object_under(&input, 4, &facts));
+    let range = |base| {
+        CResource::Memory(CMemoryRange::new_with_element_width(
+            base,
+            0u32.into(),
+            4u32.into(),
+            1,
+        ))
+    };
+    let facts = facts.assume_proposition(Proposition::CResourceSeparate {
+        left: Box::new(range(output.clone())),
+        right: Box::new(range(input.clone())),
+    });
+    assert!(!memory.may_read_uninitialized_object_under(&input, 4, &facts));
+    assert!(memory.may_read_uninitialized_object_under(&output, 4, &facts));
+    assert!(!memory.has_initialized_bytes_under(&output, 4, &facts));
+    assert!(memory.may_read_uninitialized_object_under(&input.offset_by_bytes(4), 1, &facts));
+}

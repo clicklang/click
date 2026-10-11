@@ -219,6 +219,17 @@ pub(in crate::kernel) fn signed_byte_sum_is_nonwrapping(
 }
 
 impl PureFactContext {
+    pub(crate) fn proves_memory_initialized(
+        &self,
+        memory: &CMemory,
+        base: &Pointer,
+        bytes: u32,
+    ) -> bool {
+        bytes == 0
+            || (self.proves_memory_access(memory, base, bytes)
+                && memory.has_initialized_bytes_under(base, bytes, self))
+    }
+
     /// A validity premise frames only across a lifetime-preserving, value-
     /// preserving memory edge. Value equalities alone are never authority.
     pub(crate) fn has_memory_read_defined_evidence(

@@ -557,8 +557,11 @@ fn evaluate_c_memory_load_case(
     // spellings. Authority alone cannot enable the external-memory shortcut;
     // let ordinary alias resolution find actual writes first.
     let allow_symbolic_external_load = has_external_read_resource
-        && (!memory.may_read_uninitialized_object(&pointer, value_type.byte_width())
-            || purpose == LoadPurpose::Logical
+        && (!memory.may_read_uninitialized_object_under(
+            &pointer,
+            value_type.byte_width(),
+            assumptions,
+        ) || purpose == LoadPurpose::Logical
             || written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
             || assumptions.has_memory_read_defined_evidence(memory, &pointer, value_type));
     // A typed union overlay is the authoritative view for an exact typed
@@ -1253,7 +1256,11 @@ fn evaluate_c_memory_load_case(
     // its bound first, and only a read inside it for unwritten bytes.
     if purpose != LoadPurpose::Logical
         && ((pointer.block.starts_with("local:") && memory.has_block(&pointer.block))
-            || memory.may_read_uninitialized_object(&pointer, value_type.byte_width()))
+            || memory.may_read_uninitialized_object_under(
+                &pointer,
+                value_type.byte_width(),
+                assumptions,
+            ))
         && !written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
         && !assumptions.has_memory_read_defined_evidence(&memory, &pointer, value_type)
     {

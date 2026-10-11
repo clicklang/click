@@ -2633,6 +2633,17 @@ impl CMemory {
         pointer: &Pointer,
         bytes: u32,
     ) -> bool {
+        self.may_read_uninitialized_object_under(pointer, bytes, &PureFactContext::new())
+    }
+
+    /// Exclude only raw footprints whose separation from this read is checked
+    /// in its fact context. Initialization and ownership remain independent.
+    pub(in crate::kernel) fn may_read_uninitialized_object_under(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> bool {
         if bytes == 0 {
             return false;
         }
@@ -2653,7 +2664,7 @@ impl CMemory {
                 {
                     return at < end && start < read_end;
                 }
-                true
+                !assumptions.proves_stated_byte_separation(pointer, bytes, base, *size)
             },
         )
     }
@@ -4087,6 +4098,8 @@ impl CMemory {
     /// rather than approximated: displacing typed union views (the snapshot
     /// holds some) and marking a live heap cell initialized (an allocation
     /// may hold the range). Those fall back to the stores themselves.
+    // Kept for checking the store-equivalent run representation in kernel tests.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn with_seeded_cells(
         mut self,
         base: Pointer,
@@ -4125,6 +4138,60 @@ impl CMemory {
             source,
             RunValueMode::Load,
         )
+    }
+
+    /// Name initialized universal input cells without treating proof-entry
+    /// resource materialization as a C write. An output footprint marked
+    /// unwritten stays unwritten, independently of its ownership/liveness.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn with_proof_entry_cells(
+        self,
+        base: Pointer,
+        element_width: u32,
+        element_type: CType,
+        first: u32,
+        count: u32,
+        source: SharedCMemory,
+    ) -> Self {
+        if first >= count {
+            return self;
+        }
+        let Some(start) = first.checked_mul(element_width) else {
+            return self;
+        };
+        let Some(bytes) = (count - first).checked_mul(element_width) else {
+            return self;
+        };
+        if self.may_read_uninitialized_object(&base.offset_by_bytes(start), bytes) {
+            return self;
+        }
+        match self.with_named_cell_run(
+            base.clone(),
+            element_width,
+            element_type,
+            first,
+            count,
+            source.clone(),
+        ) {
+            Ok(memory) => memory,
+            Err(mut memory) => {
+                let run = CellRun::new(
+                    base,
+                    element_width,
+                    element_type,
+                    count,
+                    source,
+                    IndexIntervals::default(),
+                );
+                for index in first..count {
+                    let pointer = run.slot_pointer(index);
+                    if !matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
+                        memory = memory.materialize_named_cell(pointer, run.value(index));
+                    }
+                }
+                memory
+            }
+        }
     }
 
     /// [`Self::materialize_named_cell`] of each element `first..count` at
@@ -5169,7 +5236,7 @@ impl CMemory {
     /// Whether the `byte_width` bytes at `pointer` are recorded initialized,
     /// whether or not a cached value for them survives (see
     /// [`InitializedBytes`]). A constant offset is covered by the run of its
-    /// block holding it; a symbolic offset by the same spelling.
+    /// block holding it; a symbolic offset by its indexed offset-family run.
     pub(in crate::kernel) fn has_initialized_bytes_at(
         &self,
         pointer: &Pointer,

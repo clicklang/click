@@ -1848,6 +1848,51 @@ fn synthesize_surface_atomic_proposition(
             )?,
         });
     }
+    if let Proposition::CMemoryInitialized {
+        memory,
+        base,
+        bytes,
+    } = proposition
+    {
+        let ClickProposition::Loadable { segment } =
+            synthesize_exact_external_zero_based_byte_range(
+                base,
+                &Bitvector32Term::Constant(*bytes),
+                parameters,
+                arguments,
+                state,
+                bound_variables,
+            )
+            .ok()??
+        else {
+            return None;
+        };
+        let initialized = ClickProposition::Initialized { segment };
+        if state.memory() == memory {
+            return Some(initialized);
+        }
+        let at_entry = SYNTHESIS_ENTRY_STATE.with(|slot| {
+            slot.borrow()
+                .as_ref()
+                .is_some_and(|entry| entry.memory() == memory)
+        });
+        let selector = if at_entry {
+            SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Function,
+                kind: ProgramPointKind::Entry,
+            })
+        } else {
+            SYNTHESIS_SNAPSHOT_STATE.with(|slot| {
+                let slot = slot.borrow();
+                let (snapshot, selector) = slot.as_ref()?;
+                (snapshot.memory() == memory).then(|| selector.clone())
+            })?
+        };
+        return Some(ClickProposition::At {
+            selector,
+            proposition: Box::new(initialized),
+        });
+    }
     if let Proposition::CMemoryReadDefined {
         memory,
         pointer,

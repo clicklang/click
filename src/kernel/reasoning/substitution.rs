@@ -461,6 +461,15 @@ pub(crate) fn substitute_bitvector_variable_in_proposition(
             pointer: substitute_bitvector_variable_in_pointer(pointer, from, to),
             outcome: substitute_bitvector_variable_in_c_expression_outcome(outcome, from, to),
         },
+        Proposition::CMemoryInitialized {
+            memory,
+            base,
+            bytes,
+        } => Proposition::CMemoryInitialized {
+            memory: substitute_bitvector_variable_in_memory(memory, from, to),
+            base: substitute_bitvector_variable_in_pointer(base, from, to),
+            bytes: *bytes,
+        },
         Proposition::CMemoryReadDefined {
             memory,
             pointer,
@@ -908,7 +917,12 @@ fn collect_proposition_bound_variables_one(
             collect_pointer_bound_variables(pointer, variables);
             collect_expression_outcome_bound_variables(outcome, variables);
         }
-        Proposition::CMemoryReadDefined {
+        Proposition::CMemoryInitialized {
+            memory,
+            base: pointer,
+            ..
+        }
+        | Proposition::CMemoryReadDefined {
             memory, pointer, ..
         }
         | Proposition::CMemoryCanStore {
@@ -2199,7 +2213,9 @@ fn validate_integer_pure_proposition(
         Proposition::ConditionIs(condition, _) => {
             validate_integer_pure_condition(condition, collector)
         }
-        Proposition::CMemoryReadDefined { .. } | Proposition::CMemoryLoadable { .. } => {
+        Proposition::CMemoryReadDefined { .. }
+        | Proposition::CMemoryInitialized { .. }
+        | Proposition::CMemoryLoadable { .. } => {
             // A symbolic array read contributes this obligation to the
             // existential body.  It is a supported C carrier as long as its
             // pointer and byte-count expressions are rewritten by the same
@@ -2413,6 +2429,7 @@ fn substitute_pure_proposition_with_walker(
                         ));
                     }
                     Proposition::CMemoryReadDefined { .. }
+                    | Proposition::CMemoryInitialized { .. }
                     | Proposition::CMemoryLoadable { .. } => {
                         rewritten.push(rewrite_integer_memory_loadable_with_walker(
                             proposition,
@@ -2651,6 +2668,25 @@ fn rewrite_integer_memory_loadable_with_walker(
             memory: memory.clone(),
             pointer: pointer.pointer().clone(),
             value_type: *value_type,
+        });
+    }
+    if let Proposition::CMemoryInitialized {
+        memory,
+        base: pointer,
+        bytes,
+    } = proposition
+    {
+        integer_work(1)?;
+        let Term::CValue(CValue::Pointer(pointer)) = walker.term(&Term::CValue(CValue::Pointer(
+            CPointerValue::new(pointer.clone(), CType::VoidPointer),
+        ))) else {
+            unreachable!("pointer rewrite changed its carrier")
+        };
+        integer_substitution_refusal(walker.refusal())?;
+        return Ok(Proposition::CMemoryInitialized {
+            memory: memory.clone(),
+            base: pointer.pointer().clone(),
+            bytes: *bytes,
         });
     }
     let Proposition::CMemoryLoadable {
@@ -5834,6 +5870,15 @@ pub(crate) fn substitute_pointer_variable_in_proposition(
             pointer: substitute_pointer_variable_in_pointer(pointer, from, to),
             outcome: substitute_pointer_variable_in_c_expression_outcome(outcome, from, to),
         },
+        Proposition::CMemoryInitialized {
+            memory,
+            base,
+            bytes,
+        } => Proposition::CMemoryInitialized {
+            memory: substitute_pointer_variable_in_memory(memory, from, to),
+            base: substitute_pointer_variable_in_pointer(base, from, to),
+            bytes: *bytes,
+        },
         Proposition::CMemoryReadDefined {
             memory,
             pointer,
@@ -7892,6 +7937,15 @@ fn substitute_pointer_variable_in_spec_proposition(
         SpecProposition::ResourceContains { parent, child } => SpecProposition::ResourceContains {
             parent: substitute_pointer_variable_in_spec_resource(parent, from, to),
             child: substitute_pointer_variable_in_spec_resource(child, from, to),
+        },
+        SpecProposition::MemoryInitialized {
+            memory,
+            base,
+            bytes,
+        } => SpecProposition::MemoryInitialized {
+            memory: substitute_pointer_variable_in_spec_memory(memory, from, to),
+            base: substitute_pointer_variable_in_spec_expression(base, from, to),
+            bytes: *bytes,
         },
         SpecProposition::MemoryLoadable {
             memory,

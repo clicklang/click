@@ -15,8 +15,9 @@
 //! Constant-offset entries of one block are *runs*: disjoint, non-adjacent
 //! intervals, merged as they are recorded, so a fully written array is one
 //! entry however many element stores wrote it, and a covering query is one
-//! predecessor lookup. A symbolic-offset entry is an exact spelling with the
-//! widest access recorded at it; it covers only a read at that spelling.
+//! predecessor lookup. Symbolic offsets use the same runs within each common
+//! offset stem, indexed by their checked constant displacements. A covering
+//! query visits only its own family with one predecessor lookup.
 //!
 //! Every operation touches the entries of the one block it names (O(log n)
 //! to position plus the entries it merges or visits), never unrelated blocks.
@@ -26,16 +27,53 @@ use super::{AliasCandidates, Pointer, PointerBlock, PointerOffsetTerm, SnapshotM
 /// See the module comment.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(crate) struct InitializedBytes {
-    /// Start pointer to byte length. Invariant: within one block, the
-    /// constant-offset entries are pairwise disjoint and non-adjacent, and
-    /// every length is nonzero.
+    /// Start pointer to byte length. Within each block/offset family, runs
+    /// are pairwise disjoint and non-adjacent; every length is nonzero.
     entries: SnapshotMap<Pointer, u32>,
 }
 
+#[cfg(test)]
 fn constant_start(block: &PointerBlock, offset: i64) -> Pointer {
     Pointer {
         block: block.clone(),
         offset: PointerOffsetTerm::Constant(offset),
+    }
+}
+
+// A canonical offset family and a checked constant displacement. Do not
+// saturate: that could identify different addresses as the same initialized byte.
+fn offset_family(offset: &PointerOffsetTerm) -> Option<(Option<&PointerOffsetTerm>, i64)> {
+    if let Some(constant) = offset.as_const() {
+        return Some((None, constant));
+    }
+    let mut stem = offset;
+    let mut shift = 0i64;
+    while let PointerOffsetTerm::Add(left, right) = stem {
+        let Some(constant) = right.as_const() else {
+            break;
+        };
+        shift = shift.checked_add(constant)?;
+        stem = left;
+    }
+    if let Some(constant) = stem.as_const() {
+        Some((None, shift.checked_add(constant)?))
+    } else {
+        Some((Some(stem), shift))
+    }
+}
+
+fn family_start(block: &PointerBlock, stem: Option<&PointerOffsetTerm>, offset: i64) -> Pointer {
+    Pointer {
+        block: block.clone(),
+        offset: match stem {
+            None => PointerOffsetTerm::Constant(offset),
+            // Retain the zero displacement too, so all keys in a symbolic family
+            // occupy one contiguous ordered range. These are private record keys.
+            Some(stem) => PointerOffsetTerm::Add(
+                Box::new(stem.clone()),
+                Box::new(PointerOffsetTerm::Constant(offset)),
+            ),
+        },
     }
 }
 
@@ -57,31 +95,37 @@ impl InitializedBytes {
         self.entries.eq_relative_to(&other.entries, &base.entries)
     }
 
-    /// The run of constant offsets in `block` that starts at or before
-    /// `offset`, nearest first: the only run that can contain it.
-    fn run_at_or_before(&self, block: &PointerBlock, offset: i64) -> Option<(i64, i64)> {
+    fn family_run_at_or_before(
+        &self,
+        block: &PointerBlock,
+        stem: Option<&PointerOffsetTerm>,
+        offset: i64,
+    ) -> Option<(i64, i64)> {
         self.entries
-            .range(constant_start(block, i64::MIN)..=constant_start(block, offset))
+            .range(family_start(block, stem, i64::MIN)..=family_start(block, stem, offset))
             .next_back()
-            .and_then(|(start, length)| {
-                let start = start.offset.as_const()?;
-                Some((start, start + i64::from(*length)))
+            .and_then(|(pointer, length)| {
+                let (_, start) = offset_family(&pointer.offset)?;
+                Some((start, start.checked_add(i64::from(*length))?))
             })
+    }
+
+    fn run_at_or_before(&self, block: &PointerBlock, offset: i64) -> Option<(i64, i64)> {
+        self.family_run_at_or_before(block, None, offset)
     }
 
     /// Whether every one of the `byte_width` bytes at `pointer` is recorded
     /// as initialized.
     pub(crate) fn covers(&self, pointer: &Pointer, byte_width: u32) -> bool {
         crate::instrumentation::record_deterministic_work(1);
-        match pointer.offset.as_const() {
-            Some(offset) => self
-                .run_at_or_before(&pointer.block, offset)
-                .is_some_and(|(_, end)| end >= offset + i64::from(byte_width)),
-            None => self
-                .entries
-                .get(pointer)
-                .is_some_and(|length| *length >= byte_width),
-        }
+        let Some((stem, start)) = offset_family(&pointer.offset) else {
+            return false;
+        };
+        let Some(end) = start.checked_add(i64::from(byte_width)) else {
+            return false;
+        };
+        self.family_run_at_or_before(&pointer.block, stem, start)
+            .is_some_and(|(_, run_end)| run_end >= end)
     }
 
     /// The end of the run of `block` holding the byte at `offset`, if one
@@ -117,21 +161,15 @@ impl InitializedBytes {
         if byte_width == 0 {
             return false;
         }
-        let Some(offset) = pointer.offset.as_const() else {
-            if self
-                .entries
-                .get(pointer)
-                .is_some_and(|length| *length >= byte_width)
-            {
-                return false;
-            }
-            self.entries.insert(pointer.clone(), byte_width);
-            return true;
+        let Some((stem, offset)) = offset_family(&pointer.offset) else {
+            return false;
         };
         let block = &pointer.block;
         let mut start = offset;
-        let mut end = offset + i64::from(byte_width);
-        if let Some((before_start, before_end)) = self.run_at_or_before(block, offset)
+        let Some(mut end) = offset.checked_add(i64::from(byte_width)) else {
+            return false;
+        };
+        if let Some((before_start, before_end)) = self.family_run_at_or_before(block, stem, offset)
             && before_end >= start
         {
             if before_end >= end {
@@ -142,11 +180,10 @@ impl InitializedBytes {
         // Every later run that the new interval reaches or touches merges.
         let merged = self
             .entries
-            .range(constant_start(block, start)..=constant_start(block, end))
+            .range(family_start(block, stem, start)..=family_start(block, stem, end))
             .filter_map(|(key, length)| {
-                key.offset
-                    .as_const()
-                    .map(|key_start| (key.clone(), key_start + i64::from(*length)))
+                let (_, key_start) = offset_family(&key.offset)?;
+                Some((key.clone(), key_start.checked_add(i64::from(*length))?))
             })
             .collect::<Vec<_>>();
         crate::instrumentation::record_deterministic_work(merged.len() + 1);
@@ -158,33 +195,36 @@ impl InitializedBytes {
             // Wider than any object; recording nothing only loses knowledge.
             return false;
         };
-        self.entries.insert(constant_start(block, start), length);
+        self.entries
+            .insert(family_start(block, stem, start), length);
         true
     }
 
-    /// Forgets the `byte_width` bytes at `pointer`: at a constant offset, the
-    /// part of every run that holds them, splitting a run that straddles
-    /// either end; at a symbolic offset, the entry of that exact spelling.
+    /// Forgets only the overlapping bytes in this offset family, splitting
+    /// a run that straddles either end. Other ranges, stems and blocks are
+    /// untouched.
     /// Returns whether the record changed.
     pub(crate) fn forget(&mut self, pointer: &Pointer, byte_width: u32) -> bool {
-        let Some(start) = pointer.offset.as_const() else {
-            return self.entries.remove(pointer).is_some();
+        let Some((stem, start)) = offset_family(&pointer.offset) else {
+            return false;
         };
         if byte_width == 0 {
             return false;
         }
         let block = &pointer.block;
-        let end = start + i64::from(byte_width);
+        let Some(end) = start.checked_add(i64::from(byte_width)) else {
+            return false;
+        };
         let first = self
-            .run_at_or_before(block, start)
+            .family_run_at_or_before(block, stem, start)
             .filter(|(_, run_end)| *run_end > start)
             .map_or(start, |(run_start, _)| run_start);
         let overlapping = self
             .entries
-            .range(constant_start(block, first)..constant_start(block, end))
+            .range(family_start(block, stem, first)..family_start(block, stem, end))
             .filter_map(|(key, length)| {
-                let key_start = key.offset.as_const()?;
-                let key_end = key_start + i64::from(*length);
+                let (_, key_start) = offset_family(&key.offset)?;
+                let key_end = key_start.checked_add(i64::from(*length))?;
                 (key_end > start && key_start < end).then_some((key_start, key_end))
             })
             .collect::<Vec<_>>();
@@ -193,16 +233,16 @@ impl InitializedBytes {
             return false;
         }
         for (run_start, run_end) in overlapping {
-            self.entries.remove(&constant_start(block, run_start));
+            self.entries.remove(&family_start(block, stem, run_start));
             if run_start < start {
                 self.entries.insert(
-                    constant_start(block, run_start),
+                    family_start(block, stem, run_start),
                     u32::try_from(start - run_start).expect("a piece of a run"),
                 );
             }
             if run_end > end {
                 self.entries.insert(
-                    constant_start(block, end),
+                    family_start(block, stem, end),
                     u32::try_from(run_end - end).expect("a piece of a run"),
                 );
             }
@@ -227,9 +267,9 @@ impl InitializedBytes {
         candidates.retain_map(&mut self.entries, keep);
     }
 
-    /// The bytes both records cover. A constant run keeps the parts the other
-    /// record's runs cover; a symbolic spelling needs the same spelling in
-    /// both, at the narrower width. The result keeps the run invariant: two
+    /// The bytes both records cover. Each run keeps the parts the other
+    /// record's runs in the same offset family cover. The result keeps the
+    /// run invariant: two
     /// clipped pieces are separated by a gap of one side or the other.
     pub(crate) fn intersection(&self, other: &Self) -> Self {
         // Equal records intersect to themselves. Two records derived from
@@ -241,22 +281,18 @@ impl InitializedBytes {
         let mut visited = 0usize;
         for (pointer, length) in self.entries.iter() {
             visited += 1;
-            let Some(start) = pointer.offset.as_const() else {
-                if let Some(other_length) = other.entries.get(pointer) {
-                    result.insert(pointer.clone(), (*length).min(*other_length));
-                }
+            let Some((stem, start)) = offset_family(&pointer.offset) else {
                 continue;
             };
             let end = start + i64::from(*length);
             let first = other
-                .run_at_or_before(&pointer.block, start)
+                .family_run_at_or_before(&pointer.block, stem, start)
                 .map_or(start, |(other_start, _)| other_start);
-            for (other_pointer, other_length) in other
-                .entries
-                .range(constant_start(&pointer.block, first)..constant_start(&pointer.block, end))
-            {
+            for (other_pointer, other_length) in other.entries.range(
+                family_start(&pointer.block, stem, first)..family_start(&pointer.block, stem, end),
+            ) {
                 visited += 1;
-                let Some(other_start) = other_pointer.offset.as_const() else {
+                let Some((_, other_start)) = offset_family(&other_pointer.offset) else {
                     continue;
                 };
                 let other_end = other_start + i64::from(*other_length);
@@ -264,7 +300,7 @@ impl InitializedBytes {
                 let piece_end = end.min(other_end);
                 if piece_start < piece_end {
                     result.insert(
-                        constant_start(&pointer.block, piece_start),
+                        family_start(&pointer.block, stem, piece_start),
                         u32::try_from(piece_end - piece_start).expect("a piece of a run"),
                     );
                 }
@@ -351,6 +387,146 @@ mod tests {
         assert!(!both.covers(&at("local:a", 0), 4));
         assert!(!both.covers(&at("local:a", 16), 4));
         assert!(!both.covers(&at("local:b", 0), 4));
+    }
+
+    #[test]
+    fn symbolic_coverage_follows_whole_writes_and_refuses_gaps() {
+        let base = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Variable(super::super::Variable(7410)),
+        };
+        let mut record = InitializedBytes::default();
+        record.record(&base, 2);
+        record.record(&base.offset_by_bytes(3), 1);
+        assert!(!record.covers(&base, 4));
+        record.record(&base.offset_by_bytes(2), 1);
+        assert!(record.covers(&base, 4));
+        assert!(!record.covers(&base, 5));
+        assert!(record.covers(&base.offset_by_bytes(1), 3));
+        let mut wide = InitializedBytes::default();
+        wide.record(&base, 4);
+        assert!(wide.covers(&base.offset_by_bytes(1), 3));
+        assert!(!wide.covers(&base.offset_by_bytes(1), 4));
+        wide.forget(&base.offset_by_bytes(1), 1);
+        assert!(wide.covers(&base, 1));
+        assert!(!wide.covers(&base.offset_by_bytes(1), 1));
+        let mut large = InitializedBytes::default();
+        large.record(&base, u32::MAX);
+        let (holds, work) =
+            crate::instrumentation::measure_deterministic_work(|| large.covers(&base, u32::MAX));
+        assert!(holds);
+        assert_eq!(work, 1, "one recorded run must take one lookup");
+        let overflow = Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Add(
+                Box::new(PointerOffsetTerm::Add(
+                    Box::new(base.offset.clone()),
+                    Box::new(PointerOffsetTerm::Constant(i64::MAX)),
+                )),
+                Box::new(PointerOffsetTerm::Constant(1)),
+            ),
+        };
+        let mut invalid = InitializedBytes::default();
+        invalid.record(&overflow, 4);
+        assert!(
+            !invalid.covers(&overflow, 4),
+            "displacements must not saturate into initialization authority"
+        );
+        record.forget_block(&base.block);
+        assert!(!record.covers(&base, 4));
+    }
+
+    #[test]
+    fn symbolic_coverage_does_not_visit_unrelated_same_block_writes() {
+        let mut samples = Vec::new();
+        let base = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Variable(super::super::Variable(7411)),
+        };
+        for count in [8, 32, 128, 512] {
+            let mut record = InitializedBytes::default();
+            for index in 0..4 {
+                record.record(&base.offset_by_bytes(index), 1);
+            }
+            for index in 0..count {
+                record.record(&base.offset_by_bytes(index + 100), 1);
+                record.record(&at(&format!("local:other{index}"), 0), 4);
+            }
+            let (holds, work) =
+                crate::instrumentation::measure_deterministic_work(|| record.covers(&base, 4));
+            assert!(holds);
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0] == pair[1]),
+            "{samples:?}"
+        );
+    }
+
+    #[test]
+    fn symbolic_run_intersection_and_rewriting_preserve_the_common_bytes() {
+        let base = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Variable(super::super::Variable(7420)),
+        };
+        let mut whole = InitializedBytes::default();
+        whole.record(&base, 8);
+        let mut pieces = InitializedBytes::default();
+        for index in 0..4 {
+            pieces.record(&base.offset_by_bytes(index), 1);
+        }
+        pieces.record(&base.offset_by_bytes(6), 4);
+        let common = whole.intersection(&pieces);
+        assert!(common.covers(&base, 4));
+        assert!(!common.covers(&base.offset_by_bytes(4), 1));
+        assert!(common.covers(&base.offset_by_bytes(6), 2));
+        assert!(!common.covers(&base.offset_by_bytes(8), 1));
+        assert_eq!(common, pieces.intersection(&whole));
+        let rewritten = common.map_pointers(|pointer| {
+            let (_, shift) = offset_family(&pointer.offset).unwrap();
+            at("local:rewritten", shift + 8)
+        });
+        assert!(rewritten.covers(&at("local:rewritten", 8), 4));
+        assert!(!rewritten.covers(&at("local:rewritten", 12), 1));
+        assert!(rewritten.covers(&at("local:rewritten", 14), 2));
+    }
+
+    #[test]
+    fn symbolic_run_reset_touches_only_overlapping_runs() {
+        let base = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Variable(super::super::Variable(7421)),
+        };
+        let mut samples = Vec::new();
+        for count in [8, 32, 128, 512] {
+            let mut record = InitializedBytes::default();
+            record.record(&base, 4);
+            for index in 0..count {
+                record.record(&base.offset_by_bytes(100 + 2 * index), 1);
+                record.record(
+                    &Pointer {
+                        block: base.block.clone(),
+                        offset: PointerOffsetTerm::Variable(super::super::Variable(
+                            7500 + u64::from(index),
+                        )),
+                    },
+                    4,
+                );
+            }
+            let (changed, work) = crate::instrumentation::measure_deterministic_work(|| {
+                record.forget(&base.offset_by_bytes(1), 1)
+            });
+            assert!(changed);
+            assert!(record.covers(&base, 1));
+            assert!(!record.covers(&base.offset_by_bytes(1), 1));
+            assert!(record.covers(&base.offset_by_bytes(2), 2));
+            assert!(record.covers(&base.offset_by_bytes(100), 1));
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0] == pair[1]),
+            "{samples:?}"
+        );
     }
 
     #[test]

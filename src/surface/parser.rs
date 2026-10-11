@@ -5769,6 +5769,14 @@ impl Parser {
             return Ok(ClickProposition::Contains { parent, child });
         }
 
+        if self.peek_ident() == Some("initialized") && self.peek_next() == Some(&Token::LParen) {
+            self.position += 1;
+            self.expect(Token::LParen)?;
+            let segment = self.parse_contract_segment()?;
+            self.expect(Token::RParen)?;
+            return Ok(ClickProposition::Initialized { segment });
+        }
+
         if self.peek_ident() == Some("viewable") && self.peek_next() == Some(&Token::LParen) {
             let segment = self.parse_loadable_segment()?;
             return Ok(ClickProposition::Loadable { segment });

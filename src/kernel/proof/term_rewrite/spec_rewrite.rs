@@ -123,6 +123,9 @@ fn collect_spec_proposition_carriers(
             }
             collect_spec_resource_carriers(right, variables, integer_seen);
         }
+        SpecProposition::MemoryInitialized { base, .. } => {
+            collect_spec_expression_carriers(base, variables, integer_seen);
+        }
         SpecProposition::MemoryLoadable {
             base, start, end, ..
         } => {
@@ -1016,6 +1019,15 @@ impl<'a> TermRewrite<'a> {
                     child: self.rewrite_spec_resource(child)?,
                 }
             }
+            SpecProposition::MemoryInitialized {
+                memory,
+                base,
+                bytes,
+            } => SpecProposition::MemoryInitialized {
+                memory: memory.clone(),
+                base: self.rewrite_spec_expression(base)?,
+                bytes: *bytes,
+            },
             SpecProposition::MemoryLoadable {
                 memory,
                 base,

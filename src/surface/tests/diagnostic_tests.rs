@@ -2239,7 +2239,7 @@ fn modular_byte_postcondition_does_not_name_the_whole_scalar() {
     "#;
     with_proof_trace("probe", || {
         let error = verify_c0_sources(click_source, &[("byte_output.c", c_source)])
-            .expect_err("ordinary output contracts do not yet convey initialization");
+            .expect_err("ownership and value postconditions alone do not convey initialization");
         assert!(
             error.message().contains("uninitialized"),
             "{}",
@@ -2250,4 +2250,103 @@ fn modular_byte_postcondition_does_not_name_the_whole_scalar() {
         assert!(!trace.contains("obj) == 120"), "{trace}");
         assert!(trace.contains("bytes[3] == 18"), "{trace}");
     });
+}
+
+#[test]
+fn initialized_output_refuses_incomplete_or_redirected_writes() {
+    let click_source = r#"
+        verifying "output.c";
+        void fill(uint8* p) {
+            owns p[0..4];
+            ensures initialized(p[0..4]);
+        } by { execute(); simp(); }
+    "#;
+    for body in [
+        "p[0] = 1; p[1] = 2; p[2] = 3;",
+        "p[0] = 1; p[2] = 3; p[3] = 4;",
+        "",
+        "p = p + 1; p[0] = 2; p[1] = 3; p[2] = 4;",
+    ] {
+        let c_source = format!("void fill(unsigned char* p) {{ {body} }}");
+        let error = match verify_c0_sources(click_source, &[("output.c", &c_source)]) {
+            Err(error) => error,
+            Ok(_) => panic!("unwritten output accepted: {body}"),
+        };
+        assert!(
+            error.message().contains("initialized(p[0..4])"),
+            "{body}: {}",
+            error.report()
+        );
+    }
+}
+
+#[test]
+fn initialized_output_does_not_grant_write_permission() {
+    let c_source = "void fill(unsigned char* p) { p[0] = 1; }";
+    let click_source = r#"
+        verifying "output.c";
+        void fill(uint8* p) { ensures initialized(p[0..1]); }
+        by { execute(); simp(); }
+    "#;
+    let error = verify_c0_sources(click_source, &[("output.c", c_source)])
+        .expect_err("initialization guarantees are not write permissions");
+    assert!(
+        error
+            .message()
+            .contains("missing resource fact `owns p[0..4]`"),
+        "{}",
+        error.report()
+    );
+}
+
+#[test]
+fn initialized_output_rejects_unsupported_contract_shapes() {
+    let c_source = "void fill(unsigned char* p) { p[0] = 1; }";
+    for clause in [
+        "requires initialized(p[0..1]); ensures true;",
+        "ensures initialized(p[0..1]) && true;",
+        "ensures initialized(old(p[0..1]));",
+    ] {
+        let click_source = format!(
+            "verifying \"output.c\"; void fill(uint8* p) {{ owns p[0..1]; {clause} }} by {{ execute(); simp(); }}"
+        );
+        assert!(
+            verify_c0_sources(&click_source, &[("output.c", c_source)]).is_err(),
+            "unsupported shape accepted: {clause}"
+        );
+    }
+}
+
+#[test]
+fn initialized_output_transfers_without_value_postconditions() {
+    let c_source = r#"
+        void fill(unsigned char* p) { p[0]=1; p[1]=2; p[2]=3; p[3]=4; }
+        unsigned char second(unsigned char* p) { fill(p); return p[1]; }
+    "#;
+    let click_source = r#"
+        verifying "output.c";
+        void fill(uint8* p) { owns p[0..4]; ensures initialized(p[0..4]); }
+        by { execute(); simp(); }
+        uint8 second(uint8* p) { owns p[0..4]; ensures initialized(p[0..4]); ensures result == result; }
+        by { execute(); simp(); }
+    "#;
+    let sources = [("output.c", c_source)];
+    verify_c0_sources(click_source, &sources).unwrap();
+    let expanded =
+        expand_c0_claim_source_by_label(click_source, &sources, "fill.contract").unwrap();
+    let expanded = expand_c0_claim_source_by_label(&expanded, &sources, "second.contract").unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+}
+
+#[test]
+fn initialized_output_requires_a_defined_read_before_a_write() {
+    let c_source = "void fill(unsigned char* p) { p[0] = p[0] + 1; p[1] = 2; p[2] = 3; p[3] = 4; }";
+    let click_source = "verifying \"output.c\"; void fill(uint8* p) { owns p[0..4]; ensures initialized(p[0..4]); } by { execute(); simp(); }";
+    let error = verify_c0_sources(click_source, &[("output.c", c_source)])
+        .expect_err("a promised initialized output does not initialize the input");
+    assert!(
+        error.message().contains("uninitialized"),
+        "{}",
+        error.report()
+    );
 }

@@ -211,6 +211,7 @@ fn collect_signed_surface_proposition_terms<'a>(
             }
             ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
+            | ClickProposition::Initialized { .. }
             | ClickProposition::Loadable { .. }
             | ClickProposition::PredicateCall { .. } => {}
         }
@@ -6207,13 +6208,19 @@ impl<'a> Proof<'a> {
     ) -> Option<Self> {
         if matches!(
             self.goal(),
-            Some(Proposition::CMemoryLoadable { .. } | Proposition::CMemoryReadDefined { .. })
+            Some(
+                Proposition::CMemoryLoadable { .. }
+                    | Proposition::CMemoryReadDefined { .. }
+                    | Proposition::CMemoryInitialized { .. }
+            )
         ) && let Some(surface_goal) = self.surface_goal()
         {
-            for source in surfaces
-                .iter()
-                .filter(|surface| matches!(surface, ClickProposition::Loadable { .. }))
-            {
+            for source in surfaces.iter().filter(|surface| {
+                matches!(
+                    surface,
+                    ClickProposition::Initialized { .. } | ClickProposition::Loadable { .. }
+                )
+            }) {
                 if let Ok(closed) = self.apply_step(ProofStep::TransportUsing {
                     source: source.clone(),
                     target: surface_goal.clone(),
