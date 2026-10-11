@@ -1742,24 +1742,7 @@ fn c_expression_steps_for_mode(expression: &CExpression, lvalue: bool) -> usize 
             CExpression::PointerOffsetBytes { pointer, .. }
             | CExpression::Not(pointer)
             | CExpression::BitwiseNot(pointer) => pending.push((pointer, false)),
-            CExpression::LessThan(left, right)
-            | CExpression::LessEqual(left, right)
-            | CExpression::GreaterThan(left, right)
-            | CExpression::GreaterEqual(left, right)
-            | CExpression::Equal(left, right)
-            | CExpression::NotEqual(left, right)
-            | CExpression::And(left, right)
-            | CExpression::Or(left, right)
-            | CExpression::Add(left, right)
-            | CExpression::Subtract(left, right)
-            | CExpression::Multiply(left, right)
-            | CExpression::Divide(left, right)
-            | CExpression::Remainder(left, right)
-            | CExpression::ShiftLeft(left, right)
-            | CExpression::ShiftRight(left, right)
-            | CExpression::BitwiseAnd(left, right)
-            | CExpression::BitwiseOr(left, right)
-            | CExpression::BitwiseXor(left, right) => {
+            crate::kernel::binary_c_operation!(left, right) => {
                 pending.push((left, false));
                 pending.push((right, false));
             }

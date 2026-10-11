@@ -2113,25 +2113,7 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet
         | CExpression::TypedLoad { pointer: inner, .. } => {
             collect_c_expression_variables(inner, names);
         }
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::And(left, right)
-        | CExpression::Or(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right)
-        | CExpression::Index(left, right) => {
+        crate::kernel::binary_c_expression!(left, right) => {
             collect_c_expression_variables(left, names);
             collect_c_expression_variables(right, names);
         }
@@ -2285,17 +2267,7 @@ fn collect_current_contract_expression_variables(
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             collect_current_contract_expression_variables(inner, names);
         }
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right)
-        | ContractExpression::Divide(left, right)
-        | ContractExpression::Remainder(left, right)
-        | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right)
-        | ContractExpression::Index(left, right) => {
+        crate::surface::binary_contract_expression!(left, right) => {
             collect_current_contract_expression_variables(left, names);
             collect_current_contract_expression_variables(right, names);
         }
@@ -2523,6 +2495,25 @@ pub enum ContractExpression {
         arguments: Vec<ContractExpression>,
     },
 }
+
+/// Matches every arithmetic, bitwise and indexing binary [`ContractExpression`], binding the
+/// operands to `$left` and `$right`.
+macro_rules! binary_contract_expression {
+    ($left:pat, $right:pat) => {
+        $crate::surface::ContractExpression::Add($left, $right)
+            | $crate::surface::ContractExpression::Subtract($left, $right)
+            | $crate::surface::ContractExpression::Multiply($left, $right)
+            | $crate::surface::ContractExpression::Divide($left, $right)
+            | $crate::surface::ContractExpression::Remainder($left, $right)
+            | $crate::surface::ContractExpression::BitwiseAnd($left, $right)
+            | $crate::surface::ContractExpression::BitwiseOr($left, $right)
+            | $crate::surface::ContractExpression::BitwiseXor($left, $right)
+            | $crate::surface::ContractExpression::ShiftLeft($left, $right)
+            | $crate::surface::ContractExpression::ShiftRight($left, $right)
+            | $crate::surface::ContractExpression::Index($left, $right)
+    };
+}
+pub(crate) use binary_contract_expression;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ClickArrayRef {

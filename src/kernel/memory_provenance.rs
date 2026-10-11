@@ -3889,39 +3889,7 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &Bitvector32Term) -> bo
                 Bitvector32Term::PointerAddress(pointer) => {
                     pending.push(Node::Offset(&pointer.offset, depth + 1));
                 }
-                Bitvector32Term::Add(left, right)
-                | Bitvector32Term::Subtract(left, right)
-                | Bitvector32Term::Multiply(left, right)
-                | Bitvector32Term::Divide(left, right)
-                | Bitvector32Term::UnsignedDivide(left, right)
-                | Bitvector32Term::Remainder(left, right)
-                | Bitvector32Term::UnsignedRemainder(left, right)
-                | Bitvector32Term::ShiftLeft(left, right)
-                | Bitvector32Term::ArithmeticShiftRight(left, right)
-                | Bitvector32Term::LogicalShiftRight(left, right)
-                | Bitvector32Term::BitwiseAnd(left, right)
-                | Bitvector32Term::BitwiseOr(left, right)
-                | Bitvector32Term::BitwiseXor(left, right)
-                | Bitvector32Term::Int64Add(left, right)
-                | Bitvector32Term::Int64Subtract(left, right)
-                | Bitvector32Term::Int64Multiply(left, right)
-                | Bitvector32Term::Int64Divide(left, right)
-                | Bitvector32Term::Int64Remainder(left, right)
-                | Bitvector32Term::Int64ShiftLeft(left, right)
-                | Bitvector32Term::Int64ArithmeticShiftRight(left, right)
-                | Bitvector32Term::Int64BitwiseAnd(left, right)
-                | Bitvector32Term::Int64BitwiseOr(left, right)
-                | Bitvector32Term::Int64BitwiseXor(left, right)
-                | Bitvector32Term::UInt64Add(left, right)
-                | Bitvector32Term::UInt64Subtract(left, right)
-                | Bitvector32Term::UInt64Multiply(left, right)
-                | Bitvector32Term::UInt64Divide(left, right)
-                | Bitvector32Term::UInt64Remainder(left, right)
-                | Bitvector32Term::UInt64ShiftLeft(left, right)
-                | Bitvector32Term::UInt64LogicalShiftRight(left, right)
-                | Bitvector32Term::UInt64BitwiseAnd(left, right)
-                | Bitvector32Term::UInt64BitwiseOr(left, right)
-                | Bitvector32Term::UInt64BitwiseXor(left, right) => {
+                crate::kernel::binary_machine_term!(left, right) => {
                     pending.push(Node::Term(right, depth + 1));
                     pending.push(Node::Term(left, depth + 1));
                 }
@@ -3979,12 +3947,7 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &Bitvector32Term) -> bo
             Node::Condition(condition, depth) => match condition {
                 ConditionTerm::AlgebraicEqual(_, _) => return false,
                 ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
-                ConditionTerm::IntegerLessThan(_, _)
-                | ConditionTerm::IntegerLessEqual(_, _)
-                | ConditionTerm::IntegerGreaterThan(_, _)
-                | ConditionTerm::IntegerGreaterEqual(_, _)
-                | ConditionTerm::IntegerEqual(_, _)
-                | ConditionTerm::IntegerNotEqual(_, _) => return false,
+                crate::kernel::integer_comparison_condition!(_, _) => return false,
                 crate::kernel::binary_bitvector_condition!(left, right) => {
                     pending.push(Node::Term(right, depth + 1));
                     pending.push(Node::Term(left, depth + 1));
@@ -4608,12 +4571,9 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
             }
             AtomicCanonicalizationTask::VisitCondition(condition) => match condition {
                 ConditionTerm::AlgebraicEqual(_, _) => condition_results.push(condition.clone()),
-                ConditionTerm::IntegerLessThan(_, _)
-                | ConditionTerm::IntegerLessEqual(_, _)
-                | ConditionTerm::IntegerGreaterThan(_, _)
-                | ConditionTerm::IntegerGreaterEqual(_, _)
-                | ConditionTerm::IntegerEqual(_, _)
-                | ConditionTerm::IntegerNotEqual(_, _) => condition_results.push(condition.clone()),
+                crate::kernel::integer_comparison_condition!(_, _) => {
+                    condition_results.push(condition.clone())
+                }
                 ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {
                     condition_results.push(condition.clone())
                 }
@@ -5334,19 +5294,7 @@ pub(crate) fn c_condition_fact_has_memory(fact: &Proposition) -> bool {
         match term {
             Bitvector32Term::MemoryLoad(_, _, _) => true,
             Bitvector32Term::PointerAddress(pointer) => offset_has_memory(&pointer.offset),
-            Bitvector32Term::Add(left, right)
-            | Bitvector32Term::Subtract(left, right)
-            | Bitvector32Term::Multiply(left, right)
-            | Bitvector32Term::Divide(left, right)
-            | Bitvector32Term::UnsignedDivide(left, right)
-            | Bitvector32Term::Remainder(left, right)
-            | Bitvector32Term::UnsignedRemainder(left, right)
-            | Bitvector32Term::ShiftLeft(left, right)
-            | Bitvector32Term::ArithmeticShiftRight(left, right)
-            | Bitvector32Term::LogicalShiftRight(left, right)
-            | Bitvector32Term::BitwiseAnd(left, right)
-            | Bitvector32Term::BitwiseOr(left, right)
-            | Bitvector32Term::BitwiseXor(left, right) => {
+            crate::kernel::binary_bitvector32_term!(left, right) => {
                 bitvector_has_memory(left) || bitvector_has_memory(right)
             }
             Bitvector32Term::Float32Binary { left, right, .. }
@@ -5365,26 +5313,7 @@ pub(crate) fn c_condition_fact_has_memory(fact: &Proposition) -> bool {
             | Bitvector32Term::Int64FromUInt32(term)
             | Bitvector32Term::UInt64FromInt32(term)
             | Bitvector32Term::UInt64FromInt64(term) => bitvector_has_memory(term),
-            Bitvector32Term::Int64Add(left, right)
-            | Bitvector32Term::Int64Subtract(left, right)
-            | Bitvector32Term::Int64Multiply(left, right)
-            | Bitvector32Term::Int64Divide(left, right)
-            | Bitvector32Term::Int64Remainder(left, right)
-            | Bitvector32Term::Int64ShiftLeft(left, right)
-            | Bitvector32Term::Int64ArithmeticShiftRight(left, right)
-            | Bitvector32Term::Int64BitwiseAnd(left, right)
-            | Bitvector32Term::Int64BitwiseOr(left, right)
-            | Bitvector32Term::Int64BitwiseXor(left, right)
-            | Bitvector32Term::UInt64Add(left, right)
-            | Bitvector32Term::UInt64Subtract(left, right)
-            | Bitvector32Term::UInt64Multiply(left, right)
-            | Bitvector32Term::UInt64Divide(left, right)
-            | Bitvector32Term::UInt64Remainder(left, right)
-            | Bitvector32Term::UInt64ShiftLeft(left, right)
-            | Bitvector32Term::UInt64LogicalShiftRight(left, right)
-            | Bitvector32Term::UInt64BitwiseAnd(left, right)
-            | Bitvector32Term::UInt64BitwiseOr(left, right)
-            | Bitvector32Term::UInt64BitwiseXor(left, right) => {
+            crate::kernel::binary_wide_term!(left, right) => {
                 bitvector_has_memory(left) || bitvector_has_memory(right)
             }
             Bitvector32Term::If {
@@ -5492,12 +5421,7 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
         }
         ConditionTerm::Constant(_)
         | ConditionTerm::Variable(_)
-        | ConditionTerm::IntegerLessThan(_, _)
-        | ConditionTerm::IntegerLessEqual(_, _)
-        | ConditionTerm::IntegerGreaterThan(_, _)
-        | ConditionTerm::IntegerGreaterEqual(_, _)
-        | ConditionTerm::IntegerEqual(_, _)
-        | ConditionTerm::IntegerNotEqual(_, _) => {}
+        | crate::kernel::integer_comparison_condition!(_, _) => {}
     }
 }
 
@@ -5528,39 +5452,7 @@ fn collect_bitvector_memories(term: &Bitvector32Term, memories: &mut Vec<SharedC
                 memories.push(memory.clone());
             }
         }
-        Bitvector32Term::Add(left, right)
-        | Bitvector32Term::Subtract(left, right)
-        | Bitvector32Term::Multiply(left, right)
-        | Bitvector32Term::Divide(left, right)
-        | Bitvector32Term::UnsignedDivide(left, right)
-        | Bitvector32Term::Remainder(left, right)
-        | Bitvector32Term::UnsignedRemainder(left, right)
-        | Bitvector32Term::ShiftLeft(left, right)
-        | Bitvector32Term::ArithmeticShiftRight(left, right)
-        | Bitvector32Term::LogicalShiftRight(left, right)
-        | Bitvector32Term::BitwiseAnd(left, right)
-        | Bitvector32Term::BitwiseOr(left, right)
-        | Bitvector32Term::BitwiseXor(left, right)
-        | Bitvector32Term::Int64Add(left, right)
-        | Bitvector32Term::Int64Subtract(left, right)
-        | Bitvector32Term::Int64Multiply(left, right)
-        | Bitvector32Term::Int64Divide(left, right)
-        | Bitvector32Term::Int64Remainder(left, right)
-        | Bitvector32Term::Int64ShiftLeft(left, right)
-        | Bitvector32Term::Int64ArithmeticShiftRight(left, right)
-        | Bitvector32Term::Int64BitwiseAnd(left, right)
-        | Bitvector32Term::Int64BitwiseOr(left, right)
-        | Bitvector32Term::Int64BitwiseXor(left, right)
-        | Bitvector32Term::UInt64Add(left, right)
-        | Bitvector32Term::UInt64Subtract(left, right)
-        | Bitvector32Term::UInt64Multiply(left, right)
-        | Bitvector32Term::UInt64Divide(left, right)
-        | Bitvector32Term::UInt64Remainder(left, right)
-        | Bitvector32Term::UInt64ShiftLeft(left, right)
-        | Bitvector32Term::UInt64LogicalShiftRight(left, right)
-        | Bitvector32Term::UInt64BitwiseAnd(left, right)
-        | Bitvector32Term::UInt64BitwiseOr(left, right)
-        | Bitvector32Term::UInt64BitwiseXor(left, right) => {
+        crate::kernel::binary_machine_term!(left, right) => {
             collect_bitvector_memories(left, memories);
             collect_bitvector_memories(right, memories);
         }
@@ -5752,12 +5644,7 @@ fn transport_framed_atomic_condition(
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => return None,
         // Mathematical integers carry no snapshot-dependent loads, so this
         // memory transport path has no authority to rewrite them.
-        ConditionTerm::IntegerLessThan(_, _)
-        | ConditionTerm::IntegerLessEqual(_, _)
-        | ConditionTerm::IntegerGreaterThan(_, _)
-        | ConditionTerm::IntegerGreaterEqual(_, _)
-        | ConditionTerm::IntegerEqual(_, _)
-        | ConditionTerm::IntegerNotEqual(_, _) => return None,
+        crate::kernel::integer_comparison_condition!(_, _) => return None,
     })
 }
 

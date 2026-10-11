@@ -208,12 +208,7 @@ impl Printer<'_> {
                 };
                 return Some(format!("{} {op} {bound}", self.bitvector(a, depth)?));
             }
-            ConditionTerm::IntegerEqual(a, b)
-            | ConditionTerm::IntegerNotEqual(a, b)
-            | ConditionTerm::IntegerLessThan(a, b)
-            | ConditionTerm::IntegerLessEqual(a, b)
-            | ConditionTerm::IntegerGreaterThan(a, b)
-            | ConditionTerm::IntegerGreaterEqual(a, b) => {
+            crate::kernel::integer_comparison_condition!(a, b) => {
                 let (positive, negative) = match condition {
                     ConditionTerm::IntegerEqual(..) => ("==", "!="),
                     ConditionTerm::IntegerNotEqual(..) => ("!=", "=="),

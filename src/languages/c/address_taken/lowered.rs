@@ -155,25 +155,7 @@ pub(super) fn summarize(function: &CFunction, summary: &mut AddressTakenSummary)
                     (else_branch.as_ref(), addressed),
                 ]);
             }
-            CExpression::LessThan(left, right)
-            | CExpression::LessEqual(left, right)
-            | CExpression::GreaterThan(left, right)
-            | CExpression::GreaterEqual(left, right)
-            | CExpression::Equal(left, right)
-            | CExpression::NotEqual(left, right)
-            | CExpression::And(left, right)
-            | CExpression::Or(left, right)
-            | CExpression::Add(left, right)
-            | CExpression::Subtract(left, right)
-            | CExpression::Multiply(left, right)
-            | CExpression::Divide(left, right)
-            | CExpression::Remainder(left, right)
-            | CExpression::ShiftLeft(left, right)
-            | CExpression::ShiftRight(left, right)
-            | CExpression::BitwiseAnd(left, right)
-            | CExpression::BitwiseOr(left, right)
-            | CExpression::BitwiseXor(left, right)
-            | CExpression::Index(left, right) => {
+            crate::kernel::binary_c_expression!(left, right) => {
                 expressions.extend([(left.as_ref(), addressed), (right.as_ref(), addressed)]);
             }
         }

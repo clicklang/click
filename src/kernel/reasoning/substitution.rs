@@ -2398,25 +2398,7 @@ fn collect_c_expression_bound_variables(
         | CExpression::TypedLoad { pointer, .. } => {
             collect_c_expression_bound_variables(pointer, variables)
         }
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::And(left, right)
-        | CExpression::Or(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right)
-        | CExpression::Index(left, right) => {
+        crate::kernel::binary_c_expression!(left, right) => {
             collect_c_expression_bound_variables(left, variables);
             collect_c_expression_bound_variables(right, variables);
         }
@@ -2900,19 +2882,7 @@ fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeS
 fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTreeSet<Variable>) {
     match term {
         Bitvector32Term::Constant(_) | Bitvector32Term::Variable(_) => {}
-        Bitvector32Term::Add(left, right)
-        | Bitvector32Term::Subtract(left, right)
-        | Bitvector32Term::Multiply(left, right)
-        | Bitvector32Term::Divide(left, right)
-        | Bitvector32Term::UnsignedDivide(left, right)
-        | Bitvector32Term::Remainder(left, right)
-        | Bitvector32Term::UnsignedRemainder(left, right)
-        | Bitvector32Term::ShiftLeft(left, right)
-        | Bitvector32Term::ArithmeticShiftRight(left, right)
-        | Bitvector32Term::LogicalShiftRight(left, right)
-        | Bitvector32Term::BitwiseAnd(left, right)
-        | Bitvector32Term::BitwiseOr(left, right)
-        | Bitvector32Term::BitwiseXor(left, right) => {
+        crate::kernel::binary_bitvector32_term!(left, right) => {
             collect_bitvector_bound_variables(left, variables);
             collect_bitvector_bound_variables(right, variables);
         }
@@ -3005,26 +2975,7 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
         | Bitvector32Term::UInt64BitwiseNot(value) => {
             collect_bitvector_bound_variables(value, variables)
         }
-        Bitvector32Term::Int64Add(left, right)
-        | Bitvector32Term::Int64Subtract(left, right)
-        | Bitvector32Term::Int64Multiply(left, right)
-        | Bitvector32Term::Int64Divide(left, right)
-        | Bitvector32Term::Int64Remainder(left, right)
-        | Bitvector32Term::Int64ShiftLeft(left, right)
-        | Bitvector32Term::Int64ArithmeticShiftRight(left, right)
-        | Bitvector32Term::Int64BitwiseAnd(left, right)
-        | Bitvector32Term::Int64BitwiseOr(left, right)
-        | Bitvector32Term::Int64BitwiseXor(left, right)
-        | Bitvector32Term::UInt64Add(left, right)
-        | Bitvector32Term::UInt64Subtract(left, right)
-        | Bitvector32Term::UInt64Multiply(left, right)
-        | Bitvector32Term::UInt64Divide(left, right)
-        | Bitvector32Term::UInt64Remainder(left, right)
-        | Bitvector32Term::UInt64ShiftLeft(left, right)
-        | Bitvector32Term::UInt64LogicalShiftRight(left, right)
-        | Bitvector32Term::UInt64BitwiseAnd(left, right)
-        | Bitvector32Term::UInt64BitwiseOr(left, right)
-        | Bitvector32Term::UInt64BitwiseXor(left, right)
+        crate::kernel::binary_wide_term!(left, right)
         | Bitvector32Term::Float32Binary { left, right, .. }
         | Bitvector32Term::Float64Binary { left, right, .. } => {
             collect_bitvector_bound_variables(left, variables);
@@ -3091,12 +3042,7 @@ fn collect_condition_bound_variables(
             collect_bitvector_bound_variables(left, variables);
             collect_bitvector_bound_variables(right, variables);
         }
-        ConditionTerm::IntegerLessThan(left, right)
-        | ConditionTerm::IntegerLessEqual(left, right)
-        | ConditionTerm::IntegerGreaterThan(left, right)
-        | ConditionTerm::IntegerGreaterEqual(left, right)
-        | ConditionTerm::IntegerEqual(left, right)
-        | ConditionTerm::IntegerNotEqual(left, right) => {
+        crate::kernel::integer_comparison_condition!(left, right) => {
             collect_integer_bound_variables(left, variables);
             collect_integer_bound_variables(right, variables);
         }
@@ -3307,11 +3253,7 @@ fn collect_integer_bound_variables_seen(
                 collect_integer_bound_variables_seen(value, variables, seen);
             }
         }
-        IntegerTerm::Add(left, right)
-        | IntegerTerm::Subtract(left, right)
-        | IntegerTerm::Multiply(left, right)
-        | IntegerTerm::TruncatingQuotient(left, right)
-        | IntegerTerm::TruncatingRemainder(left, right) => {
+        crate::kernel::binary_integer_term!(left, right) => {
             if seen.insert(left.id()) {
                 collect_integer_bound_variables_seen(left, variables, seen);
             }
@@ -4848,12 +4790,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
                 substitute_bitvector_variable(right, from, to),
             )
         }
-        ConditionTerm::IntegerLessThan(left, right)
-        | ConditionTerm::IntegerLessEqual(left, right)
-        | ConditionTerm::IntegerGreaterThan(left, right)
-        | ConditionTerm::IntegerGreaterEqual(left, right)
-        | ConditionTerm::IntegerEqual(left, right)
-        | ConditionTerm::IntegerNotEqual(left, right) => {
+        crate::kernel::integer_comparison_condition!(left, right) => {
             let rewrite =
                 |term: &IntegerTerm| substitute_bitvector_variable_in_integer(term, from, to);
             match condition {
@@ -6147,25 +6084,7 @@ fn substitute_pointer_variable_in_c_expression(
                 _ => unreachable!("the combined unary expression arm is exhaustive"),
             }
         }
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::And(left, right)
-        | CExpression::Or(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right)
-        | CExpression::Index(left, right) => {
+        crate::kernel::binary_c_expression!(left, right) => {
             let left = Box::new(substitute_pointer_variable_in_c_expression(left, from, to));
             let right = Box::new(substitute_pointer_variable_in_c_expression(right, from, to));
             match expression {
@@ -6538,16 +6457,7 @@ fn substitute_pointer_variable_in_spec_expression(
                     .collect(),
             }
         }
-        SpecExpression::Add(left, right)
-        | SpecExpression::Subtract(left, right)
-        | SpecExpression::Multiply(left, right)
-        | SpecExpression::Divide(left, right)
-        | SpecExpression::Remainder(left, right)
-        | SpecExpression::ShiftLeft(left, right)
-        | SpecExpression::ShiftRight(left, right)
-        | SpecExpression::BitwiseAnd(left, right)
-        | SpecExpression::BitwiseOr(left, right)
-        | SpecExpression::BitwiseXor(left, right) => {
+        crate::kernel::binary_spec_expression!(left, right) => {
             let left = Box::new(substitute_pointer_variable_in_spec_expression(
                 left, from, to,
             ));

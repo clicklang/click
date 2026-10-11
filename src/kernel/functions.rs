@@ -7518,21 +7518,7 @@ fn source_load_snapshot_for_proposition(
                 }
                 snapshot = Some(identity);
             }
-            Work::Bitvector(
-                Bitvector32Term::Add(left, right)
-                | Bitvector32Term::Subtract(left, right)
-                | Bitvector32Term::Multiply(left, right)
-                | Bitvector32Term::Divide(left, right)
-                | Bitvector32Term::UnsignedDivide(left, right)
-                | Bitvector32Term::Remainder(left, right)
-                | Bitvector32Term::UnsignedRemainder(left, right)
-                | Bitvector32Term::ShiftLeft(left, right)
-                | Bitvector32Term::ArithmeticShiftRight(left, right)
-                | Bitvector32Term::LogicalShiftRight(left, right)
-                | Bitvector32Term::BitwiseAnd(left, right)
-                | Bitvector32Term::BitwiseOr(left, right)
-                | Bitvector32Term::BitwiseXor(left, right),
-            ) => {
+            Work::Bitvector(crate::kernel::binary_bitvector32_term!(left, right)) => {
                 work.push(Work::Bitvector(right));
                 work.push(Work::Bitvector(left));
             }
@@ -13474,16 +13460,7 @@ fn spec_expression_supports_stateful_memory_refinement(expression: &SpecExpressi
         SpecExpression::CExpression(expression) => {
             c_expression_supports_stateful_memory_refinement(expression)
         }
-        SpecExpression::Add(left, right)
-        | SpecExpression::Subtract(left, right)
-        | SpecExpression::Multiply(left, right)
-        | SpecExpression::Divide(left, right)
-        | SpecExpression::Remainder(left, right)
-        | SpecExpression::ShiftLeft(left, right)
-        | SpecExpression::ShiftRight(left, right)
-        | SpecExpression::BitwiseAnd(left, right)
-        | SpecExpression::BitwiseOr(left, right)
-        | SpecExpression::BitwiseXor(left, right) => {
+        crate::kernel::binary_spec_expression!(left, right) => {
             spec_expression_supports_stateful_memory_refinement(left)
                 && spec_expression_supports_stateful_memory_refinement(right)
         }
@@ -13618,25 +13595,7 @@ fn c_expression_supports_stateful_memory_refinement(expression: &CExpression) ->
                 && c_expression_supports_stateful_memory_refinement(then_branch)
                 && c_expression_supports_stateful_memory_refinement(else_branch)
         }
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::And(left, right)
-        | CExpression::Or(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right)
-        | CExpression::Index(left, right) => {
+        crate::kernel::binary_c_expression!(left, right) => {
             c_expression_supports_stateful_memory_refinement(left)
                 && c_expression_supports_stateful_memory_refinement(right)
         }
@@ -13647,16 +13606,7 @@ fn spec_expression_is_state_independent(expression: &SpecExpression) -> bool {
     match expression {
         SpecExpression::Value(_) => true,
         SpecExpression::CExpression(expression) => c_expression_is_state_independent(expression),
-        SpecExpression::Add(left, right)
-        | SpecExpression::Subtract(left, right)
-        | SpecExpression::Multiply(left, right)
-        | SpecExpression::Divide(left, right)
-        | SpecExpression::Remainder(left, right)
-        | SpecExpression::ShiftLeft(left, right)
-        | SpecExpression::ShiftRight(left, right)
-        | SpecExpression::BitwiseAnd(left, right)
-        | SpecExpression::BitwiseOr(left, right)
-        | SpecExpression::BitwiseXor(left, right) => {
+        crate::kernel::binary_spec_expression!(left, right) => {
             spec_expression_is_state_independent(left)
                 && spec_expression_is_state_independent(right)
         }
@@ -13836,24 +13786,7 @@ pub(super) fn c_expression_is_state_independent(expression: &CExpression) -> boo
                 && c_expression_is_state_independent(then_branch)
                 && c_expression_is_state_independent(else_branch)
         }
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::And(left, right)
-        | CExpression::Or(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right) => {
+        crate::kernel::binary_c_operation!(left, right) => {
             c_expression_is_state_independent(left) && c_expression_is_state_independent(right)
         }
         CExpression::AddressOf(_)
@@ -13890,16 +13823,7 @@ fn spec_expression_reads_current_parameter(
             .iter()
             .flatten()
             .any(|argument| spec_expression_reads_current_parameter(argument, parameter_name)),
-        SpecExpression::Add(left, right)
-        | SpecExpression::Subtract(left, right)
-        | SpecExpression::Multiply(left, right)
-        | SpecExpression::Divide(left, right)
-        | SpecExpression::Remainder(left, right)
-        | SpecExpression::ShiftLeft(left, right)
-        | SpecExpression::ShiftRight(left, right)
-        | SpecExpression::BitwiseAnd(left, right)
-        | SpecExpression::BitwiseOr(left, right)
-        | SpecExpression::BitwiseXor(left, right) => {
+        crate::kernel::binary_spec_expression!(left, right) => {
             spec_expression_reads_current_parameter(left, parameter_name)
                 || spec_expression_reads_current_parameter(right, parameter_name)
         }
@@ -13978,11 +13902,7 @@ fn spec_integer_expression_reads_current_parameter(
         SpecIntegerExpression::Negate(inner) => {
             spec_integer_expression_reads_current_parameter(inner, parameter_name)
         }
-        SpecIntegerExpression::Add(left, right)
-        | SpecIntegerExpression::Subtract(left, right)
-        | SpecIntegerExpression::Multiply(left, right)
-        | SpecIntegerExpression::TruncatingQuotient(left, right)
-        | SpecIntegerExpression::TruncatingRemainder(left, right) => {
+        crate::kernel::binary_spec_integer_expression!(left, right) => {
             spec_integer_expression_reads_current_parameter(left, parameter_name)
                 || spec_integer_expression_reads_current_parameter(right, parameter_name)
         }
@@ -14207,25 +14127,7 @@ fn c_expression_mentions_variable(expression: &CExpression, name: &str) -> bool 
                 || c_expression_mentions_variable(then_branch, name)
                 || c_expression_mentions_variable(else_branch, name)
         }
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::And(left, right)
-        | CExpression::Or(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right)
-        | CExpression::Index(left, right) => {
+        crate::kernel::binary_c_expression!(left, right) => {
             c_expression_mentions_variable(left, name)
                 || c_expression_mentions_variable(right, name)
         }
@@ -14263,25 +14165,7 @@ fn c_expression_takes_address_of_variable(expression: &CExpression, name: &str) 
                 || c_expression_takes_address_of_variable(then_branch, name)
                 || c_expression_takes_address_of_variable(else_branch, name)
         }
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::And(left, right)
-        | CExpression::Or(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right)
-        | CExpression::Index(left, right) => {
+        crate::kernel::binary_c_expression!(left, right) => {
             c_expression_takes_address_of_variable(left, name)
                 || c_expression_takes_address_of_variable(right, name)
         }
@@ -14406,25 +14290,7 @@ fn c_expression_uses_object_address(expression: &CExpression, name: &str) -> boo
                 || c_expression_uses_object_address(then_branch, name)
                 || c_expression_uses_object_address(else_branch, name)
         }
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::And(left, right)
-        | CExpression::Or(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right)
-        | CExpression::Index(left, right) => {
+        crate::kernel::binary_c_expression!(left, right) => {
             c_expression_uses_object_address(left, name)
                 || c_expression_uses_object_address(right, name)
         }
@@ -14604,16 +14470,7 @@ fn spec_expression_current_parameter_accesses(
                 );
             }
         }
-        SpecExpression::Add(left, right)
-        | SpecExpression::Subtract(left, right)
-        | SpecExpression::Multiply(left, right)
-        | SpecExpression::Divide(left, right)
-        | SpecExpression::Remainder(left, right)
-        | SpecExpression::ShiftLeft(left, right)
-        | SpecExpression::ShiftRight(left, right)
-        | SpecExpression::BitwiseAnd(left, right)
-        | SpecExpression::BitwiseOr(left, right)
-        | SpecExpression::BitwiseXor(left, right) => {
+        crate::kernel::binary_spec_expression!(left, right) => {
             spec_expression_current_parameter_accesses(left, parameter_name, reads, unknown_read);
             spec_expression_current_parameter_accesses(right, parameter_name, reads, unknown_read);
         }
@@ -16686,24 +16543,7 @@ fn collect_c_memory_read_expressions(statement: &CStatement, reads: &mut Vec<CEx
                 values(base, reads);
                 values(index, reads);
             }
-            CExpression::LessThan(left, right)
-            | CExpression::LessEqual(left, right)
-            | CExpression::GreaterThan(left, right)
-            | CExpression::GreaterEqual(left, right)
-            | CExpression::Equal(left, right)
-            | CExpression::NotEqual(left, right)
-            | CExpression::And(left, right)
-            | CExpression::Or(left, right)
-            | CExpression::Add(left, right)
-            | CExpression::Subtract(left, right)
-            | CExpression::Multiply(left, right)
-            | CExpression::Divide(left, right)
-            | CExpression::Remainder(left, right)
-            | CExpression::ShiftLeft(left, right)
-            | CExpression::ShiftRight(left, right)
-            | CExpression::BitwiseAnd(left, right)
-            | CExpression::BitwiseOr(left, right)
-            | CExpression::BitwiseXor(left, right) => {
+            crate::kernel::binary_c_operation!(left, right) => {
                 values(left, reads);
                 values(right, reads);
             }
@@ -16831,25 +16671,7 @@ fn c_expression_mentions_pointer_parameter(
                 || c_expression_mentions_pointer_parameter(then_branch, pointer_parameters)
                 || c_expression_mentions_pointer_parameter(else_branch, pointer_parameters)
         }
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::And(left, right)
-        | CExpression::Or(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right)
-        | CExpression::Index(left, right) => {
+        crate::kernel::binary_c_expression!(left, right) => {
             c_expression_mentions_pointer_parameter(left, pointer_parameters)
                 || c_expression_mentions_pointer_parameter(right, pointer_parameters)
         }
@@ -29559,25 +29381,7 @@ fn resolve_retained_aggregate_fields(
                 budget,
             )?;
         }
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::And(left, right)
-        | CExpression::Or(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right)
-        | CExpression::Index(left, right) => {
+        crate::kernel::binary_c_expression!(left, right) => {
             resolve_retained_aggregate_fields(entry, state, left, true, assumptions, budget)?;
             resolve_retained_aggregate_fields(entry, state, right, true, assumptions, budget)?;
         }

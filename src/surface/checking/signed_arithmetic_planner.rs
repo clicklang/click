@@ -1456,19 +1456,7 @@ impl<'a> Planner<'a> {
                             tasks.push(Task::Finish(term));
                             tasks.extend(arguments.iter().rev().map(Task::Visit));
                         }
-                        Bitvector32Term::Add(left, right)
-                        | Bitvector32Term::Subtract(left, right)
-                        | Bitvector32Term::Multiply(left, right)
-                        | Bitvector32Term::Divide(left, right)
-                        | Bitvector32Term::UnsignedDivide(left, right)
-                        | Bitvector32Term::Remainder(left, right)
-                        | Bitvector32Term::UnsignedRemainder(left, right)
-                        | Bitvector32Term::ShiftLeft(left, right)
-                        | Bitvector32Term::ArithmeticShiftRight(left, right)
-                        | Bitvector32Term::LogicalShiftRight(left, right)
-                        | Bitvector32Term::BitwiseAnd(left, right)
-                        | Bitvector32Term::BitwiseOr(left, right)
-                        | Bitvector32Term::BitwiseXor(left, right) => {
+                        crate::kernel::binary_bitvector32_term!(left, right) => {
                             tasks.push(Task::Finish(term));
                             tasks.push(Task::Visit(right));
                             tasks.push(Task::Visit(left));
@@ -1503,19 +1491,7 @@ impl<'a> Planner<'a> {
                                     .hash(&mut hasher);
                             }
                         }
-                        Bitvector32Term::Add(left, right)
-                        | Bitvector32Term::Subtract(left, right)
-                        | Bitvector32Term::Multiply(left, right)
-                        | Bitvector32Term::Divide(left, right)
-                        | Bitvector32Term::UnsignedDivide(left, right)
-                        | Bitvector32Term::Remainder(left, right)
-                        | Bitvector32Term::UnsignedRemainder(left, right)
-                        | Bitvector32Term::ShiftLeft(left, right)
-                        | Bitvector32Term::ArithmeticShiftRight(left, right)
-                        | Bitvector32Term::LogicalShiftRight(left, right)
-                        | Bitvector32Term::BitwiseAnd(left, right)
-                        | Bitvector32Term::BitwiseOr(left, right)
-                        | Bitvector32Term::BitwiseXor(left, right) => {
+                        crate::kernel::binary_bitvector32_term!(left, right) => {
                             self.term_hash_cache
                                 .get(&(left.as_ref() as *const Bitvector32Term as usize))?
                                 .hash(&mut hasher);

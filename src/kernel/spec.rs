@@ -2580,11 +2580,7 @@ fn integer_carrier_in_integer(term: &IntegerTerm, variable: Variable) -> bool {
         // conservatively rather than recursively duplicating the full term
         // language here.
         IntegerTerm::Negate(_)
-        | IntegerTerm::Add(_, _)
-        | IntegerTerm::Subtract(_, _)
-        | IntegerTerm::Multiply(_, _)
-        | IntegerTerm::TruncatingQuotient(_, _)
-        | IntegerTerm::TruncatingRemainder(_, _)
+        | crate::kernel::binary_integer_term!(_, _)
         | IntegerTerm::PureFunctionApplication(_)
         | IntegerTerm::AlgebraicMatch { .. }
         | IntegerTerm::RangeFold { .. } => true,
@@ -2647,12 +2643,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
 
     fn condition_contains(condition: &ConditionTerm, variable: Variable) -> bool {
         match condition {
-            ConditionTerm::IntegerLessThan(left, right)
-            | ConditionTerm::IntegerLessEqual(left, right)
-            | ConditionTerm::IntegerGreaterThan(left, right)
-            | ConditionTerm::IntegerGreaterEqual(left, right)
-            | ConditionTerm::IntegerEqual(left, right)
-            | ConditionTerm::IntegerNotEqual(left, right) => {
+            crate::kernel::integer_comparison_condition!(left, right) => {
                 integer_carrier_in_integer(left.as_ref(), variable)
                     || integer_carrier_in_integer(right.as_ref(), variable)
             }

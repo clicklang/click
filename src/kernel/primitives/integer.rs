@@ -805,11 +805,7 @@ impl IntegerTerm {
                     }
                 }
                 IntegerTerm::Negate(value) => visit_shared(value, variables, seen),
-                IntegerTerm::Add(left, right)
-                | IntegerTerm::Subtract(left, right)
-                | IntegerTerm::Multiply(left, right)
-                | IntegerTerm::TruncatingQuotient(left, right)
-                | IntegerTerm::TruncatingRemainder(left, right) => {
+                crate::kernel::binary_integer_term!(left, right) => {
                     visit_shared(left, variables, seen);
                     visit_shared(right, variables, seen);
                 }
@@ -1366,11 +1362,7 @@ mod tests {
                 | IntegerTerm::PureFunctionApplication { .. }
                 | IntegerTerm::AlgebraicMatch { .. } => {}
                 IntegerTerm::Negate(value) => pending.push(value.clone()),
-                IntegerTerm::Add(left, right)
-                | IntegerTerm::Subtract(left, right)
-                | IntegerTerm::Multiply(left, right)
-                | IntegerTerm::TruncatingQuotient(left, right)
-                | IntegerTerm::TruncatingRemainder(left, right) => {
+                crate::kernel::binary_integer_term!(left, right) => {
                     pending.push(left.clone());
                     pending.push(right.clone());
                 }

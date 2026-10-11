@@ -846,17 +846,7 @@ fn collect_contract_expression_binding_names(
         ContractExpression::ResourceCount(resource) => {
             collect_resource_clause_binding_names(resource, names);
         }
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right)
-        | ContractExpression::Divide(left, right)
-        | ContractExpression::Remainder(left, right)
-        | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right)
-        | ContractExpression::Index(left, right) => {
+        crate::surface::binary_contract_expression!(left, right) => {
             collect_contract_expression_binding_names(left, names);
             collect_contract_expression_binding_names(right, names);
         }
@@ -1609,17 +1599,7 @@ fn rewrite_contract_expression_exact(
                 changed,
             )
         }
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right)
-        | ContractExpression::Divide(left, right)
-        | ContractExpression::Remainder(left, right)
-        | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right)
-        | ContractExpression::Index(left, right) => {
+        crate::surface::binary_contract_expression!(left, right) => {
             let (left, right, changed) = binary(left, right);
             let rewritten = match expression {
                 ContractExpression::Add(_, _) => {
@@ -2411,17 +2391,7 @@ pub(in crate::surface) fn collect_contract_expression_referenced_names(
         let mut pending = vec![expression];
         while let Some(expression) = pending.pop() {
             match expression {
-                ContractExpression::Add(left, right)
-                | ContractExpression::Subtract(left, right)
-                | ContractExpression::Multiply(left, right)
-                | ContractExpression::Divide(left, right)
-                | ContractExpression::Remainder(left, right)
-                | ContractExpression::ShiftLeft(left, right)
-                | ContractExpression::ShiftRight(left, right)
-                | ContractExpression::BitwiseAnd(left, right)
-                | ContractExpression::BitwiseOr(left, right)
-                | ContractExpression::BitwiseXor(left, right)
-                | ContractExpression::Index(left, right) => {
+                crate::surface::binary_contract_expression!(left, right) => {
                     pending.push(right);
                     pending.push(left);
                 }
@@ -2516,17 +2486,7 @@ fn collect_contract_expression_referenced_names_one(
         ContractExpression::At { expression, .. } => {
             collect_contract_expression_referenced_names(expression, names);
         }
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right)
-        | ContractExpression::Divide(left, right)
-        | ContractExpression::Remainder(left, right)
-        | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right)
-        | ContractExpression::Index(left, right) => {
+        crate::surface::binary_contract_expression!(left, right) => {
             collect_contract_expression_referenced_names(left, names);
             collect_contract_expression_referenced_names(right, names);
         }
@@ -2865,17 +2825,7 @@ pub(in crate::surface) fn contract_expression_has_explicit_c_result_reference(
                 pending.push(base);
                 pending.extend(indexes.iter());
             }
-            ContractExpression::Add(left, right)
-            | ContractExpression::Subtract(left, right)
-            | ContractExpression::Multiply(left, right)
-            | ContractExpression::Divide(left, right)
-            | ContractExpression::Remainder(left, right)
-            | ContractExpression::ShiftLeft(left, right)
-            | ContractExpression::ShiftRight(left, right)
-            | ContractExpression::BitwiseAnd(left, right)
-            | ContractExpression::BitwiseOr(left, right)
-            | ContractExpression::BitwiseXor(left, right)
-            | ContractExpression::Index(left, right) => {
+            crate::surface::binary_contract_expression!(left, right) => {
                 pending.extend([left.as_ref(), right.as_ref()])
             }
             _ => {}

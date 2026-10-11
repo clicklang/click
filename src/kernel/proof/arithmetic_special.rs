@@ -1738,27 +1738,9 @@ fn bounded_uint64_constants(roots: &[&Bitvector32Term]) -> HashMap<usize, Option
         if expanded {
             let value = match term {
                 Bitvector32Term::UInt64Constant(value) => Some(*value),
-                Bitvector32Term::UInt64Add(_, _)
-                | Bitvector32Term::UInt64Subtract(_, _)
-                | Bitvector32Term::UInt64Multiply(_, _)
-                | Bitvector32Term::UInt64Divide(_, _)
-                | Bitvector32Term::UInt64Remainder(_, _)
-                | Bitvector32Term::UInt64ShiftLeft(_, _)
-                | Bitvector32Term::UInt64LogicalShiftRight(_, _)
-                | Bitvector32Term::UInt64BitwiseAnd(_, _)
-                | Bitvector32Term::UInt64BitwiseOr(_, _)
-                | Bitvector32Term::UInt64BitwiseXor(_, _) => {
+                crate::kernel::binary_uint64_term!(_, _) => {
                     let (left, right) = match term {
-                        Bitvector32Term::UInt64Add(left, right)
-                        | Bitvector32Term::UInt64Subtract(left, right)
-                        | Bitvector32Term::UInt64Multiply(left, right)
-                        | Bitvector32Term::UInt64Divide(left, right)
-                        | Bitvector32Term::UInt64Remainder(left, right)
-                        | Bitvector32Term::UInt64ShiftLeft(left, right)
-                        | Bitvector32Term::UInt64LogicalShiftRight(left, right)
-                        | Bitvector32Term::UInt64BitwiseAnd(left, right)
-                        | Bitvector32Term::UInt64BitwiseOr(left, right)
-                        | Bitvector32Term::UInt64BitwiseXor(left, right) => (
+                        crate::kernel::binary_uint64_term!(left, right) => (
                             values
                                 .get(&(left.as_ref() as *const _ as usize))
                                 .copied()
@@ -1867,16 +1849,7 @@ fn bounded_uint64_constants(roots: &[&Bitvector32Term]) -> HashMap<usize, Option
                     pending.push((value, false));
                 }
             }
-            Bitvector32Term::UInt64Add(left, right)
-            | Bitvector32Term::UInt64Subtract(left, right)
-            | Bitvector32Term::UInt64Multiply(left, right)
-            | Bitvector32Term::UInt64Divide(left, right)
-            | Bitvector32Term::UInt64Remainder(left, right)
-            | Bitvector32Term::UInt64ShiftLeft(left, right)
-            | Bitvector32Term::UInt64LogicalShiftRight(left, right)
-            | Bitvector32Term::UInt64BitwiseAnd(left, right)
-            | Bitvector32Term::UInt64BitwiseOr(left, right)
-            | Bitvector32Term::UInt64BitwiseXor(left, right) => {
+            crate::kernel::binary_uint64_term!(left, right) => {
                 pending.push((term, true));
                 pending.push((right, false));
                 pending.push((left, false));

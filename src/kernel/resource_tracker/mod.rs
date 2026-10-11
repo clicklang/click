@@ -1234,12 +1234,7 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
             left.for_each_bitvector_term(|term| collect_bitvector_reads(term, reads));
             right.for_each_bitvector_term(|term| collect_bitvector_reads(term, reads));
         }
-        ConditionTerm::IntegerLessThan(left, right)
-        | ConditionTerm::IntegerLessEqual(left, right)
-        | ConditionTerm::IntegerGreaterThan(left, right)
-        | ConditionTerm::IntegerGreaterEqual(left, right)
-        | ConditionTerm::IntegerEqual(left, right)
-        | ConditionTerm::IntegerNotEqual(left, right) => {
+        crate::kernel::integer_comparison_condition!(left, right) => {
             collect_integer_reads(left, reads);
             collect_integer_reads(right, reads);
         }
@@ -1308,11 +1303,7 @@ fn collect_integer_node_reads(
             collect_bitvector_reads(machine.value(), reads);
         }
         IntegerTerm::Negate(inner) => collect_shared_integer_reads(inner, reads, seen),
-        IntegerTerm::Add(left, right)
-        | IntegerTerm::Subtract(left, right)
-        | IntegerTerm::Multiply(left, right)
-        | IntegerTerm::TruncatingQuotient(left, right)
-        | IntegerTerm::TruncatingRemainder(left, right) => {
+        crate::kernel::binary_integer_term!(left, right) => {
             collect_shared_integer_reads(left, reads, seen);
             collect_shared_integer_reads(right, reads, seen);
         }
@@ -1386,19 +1377,7 @@ fn collect_bitvector_reads(term: &Bitvector32Term, reads: &mut Vec<ResourceRead>
                 );
             }
         }
-        Bitvector32Term::Add(left, right)
-        | Bitvector32Term::Subtract(left, right)
-        | Bitvector32Term::Multiply(left, right)
-        | Bitvector32Term::Divide(left, right)
-        | Bitvector32Term::UnsignedDivide(left, right)
-        | Bitvector32Term::Remainder(left, right)
-        | Bitvector32Term::UnsignedRemainder(left, right)
-        | Bitvector32Term::ShiftLeft(left, right)
-        | Bitvector32Term::ArithmeticShiftRight(left, right)
-        | Bitvector32Term::LogicalShiftRight(left, right)
-        | Bitvector32Term::BitwiseAnd(left, right)
-        | Bitvector32Term::BitwiseOr(left, right)
-        | Bitvector32Term::BitwiseXor(left, right) => {
+        crate::kernel::binary_bitvector32_term!(left, right) => {
             collect_bitvector_reads(left, reads);
             collect_bitvector_reads(right, reads);
         }

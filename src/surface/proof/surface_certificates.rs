@@ -4416,17 +4416,7 @@ pub(super) fn contract_expression_mentions_c_local(
         | ContractExpression::BitwiseNot(base) => {
             contract_expression_mentions_c_local(base, parameter_names)
         }
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right)
-        | ContractExpression::Divide(left, right)
-        | ContractExpression::Remainder(left, right)
-        | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right)
-        | ContractExpression::Index(left, right) => {
+        crate::surface::binary_contract_expression!(left, right) => {
             contract_expression_mentions_c_local(left, parameter_names)
                 || contract_expression_mentions_c_local(right, parameter_names)
         }

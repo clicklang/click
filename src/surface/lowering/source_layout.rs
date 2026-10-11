@@ -155,25 +155,9 @@ fn expression_reads(expression: &CExpression) -> bool {
                 (then_branch.as_ref(), true),
                 (else_branch.as_ref(), true),
             ]),
-            CExpression::LessThan(a, b)
-            | CExpression::LessEqual(a, b)
-            | CExpression::GreaterThan(a, b)
-            | CExpression::GreaterEqual(a, b)
-            | CExpression::Equal(a, b)
-            | CExpression::NotEqual(a, b)
-            | CExpression::And(a, b)
-            | CExpression::Or(a, b)
-            | CExpression::Add(a, b)
-            | CExpression::Subtract(a, b)
-            | CExpression::Multiply(a, b)
-            | CExpression::Divide(a, b)
-            | CExpression::Remainder(a, b)
-            | CExpression::ShiftLeft(a, b)
-            | CExpression::ShiftRight(a, b)
-            | CExpression::BitwiseAnd(a, b)
-            | CExpression::BitwiseOr(a, b)
-            | CExpression::BitwiseXor(a, b)
-            | CExpression::Index(a, b) => pending.extend([(a.as_ref(), true), (b.as_ref(), true)]),
+            crate::kernel::binary_c_expression!(a, b) => {
+                pending.extend([(a.as_ref(), true), (b.as_ref(), true)])
+            }
             CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
         }
     }
@@ -982,25 +966,7 @@ pub(in crate::surface) fn collect_c_expression_referenced_names(
         CExpression::TypedLoad { pointer, .. } => {
             collect_c_expression_referenced_names(pointer, names);
         }
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::And(left, right)
-        | CExpression::Or(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right)
-        | CExpression::Index(left, right) => {
+        crate::kernel::binary_c_expression!(left, right) => {
             collect_c_expression_referenced_names(left, names);
             collect_c_expression_referenced_names(right, names);
         }
