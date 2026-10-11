@@ -208,12 +208,21 @@ with checked guards for the signed addition. The proof establishes native read
 equality before rewriting the Integer observation; address equality alone does
 not normalize the Integer loads. Complete claim audits, expansion and cold
 re-verification check both observation lemmas; mutations reject shifted byte
-positions and missing count or lane bounds. The original small-batch vector
-loop explicitly recovers all four constructor lanes from its shared subslice,
-then uses the checked byte-cast lemma to obtain their Integer observations at
-the constructor mark. These new constructor steps use direct normalization,
-explicit lemma applications and rewrites. Connecting that subslice to the input prefix and carrying
-both checksum residues through the original loops remains necessary.
+positions and missing count or lane bounds. The remaining-count bridge recovers
+the chunk just consumed by `Next` at `prefix - remaining - 4`, with native and
+signed subtraction bounds. It verifies, expands and re-verifies; mutations
+reject shifted chunk starts, wrong lane positions and missing guards.
+
+The original small-batch vector loop explicitly recovers all four constructor
+lanes from its shared subslice, uses the checked byte-cast lemma to obtain
+their Integer observations at the constructor mark, and connects each lane to
+`bytes[prefix - remaining - 4 + lane]`. The position comes from the actual
+stored remaining count after `Next`; no processed-count local is introduced.
+Native byte equality precedes the Integer equality chain, which uses three
+explicit arithmetic premises. The unchanged whole computation verifies with
+these observations. Nightly mutations reject a shifted subslice and a lane
+associated with the wrong input byte. Carrying both checksum residues through
+the original loops remains necessary.
 
 ## Native vector-prefix transitions
 
@@ -496,8 +505,9 @@ and final tail.
 The general contract supplies induction and bounds rather than a checksum
 postcondition. Full original-computation smart audits currently exhaust the
 standard ten-minute run bound before completing a site, although ordinary
-verification succeeds. Investigate that audit cost before extending the loop
-proof; the standalone byte-observation claims pass complete audits. All helper bodies remain checked
+verification succeeds. Treat this as an audit-tool limitation and continue
+checksum correctness with ordinary verification; the timeout supplies no proof
+verdict. The standalone byte-observation claims pass complete audits. All helper bodies remain checked
 alongside the computation. Then prove incremental processing, the unchanged
 C implementation, and equality under matched input and seed conditions.
 
