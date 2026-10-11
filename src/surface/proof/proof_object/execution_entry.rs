@@ -199,7 +199,7 @@ impl<'a> Proof<'a> {
         let execution = checked.execution();
         Ok(ProofExecutionView {
             state: &execution.core.state,
-            facts: checked.facts().to_vec(),
+            facts: checked.facts(),
             frontier: &execution.core.frontier,
             execution,
             context,

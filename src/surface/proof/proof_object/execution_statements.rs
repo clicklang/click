@@ -2032,7 +2032,7 @@ impl<'a> Proof<'a> {
         let claim_label = context.claim_label;
         let premises = {
             let view = self.execution_view()?;
-            let (state, frontier, facts) = (view.state, view.frontier, &view.facts);
+            let (state, frontier, facts) = (view.state, view.frontier, &view.facts.to_vec());
             if frontier.is_at_function_entry() || frontier.is_at_function_exit() {
                 return Err(ClickError::new(format!(
                     "`{claim_label}` tactic {tactic_index}: `transport` requires a current statement frontier after at least one completed execution step"

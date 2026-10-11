@@ -880,7 +880,7 @@ impl ExecutionBranchDecisions {
 /// checks its typed outcome goals.
 pub(super) struct ProofExecutionView<'p> {
     pub(super) state: &'p CState,
-    pub(super) facts: Vec<Proposition>,
+    pub(super) facts: &'p ProofFacts,
     pub(super) frontier: &'p ExecutionFrontier,
     pub(super) execution: &'p ExecutionProofState,
     pub(super) context: &'p ExecutionProofContext<'p>,
