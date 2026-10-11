@@ -227,6 +227,16 @@ any outer context. Each passes all 136 audit sites; four mutations reject an
 incorrect near-child parent or attachment. Rotations after deficit propagation
 and the complete `rb_erase` wrapper remain.
 
+`rbtree_erase_color_flips_red_inner_right.click` extends the propagated repair
+proof with red-sibling cases 1, 3, and 4 when the deficit is the right child.
+The focus and rotation subtrees may be nonempty. It retains the existing
+color-flip propagation and both orientations of cases 1/2 and 1/4, and returns
+the exact balanced tree with consistent parents and preserved in-order contents.
+The parent/color frame is explicit across the inner and outer updates, and the
+saved child pointer is connected to the right link before the subtree is folded.
+The mirrored propagated red-sibling inner rotation and complete erase wrapper
+remain.
+
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is
 separated from fields the C may write. Metadata-carrying callbacks remain

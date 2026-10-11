@@ -7469,3 +7469,52 @@ fn owned_pointer_parameters_scale_with_their_number() {
         .collect::<Vec<_>>();
     assert_near_linear_scaling("owned pointer parameters", &samples);
 }
+
+/// A selected field separation after unfold uses the live partition before
+/// attempting to connect the older body compositions to surrounding owners.
+#[test]
+fn held_field_separation_precedes_general_composition_reasoning() {
+    let mut work = Vec::new();
+    for size in [4, 8, 16, 32] {
+        let parameters = (0..size)
+            .map(|i| format!(", struct node* q{i}"))
+            .collect::<String>();
+        let resources = (0..size)
+            .map(|i| format!("consumes r{i}: cell(q{i});\n"))
+            .collect::<String>();
+        let unfolds = (0..size)
+            .map(|i| format!("unfold(r{i});\n"))
+            .collect::<String>();
+        let c_source = format!(
+            "struct node {{ uint64 word; struct node *left; struct node *right; }};
+void inspect(struct node* parent, struct node* child{parameters}) {{ }}"
+        );
+        let click_source = format!(
+            "verifying \"held.c\";
+resource cell(p: struct node*) {{ field value: uint64; owns p->word; fact p->word == value; }}
+void inspect(struct node* parent, struct node* child{parameters}) {{
+ owns *parent; consumes c: cell(child); {resources}
+}} by {{
+ {unfolds}
+ unfold(c);
+ have separate(memory(parent->word), memory(child->word)) by assumption();
+ execute(); simp();
+}}"
+        );
+        let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c0_sources(&click_source, &[("held.c", &c_source)])
+        });
+        result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
+        let selected = samples
+            .iter()
+            .filter(|sample| sample.tactic.tactic_name == "have")
+            .collect::<Vec<_>>();
+        assert_eq!(selected.len(), 1);
+        work.push(selected[0].work);
+    }
+    assert!(work.iter().all(|count| *count > 0));
+    assert!(
+        work.windows(2).all(|pair| pair[0] == pair[1]),
+        "held field lookup traversed unrelated compositions: {work:?}"
+    );
+}
