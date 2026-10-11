@@ -4301,6 +4301,78 @@ pub fn program_prepared_project_summary(
     c0_project_summary_file(&file, &sources)
 }
 
+/// A summary and a verification of one loaded project from a single
+/// resolution of its sources. The outer error is the summary's, a failure to
+/// resolve or summarize the sources; the inner result is verification's.
+pub type SummarizedVerification =
+    Result<(CProjectSummary, Result<Vec<VerifiedCTheorem>, ClickError>), ClickError>;
+
+/// [`c0_project_summary`] then [`verify_c0_project`], resolving the sources
+/// once for both: the resolution validates every declaration, standard
+/// library included, so a caller reporting the summary should not pay twice.
+pub fn verify_c0_project_with_summary(
+    project: &ClickProject,
+    c_sources: &[(&str, &str)],
+) -> SummarizedVerification {
+    let sources = CSourceContext::bundle(c_sources).with_click_project(project);
+    summarize_then_verify(project, &sources, true)
+}
+
+/// [`c0_prepared_project_summary`] then [`verify_c0_prepared_project`] from
+/// one resolution.
+pub fn verify_c0_prepared_project_with_summary(
+    project: &ClickProject,
+    imports: &[PreparedCImport],
+) -> SummarizedVerification {
+    let sources = CSourceContext::prepared(imports).with_click_project(project);
+    summarize_then_verify(project, &sources, false)
+}
+
+/// [`program_prepared_project_summary`] then
+/// [`verify_program_prepared_project`] from one resolution.
+pub fn verify_program_prepared_project_with_summary(
+    project: &ClickProject,
+    import: &impl PreparedProgramSource,
+) -> SummarizedVerification {
+    let sources = CSourceContext::program(import)?.with_click_project(project);
+    summarize_then_verify(project, &sources, false)
+}
+
+fn summarize_then_verify(
+    project: &ClickProject,
+    sources: &CSourceContext<'_>,
+    emit_timing_failure: bool,
+) -> SummarizedVerification {
+    // As in the separate summary: the CLI's phase name, which a stop report
+    // cites, and its own kernel session, so what this thread verified before
+    // cannot change its units. The resolved file holds no session state; the
+    // separate verification entry points also resolve before verification
+    // enters its session.
+    let (file, summary) = {
+        let _phase = instrumentation::VerificationPhase::new("external dependency summary");
+        let _session = crate::kernel::VerificationSession::enter();
+        let file = resolve_click_project_context(project, sources)?;
+        let summary = c0_project_summary_file(&file, sources)?;
+        (file, summary)
+    };
+    let verified = instrumentation::with_default_tactic_limits(|| {
+        let result = verify_c0_sources_with_context(
+            project.entry_source().expect("resolved entry source"),
+            sources,
+            None,
+            None,
+            None,
+            Some(file),
+        )
+        .map(|(verified, _)| verified);
+        if emit_timing_failure && let Err(error) = &result {
+            error.emit_timing_failure();
+        }
+        result
+    });
+    Ok((summary, verified))
+}
+
 /// Reports the same explicit external-contract assumptions for compiler imports.
 pub fn c0_prepared_external_dependencies(
     click_source: &str,
