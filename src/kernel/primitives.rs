@@ -3994,6 +3994,10 @@ pub struct CVerifiedFunctionRule {
     /// these applications are its call edges, written by the kernel from the
     /// checked traces, so the termination check may trust them.
     pub(super) applied_tactics: std::collections::BTreeSet<String>,
+    /// Complete conservative call dependencies from kernel-checked execution.
+    /// None retains source-call analysis; a present empty set proves no calls.
+    /// Shared across claims and certificate reuse, never copied per step.
+    pub(super) checked_callees: Option<Arc<BTreeSet<String>>>,
 }
 
 impl CVerifiedFunctionRule {
@@ -4372,6 +4376,10 @@ pub struct CVerifiedFunctionContractClaim {
     /// The user-defined tactics the certification this claim came from
     /// applied.
     pub(super) applied_tactics: std::collections::BTreeSet<String>,
+    /// Complete conservative call dependencies from kernel-checked execution.
+    /// None retains source-call analysis; a present empty set proves no calls.
+    /// Shared across claims and certificate reuse, never copied per step.
+    pub(super) checked_callees: Option<Arc<BTreeSet<String>>>,
 }
 
 /// Kernel-checked evidence that a checked proof discharged one proposition at
@@ -10436,6 +10444,10 @@ pub struct CFunctionContractExecution {
     pub(super) loop_semantics: CLoopSemantics,
     /// The user-defined tactics the certified proofs applied.
     pub(super) applied_tactics: std::collections::BTreeSet<String>,
+    /// Complete conservative call dependencies from kernel-checked execution.
+    /// None retains source-call analysis; a present empty set proves no calls.
+    /// Shared across claims and certificate reuse, never copied per step.
+    pub(super) checked_callees: Option<Arc<BTreeSet<String>>>,
 }
 
 /// A kernel-created record of one exact whole-function execution judgment.
@@ -10479,6 +10491,10 @@ pub struct CCheckedFunctionExecution {
     pub(super) entry_representation_origin: Option<CState>,
     /// The user-defined tactics this execution's proof applied.
     pub(super) applied_tactics: std::collections::BTreeSet<String>,
+    /// Complete conservative call dependencies from kernel-checked execution.
+    /// None retains source-call analysis; a present empty set proves no calls.
+    /// Shared across claims and certificate reuse, never copied per step.
+    pub(super) checked_callees: Option<Arc<BTreeSet<String>>>,
     /// Original checked input selection; later certification must not rebuild it.
     pub(super) boundary_transfer: Option<Arc<super::functions::CheckedBoundaryResourceTransfer>>,
     pub(super) checked_call_events: super::proof::CheckedCallEvents,
@@ -10503,6 +10519,7 @@ impl CFunctionContractExecution {
             reuse_context_facts: Vec::new(),
             checked_call_events: Default::default(),
             loop_semantics: CLoopSemantics::Verify,
+            checked_callees: None,
             applied_tactics: Default::default(),
         }
     }

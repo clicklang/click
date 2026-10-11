@@ -5072,6 +5072,7 @@ pub fn prove_checked_c_function_execution_with_environment(
         entry_representation_origin: None,
         boundary_transfer: None,
         checked_call_events: Default::default(),
+        checked_callees: None,
         applied_tactics: Default::default(),
     }
 }
@@ -6912,6 +6913,11 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
         checked_call_events,
         loop_semantics: execution_semantics.loops,
         applied_tactics,
+        checked_callees: super::termination::merge_checked_callees(
+            checked_artifacts
+                .iter()
+                .map(|artifact| artifact.checked_callees.as_ref()),
+        ),
     }
 }
 

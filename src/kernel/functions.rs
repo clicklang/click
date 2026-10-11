@@ -32635,6 +32635,7 @@ mod verified_call_initialization_tests {
             CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
                 function: function.clone(),
                 loop_semantics: CLoopSemantics::Verify,
+                checked_callees: None,
                 applied_tactics: Default::default(),
             });
         execute_c_function_call_paths(
@@ -32935,6 +32936,7 @@ mod stable_view_call_tests {
         CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
             function: function.clone(),
             loop_semantics: CLoopSemantics::Verify,
+            checked_callees: None,
             applied_tactics: Default::default(),
         })
     }
@@ -33526,6 +33528,7 @@ mod stable_view_call_tests {
             CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
                 function: function.clone(),
                 loop_semantics: CLoopSemantics::Verify,
+                checked_callees: None,
                 applied_tactics: Default::default(),
             });
         let paths = execute_c_function_call_paths(
@@ -34294,6 +34297,7 @@ mod stable_view_call_tests {
             .with_verified_function_rule(CVerifiedFunctionRule {
                 function: inner,
                 loop_semantics: CLoopSemantics::Verify,
+                checked_callees: None,
                 applied_tactics: Default::default(),
             });
 

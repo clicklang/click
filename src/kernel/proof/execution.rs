@@ -6189,6 +6189,45 @@ fn collect_applied_tactics(
     }
 }
 
+/// Conservative dependencies of retained checked statements. A summarized
+/// statement (including a loop) contributes its whole body; selected branches
+/// contribute only their checked arm events. No diagnostic trace is consulted.
+fn collect_checked_callees(
+    events: &[CheckedExecutionEvent],
+    seen: &mut std::collections::HashSet<usize>,
+    callees: &mut std::collections::BTreeSet<String>,
+) {
+    for event in events {
+        crate::kernel::termination::charge_termination_work(1);
+        match event {
+            CheckedExecutionEvent::Statement(theorem) => {
+                match checked_evidence_conclusion(theorem) {
+                    Proposition::CStatementExecutes { statement, .. }
+                    | Proposition::CStatementVerifies { statement, .. } => {
+                        crate::kernel::termination::checked_statement_calls(
+                            statement, seen, callees,
+                        );
+                    }
+                    _ => unreachable!("checked statement evidence has a statement conclusion"),
+                }
+            }
+            CheckedExecutionEvent::Branch(branch) => {
+                for arm in &branch.arms {
+                    collect_checked_callees(&arm.events, seen, callees);
+                }
+            }
+            CheckedExecutionEvent::ProofCaseJoin(join) => {
+                for events in join.live_arm_events() {
+                    collect_checked_callees(events, seen, callees);
+                }
+            }
+            // Conditions contain no calls in kernel C: calls are statements.
+            // Tactic dependencies are retained separately in applied_tactics.
+            _ => {}
+        }
+    }
+}
+
 fn collect_retained_call_events(
     events: &[CheckedExecutionEvent],
     call_events: &mut CheckedCallEvents,
@@ -7664,6 +7703,18 @@ impl ExecutionProofCore {
 
     pub(crate) fn checked_call_events(&self) -> CheckedCallEvents {
         self.checked_call_events.clone()
+    }
+
+    fn retained_checked_callees(&self) -> Option<Arc<std::collections::BTreeSet<String>>> {
+        if self.execution_evidence.is_empty() {
+            return None;
+        }
+        let mut callees = std::collections::BTreeSet::new();
+        let mut seen = std::collections::HashSet::new();
+        for trace in &self.execution_evidence {
+            collect_checked_callees(&trace.to_vec(), &mut seen, &mut callees);
+        }
+        Some(Arc::new(callees))
     }
 
     fn retained_applied_tactics(&self) -> std::collections::BTreeSet<String> {
@@ -10400,7 +10451,8 @@ impl ExecutionProofCore {
     /// path per retained trace, each its trace's completing theorem under
     /// the contract's exit rule, stating everything the proof established
     /// on the path. Every step of every trace was checked when it was
-    /// recorded, so this composes the traces and walks nothing.
+    /// recorded, so this composes the traces without re-executing the body.
+    /// A single traversal collects conservative call dependencies.
     /// `candidates` is the driver's publication of the paths, which must
     /// name the traces' outcomes in order.
     pub(crate) fn checked_function_execution(
@@ -10472,6 +10524,7 @@ impl ExecutionProofCore {
                 .and_then(|entry| entry.boundary_transfer.clone()),
             checked_call_events: self.retained_call_events(),
             applied_tactics: self.retained_applied_tactics(),
+            checked_callees: self.retained_checked_callees(),
         })
     }
 
@@ -16628,5 +16681,53 @@ mod wide_range_reader_tests {
             &[wide],
             &PureFactContext::new()
         ));
+    }
+}
+
+#[cfg(test)]
+mod checked_callee_dependency_tests {
+    use super::*;
+
+    /// Reusing a wide summary must visit its syntax once, rather than once
+    /// per occurrence. Both the call count and reuse count grow here.
+    #[test]
+    fn checked_callee_summary_reuse_scales_with_input_not_product() {
+        let mut previous = None;
+        for size in [16, 64, 256, 1024] {
+            let mut body = CStatement::Skip;
+            for index in 0..size {
+                body = CStatement::Seq(
+                    Arc::new(body),
+                    Arc::new(crate::kernel::c_call(format!("callee_{index}"), vec![])),
+                );
+            }
+            let summary = crate::kernel::c_while(crate::kernel::c_int32_literal(1), vec![], body);
+            let events = (0..size)
+                .map(|_| {
+                    CheckedExecutionEvent::Statement(Theorem::new(
+                        Proposition::CStatementVerifies {
+                            state: Box::new(CState::new()),
+                            statement: Box::new(summary.clone()),
+                            outcome: CStatementOutcome::Normal(Box::new(CState::new())),
+                        },
+                    ))
+                })
+                .collect::<Vec<_>>();
+            let (calls, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut calls = std::collections::BTreeSet::new();
+                collect_checked_callees(&events, &mut Default::default(), &mut calls);
+                calls
+            });
+            eprintln!("summary reuse size={size}, dependency work={work}");
+            assert_eq!(calls.len(), size);
+            assert!(calls.contains(&format!("callee_{}", size - 1)));
+            if let Some(before) = previous {
+                assert!(
+                    work <= 5 * before,
+                    "superlinear summary reuse: {before} -> {work}"
+                );
+            }
+            previous = Some(work);
+        }
     }
 }
