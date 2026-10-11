@@ -8469,6 +8469,104 @@ fn known_resource_constructor_skips_predicate_refutation_work() {
     );
 }
 
+// Once the only fieldless arm is known excluded, no arm can be published: the
+// exclusion is already a fact, and refuting the remaining arm could not name
+// the model's constructor. The call must not reevaluate the model's
+// predicates at every step.
+#[test]
+fn known_exclusion_skips_refutation_of_unpublishable_arms() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = arm_selection_type(&["Empty"], "Filled");
+    let model = resource_index_variable(&ty, 850101);
+    let empty = arm_selection_constructor(&ty, "Empty", vec![]);
+    let schema = ResourceFieldSchema::new(vec![(
+        "model".into(),
+        ResourceFieldType::Algebraic(ty.clone()),
+    )])
+    .unwrap();
+    let instance = ResourceInstance::new(
+        Variable(850100),
+        "choice".into(),
+        vec![].into(),
+        schema.clone(),
+        vec![AlgebraicValue::Algebraic(model.clone())].into(),
+    )
+    .unwrap();
+    let mut definition =
+        CCompositeResourceDefinition::new("choice", vec![], None, false, vec![], vec![])
+            .with_instance_schema(Some(schema));
+    definition.matched = Some(CResourceMatchBody {
+        field_index: 0,
+        algebraic_type: ty.clone(),
+        arms: vec![
+            CResourceMatchArm {
+                variant: "Empty".into(),
+                bindings: vec![],
+                binding_types: vec![],
+                binding_variables: vec![],
+                contains: vec![],
+                facts: vec![],
+                children: vec![],
+            },
+            CResourceMatchArm {
+                variant: "Filled".into(),
+                bindings: vec!["value".into()],
+                binding_types: vec![AlgebraicValueType::C(CType::Int32)],
+                binding_variables: vec![None],
+                contains: vec![],
+                facts: vec![],
+                children: vec![],
+            },
+        ],
+    });
+    let state = CState::new().with_resource_context(
+        ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
+    );
+    let mut costs = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let mut assumptions = PureFactContext::new();
+        for index in 0..size {
+            assumptions = assumptions.assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::equal(
+                    Bitvector32Term::ClickFunctionApplication {
+                        name: format!("predicate{index}"),
+                        arguments: vec![PureFunctionArgument::Algebraic(model.clone())],
+                    },
+                    Bitvector32Term::Constant(1),
+                ),
+                true,
+            ));
+        }
+        let negation = Proposition::Not(Box::new(Proposition::Equal(
+            Term::Algebraic(model.clone()),
+            Term::Algebraic(empty.clone()),
+        )));
+        let excluded = assumptions.assume_proposition(negation.clone());
+        // The exact-fact index is built on its first query; a live context
+        // has already paid for it.
+        assert!(
+            crate::kernel::reasoning::path_facts::required_obligation_is_exactly_discharged(
+                &excluded, &negation,
+            )
+        );
+        let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::functions::instance_arm_model_facts(
+                &instance,
+                std::slice::from_ref(&definition),
+                &state,
+                &excluded,
+            )
+        });
+        assert!(facts.is_empty(), "{facts:?}");
+        costs.push(work);
+    }
+    assert!(
+        costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] * 2),
+        "{costs:?}"
+    );
+}
+
 // A suffix uses a non-wrapping, full-width subtraction and the same backing
 // identity. Neither a low-word bound nor an invented endpoint supplies it.
 #[test]
