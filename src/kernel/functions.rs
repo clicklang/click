@@ -5984,11 +5984,11 @@ fn execute_verified_function_applications_with_suspension(
         // built once, here, so the population transition and the returned
         // resources agree on its fresh fields.
         let mut produced_instances = BTreeMap::new();
-        // A produced instance's arguments are read at the return, where the
-        // contract's own input instances still address the cells their
-        // unmatched bodies owned (`produces after: state(region->arena)`
-        // beside a consumed region). The views are the contract's inputs
-        // only, and they are computed once, when some instance is produced.
+        // Current arguments of a produced instance are read at return, where
+        // the contract's input instances still address cells their unmatched
+        // bodies owned (`produces after: state(region->arena)` beside a
+        // consumed region). These views come only from the contract's inputs
+        // and are computed once. Entry arguments use entry_contract_state.
         let mut produced_argument_state: Option<CState> = None;
         for resource in interface.resource_ensures() {
             let Some(identity) = resource.instance_identity() else {
@@ -6054,7 +6054,11 @@ fn execute_verified_function_applications_with_suspension(
                     )
                 }
             });
-            let (name, arguments) = match evaluate_function_resource_spec(
+            // Each argument keeps its declared snapshot. In particular, an
+            // `old(...)` argument uses entry read authority, not the fresh
+            // post-call memory used for current arguments.
+            let (name, arguments) = match evaluate_function_resource_spec_with_entry(
+                &entry_contract_state,
                 argument_state,
                 &instance_resource,
                 &effective_assumptions,
