@@ -78,12 +78,15 @@ representative bounds. A joint native vector-prefix bridge now connects the
 checked word additions and exact constructor byte observations to both common
 prefix residues. Its iterator adapter derives the prefix from stored remaining
 state and checks the four-byte advance and remaining-length bounds. The original
-small-batch vector loop now carries the A residue against the common
-specification at every actual remaining count and establishes the relation for
-the completed four-byte prefix, from any canonical A seed. Initialization,
-native lane additions, exact input-byte observations and signed prefix
-subtraction safety are checked. Carrying B through that loop, transporting both
-residues through reductions and recombination, and finishing the scalar tail
+small-batch vector loop carries both residues against the common
+specification at every actual remaining count and establishes their relations
+for the completed four-byte prefix, from any canonical A and B seeds. The B
+representative includes the deferred prefix-length times A-seed contribution,
+the original four lane weights and the `6*MOD` offset, and stays nonnegative.
+Initialization, native lane additions, exact input-byte observations, signed
+prefix subtraction safety and exact Integer prefix advances are checked.
+Transporting both residues through reductions and recombination and finishing
+the scalar tail
 remain pending, as do the arbitrary-length computation’s nested loops. Full original-computation smart audits
 currently exhaust the standard ten-minute run bound before completing a site,
 while ordinary verification succeeds. This is an audit-tool limitation, not a

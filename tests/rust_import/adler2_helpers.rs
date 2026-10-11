@@ -1482,6 +1482,41 @@ fn charon_adler2_small_batch_compute_rejects_false_vector_prefix_a() {
 }
 
 #[test]
+#[ignore = "nightly: original vector-prefix B weights and deferred seed rejections"]
+fn charon_adler2_small_batch_compute_rejects_false_vector_prefix_b() {
+    let total = "(int32)(uint32)(bytes_len - bytes_len % 4u64)";
+    let remaining = "(int32)(uint32)__rust_mir_62_remaining";
+    let prefix = format!("({total} - {remaining})");
+    let previous = format!("({prefix} - 4)");
+    let representative = format!(
+        "adler_lane_b(to_integer(b) + to_integer({prefix}) * to_integer(a), to_integer(a_vec._0[1]), to_integer(a_vec._0[2]), to_integer(a_vec._0[3]), to_integer(b_vec._0[0]), to_integer(b_vec._0[1]), to_integer(b_vec._0[2]), to_integer(b_vec._0[3]))"
+    );
+    let old_representative = format!(
+        "adler_lane_b(to_integer(b) + to_integer({previous}) * to_integer(a), to_integer(at(vector_a, a_vec._0[1])), to_integer(at(vector_a, a_vec._0[2])), to_integer(at(vector_a, a_vec._0[3])), to_integer(at(vector_a, b_vec._0[0])), to_integer(at(vector_a, b_vec._0[1])), to_integer(at(vector_a, b_vec._0[2])), to_integer(at(vector_a, b_vec._0[3])))"
+    );
+    let old_a = "adler_lane_a(to_integer(a), to_integer(at(vector_a, a_vec._0[0])), to_integer(at(vector_a, a_vec._0[1])), to_integer(at(vector_a, a_vec._0[2])), to_integer(at(vector_a, a_vec._0[3])))";
+    let first_byte = format!("to_integer((int32)bytes[{previous}])");
+    let weighted = format!(
+        "(4 * {first_byte} + 3 * to_integer((int32)bytes[{previous} + 1]) + 2 * to_integer((int32)bytes[{previous} + 2]) + to_integer((int32)bytes[{previous} + 3]))"
+    );
+    let goal =
+        format!("have {representative} == ({old_representative} + 4 * {old_a} + {weighted}) by");
+    reject_compute(
+        SMALL_BATCH_COMPUTE,
+        &goal,
+        &goal.replace(&format!("4 * {first_byte}"), &format!("1 * {first_byte}")),
+    );
+    reject_compute(
+        SMALL_BATCH_COMPUTE,
+        &goal,
+        &goal.replace(
+            &format!("4 * {old_a}"),
+            &format!("4 * ({old_a} - to_integer(a))"),
+        ),
+    );
+}
+
+#[test]
 #[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_batch_compute_requires_canonical_a() {
     reject_compute(

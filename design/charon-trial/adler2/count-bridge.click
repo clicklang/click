@@ -185,3 +185,19 @@ theorem adler_count_previous_chunk_byte_observation(bytes: uint8[], total: uint6
   assumption();
  }
 }
+
+# Exact prefix advance used by the deferred scalar B contribution.
+theorem adler_small_prefix_integer_advance(total: int32, remaining: int32) {
+ requires 0 <= remaining;
+ requires remaining <= total;
+ requires total <= 22204;
+ requires 4 <= total - remaining;
+ ensures to_integer(total - remaining) == to_integer((total - remaining) - 4) + 4 by {
+  apply(int32_nonnegative_subtract_within_value_is_defined(total, remaining)) using { 0 <= remaining; remaining <= total; };
+  have defined(total - remaining) by { assumption(); }
+  apply(int32_nonnegative_subtract_within_value_is_defined(total - remaining, 4)) using { 0 <= 4; 4 <= total - remaining; };
+  have defined((total - remaining) - 4) by { simp(); }
+  apply(int32_subtract_to_integer(total - remaining, 4)) using { defined((total - remaining) - 4); };
+  arithmetic() using { to_integer((total - remaining) - 4) == to_integer(total - remaining) - to_integer(4); };
+ }
+}
