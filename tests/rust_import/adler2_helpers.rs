@@ -23,8 +23,7 @@ const GENERAL_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/general-compute.click");
 
 fn compute_proof(contract: &str) -> String {
-    let computation = HELPERS.split_once("# Empty-input boundary").unwrap().1;
-    let getters = &computation[computation.find("\nuint32 ").unwrap()..];
+    let getters = HELPERS.split_once("# Imported scalar constants").unwrap().1;
     // Function-contract imports are not admitted yet. Assemble one verification
     // unit from the canonical helper/getter bodies and this alternative compute
     // contract, rather than duplicating or assuming their interfaces.
@@ -104,7 +103,7 @@ fn reject_compute(contract: &str, before: &str, after: &str) {
     let p = adler2_helpers_project();
     let prepared = load_import(&p.config()).unwrap();
     let changed = contract.replacen(before, after, 1);
-    assert_ne!(changed, contract, "missing mutation: {before}");
+    assert!(changed != contract, "missing mutation: {before}");
     let invalid = compute_proof(&changed);
     let offset = invalid.find("execute_until(assignment(b, 0))").unwrap();
     let line = invalid[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
@@ -225,20 +224,23 @@ fn charon_adler2_helpers_from_rejects_false_lanes_and_short_reads() {
     reject_helper_contracts(
         0,
         &[
-            ("result._0[3] == bytes[3]", "result._0[3] == bytes[2]"),
-            ("requires bytes_len >= 4u64;", "requires bytes_len >= 3u64;"),
+            ("result.0[3] == bytes[3]", "result.0[3] == bytes[2]"),
+            (
+                "requires bytes.len() >= 4u64;",
+                "requires bytes.len() >= 3u64;",
+            ),
             ("views bytes[0..4];", "views bytes[0..3];"),
         ],
     );
 }
 
 fn reject_helper_byte_bounds(lane: usize) {
-    let native = format!("result._0[{lane}] <= 255u32");
-    let false_native = format!("result._0[{lane}] <= 254u32");
-    let upper = format!("to_integer(result._0[{lane}]) <= 255");
-    let false_upper = format!("to_integer(result._0[{lane}]) <= 254");
-    let lower = format!("0 <= to_integer(result._0[{lane}])");
-    let false_lower = format!("1 <= to_integer(result._0[{lane}])");
+    let native = format!("result.0[{lane}] <= 255u32");
+    let false_native = format!("result.0[{lane}] <= 254u32");
+    let upper = format!("to_integer(result.0[{lane}]) <= 255");
+    let false_upper = format!("to_integer(result.0[{lane}]) <= 254");
+    let lower = format!("0 <= to_integer(result.0[{lane}])");
+    let false_lower = format!("1 <= to_integer(result.0[{lane}])");
     reject_helper_contracts(
         0,
         &[
@@ -278,34 +280,31 @@ fn charon_adler2_helpers_add_rejects_false_lanes_and_overflow() {
     reject_helper_contracts(
         1,
         &[
+            ("old(self.0[3]) + other.0[3]", "old(self.0[3]) + other.0[2]"),
             (
-                "old(self->_0[3]) + other._0[3]",
-                "old(self->_0[3]) + other._0[2]",
-            ),
-            (
-                "requires to_integer(self->_0[3]) + to_integer(other._0[3]) <= 4294967295;",
+                "requires to_integer(self.0[3]) + to_integer(other.0[3]) <= 4294967295;",
                 "",
             ),
             ("<= 4294967295;", "<= 4294967296;"),
             (
-                "requires to_integer(self->_0[3]) + to_integer(other._0[3]) <= 4294967295;",
-                "requires self->_0[3] + other._0[3] <= 4294967295u32;",
+                "requires to_integer(self.0[3]) + to_integer(other.0[3]) <= 4294967295;",
+                "requires self.0[3] + other.0[3] <= 4294967295u32;",
             ),
-            ("owns self->_0[0..4];", "views self->_0[0..4];"),
+            ("owns self.0[0..4];", "views self.0[0..4];"),
         ],
     );
 }
 
 fn reject_helper_add_observations(lane: usize) {
     let exact = format!(
-        "ensures to_integer(self->_0[{lane}]) == to_integer(old(self->_0[{lane}])) + to_integer(other._0[{lane}]);"
+        "ensures to_integer(self.0[{lane}]) == to_integer(old(self.0[{lane}])) + to_integer(other.0[{lane}]);"
     );
     let wrong = format!(
-        "ensures to_integer(self->_0[{lane}]) == to_integer(old(self->_0[{lane}])) + to_integer(other._0[{}]);",
+        "ensures to_integer(self.0[{lane}]) == to_integer(old(self.0[{lane}])) + to_integer(other.0[{}]);",
         (lane + 1) % 4
     );
-    let lower = format!("ensures 0 <= to_integer(self->_0[{lane}]);");
-    let false_lower = format!("ensures 1 <= to_integer(self->_0[{lane}]);");
+    let lower = format!("ensures 0 <= to_integer(self.0[{lane}]);");
+    let false_lower = format!("ensures 1 <= to_integer(self.0[{lane}]);");
     reject_helper_contracts(1, &[(&exact, &wrong), (&lower, &false_lower)]);
 }
 
@@ -359,14 +358,11 @@ fn charon_adler2_helpers_rem_preservation_rejects_false_lane_3() {
 #[test]
 #[ignore = "nightly: unchanged reduction rejects false mathematical observations"]
 fn charon_adler2_helpers_rem_rejects_false_integer_residue_observations() {
-    let exact = "ensures to_integer(self->_0[3]) == truncating_remainder(to_integer(old(self->_0[3])), to_integer(quotient));";
+    let exact = "ensures to_integer(self.0[3]) == truncating_remainder(to_integer(old(self.0[3])), to_integer(quotient));";
     reject_helper_contracts(
         2,
         &[
-            (
-                exact,
-                &exact.replace("old(self->_0[3])", "old(self->_0[2])"),
-            ),
+            (exact, &exact.replace("old(self.0[3])", "old(self.0[2])")),
             (exact, &exact.replace("));", ")) + 1;")),
         ],
     );
@@ -374,7 +370,7 @@ fn charon_adler2_helpers_rem_rejects_false_integer_residue_observations() {
 
 fn reject_helper_reduction_preservation(lane: usize) {
     let postcondition = format!(
-        "ensures old(self->_0[{lane}]) < quotient implies self->_0[{lane}] == old(self->_0[{lane}])"
+        "ensures old(self.0[{lane}]) < quotient implies self.0[{lane}] == old(self.0[{lane}])"
     );
     reject_helper_contracts(
         2,
@@ -387,8 +383,8 @@ fn reject_helper_reduction_preservation(lane: usize) {
             (
                 &postcondition,
                 &postcondition.replace(
-                    &format!("== old(self->_0[{lane}])"),
-                    &format!("== old(self->_0[{}])", (lane + 1) % 4),
+                    &format!("== old(self.0[{lane}])"),
+                    &format!("== old(self.0[{}])", (lane + 1) % 4),
                 ),
             ),
         ],
@@ -401,20 +397,20 @@ fn charon_adler2_helpers_rem_rejects_false_lanes_and_zero_divisor() {
     reject_helper_contracts(
         2,
         &[
-            ("old(self->_0[3]) % quotient", "old(self->_0[2]) % quotient"),
+            ("old(self.0[3]) % quotient", "old(self.0[2]) % quotient"),
             ("requires quotient != 0u32;", ""),
-            ("owns self->_0[0..4];", "views self->_0[0..4];"),
+            ("owns self.0[0..4];", "views self.0[0..4];"),
         ],
     );
 }
 
 fn reject_helper_reduction_bounds(lane: usize) {
-    let native = format!("ensures self->_0[{lane}] < quotient;");
-    let false_native = format!("ensures self->_0[{lane}] < quotient - 1u32;");
-    let lower = format!("0 <= to_integer(self->_0[{lane}])");
-    let false_lower = format!("1 <= to_integer(self->_0[{lane}])");
-    let upper = format!("to_integer(self->_0[{lane}]) < to_integer(quotient)");
-    let false_upper = format!("to_integer(self->_0[{lane}]) < to_integer(quotient) - 1");
+    let native = format!("ensures self.0[{lane}] < quotient;");
+    let false_native = format!("ensures self.0[{lane}] < quotient - 1u32;");
+    let lower = format!("0 <= to_integer(self.0[{lane}])");
+    let false_lower = format!("1 <= to_integer(self.0[{lane}])");
+    let upper = format!("to_integer(self.0[{lane}]) < to_integer(quotient)");
+    let false_upper = format!("to_integer(self.0[{lane}]) < to_integer(quotient) - 1");
     reject_helper_contracts(
         2,
         &[
@@ -455,26 +451,26 @@ fn charon_adler2_helpers_mul_rejects_false_lanes_and_overflow() {
     reject_helper_contracts(
         3,
         &[
-            ("old(self->_0[3]) * rhs", "old(self->_0[2]) * rhs"),
+            ("old(self.0[3]) * rhs", "old(self.0[2]) * rhs"),
             (
-                "requires rhs == 0u32 or self->_0[3] <= 4294967295u32 / rhs;",
+                "requires rhs == 0u32 or self.0[3] <= 4294967295u32 / rhs;",
                 "",
             ),
-            ("owns self->_0[0..4];", "views self->_0[0..4];"),
+            ("owns self.0[0..4];", "views self.0[0..4];"),
         ],
     );
 }
 
 fn reject_helper_product_observations(lane: usize) {
     let exact = format!(
-        "ensures to_integer(self->_0[{lane}]) == to_integer(old(self->_0[{lane}])) * to_integer(rhs);"
+        "ensures to_integer(self.0[{lane}]) == to_integer(old(self.0[{lane}])) * to_integer(rhs);"
     );
     let wrong_product = exact.replace("== to_integer", "== 1 + to_integer");
-    let lower = format!("0 <= to_integer(self->_0[{lane}])");
-    let false_lower = format!("1 <= to_integer(self->_0[{lane}])");
-    let upper = format!("to_integer(self->_0[{lane}]) <= 4294967295");
-    let false_upper = format!("to_integer(self->_0[{lane}]) <= 4294967294");
-    let guard = format!("requires rhs == 0u32 or self->_0[{lane}] <= 4294967295u32 / rhs;");
+    let lower = format!("0 <= to_integer(self.0[{lane}])");
+    let false_lower = format!("1 <= to_integer(self.0[{lane}])");
+    let upper = format!("to_integer(self.0[{lane}]) <= 4294967295");
+    let false_upper = format!("to_integer(self.0[{lane}]) <= 4294967294");
+    let guard = format!("requires rhs == 0u32 or self.0[{lane}] <= 4294967295u32 / rhs;");
     reject_helper_contracts(
         3,
         &[
@@ -513,16 +509,13 @@ fn charon_adler2_helpers_mul_rejects_false_observations_lane_3() {
 fn recheck_helper_tools(index: usize, commands: &[&str], expand: bool) {
     let p = adler2_helpers_project();
     let proof = helper_proof(index);
-    let claim = proof
-        .lines()
-        .find(|line| line.starts_with("struct ") || line.starts_with("void "))
-        .unwrap()
-        .split_once('(')
-        .unwrap()
-        .0
-        .split_whitespace()
-        .last()
-        .unwrap();
+    let claim = [
+        "adler2::algo::U32X4::from",
+        // Operator labels retain the importer's trait identity.
+        "__rust_q_I6_adler2_I4_algo_I5_U32X4_add_assign_value_35__rust_q_I6_adler2_I4_algo_I5_U32X4",
+        "__rust_q_I6_adler2_I4_algo_I5_U32X4_rem_assign_u32",
+        "__rust_q_I6_adler2_I4_algo_I5_U32X4_mul_assign_u32",
+    ][index];
     fs::write(p.root.join("borrow.click"), &proof).unwrap();
     for command in commands {
         assert_cli(&p, &[command]);
@@ -1038,20 +1031,20 @@ fn reject_empty_compute(before: &str, after: &str) {
 #[test]
 #[ignore = "nightly: original computation mutation, 16s locally; exceeded 30s in CI"]
 fn charon_adler2_empty_compute_rejects_missing_input_lock() {
-    reject_empty_compute("requires bytes_len == 0u64;", "");
+    reject_empty_compute("requires bytes.len() == 0u64;", "");
 }
 
 #[test]
 #[ignore = "nightly: original computation mutation, 12s locally"]
 fn charon_adler2_empty_compute_rejects_missing_scalar_b_premise() {
-    reject_empty_compute("requires self->b == 0;", "");
+    reject_empty_compute("requires self.b == 0;", "");
 }
 
 #[test]
 #[ignore = "nightly: original computation mutation, 21s locally; exceeded 30s in CI"]
 fn charon_adler2_empty_compute_rejects_missing_ownership() {
-    reject_empty_compute("owns self->a;", "");
-    reject_empty_compute("owns self->b;", "");
+    reject_empty_compute("owns self.a;", "");
+    reject_empty_compute("owns self.b;", "");
 }
 
 #[test]
@@ -1060,9 +1053,9 @@ fn charon_adler2_empty_compute_proves_original_body_and_rejects_false_outputs() 
     let p = adler2_helpers_project();
     C0VerificationSession::new_program_prepared(HELPERS, &load_import(&p.config()).unwrap())
         .unwrap();
-    reject_empty_compute("ensures self->a == 1;", "ensures self->a == 2;");
-    reject_empty_compute("ensures self->b == 0;", "ensures self->b == 1;");
-    reject_empty_compute("requires self->a == 1;", "requires self->a == 2;");
+    reject_empty_compute("ensures self.a == 1;", "ensures self.a == 2;");
+    reject_empty_compute("ensures self.b == 0;", "ensures self.b == 1;");
+    reject_empty_compute("requires self.a == 1;", "requires self.a == 2;");
 }
 
 #[test]
@@ -1091,7 +1084,7 @@ fn charon_adler2_empty_compute_tools_recheck_original_contract() {
         &[
             "expand",
             "--claim",
-            "__rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute.contract",
+            "adler2::Adler32::compute.contract",
             "--in-place",
         ],
     );
@@ -1101,14 +1094,17 @@ fn charon_adler2_empty_compute_tools_recheck_original_contract() {
 #[test]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn charon_adler2_single_byte_compute_rejects_missing_length_and_view() {
-    reject_single_byte_compute("requires bytes_len == 1u64;", "");
+    reject_single_byte_compute("requires bytes.len() == 1u64;", "");
     reject_single_byte_compute("views bytes[0..1];", "");
 }
 
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_single_byte_compute_rejects_empty_input() {
-    reject_single_byte_compute("requires bytes_len == 1u64;", "requires bytes_len == 0u64;");
+    reject_single_byte_compute(
+        "requires bytes.len() == 1u64;",
+        "requires bytes.len() == 0u64;",
+    );
 }
 
 #[test]
@@ -1122,8 +1118,8 @@ fn charon_adler2_single_byte_compute_proves_original_body_and_rejects_false_outp
     .unwrap();
     for field in ["a", "b"] {
         reject_single_byte_compute(
-            &format!("ensures to_integer(self->{field}) == to_integer("),
-            &format!("ensures to_integer(self->{field}) == 1 + to_integer("),
+            &format!("ensures to_integer(self.{field}) == to_integer("),
+            &format!("ensures to_integer(self.{field}) == 1 + to_integer("),
         );
     }
     for (field, specification) in [
@@ -1131,8 +1127,8 @@ fn charon_adler2_single_byte_compute_proves_original_body_and_rejects_false_outp
         ("b", "adler_spec_b(bytes, 1, 1, 0)"),
     ] {
         reject_single_byte_compute(
-            &format!("ensures to_integer(self->{field}) == old({specification});"),
-            &format!("ensures to_integer(self->{field}) == old({specification}) + 1;"),
+            &format!("ensures to_integer(self.{field}) == old({specification});"),
+            &format!("ensures to_integer(self.{field}) == old({specification}) + 1;"),
         );
     }
     reject_single_byte_compute(
@@ -1154,7 +1150,7 @@ fn recheck_compute_tools(contract: &str, bytes: usize) {
     }
     let source = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     let site = if bytes == 4 {
-        "have (int32)(uint32)__rust_mir_115_remaining == 3".to_owned()
+        "have ((__rust_mir_115_remaining as u32) as i32) == 3".to_owned()
     } else if bytes == 1 {
         "execute_until(assignment(__rust_mir_144, 0))".to_owned()
     } else {
@@ -1178,7 +1174,7 @@ fn recheck_compute_tools(contract: &str, bytes: usize) {
         &[
             "expand",
             "--claim",
-            "__rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute.contract",
+            "adler2::Adler32::compute.contract",
             "--in-place",
         ],
     );
@@ -1189,7 +1185,11 @@ fn recheck_compute_tools(contract: &str, bytes: usize) {
 #[ignore = "nightly: 8s in the parallel gate"]
 fn charon_adler2_short_tail_compute_rejects_missing_length_and_view() {
     for (bytes, contract) in [(2, TWO_BYTE_COMPUTE), (3, THREE_BYTE_COMPUTE)] {
-        reject_compute(contract, &format!("requires bytes_len == {bytes}u64;"), "");
+        reject_compute(
+            contract,
+            &format!("requires bytes.len() == {bytes}u64;"),
+            "",
+        );
         reject_compute(contract, &format!("views bytes[0..{bytes}];"), "");
     }
 }
@@ -1200,10 +1200,10 @@ fn charon_adler2_short_tail_compute_rejects_wrong_extent_and_constructor() {
     for (bytes, contract) in [(2, TWO_BYTE_COMPUTE), (3, THREE_BYTE_COMPUTE)] {
         reject_compute(
             contract,
-            &format!("requires bytes_len == {bytes}u64;"),
-            "requires bytes_len == 4u64;",
+            &format!("requires bytes.len() == {bytes}u64;"),
+            "requires bytes.len() == 4u64;",
         );
-        reject_compute(contract, "requires self->a == 1;", "requires self->a == 2;");
+        reject_compute(contract, "requires self.a == 1;", "requires self.a == 2;");
     }
 }
 
@@ -1217,8 +1217,8 @@ fn check_short_tail_compute(contract: &str, bytes: usize) {
     for field in ["a", "b"] {
         reject_compute(
             contract,
-            &format!("ensures to_integer(self->{field}) == to_integer("),
-            &format!("ensures to_integer(self->{field}) == 1 + to_integer("),
+            &format!("ensures to_integer(self.{field}) == to_integer("),
+            &format!("ensures to_integer(self.{field}) == 1 + to_integer("),
         );
     }
     for index in 0..bytes {
@@ -1232,7 +1232,7 @@ fn check_short_tail_compute(contract: &str, bytes: usize) {
     // Only mutate the promised B result; the proof and original Rust stay fixed.
     let b_result = contract
         .lines()
-        .find(|line| line.contains("ensures to_integer(self->b)"))
+        .find(|line| line.contains("ensures to_integer(self.b)"))
         .unwrap();
     let swapped = b_result
         .replace("bytes[0]", "@first@")
@@ -1278,13 +1278,13 @@ fn charon_adler2_three_byte_compute_tools_recheck_original_contract() {
 fn charon_adler2_four_byte_compute_rejects_false_stored_iterator_observations() {
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "have (int32)(uint32)__rust_mir_62_remaining == 4 by",
-        "have (int32)(uint32)__rust_mir_62_remaining == 8 by",
+        "have ((__rust_mir_62_remaining as u32) as i32) == 4",
+        "have ((__rust_mir_62_remaining as u32) as i32) == 8",
     );
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "have adler_lane_vectors_consumed(4, (int32)(uint32)__rust_mir_62_remaining) == 0 by",
-        "have adler_lane_vectors_consumed(4, (int32)(uint32)__rust_mir_62_remaining) == 1 by",
+        "have adler_lane_vectors_consumed(4, ((__rust_mir_62_remaining as u32) as i32)) == 0 by",
+        "have adler_lane_vectors_consumed(4, ((__rust_mir_62_remaining as u32) as i32)) == 1 by",
     );
 }
 
@@ -1292,9 +1292,9 @@ fn charon_adler2_four_byte_compute_rejects_false_stored_iterator_observations() 
 #[ignore = "nightly: 3s in the parallel gate"]
 fn charon_adler2_four_byte_compute_rejects_missing_extent_view_and_constructor() {
     for (before, after) in [
-        ("requires bytes_len == 4u64;", ""),
+        ("requires bytes.len() == 4u64;", ""),
         ("views bytes[0..4];", "views bytes[0..3];"),
-        ("requires self->a == 1;", "requires self->a == 2;"),
+        ("requires self.a == 1;", "requires self.a == 2;"),
     ] {
         reject_compute(FOUR_BYTE_COMPUTE, before, after);
     }
@@ -1312,8 +1312,8 @@ fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_output
     for field in ["a", "b"] {
         reject_compute(
             FOUR_BYTE_COMPUTE,
-            &format!("ensures to_integer(self->{field}) == to_integer("),
-            &format!("ensures to_integer(self->{field}) == 1 + to_integer("),
+            &format!("ensures to_integer(self.{field}) == to_integer("),
+            &format!("ensures to_integer(self.{field}) == 1 + to_integer("),
         );
         let specification = if field == "a" {
             "adler_spec_a(bytes, 4, 1)"
@@ -1322,8 +1322,8 @@ fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_output
         };
         reject_compute(
             FOUR_BYTE_COMPUTE,
-            &format!("ensures to_integer(self->{field}) == old({specification});"),
-            &format!("ensures to_integer(self->{field}) == old({specification}) + 1;"),
+            &format!("ensures to_integer(self.{field}) == old({specification});"),
+            &format!("ensures to_integer(self.{field}) == old({specification}) + 1;"),
         );
     }
     reject_compute(
@@ -1333,7 +1333,7 @@ fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_output
     );
     let b_result = FOUR_BYTE_COMPUTE
         .lines()
-        .find(|line| line.contains("ensures to_integer(self->b)"))
+        .find(|line| line.contains("ensures to_integer(self.b)"))
         .unwrap();
     let swapped = b_result
         .replace("bytes[2]", "@third@")
@@ -1342,8 +1342,8 @@ fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_output
     reject_compute(FOUR_BYTE_COMPUTE, b_result, &swapped);
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "have av == old((uint32)bytes[3])",
-        "have av == old((uint32)bytes[2])",
+        "have av == old((bytes[3] as u32))",
+        "have av == old((bytes[2] as u32))",
     );
 }
 
@@ -1360,11 +1360,11 @@ fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
     for field in ["a", "b"] {
         for lane in [0, 3] {
             let bound = format!(
-                "have to_integer({field}_vec._0[{lane}]) <= adler_lane_{field}_ceiling(adler_lane_vectors_consumed(4, (int32)(uint32)__rust_mir_62_remaining)) by"
+                "have to_integer({field}_vec.0[{lane}]) <= adler_lane_{field}_ceiling(adler_lane_vectors_consumed(4, ((__rust_mir_62_remaining as u32) as i32))) by"
             );
             let changed = post_step.replacen(
                 &bound,
-                &format!("have to_integer({field}_vec._0[{lane}]) <= 0 by"),
+                &format!("have to_integer({field}_vec.0[{lane}]) <= 0 by"),
                 1,
             );
             assert_ne!(post_step, changed);
@@ -1373,13 +1373,13 @@ fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
     }
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "have to_integer(b_vec._0[3]) + to_integer(a_vec._0[3]) <= 4294967295 by",
-        "have to_integer(b_vec._0[3]) + to_integer(a_vec._0[3]) <= 254 by",
+        "have to_integer(b_vec.0[3]) + to_integer(a_vec.0[3]) <= 4294967295 by",
+        "have to_integer(b_vec.0[3]) + to_integer(a_vec.0[3]) <= 254 by",
     );
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "# Both actual helper results satisfy the ceiling at next()'s new state.\n   have (int32)(uint32)__rust_mir_62_remaining == at(lane_head, (int32)(uint32)__rust_mir_62_remaining) - 4 by",
-        "# Both actual helper results satisfy the ceiling at next()'s new state.\n   have (int32)(uint32)__rust_mir_62_remaining == at(lane_head, (int32)(uint32)__rust_mir_62_remaining) by",
+        "# Both actual helper results satisfy the ceiling at next()'s new state.\n       have ((__rust_mir_62_remaining as u32) as i32) == at(lane_head, ((__rust_mir_62_remaining as u32) as i32)) - 4",
+        "# Both actual helper results satisfy the ceiling at next()'s new state.\n       have ((__rust_mir_62_remaining as u32) as i32) == at(lane_head, ((__rust_mir_62_remaining as u32) as i32))",
     );
 }
 
@@ -1392,16 +1392,16 @@ fn charon_adler2_four_byte_compute_rejects_false_vector_loop_induction() {
             "decreases 4 - __rust_mir_62_remaining;",
         ),
         (
-            "invariant (int32)(uint32)__rust_mir_62_remaining % 4 == 0;",
-            "invariant (int32)(uint32)__rust_mir_62_remaining % 4 == 1;",
+            "invariant ((__rust_mir_62_remaining as u32) as i32) % 4 == 0;",
+            "invariant ((__rust_mir_62_remaining as u32) as i32) % 4 == 1;",
         ),
         (
-            "invariant (int32)(uint32)__rust_mir_62_remaining == 0 implies a_vec._0[3] == old((uint32)bytes[3]);",
-            "invariant (int32)(uint32)__rust_mir_62_remaining == 0 implies a_vec._0[3] == old((uint32)bytes[2]);",
+            "invariant ((__rust_mir_62_remaining as u32) as i32) == 0 implies a_vec.0[3] == old((bytes[3] as u32));",
+            "invariant ((__rust_mir_62_remaining as u32) as i32) == 0 implies a_vec.0[3] == old((bytes[2] as u32));",
         ),
         (
-            "invariant b_vec._0[3] <= 255u32;",
-            "invariant b_vec._0[3] <= 254u32;",
+            "invariant b_vec.0[3] <= 255u32;",
+            "invariant b_vec.0[3] <= 254u32;",
         ),
     ] {
         reject_compute(FOUR_BYTE_COMPUTE, before, after);
@@ -1417,11 +1417,11 @@ fn charon_adler2_four_byte_compute_tools_recheck_original_contract() {
 #[test]
 #[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_batch_compute_rejects_missing_view_and_full_outer_batch() {
-    reject_compute(SMALL_BATCH_COMPUTE, " views bytes[0..bytes_len];", "");
+    reject_compute(SMALL_BATCH_COMPUTE, " views *bytes;", "");
     reject_compute(
         SMALL_BATCH_COMPUTE,
-        " requires bytes_len <= 22207u64;\n requires bytes_len < 22208u64;",
-        " requires bytes_len <= 22208u64;",
+        " requires bytes.len() <= 22207u64;\n     requires bytes.len() < 22208u64;",
+        " requires bytes.len() <= 22208u64;",
     );
 }
 
@@ -1441,24 +1441,24 @@ fn charon_adler2_small_batch_compute_proves_original_body() {
 fn charon_adler2_small_batch_compute_rejects_wrong_constructor_input_positions() {
     reject_compute(
         SMALL_BATCH_COMPUTE,
-        "have __rust_mir_69 == bytes + ((bytes_len - bytes_len % 4u64) - __rust_mir_62_remaining - 4u64) by",
-        "have __rust_mir_69 == bytes + ((bytes_len - bytes_len % 4u64) - __rust_mir_62_remaining - 3u64) by",
+        "have __rust_mir_69 == bytes + ((bytes.len() - bytes.len() % 4u64) - __rust_mir_62_remaining - 4u64) by",
+        "have __rust_mir_69 == bytes + ((bytes.len() - bytes.len() % 4u64) - __rust_mir_62_remaining - 3u64) by",
     );
     reject_compute(
         SMALL_BATCH_COMPUTE,
-        "to_integer(at(vector_a, __rust_mir_68._0[3])) == to_integer((int32)bytes[(((int32)(uint32)(bytes_len - bytes_len % 4u64) - (int32)(uint32)__rust_mir_62_remaining) - 4) + 3]) by",
-        "to_integer(at(vector_a, __rust_mir_68._0[3])) == to_integer((int32)bytes[(((int32)(uint32)(bytes_len - bytes_len % 4u64) - (int32)(uint32)__rust_mir_62_remaining) - 4) + 2]) by",
+        "to_integer(at(vector_a, __rust_mir_68.0[3])) == to_integer((bytes[(((((bytes.len() - bytes.len() % 4u64) as u32) as i32) - ((__rust_mir_62_remaining as u32) as i32)) - 4) + 3] as i32)) by",
+        "to_integer(at(vector_a, __rust_mir_68.0[3])) == to_integer((bytes[(((((bytes.len() - bytes.len() % 4u64) as u32) as i32) - ((__rust_mir_62_remaining as u32) as i32)) - 4) + 2] as i32)) by",
     );
 }
 
 #[test]
 #[ignore = "nightly: original vector-prefix A recurrence and seed rejections"]
 fn charon_adler2_small_batch_compute_rejects_false_vector_prefix_a() {
-    let total = "(int32)(uint32)(bytes_len - bytes_len % 4u64)";
-    let remaining = "(int32)(uint32)__rust_mir_62_remaining";
+    let total = "(((bytes.len() - bytes.len() % 4u64) as u32) as i32)";
+    let remaining = "((__rust_mir_62_remaining as u32) as i32)";
     let previous = format!("(({total} - {remaining}) - 4)");
-    let representative = "adler_lane_a(to_integer(a), to_integer(a_vec._0[0]), to_integer(a_vec._0[1]), to_integer(a_vec._0[2]), to_integer(a_vec._0[3]))";
-    let old_representative = "adler_lane_a(to_integer(a), to_integer(at(vector_a, a_vec._0[0])), to_integer(at(vector_a, a_vec._0[1])), to_integer(at(vector_a, a_vec._0[2])), to_integer(at(vector_a, a_vec._0[3])))";
+    let representative = "adler_lane_a(to_integer(a), to_integer(a_vec.0[0]), to_integer(a_vec.0[1]), to_integer(a_vec.0[2]), to_integer(a_vec.0[3]))";
+    let old_representative = "adler_lane_a(to_integer(a), to_integer(at(vector_a, a_vec.0[0])), to_integer(at(vector_a, a_vec.0[1])), to_integer(at(vector_a, a_vec.0[2])), to_integer(at(vector_a, a_vec.0[3])))";
     let bytes = format!(
         "to_integer((int32)bytes[{previous}]) + to_integer((int32)bytes[{previous} + 1]) + to_integer((int32)bytes[{previous} + 2]) + to_integer((int32)bytes[{previous} + 3])"
     );
@@ -1484,17 +1484,17 @@ fn charon_adler2_small_batch_compute_rejects_false_vector_prefix_a() {
 #[test]
 #[ignore = "nightly: original vector-prefix B weights and deferred seed rejections"]
 fn charon_adler2_small_batch_compute_rejects_false_vector_prefix_b() {
-    let total = "(int32)(uint32)(bytes_len - bytes_len % 4u64)";
-    let remaining = "(int32)(uint32)__rust_mir_62_remaining";
+    let total = "(((bytes.len() - bytes.len() % 4u64) as u32) as i32)";
+    let remaining = "((__rust_mir_62_remaining as u32) as i32)";
     let prefix = format!("({total} - {remaining})");
     let previous = format!("({prefix} - 4)");
     let representative = format!(
-        "adler_lane_b(to_integer(b) + to_integer({prefix}) * to_integer(a), to_integer(a_vec._0[1]), to_integer(a_vec._0[2]), to_integer(a_vec._0[3]), to_integer(b_vec._0[0]), to_integer(b_vec._0[1]), to_integer(b_vec._0[2]), to_integer(b_vec._0[3]))"
+        "adler_lane_b(to_integer(b) + to_integer({prefix}) * to_integer(a), to_integer(a_vec.0[1]), to_integer(a_vec.0[2]), to_integer(a_vec.0[3]), to_integer(b_vec.0[0]), to_integer(b_vec.0[1]), to_integer(b_vec.0[2]), to_integer(b_vec.0[3]))"
     );
     let old_representative = format!(
-        "adler_lane_b(to_integer(b) + to_integer({previous}) * to_integer(a), to_integer(at(vector_a, a_vec._0[1])), to_integer(at(vector_a, a_vec._0[2])), to_integer(at(vector_a, a_vec._0[3])), to_integer(at(vector_a, b_vec._0[0])), to_integer(at(vector_a, b_vec._0[1])), to_integer(at(vector_a, b_vec._0[2])), to_integer(at(vector_a, b_vec._0[3])))"
+        "adler_lane_b(to_integer(b) + to_integer({previous}) * to_integer(a), to_integer(at(vector_a, a_vec.0[1])), to_integer(at(vector_a, a_vec.0[2])), to_integer(at(vector_a, a_vec.0[3])), to_integer(at(vector_a, b_vec.0[0])), to_integer(at(vector_a, b_vec.0[1])), to_integer(at(vector_a, b_vec.0[2])), to_integer(at(vector_a, b_vec.0[3])))"
     );
-    let old_a = "adler_lane_a(to_integer(a), to_integer(at(vector_a, a_vec._0[0])), to_integer(at(vector_a, a_vec._0[1])), to_integer(at(vector_a, a_vec._0[2])), to_integer(at(vector_a, a_vec._0[3])))";
+    let old_a = "adler_lane_a(to_integer(a), to_integer(at(vector_a, a_vec.0[0])), to_integer(at(vector_a, a_vec.0[1])), to_integer(at(vector_a, a_vec.0[2])), to_integer(at(vector_a, a_vec.0[3])))";
     let first_byte = format!("to_integer((int32)bytes[{previous}])");
     let weighted = format!(
         "(4 * {first_byte} + 3 * to_integer((int32)bytes[{previous} + 1]) + 2 * to_integer((int32)bytes[{previous} + 2]) + to_integer((int32)bytes[{previous} + 3]))"
@@ -1519,17 +1519,17 @@ fn charon_adler2_small_batch_compute_rejects_false_vector_prefix_b() {
 #[test]
 #[ignore = "nightly: original A lane reduction and scalar recombination rejections"]
 fn charon_adler2_small_batch_compute_rejects_false_recombined_prefix_a() {
-    let total = "(int32)(uint32)(bytes_len - bytes_len % 4u64)";
+    let total = "(((bytes.len() - bytes.len() % 4u64) as u32) as i32)";
     let seed = "to_integer(at(vector_prefix, a))";
     let sum = format!(
-        "{seed} + to_integer(a_vec._0[0]) + to_integer(a_vec._0[1]) + to_integer(a_vec._0[2]) + to_integer(a_vec._0[3])"
+        "{seed} + to_integer(a_vec.0[0]) + to_integer(a_vec.0[1]) + to_integer(a_vec.0[2]) + to_integer(a_vec.0[3])"
     );
     reject_compute(
         SMALL_BATCH_COMPUTE,
         &format!("have to_integer(a) == {sum} by"),
         &format!(
             "have to_integer(a) == {} by",
-            sum.replace("a_vec._0[3]", "a_vec._0[2]")
+            sum.replace("a_vec.0[3]", "a_vec.0[2]")
         ),
     );
     reject_compute(
@@ -1546,15 +1546,15 @@ fn charon_adler2_small_batch_compute_rejects_false_recombined_prefix_a() {
 #[test]
 #[ignore = "nightly: original B reduction and weighted scalar recombination rejections"]
 fn charon_adler2_small_batch_compute_rejects_false_recombined_prefix_b() {
-    let total = "(int32)(uint32)(bytes_len - bytes_len % 4u64)";
+    let total = "(((bytes.len() - bytes.len() % 4u64) as u32) as i32)";
     let a_seed = "to_integer(at(vector_prefix, a))";
     let b_seed = "to_integer(at(vector_prefix, b))";
-    let weighted = "to_integer(at(weighted_b, b_vec._0[3])) * 4 + (65521 - to_integer(at(weighted_b, a_vec._0[3]))) * 3";
+    let weighted = "to_integer(at(weighted_b, b_vec.0[3])) * 4 + (65521 - to_integer(at(weighted_b, a_vec.0[3]))) * 3";
     reject_compute(
         SMALL_BATCH_COMPUTE,
-        &format!("have to_integer(b_vec._0[3]) == {weighted} by"),
+        &format!("have to_integer(b_vec.0[3]) == {weighted} by"),
         &format!(
-            "have to_integer(b_vec._0[3]) == {} by",
+            "have to_integer(b_vec.0[3]) == {} by",
             weighted.replace(" * 3", " * 2")
         ),
     );
@@ -1574,7 +1574,7 @@ fn charon_adler2_small_batch_compute_rejects_false_recombined_prefix_b() {
 fn charon_adler2_small_batch_compute_requires_canonical_a() {
     reject_compute(
         SMALL_BATCH_COMPUTE,
-        " requires (uint32)self->a <= 65520u32;",
+        " requires (self.a as u32) <= 65520u32;",
         "",
     );
 }
@@ -1584,7 +1584,7 @@ fn charon_adler2_small_batch_compute_requires_canonical_a() {
 fn charon_adler2_small_batch_compute_requires_canonical_b() {
     reject_compute(
         SMALL_BATCH_COMPUTE,
-        " requires (uint32)self->b <= 65520u32;",
+        " requires (self.b as u32) <= 65520u32;",
         "",
     );
 }
@@ -1594,11 +1594,11 @@ fn charon_adler2_small_batch_compute_requires_canonical_b() {
 fn charon_adler2_small_batch_compute_rejects_false_induction_and_final_bounds() {
     for (before, after) in [
         (
-            "have __rust_mir_62_remaining == bytes_len - bytes_len % 4u64 by { simp(); }",
-            "have __rust_mir_62_remaining == (bytes_len - bytes_len % 4u64) + 4u64 by { assumption(); }",
+            "have __rust_mir_62_remaining == bytes.len() - bytes.len() % 4u64;",
+            "have __rust_mir_62_remaining == (bytes.len() - bytes.len() % 4u64) + 4u64 by assumption();",
         ),
-        ("ensures self->a < 65521;", "ensures self->a < 1;"),
-        ("ensures self->b < 65521;", "ensures self->b < 1;"),
+        ("ensures self.a < 65521;", "ensures self.a < 1;"),
+        ("ensures self.b < 65521;", "ensures self.b < 1;"),
     ] {
         reject_compute(SMALL_BATCH_COMPUTE, before, after);
     }
@@ -1609,12 +1609,12 @@ fn charon_adler2_small_batch_compute_rejects_false_induction_and_final_bounds() 
 fn charon_adler2_small_batch_compute_rejects_false_tail_state_and_ranking() {
     for (before, after) in [
         (
-            "have __rust_mir_138_cursor == remainder by { normalize(); }",
-            "have __rust_mir_138_cursor == remainder + 1 by { assumption(); }",
+            "have __rust_mir_138_cursor == remainder by normalize();",
+            "have __rust_mir_138_cursor == remainder + 1 by assumption();",
         ),
         (
-            "have __rust_mir_138_remaining < at(tail_head, __rust_mir_138_remaining) by { arithmetic() using { __rust_mir_138_remaining == at(tail_head, __rust_mir_138_remaining) - 1u64; 1u64 <= at(tail_head, __rust_mir_138_remaining); } }",
-            "have at(tail_head, __rust_mir_138_remaining) < __rust_mir_138_remaining by { assumption(); }",
+            "have __rust_mir_138_remaining < at(tail_head, __rust_mir_138_remaining) by arithmetic() using { __rust_mir_138_remaining == at(tail_head, __rust_mir_138_remaining) - 1u64; 1u64 <= at(tail_head, __rust_mir_138_remaining); };",
+            "have at(tail_head, __rust_mir_138_remaining) < __rust_mir_138_remaining by assumption();",
         ),
     ] {
         reject_compute(SMALL_BATCH_COMPUTE, before, after);
@@ -1625,7 +1625,7 @@ fn charon_adler2_small_batch_compute_rejects_false_tail_state_and_ranking() {
 #[ignore = "nightly: arbitrary small-batch proof-tool agreement and expansion"]
 fn charon_adler2_small_batch_compute_tools_recheck_original_contract() {
     let p = compute_project(SMALL_BATCH_COMPUTE);
-    let claim = "__rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute.contract";
+    let claim = "adler2::Adler32::compute.contract";
     for command in ["verify", "profile"] {
         assert_cli(&p, &[command]);
     }
@@ -1919,20 +1919,20 @@ const STORED_GUARD_PROOF: &str = r#"int adler_stored_guard(int remaining, uint64
   invariant remaining % 22208 == 0;
   invariant size == 22208u64;
   preserve by {
-   have 0 < remaining by { simp(); }
+   have 0 < remaining;
    apply(adler_outer_nonempty_remaining(remaining)) using { 0 < remaining; remaining % 22208 == 0; }
    mark head;
    apply(adler_outer_remaining_step(at(head, remaining), at(head, remaining))) using { 0 <= at(head, remaining); at(head, remaining) <= at(head, remaining); 22208 <= at(head, remaining); }
    apply(adler_outer_remaining_step_divisible(at(head, remaining))) using { 22208 <= at(head, remaining); at(head, remaining) % 22208 == 0; }
    step();
-   have remaining == at(head, remaining) - 22208 by { simp(); }
+   have remaining == at(head, remaining) - 22208;
    have 0 <= remaining by { rewrite(remaining == at(head, remaining) - 22208); assumption(); }
    have remaining % 22208 == 0 by { rewrite(remaining == at(head, remaining) - 22208); assumption(); }
    have remaining < at(head, remaining) by { rewrite(remaining == at(head, remaining) - 22208); assumption(); }
-   close_invariants by { simp(); }
+   close_invariants by simp();
   }
  }
- have not (0 < remaining) or not ((int32)(uint32)size <= remaining) by { assumption(); }
+ have not (0 < remaining) or not ((int32)(uint32)size <= remaining) by assumption();
  apply(adler_outer_exhausted_remaining(remaining, size)) using { 0 <= remaining; remaining % 22208 == 0; size == 22208u64; not (0 < remaining) or not ((int32)(uint32)size <= remaining); }
  execute(); simp();
 }
@@ -2040,10 +2040,10 @@ fn charon_adler2_general_compute_proves_original_body() {
 #[ignore = "nightly: general computation authority, seeds and final bounds"]
 fn charon_adler2_general_compute_rejects_invalid_contracts() {
     for (before, after) in [
-        (" views bytes[0..bytes_len];", ""),
-        (" requires (uint32)self->a <= 65520u32;", ""),
-        (" requires (uint32)self->b <= 65520u32;", ""),
-        ("ensures self->a < 65521;", "ensures self->a < 1;"),
+        (" views *bytes;", ""),
+        (" requires (self.a as u32) <= 65520u32;", ""),
+        (" requires (self.b as u32) <= 65520u32;", ""),
+        ("ensures self.a < 65521;", "ensures self.a < 1;"),
     ] {
         reject_compute(GENERAL_COMPUTE, before, after);
     }
@@ -2053,7 +2053,7 @@ fn charon_adler2_general_compute_rejects_invalid_contracts() {
 #[ignore = "nightly: general whole-body proof-tool agreement and expansion"]
 fn charon_adler2_general_compute_tools_recheck_original_contract() {
     let p = compute_project(GENERAL_COMPUTE);
-    let claim = "__rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute.contract";
+    let claim = "adler2::Adler32::compute.contract";
     for command in ["verify", "profile"] {
         assert_cli(&p, &[command]);
     }
@@ -2067,12 +2067,12 @@ fn charon_adler2_general_compute_tools_recheck_original_contract() {
 fn charon_adler2_general_compute_rejects_false_iterator_state() {
     for (before, after) in [
         (
-            "have __rust_mir_27_cursor == old(bytes) by { simp(); }",
-            "have __rust_mir_27_cursor == old(bytes) + 1 by { assumption(); }",
+            "have __rust_mir_27_cursor == old(bytes);",
+            "have __rust_mir_27_cursor == old(bytes) + 1 by assumption();",
         ),
         (
-            "have __rust_mir_138_cursor == remainder by { simp(); }",
-            "have __rust_mir_138_cursor == remainder + 1 by { assumption(); }",
+            "have __rust_mir_138_cursor == remainder;",
+            "have __rust_mir_138_cursor == remainder + 1 by assumption();",
         ),
     ] {
         reject_compute(GENERAL_COMPUTE, before, after);
@@ -2155,11 +2155,11 @@ fn charon_adler2_helpers_from_rejects_wrong_mathematical_bytes() {
         0,
         &[
             (
-                "old(to_integer((int32)bytes[3]))",
-                "old(to_integer((int32)bytes[2]))",
+                "old(to_integer((bytes[3] as i32)))",
+                "old(to_integer((bytes[2] as i32)))",
             ),
             (
-                "old(to_integer((int32)bytes[0]))",
+                "old(to_integer((bytes[0] as i32)))",
                 "old(to_integer((int32)bytes[0])) + 1",
             ),
         ],
@@ -2200,15 +2200,15 @@ fn charon_adler2_checksum_rejects_false_packing_and_missing_shared_authority() {
     let prepared = load_import(&p.config()).unwrap();
     for (before, after) in [
         (
-            "65536 * old(to_integer(self->b))",
-            "65535 * old(to_integer(self->b))",
+            "65536 * old(to_integer(self.b))",
+            "65535 * old(to_integer(self.b))",
         ),
         (
-            "+ old(to_integer(self->a));",
-            "+ old(to_integer(self->a)) + 1;",
+            "+ old(to_integer(self.a));",
+            "+ old(to_integer(self.a)) + 1;",
         ),
-        ("views self->a;", ""),
-        ("views self->b;", ""),
+        ("views self.a;", ""),
+        ("views self.b;", ""),
     ] {
         let contract = CHECKSUM.replacen(before, after, 1);
         assert_ne!(contract, CHECKSUM, "{before}");
@@ -2234,7 +2234,7 @@ fn charon_adler2_checksum_tools_recheck_original_contract() {
     for command in ["verify", "profile"] {
         assert_cli(&p, &[command]);
     }
-    let offset = source.find("have result == old(((uint32)self->b").unwrap();
+    let offset = source.find("have result == old(((self.b as u32)").unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
     let audit = Command::new(env!("CARGO_BIN_EXE_click"))
@@ -2259,7 +2259,7 @@ fn charon_adler2_checksum_tools_recheck_original_contract() {
         &[
             "expand",
             "--claim",
-            "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I8_checksum.contract",
+            "adler2::Adler32::checksum.contract",
             "--in-place",
         ],
     );
@@ -2291,7 +2291,14 @@ fn verify_public_checksum_unit(
     prepared: &click::languages::rust::PreparedRustImport,
     name: &str,
 ) -> Result<(), click::surface::ClickError> {
-    let start = source.find(&format!("{name}(")).unwrap();
+    let written_name = if name.ends_with("_default") {
+        "default"
+    } else if name == "adler2::adler32_slice" {
+        name
+    } else {
+        name.rsplit("::").next().unwrap()
+    };
+    let start = source.find(&format!("fn {written_name}(")).unwrap();
     let offset = start + source[start..].find("} by {").unwrap() + "} by {".len();
     let offset = offset + source[offset..].len() - source[offset..].trim_start().len();
     let prefix = &source[..offset];
@@ -2307,9 +2314,9 @@ fn charon_adler2_public_checksum_matches_one_byte_spec() {
     let source = public_one_byte_proof();
     for name in [
         "__rust_q_I6_adler2_I7_Adler32_default",
-        "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I3_new",
-        "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I11_write_slice",
-        "__rust_q_I6_adler2_I13_adler32_slice",
+        "adler2::Adler32::new",
+        "adler2::Adler32::write_slice",
+        "adler2::adler32_slice",
     ] {
         verify_public_checksum_unit(&source, &prepared, name).unwrap();
     }
@@ -2329,7 +2336,10 @@ fn charon_adler2_public_checksum_rejects_false_result_length_and_authority() {
             "adler_spec_checksum(data, 1, 1, 0)",
             "adler_spec_checksum(data, 1, 0, 1)",
         ),
-        ("requires data_len == 1u64;", "requires data_len == 0u64;"),
+        (
+            "requires data.len() == 1u64;",
+            "requires data.len() == 0u64;",
+        ),
         ("views data[0..1];", ""),
         (
             "ensures data[0] == old(data[0]);",
@@ -2342,9 +2352,8 @@ fn charon_adler2_public_checksum_rejects_false_result_length_and_authority() {
             "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{contract}",
             compute_proof(SINGLE_BYTE_COMPUTE)
         );
-        let error =
-            verify_public_checksum_unit(&source, &prepared, "__rust_q_I6_adler2_I13_adler32_slice")
-                .expect_err("false public result or insufficient call authority must be refused");
+        let error = verify_public_checksum_unit(&source, &prepared, "adler2::adler32_slice")
+            .expect_err("false public result or insufficient call authority must be refused");
         assert!(
             !error.message().contains("budget exhausted"),
             "{}",
@@ -2390,9 +2399,9 @@ fn charon_adler2_public_checksum_tools_recheck_original_contracts() {
     );
     for name in [
         "__rust_q_I6_adler2_I7_Adler32_default",
-        "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I3_new",
-        "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I11_write_slice",
-        "__rust_q_I6_adler2_I13_adler32_slice",
+        "adler2::Adler32::new",
+        "adler2::Adler32::write_slice",
+        "adler2::adler32_slice",
     ] {
         assert_cli(
             &p,
@@ -2436,9 +2445,9 @@ fn charon_adler2_public_boundaries_match_empty_and_four_byte_spec() {
         let source = public_boundary_proof(length);
         for name in [
             "__rust_q_I6_adler2_I7_Adler32_default",
-            "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I3_new",
-            "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I11_write_slice",
-            "__rust_q_I6_adler2_I13_adler32_slice",
+            "adler2::Adler32::new",
+            "adler2::Adler32::write_slice",
+            "adler2::adler32_slice",
         ] {
             verify_public_checksum_unit(&source, &prepared, name).unwrap();
         }
@@ -2450,8 +2459,7 @@ fn charon_adler2_public_empty_needs_no_input_byte_authority() {
     let p = adler2_helpers_project();
     let prepared = load_import(&p.config()).unwrap();
     let source = public_boundary_proof(0).replacen("views data[0..0];", "", 1);
-    verify_public_checksum_unit(&source, &prepared, "__rust_q_I6_adler2_I13_adler32_slice")
-        .unwrap();
+    verify_public_checksum_unit(&source, &prepared, "adler2::adler32_slice").unwrap();
 }
 
 #[test]
@@ -2471,9 +2479,9 @@ fn charon_adler2_public_boundaries_reject_false_result_extent_and_preservation()
                 format!("adler_spec_checksum(data, {length}, 0, 1)"),
             ),
             (
-                format!("requires data_len == {length}u64;"),
+                format!("requires data.len() == {length}u64;"),
                 format!(
-                    "requires data_len == {}u64;",
+                    "requires data.len() == {}u64;",
                     if length == 0 { 1 } else { length - 1 }
                 ),
             ),
@@ -2493,12 +2501,10 @@ fn charon_adler2_public_boundaries_reject_false_result_extent_and_preservation()
         for (before, after) in mutations {
             let source = original.replacen(&before, &after, 1);
             assert_ne!(source, original, "{before}");
-            let error = verify_public_checksum_unit(
-                &source,
-                &prepared,
-                "__rust_q_I6_adler2_I13_adler32_slice",
-            )
-            .expect_err("incorrect public checksum, extent, or byte preservation must be refused");
+            let error = verify_public_checksum_unit(&source, &prepared, "adler2::adler32_slice")
+                .expect_err(
+                    "incorrect public checksum, extent, or byte preservation must be refused",
+                );
             assert!(
                 !error.message().contains("budget exhausted"),
                 "{}",
@@ -2537,10 +2543,7 @@ fn check_public_boundary_tools(lengths: &[usize]) {
             "{}",
             String::from_utf8_lossy(&audit.stderr)
         );
-        let claims = [
-            "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I11_write_slice",
-            "__rust_q_I6_adler2_I13_adler32_slice",
-        ];
+        let claims = ["adler2::Adler32::write_slice", "adler2::adler32_slice"];
         for name in claims {
             assert_cli(
                 &p,
@@ -2571,10 +2574,7 @@ fn charon_adler2_public_serial_tails_match_two_and_three_byte_spec() {
     let prepared = load_import(&p.config()).unwrap();
     for length in [2, 3] {
         let source = public_boundary_proof(length);
-        for name in [
-            "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I11_write_slice",
-            "__rust_q_I6_adler2_I13_adler32_slice",
-        ] {
+        for name in ["adler2::Adler32::write_slice", "adler2::adler32_slice"] {
             verify_public_checksum_unit(&source, &prepared, name).unwrap();
         }
     }
@@ -2636,7 +2636,7 @@ fn charon_adler2_serial_tails_reject_false_common_fields() {
     for (contract, length) in [(TWO_BYTE_COMPUTE, 2), (THREE_BYTE_COMPUTE, 3)] {
         for (field, spec, seed) in [("a", "adler_spec_a", "1"), ("b", "adler_spec_b", "1, 0")] {
             let claim = format!(
-                "ensures to_integer(self->{field}) == old({spec}(bytes, {length}, {seed}));"
+                "ensures to_integer(self.{field}) == old({spec}(bytes, {length}, {seed}));"
             );
             reject_compute(contract, &claim, &claim.replace("));", ")) + 1;"));
         }

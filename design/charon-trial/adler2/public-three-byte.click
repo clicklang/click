@@ -1,20 +1,22 @@
 # Three-byte public API fragment; the harness adds public-constructors.click.
-void __rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I11_write_slice(struct __rust_q_I6_adler2_I7_Adler32* self, const uint8* bytes, uint64 bytes_len) {
- requires bytes_len == 3u64;
- requires self->a == 1;
- requires self->b == 0;
- owns self->a;
- owns self->b;
- views bytes[0..3];
- ensures to_integer(self->a) == old(adler_spec_a(bytes, 3, 1));
- ensures to_integer(self->b) == old(adler_spec_b(bytes, 3, 1, 0));
- ensures bytes[0] == old(bytes[0]);
- ensures bytes[1] == old(bytes[1]);
- ensures bytes[2] == old(bytes[2]);
-} by { execute(); simp(); }
+impl adler2::Adler32 {
+    fn write_slice(&mut self, bytes: &[u8]) {
+     requires bytes.len() == 3u64;
+     requires self.a == 1;
+     requires self.b == 0;
+     owns self.a;
+     owns self.b;
+     views bytes[0..3];
+     ensures to_integer(self.a) == old(adler_spec_a(bytes, 3, 1));
+     ensures to_integer(self.b) == old(adler_spec_b(bytes, 3, 1, 0));
+     ensures bytes[0] == old(bytes[0]);
+     ensures bytes[1] == old(bytes[1]);
+     ensures bytes[2] == old(bytes[2]);
+    } by { execute(); simp(); }
+}
 
-uint32 __rust_q_I6_adler2_I13_adler32_slice(const uint8* data, uint64 data_len) {
- requires data_len == 3u64;
+fn adler2::adler32_slice(data: &[u8]) -> u32 {
+ requires data.len() == 3u64;
  views data[0..3];
  ensures to_integer(result) == old(adler_spec_checksum(data, 3, 1, 0));
  ensures data[0] == old(data[0]);
@@ -22,8 +24,8 @@ uint32 __rust_q_I6_adler2_I13_adler32_slice(const uint8* data, uint64 data_len) 
  ensures data[2] == old(data[2]);
 } by {
  execute_until(assignment(__rust_mir_0, 0));
- have to_integer(h.a) == old(adler_spec_a(data, 3, 1)) by { simp(); }
- have to_integer(h.b) == old(adler_spec_b(data, 3, 1, 0)) by { simp(); }
+ have to_integer(h.a) == old(adler_spec_a(data, 3, 1));
+ have to_integer(h.b) == old(adler_spec_b(data, 3, 1, 0));
  have 65536 * to_integer(h.b) + to_integer(h.a) == old(adler_spec_checksum(data, 3, 1, 0)) by {
   unfold(adler_spec_checksum(data, 3, 1, 0));
   rewrite(to_integer(h.a) == old(adler_spec_a(data, 3, 1)));
@@ -31,13 +33,11 @@ uint32 __rust_q_I6_adler2_I13_adler32_slice(const uint8* data, uint64 data_len) 
   simp();
  }
  step();
- have to_integer(__rust_mir_0) == 65536 * to_integer(h.b) + to_integer(h.a) by { simp(); }
- have to_integer(__rust_mir_0) == old(adler_spec_checksum(data, 3, 1, 0)) by {
-  arithmetic() using {
+ have to_integer(__rust_mir_0) == 65536 * to_integer(h.b) + to_integer(h.a);
+ have to_integer(__rust_mir_0) == old(adler_spec_checksum(data, 3, 1, 0)) by arithmetic() using {
    to_integer(__rust_mir_0) == 65536 * to_integer(h.b) + to_integer(h.a);
    65536 * to_integer(h.b) + to_integer(h.a) == old(adler_spec_checksum(data, 3, 1, 0));
-  }
- }
+  };
  execute();
  simp();
 }

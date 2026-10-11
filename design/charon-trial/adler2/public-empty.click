@@ -1,17 +1,19 @@
 # Empty public API fragment; no input-byte authority or dereference is needed.
-void __rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I11_write_slice(struct __rust_q_I6_adler2_I7_Adler32* self, const uint8* bytes, uint64 bytes_len) {
- requires bytes_len == 0u64;
- requires self->a == 1;
- requires self->b == 0;
- owns self->a;
- owns self->b;
- views bytes[0..0];
- ensures self->a == 1;
- ensures self->b == 0;
-} by { execute(); simp(); }
+impl adler2::Adler32 {
+    fn write_slice(&mut self, bytes: &[u8]) {
+     requires bytes.len() == 0u64;
+     requires self.a == 1;
+     requires self.b == 0;
+     owns self.a;
+     owns self.b;
+     views bytes[0..0];
+     ensures self.a == 1;
+     ensures self.b == 0;
+    } by { execute(); simp(); }
+}
 
-uint32 __rust_q_I6_adler2_I13_adler32_slice(const uint8* data, uint64 data_len) {
- requires data_len == 0u64;
+fn adler2::adler32_slice(data: &[u8]) -> u32 {
+ requires data.len() == 0u64;
  views data[0..0];
  ensures to_integer(result) == old(adler_spec_checksum(data, 0, 1, 0));
 } by {
@@ -34,13 +36,11 @@ uint32 __rust_q_I6_adler2_I13_adler32_slice(const uint8* data, uint64 data_len) 
   simp();
  }
  step();
- have to_integer(__rust_mir_0) == 65536 * to_integer(h.b) + to_integer(h.a) by { simp(); }
- have to_integer(__rust_mir_0) == old(adler_spec_checksum(data, 0, 1, 0)) by {
-  arithmetic() using {
+ have to_integer(__rust_mir_0) == 65536 * to_integer(h.b) + to_integer(h.a);
+ have to_integer(__rust_mir_0) == old(adler_spec_checksum(data, 0, 1, 0)) by arithmetic() using {
    to_integer(__rust_mir_0) == 65536 * to_integer(h.b) + to_integer(h.a);
    65536 * to_integer(h.b) + to_integer(h.a) == old(adler_spec_checksum(data, 0, 1, 0));
-  }
- }
+  };
  execute();
  simp();
 }

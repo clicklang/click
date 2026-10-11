@@ -114,7 +114,7 @@ theorem adler_tail_remaining_progress(total: int32, remaining: int32) {
  requires remaining <= total;
  requires total <= 3;
  ensures adler_tail_consumed(total, remaining - 1) == adler_tail_consumed(total, remaining) + 1 by {
-  have defined(remaining - 1) by { simp() using { 1 <= remaining; remaining <= total; total <= 3; } }
+  have defined(remaining - 1) by simp() using { 1 <= remaining; remaining <= total; total <= 3; };
   apply(int32_subtract_to_integer(remaining, 1)) using { defined(remaining - 1); }
   unfold(adler_tail_consumed(total, remaining - 1));
   unfold(adler_tail_consumed(total, remaining));

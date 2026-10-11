@@ -2,13 +2,10 @@
 
 Priority: P1.
 
-A Rust sidecar looks like Rust (decided 2026-10-08). Every Rust sidecar in
-the repository is written that way except the ones under
-`design/charon-trial/adler2/`, which still use the C-shaped spelling: C
-types and parameter lists, the importer's names
-(`__rust_q_I6_adler2_I4_algo_I5_U32X4`), `->`, an explicit `bytes_len`, and
-the long proof forms. While they do, Click has to accept both spellings
-for a Rust source, so a Rust sidecar can still be written two ways.
+A Rust sidecar looks like Rust (decided 2026-10-08). The active Adler
+contracts use Rust signatures, paths, methods, slices, fields, casts, and short
+proof forms. Click still accepts the older C-shaped function spelling for a
+Rust source; remove that compatibility.
 
 ## Violated invariant
 
@@ -17,31 +14,14 @@ is written as Rust writes its signature, and only that way.
 
 ## Work
 
-1. Convert each Adler sidecar to Rust syntax (`docs/reference/rust.md`,
-   "Signatures in Rust syntax"):
-   - `fn` signatures with Rust types: `fn adler32_slice(data: &[u8]) -> u32`;
-   - methods in `impl` blocks with `self`, `&self` or `&mut self`;
-     operator methods as trait impls, `impl MulAssign<u32> for U32X4`;
-   - items by path: `adler2::algo::U32X4`, `adler2::Adler32::compute`;
-   - a slice as one name, `bytes.len()` and `*bytes`, with no `bytes_len`;
-   - fields through a reference as `p.f`, not `p->f`; casts as `x as u32`;
-   - the short proof forms: `have P;` for `have P by { simp(); }` and
-     `by T(args);` for a one-step proof.
-
-   The tests in `tests/rust_import/adler2_helpers.rs` cut `helpers.click`
-   apart by its text and pass `--claim` with importer names. Update them in
-   the same change; `--claim` and `--trace-proof` already accept the Rust
-   path (`adler2::Adler32::compute.contract`).
-
-2. Then refuse the C-shaped spelling for a Rust source, in its own change:
-   - the parser refuses a C-shaped signature and `->` in a sidecar whose
-     source is `.rs`, naming the `fn` spelling to write;
-   - `a_rust_sidecar_states_its_signature_in_rust_syntax` in
-     `src/surface/tests/surface_syntax.rs` compares the two spellings
-     today; it becomes the refusal's test;
-   - `docs/reference/rust.md` drops the sentence that keeps the C-shaped
-     spelling until the Adler sidecars are converted, and the note in
-     `design/charon-trial/adler2/README.md` goes.
+Refuse the C-shaped spelling for a Rust source:
+- the parser refuses a C-shaped signature and `->` in a sidecar whose
+  source is `.rs`, naming the `fn` spelling to write;
+- `a_rust_sidecar_states_its_signature_in_rust_syntax` in
+  `src/surface/tests/surface_syntax.rs` compares the two spellings
+  today; it becomes the refusal's test;
+- `docs/reference/rust.md` drops the sentence accepting the C-shaped
+  spelling, and the compatibility note in the Adler README goes.
 
 Not converted: the five hash-pinned originals listed in
 `design/charon-trial/parity.json`, and `into-slices/sum.click`, which a test
