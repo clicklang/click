@@ -10,7 +10,7 @@ counts, checked signed observations, and shared input views throughout all loops
 The 2,147,483,647-byte limit comes from the bound library
 ([`bounded-count.click`](bounded-count.click) and the proofs built on it), which
 states counts over `int32` and reads each `usize` count through
-`(int32)(uint32)`. The kernel no longer needs it: a 64-bit count bounds a range
+`((count as u32) as i32)`. The kernel no longer needs it: a 64-bit count bounds a range
 and indexes memory directly (`design/typed-indices.md`), so restating the
 library over `uint64` would lift the limit.
 

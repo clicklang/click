@@ -509,16 +509,13 @@ fn charon_adler2_helpers_mul_rejects_false_observations_lane_3() {
 fn recheck_helper_tools(index: usize, commands: &[&str], expand: bool) {
     let p = adler2_helpers_project();
     let proof = helper_proof(index);
-    let claim = proof
-        .lines()
-        .find(|line| line.starts_with("struct ") || line.starts_with("void "))
-        .unwrap()
-        .split_once('(')
-        .unwrap()
-        .0
-        .split_whitespace()
-        .last()
-        .unwrap();
+    let parsed = click::surface::parse(&proof).unwrap();
+    let claim = if index == 0 {
+        "adler2::algo::U32X4::from"
+    } else {
+        // Operator labels retain the importer's trait identity.
+        parsed.function_blocks()[0].signature().name()
+    };
     fs::write(p.root.join("borrow.click"), &proof).unwrap();
     for command in commands {
         assert_cli(&p, &[command]);
