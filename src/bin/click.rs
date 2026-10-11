@@ -650,7 +650,7 @@ mod tests {
             traced.contains("requires: exists (x: int32) { x == 0 }"),
             "{traced}"
         );
-        assert!(!traced.contains("\ngoal:"), "{traced}");
+        assert_eq!(traced.matches("\ngoal:").count(), 1, "{traced}");
         assert!(
             traced.contains("tactic@5:\n  obtain (x: int32) {\n      x == 0\n  };"),
             "{traced}"
@@ -817,10 +817,7 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
             sidecar.display().to_string(),
         ])
         .unwrap_err();
-        assert!(
-            report.contains("goal: exists (z: int32) { z == a[cur] }"),
-            "{report}"
-        );
+        assert!(report.contains("goal: ∃z:CInt32."), "{report}");
         assert!(!report.contains("recent premises"), "{report}");
         assert!(report.contains("adds: r == 1"), "{report}");
         assert!(
@@ -829,23 +826,14 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
         );
         // Both facts are now printed. Keep the saved read's snapshot visible
         // in the implication rather than confusing it with the current goal.
-        assert!(
-            report.contains("adds (internal): validated-composition"),
-            "{report}"
-        );
+        assert!(report.contains("adds: validated-composition"), "{report}");
         assert!(report.contains("is false ⇒ ∃z:CInt32."), "{report}");
         assert!(report.contains("read<Bits32>(snapshot#"), "{report}");
         assert!(
             !report.contains("checked fact(s) with no exact Click spelling"),
             "{report}"
         );
-        assert_eq!(
-            report
-                .matches("goal: exists (z: int32) { z == a[cur] }")
-                .count(),
-            1,
-            "{report}"
-        );
+        assert_eq!(report.matches("goal: ∃z:CInt32.").count(), 1, "{report}");
         assert!(
             !report.contains("snapshot identity (internal):"),
             "{report}"
@@ -877,7 +865,10 @@ theorem bad(p: int32*, q: int32*) {
         )
         .unwrap();
         let ordinary = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-        assert!(!ordinary.contains("checked goal:"), "{ordinary}");
+        let ordinary_goal = ordinary
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("goal: "))
+            .unwrap();
         let report = entry([
             "verify".to_string(),
             "--trace-proof".to_string(),
@@ -885,12 +876,12 @@ theorem bad(p: int32*, q: int32*) {
             sidecar.display().to_string(),
         ])
         .unwrap_err();
-        assert!(report.contains("goal: tag(q) == 1"), "{report}");
-        assert_eq!(report.matches("checked goal:").count(), 1, "{report}");
-        let checked = report
-            .lines()
-            .find(|line| line.contains("checked goal:"))
-            .unwrap();
+        assert!(
+            report.contains(&format!("goal: {ordinary_goal}")),
+            "{report}"
+        );
+        assert_eq!(report.matches("goal:").count(), 1, "{report}");
+        let checked = report.lines().find(|line| line.contains("goal:")).unwrap();
         assert!(checked.contains("tag("), "{report}");
         assert!(checked.contains("array-ref<int32>(snapshot#1,"), "{report}");
         assert!(checked.contains("ptr<int32*>("), "{report}");

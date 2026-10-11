@@ -37,5 +37,5 @@ uint32 pick(uint32 x) {
 ```expect
 fail: undecided condition:
   successor 1: `x < 4 (unsigned)`
-  successor 2: `x < 4 (unsigned) is false`
+  successor 2: `x >= 4 (unsigned)`
 ```

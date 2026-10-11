@@ -23,9 +23,9 @@ const MAX_BYTES: usize = 32 * 1024;
 const MAX_NODES: usize = 4096;
 const MAX_DEPTH: usize = 96;
 /// How many distinct snapshots one report labels before it stops comparing.
-/// Structural equality is bounded independently of identity retention. Trace
-/// facts may name more states through constant-time retained-root identities;
-/// ordinary diagnostic callers still stop labeling at this comparison cap.
+/// Structural equality is bounded independently of identity retention.
+/// Proposition displays may name more states through constant-time retained
+/// root identities; low-level expression displays stop at this comparison cap.
 const MAX_SNAPSHOT_LABELS: usize = 32;
 
 /// Report-local labels for memory snapshots and symbolic values.
@@ -79,6 +79,9 @@ impl SnapshotLabels {
             let crate::kernel::CExpression::Value(value) = argument else {
                 continue;
             };
+            if let crate::kernel::CValue::Pointer(pointer) = value {
+                labels.immutable_pointer_name(pointer.pointer(), parameter.name());
+            }
             let term = match value {
                 crate::kernel::CValue::Bool(term)
                 | crate::kernel::CValue::Int8(term)
@@ -122,6 +125,16 @@ impl SnapshotLabels {
             {
                 *name = format!("at(function.entry, {name})");
             }
+        }
+        for (pointer, name) in &mut self.pointer_sources {
+            if names.iter().any(|local| local.name() == name)
+                && !current.pointer_sources.contains_key(pointer)
+            {
+                *name = format!("at(function.entry, {name})");
+            }
+        }
+        for (pointer, name) in current.pointer_sources {
+            self.pointer_sources.entry(pointer).or_insert(name);
         }
         self.source_types.extend(current.source_types);
         for (variable, name) in current.source_names {
@@ -234,18 +247,12 @@ impl SnapshotLabels {
 /// Exact Click spelling for a bounded fact whose operands are named source
 /// values. Historical reads require their own recorded state's names and an
 /// explicit `at(...)`; unknown states and generated values do not qualify.
+#[cfg(test)]
 pub(crate) fn render_simple_click_fact_labeled(
     proposition: &Proposition,
     labels: &SnapshotLabels,
 ) -> Option<String> {
     surface::render(proposition, labels)
-}
-
-pub(crate) fn render_partial_click_fact_labeled(
-    proposition: &Proposition,
-    labels: &mut SnapshotLabels,
-) -> Option<String> {
-    surface::partial(proposition, labels)
 }
 
 fn alphabetic_label(mut index: usize) -> String {
@@ -264,7 +271,10 @@ fn alphabetic_label(mut index: usize) -> String {
 /// Render one proposition without allowing its shape or attached snapshots to
 /// determine the size of the error message.
 pub(crate) fn render_proposition(proposition: &Proposition) -> String {
-    render_proposition_labeled(proposition, &mut SnapshotLabels::ambient())
+    let mut labels = SnapshotLabels::ambient();
+    let mut text = render_proposition_labeled(proposition, &mut labels);
+    text.push_str(&labels.trace_legend());
+    text
 }
 
 type NamingTables = (
@@ -332,19 +342,21 @@ pub(crate) fn render_resource_fact_labeled(
     renderer.output
 }
 
-/// A source-facing fact using one report's names and recorded program points.
-/// An unspellable operand gets a diagnostic placeholder when its surrounding
-/// fact can be rendered; otherwise give a bounded explanation, never kernel notation.
+/// One proposition display policy for facts, requirements, and goals in both
+/// ordinary verifier errors and traces. Source-like spelling is used only when
+/// it preserves the checked identities; otherwise the typed renderer names
+/// each read's width, snapshot, and address with report-local labels.
 pub(crate) fn render_proposition_labeled(
     proposition: &Proposition,
     labels: &mut SnapshotLabels,
 ) -> String {
-    render_simple_click_fact_labeled(proposition, labels)
-        .or_else(|| render_partial_click_fact_labeled(proposition, labels))
-        .unwrap_or_else(|| "fact has no exact Click spelling at this frontier".to_owned())
+    labels.trace_labels = true;
+    surface::display(proposition, labels)
+        .unwrap_or_else(|| render_kernel_fact(proposition, labels, true))
 }
 
-/// Developer-only notation for an explicitly requested proof trace.
+/// Lower-level renderer tests exercise the bounded notation directly.
+#[cfg(test)]
 pub(crate) fn render_internal_proposition_labeled(
     proposition: &Proposition,
     labels: &mut SnapshotLabels,
@@ -352,13 +364,12 @@ pub(crate) fn render_internal_proposition_labeled(
     render_kernel_fact(proposition, labels, false)
 }
 
-/// Complete fact kinds with explicit diagnostic notation when source recovery fails.
+#[cfg(test)]
 pub(crate) fn render_trace_fact_labeled(
     proposition: &Proposition,
     labels: &mut SnapshotLabels,
 ) -> String {
-    labels.trace_labels = true;
-    render_kernel_fact(proposition, labels, true)
+    render_proposition_labeled(proposition, labels)
 }
 
 fn render_kernel_fact(
@@ -416,27 +427,6 @@ pub(crate) fn render_integer_comparison(
         (Some(left), Some(right)) => format!("{left} {operator} {right}"),
         _ => "Integer comparison has no exact Click spelling at this frontier".into(),
     }
-}
-
-/// Compact binder sort spelling shared by traces and ordinary diagnostics.
-/// The kernel's `Debug` for an algebraic sort embeds its entire constructor
-/// schema, which obscures the proposition that follows the binder.
-pub(crate) fn render_sort(sort: &Sort) -> String {
-    let mut labels = SnapshotLabels::ambient();
-    let mut renderer = Renderer {
-        output: String::with_capacity(64),
-        nodes: 0,
-        depth: 0,
-        truncated: false,
-        labels: &mut labels,
-        bound_names: Vec::new(),
-        trace_facts: false,
-    };
-    renderer.sort(sort);
-    if renderer.truncated {
-        renderer.output.push('…');
-    }
-    renderer.output
 }
 
 /// Describe a refused Integer capture: which written subterm carries an
@@ -1459,6 +1449,8 @@ impl Renderer<'_> {
         if self.trace_facts {
             let name = if p == &Pointer::null() {
                 "0".into()
+            } else if crate::surface::proof_trace::pointer_definition(p).is_some() {
+                self.labels.pointer_value_name(p)
             } else if let Some(name) = self.labels.pointer_sources.get(p) {
                 name.clone()
             } else {
@@ -1842,7 +1834,7 @@ mod tests {
         assert!(!rendered.contains("AlgebraicSchemas"), "{rendered}");
         assert_eq!(
             crate::surface::diagnostics::describe_pure_fact(&proposition, &[], &[]),
-            "existential proposition over Path<Integer>"
+            "∃path:Path<Integer>. true is true"
         );
     }
 

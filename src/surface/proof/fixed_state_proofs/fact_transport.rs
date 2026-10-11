@@ -751,15 +751,12 @@ fn describe_unreachable_fact_transport(
         "\n  effect facts relating states at this frontier (showing {} of {total}):",
         total.min(LISTED)
     ));
-    let mut omitted = false;
     for fact in transition_facts.fact_iter().take(LISTED) {
-        match render::render_simple_click_fact_labeled(fact.proposition(), labels) {
-            Some(text) => {
-                rendered.push_str("\n    ");
-                rendered.push_str(&text);
-            }
-            None => omitted = true,
-        }
+        rendered.push_str("\n    ");
+        rendered.push_str(&render::render_proposition_labeled(
+            fact.proposition(),
+            labels,
+        ));
         if let Proposition::CMemoryMutatesOnly { writes, .. } = fact.proposition() {
             for (pointer, bytes) in writes.iter().take(LISTED) {
                 if let Some((names, values)) = labels.naming_tables()
@@ -773,12 +770,14 @@ fn describe_unreachable_fact_transport(
             }
         }
     }
-    if omitted {
-        rendered.push_str("\n    some effect facts have no exact Click spelling at this frontier");
-    }
+
     if total > LISTED {
         rendered.push_str("\n    … <additional effect facts omitted>");
     }
+    rendered.push_str(&labels.trace_legend().replace(
+        "label definitions (recorded constructions, not additional facts):",
+        "effect-fact label definitions (local to the list above):",
+    ));
     rendered.push_str(
         "\n  none of them justifies the target: a store's effect summary carries a fact about a \
          cell the store did not write, and a call's havoc needs a separation for the cell",

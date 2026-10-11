@@ -1328,13 +1328,7 @@ mod condition_transition_tests {
             Err(error) => error,
         };
 
-        // Spelled over the locals, as the other refusals are, not as the
-        // kernel's proposition term.
-        assert_eq!(
-            error.message(),
-            "condition obligation regression is missing condition prerequisite: `viewable(base=p, bytes=4)`",
-            "{error:?}"
-        );
+        assert!(error.message().contains("missing condition prerequisite: `viewable(memory=snapshot#1, base=p, bytes:uint32=4)"), "{error:?}");
     }
 
     #[test]

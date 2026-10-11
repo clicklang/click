@@ -18,7 +18,9 @@ fn allocate_quantifier_variable(next: &mut u64) -> Result<Variable, String> {
     Ok(variable)
 }
 
-fn algebraic_binder_variable(binder_index: usize) -> Result<Variable, String> {
+pub(in crate::surface) fn algebraic_binder_variable(
+    binder_index: usize,
+) -> Result<Variable, String> {
     let index = u64::try_from(binder_index).map_err(|_| "too many algebraic binders")?;
     let identity = index
         .checked_mul(ALGEBRAIC_BINDER_STRIDE)

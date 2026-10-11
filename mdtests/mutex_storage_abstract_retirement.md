@@ -33,5 +33,5 @@ void release_other(struct holder *holder, int32 *data) {
 ```
 
 ```expect
-fail: Requires separate(
+fail: Requires memory(
 ```

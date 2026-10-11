@@ -385,7 +385,7 @@ fn ordinary_requirement_errors_have_no_call_site_metadata() {
     assert!(
         error
             .report()
-            .contains("needed: fact has no exact Click spelling at this frontier"),
+            .contains("needed: predicate ordinary_requirement()"),
         "{}",
         error.report()
     );

@@ -185,6 +185,8 @@ pub(in crate::surface) fn verify_concrete_theorem_definition(
 
 #[derive(Clone, Debug)]
 pub(super) struct PureTheoremContext {
+    /// Immutable specification parameter names, retained for diagnostics.
+    pub(super) diagnostic_names: std::sync::Arc<[(Variable, String)]>,
     pub(super) declaration_bindings: BTreeMap<String, ContractExpression>,
     pub(super) memory: CMemory,
     pub(super) values: BTreeMap<String, CValue>,
@@ -1353,7 +1355,24 @@ pub(super) fn pure_theorem_context(
             requires.push(guard);
         }
     }
+    let diagnostic_names = theorem
+        .parameters()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, parameter)| {
+            let variable = match parameter.click_type() {
+                ClickType::Algebraic(_) => {
+                    crate::surface::lowering::algebraic_binder_variable(index).ok()?
+                }
+                ClickType::Integer => Variable(index as u64),
+                _ => return None,
+            };
+            Some((variable, parameter.name().to_owned()))
+        })
+        .collect::<Vec<_>>()
+        .into();
     Ok(PureTheoremContext {
+        diagnostic_names,
         declaration_bindings: BTreeMap::new(),
         memory,
         values,

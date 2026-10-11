@@ -859,8 +859,7 @@ impl<'a> ProofScope<'a> {
                         .path()
                         .unwrap_or_else(|| "checked have".into());
                     let node = Arc::as_ptr(&successor.node) as usize;
-                    let mut fact = successor.checked_trace_fact(kernel);
-                    fact.source = Some(source.clone());
+                    let fact = successor.checked_trace_fact(kernel);
                     crate::surface::proof_trace::record(
                         node,
                         crate::surface::proof_trace::TraceStep {

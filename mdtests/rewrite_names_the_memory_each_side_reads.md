@@ -1,10 +1,10 @@
 # a refused rewrite says which memory each side reads
 
-`old(a[m])` and `a[m]` are the same address in two states, so the source
-spelling of both is the same read and the two lines that name them say nothing
-on their own. The refusal notices that its two sides spell alike, and adds the
-rendering that labels the memory each one reads — which is the whole reason the
-rewrite found nothing to replace.
+`old(a[m])` and `a[m]` read the same address in different states. The
+requested equality and current goal use one printer and label map, so their
+read widths and address match while their snapshot labels differ. The store
+may overwrite `a[m]`; the old equality alone cannot justify the current read.
+The diagnostic shows this directly, without an additional display mode.
 
 ```c filename=rewrite_names_the_memory_each_side_reads.c
 void mark_one(int32 a[], int32 n, int32 i, int32 m) {
@@ -36,5 +36,6 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
 ```
 
 ```expect
-fail: the two spell alike but are different propositions; with each memory labelled they read
+fail: equality: int32 =(load A=read<Bits32>(snapshot#1, pointer=value#1), 5) is true
+  goal: int32 =(load B=read<Bits32>(snapshot#2, pointer=value#1), 5) is true
 ```
