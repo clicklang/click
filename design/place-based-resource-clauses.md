@@ -314,11 +314,12 @@ an accepted clause.
   (`bugs/a-symbolic-struct-count-range-is-not-usable.md`).
 - Done: step 6 for C++ reference parameters, as designed under "Reference
   parameters". Receivers, reference locals and Rust remain
-  (`issues/design-review.md`).
+  (`issues/adler-syntax.md` for Rust).
 - `views *p` and `views p->inner` are accepted in a contract. They were
   refused outside a resource definition for no recorded reason.
 
 ## Open questions
 
-Open items are tracked in `issues/design-review.md`.
+The review's rulings are in `design/proof-language-rulings.md`; its open
+work is in `issues/adler-syntax.md`.
 
