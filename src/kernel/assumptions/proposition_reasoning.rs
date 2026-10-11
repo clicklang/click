@@ -1161,24 +1161,17 @@ impl PureFactContext {
                 }),
             _ => None,
         };
+        // `0 <= value` and `value >= 0` are one order; the theorem's
+        // `0 <= value` conclusion closes either spelling.
         let positive_is_nonnegative_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(lower, value),
-                true,
-            ) if lower.as_ref() == &Bitvector32Term::Constant(0) => self
-                .exact_direct_order_step(&Bitvector32Term::Constant(1), value, false)
-                .map(Box::new)
-                .map(AtomicPropositionDerivationEvidence::Int32PositiveIsNonnegative),
-            _ => None,
-        };
-        let strictly_positive_is_nonnegative_evidence = match proposition {
-            Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedGreaterEqual(value, lower),
+                ConditionTerm::Bitvector32SignedLessEqual(lower, value)
+                | ConditionTerm::Bitvector32SignedGreaterEqual(value, lower),
                 true,
             ) if lower.as_ref() == &Bitvector32Term::Constant(0) => self
                 .exact_direct_order_step(&Bitvector32Term::Constant(0), value, true)
                 .map(Box::new)
-                .map(AtomicPropositionDerivationEvidence::Int32StrictlyPositiveIsNonnegative),
+                .map(AtomicPropositionDerivationEvidence::Int32PositiveIsNonnegative),
             _ => None,
         };
         let successor_le_implies_lt_evidence = match proposition {
@@ -1390,7 +1383,6 @@ impl PureFactContext {
             .or(ge_and_not_gt_equality_evidence)
             .or(le_and_neq_strict_evidence)
             .or(positive_is_nonnegative_evidence)
-            .or(strictly_positive_is_nonnegative_evidence)
             .or(successor_le_implies_lt_evidence)
             .or(constant_lower_bound_weakening_evidence)
             .or(negated_strict_successor_bound_evidence)
@@ -1895,23 +1887,8 @@ impl PureFactContext {
         }
         if let AtomicPropositionDerivationEvidence::Int32PositiveIsNonnegative(step) = evidence {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(lower, value),
-                true,
-            ) = proposition
-            else {
-                return false;
-            };
-            return lower.as_ref() == &Bitvector32Term::Constant(0)
-                && step.lower == Bitvector32Term::Constant(1)
-                && step.upper == **value
-                && !step.strict
-                && self.checks_exact_order_step(step);
-        }
-        if let AtomicPropositionDerivationEvidence::Int32StrictlyPositiveIsNonnegative(step) =
-            evidence
-        {
-            let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedGreaterEqual(value, lower),
+                ConditionTerm::Bitvector32SignedLessEqual(lower, value)
+                | ConditionTerm::Bitvector32SignedGreaterEqual(value, lower),
                 true,
             ) = proposition
             else {

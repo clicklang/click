@@ -24,7 +24,7 @@ int64 add_byte(uint32 sum, uint8 byte) {
         simp() using { ((uint32)byte) <= 255u32; sum <= 4294967040u32; }
     }
     have result <= 4294967295i64 by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: ((uint32)byte) <= 255u32 => ((uint32)byte) <= 255u32;
             premise 1: sum <= 4294967040u32 => sum <= 4294967040u32;
             unsigned_sum_bound bounds [0, 1] => result <= 4294967295i64;

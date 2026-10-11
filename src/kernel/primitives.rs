@@ -10652,7 +10652,6 @@ pub(crate) enum AtomicPropositionDerivationEvidence {
     Int32IncrementStrictGreaterFromStrictLower(Box<Int32IncrementBoundsEvidence>),
     Int32IncrementPreservesOrder(Box<Int32IncrementBoundsEvidence>),
     Int32PositiveIsNonnegative(Box<SignedOrderDerivationStep>),
-    Int32StrictlyPositiveIsNonnegative(Box<SignedOrderDerivationStep>),
     Int32SuccessorLeImpliesLt(Box<SignedOrderDerivationStep>),
     Int32ConstantLowerBoundWeakening(Box<SignedOrderDerivationStep>),
     Int32NegatedStrictSuccessorBound(Box<SignedOrderDerivationStep>),

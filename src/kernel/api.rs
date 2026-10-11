@@ -7399,10 +7399,10 @@ pub fn prove_int32_ge_and_not_gt_implies_eq(
     ))
 }
 
-/// Any signed int32 value that is at least one is nonnegative.
+/// Any positive signed int32 value is nonnegative.
 pub fn prove_int32_positive_is_nonnegative(value: Bitvector32Term) -> Theorem {
     let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(Bitvector32Term::Constant(1), value.clone()),
+        ConditionTerm::signed_less_than(Bitvector32Term::Constant(0), value.clone()),
         true,
     );
     let conclusion = Proposition::ConditionIs(
@@ -7452,22 +7452,6 @@ pub fn prove_int32_not_lt_implies_ge(left: Bitvector32Term, right: Bitvector32Te
     );
     let conclusion =
         Proposition::ConditionIs(ConditionTerm::signed_greater_equal(left, right), true);
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(conclusion),
-    ))
-}
-
-/// Any strictly positive signed int32 value is nonnegative.
-pub fn prove_int32_strictly_positive_is_nonnegative(value: Bitvector32Term) -> Theorem {
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(Bitvector32Term::Constant(0), value.clone()),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(value, Bitvector32Term::Constant(0)),
-        true,
-    );
     Theorem::new(Proposition::Implies(
         Box::new(premise),
         Box::new(conclusion),
@@ -9313,25 +9297,25 @@ pub fn prove_uint64_integer_bridge(
 ) -> Option<Theorem> {
     if matches!(
         name,
-        "uint64_less_equal_to_integer" | "uint64_less_equal_of_to_integer"
+        "uint64_less_equal_to_integer" | "uint64_to_integer_less_equal_implies_less_equal"
     ) {
         return Some(prove_machine_integer_order_bridge(
             MachineIntegerType::UInt64,
             left,
             right,
-            name == "uint64_less_equal_of_to_integer",
+            name == "uint64_to_integer_less_equal_implies_less_equal",
         ));
     }
     // The unsigned observation is injective: equal observations are the
     // same 64-bit pattern.
-    if name == "uint64_equal_of_to_integer" {
+    if name == "uint64_to_integer_equal_implies_equal" {
         return Some(prove_integer_equality_bridge(
             MachineIntegerType::UInt64,
             left,
             right,
         ));
     }
-    if name == "uint64_pack_u16_to_integer" {
+    if name == "uint64_pack_uint16_to_integer" {
         return prove_unsigned_pack_u16_to_integer(MachineIntegerType::UInt64, left, right);
     }
     let observe = |value| {
@@ -9344,12 +9328,12 @@ pub fn prove_uint64_integer_bridge(
     // injective and monotone over every 64-bit pattern.
     if matches!(
         name,
-        "uint64_less_than_to_integer" | "uint64_less_than_of_to_integer"
+        "uint64_less_than_to_integer" | "uint64_to_integer_less_than_implies_less_than"
     ) {
         let native = Proposition::ConditionIs(ConditionTerm::uint64_less_than(left, right), true);
         let integer =
             Proposition::ConditionIs(ConditionTerm::IntegerLessThan(a.into(), b.into()), true);
-        let (premise, conclusion) = if name == "uint64_less_than_of_to_integer" {
+        let (premise, conclusion) = if name == "uint64_to_integer_less_than_implies_less_than" {
             (integer, native)
         } else {
             (native, integer)
@@ -9361,7 +9345,7 @@ pub fn prove_uint64_integer_bridge(
     }
     // Unsigned total order: strict less and greater-or-equal are
     // complementary evaluations of the same two 64-bit patterns.
-    if name == "uint64_not_greater_equal_of_less_than" {
+    if name == "uint64_less_than_implies_not_greater_equal" {
         return Some(Theorem::new(Proposition::Implies(
             Box::new(Proposition::ConditionIs(
                 ConditionTerm::uint64_less_than(left.clone(), right.clone()),
@@ -10077,13 +10061,16 @@ pub fn is_wide_order_transitivity_name(name: &str) -> bool {
         name.split_once('_'),
         Some((
             "uint64" | "int64",
-            "lt_le_transitive" | "le_lt_transitive" | "lt_transitive" | "le_transitive"
+            "less_than_less_equal_transitive"
+                | "less_equal_less_than_transitive"
+                | "less_than_transitive"
+                | "less_equal_transitive"
         ))
     )
 }
 
 /// Transitivity of 64-bit order, by the name of its standard theorem:
-/// `{uint64,int64}_{lt_le,le_lt,lt,le}_transitive`. The first premise orders
+/// `{uint64,int64}_{less_than_less_equal,less_equal_less_than,less_than,less_equal}_transitive`. The first premise orders
 /// `first` and `middle`, the second `middle` and `last`, and the conclusion
 /// is strict when either premise is.
 pub fn prove_wide_order_transitive(
@@ -10098,10 +10085,10 @@ pub fn prove_wide_order_transitive(
         _ => return None,
     };
     let (first_strict, second_strict) = match shape {
-        "lt_le_transitive" => (true, false),
-        "le_lt_transitive" => (false, true),
-        "lt_transitive" => (true, true),
-        "le_transitive" => (false, false),
+        "less_than_less_equal_transitive" => (true, false),
+        "less_equal_less_than_transitive" => (false, true),
+        "less_than_transitive" => (true, true),
+        "less_equal_transitive" => (false, false),
         _ => return None,
     };
     let order = |lower: Bitvector32Term, upper: Bitvector32Term, strict: bool| {

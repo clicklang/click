@@ -22,7 +22,7 @@ int32 sum(int32 a, int32 b, int32 c) {
     ensures result == a + b;
 } by {
     have defined(a + b) by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: a < 100 => a < 100;
             premise 1: b == 1 => b == 1;
             premise 2: c < 5 => c < 5;

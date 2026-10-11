@@ -169,12 +169,15 @@ fn selected_tactic_batch_uses_the_project_entry_scope() {
         "unit.click",
         [ClickModuleSource::new("unit.click", source, [])],
     );
-    let sites = c0_project_smart_tactic_source_sites(&project, &c).unwrap();
+    let sites =
+        project_smart_tactic_source_sites(&project, &ProgramInputs::Bundle(c.to_vec())).unwrap();
     let positions = sites[1..3]
         .iter()
         .map(|site| site.position.clone())
         .collect::<Vec<_>>();
-    let expanded = expand_c0_project_tactics_source_at(&project, &c, &positions).unwrap();
+    let expanded =
+        expand_project_tactics_source_at(&project, &ProgramInputs::Bundle(c.to_vec()), &positions)
+            .unwrap();
     assert!(expanded.source.contains("execute();"));
     verify_c0_project(&project.with_entry_source(expanded.source), &c).unwrap();
 }
@@ -1016,7 +1019,7 @@ fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
         "{expanded}"
     );
     assert!(
-        claim.contains("arithmetic_certificate special {"),
+        claim.contains("arithmetic_certificate rules {"),
         "{expanded}"
     );
     assert!(
@@ -1062,7 +1065,7 @@ fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
         "{expanded}"
     );
     assert!(
-        claim.contains("arithmetic_certificate special {"),
+        claim.contains("arithmetic_certificate rules {"),
         "{expanded}"
     );
     assert!(claim.contains("st.total < 100"), "{expanded}");
@@ -3082,9 +3085,9 @@ fn return_population_proofs_expand_without_effect_clauses() {
                 .map_or_else(
                     || expand_c0_claim_source(source, &sources, function, CProofClaim::Grouped),
                     |project| {
-                        expand_c0_project_claim_source_by_label(
+                        expand_project_claim_source_by_label(
                             project,
-                            &sources,
+                            &ProgramInputs::Bundle(sources.to_vec()),
                             &format!("{function}.contract"),
                         )
                     },
@@ -4222,8 +4225,8 @@ fn post_execution_simp_builds_recursive_conjunction_on_proof() {
         verifying "first.c";
 
         int32 first(int32 x, int32 y) {
-            requires 1 <= x;
-            requires 1 <= y;
+            requires 0 < x;
+            requires 0 < y;
             ensures 0 <= x and 0 <= y;
         } by {
             execute();
@@ -4303,8 +4306,8 @@ fn post_execution_smart_have_builds_recursive_conjunction_on_proof() {
         verifying "first.c";
 
         int32 first(int32 x, int32 y) {
-            requires 1 <= x;
-            requires 1 <= y;
+            requires 0 < x;
+            requires 0 < y;
             ensures 0 <= x and 0 <= y;
         } by {
             execute();
@@ -5784,22 +5787,22 @@ fn smart_tactic_selection_by_line_is_unique_or_lists_candidates() {
 fn pure_structural_simp_builds_recursive_conjunction_on_proof() {
     let click_source = r#"
         theorem nonnegative_pair_direct(x: int32, y: int32) {
-            requires 1 <= x;
-            requires 1 <= y;
+            requires 0 < x;
+            requires 0 < y;
             ensures 0 <= x and 0 <= y by simp;
         }
 
         theorem nonnegative_pair_script(x: int32, y: int32) {
-            requires 1 <= x;
-            requires 1 <= y;
+            requires 0 < x;
+            requires 0 < y;
             ensures 0 <= x and 0 <= y by {
                 simp();
             }
         }
 
         theorem nonnegative_pair_branches(flag: int32, x: int32, y: int32) {
-            requires 1 <= x;
-            requires 1 <= y;
+            requires 0 < x;
+            requires 0 < y;
             ensures 0 <= x and 0 <= y by {
                 if flag == 0 {
                     simp();
@@ -6210,7 +6213,7 @@ fn restricted_simp_expands_strict_order_to_nonstrict_theorem_application() {
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("strict-to-nonstrict simp should have an explicit certificate");
     assert!(
-        expanded.contains("apply(int32_lt_implies_le(x, y)) using"),
+        expanded.contains("apply(int32_less_than_implies_less_equal(x, y)) using"),
         "{expanded}"
     );
     assert!(!expanded.contains("assumption();"), "{expanded}");
@@ -6254,7 +6257,7 @@ fn post_execution_simp_applies_strict_order_rule() {
         expand_c0_tactic_source_at(click_source, &[("identity.c", c_source)], line, column)
             .expect("post-execution strict-order simp should expand");
     assert!(
-        expanded.contains("apply(int32_lt_implies_le("),
+        expanded.contains("apply(int32_less_than_implies_less_equal("),
         "{expanded}"
     );
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -6290,7 +6293,7 @@ fn restricted_simp_expands_negated_strict_order_to_greater_equal() {
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("negated strict-order simp should expand");
     assert!(
-        expanded.contains("apply(int32_not_lt_implies_ge(x, 0)) using"),
+        expanded.contains("apply(int32_not_less_than_implies_greater_equal(x, 0)) using"),
         "{expanded}"
     );
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -6472,7 +6475,7 @@ fn post_execution_simp_expands_order_equality_closure() {
     )
     .expect("post-execution order equality should expand");
     assert!(
-        expanded.contains("apply(int32_le_and_not_lt_implies_eq("),
+        expanded.contains("apply(int32_less_equal_and_not_less_than_implies_equal("),
         "{expanded}"
     );
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -6509,7 +6512,8 @@ fn restricted_simp_expands_nonstrict_unequal_order() {
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("nonstrict unequal order should expand");
     assert!(
-        expanded.contains("apply(int32_le_and_neq_implies_lt(left, right)) using"),
+        expanded
+            .contains("apply(int32_less_equal_and_not_equal_implies_less_than(left, right)) using"),
         "{expanded}"
     );
     assert!(!expanded.contains("simp()"), "{expanded}");
@@ -6601,7 +6605,7 @@ fn post_execution_simp_expands_strict_transitivity() {
         expand_c0_tactic_source_at(click_source, &[("return_first.c", c_source)], line, column)
             .expect("post-execution strict transitivity should expand");
     assert!(
-        expanded.contains("apply(int32_lt_transitive("),
+        expanded.contains("apply(int32_less_than_transitive("),
         "{expanded}"
     );
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -6645,7 +6649,7 @@ fn post_execution_simp_expands_greater_equal_transitivity() {
         expand_c0_tactic_source_at(click_source, &[("return_last.c", c_source)], line, column)
             .expect("post-execution non-strict transitivity should expand");
     assert!(
-        expanded.contains("apply(int32_ge_transitive("),
+        expanded.contains("apply(int32_greater_equal_transitive("),
         "{expanded}"
     );
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -6741,7 +6745,7 @@ fn post_execution_simp_expands_strict_greater_increment_bound() {
         expand_c0_tactic_source_at(click_source, &[("increment_gt.c", c_source)], line, column)
             .expect("post-execution strict-greater increment bound should expand");
     assert!(
-        expanded.contains("apply(int32_increment_strict_greater_lower_bound("),
+        expanded.contains("apply(int32_increment_greater_than_lower_bound("),
         "{expanded}"
     );
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -6788,7 +6792,7 @@ fn post_execution_simp_expands_greater_order_equality() {
         expand_c0_tactic_source_at(click_source, &[("identity_zero.c", c_source)], line, column)
             .expect("post-execution greater-order equality should expand");
     assert!(
-        expanded.contains("apply(int32_ge_and_not_gt_implies_eq("),
+        expanded.contains("apply(int32_greater_equal_and_not_greater_than_implies_equal("),
         "{expanded}"
     );
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -6840,7 +6844,7 @@ fn post_execution_simp_composes_negated_successor_bound() {
     // the successor bound is an available fact and the chain needs only the
     // transitive step.
     assert!(
-        expanded.contains("apply(int32_ge_transitive("),
+        expanded.contains("apply(int32_greater_equal_transitive("),
         "{expanded}"
     );
     assert!(expanded.contains("normalize();"), "{expanded}");
@@ -6879,11 +6883,11 @@ fn restricted_simp_composes_negated_successor_bound() {
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("restricted successor lower bound should expand");
     assert!(
-        expanded.contains("apply(int32_not_lt_implies_ge("),
+        expanded.contains("apply(int32_not_less_than_implies_greater_equal("),
         "{expanded}"
     );
     assert!(
-        expanded.contains("apply(int32_ge_transitive("),
+        expanded.contains("apply(int32_greater_equal_transitive("),
         "{expanded}"
     );
     assert!(expanded.contains("normalize();"), "{expanded}");
@@ -6940,7 +6944,7 @@ fn post_execution_simp_unfolds_predicate_goal_explicitly() {
     let expanded = expanded.expect("post-execution predicate goal should expand");
     assert!(expanded.contains("unfold(sorted_pair);"), "{expanded}");
     assert!(
-        expanded.contains("apply(int32_lt_implies_le("),
+        expanded.contains("apply(int32_less_than_implies_less_equal("),
         "{expanded}"
     );
     assert!(expanded.contains("assumption();"), "{expanded}");
@@ -7035,10 +7039,10 @@ fn restricted_simp_expands_increment_upper_bound_to_theorem_application() {
 fn restricted_simp_expands_positive_to_nonnegative_theorem_application() {
     let click_source = r#"
         theorem positive_is_nonnegative(value: int32) {
-            requires 1 <= value;
+            requires 0 < value;
             ensures 0 <= value by {
                 simp() using {
-                    1 <= value;
+                    0 < value;
                 }
             }
         }
@@ -7064,49 +7068,10 @@ fn restricted_simp_expands_positive_to_nonnegative_theorem_application() {
         expanded.contains("apply(int32_positive_is_nonnegative(value)) using"),
         "{expanded}"
     );
-    assert!(expanded.contains("1 <= value;"), "{expanded}");
-    assert!(!expanded.contains("assumption();"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
-    assert!(!expanded.contains("derive using"), "{expanded}");
-    verify_click_theorems(&expanded).expect("expanded theorem application should check");
-}
-
-#[test]
-fn restricted_simp_expands_strictly_positive_to_nonnegative_theorem_application() {
-    let click_source = r#"
-        theorem strictly_positive_is_nonnegative(value: int32) {
-            requires 0 < value;
-            ensures value >= 0 by {
-                simp() using {
-                    0 < value;
-                }
-            }
-        }
-    "#;
-    let verified = verify_click_theorems(click_source);
-    verified.expect("strictly-positive-to-nonnegative simp should verify through Proof");
-    let offset = click_source.find("simp() using").unwrap();
-    let line = click_source[..offset]
-        .bytes()
-        .filter(|byte| *byte == b'\n')
-        .count()
-        + 1;
-    let column = offset
-        - click_source[..offset]
-            .rfind('\n')
-            .map(|offset| offset + 1)
-            .unwrap_or(0)
-        + 1;
-
-    let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
-        .expect("strictly-positive-to-nonnegative simp should expand");
-    assert!(
-        expanded.contains("apply(int32_strictly_positive_is_nonnegative(value)) using"),
-        "{expanded}"
-    );
     assert!(expanded.contains("0 < value;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
 }
 
@@ -7242,7 +7207,7 @@ fn restricted_simp_retains_nested_one_le_predecessor_nonnegative_proof() {
         .expect("one-le predecessor proof should expand");
     assert!(expanded.contains("have 0 < value"), "{expanded}");
     assert!(
-        expanded.contains("apply(int32_successor_le_implies_lt(0, value)) using"),
+        expanded.contains("apply(int32_increment_less_equal_implies_less_than(0, value)) using"),
         "{expanded}"
     );
     assert!(
@@ -7274,7 +7239,7 @@ fn restricted_simp_retains_nested_one_le_predecessor_decrease_proof() {
         .expect("one-le predecessor-decrease proof should expand");
     assert!(expanded.contains("have 0 < value"), "{expanded}");
     assert!(
-        expanded.contains("apply(int32_successor_le_implies_lt(0, value)) using"),
+        expanded.contains("apply(int32_increment_less_equal_implies_less_than(0, value)) using"),
         "{expanded}"
     );
     assert!(
@@ -7661,7 +7626,7 @@ fn restricted_simp_expands_adjacent_order_to_theorem_application() {
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("adjacent order simp should expand");
     assert!(
-        expanded.contains("apply(int32_successor_le_implies_lt(1, value)) using"),
+        expanded.contains("apply(int32_increment_less_equal_implies_less_than(1, value)) using"),
         "{expanded}"
     );
     assert!(expanded.contains("2 <= value;"), "{expanded}");
@@ -7706,11 +7671,12 @@ fn smart_simp_transcribes_a_three_edge_signed_order_path() {
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("the retained three-edge order path should expand");
     assert!(
-        expanded.contains("apply(int32_le_lt_transitive(first, second, third)) using"),
+        expanded
+            .contains("apply(int32_less_equal_less_than_transitive(first, second, third)) using"),
         "{expanded}"
     );
     assert!(
-        expanded.contains("apply(int32_lt_le_transitive(first, third, last)) using"),
+        expanded.contains("apply(int32_less_than_less_equal_transitive(first, third, last)) using"),
         "{expanded}"
     );
     assert!(!expanded.contains("simp();"), "{expanded}");
@@ -7793,7 +7759,8 @@ fn smart_simp_retains_both_signed_equality_rules_as_named_steps() {
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("the retained equality theorem should expand");
     assert!(
-        expanded.contains("apply(int32_le_and_not_lt_implies_eq(left, right)) using"),
+        expanded
+            .contains("apply(int32_less_equal_and_not_less_than_implies_equal(left, right)) using"),
         "{expanded}"
     );
     verify_click_theorems(&expanded).expect("the named equality step should independently check");
@@ -7813,7 +7780,9 @@ fn smart_simp_retains_both_signed_equality_rules_as_named_steps() {
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("the retained >=/not-> equality theorem should expand");
     assert!(
-        expanded.contains("apply(int32_ge_and_not_gt_implies_eq(left, right)) using"),
+        expanded.contains(
+            "apply(int32_greater_equal_and_not_greater_than_implies_equal(left, right)) using"
+        ),
         "{expanded}"
     );
     verify_click_theorems(&expanded)
@@ -7892,13 +7861,13 @@ fn outcome_simp_applies_theorems_through_its_recorded_order_path() {
     .expect("the retained outcome theorem path should expand");
     assert!(
         expanded.contains(
-            "apply(int32_le_lt_transitive(at(function.entry, first), at(function.entry, second), at(function.entry, third))) using"
+            "apply(int32_less_equal_less_than_transitive(at(function.entry, first), at(function.entry, second), at(function.entry, third))) using"
         ),
         "{expanded}"
     );
     assert!(
         expanded.contains(
-            "apply(int32_lt_le_transitive(at(function.entry, first), at(function.entry, third), at(function.entry, last))) using"
+            "apply(int32_less_than_less_equal_transitive(at(function.entry, first), at(function.entry, third), at(function.entry, last))) using"
         ),
         "{expanded}"
     );
@@ -7937,7 +7906,7 @@ fn restricted_simp_expands_constant_order_weakening_to_theorem_application() {
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("constant order weakening simp should expand");
     assert!(
-        expanded.contains("apply(int32_le_transitive(0, 3, value)) using"),
+        expanded.contains("apply(int32_less_equal_transitive(0, 3, value)) using"),
         "{expanded}"
     );
     assert!(expanded.contains("3 <= value;"), "{expanded}");
@@ -7966,7 +7935,7 @@ fn restricted_simp_expands_constant_strict_upper_bound_to_theorem_application() 
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("constant strict upper-bound simp should expand");
     assert!(
-        expanded.contains("apply(int32_le_lt_transitive(value, 3, 5)) using"),
+        expanded.contains("apply(int32_less_equal_less_than_transitive(value, 3, 5)) using"),
         "{expanded}"
     );
     assert!(expanded.contains("value <= 3;"), "{expanded}");
@@ -7994,7 +7963,7 @@ fn restricted_simp_retains_increment_under_a_larger_constant() {
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("increment constant-bound simp should expand");
     assert!(
-        expanded.contains("apply(int32_le_lt_transitive(value, 3, 5)) using"),
+        expanded.contains("apply(int32_less_equal_less_than_transitive(value, 3, 5)) using"),
         "{expanded}"
     );
     assert!(
@@ -8087,7 +8056,7 @@ fn restricted_simp_retains_one_plus_operand_specific_theorems() {
                 }
             "#,
             "one_plus_is_defined.ensures_0",
-            "apply(int32_one_plus_below_max_is_defined(value)) using",
+            "apply(int32_increment_left_below_max_is_defined(value)) using",
         ),
         (
             r#"
@@ -8099,7 +8068,7 @@ fn restricted_simp_retains_one_plus_operand_specific_theorems() {
                 }
             "#,
             "one_plus_increases.ensures_0",
-            "apply(int32_one_plus_strictly_increases(value)) using",
+            "apply(int32_increment_left_strictly_increases(value)) using",
         ),
     ];
     for (click_source, _, application) in cases {
@@ -8155,7 +8124,7 @@ fn restricted_simp_composes_equality_rewrites_with_adjacent_order() {
     assert!(expanded.contains("rewrite(bound == length);"), "{expanded}");
     assert!(expanded.contains("rewrite(position == 0);"), "{expanded}");
     assert!(
-        expanded.contains("apply(int32_successor_le_implies_lt(0, length)) using"),
+        expanded.contains("apply(int32_increment_less_equal_implies_less_than(0, length)) using"),
         "{expanded}"
     );
     assert!(!expanded.contains("simp() using"), "{expanded}");
@@ -8665,7 +8634,7 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
                 requires value < upper;
                 ensures result <= upper;
             } by {
-                apply(int32_lt_implies_le(value, upper));
+                apply(int32_less_than_implies_less_equal(value, upper));
                 step();
                 assumption();
             }
@@ -8679,12 +8648,14 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
     assert!(matches!(
         expanded.first(),
         Some(ProofTactic::ApplyTheoremUsing { application, premises })
-            if application.name == "int32_lt_implies_le" && premises.len() == 1
+            if application.name == "int32_less_than_implies_less_equal" && premises.len() == 1
     ));
     let retained_source = verified[0]
         .expanded_proof_source()
         .expect("the checked execution apply should have canonical source");
-    assert!(retained_source.contains("apply(int32_lt_implies_le(value, upper)) using {"));
+    assert!(
+        retained_source.contains("apply(int32_less_than_implies_less_equal(value, upper)) using {")
+    );
     let expanded = expand_c0_claim_source(
         click_source,
         &[("keep.c", c_source)],
@@ -9471,7 +9442,7 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
             ensures lower <= upper;
         } by {
             open(ordered(lower, upper)) {
-                apply(int32_lt_implies_le(lower, upper));
+                apply(int32_less_than_implies_less_equal(lower, upper));
                 step();
             }
             simp();
@@ -9492,7 +9463,7 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
                     [
                         ProofTactic::ApplyTheoremUsing { application, premises },
                         ProofTactic::Step,
-                    ] if application.name == "int32_lt_implies_le" && premises.len() == 1
+                    ] if application.name == "int32_less_than_implies_less_equal" && premises.len() == 1
                 )
         ),
         "{tactics:#?}"
@@ -10116,10 +10087,10 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
                 fact lower <= upper;
             } then {
                 step();
-                apply(int32_lt_implies_le(lower, upper));
+                apply(int32_less_than_implies_less_equal(lower, upper));
             } else {
                 step();
-                apply(int32_lt_implies_le(lower, upper));
+                apply(int32_less_than_implies_less_equal(lower, upper));
             }
             step();
             simp();
@@ -10138,11 +10109,11 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
                 if matches!(
                     branch.then_tactics.as_slice(),
                     [ProofTactic::Step, ProofTactic::ApplyTheoremUsing { application, premises }]
-                        if application.name == "int32_lt_implies_le" && premises.len() == 1
+                        if application.name == "int32_less_than_implies_less_equal" && premises.len() == 1
                 ) && matches!(
                     branch.else_tactics.as_slice(),
                     [ProofTactic::Step, ProofTactic::ApplyTheoremUsing { application, premises }]
-                        if application.name == "int32_lt_implies_le" && premises.len() == 1
+                        if application.name == "int32_less_than_implies_less_equal" && premises.len() == 1
                 )
         ),
         "{tactics:#?}"
@@ -10182,7 +10153,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
             branch ensuring {
                 fact lower < upper;
             } then { step(); } else { step(); }
-            apply(int32_lt_implies_le(lower, upper));
+            apply(int32_less_than_implies_less_equal(lower, upper));
             step();
             simp();
         }
@@ -10212,7 +10183,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
                 )
                 && matches!(branch.then_tactics.as_slice(), [ProofTactic::Step])
                 && matches!(branch.else_tactics.as_slice(), [ProofTactic::Step])
-                && application.name == "int32_lt_implies_le"
+                && application.name == "int32_less_than_implies_less_equal"
                 && premises.len() == 1
         ),
         "{tactics:#?}"
@@ -10322,7 +10293,7 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
                 fact selected < 2147483647;
             } then { step(); } else { step(); }
             have selected >= 0 by {
-                apply(int32_strictly_positive_is_nonnegative(selected));
+                apply(int32_positive_is_nonnegative(selected));
             }
             execute_until(statement(5));
             step();
@@ -10365,8 +10336,12 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
                 && matches!(branch.else_tactics.as_slice(), [ProofTactic::Step])
                 && matches!(
                     body.as_slice(),
-                    [ProofTactic::ApplyTheoremUsing { application, premises }]
-                        if application.name == "int32_strictly_positive_is_nonnegative"
+                    // The theorem concludes `0 <= selected`; the mirrored
+                    // `selected >= 0` closes by `assumption`.
+                    [
+                        ProofTactic::ApplyTheoremUsing { application, premises },
+                        ProofTactic::Assumption,
+                    ] if application.name == "int32_positive_is_nonnegative"
                             && premises.len() == 1
                 )
         ),
@@ -10500,11 +10475,11 @@ fn incremented_strict_lower_bound_retains_its_theorem_path() {
     )
     .expect("the strict-positive increment proof should expand");
     assert!(
-        expanded.contains("apply(int32_lt_implies_le("),
+        expanded.contains("apply(int32_less_than_implies_less_equal("),
         "{expanded}"
     );
     assert!(
-        expanded.contains("apply(int32_increment_strict_greater_lower_bound("),
+        expanded.contains("apply(int32_increment_greater_than_lower_bound("),
         "{expanded}"
     );
     verify_c0_sources(&expanded, &[("select_and_increment_positive.c", c_source)])
@@ -10561,11 +10536,11 @@ fn post_execution_have_anchors_strict_increment_theorem_premises() {
     .expect("the retained strict-positive have should expand");
     assert!(!expanded.contains("have result > 0 by simp"), "{expanded}");
     assert!(
-        expanded.contains("apply(int32_lt_implies_le("),
+        expanded.contains("apply(int32_less_than_implies_less_equal("),
         "{expanded}"
     );
     assert!(
-        expanded.contains("apply(int32_increment_strict_greater_lower_bound("),
+        expanded.contains("apply(int32_increment_greater_than_lower_bound("),
         "{expanded}"
     );
     verify_c0_sources(
@@ -12039,7 +12014,7 @@ fn assert_bound_universal_fixture_has_no_outcome_fallbacks(filename: &str, funct
         path.display()
     );
     assert!(
-        expanded.contains("int32_lt_successor_implies_le"),
+        expanded.contains("int32_less_than_increment_implies_less_equal"),
         "expanded proof from `{}` omitted the split's explicit bound theorem",
         path.display()
     );
@@ -12302,7 +12277,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
         "owned-segmented-buffer",
         "owned_segmented_buffer.click",
         "owned_segmented_buffer_swap",
-        "apply(int32_successor_le_implies_lt(0, owner->first_len)) using {",
+        "apply(int32_increment_less_equal_implies_less_than(0, owner->first_len)) using {",
     ),
     (
         "owned-string",
@@ -12606,7 +12581,7 @@ fn branch_continuation_claims_retain_their_selected_outcome_step() {
             );
         }
 
-        let retained_step = "apply(int32_increment_strict_greater_lower_bound(";
+        let retained_step = "apply(int32_increment_greater_than_lower_bound(";
         let expanded = expand_c0_claim_source(click_source, &c_sources, function, claim)
             .unwrap_or_else(|error| panic!("failed to expand `{}`: {error:?}", path.display()));
         assert!(expanded.contains(retained_step), "{expanded}");
@@ -12744,10 +12719,10 @@ fn outcome_simp_instantiates_an_unfolded_byte_predicate_on_the_checked_proof() {
 
         int32 byte_prefix(uint8 p[], int32 n) {
             requires viewable(p[0..3]);
-            requires bytes_all_not_eq(p, 0, 3, 'y');
+            requires bytes_all_not_equal(p, 0, 3, 'y');
             ensures p[1] != 'y' by {
                 execute();
-                unfold(bytes_all_not_eq);
+                unfold(bytes_all_not_equal);
                 simp();
             }
         }
@@ -14105,7 +14080,7 @@ fn pure_folded_constant_successor_simp_expands_to_successor_bound() {
         .expect("the folded constant successor simp should have an explicit certificate");
     assert!(expanded.contains("rewrite(x == 0);"), "{expanded}");
     assert!(
-        expanded.contains("apply(int32_successor_le_implies_lt("),
+        expanded.contains("apply(int32_increment_less_equal_implies_less_than("),
         "{expanded}"
     );
     assert!(!expanded.contains("simp()"), "{expanded}");
@@ -15860,19 +15835,21 @@ fn authority_population_certification_expands_every_smart_site() {
     };
     let project = project_for(source);
     verify_c0_project(&project, &c_sources).expect("the population certification proof verifies");
-    let sites = c0_project_smart_tactic_source_sites(&project, &c_sources).unwrap();
+    let sites =
+        project_smart_tactic_source_sites(&project, &ProgramInputs::Bundle(c_sources.to_vec()))
+            .unwrap();
     assert!(!sites.is_empty());
     for site in sites {
-        let position = c0_project_tactic_source_position(
+        let position = project_tactic_source_position(
             &project,
-            &c_sources,
+            &ProgramInputs::Bundle(c_sources.to_vec()),
             &site.claim_label,
             site.source_index,
         )
         .unwrap();
-        let expanded = expand_c0_project_tactic_source_at(
+        let expanded = expand_project_tactic_source_at(
             &project,
-            &c_sources,
+            &ProgramInputs::Bundle(c_sources.to_vec()),
             position.line,
             position.column,
         )
@@ -15914,19 +15891,21 @@ fn authority_callback_count_refinement_expands_every_smart_site() {
     };
     let project = project_for(source);
     verify_c0_project(&project, &c_sources).expect("the callback Count refinement verifies");
-    let sites = c0_project_smart_tactic_source_sites(&project, &c_sources).unwrap();
+    let sites =
+        project_smart_tactic_source_sites(&project, &ProgramInputs::Bundle(c_sources.to_vec()))
+            .unwrap();
     assert!(!sites.is_empty());
     for site in sites {
-        let position = c0_project_tactic_source_position(
+        let position = project_tactic_source_position(
             &project,
-            &c_sources,
+            &ProgramInputs::Bundle(c_sources.to_vec()),
             &site.claim_label,
             site.source_index,
         )
         .unwrap();
-        let expanded = expand_c0_project_tactic_source_at(
+        let expanded = expand_project_tactic_source_at(
             &project,
-            &c_sources,
+            &ProgramInputs::Bundle(c_sources.to_vec()),
             position.line,
             position.column,
         )
@@ -16066,13 +16045,23 @@ void caller(struct parent* p, struct child* kid) {
     let project = project_for(source);
     verify_c0_project(&project, &c)
         .expect("a named parent's actual field identity survives the unrelated call");
-    for site in c0_project_smart_tactic_source_sites(&project, &c).unwrap() {
-        let position =
-            c0_project_tactic_source_position(&project, &c, &site.claim_label, site.source_index)
-                .unwrap();
-        let expanded =
-            expand_c0_project_tactic_source_at(&project, &c, position.line, position.column)
-                .unwrap();
+    for site in
+        project_smart_tactic_source_sites(&project, &ProgramInputs::Bundle(c.to_vec())).unwrap()
+    {
+        let position = project_tactic_source_position(
+            &project,
+            &ProgramInputs::Bundle(c.to_vec()),
+            &site.claim_label,
+            site.source_index,
+        )
+        .unwrap();
+        let expanded = expand_project_tactic_source_at(
+            &project,
+            &ProgramInputs::Bundle(c.to_vec()),
+            position.line,
+            position.column,
+        )
+        .unwrap();
         verify_c0_project(&project_for(&expanded), &c)
             .expect("the explicit proof preserves actual instance fields and the caller frame");
     }
@@ -16638,7 +16627,12 @@ fn check_counted_pthread_whole_claim_expansion(fixture: &str, claim: &str) {
     };
     let project = project_for(&source);
     verify_c0_project(&project, &sources).expect("the original counted pthread proof verifies");
-    let expanded = expand_c0_project_claim_source_by_label(&project, &sources, claim).unwrap();
+    let expanded = expand_project_claim_source_by_label(
+        &project,
+        &ProgramInputs::Bundle(sources.to_vec()),
+        claim,
+    )
+    .unwrap();
     verify_c0_project(&project_for(&expanded), &sources)
         .unwrap_or_else(|error| panic!("{fixture}: {}\n{expanded}", error.message()));
     if fixture == "modeled_pthread_counted_join" {
@@ -16650,9 +16644,9 @@ fn check_counted_pthread_whole_claim_expansion(fixture: &str, claim: &str) {
         );
         let (result, planning) =
             crate::surface::proof::count_planning_statement_transitions(|| {
-                verify_c0_project_at(
+                verify_project_at(
                     &project_for(&expanded),
-                    &sources,
+                    &ProgramInputs::Bundle(sources.to_vec()),
                     position.line,
                     position.column,
                 )
@@ -16922,14 +16916,17 @@ fn exceptional_claim_labels_preserve_names_and_covering_proofs_in_projects() {
                 [ClickModuleSource::new("helper.click", source, [])],
             )
         };
-        let expanded =
-            expand_c0_project_claim_source_by_label(&project(&source), &c_sources, "helper.threw")
-                .unwrap();
+        let expanded = expand_project_claim_source_by_label(
+            &project(&source),
+            &ProgramInputs::Bundle(c_sources.to_vec()),
+            "helper.threw",
+        )
+        .unwrap();
         assert_ne!(expanded, source);
         verify_c0_project(&project(&expanded), &c_sources).unwrap();
-        expand_c0_project_claim_source_by_label(
+        expand_project_claim_source_by_label(
             &project(&source),
-            &c_sources,
+            &ProgramInputs::Bundle(c_sources.to_vec()),
             "helper.exceptional_ensures_0",
         )
         .expect_err("an explicitly named claim does not acquire a default label");

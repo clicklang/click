@@ -255,7 +255,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         }
     }
     have i == capacity by {
-        apply(int32_le_and_not_lt_implies_eq(i, capacity)) using {
+        apply(int32_less_equal_and_not_less_than_implies_equal(i, capacity)) using {
             i <= capacity;
             not (i < capacity);
         }

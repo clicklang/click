@@ -1438,7 +1438,13 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
     );
     let c = [("f.c", "int f(void) { return 1; }")];
     let locate = |claim: &str, path: &[usize]| {
-        let outer = c0_project_tactic_source_position(&project, &c, claim, path[0]).ok()?;
+        let outer = project_tactic_source_position(
+            &project,
+            &ProgramInputs::Bundle(c.to_vec()),
+            claim,
+            path[0],
+        )
+        .ok()?;
         let position = if path.len() == 1 {
             outer
         } else {
@@ -1453,7 +1459,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
             .flatten()
     };
     with_proof_trace("good", || {
-        verify_c0_project_theorem(&project, &c, "good").unwrap();
+        verify_project_theorem(&project, &ProgramInputs::Bundle(c.to_vec()), "good").unwrap();
         let trace = accepted_proof_trace(&locate, &arm, &|_, _, _| false, None).unwrap();
         assert_eq!(
             trace,
@@ -1461,7 +1467,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         );
     });
     with_proof_trace("split", || {
-        verify_c0_project_theorem(&project, &c, "split").unwrap();
+        verify_project_theorem(&project, &ProgramInputs::Bundle(c.to_vec()), "split").unwrap();
         let whole = accepted_proof_trace(&locate, &arm, &|_, _, _| false, None).unwrap();
         assert!(whole.ends_with("\ntactic@12: cases"), "{whole}");
         let right = accepted_proof_trace(
@@ -1480,7 +1486,8 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         assert!(!right.contains("x == 1"), "{right}");
     });
     // The theorem that fails reports the tactic it wrote.
-    let error = verify_c0_project_theorem(&project, &c, "unproved").unwrap_err();
+    let error = verify_project_theorem(&project, &ProgramInputs::Bundle(c.to_vec()), "unproved")
+        .unwrap_err();
     assert_eq!(
         error.proof_source_site(),
         Some(("unproved.ensures_0", &[0][..]))
@@ -2390,6 +2397,84 @@ fn initialized_output_requires_a_defined_read_before_a_write() {
         error.report()
     );
 }
+/// Unnamed addresses still identify the exact blocking store, using the goal's
+/// label map. A history-only diagnostic must not claim missing proof facts.
+#[test]
+fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
+    use crate::kernel::{LoadKind, intern_c_memory};
+    use crate::surface::proof_diagnostics::render::{
+        SnapshotLabels, render_memory_history_check, render_proposition_labeled,
+    };
+    let read = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(992001)),
+    };
+    let written = Pointer::symbolic(Variable(992002));
+    let before = CMemory::new();
+    let blocked = before.clone().store(
+        written.clone(),
+        CValue::UInt64(Bitvector32Term::UInt64Constant(42)),
+    );
+    let after = blocked.clone().store(
+        Pointer {
+            block: "local:unrelated".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        },
+        int32(1),
+    );
+    let load = |memory: &CMemory| {
+        Bitvector32Term::MemoryLoad(
+            intern_c_memory(memory.clone()),
+            Box::new(read.clone()),
+            LoadKind::Bits64,
+        )
+    };
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::Bitvector64Equal(Box::new(load(&after)), Box::new(load(&before))),
+        true,
+    );
+    let summary =
+        super::diagnostics::describe_proposition_version_mismatch(&goal, &[], "earlier", &[], &[])
+            .expect("different snapshots explain the failure");
+    assert!(
+        summary.contains("without using the proof context's equality and ownership facts"),
+        "{summary}"
+    );
+    assert!(
+        summary.contains("subsequent recorded memory transition"),
+        "{summary}"
+    );
+    assert!(!summary.contains("nothing tells"), "{summary}");
+    assert!(!summary.contains("later step"), "{summary}");
+    let (explanation, _) =
+        super::diagnostics::proposition_version_explanation(&goal, &[], &[], &[]).unwrap();
+    let history = crate::surface::proof_diagnostics::MemoryHistoryDiagnostic::capture(explanation);
+    // Clear the live arena before printing, as the terminal renderer may run
+    // after the verification session has ended. The retained result must stand.
+    let _fresh_session = crate::kernel::VerificationSession::enter();
+    let mut labels = SnapshotLabels::default();
+    let goal_text = render_proposition_labeled(&goal, &mut labels);
+    let report = render_memory_history_check(&history, &mut labels).unwrap();
+    let write_name = labels.pointer_value_name(&written);
+    let read_name = labels.pointer_value_name(&read);
+    let stopped = labels.snapshot_name(&blocked);
+    assert!(report.contains(&format!("stops at {stopped}")), "{report}");
+    assert!(
+        report.contains(&format!("store: 8 bytes at address {write_name}")),
+        "{report}"
+    );
+    assert!(
+        report.contains(&format!(
+            "read range checked: 16 bytes at address {read_name}"
+        )),
+        "{report}"
+    );
+    assert!(goal_text.contains(&read_name), "{goal_text}");
+    let legend = labels.trace_legend();
+    assert!(legend.contains(&format!("{stopped} = store")), "{legend}");
+    assert!(legend.contains(&format!("{write_name} =")), "{legend}");
+}
+
 /// Long checked paths retain their beginning, late target, and added facts.
 /// Multiple sizes exercise both former aggregate caps without timing thresholds.
 #[test]
@@ -2416,7 +2501,8 @@ fn long_theorem_traces_retain_every_step_and_reach_late_targets() {
             Some((format!("tactic@{line}"), SourcePosition::new(line, 1)))
         };
         with_proof_trace("long_trace", || {
-            verify_c0_project_theorem(&project, &[], "long_trace").unwrap();
+            verify_project_theorem(&project, &ProgramInputs::Bundle(Vec::new()), "long_trace")
+                .unwrap();
             for target in [None, Some(SourcePosition::new(size + 4, 1))] {
                 let trace = accepted_proof_trace(
                     &locate,

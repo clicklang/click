@@ -573,7 +573,7 @@ fn symbolic_loop_footprint_frames_a_complete_separated_read_with_captured_bounds
     let (ranges, premises) = crate::kernel::collect_reasoning_provenance(|| {
         crate::kernel::capture_implicit_reasoning_provenance(|| {
             typed_ranges_disjoint_from_pointer_evidence(
-                &[footprint.clone()],
+                std::slice::from_ref(&footprint),
                 &read,
                 4,
                 &assumptions,

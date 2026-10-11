@@ -1,7 +1,7 @@
 //! Checked laws for the reserved conversions between structural Nat and Integer.
 //!
 //! These operations have builtin meanings. In particular their laws never
-//! assume a body for the ordinary, user-definable `nat_to_integer` function.
+//! assume a body for an ordinary user-defined function such as `nat_to_integer`.
 use super::prelude::*;
 
 pub(crate) fn is_conversion_nat_type(ty: &AlgebraicType) -> bool {

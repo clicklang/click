@@ -1,3 +1,4 @@
+use click::surface::ProgramInputs;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -12,10 +13,8 @@ use click::cli::{
 use click::instrumentation::{self, ArtifactReuseRejection};
 use click::languages::refresh_compiler_import;
 use click::surface::{
-    c0_prepared_project_tactic_source_position, c0_project_tactic_source_position,
-    c0_tactic_source_position, program_prepared_project_tactic_source_position,
-    verify_c0_prepared_project, verify_c0_project, verify_c0_sources,
-    verify_program_prepared_project,
+    c0_tactic_source_position, project_tactic_source_position, verify_c0_prepared_project,
+    verify_c0_project, verify_c0_sources, verify_program_prepared_project,
 };
 
 #[path = "support/limits.rs"]
@@ -454,9 +453,9 @@ fn rbtree_insert_whole_claim_expansion_verifies() {
         "rbtree insert whole-claim expansion",
         "click-rbtree-expansion".to_string(),
         move || {
-            let expanded = click::surface::expand_c0_project_claim_source_by_label(
+            let expanded = click::surface::expand_project_claim_source_by_label(
                 &project,
-                &source_refs(&c_sources),
+                &ProgramInputs::Bundle(source_refs(&c_sources)),
                 "__rb_insert.contract",
             )?;
             assert_ne!(expanded, source);
@@ -637,9 +636,9 @@ fn rbtree_erase_successor_explicit_closers_preserve_ownership() {
         "successor closer expansion",
         "click-successor-expansion".into(),
         move || {
-            let expanded = click::surface::expand_c0_project_tactic_source_at(
+            let expanded = click::surface::expand_project_tactic_source_at(
                 &project,
-                &source_refs(&c_sources),
+                &ProgramInputs::Bundle(source_refs(&c_sources)),
                 line + 1,
                 column,
             )?;
@@ -1451,28 +1450,24 @@ fn run_example_project(project: &Path) -> Result<(), String> {
                                         source_index,
                                     )
                                 }
-                                CInput::Bundle(c_sources) => c0_project_tactic_source_position(
+                                CInput::Bundle(c_sources) => project_tactic_source_position(
                                     &click_project,
-                                    &source_refs(c_sources),
+                                    &ProgramInputs::Bundle(source_refs(c_sources)),
                                     claim,
                                     source_index,
                                 ),
-                                CInput::Prepared(imports) => {
-                                    c0_prepared_project_tactic_source_position(
-                                        &click_project,
-                                        imports,
-                                        claim,
-                                        source_index,
-                                    )
-                                }
-                                CInput::PreparedProgram(import) => {
-                                    program_prepared_project_tactic_source_position(
-                                        &click_project,
-                                        import,
-                                        claim,
-                                        source_index,
-                                    )
-                                }
+                                CInput::Prepared(imports) => project_tactic_source_position(
+                                    &click_project,
+                                    &ProgramInputs::Prepared(imports),
+                                    claim,
+                                    source_index,
+                                ),
+                                CInput::PreparedProgram(import) => project_tactic_source_position(
+                                    &click_project,
+                                    &ProgramInputs::Program(import),
+                                    claim,
+                                    source_index,
+                                ),
                             }
                             .ok()
                             .map(|position| (position.line, position.column))

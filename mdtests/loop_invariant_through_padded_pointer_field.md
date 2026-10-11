@@ -92,7 +92,7 @@ int32 probe_contract(struct job *j) {
                     simp();
                 } else {
                     have k == i by {
-                        apply(int32_le_and_not_lt_implies_eq(k, i)) using { k <= i; not (k < i); }
+                        apply(int32_less_equal_and_not_less_than_implies_equal(k, i)) using { k <= i; not (k < i); }
                     }
                     rewrite(k == i);
                     simp();

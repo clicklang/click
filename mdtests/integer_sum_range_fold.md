@@ -55,14 +55,14 @@ int32 sum(int32 a[], int32 n) {
     have 0 <= (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
         arithmetic_certificate {
             premise 0: (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0 => (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0;
-            eq_to_le 0 reverse => 0 <= (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) });
+            less_equal_from_equal 0 reverse => 0 <= (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) });
             conclusion 1;
         }
     }
     have (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= 0 by {
         arithmetic_certificate {
             premise 0: (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0 => (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0;
-            eq_to_le 0 => (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= 0;
+            less_equal_from_equal 0 => (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= 0;
             conclusion 1;
         }
     }
@@ -80,7 +80,7 @@ int32 sum(int32 a[], int32 n) {
             have i <= n by {
                 if n < 1073741823 {
                     have n != 1073741823 by {
-                        apply(int32_lt_implies_neq(n, 1073741823)) using {
+                        apply(int32_less_than_implies_not_equal(n, 1073741823)) using {
                             n < 1073741823;
                         }
                     }
@@ -90,7 +90,7 @@ int32 sum(int32 a[], int32 n) {
                         have n <= 1073741823 by {
                             assumption();
                         }
-                        apply(int32_le_and_not_lt_implies_eq(n, 1073741823)) using {
+                        apply(int32_less_equal_and_not_less_than_implies_equal(n, 1073741823)) using {
                             n <= 1073741823;
                             not n < 1073741823;
                         }
@@ -150,7 +150,7 @@ int32 sum(int32 a[], int32 n) {
             have (-1000 * to_integer(i)) <= to_integer(total) by {
                 arithmetic_certificate {
                     premise 0: to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) => to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-                    eq_to_le 0 reverse => (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= to_integer(total);
+                    less_equal_from_equal 0 reverse => (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= to_integer(total);
                     premise 1: (-1000 * to_integer(i)) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) => (-1000 * to_integer(i)) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
                     add 1, 2 => ((0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + (-1000 * to_integer(i))) <= (to_integer(total) + (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }));
                     conclusion 3;
@@ -159,7 +159,7 @@ int32 sum(int32 a[], int32 n) {
             have to_integer(total) <= (1000 * to_integer(i)) by {
                 arithmetic_certificate {
                     premise 0: to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) => to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-                    eq_to_le 0 => to_integer(total) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
+                    less_equal_from_equal 0 => to_integer(total) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
                     premise 1: (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= (1000 * to_integer(i)) => (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= (1000 * to_integer(i));
                     add 1, 2 => (to_integer(total) + (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) })) <= ((0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + (1000 * to_integer(i)));
                     conclusion 3;
@@ -238,7 +238,7 @@ int32 sum(int32 a[], int32 n) {
             }
             have i < 2147483647 by {
                 have i < 1000 by {
-                    apply(int32_lt_le_transitive(i, n, 1000)) using {
+                    apply(int32_less_than_less_equal_transitive(i, n, 1000)) using {
                         i < n;
                         n <= 1000;
                     }
@@ -246,7 +246,7 @@ int32 sum(int32 a[], int32 n) {
                 have 1000 < 2147483647 by {
                     normalize();
                 }
-                apply(int32_lt_transitive(i, 1000, 2147483647)) using {
+                apply(int32_less_than_transitive(i, 1000, 2147483647)) using {
                     i < 1000;
                     1000 < 2147483647;
                 }
@@ -265,7 +265,7 @@ int32 sum(int32 a[], int32 n) {
                 arithmetic_certificate {
                     premise 0: ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i])) => ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i]));
                     premise 1: to_integer((i + 1)) == (to_integer(i) + to_integer(1)) => to_integer((i + 1)) == (to_integer(i) + to_integer(1));
-                    eq_to_le 1 reverse => (to_integer(i) + to_integer(1)) <= to_integer((i + 1));
+                    less_equal_from_equal 1 reverse => (to_integer(i) + to_integer(1)) <= to_integer((i + 1));
                     scale 2 by 1000 => (1000 * (to_integer(i) + to_integer(1))) <= (1000 * to_integer((i + 1)));
                     add 0, 3 => (((-1000 * to_integer(i)) - 1000) + (1000 * (to_integer(i) + to_integer(1)))) <= ((to_integer(total) + to_integer(a[i])) + (1000 * to_integer((i + 1))));
                     conclusion 4;
@@ -275,7 +275,7 @@ int32 sum(int32 a[], int32 n) {
                 arithmetic_certificate {
                     premise 0: (-1000 * to_integer((i + 1))) <= (to_integer(total) + to_integer(a[i])) => (-1000 * to_integer((i + 1))) <= (to_integer(total) + to_integer(a[i]));
                     premise 1: to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i])) => to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i]));
-                    eq_to_le 1 reverse => (to_integer(total) + to_integer(a[i])) <= to_integer((total + a[i]));
+                    less_equal_from_equal 1 reverse => (to_integer(total) + to_integer(a[i])) <= to_integer((total + a[i]));
                     add 0, 2 => ((-1000 * to_integer((i + 1))) + (to_integer(total) + to_integer(a[i]))) <= ((to_integer(total) + to_integer(a[i])) + to_integer((total + a[i])));
                     conclusion 3;
                 }
@@ -284,7 +284,7 @@ int32 sum(int32 a[], int32 n) {
                 arithmetic_certificate {
                     premise 0: (to_integer(total) + to_integer(a[i])) <= ((1000 * to_integer(i)) + 1000) => (to_integer(total) + to_integer(a[i])) <= ((1000 * to_integer(i)) + 1000);
                     premise 1: to_integer((i + 1)) == (to_integer(i) + to_integer(1)) => to_integer((i + 1)) == (to_integer(i) + to_integer(1));
-                    eq_to_le 1 reverse => (to_integer(i) + to_integer(1)) <= to_integer((i + 1));
+                    less_equal_from_equal 1 reverse => (to_integer(i) + to_integer(1)) <= to_integer((i + 1));
                     scale 2 by 1000 => (1000 * (to_integer(i) + to_integer(1))) <= (1000 * to_integer((i + 1)));
                     add 0, 3 => ((to_integer(total) + to_integer(a[i])) + (1000 * (to_integer(i) + to_integer(1)))) <= (((1000 * to_integer(i)) + 1000) + (1000 * to_integer((i + 1))));
                     conclusion 4;
@@ -293,7 +293,7 @@ int32 sum(int32 a[], int32 n) {
             have to_integer((total + a[i])) <= (1000 * to_integer((i + 1))) by {
                 arithmetic_certificate {
                     premise 0: to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i])) => to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i]));
-                    eq_to_le 0 => to_integer((total + a[i])) <= (to_integer(total) + to_integer(a[i]));
+                    less_equal_from_equal 0 => to_integer((total + a[i])) <= (to_integer(total) + to_integer(a[i]));
                     premise 1: (to_integer(total) + to_integer(a[i])) <= (1000 * to_integer((i + 1))) => (to_integer(total) + to_integer(a[i])) <= (1000 * to_integer((i + 1)));
                     add 1, 2 => (to_integer((total + a[i])) + (to_integer(total) + to_integer(a[i]))) <= ((to_integer(total) + to_integer(a[i])) + (1000 * to_integer((i + 1))));
                     conclusion 3;
@@ -343,7 +343,7 @@ int32 sum(int32 a[], int32 n) {
                 arithmetic_certificate {
                     premise 0: (-1000 * to_integer(i)) <= to_integer(total) => (-1000 * to_integer(i)) <= to_integer(total);
                     premise 1: to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) => to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-                    eq_to_le 1 => to_integer(total) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
+                    less_equal_from_equal 1 => to_integer(total) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
                     add 0, 2 => ((-1000 * to_integer(i)) + to_integer(total)) <= (to_integer(total) + (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }));
                     conclusion 3;
                 }
@@ -352,7 +352,7 @@ int32 sum(int32 a[], int32 n) {
                 arithmetic_certificate {
                     premise 0: to_integer(total) <= (1000 * to_integer(i)) => to_integer(total) <= (1000 * to_integer(i));
                     premise 1: to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) => to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-                    eq_to_le 1 reverse => (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= to_integer(total);
+                    less_equal_from_equal 1 reverse => (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= to_integer(total);
                     add 0, 2 => (to_integer(total) + (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) })) <= ((1000 * to_integer(i)) + to_integer(total));
                     conclusion 3;
                 }
@@ -361,7 +361,7 @@ int32 sum(int32 a[], int32 n) {
                 intro();
                 intro();
                 have k < n by {
-                    apply(int32_lt_le_transitive(k, i, n)) using {
+                    apply(int32_less_than_less_equal_transitive(k, i, n)) using {
                         k < i;
                         i <= n;
                     }
@@ -435,7 +435,7 @@ int32 sum(int32 a[], int32 n) {
         }
     }
     have i == n by {
-        apply(int32_le_and_not_lt_implies_eq(i, n)) using {
+        apply(int32_less_equal_and_not_less_than_implies_equal(i, n)) using {
             i <= n;
             not i < n;
         }

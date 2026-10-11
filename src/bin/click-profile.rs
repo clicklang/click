@@ -10,14 +10,10 @@ use click::cli::{
 };
 use click::instrumentation::{self, ActiveVerificationWork, TacticEvent, VerificationEvent};
 use click::surface::{
-    ClickProject, SourcePosition, c0_prepared_project_smart_tactic_source_sites,
-    c0_prepared_project_tactic_source_position, c0_prepared_smart_tactic_source_sites,
-    c0_prepared_tactic_source_position, c0_project_smart_tactic_source_sites,
-    c0_project_tactic_source_position, c0_smart_tactic_source_sites, c0_tactic_source_position,
-    program_prepared_project_smart_tactic_source_sites,
-    program_prepared_project_tactic_source_position, program_prepared_smart_tactic_source_sites,
-    program_prepared_tactic_source_position, verify_c0_prepared_project, verify_c0_project,
-    verify_c0_sources, verify_program_prepared_project,
+    ClickProject, SourcePosition, project_smart_tactic_source_sites,
+    project_tactic_source_position, smart_tactic_source_sites, tactic_source_position,
+    verify_c0_prepared_project, verify_c0_project, verify_c0_sources,
+    verify_program_prepared_project,
 };
 
 /// The crash-containment bound per profiled project; see
@@ -619,29 +615,13 @@ fn count_smart_source_sites(
         .into_iter()
         .try_fold(0usize, |total, path| {
             let source = sources.get(path)?;
-            let sites = match &source.inputs {
-                CInput::Bundle(c_sources) => match &source.project {
-                    Some(project) => {
-                        c0_project_smart_tactic_source_sites(project, &source_refs(c_sources))
-                    }
-                    None => {
-                        c0_smart_tactic_source_sites(&source.click_source, &source_refs(c_sources))
-                    }
-                },
-                CInput::Prepared(imports) => match &source.project {
-                    Some(project) => {
-                        c0_prepared_project_smart_tactic_source_sites(project, imports)
-                    }
-                    None => c0_prepared_smart_tactic_source_sites(&source.click_source, imports),
-                },
-                CInput::PreparedProgram(import) => match &source.project {
-                    Some(project) => {
-                        program_prepared_project_smart_tactic_source_sites(project, import)
-                    }
-                    None => {
-                        program_prepared_smart_tactic_source_sites(&source.click_source, import)
-                    }
-                },
+            let sites = match (&source.project, &source.inputs) {
+                (Some(project), inputs) => {
+                    project_smart_tactic_source_sites(project, &inputs.program_inputs())
+                }
+                (None, inputs) => {
+                    smart_tactic_source_sites(&source.click_source, &inputs.program_inputs())
+                }
             }
             .map_err(|error| {
                 format!(
@@ -1586,49 +1566,19 @@ fn resolve_source_positions(
         }
         let source = sources.get(&key.source_path)?;
         key.prepared_import = source.inputs.is_prepared() && !looks_like_mdtest(&key.source_path);
-        let position = match &source.inputs {
-            CInput::Bundle(c_sources) => match &source.project {
-                Some(project) => c0_project_tactic_source_position(
-                    project,
-                    &source_refs(c_sources),
-                    &key.claim,
-                    key.source_index,
-                ),
-                None => c0_tactic_source_position(
-                    &source.click_source,
-                    &source_refs(c_sources),
-                    &key.claim,
-                    key.source_index,
-                ),
-            },
-            CInput::Prepared(imports) => match &source.project {
-                Some(project) => c0_prepared_project_tactic_source_position(
-                    project,
-                    imports,
-                    &key.claim,
-                    key.source_index,
-                ),
-                None => c0_prepared_tactic_source_position(
-                    &source.click_source,
-                    imports,
-                    &key.claim,
-                    key.source_index,
-                ),
-            },
-            CInput::PreparedProgram(import) => match &source.project {
-                Some(project) => program_prepared_project_tactic_source_position(
-                    project,
-                    import,
-                    &key.claim,
-                    key.source_index,
-                ),
-                None => program_prepared_tactic_source_position(
-                    &source.click_source,
-                    import,
-                    &key.claim,
-                    key.source_index,
-                ),
-            },
+        let position = match (&source.project, &source.inputs) {
+            (Some(project), inputs) => project_tactic_source_position(
+                project,
+                &inputs.program_inputs(),
+                &key.claim,
+                key.source_index,
+            ),
+            (None, inputs) => tactic_source_position(
+                &source.click_source,
+                &inputs.program_inputs(),
+                &key.claim,
+                key.source_index,
+            ),
         };
         let position = position.and_then(|outer| match key.source_tactic_path.as_deref() {
             Some(path) if path.len() > 1 => click::surface::nested_tactic_source_position(

@@ -342,27 +342,12 @@ impl PropositionDerivation {
         }
     }
 
-    /// Return the exact `1 <= value` premise selected when the atomic prover
+    /// Return the exact `0 < value` premise selected when the atomic prover
     /// established `0 <= value`.
     pub fn int32_positive_is_nonnegative_step(&self) -> Option<&SignedOrderDerivationStep> {
         match &self.rule {
             PropositionDerivationRule::ContextualAtomic {
                 evidence: AtomicPropositionDerivationEvidence::Int32PositiveIsNonnegative(step),
-                ..
-            } => Some(step),
-            _ => None,
-        }
-    }
-
-    /// Return the exact `0 < value` premise selected when the atomic prover
-    /// established `0 <= value`.
-    pub fn int32_strictly_positive_is_nonnegative_step(
-        &self,
-    ) -> Option<&SignedOrderDerivationStep> {
-        match &self.rule {
-            PropositionDerivationRule::ContextualAtomic {
-                evidence:
-                    AtomicPropositionDerivationEvidence::Int32StrictlyPositiveIsNonnegative(step),
                 ..
             } => Some(step),
             _ => None,

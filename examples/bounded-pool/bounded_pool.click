@@ -36,7 +36,7 @@ theorem pool_checkout_increment_bound(capacity: int32, used: int32, available: i
         arithmetic_certificate {
             premise 0: to_integer(capacity) == to_integer(used) + to_integer(available) => to_integer(capacity) == to_integer(used) + to_integer(available);
             scale 0 by -1 => -to_integer(capacity) == -to_integer(available) - to_integer(used);
-            eq_to_le 1 => -to_integer(capacity) <= -to_integer(available) - to_integer(used);
+            less_equal_from_equal 1 => -to_integer(capacity) <= -to_integer(available) - to_integer(used);
             premise 1: to_integer(capacity) <= 2147483647 => to_integer(capacity) <= 2147483647;
             add 2, 3 => -to_integer(capacity) + to_integer(capacity) <= -to_integer(available) - to_integer(used) + 2147483647;
             premise 2: 1 <= to_integer(available) => 1 <= to_integer(available);
@@ -77,9 +77,9 @@ theorem pool_shrink_sum_defined(capacity: int32, used: int32, available: int32, 
             arithmetic_certificate {
                 premise 0: to_integer(capacity) == to_integer(used) + to_integer(available) => to_integer(capacity) == to_integer(used) + to_integer(available);
                 scale 0 by -1 => -to_integer(capacity) == -to_integer(used) - to_integer(available);
-                eq_to_le 1 => -to_integer(capacity) <= -to_integer(used) - to_integer(available);
+                less_equal_from_equal 1 => -to_integer(capacity) <= -to_integer(used) - to_integer(available);
                 premise 1: to_integer(available - amount) == to_integer(available) - to_integer(amount) => to_integer(available - amount) == to_integer(available) - to_integer(amount);
-                eq_to_le 3 => to_integer(available - amount) <= to_integer(available) - to_integer(amount);
+                less_equal_from_equal 3 => to_integer(available - amount) <= to_integer(available) - to_integer(amount);
                 premise 2: to_integer(capacity) <= 2147483647 => to_integer(capacity) <= 2147483647;
                 add 2, 5 => -to_integer(capacity) + to_integer(capacity) <= -to_integer(used) - to_integer(available) + 2147483647;
                 add 6, 4 => -to_integer(capacity) + to_integer(capacity) + to_integer(available - amount) <= -to_integer(used) - to_integer(available) + 2147483647 + to_integer(available) - to_integer(amount);
@@ -144,7 +144,7 @@ theorem pool_shrink_conservation(capacity: int32, used: int32, available: int32,
                 conclusion 8;
             }
         }
-        apply(int32_equal_of_to_integer(capacity - amount, used + (available - amount))) using {
+        apply(int32_to_integer_equal_implies_equal(capacity - amount, used + (available - amount))) using {
             to_integer(capacity - amount) == to_integer(used + (available - amount));
         }
         assumption();
@@ -175,10 +175,10 @@ theorem pool_grow_slots_defined(capacity: int32, used: int32, available: int32, 
             arithmetic_certificate {
                 premise 0: to_integer(capacity) == to_integer(used) + to_integer(available) => to_integer(capacity) == to_integer(used) + to_integer(available);
                 scale 0 by -1 => -to_integer(capacity) == -to_integer(used) - to_integer(available);
-                eq_to_le 1 => -to_integer(capacity) <= -to_integer(used) - to_integer(available);
+                less_equal_from_equal 1 => -to_integer(capacity) <= -to_integer(used) - to_integer(available);
                 premise 1: to_integer(capacity + amount) == to_integer(capacity) + to_integer(amount) => to_integer(capacity + amount) == to_integer(capacity) + to_integer(amount);
                 scale 3 by -1 => -to_integer(capacity + amount) == -to_integer(capacity) - to_integer(amount);
-                eq_to_le 4 => -to_integer(capacity + amount) <= -to_integer(capacity) - to_integer(amount);
+                less_equal_from_equal 4 => -to_integer(capacity + amount) <= -to_integer(capacity) - to_integer(amount);
                 add 2, 5 => -to_integer(capacity + amount) <= -to_integer(used) - to_integer(available) - to_integer(amount);
                 premise 2: to_integer(capacity + amount) <= 2147483647 => to_integer(capacity + amount) <= 2147483647;
                 add 6, 7 => 0 <= 2147483647 - to_integer(used) - to_integer(available) - to_integer(amount);
@@ -247,7 +247,7 @@ theorem pool_grow_conservation(capacity: int32, used: int32, available: int32, a
             arithmetic_certificate {
                 premise 0: to_integer(used) + to_integer(available + amount) == to_integer(capacity + amount) => to_integer(used) + to_integer(available + amount) == to_integer(capacity + amount);
                 scale 0 by -1 => to_integer(capacity + amount) == to_integer(used) + to_integer(available + amount);
-                eq_to_le 1 => to_integer(capacity + amount) <= to_integer(used) + to_integer(available + amount);
+                less_equal_from_equal 1 => to_integer(capacity + amount) <= to_integer(used) + to_integer(available + amount);
                 premise 1: -2147483648 <= to_integer(capacity + amount) => -2147483648 <= to_integer(capacity + amount);
                 add 2, 3 => -2147483648 <= to_integer(used) + to_integer(available + amount);
                 conclusion 4;
@@ -256,7 +256,7 @@ theorem pool_grow_conservation(capacity: int32, used: int32, available: int32, a
         have to_integer(used) + to_integer(available + amount) <= 2147483647 by {
             arithmetic_certificate {
                 premise 0: to_integer(used) + to_integer(available + amount) == to_integer(capacity + amount) => to_integer(used) + to_integer(available + amount) == to_integer(capacity + amount);
-                eq_to_le 0 => to_integer(used) + to_integer(available + amount) <= to_integer(capacity + amount);
+                less_equal_from_equal 0 => to_integer(used) + to_integer(available + amount) <= to_integer(capacity + amount);
                 premise 1: to_integer(capacity + amount) <= 2147483647 => to_integer(capacity + amount) <= 2147483647;
                 add 1, 2 => to_integer(used) + to_integer(available + amount) <= 2147483647;
                 conclusion 3;
@@ -278,7 +278,7 @@ theorem pool_grow_conservation(capacity: int32, used: int32, available: int32, a
                 conclusion 4;
             }
         }
-        apply(int32_equal_of_to_integer(capacity + amount, used + (available + amount))) using {
+        apply(int32_to_integer_equal_implies_equal(capacity + amount, used + (available + amount))) using {
             to_integer(capacity + amount) == to_integer(used + (available + amount));
         }
         assumption();
@@ -465,7 +465,7 @@ void pool_return(struct pool* pool, struct object* object) {
             arithmetic_certificate {
                 premise 0: to_integer(pool->capacity) == to_integer(pool->checked_out) + to_integer(count(pool_slot(pool))) => to_integer(pool->capacity) == to_integer(pool->checked_out) + to_integer(count(pool_slot(pool)));
                 scale 0 by -1 => -to_integer(pool->capacity) == -to_integer(pool->checked_out) - to_integer(count(pool_slot(pool)));
-                eq_to_le 1 => -to_integer(pool->capacity) <= -to_integer(pool->checked_out) - to_integer(count(pool_slot(pool)));
+                less_equal_from_equal 1 => -to_integer(pool->capacity) <= -to_integer(pool->checked_out) - to_integer(count(pool_slot(pool)));
                 premise 1: to_integer(pool->capacity) <= 2147483647 => to_integer(pool->capacity) <= 2147483647;
                 add 2, 3 => -to_integer(pool->capacity) + to_integer(pool->capacity) <= -to_integer(pool->checked_out) - to_integer(count(pool_slot(pool))) + 2147483647;
                 premise 2: 1 <= to_integer(pool->checked_out) => 1 <= to_integer(pool->checked_out);
@@ -712,7 +712,7 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
                 arithmetic_certificate {
                     premise 0: to_integer(source->capacity) == to_integer(source->checked_out) + to_integer(count(pool_slot(source))) => to_integer(source->capacity) == to_integer(source->checked_out) + to_integer(count(pool_slot(source)));
                     scale 0 by -1 => -to_integer(source->capacity) == -to_integer(source->checked_out) - to_integer(count(pool_slot(source)));
-                    eq_to_le 1 => -to_integer(source->capacity) <= -to_integer(source->checked_out) - to_integer(count(pool_slot(source)));
+                    less_equal_from_equal 1 => -to_integer(source->capacity) <= -to_integer(source->checked_out) - to_integer(count(pool_slot(source)));
                     premise 1: to_integer(source->capacity) <= 2147483647 => to_integer(source->capacity) <= 2147483647;
                     add 2, 3 => -to_integer(source->capacity) + to_integer(source->capacity) <= -to_integer(source->checked_out) - to_integer(count(pool_slot(source))) + 2147483647;
                     premise 2: 1 <= to_integer(source->checked_out) => 1 <= to_integer(source->checked_out);

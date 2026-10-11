@@ -562,7 +562,7 @@ fn pointer_loop_increment_emits_checked_equality_proof() {
     let expanded = expand_c0_claim_source(&click, &sources, "last_element", CProofClaim::Grouped)
         .unwrap_or_else(|e| panic!("{}", e.message()));
     assert!(
-        expanded.contains("arithmetic_certificate special"),
+        expanded.contains("arithmetic_certificate rules"),
         "{expanded}"
     );
     verify_c0_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
@@ -614,7 +614,7 @@ fn symbolic_alignment_expands_to_special_certificate_and_rechecks_without_planni
         expand_c0_claim_source(&click, &sources, "element_is_aligned", CProofClaim::Grouped)
             .unwrap();
     assert!(
-        expanded.contains("arithmetic_certificate special"),
+        expanded.contains("arithmetic_certificate rules"),
         "{expanded}"
     );
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
@@ -717,8 +717,8 @@ fn explicit_swap_loop_fixture(include_transports: bool) -> (&'static str, String
                 initialize by simp;
                 preserve by {{
                     have j == 0 by {{
-                        apply(int32_lt_successor_implies_le(j, 0)) using {{ j < 1; }}
-                        apply(int32_le_and_not_lt_implies_eq(j, 0)) using {{ j <= 0; j >= 0; }}
+                        apply(int32_less_than_increment_implies_less_equal(j, 0)) using {{ j < 1; }}
+                        apply(int32_less_equal_and_not_less_than_implies_equal(j, 0)) using {{ j <= 0; j >= 0; }}
                         assumption();
                     }}
                     mark before_swap;
@@ -1735,7 +1735,7 @@ fn loop_exit_simp_expands_invariant_conjuncts_explicitly() {
         "{expanded}"
     );
     assert!(
-        expanded.contains("apply(int32_le_and_not_lt_implies_eq("),
+        expanded.contains("apply(int32_less_equal_and_not_less_than_implies_equal("),
         "{expanded}"
     );
     verify_c0_sources(&expanded, &[("count_to_n.c", c_source)]).unwrap_or_else(|error| {
@@ -2154,7 +2154,7 @@ fn frontier_local_loop_exit_bound_weakens_to_a_looser_ensures() {
     // The negated loop guard leaves `i >= 3` at the loop's exit. The checked
     // outcome `simp` must retain a checkable proof of the *looser* bounds
     // `result >= 1` and `result <= 5` (constant-bound weakening through
-    // `int32_ge_transitive` / `int32_le_transitive`), not only the exact
+    // `int32_greater_equal_transitive` / `int32_less_equal_transitive`), not only the exact
     // `result == 3`.
     let c_source = r#"
             int32 count_to_three() {

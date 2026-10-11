@@ -410,9 +410,7 @@ impl RangeInRangeEvidence {
     }
 
     fn bounded_access(range: &CMemoryRange) -> Option<(Pointer, u32)> {
-        if range.int32_bounds().is_none() {
-            return None;
-        }
+        range.int32_bounds()?;
         // This fallback covers a concrete write footprint. A modular affine
         // endpoint difference alone does not establish an ordered extent.
         let start = range.signed_constant_start()?;

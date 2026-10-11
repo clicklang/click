@@ -51,7 +51,7 @@ void fill(struct buffer* b, int32 from, int32 to) {
 } by {
     let { prefix: q } = unfold(r);
     have to <= b->n by {
-        apply(int32_le_transitive(to, q, b->n)) using { to <= q; q <= b->n; }
+        apply(int32_less_equal_transitive(to, q, b->n)) using { to <= q; q <= b->n; }
     }
     step();
     step();

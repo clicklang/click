@@ -350,7 +350,7 @@ the case that actually applies:
 | two objects nothing separates | ``the store to `g[0]` may have written it, because `a` may point into `g`. If they are separate, require `separate(memory(a[0..1]), memory(g[0..1]))`; where the contract already transfers `g[0..1]` with `owns` or `consumes`, declaring `views a[0..1]` says the same.`` |
 | a call or a loop with a write set | ``the call in between may write `g[0..1]` …`` then the same two clauses |
 | the resource was written | ``the store to `a[i]` wrote it.`` |
-| the read has no source spelling | ``the store to `g[0]` may have written it, and nothing tells that address apart from this read.`` |
+| the read has no source spelling | ``the memory-history check could not establish that the store to `g[0]` is separate from this read.`` |
 | a fact about a block | ``a fact about `a` as a whole does not carry across the store to `b[j]`.`` plus the note below |
 | a model field across a call | ``` `c.rank` may have changed since function entry: the call to `bump` returned ownership of `c` with a new model, and `bump` promises nothing about this field. If it keeps the field, state `ensures c.rank == old(c.rank)` on `bump`.``` |
 | a model field across a loop | ``` … the loop owns `c`, and a loop head is an arbitrary visit, so it gives `c` a fresh model. If the body keeps the field, carry it through as `invariant c.rank == old(c.rank);`.``` |
@@ -363,6 +363,18 @@ reads no stated separation at all, so the text says so rather than sending the
 reader to write a `separate(..)` the walk will never consult. A model field
 neither point holds is the other: `old(c.rank)` would name nothing either, so
 the text says that rather than printing it.
+
+The memory-history diagnostic uses no proof-context equality or ownership facts
+and explicitly states that scope. A stopped walk does not establish that such
+facts are absent. Proof reports identify the blocking store's snapshot and both
+write width and checked read range, using the same address labels and construction
+legend as goals and traced facts when source names are unavailable. Subsequent
+steps are described as recorded memory transitions, not C statements. The checked
+read range may be
+conservative when the history query has no registered load width. The stopping
+point and write width are retained while the failing proof's session is active;
+formatting never reruns the check in a later arena or under a different bridging
+mode.
 
 The three model-field rows are pinned as refusals with their
 verified repairs beside them:
@@ -385,21 +397,12 @@ a file-scope declaration and yields nothing for a local.
 
 An index only the lowering has a name for is printed `a[…]`, never as the
 kernel variable, and no inequality is proposed over a name nobody wrote. It
-never prints memory, and it reports at most the blocking step plus a count of
-the steps after it.
+does not dump memory contents. It reports the blocking step and whether later
+recorded memory transitions preserve the resource.
 
-A read through a pointer the function received rather than an object it names —
-a pointer a call returned, a pointer a branch join selected — has no source
-spelling at all, so only one side of the comparison can be printed. The text
-still names the store, because that is the step the reader has to be told
-apart from their read, and it does not offer a `separate(..)` it could not
-spell.
-
-No recorded step carries a source span or statement text today, so a step is
-described by kind and target ("a store to `g[0]`", "the call", "the loop"). A
-line number would mean adding a source location to the `CMemoryDerivation`
-edges at their producers in `src/kernel/primitives/memory_state.rs`; the edge
-may carry it, since a span is path-independent.
+A read or store whose address has no source spelling still appears in the
+structured proof report as a report-local address label. Its definition and the
+blocking snapshot's construction are expanded in the shared legend.
 
 ## Every site that decides whether a change matters
 

@@ -28379,13 +28379,6 @@ pub(in crate::kernel) fn instance_arm_model_facts(
     {
         return Vec::new();
     }
-    let Ok(evaluation) = instance_body_evaluation(state, instance, definition) else {
-        return Vec::new();
-    };
-    let evaluation_assumptions = assumptions
-        .clone()
-        .allow_symbolic_contract_loads()
-        .prefer_symbolic_external_loads();
     let constructor = |arm: &CResourceMatchArm| {
         let term = AlgebraicTerm {
             algebraic_type: model.algebraic_type.clone(),
@@ -28396,42 +28389,77 @@ pub(in crate::kernel) fn instance_arm_model_facts(
         };
         (arm.bindings.is_empty() && term.is_well_formed()).then_some(term)
     };
+    // The body is evaluated, and arms are refuted, only for an answer this
+    // call can still publish.
+    let evaluated = std::cell::OnceCell::new();
+    let refuted = |arm: &CResourceMatchArm| -> Option<bool> {
+        let (evaluation, evaluation_assumptions) = evaluated
+            .get_or_init(|| {
+                instance_body_evaluation(state, instance, definition)
+                    .ok()
+                    .map(|evaluation| {
+                        let evaluation_assumptions = assumptions
+                            .clone()
+                            .allow_symbolic_contract_loads()
+                            .prefer_symbolic_external_loads();
+                        (evaluation, evaluation_assumptions)
+                    })
+            })
+            .as_ref()?;
+        Some(
+            arm_is_refuted_by_a_binding_free_fact(
+                evaluation,
+                arm,
+                evaluation_assumptions,
+                assumptions,
+            ) || arm_is_refuted_by_a_predicate_fact(
+                evaluation,
+                model,
+                arm,
+                evaluation_assumptions,
+                assumptions,
+            ),
+        )
+    };
+    // Only an arm naming a constructor without fields publishes anything: its
+    // exclusion, or, when it alone survives, the model's constructor. An arm
+    // whose exclusion is already a fact is refuted; nothing is learned by
+    // refuting it again.
     let mut published = Vec::new();
     let mut surviving = Vec::new();
+    let mut unpublishable = Vec::new();
     for arm in &body.arms {
         crate::instrumentation::record_deterministic_work(1);
-        if !arm_is_refuted_by_a_binding_free_fact(
-            &evaluation,
-            arm,
-            &evaluation_assumptions,
-            assumptions,
-        ) && !arm_is_refuted_by_a_predicate_fact(
-            &evaluation,
-            model,
-            arm,
-            &evaluation_assumptions,
-            assumptions,
-        ) {
-            surviving.push(arm);
-            continue;
-        }
         let Some(excluded) = constructor(arm) else {
+            unpublishable.push(arm);
             continue;
         };
         let negation = Proposition::Not(Box::new(Proposition::Equal(
             Term::Algebraic(model.clone()),
-            Term::Algebraic(excluded),
+            Term::Algebraic(excluded.clone()),
         )));
-        if !required_obligation_is_exactly_discharged(assumptions, &negation) {
-            published.push(negation);
+        if required_obligation_is_exactly_discharged(assumptions, &negation) {
+            continue;
+        }
+        match refuted(arm) {
+            None => return Vec::new(),
+            Some(true) => published.push(negation),
+            Some(false) => surviving.push(excluded),
         }
     }
-    if let [survivor] = surviving.as_slice()
-        && let Some(selected) = constructor(survivor)
-    {
+    // The other arms decide only whether a sole surviving constructor is the
+    // model's: each must be refuted for that.
+    if let [selected] = surviving.as_slice() {
+        for arm in unpublishable {
+            match refuted(arm) {
+                None => return Vec::new(),
+                Some(true) => {}
+                Some(false) => return published,
+            }
+        }
         published.push(Proposition::Equal(
             Term::Algebraic(model.clone()),
-            Term::Algebraic(selected),
+            Term::Algebraic(selected.clone()),
         ));
     }
     published

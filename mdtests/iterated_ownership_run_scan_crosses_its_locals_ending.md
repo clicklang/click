@@ -94,7 +94,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 }
             }
             have 0 <= i by {
-                apply(int32_le_transitive(0, lo, i)) using {
+                apply(int32_less_equal_transitive(0, lo, i)) using {
                     0 <= lo;
                     lo <= i;
                 }
@@ -142,12 +142,12 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                     assumption();
                 }
                 have at(iteration, i) <= i by {
-                    apply(int32_lt_implies_le(at(iteration, i), i)) using {
+                    apply(int32_less_than_implies_less_equal(at(iteration, i), i)) using {
                         at(iteration, i) < i;
                     }
                 }
                 have lo <= i by {
-                    apply(int32_le_transitive(lo, at(iteration, i), i)) using {
+                    apply(int32_less_equal_transitive(lo, at(iteration, i), i)) using {
                         lo <= at(iteration, i);
                         at(iteration, i) <= i;
                     }

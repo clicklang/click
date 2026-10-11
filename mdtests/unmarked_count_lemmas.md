@@ -29,7 +29,7 @@ at the smaller endpoint is the same proposition.
 `unmarked_point_update` says "`b` is `a` with cell `j` marked" with two
 half-range agreements, below `j` and above `j`, rather than one range with
 `k != j`. The `k != j` spelling is provable at only one of the two places that
-need it: `k < j` gives `k != j` through `int32_lt_implies_neq`, but the
+need it: `k < j` gives `k != j` through `int32_less_than_implies_not_equal`, but the
 symmetric `hi - 1 != j` from `j < hi - 1` needs a disequality symmetry Click
 does not have. Split at `j`, each instantiation gets the orientation it can
 prove, and the boundary case hands `unmarked_frame` its premise verbatim.

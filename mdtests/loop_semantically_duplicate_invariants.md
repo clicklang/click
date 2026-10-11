@@ -48,10 +48,10 @@ int32 probe_fill(int32 p[], int32 lo, int32 hi, int32 v) {
         }
         preserve by {
             have 0 <= i by {
-                apply(int32_le_transitive(0, lo, i)) using { 0 <= lo; lo <= i; }
+                apply(int32_less_equal_transitive(0, lo, i)) using { 0 <= lo; lo <= i; }
             }
             have 0 <= hi by {
-                apply(int32_le_transitive(0, lo, hi)) using { 0 <= lo; lo <= hi; }
+                apply(int32_less_equal_transitive(0, lo, hi)) using { 0 <= lo; lo <= hi; }
             }
             have 0 <= hi - i - 1 by {
                 arithmetic() using { i < hi; 0 <= i; 0 <= hi; hi <= 1000; }

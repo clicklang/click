@@ -90,7 +90,7 @@ void* increment_counter(void* argument) {
         to_integer(done) + to_integer(slack) == 2;
         to_integer(1) <= to_integer(slack);
     };
-    have done <= 1 by apply(int32_less_equal_of_to_integer(done, 1));
+    have done <= 1 by apply(int32_to_integer_less_equal_implies_less_equal(done, 1));
     have defined(done + 1);
     have defined(slack - 1);
     have to_integer(done + 1) == to_integer(done) + to_integer(1) by {
@@ -200,7 +200,7 @@ int32 increment_twice(struct mutex_counter* counter) {
         to_integer(counter->value) == 2;
         to_integer(2u32) == 2;
     };
-    have counter->value == 2u32 by apply(uint32_equal_of_to_integer(counter->value, 2u32));
+    have counter->value == 2u32 by apply(uint32_to_integer_equal_implies_equal(counter->value, 2u32));
     unfold(contribution(counter));
     unfold(contribution(counter));
     step();

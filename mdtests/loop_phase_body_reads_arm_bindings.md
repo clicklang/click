@@ -104,7 +104,7 @@ int spin(struct node* p, int n) {
                 initialize by {
                     have i >= 0 by normalize();
                     have i <= n by {
-                        apply(int32_ge_implies_reversed_le(n, 0)) using { n >= 0; }
+                        apply(int32_greater_equal_implies_reversed_less_equal(n, 0)) using { n >= 0; }
                     }
                     have t.model == Tree::Node(id, value, left_model) by {
                         have head_value(Tree::Node(id, value, left_model)) == value by {

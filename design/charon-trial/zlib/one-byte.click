@@ -11,7 +11,7 @@ theorem zlib_byte_u64(value: uint8) {
   apply(int32_less_equal_to_integer(0, (int32)value));
   apply(int32_less_equal_to_integer((int32)value, 255));
   have (uint8)(int32)value == value by { normalize(); }
-  have to_integer((uint8)(int32)value) == to_integer((int32)value) by { arithmetic_certificate special {
+  have to_integer((uint8)(int32)value) == to_integer((int32)value) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer((int32)value) => 0 <= to_integer((int32)value);
    premise 1: to_integer((int32)value) <= 255 => to_integer((int32)value) <= 255;
    integer_cast_identity bounds [0, 1] => to_integer((uint8)(int32)value) == to_integer((int32)value); conclusion 0;
@@ -24,7 +24,7 @@ theorem zlib_byte_u64(value: uint8) {
   have (int32)value <= 255 by { simp(); }
   apply(int32_less_equal_to_integer(0, (int32)value));
   apply(int32_less_equal_to_integer((int32)value, 255));
-  have to_integer((uint64)value) == to_integer((int32)value) by { arithmetic_certificate special {
+  have to_integer((uint64)value) == to_integer((int32)value) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer((int32)value) => 0 <= to_integer((int32)value);
    premise 1: to_integer((int32)value) <= 255 => to_integer((int32)value) <= 255;
    integer_cast_identity bounds [0, 1] => to_integer((uint64)value) == to_integer((int32)value); conclusion 0;
@@ -33,7 +33,7 @@ theorem zlib_byte_u64(value: uint8) {
    to_integer((uint64)value) == to_integer((int32)value);
    to_integer((int32)value) <= to_integer(255);
   } }
-  apply(uint64_less_equal_of_to_integer((uint64)value, 255u64));
+  apply(uint64_to_integer_less_equal_implies_less_equal((uint64)value, 255u64));
   assumption();
  }
  ensures (uint64)(uint32)value <= 255u64 by {
@@ -41,14 +41,14 @@ theorem zlib_byte_u64(value: uint8) {
   have (int32)value <= 255 by { simp(); }
   apply(int32_less_equal_to_integer(0, (int32)value));
   apply(int32_less_equal_to_integer((int32)value, 255));
-  have to_integer((uint32)value) == to_integer((int32)value) by { arithmetic_certificate special {
+  have to_integer((uint32)value) == to_integer((int32)value) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer((int32)value) => 0 <= to_integer((int32)value);
    premise 1: to_integer((int32)value) <= 255 => to_integer((int32)value) <= 255;
    integer_cast_identity bounds [0, 1] => to_integer((uint32)value) == to_integer((int32)value); conclusion 0;
   } }
   have 0 <= to_integer((uint32)value) by { rewrite(to_integer((uint32)value) == to_integer((int32)value)); assumption(); }
   have to_integer((uint32)value) <= 255 by { rewrite(to_integer((uint32)value) == to_integer((int32)value)); assumption(); }
-  have to_integer((uint64)(uint32)value) == to_integer((uint32)value) by { arithmetic_certificate special {
+  have to_integer((uint64)(uint32)value) == to_integer((uint32)value) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer((uint32)value) => 0 <= to_integer((uint32)value);
    premise 1: to_integer((uint32)value) <= 255 => to_integer((uint32)value) <= 255;
    integer_cast_identity bounds [0, 1] => to_integer((uint64)(uint32)value) == to_integer((uint32)value); conclusion 0;
@@ -56,21 +56,21 @@ theorem zlib_byte_u64(value: uint8) {
   have to_integer((uint64)(uint32)value) <= to_integer(255u64) by { arithmetic() using {
    to_integer((uint64)(uint32)value) == to_integer((uint32)value); to_integer((uint32)value) <= 255;
   } }
-  apply(uint64_less_equal_of_to_integer((uint64)(uint32)value, 255u64)); assumption();
+  apply(uint64_to_integer_less_equal_implies_less_equal((uint64)(uint32)value, 255u64)); assumption();
  }
  ensures to_integer((uint64)(uint32)value) == to_integer((int32)value) by {
   have 0 <= (int32)value by { simp(); }
   have (int32)value <= 255 by { simp(); }
   apply(int32_less_equal_to_integer(0, (int32)value));
   apply(int32_less_equal_to_integer((int32)value, 255));
-  have to_integer((uint32)value) == to_integer((int32)value) by { arithmetic_certificate special {
+  have to_integer((uint32)value) == to_integer((int32)value) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer((int32)value) => 0 <= to_integer((int32)value);
    premise 1: to_integer((int32)value) <= 255 => to_integer((int32)value) <= 255;
    integer_cast_identity bounds [0, 1] => to_integer((uint32)value) == to_integer((int32)value); conclusion 0;
   } }
   have 0 <= to_integer((uint32)value) by { rewrite(to_integer((uint32)value) == to_integer((int32)value)); assumption(); }
   have to_integer((uint32)value) <= 255 by { rewrite(to_integer((uint32)value) == to_integer((int32)value)); assumption(); }
-  have to_integer((uint64)(uint32)value) == to_integer((uint32)value) by { arithmetic_certificate special {
+  have to_integer((uint64)(uint32)value) == to_integer((uint32)value) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer((uint32)value) => 0 <= to_integer((uint32)value);
    premise 1: to_integer((uint32)value) <= 255 => to_integer((uint32)value) <= 255;
    integer_cast_identity bounds [0, 1] => to_integer((uint64)(uint32)value) == to_integer((uint32)value); conclusion 0;
@@ -106,15 +106,15 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  have adler == 1u64 + (uint64)(uint32)buf[0] by { simp(); }
  have adler <= 256u64 by { arithmetic() using { (uint64)(uint32)buf[0] <= 255u64; adler == 1u64 + (uint64)(uint32)buf[0]; } }
  have adler < 65521u64 by { arithmetic() using { adler <= 256u64; } }
- apply(uint64_not_greater_equal_of_less_than(adler, 65521u64));
+ apply(uint64_less_than_implies_not_greater_equal(adler, 65521u64));
  execute_until(assignment(sum2, 1)); step();
  have sum2 == adler by { simp(); }
  have sum2 <= 256u64 by { rewrite(sum2 == adler); assumption(); }
  have sum2 < 65521u64 by { arithmetic() using { sum2 <= 256u64; } }
- apply(uint64_not_greater_equal_of_less_than(sum2, 65521u64));
+ apply(uint64_less_than_implies_not_greater_equal(sum2, 65521u64));
  have adler <= 65535u64 by { arithmetic() using { adler <= 256u64; } }
  have sum2 <= 65535u64 by { arithmetic() using { sum2 <= 256u64; } }
- apply(uint64_pack_u16_to_integer(adler, sum2));
+ apply(uint64_pack_uint16_to_integer(adler, sum2));
  have to_integer(1u64) + to_integer((uint64)(uint32)buf[0]) <= 18446744073709551615 by { arithmetic() using { to_integer((uint64)(uint32)buf[0]) == to_integer((int32)buf[0]); to_integer((int32)buf[0]) <= 255; } }
  apply(uint64_add_to_integer(1u64, (uint64)(uint32)buf[0]));
  have to_integer(adler) == 1 + to_integer((int32)buf[0]) by { rewrite(adler == 1u64 + (uint64)(uint32)buf[0]); rewrite(to_integer(1u64 + (uint64)(uint32)buf[0]) == to_integer(1u64) + to_integer((uint64)(uint32)buf[0])); rewrite(to_integer((uint64)(uint32)buf[0]) == to_integer((int32)buf[0])); simp(); }

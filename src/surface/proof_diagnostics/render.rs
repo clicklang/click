@@ -272,6 +272,45 @@ fn alphabetic_label(mut index: usize) -> String {
     letters.into_iter().rev().collect()
 }
 
+/// Identify the actual store where an assumption-free history comparison stops.
+/// Use report-wide labels even when no source spelling names the address.
+pub(crate) fn render_memory_history_check(
+    history: &super::MemoryHistoryDiagnostic,
+    labels: &mut SnapshotLabels,
+) -> Option<String> {
+    use crate::kernel::resource_tracker::{Change, OwnedResource};
+    let naming = labels.naming.clone();
+    let (parameters, arguments) = naming
+        .as_deref()
+        .map_or((&[][..], &[][..]), |(p, a)| (p.as_slice(), a.as_slice()));
+    let explanation = &history.explanation;
+    let (at, stop) = explanation.outcome.blocking_step()?;
+    let OwnedResource::Cell {
+        pointer: read,
+        bytes,
+    } = &explanation.resource
+    else {
+        return None;
+    };
+    let Change::Store { pointer: written } = &stop.change else {
+        return None;
+    };
+    let at = at?;
+    let written_bytes = history.written_bytes?;
+    let address = |pointer: &Pointer, labels: &mut SnapshotLabels| {
+        crate::surface::diagnostics::diagnostic_source_cell(pointer, parameters, arguments)
+            .map(|source| format!("`{source}`"))
+            .unwrap_or_else(|| format!("address {}", labels.pointer_value_name(pointer)))
+    };
+    let written = address(written, labels);
+    let read = address(read, labels);
+    let snapshot = labels.snapshot_name(at.snapshot().memory());
+    Some(format!(
+        "memory-history check stops at {snapshot}:\n    store: {} bytes at {written}\n    read range checked: {bytes} bytes at {read}",
+        written_bytes,
+    ))
+}
+
 /// Render one proposition without allowing its shape or attached snapshots to
 /// determine the size of the error message.
 pub(crate) fn render_proposition(proposition: &Proposition) -> String {

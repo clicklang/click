@@ -786,7 +786,7 @@ int32 identity(int32 x) { ensures result == x by { execute(); simp(); } }
         let first = ClickProject::new("entry.click", [entry.clone(), library.clone()]);
         let reordered = ClickProject::new("entry.click", [library.clone(), entry.clone()]);
         assert_eq!(
-            c0_project_selected_proof_names(&first, &c).unwrap(),
+            project_selected_proof_names(&first, &ProgramInputs::Bundle(c.to_vec())).unwrap(),
             ["function:identity"]
         );
         let first_artifact = verify_c0_project(&first, &c).unwrap().remove(0);
@@ -835,19 +835,23 @@ int32 identity(int32 x) { ensures result == x by { execute(); simp(); } }
                 ),
             ],
         );
-        let sites = expansion::c0_project_smart_tactic_source_sites(&project, &[]).unwrap();
+        let sites = expansion::project_smart_tactic_source_sites(
+            &project,
+            &ProgramInputs::Bundle(Vec::new()),
+        )
+        .unwrap();
         assert_eq!(sites.len(), 1);
         assert_eq!(sites[0].claim_label, "local_ok.ensures_0");
-        let position = expansion::c0_project_tactic_source_position(
+        let position = expansion::project_tactic_source_position(
             &project,
-            &[],
+            &ProgramInputs::Bundle(Vec::new()),
             &sites[0].claim_label,
             sites[0].source_index,
         )
         .unwrap();
-        let expanded = expansion::expand_c0_project_tactic_source_at(
+        let expanded = expansion::expand_project_tactic_source_at(
             &project,
-            &[],
+            &ProgramInputs::Bundle(Vec::new()),
             position.line,
             position.column,
         )
@@ -857,12 +861,16 @@ int32 identity(int32 x) { ensures result == x by { execute(); simp(); } }
             rewritten.modules()[0].source(),
             "theorem imported_bad() { ensures 0 == 1 by simp; }"
         );
-        let rewritten_position =
-            expansion::c0_project_tactic_source_position(&rewritten, &[], "local_ok.ensures_0", 0)
-                .unwrap();
-        verify_c0_project_at(
+        let rewritten_position = expansion::project_tactic_source_position(
             &rewritten,
-            &[],
+            &ProgramInputs::Bundle(Vec::new()),
+            "local_ok.ensures_0",
+            0,
+        )
+        .unwrap();
+        verify_project_at(
+            &rewritten,
+            &ProgramInputs::Bundle(Vec::new()),
             rewritten_position.line,
             rewritten_position.column,
         )
@@ -898,12 +906,21 @@ theorem sibling_bad() { ensures 0 == 1 by simp; }
                 ),
             ],
         );
-        let position =
-            expansion::c0_project_tactic_source_position(&project, &[], "selected_ok.ensures_0", 0)
-                .unwrap();
+        let position = expansion::project_tactic_source_position(
+            &project,
+            &ProgramInputs::Bundle(Vec::new()),
+            "selected_ok.ensures_0",
+            0,
+        )
+        .unwrap();
         super::proof::PROVED_THEOREMS.with(|proved| proved.borrow_mut().clear());
-        verify_c0_project_at(&project, &[], position.line, position.column)
-            .expect("the selected proof should assume declarations without running siblings");
+        verify_project_at(
+            &project,
+            &ProgramInputs::Bundle(Vec::new()),
+            position.line,
+            position.column,
+        )
+        .expect("the selected proof should assume declarations without running siblings");
         super::proof::PROVED_THEOREMS.with(|proved| {
             assert_eq!(proved.borrow().as_slice(), ["selected_ok"]);
         });
@@ -935,34 +952,37 @@ theorem sibling_bad() { ensures 0 == 1 by simp; }
             ),
         ];
         verify_c0_prepared_project(&project, &imports).unwrap();
-        let sites =
-            expansion::c0_prepared_project_smart_tactic_source_sites(&project, &imports).unwrap();
-        assert_eq!(sites.len(), 1);
-        let position = expansion::c0_prepared_project_tactic_source_position(
+        let sites = expansion::project_smart_tactic_source_sites(
             &project,
-            &imports,
+            &ProgramInputs::Prepared(&imports),
+        )
+        .unwrap();
+        assert_eq!(sites.len(), 1);
+        let position = expansion::project_tactic_source_position(
+            &project,
+            &ProgramInputs::Prepared(&imports),
             &sites[0].claim_label,
             sites[0].source_index,
         )
         .unwrap();
-        let expanded = expansion::expand_c0_prepared_project_tactic_source_at(
+        let expanded = expansion::expand_project_tactic_source_at(
             &project,
-            &imports,
+            &ProgramInputs::Prepared(&imports),
             position.line,
             position.column,
         )
         .unwrap();
         let rewritten = project.with_entry_source(expanded);
-        let rewritten_position = expansion::c0_prepared_project_tactic_source_position(
+        let rewritten_position = expansion::project_tactic_source_position(
             &rewritten,
-            &imports,
+            &ProgramInputs::Prepared(&imports),
             "identity.ensures_0",
             0,
         )
         .unwrap();
-        verify_c0_prepared_project_at(
+        verify_project_at(
             &rewritten,
-            &imports,
+            &ProgramInputs::Prepared(&imports),
             rewritten_position.line,
             rewritten_position.column,
         )

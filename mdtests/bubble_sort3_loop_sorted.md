@@ -258,7 +258,7 @@ int32 bubble_sort3_loop(int32 p[3]) {
         have p[0] <= p[1] by simp;
         have p[1] <= p[2] by simp;
         have p[0] <= p[2] by {
-            apply(int32_le_transitive(p[0], p[1], p[2]));
+            apply(int32_less_equal_transitive(p[0], p[1], p[2]));
             assumption();
         }
     }

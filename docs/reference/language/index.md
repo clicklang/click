@@ -2889,8 +2889,8 @@ The same typed array-ref model is used by loop-invariant spec lowering, so a
 pure helper over `uint8[]` can appear in an invariant or inside `old(...)`.
 
 The prelude currently provides byte-slice helpers over `uint8[]`: `byte_count`,
-`bytes_equal`, `bytes_equal_range`, `bytes_all_eq`, `bytes_contains`, and
-`bytes_all_not_eq`. It also provides first-pass C-string predicates:
+`bytes_equal`, `bytes_equal_range`, `bytes_all_equal`, `bytes_contains`, and
+`bytes_all_not_equal`. It also provides first-pass C-string predicates:
 `cstr_prefix`, `cstr_len`, `cstr`, and `cstr_bounded`, whose lengths and bounds
 are `size_t` (`uint64`) values as C measures them. These are ordinary Click
 functions and predicates, not built-in kernel concepts.

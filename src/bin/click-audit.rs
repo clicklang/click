@@ -17,22 +17,12 @@ use click::cli::{
 use click::surface::claim_label_matches;
 use click::surface::{
     C0VerificationSession, ClickProject, SourcePosition, c0_incremental_selection,
-    c0_prepared_project_smart_tactic_source_sites, c0_prepared_project_tactic_source_position,
-    c0_prepared_smart_tactic_source_sites, c0_prepared_tactic_source_position,
-    c0_project_smart_tactic_source_sites, c0_project_tactic_source_position,
-    c0_smart_tactic_source_sites, c0_tactic_source_position, click_import_sites,
-    expand_c0_claim_source_by_label, expand_c0_prepared_claim_source_by_label,
-    expand_c0_prepared_project_claim_source_by_label, expand_c0_prepared_project_tactic_source_at,
-    expand_c0_prepared_tactic_source_at, expand_c0_project_claim_source_by_label,
-    expand_c0_project_tactic_source_at, expand_c0_tactic_source_at,
-    expand_program_prepared_claim_source_by_label,
-    expand_program_prepared_project_claim_source_by_label,
-    expand_program_prepared_project_tactic_source_at, expand_program_prepared_tactic_source_at,
-    program_prepared_project_smart_tactic_source_sites,
-    program_prepared_project_tactic_source_position, program_prepared_smart_tactic_source_sites,
-    program_prepared_tactic_source_position, verify_c0_prepared_project_at,
-    verify_c0_prepared_sources_at, verify_c0_project_at, verify_c0_sources_at,
-    verify_program_prepared_project_at, verify_program_prepared_sources_at, verifying_source_paths,
+    click_import_sites, expand_c0_claim_source_by_label, expand_c0_prepared_claim_source_by_label,
+    expand_c0_prepared_tactic_source_at, expand_c0_tactic_source_at,
+    expand_program_prepared_claim_source_by_label, expand_program_prepared_tactic_source_at,
+    expand_project_claim_source_by_label, expand_project_tactic_source_at,
+    project_smart_tactic_source_sites, project_tactic_source_position, smart_tactic_source_sites,
+    tactic_source_position, verify_project_at, verify_sources_at, verifying_source_paths,
 };
 
 /// Each phase's wall-clock bound is crash containment only: a phase is judged
@@ -1201,23 +1191,11 @@ fn inventory_sites(sources: &[PathBuf]) -> Result<Vec<AuditSite>, String> {
             line_offset,
             ..
         } = source;
-        let syntactic_sites = match &inputs {
-            CInput::Bundle(sources) => match &project {
-                Some(project) => {
-                    c0_project_smart_tactic_source_sites(project, &source_refs(sources))
-                }
-                None => c0_smart_tactic_source_sites(&click_source, &source_refs(sources)),
-            },
-            CInput::Prepared(imports) => match &project {
-                Some(project) => c0_prepared_project_smart_tactic_source_sites(project, imports),
-                None => c0_prepared_smart_tactic_source_sites(&click_source, imports),
-            },
-            CInput::PreparedProgram(import) => match &project {
-                Some(project) => {
-                    program_prepared_project_smart_tactic_source_sites(project, import)
-                }
-                None => program_prepared_smart_tactic_source_sites(&click_source, import),
-            },
+        let syntactic_sites = match (&project, &inputs) {
+            (Some(project), _) => {
+                project_smart_tactic_source_sites(project, &inputs.program_inputs())
+            }
+            (None, inputs) => smart_tactic_source_sites(&click_source, &inputs.program_inputs()),
         }
         .map_err(|error| {
             format!(
@@ -1708,35 +1686,13 @@ fn audit_selected_claim_rewrite(
     let source = &worker.source;
     let (artifact, expansion) = run_phase("expansion", limits.expansion.within(deadline)?, || {
         use click::surface::*;
-        match &source.inputs {
-            CInput::Bundle(sources) => match &source.project {
-                Some(project) => {
-                    expand_c0_project_tactics_source_at(project, &source_refs(sources), &positions)
-                }
-                None => expand_c0_tactics_source_at(
-                    &source.click_source,
-                    &source_refs(sources),
-                    &positions,
-                ),
-            },
-            CInput::Prepared(imports) => match &source.project {
-                Some(project) => {
-                    expand_c0_prepared_project_tactics_source_at(project, imports, &positions)
-                }
-                None => {
-                    expand_c0_prepared_tactics_source_at(&source.click_source, imports, &positions)
-                }
-            },
-            CInput::PreparedProgram(import) => match &source.project {
-                Some(project) => {
-                    expand_program_prepared_project_tactics_source_at(project, import, &positions)
-                }
-                None => expand_program_prepared_tactics_source_at(
-                    &source.click_source,
-                    import,
-                    &positions,
-                ),
-            },
+        match (&source.project, &source.inputs) {
+            (Some(project), inputs) => {
+                expand_project_tactics_source_at(project, &inputs.program_inputs(), &positions)
+            }
+            (None, inputs) => {
+                expand_tactics_source_at(&source.click_source, &inputs.program_inputs(), &positions)
+            }
         }
         .map_err(|error| error.report())
     })?;
@@ -1819,35 +1775,21 @@ fn expand_claim_with_source(
     source: &AuditSource,
     claim_label: &str,
 ) -> Result<String, String> {
-    let expanded_click = match &source.inputs {
-        CInput::Bundle(sources) => match &source.project {
-            Some(project) => {
-                expand_c0_project_claim_source_by_label(project, &source_refs(sources), claim_label)
-            }
-            None => expand_c0_claim_source_by_label(
-                &source.click_source,
-                &source_refs(sources),
-                claim_label,
-            ),
-        },
-        CInput::Prepared(imports) => match &source.project {
-            Some(project) => {
-                expand_c0_prepared_project_claim_source_by_label(project, imports, claim_label)
-            }
-            None => {
-                expand_c0_prepared_claim_source_by_label(&source.click_source, imports, claim_label)
-            }
-        },
-        CInput::PreparedProgram(import) => match &source.project {
-            Some(project) => {
-                expand_program_prepared_project_claim_source_by_label(project, import, claim_label)
-            }
-            None => expand_program_prepared_claim_source_by_label(
-                &source.click_source,
-                import,
-                claim_label,
-            ),
-        },
+    let expanded_click = match (&source.project, &source.inputs) {
+        (Some(project), inputs) => {
+            expand_project_claim_source_by_label(project, &inputs.program_inputs(), claim_label)
+        }
+        (None, CInput::Bundle(sources)) => expand_c0_claim_source_by_label(
+            &source.click_source,
+            &source_refs(sources),
+            claim_label,
+        ),
+        (None, CInput::Prepared(imports)) => {
+            expand_c0_prepared_claim_source_by_label(&source.click_source, imports, claim_label)
+        }
+        (None, CInput::PreparedProgram(import)) => {
+            expand_program_prepared_claim_source_by_label(&source.click_source, import, claim_label)
+        }
     }
     .map_err(|error| error.report())?;
     if looks_like_mdtest(click_path) {
@@ -1882,28 +1824,12 @@ fn smart_sites_for_source(
     inputs: &CInput,
     project: Option<&ClickProject>,
 ) -> Result<Vec<click::surface::SmartTacticSourceSite>, String> {
-    let sites = match inputs {
-        CInput::Bundle(sources) => match project {
-            Some(project) => c0_project_smart_tactic_source_sites(
-                &project.with_entry_source(source.to_string()),
-                &source_refs(sources),
-            ),
-            None => c0_smart_tactic_source_sites(source, &source_refs(sources)),
-        },
-        CInput::Prepared(imports) => match project {
-            Some(project) => c0_prepared_project_smart_tactic_source_sites(
-                &project.with_entry_source(source.to_string()),
-                imports,
-            ),
-            None => c0_prepared_smart_tactic_source_sites(source, imports),
-        },
-        CInput::PreparedProgram(import) => match project {
-            Some(project) => program_prepared_project_smart_tactic_source_sites(
-                &project.with_entry_source(source.to_string()),
-                import,
-            ),
-            None => program_prepared_smart_tactic_source_sites(source, import),
-        },
+    let sites = match (project, inputs) {
+        (Some(project), _) => project_smart_tactic_source_sites(
+            &project.with_entry_source(source.to_string()),
+            &inputs.program_inputs(),
+        ),
+        (None, inputs) => smart_tactic_source_sites(source, &inputs.program_inputs()),
     };
     sites.map_err(|error| error.report())
 }
@@ -2231,43 +2157,25 @@ fn expand_location_with_source_parts(
             "line {line} is outside the proof container's Click source"
         ));
     };
-    let expanded_click = match &source.inputs {
-        CInput::Bundle(sources) => match &source.project {
-            Some(project) => expand_c0_project_tactic_source_at(
-                project,
-                &source_refs(sources),
-                click_line,
-                column,
-            ),
-            None => expand_c0_tactic_source_at(
-                &source.click_source,
-                &source_refs(sources),
-                click_line,
-                column,
-            ),
-        },
-        CInput::Prepared(imports) => match &source.project {
-            Some(project) => {
-                expand_c0_prepared_project_tactic_source_at(project, imports, click_line, column)
-            }
-            None => expand_c0_prepared_tactic_source_at(
-                &source.click_source,
-                imports,
-                click_line,
-                column,
-            ),
-        },
-        CInput::PreparedProgram(import) => match &source.project {
-            Some(project) => expand_program_prepared_project_tactic_source_at(
-                project, import, click_line, column,
-            ),
-            None => expand_program_prepared_tactic_source_at(
-                &source.click_source,
-                import,
-                click_line,
-                column,
-            ),
-        },
+    let expanded_click = match (&source.project, &source.inputs) {
+        (Some(project), inputs) => {
+            expand_project_tactic_source_at(project, &inputs.program_inputs(), click_line, column)
+        }
+        (None, CInput::Bundle(sources)) => expand_c0_tactic_source_at(
+            &source.click_source,
+            &source_refs(sources),
+            click_line,
+            column,
+        ),
+        (None, CInput::Prepared(imports)) => {
+            expand_c0_prepared_tactic_source_at(&source.click_source, imports, click_line, column)
+        }
+        (None, CInput::PreparedProgram(import)) => expand_program_prepared_tactic_source_at(
+            &source.click_source,
+            import,
+            click_line,
+            column,
+        ),
     }
     .map_err(|error| error.report())?;
     if looks_like_mdtest(click_path) {
@@ -2292,49 +2200,19 @@ fn verify_rewritten_with_inputs(
     rewritten_click_source: &str,
 ) -> Result<(), String> {
     let position = claim_source_position_for_source(source, rewritten_click_source, claim_label)?;
-    match &source.inputs {
-        CInput::Bundle(sources) => match &source.project {
-            Some(project) => verify_c0_project_at(
-                &project.with_entry_source(rewritten_click_source.to_string()),
-                &source_refs(sources),
-                position.line,
-                position.column,
-            ),
-            None => verify_c0_sources_at(
-                rewritten_click_source,
-                &source_refs(sources),
-                position.line,
-                position.column,
-            ),
-        },
-        CInput::Prepared(imports) => match &source.project {
-            Some(project) => verify_c0_prepared_project_at(
-                &project.with_entry_source(rewritten_click_source.to_string()),
-                imports,
-                position.line,
-                position.column,
-            ),
-            None => verify_c0_prepared_sources_at(
-                rewritten_click_source,
-                imports,
-                position.line,
-                position.column,
-            ),
-        },
-        CInput::PreparedProgram(import) => match &source.project {
-            Some(project) => verify_program_prepared_project_at(
-                &project.with_entry_source(rewritten_click_source.to_string()),
-                import,
-                position.line,
-                position.column,
-            ),
-            None => verify_program_prepared_sources_at(
-                rewritten_click_source,
-                import,
-                position.line,
-                position.column,
-            ),
-        },
+    match (&source.project, &source.inputs) {
+        (Some(project), inputs) => verify_project_at(
+            &project.with_entry_source(rewritten_click_source.to_string()),
+            &inputs.program_inputs(),
+            position.line,
+            position.column,
+        ),
+        (None, inputs) => verify_sources_at(
+            rewritten_click_source,
+            &inputs.program_inputs(),
+            position.line,
+            position.column,
+        ),
     }
     .map(|_| ())
     .map_err(|error| error.report())
@@ -2353,29 +2231,15 @@ fn claim_source_position_for_source(
     click_source: &str,
     claim_label: &str,
 ) -> Result<SourcePosition, String> {
-    let position = match (&source.inputs, &source.project) {
-        (CInput::Bundle(sources), Some(project)) => c0_project_tactic_source_position(
-            &project.with_entry_source(click_source.to_string()),
-            &source_refs(sources),
-            claim_label,
-            0,
-        ),
-        (CInput::Prepared(imports), Some(project)) => c0_prepared_project_tactic_source_position(
-            &project.with_entry_source(click_source.to_string()),
-            imports,
-            claim_label,
-            0,
-        ),
-        (CInput::PreparedProgram(import), Some(project)) => {
-            program_prepared_project_tactic_source_position(
-                &project.with_entry_source(click_source.to_string()),
-                import,
-                claim_label,
-                0,
-            )
-        }
-        _ => return claim_source_position_for_inputs(click_source, &source.inputs, claim_label),
+    let Some(project) = &source.project else {
+        return claim_source_position_for_inputs(click_source, &source.inputs, claim_label);
     };
+    let position = project_tactic_source_position(
+        &project.with_entry_source(click_source.to_string()),
+        &source.inputs.program_inputs(),
+        claim_label,
+        0,
+    );
     position.map_err(|error| {
         format!(
             "could not locate `{claim_label}` in the rewritten sidecar: {}",
@@ -2389,17 +2253,7 @@ fn claim_source_position_for_inputs(
     inputs: &CInput,
     claim_label: &str,
 ) -> Result<SourcePosition, String> {
-    let position = match inputs {
-        CInput::Bundle(sources) => {
-            c0_tactic_source_position(click_source, &source_refs(sources), claim_label, 0)
-        }
-        CInput::Prepared(imports) => {
-            c0_prepared_tactic_source_position(click_source, imports, claim_label, 0)
-        }
-        CInput::PreparedProgram(import) => {
-            program_prepared_tactic_source_position(click_source, import, claim_label, 0)
-        }
-    };
+    let position = tactic_source_position(click_source, &inputs.program_inputs(), claim_label, 0);
     position.map_err(|error| {
         format!(
             "could not locate `{claim_label}` in the rewritten sidecar: {}",

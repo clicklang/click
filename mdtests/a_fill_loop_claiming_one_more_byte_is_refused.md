@@ -45,7 +45,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
                         arithmetic() using { k < at(before, i) + 1u64; at(before, i) < length; }
                     }
                     have k == at(before, i) by {
-                        apply(uint64_le_and_not_lt_implies_eq(k, at(before, i))) using {
+                        apply(uint64_less_equal_and_not_less_than_implies_equal(k, at(before, i))) using {
                             k <= at(before, i);
                             not k < at(before, i);
                         }
@@ -58,7 +58,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
     }
     execute();
     have at(loop(0).exit, i) == length by {
-        apply(uint64_le_and_not_lt_implies_eq(at(loop(0).exit, i), length)) using {
+        apply(uint64_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), length)) using {
             at(loop(0).exit, i) <= length;
             not at(loop(0).exit, i) < length;
         }

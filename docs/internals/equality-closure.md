@@ -42,6 +42,16 @@ Offset equality queries register the same producer-retained typed-read
 definitions as full-pointer queries. Registration visits only the selected
 operands; it never infers pointer-block identity from equal offsets.
 
+A checked pointer store also emits the equation between its stored pointer
+address and the address returned by the typed pointer read at the written
+cell in the resulting snapshot.
+The equation travels with the certified execution facts into the ordinary
+graph, so an equal-address query does not require a preliminary read through
+the store spelling. It relates only that snapshot; a subsequent write needs
+its own preservation evidence. Scalar or partial stores do not emit these
+pointer-address equations. The equation does not equate designations;
+designation transport requires the complete checked pointer carrier.
+
 When a logical read returns a cached pointer, its path also carries the
 producer-derived equation between that value and the current cell's typed
 read. A named scalar cache supplies this equation only when its original

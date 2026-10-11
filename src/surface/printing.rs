@@ -778,7 +778,7 @@ fn write_arithmetic_certificate(
                 reverse,
                 result,
             } => format!(
-                "eq_to_le {source}{} => {};",
+                "less_equal_from_equal {source}{} => {};",
                 if *reverse { " reverse" } else { "" },
                 source_click_proposition(result)
             ),
@@ -787,7 +787,7 @@ fn write_arithmetic_certificate(
                 upper,
                 result,
             } => format!(
-                "eq_from_bounds {lower}, {upper} => {};",
+                "equal_from_bounds {lower}, {upper} => {};",
                 source_click_proposition(result)
             ),
             IntegerCertificateNode::Trivial { result } => {
@@ -810,7 +810,7 @@ fn write_special_arithmetic_certificate(
     indent: usize,
 ) {
     let prefix = "    ".repeat(indent);
-    line(output, &prefix, "arithmetic_certificate special {");
+    line(output, &prefix, "arithmetic_certificate rules {");
     let body = "    ".repeat(indent + 1);
     for (index, premise) in certificate.premises.iter().enumerate() {
         line(
@@ -1025,7 +1025,7 @@ fn write_signed_int32_certificate(
                 reverse,
                 result,
             } => format!(
-                "eq_to_le {source}{} => {};",
+                "less_equal_from_equal {source}{} => {};",
                 if *reverse { " reverse" } else { "" },
                 source_click_proposition(result)
             ),
@@ -1034,7 +1034,7 @@ fn write_signed_int32_certificate(
                 upper,
                 result,
             } => format!(
-                "eq_from_bounds {lower}, {upper} => {};",
+                "equal_from_bounds {lower}, {upper} => {};",
                 source_click_proposition(result)
             ),
             SignedArithmeticStep::StrictFromDisequal {
@@ -1042,7 +1042,7 @@ fn write_signed_int32_certificate(
                 disequal,
                 result,
             } => format!(
-                "lt_from_neq {bound}, {disequal} => {};",
+                "less_than_from_not_equal {bound}, {disequal} => {};",
                 source_click_proposition(result)
             ),
             SignedArithmeticStep::Trivial { result } => {

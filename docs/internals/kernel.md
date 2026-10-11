@@ -175,7 +175,6 @@ the trusted implementation settles that question.
 `prove_int32_positive_is_nonnegative`, and
 `prove_int32_lt_implies_le`,
 `prove_int32_not_lt_implies_ge`,
-`prove_int32_strictly_positive_is_nonnegative`,
 `prove_int32_increment_below_max_is_defined`,
 `prove_int32_one_plus_below_max_is_defined`,
 `prove_int32_one_plus_strictly_increases`,

@@ -46,29 +46,6 @@ function nat_add(left: Nat, right: Nat) -> Nat
     }
 }
 
-function nat_to_integer(value: Nat) -> Integer
-    decreases value
-{
-    match value {
-        Nat::Zero => 0,
-        Nat::Succ(previous) => nat_to_integer(previous) + 1,
-    }
-}
-
-theorem nat_to_integer_zero() {
-    ensures nat_to_integer(Nat::Zero) == 0 by {
-        unfold(nat_to_integer(Nat::Zero));
-        normalize();
-    }
-}
-
-theorem nat_to_integer_succ(n: Nat) {
-    ensures nat_to_integer(Nat::Succ(n)) == nat_to_integer(n) + 1 by {
-        unfold(nat_to_integer(Nat::Succ(n)));
-        normalize();
-    }
-}
-
 theorem nat_add_left_identity(n: Nat) {
     ensures nat_add(Nat::Zero, n) == n by {
         unfold(nat_add(Nat::Zero, n));
@@ -414,7 +391,7 @@ theorem int32_increment_greater_equal_lower_bound(value: int32, lower: int32, up
     ensures value + 1 >= lower;
 }
 
-theorem int32_increment_strict_greater_lower_bound(value: int32, lower: int32, upper: int32) {
+theorem int32_increment_greater_than_lower_bound(value: int32, lower: int32, upper: int32) {
     requires value >= lower;
     requires value < upper;
 
@@ -428,47 +405,41 @@ theorem int32_increment_preserves_order(value: int32, lower: int32, upper: int32
     ensures lower + 1 <= value + 1;
 }
 
-theorem int32_successor_le_implies_lt(lower: int32, value: int32) {
+theorem int32_increment_less_equal_implies_less_than(lower: int32, value: int32) {
     requires lower < lower + 1;
     requires lower + 1 <= value;
 
     ensures lower < value;
 }
 
-theorem int32_lt_successor_implies_le(value: int32, upper: int32) {
+theorem int32_less_than_increment_implies_less_equal(value: int32, upper: int32) {
     requires value < upper + 1;
 
     ensures value <= upper;
 }
 
 theorem int32_positive_is_nonnegative(value: int32) {
-    requires 1 <= value;
+    requires 0 < value;
 
     ensures 0 <= value;
 }
 
-theorem int32_lt_implies_le(left: int32, right: int32) {
+theorem int32_less_than_implies_less_equal(left: int32, right: int32) {
     requires left < right;
 
     ensures left <= right;
 }
 
-theorem int32_lt_implies_neq(left: int32, right: int32) {
+theorem int32_less_than_implies_not_equal(left: int32, right: int32) {
     requires left < right;
 
     ensures left != right;
 }
 
-theorem int32_not_lt_implies_ge(left: int32, right: int32) {
+theorem int32_not_less_than_implies_greater_equal(left: int32, right: int32) {
     requires not (left < right);
 
     ensures left >= right;
-}
-
-theorem int32_strictly_positive_is_nonnegative(value: int32) {
-    requires 0 < value;
-
-    ensures value >= 0;
 }
 
 theorem int32_increment_below_max_is_defined(value: int32) {
@@ -477,13 +448,13 @@ theorem int32_increment_below_max_is_defined(value: int32) {
     ensures defined(value + 1);
 }
 
-theorem int32_one_plus_below_max_is_defined(value: int32) {
+theorem int32_increment_left_below_max_is_defined(value: int32) {
     requires value < 2147483647;
 
     ensures defined(1 + value);
 }
 
-theorem int32_one_plus_strictly_increases(value: int32) {
+theorem int32_increment_left_strictly_increases(value: int32) {
     requires value < 2147483647;
 
     ensures value < 1 + value;
@@ -575,7 +546,7 @@ theorem uint32_increment_strictly_increases(value: uint32, upper: uint32) {
     ensures value < value + 1u32;
 }
 
-theorem uint32_lt_implies_positive_difference(value: uint32, upper: uint32) {
+theorem uint32_less_than_implies_positive_difference(value: uint32, upper: uint32) {
     requires value < upper;
 
     ensures 0u32 < upper - value;
@@ -587,116 +558,116 @@ theorem uint32_difference_decreases_after_increment(value: uint32, bound: uint32
     ensures (0u32 - value) + (bound - 1u32) < (0u32 - value) + bound;
 }
 
-theorem uint32_lt_le_transitive(first: uint32, middle: uint32, last: uint32) {
+theorem uint32_less_than_less_equal_transitive(first: uint32, middle: uint32, last: uint32) {
     requires first < middle;
     requires middle <= last;
 
     ensures first < last;
 }
 
-theorem uint32_le_lt_transitive(first: uint32, middle: uint32, last: uint32) {
+theorem uint32_less_equal_less_than_transitive(first: uint32, middle: uint32, last: uint32) {
     requires first <= middle;
     requires middle < last;
 
     ensures first < last;
 }
 
-theorem uint32_lt_transitive(first: uint32, middle: uint32, last: uint32) {
+theorem uint32_less_than_transitive(first: uint32, middle: uint32, last: uint32) {
     requires first < middle;
     requires middle < last;
 
     ensures first < last;
 }
 
-theorem uint32_le_transitive(first: uint32, middle: uint32, last: uint32) {
-    requires first <= middle;
-    requires middle <= last;
-
-    ensures first <= last;
-}
-
-theorem uint64_lt_le_transitive(first: uint64, middle: uint64, last: uint64) {
-    requires first < middle;
-    requires middle <= last;
-
-    ensures first < last;
-}
-
-theorem uint64_le_lt_transitive(first: uint64, middle: uint64, last: uint64) {
-    requires first <= middle;
-    requires middle < last;
-
-    ensures first < last;
-}
-
-theorem uint64_lt_transitive(first: uint64, middle: uint64, last: uint64) {
-    requires first < middle;
-    requires middle < last;
-
-    ensures first < last;
-}
-
-theorem uint64_le_transitive(first: uint64, middle: uint64, last: uint64) {
+theorem uint32_less_equal_transitive(first: uint32, middle: uint32, last: uint32) {
     requires first <= middle;
     requires middle <= last;
 
     ensures first <= last;
 }
 
-theorem uint64_le_and_not_lt_implies_eq(left: uint64, right: uint64) {
+theorem uint64_less_than_less_equal_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last;
+}
+
+theorem uint64_less_equal_less_than_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+
+theorem uint64_less_than_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first < middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+
+theorem uint64_less_equal_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last;
+}
+
+theorem uint64_less_equal_and_not_less_than_implies_equal(left: uint64, right: uint64) {
     requires left <= right;
     requires not left < right;
 
     ensures left == right;
 }
 
-theorem int64_lt_le_transitive(first: int64, middle: int64, last: int64) {
+theorem int64_less_than_less_equal_transitive(first: int64, middle: int64, last: int64) {
     requires first < middle;
     requires middle <= last;
 
     ensures first < last;
 }
 
-theorem int64_le_lt_transitive(first: int64, middle: int64, last: int64) {
+theorem int64_less_equal_less_than_transitive(first: int64, middle: int64, last: int64) {
     requires first <= middle;
     requires middle < last;
 
     ensures first < last;
 }
 
-theorem int64_lt_transitive(first: int64, middle: int64, last: int64) {
+theorem int64_less_than_transitive(first: int64, middle: int64, last: int64) {
     requires first < middle;
     requires middle < last;
 
     ensures first < last;
 }
 
-theorem int64_le_transitive(first: int64, middle: int64, last: int64) {
+theorem int64_less_equal_transitive(first: int64, middle: int64, last: int64) {
     requires first <= middle;
     requires middle <= last;
 
     ensures first <= last;
 }
 
-theorem uint32_gt_implies_reversed_lt(greater: uint32, lower: uint32) {
+theorem uint32_greater_than_implies_reversed_less_than(greater: uint32, lower: uint32) {
     requires greater > lower;
 
     ensures lower < greater;
 }
 
-theorem uint32_lt_implies_reversed_gt(lower: uint32, greater: uint32) {
+theorem uint32_less_than_implies_reversed_greater_than(lower: uint32, greater: uint32) {
     requires lower < greater;
 
     ensures greater > lower;
 }
 
-theorem uint32_ge_implies_reversed_le(greater: uint32, lower: uint32) {
+theorem uint32_greater_equal_implies_reversed_less_equal(greater: uint32, lower: uint32) {
     requires greater >= lower;
 
     ensures lower <= greater;
 }
 
-theorem uint32_le_implies_reversed_ge(lower: uint32, greater: uint32) {
+theorem uint32_less_equal_implies_reversed_greater_equal(lower: uint32, greater: uint32) {
     requires lower <= greater;
 
     ensures greater >= lower;
@@ -709,68 +680,68 @@ theorem int32_nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
     ensures value - 1 <= bound;
 }
 
-theorem int32_le_lt_transitive(first: int32, middle: int32, last: int32) {
+theorem int32_less_equal_less_than_transitive(first: int32, middle: int32, last: int32) {
     requires first <= middle;
     requires middle < last;
 
     ensures first < last;
 }
 
-theorem int32_le_transitive(first: int32, middle: int32, last: int32) {
+theorem int32_less_equal_transitive(first: int32, middle: int32, last: int32) {
     requires first <= middle;
     requires middle <= last;
 
     ensures first <= last;
 }
 
-theorem int32_lt_transitive(first: int32, middle: int32, last: int32) {
+theorem int32_less_than_transitive(first: int32, middle: int32, last: int32) {
     requires first < middle;
     requires middle < last;
 
     ensures first < last;
 }
 
-theorem int32_lt_le_transitive(first: int32, middle: int32, last: int32) {
+theorem int32_less_than_less_equal_transitive(first: int32, middle: int32, last: int32) {
     requires first < middle;
     requires middle <= last;
 
     ensures first < last;
 }
 
-theorem int32_ge_transitive(last: int32, middle: int32, first: int32) {
+theorem int32_greater_equal_transitive(last: int32, middle: int32, first: int32) {
     requires last >= middle;
     requires middle >= first;
 
     ensures last >= first;
 }
 
-theorem int32_ge_implies_reversed_le(greater: int32, lower: int32) {
+theorem int32_greater_equal_implies_reversed_less_equal(greater: int32, lower: int32) {
     requires greater >= lower;
 
     ensures lower <= greater;
 }
 
-theorem int32_le_implies_reversed_ge(lower: int32, greater: int32) {
+theorem int32_less_equal_implies_reversed_greater_equal(lower: int32, greater: int32) {
     requires lower <= greater;
 
     ensures greater >= lower;
 }
 
-theorem int32_le_and_not_lt_implies_eq(left: int32, right: int32) {
+theorem int32_less_equal_and_not_less_than_implies_equal(left: int32, right: int32) {
     requires left <= right;
     requires not (left < right);
 
     ensures left == right;
 }
 
-theorem int32_le_and_neq_implies_lt(left: int32, right: int32) {
+theorem int32_less_equal_and_not_equal_implies_less_than(left: int32, right: int32) {
     requires left <= right;
     requires left != right;
 
     ensures left < right;
 }
 
-theorem int32_ge_and_not_gt_implies_eq(left: int32, right: int32) {
+theorem int32_greater_equal_and_not_greater_than_implies_equal(left: int32, right: int32) {
     requires left >= right;
     requires not (left > right);
 
@@ -810,7 +781,7 @@ predicate bytes_equal_range(left: uint8[], right: uint8[], lo: uint64, hi: uint6
     })
 }
 
-predicate bytes_all_eq(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
+predicate bytes_all_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     (lo..hi).all(|k| {
         bytes[k] == value
     })
@@ -822,7 +793,7 @@ predicate bytes_contains(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     })
 }
 
-predicate bytes_all_not_eq(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
+predicate bytes_all_not_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     (lo..hi).all(|k| {
         bytes[k] != value
     })
@@ -894,7 +865,7 @@ theorem cstr_readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
                         have left <= right by {
                             simp();
                         }
-                        apply(uint64_le_and_not_lt_implies_eq(left, right)) using {
+                        apply(uint64_less_equal_and_not_less_than_implies_equal(left, right)) using {
                             left <= right;
                             not (left < right);
                         }
@@ -1037,7 +1008,7 @@ theorem uint64_less_equal_to_integer(left: uint64, right: uint64) {
     ensures to_integer(left) <= to_integer(right);
 }
 
-theorem uint64_less_equal_of_to_integer(left: uint64, right: uint64) {
+theorem uint64_to_integer_less_equal_implies_less_equal(left: uint64, right: uint64) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right;
 }
@@ -1047,35 +1018,35 @@ theorem uint64_less_than_to_integer(left: uint64, right: uint64) {
     ensures to_integer(left) < to_integer(right);
 }
 
-theorem uint64_less_than_of_to_integer(left: uint64, right: uint64) {
+theorem uint64_to_integer_less_than_implies_less_than(left: uint64, right: uint64) {
     requires to_integer(left) < to_integer(right);
     ensures left < right;
 }
 
-theorem uint32_pack_u16_to_integer(low: uint32, high: uint32) {
+theorem uint32_pack_uint16_to_integer(low: uint32, high: uint32) {
     requires low <= 65535u32;
     requires high <= 65535u32;
     ensures to_integer(low | (high << 16)) == to_integer(low) + 65536 * to_integer(high);
 }
 
-theorem uint32_pack_u16_high_first_to_integer(low: uint32, high: uint32) {
+theorem uint32_pack_uint16_high_first_to_integer(low: uint32, high: uint32) {
     requires low <= 65535u32;
     requires high <= 65535u32;
     ensures to_integer((high << 16) | low) == to_integer(low) + 65536 * to_integer(high);
 }
 
-theorem uint64_pack_u16_to_integer(low: uint64, high: uint64) {
+theorem uint64_pack_uint16_to_integer(low: uint64, high: uint64) {
     requires low <= 65535u64;
     requires high <= 65535u64;
     ensures to_integer(low | (high << 16)) == to_integer(low) + 65536 * to_integer(high);
 }
 
-theorem uint64_not_greater_equal_of_less_than(left: uint64, right: uint64) {
+theorem uint64_less_than_implies_not_greater_equal(left: uint64, right: uint64) {
     requires left < right;
     ensures not (left >= right);
 }
 
-theorem uint64_equal_of_to_integer(left: uint64, right: uint64) {
+theorem uint64_to_integer_equal_implies_equal(left: uint64, right: uint64) {
     requires to_integer(left) == to_integer(right);
     ensures left == right;
 }
@@ -1093,12 +1064,12 @@ theorem uint32_remainder_to_integer(left: uint32, right: uint32) {
     ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right));
 }
 
-theorem uint32_mul_to_integer(left: uint32, right: uint32) {
+theorem uint32_multiply_to_integer(left: uint32, right: uint32) {
     requires right == 0u32 or left <= 4294967295u32 / right;
     ensures to_integer(left * right) == to_integer(left) * to_integer(right);
 }
 
-theorem uint32_mul_guard_by_integer_bound(left: uint32, right: uint32) {
+theorem uint32_multiply_guard_by_integer_bound(left: uint32, right: uint32) {
     requires to_integer(left) * to_integer(right) <= 4294967295;
     ensures right == 0u32 or left <= 4294967295u32 / right;
 }
@@ -1108,12 +1079,12 @@ theorem uint32_less_equal_to_integer(left: uint32, right: uint32) {
     ensures to_integer(left) <= to_integer(right);
 }
 
-theorem uint32_less_equal_of_to_integer(left: uint32, right: uint32) {
+theorem uint32_to_integer_less_equal_implies_less_equal(left: uint32, right: uint32) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right;
 }
 
-theorem uint32_equal_of_to_integer(left: uint32, right: uint32) {
+theorem uint32_to_integer_equal_implies_equal(left: uint32, right: uint32) {
     requires to_integer(left) == to_integer(right);
     ensures left == right;
 }
@@ -1122,7 +1093,7 @@ theorem uint32_less_than_to_integer(left: uint32, right: uint32) {
     requires left < right;
     ensures to_integer(left) < to_integer(right) by {
         if to_integer(right) <= to_integer(left) {
-            apply(uint32_less_equal_of_to_integer(right, left));
+            apply(uint32_to_integer_less_equal_implies_less_equal(right, left));
             contradiction(left < right);
         } else {
             arithmetic() using { not (to_integer(right) <= to_integer(left)); }
@@ -1135,7 +1106,7 @@ theorem uint32_remainder_less_than_divisor(value: uint32, divisor: uint32) {
     ensures value % divisor < divisor;
 }
 
-theorem uint32_remainder_of_lt(value: uint32, divisor: uint32) {
+theorem uint32_less_than_divisor_implies_remainder_is_value(value: uint32, divisor: uint32) {
     requires value < divisor;
     ensures value % divisor == value;
 }
@@ -1161,7 +1132,7 @@ theorem uint32_nonzero_to_integer(value: uint32) {
   have 1 <= to_integer(value) by {
    arithmetic() using { 0 <= to_integer(0u32 % value); to_integer(0u32 % value) < to_integer(value); }
   }
-  arithmetic_certificate special {
+  arithmetic_certificate rules {
    premise 0: 1 <= to_integer(value) => 1 <= to_integer(value);
    integer_bound_exclusion bounds [0] => to_integer(value) != 0;
    conclusion 0;
@@ -1190,12 +1161,12 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
     ensures to_integer(left) <= to_integer(right);
 }
 
-theorem int32_equal_of_to_integer(left: int32, right: int32) {
+theorem int32_to_integer_equal_implies_equal(left: int32, right: int32) {
     requires to_integer(left) == to_integer(right);
     ensures left == right;
 }
 
-theorem int32_less_equal_of_to_integer(left: int32, right: int32) {
+theorem int32_to_integer_less_equal_implies_less_equal(left: int32, right: int32) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right;
 }
@@ -1204,7 +1175,7 @@ theorem int32_less_than_to_integer(left: int32, right: int32) {
     requires left < right;
     ensures to_integer(left) < to_integer(right) by {
         if to_integer(right) <= to_integer(left) {
-            apply(int32_less_equal_of_to_integer(right, left));
+            apply(int32_to_integer_less_equal_implies_less_equal(right, left));
             contradiction(left < right);
         } else {
             arithmetic() using { not (to_integer(right) <= to_integer(left)); }
@@ -1227,12 +1198,12 @@ theorem int64_greater_equal_to_integer(left: int64, right: int64) {
     ensures to_integer(left) >= to_integer(right);
 }
 
-theorem int64_less_equal_of_to_integer(left: int64, right: int64) {
+theorem int64_to_integer_less_equal_implies_less_equal(left: int64, right: int64) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right;
 }
 
-theorem int64_equal_of_to_integer(left: int64, right: int64) {
+theorem int64_to_integer_equal_implies_equal(left: int64, right: int64) {
     requires to_integer(left) == to_integer(right);
     ensures left == right;
 }
@@ -1320,7 +1291,7 @@ theorem int64_subtract_defined_by_integer_bounds(left: int64, right: int64) {
     ensures defined(left - right);
 }
 
-theorem int64_less_than_of_to_integer(left: int64, right: int64) {
+theorem int64_to_integer_less_than_implies_less_than(left: int64, right: int64) {
     requires to_integer(left) < to_integer(right);
     ensures left < right;
 }
@@ -1367,7 +1338,7 @@ theorem integer_nonpositive_dividend_remainder(n: Integer, d: Integer) {
 
 theorem integer_multiply_add(a: Integer, b: Integer, c: Integer) {
     ensures (a + b) * c == a * c + b * c by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             integer_polynomial_identity bounds [] => (a + b) * c == a * c + b * c;
             conclusion 0;
         }
@@ -1455,7 +1426,7 @@ theorem integer_positive_divisor_quotient_lower(n: Integer, d: Integer, bound: I
     requires 1 <= d;
     requires bound * d <= n;
     ensures bound <= truncating_quotient(n, d) by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: bound * d <= n => bound * d <= n;
             premise 1: 1 <= d => 1 <= d;
             integer_quotient_bound bounds [0, 1] => bound <= truncating_quotient(n, d);
@@ -1469,7 +1440,7 @@ theorem integer_positive_divisor_quotient_upper(n: Integer, d: Integer, bound: I
     requires 1 <= d;
     requires n <= bound * d;
     ensures truncating_quotient(n, d) <= bound by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: n <= bound * d => n <= bound * d;
             premise 1: 1 <= d => 1 <= d;
             integer_quotient_bound bounds [0, 1] => truncating_quotient(n, d) <= bound;
@@ -1599,7 +1570,7 @@ theorem integer_multiply_order_nonnegative(a: Integer, b: Integer, factor: Integ
     requires a <= b;
     requires 0 <= factor;
     ensures a * factor <= b * factor by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: a <= b => a <= b;
             premise 1: 0 <= factor => 0 <= factor;
             integer_multiply_order bounds [0, 1] => a * factor <= b * factor;
@@ -1612,7 +1583,7 @@ theorem integer_multiply_order_nonpositive(a: Integer, b: Integer, factor: Integ
     requires a <= b;
     requires factor <= 0;
     ensures b * factor <= a * factor by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: a <= b => a <= b;
             premise 1: factor <= 0 => factor <= 0;
             integer_multiply_order bounds [0, 1] => b * factor <= a * factor;
@@ -1631,7 +1602,7 @@ theorem integer_scaled_product_bounds(value: Integer, amount: Integer, size: Int
     ensures lower * size <= value * amount by {
         apply(integer_multiply_order_nonnegative(lower, value, amount));
         have lower * size <= lower * amount by {
-            arithmetic_certificate special {
+            arithmetic_certificate rules {
                 premise 0: amount <= size => amount <= size;
                 premise 1: lower <= 0 => lower <= 0;
                 integer_multiply_order bounds [0, 1] => lower * size <= lower * amount;
@@ -1643,7 +1614,7 @@ theorem integer_scaled_product_bounds(value: Integer, amount: Integer, size: Int
     ensures value * amount <= upper * size by {
         apply(integer_multiply_order_nonnegative(value, upper, amount));
         have upper * amount <= upper * size by {
-            arithmetic_certificate special {
+            arithmetic_certificate rules {
                 premise 0: amount <= size => amount <= size;
                 premise 1: 0 <= upper => 0 <= upper;
                 integer_multiply_order bounds [0, 1] => upper * amount <= upper * size;

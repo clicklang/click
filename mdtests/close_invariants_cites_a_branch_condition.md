@@ -12,7 +12,7 @@ path decided it, at that statement's entry snapshot, and names it beside the
 invariants and the guard — a fixed, small list per path, not a search over the
 facts in scope. Here the cells the condition read are unchanged since iteration
 entry, so the premise is cited in the iteration-entry spelling the invariant
-already uses and `lt_from_neq` pairs the two.
+already uses and `less_than_from_not_equal` pairs the two.
 
 ```c filename=close_invariants_cites_a_branch_condition.c
 int32 stop_at_zero(int32 n) {

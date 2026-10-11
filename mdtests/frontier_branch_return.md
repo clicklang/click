@@ -24,7 +24,7 @@ int32 returning_branch(int32 x) {
             simp();
         } else {
             have x >= 0 by {
-                apply(int32_not_lt_implies_ge(at(function.entry, x), at(function.entry, 0))) using {
+                apply(int32_not_less_than_implies_greater_equal(at(function.entry, x), at(function.entry, 0))) using {
                     not at(function.entry, x) < at(function.entry, 0);
                 }
             }

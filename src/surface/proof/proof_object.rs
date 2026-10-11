@@ -1046,6 +1046,7 @@ struct ProofDiagnosticProofState(
     Option<CState>,
     Option<crate::surface::proof_trace::ChildArgumentTrace>,
     Option<(&'static str, Box<Proposition>, Option<String>)>,
+    Option<crate::surface::proof_diagnostics::MemoryHistoryDiagnostic>,
 );
 
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
@@ -1116,6 +1117,12 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         self.5
             .as_ref()
             .map(|(label, fact, _)| (*label, fact.as_ref()))
+    }
+
+    fn memory_history(
+        &self,
+    ) -> Option<&crate::surface::proof_diagnostics::MemoryHistoryDiagnostic> {
+        self.6.as_ref()
     }
 
     fn kernel_goal(&self) -> Option<&Proposition> {
@@ -1466,6 +1473,34 @@ impl Proof<'_> {
             }
             ProofContext::FixedState(_) | ProofContext::Execution(_) => Vec::new(),
         };
+        // Capture only a bounded diagnostic comparison while this proof's
+        // arena and bridging mode are still active. The terminal renderer
+        // must not recompute it after the verifier has unwound.
+        let history = self.goal().and_then(|goal| {
+            if !crate::kernel::resource_tracker::reads_any_resource(goal) {
+                return None;
+            }
+            let names = self
+                .outcome_fixed_state_view()
+                .or_else(|| self.execution_fixed_state_view());
+            let (parameters, arguments) = names
+                .as_ref()
+                .map(|view| (view.parameters, view.arguments))
+                .unwrap_or((&[], &[]));
+            let premises = self
+                .state
+                .state()
+                .open_branches()
+                .get(self.state.focused_branch())
+                .map(|branch| branch.state.facts.recent_facts(8))
+                .unwrap_or_default();
+            crate::surface::diagnostics::proposition_version_explanation(
+                goal, &premises, parameters, arguments,
+            )
+            .map(|(explanation, _)| {
+                crate::surface::proof_diagnostics::MemoryHistoryDiagnostic::capture(explanation)
+            })
+        });
         ProofDiagnosticProofState(
             self.state.clone(),
             self.node.clone(),
@@ -1479,6 +1514,7 @@ impl Proof<'_> {
             },
             None,
             None,
+            history,
         )
     }
 }

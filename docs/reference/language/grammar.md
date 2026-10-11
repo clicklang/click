@@ -50,7 +50,8 @@ documentation inventory keep the following accepted words synchronized.
 | `constructs` | Authorizes one function to create an abstract resource token. |
 | `invariant`, `initialize`, `preserve` | Loop structural items and phase proofs; a loop header also takes `owns` and `views` clauses of its own. |
 | `contains`, `fact`, `field`, `if` | The containment proposition `contains(parent, child)`, resource facts, pure field declarations, and optional resource guard. A resource holds a child resource with `owns`, as it holds memory. `if` also forms expressions and proof splits. |
-| `read`, `write`, `object`, `memory`, `of`, `count` | Memory-resource forms, quantified resources, and resource-population expressions. |
+| `object`, `memory`, `of`, `count` | Memory-resource forms, quantified resources, and resource-population expressions. |
+| `read`, `write` | Reserved: no resource may be named either. `read(N)` is also an execution target, below. |
 | `and`, `or`, `implies`, `not`, `in` | Proposition connectives and sequence membership. `and`, `or`, and `implies` have increasing precedence except right-associative `implies`; `in` has comparison precedence. |
 | `forall`, `exists` | Universal and existential quantifiers; `exists (x: T, y: U) { P }` binds multiple variables. |
 | `all`, `any`, `fold` | Range proposition and expression methods. |
@@ -65,26 +66,26 @@ documentation inventory keep the following accepted words synchronized.
 | `apply`, `have`, `if`, `cases`, `both`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
 | `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
 | `assumption`, `extract`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
-| `arithmetic_certificate` | Starts the typed arithmetic-certificate envelope. The canonical mathematical family is `arithmetic_certificate { ... }`; checked machine families are `arithmetic_certificate signed_int32 { ... }` and `arithmetic_certificate special { ... }`. |
+| `arithmetic_certificate` | Starts the typed arithmetic-certificate envelope. The canonical mathematical family is `arithmetic_certificate { ... }`; checked machine families are `arithmetic_certificate signed_int32 { ... }` and `arithmetic_certificate rules { ... }`. |
 | `signed_int32` | Selects the public checked signed-machine arithmetic-certificate family. |
-| `special` | Selects the pointer, tagged-word, finite-float, and `int32` / `int64` definedness arithmetic-certificate family. |
-| `int32_defined`, `int64_defined` | Proves `defined(a + b)` or `defined(a - b)` over `int32` or `int64` in a `special` certificate from the operands' width ranges and the listed constant bounds on them. One checker serves both widths. |
+| `rules` | Selects the pointer, tagged-word, finite-float, and `int32` / `int64` definedness arithmetic-certificate family. |
+| `int32_defined`, `int64_defined` | Proves `defined(a + b)` or `defined(a - b)` over `int32` or `int64` in a `rules` certificate from the operands' width ranges and the listed constant bounds on them. One checker serves both widths. |
 | `premise` | Names an exact premise node in an arithmetic certificate. |
 | `scale` | Scales an earlier arithmetic certificate node by an exact decimal coefficient. |
 | `add` | Adds two earlier arithmetic certificate nodes. |
-| `eq_to_le` | Converts an equality certificate node to a non-strict bound. |
-| `eq_from_bounds` | Closes an equality from opposite non-strict bounds. |
-| `lt_from_neq` | Sharpens a non-strict bound to a strict one with a disequality on the same sides. |
+| `less_equal_from_equal` | Converts an equality certificate node to a non-strict bound. |
+| `equal_from_bounds` | Closes an equality from opposite non-strict bounds. |
+| `less_than_from_not_equal` | Sharpens a non-strict bound to a strict one with a disequality on the same sides. |
 | `trivial` | Checks a context-free affine identity. |
 | `int32_range` | States one opaque `int32` term's own range as an affine bound, `t <= 2147483647` or `-2147483648 <= t`. |
 | `interval_from_affine`, `interval_from_affine_direct`, `interval_atom`, `interval_intersect` | Introduce, import, or intersect, checked signed-machine intervals. `interval_from_affine_direct` is required when the cited affine premise already contains a compound machine operation; it does not silently decompose that operation. |
 | `defined`, `interval_add`, `interval_add_bounded`, `interval_subtract`, `interval_multiply`, `interval_remainder`, `interval_shift_left`, `interval_arithmetic_shift_right`, `interval_bitwise_and`, `interval_sign_bit_flip`, `interval_compare` | Record exact definedness premises and bounded interval-operation evidence for signed-machine expressions. |
 | `affine_conclusion`, `affine_conclusion_pair` | Bridge an affine claim to a machine proposition using one, or separately named left and right, interval/definedness evidence. The pair form is required when both comparison sides contain compound operations. |
 | `conclusion` | Selects the final node of an arithmetic certificate. |
-| `reverse` | Selects the reverse equality direction for `eq_to_le`. |
+| `reverse` | Selects the reverse equality direction for `less_equal_from_equal`. |
 | `rewrite`, `transport`, `instantiate`, `simp`, `induct`, `close_invariants` | Equality, snapshot, quantifier, simplification, induction, and loop-proof tactics. |
 | `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also introduces the target contract's proof instances on an `executes` conclusion. |
-| `function`, `loop`, `statement`, `assignment`, `read`, `entry`, `exit` | Program-region and program-point selectors. `assignment(local, N)` and `read(N)` are execution targets only. |
+| `function`, `loop`, `statement`, `assignment`, `read`, `back_edge`, `entry`, `exit` | Program-region and program-point selectors. `assignment(local, N)`, `read(N)` and `back_edge()` are execution targets only. |
 
 See [Tactics](../tactics/index.md) for tactic syntax and classification. A word
 listed here isn't necessarily valid in every identifier or expression

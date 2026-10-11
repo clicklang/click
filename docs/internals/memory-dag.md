@@ -282,14 +282,21 @@ compare the recovered value. If the cheap walk stops at a store whose address
 needs recorded load identities, the bounded query checks that one endpoint with
 the full pointer matcher and the exact typed width; it never searches older
 writes at that point. Explicit `transport` uses the same read-value rule for
-pointer and pointer-offset equalities. Whole-pointer equality checks the
-complete stored pointer, including its block. Same-block pointer comparisons lower to offset
+pointer and pointer-offset equalities. Pointer address equality checks both
+the stored block and offset. Same-block pointer comparisons lower to offset
 equality; that form uses an exact typed-read offset definition, including its
 stride, and proves only the offset equality. Conflicting offset definitions
 remain ambiguous. Equal offsets alone do not establish equality of blocks.
 A narrow read, a scalar cell, or an intervening partial write cannot supply a
 full pointer value. These rules establish only the selected equality and do
 not grant ownership or initialization authority.
+
+A checked full-width pointer store retains an equation between its stored
+pointer address and the address returned by the pointer read at the written
+cell in the resulting snapshot.
+This address equation lets the graph use an established alias immediately;
+it does not equate designations. Transporting a designation still requires
+the complete checked pointer carrier from that exact cell.
 
 The stronger bridging that crosses `BlockDeclared` and `CellsForgotten` is
 scoped to viewability reasoning through `with_extended_dag_bridging`. Enabling

@@ -39,7 +39,7 @@ int32 set_then_read_end(int32* data, int32 index, int32 len, int32 cap) {
     unfold(zero_terminated(data, len, cap));
     unfold(terminated_at);
     have index < cap by {
-        apply(int32_lt_transitive(index, len, cap)) using {
+        apply(int32_less_than_transitive(index, len, cap)) using {
             index < len;
             len < cap;
         }

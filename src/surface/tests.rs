@@ -2502,8 +2502,12 @@ fn bounded_population_increment_expands_and_checks() {
         .map(|(name, body)| (name.as_str(), body.as_str()))
         .collect::<Vec<_>>();
     verify_c0_project(project, &inputs).unwrap();
-    let expanded =
-        expand_c0_project_claim_source_by_label(project, &inputs, "increment.contract").unwrap();
+    let expanded = expand_project_claim_source_by_label(
+        project,
+        &ProgramInputs::Bundle(inputs.to_vec()),
+        "increment.contract",
+    )
+    .unwrap();
     verify_c0_project(&project.with_entry_source(expanded), &inputs).unwrap();
 }
 

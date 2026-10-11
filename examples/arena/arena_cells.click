@@ -249,7 +249,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         }
     }
     have i == capacity by {
-        apply(int32_le_and_not_lt_implies_eq(i, capacity)) using {
+        apply(int32_less_equal_and_not_less_than_implies_equal(i, capacity)) using {
             i <= capacity;
             not (i < capacity);
         }
@@ -718,7 +718,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
             }
             have 0 <= i by {
-                apply(int32_le_transitive(0, lo, i)) using {
+                apply(int32_less_equal_transitive(0, lo, i)) using {
                     0 <= lo;
                     lo <= i;
                 }
@@ -767,7 +767,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                             assumption();
                         }
                         have k <= at(iteration, i) by {
-                            apply(int32_lt_successor_implies_le(
+                            apply(int32_less_than_increment_implies_less_equal(
                                 k,
                                 at(iteration, i)
                             )) using {
@@ -775,7 +775,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                             }
                         }
                         have k == at(iteration, i) by {
-                            apply(int32_le_and_not_lt_implies_eq(
+                            apply(int32_less_equal_and_not_less_than_implies_equal(
                                 k,
                                 at(iteration, i)
                             )) using {
@@ -812,12 +812,12 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     assumption();
                 }
                 have at(iteration, i) <= i by {
-                    apply(int32_lt_implies_le(at(iteration, i), i)) using {
+                    apply(int32_less_than_implies_less_equal(at(iteration, i), i)) using {
                         at(iteration, i) < i;
                     }
                 }
                 have lo <= i by {
-                    apply(int32_le_transitive(lo, at(iteration, i), i)) using {
+                    apply(int32_less_equal_transitive(lo, at(iteration, i), i)) using {
                         lo <= at(iteration, i);
                         at(iteration, i) <= i;
                     }
@@ -1132,7 +1132,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         assumption();
     } else {}
     have run_length == count by {
-        apply(int32_le_and_not_lt_implies_eq(run_length, count)) using {
+        apply(int32_less_equal_and_not_less_than_implies_equal(run_length, count)) using {
             run_length <= count;
             not (run_length < count);
         }
@@ -1145,7 +1145,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         assumption();
     }
     have 0 <= count by {
-        apply(int32_lt_implies_le(0, count)) using { 0 < count; }
+        apply(int32_less_than_implies_less_equal(0, count)) using { 0 < count; }
     }
     have defined(run_lo + count) by {
         simp();
@@ -1178,7 +1178,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         normalize();
     }
     have run_lo <= arena->capacity by {
-        apply(int32_le_transitive(run_lo, run_hi, arena->capacity)) using {
+        apply(int32_less_equal_transitive(run_lo, run_hi, arena->capacity)) using {
             run_lo <= run_hi;
             run_hi <= arena->capacity;
         }
@@ -1259,13 +1259,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         extract(start <= k);
         extract(k < end);
         have 0 <= k by {
-            apply(int32_le_transitive(0, start, k)) using {
+            apply(int32_less_equal_transitive(0, start, k)) using {
                 0 <= start;
                 start <= k;
             }
         }
         have k < arena->capacity by {
-            apply(int32_lt_le_transitive(k, end, arena->capacity)) using {
+            apply(int32_less_than_less_equal_transitive(k, end, arena->capacity)) using {
                 k < end;
                 end <= arena->capacity;
             }
@@ -1350,11 +1350,11 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 apply(int32_increment_strictly_increases(at(opened, i), end)) using {
                     at(opened, i) < end;
                 }
-                apply(int32_successor_le_implies_lt(at(opened, i), k)) using {
+                apply(int32_increment_less_equal_implies_less_than(at(opened, i), k)) using {
                     at(opened, i) < at(opened, i) + 1;
                     at(opened, i) + 1 <= k;
                 }
-                apply(int32_lt_implies_le(at(opened, i), k)) using {
+                apply(int32_less_than_implies_less_equal(at(opened, i), k)) using {
                     at(opened, i) < k;
                 }
                 have m <= k by {
@@ -1373,13 +1373,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     assumption();
                 }
                 have 0 <= k by {
-                    apply(int32_le_transitive(0, at(opened, i), k)) using {
+                    apply(int32_less_equal_transitive(0, at(opened, i), k)) using {
                         0 <= at(opened, i);
                         at(opened, i) <= k;
                     }
                 }
                 have k < at(opened, arena->capacity) by {
-                    apply(int32_lt_le_transitive(k, end, at(opened, arena->capacity))) using {
+                    apply(int32_less_than_less_equal_transitive(k, end, at(opened, arena->capacity))) using {
                         k < end;
                         end <= at(opened, arena->capacity);
                     }
@@ -1433,12 +1433,12 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     }
                 } else {
                     have k <= at(opened, i) by {
-                        apply(int32_lt_successor_implies_le(k, at(opened, i))) using {
+                        apply(int32_less_than_increment_implies_less_equal(k, at(opened, i))) using {
                             k < at(opened, i) + 1;
                         }
                     }
                     have k == at(opened, i) by {
-                        apply(int32_le_and_not_lt_implies_eq(k, at(opened, i))) using {
+                        apply(int32_less_equal_and_not_less_than_implies_equal(k, at(opened, i))) using {
                             k <= at(opened, i);
                             not (k < at(opened, i));
                         }
@@ -1469,7 +1469,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     assumption();
                 }
                 have k < at(opened, i) by {
-                    apply(int32_lt_le_transitive(k, start, at(opened, i))) using {
+                    apply(int32_less_than_less_equal_transitive(k, start, at(opened, i))) using {
                         k < start;
                         start <= at(opened, i);
                     }
@@ -1509,18 +1509,18 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     assumption();
                 }
                 have at(opened, i) < k by {
-                    apply(int32_lt_le_transitive(at(opened, i), end, k)) using {
+                    apply(int32_less_than_less_equal_transitive(at(opened, i), end, k)) using {
                         at(opened, i) < end;
                         end <= k;
                     }
                 }
                 have at(opened, i) <= k by {
-                    apply(int32_lt_implies_le(at(opened, i), k)) using {
+                    apply(int32_less_than_implies_less_equal(at(opened, i), k)) using {
                         at(opened, i) < k;
                     }
                 }
                 have 0 <= k by {
-                    apply(int32_le_transitive(0, at(opened, i), k)) using {
+                    apply(int32_less_equal_transitive(0, at(opened, i), k)) using {
                         0 <= at(opened, i);
                         at(opened, i) <= k;
                     }
@@ -1586,7 +1586,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         assumption();
     }
     have m == end by {
-        apply(int32_le_and_not_lt_implies_eq(m, end)) using {
+        apply(int32_less_equal_and_not_less_than_implies_equal(m, end)) using {
             m <= end;
             not (m < end);
         }
@@ -1625,13 +1625,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             k < start;
         }
         have k < end by {
-            apply(int32_lt_le_transitive(k, start, end)) using {
+            apply(int32_less_than_less_equal_transitive(k, start, end)) using {
                 k < start;
                 start <= end;
             }
         }
         have k < arena->capacity by {
-            apply(int32_lt_le_transitive(k, end, arena->capacity)) using {
+            apply(int32_less_than_less_equal_transitive(k, end, arena->capacity)) using {
                 k < end;
                 end <= arena->capacity;
             }
@@ -1663,13 +1663,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             k < arena->capacity;
         }
         have 0 <= end by {
-            apply(int32_le_transitive(0, start, end)) using {
+            apply(int32_less_equal_transitive(0, start, end)) using {
                 0 <= start;
                 start <= end;
             }
         }
         have 0 <= k by {
-            apply(int32_le_transitive(0, end, k)) using {
+            apply(int32_less_equal_transitive(0, end, k)) using {
                 0 <= end;
                 end <= k;
             }
@@ -1724,13 +1724,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             assumption();
         }
         have 0 <= k by {
-            apply(int32_le_transitive(0, start, k)) using {
+            apply(int32_less_equal_transitive(0, start, k)) using {
                 0 <= start;
                 start <= k;
             }
         }
         have k < arena->capacity by {
-            apply(int32_lt_le_transitive(k, end, arena->capacity)) using {
+            apply(int32_less_than_less_equal_transitive(k, end, arena->capacity)) using {
                 k < end;
                 end <= arena->capacity;
             }
@@ -1767,13 +1767,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             assumption();
         }
         have k < end by {
-            apply(int32_lt_le_transitive(k, start, end)) using {
+            apply(int32_less_than_less_equal_transitive(k, start, end)) using {
                 k < start;
                 start <= end;
             }
         }
         have k < arena->capacity by {
-            apply(int32_lt_le_transitive(k, end, arena->capacity)) using {
+            apply(int32_less_than_less_equal_transitive(k, end, arena->capacity)) using {
                 k < end;
                 end <= arena->capacity;
             }
@@ -1810,13 +1810,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             assumption();
         }
         have 0 <= end by {
-            apply(int32_le_transitive(0, start, end)) using {
+            apply(int32_less_equal_transitive(0, start, end)) using {
                 0 <= start;
                 start <= end;
             }
         }
         have 0 <= k by {
-            apply(int32_le_transitive(0, end, k)) using {
+            apply(int32_less_equal_transitive(0, end, k)) using {
                 0 <= end;
                 end <= k;
             }
@@ -2115,14 +2115,14 @@ void arena_free(struct region* region) {
             have region->start <= m;
             have region->start <= i;
             have 0 <= i by {
-                apply(int32_le_transitive(0, region->start, i)) using {
+                apply(int32_less_equal_transitive(0, region->start, i)) using {
                     0 <= region->start;
                     region->start <= i;
                 }
             }
             have region->end <= arena->capacity;
             have i < arena->capacity by {
-                apply(int32_lt_le_transitive(i, region->end, arena->capacity)) using {
+                apply(int32_less_than_less_equal_transitive(i, region->end, arena->capacity)) using {
                     i < region->end;
                     region->end <= arena->capacity;
                 }
@@ -2164,7 +2164,7 @@ void arena_free(struct region* region) {
                         assumption();
                     }
                     have 0 <= k by {
-                        apply(int32_le_transitive(0, region->start, k)) using {
+                        apply(int32_less_equal_transitive(0, region->start, k)) using {
                             0 <= region->start;
                             region->start <= k;
                         }
@@ -2178,12 +2178,12 @@ void arena_free(struct region* region) {
                     }
                 } else {
                     have k <= at(opened, i) by {
-                        apply(int32_lt_successor_implies_le(k, at(opened, i))) using {
+                        apply(int32_less_than_increment_implies_less_equal(k, at(opened, i))) using {
                             k < at(opened, i) + 1;
                         }
                     }
                     have k == at(opened, i) by {
-                        apply(int32_le_and_not_lt_implies_eq(k, at(opened, i))) using {
+                        apply(int32_less_equal_and_not_less_than_implies_equal(k, at(opened, i))) using {
                             k <= at(opened, i);
                             not (k < at(opened, i));
                         }
@@ -2214,7 +2214,7 @@ void arena_free(struct region* region) {
                     assumption();
                 }
                 have k < at(opened, i) by {
-                    apply(int32_lt_le_transitive(k, region->start, at(opened, i))) using {
+                    apply(int32_less_than_less_equal_transitive(k, region->start, at(opened, i))) using {
                         k < region->start;
                         region->start <= at(opened, i);
                     }
@@ -2254,18 +2254,18 @@ void arena_free(struct region* region) {
                     assumption();
                 }
                 have at(opened, i) < k by {
-                    apply(int32_lt_le_transitive(at(opened, i), region->end, k)) using {
+                    apply(int32_less_than_less_equal_transitive(at(opened, i), region->end, k)) using {
                         at(opened, i) < region->end;
                         region->end <= k;
                     }
                 }
                 have at(opened, i) <= k by {
-                    apply(int32_lt_implies_le(at(opened, i), k)) using {
+                    apply(int32_less_than_implies_less_equal(at(opened, i), k)) using {
                         at(opened, i) < k;
                     }
                 }
                 have 0 <= k by {
-                    apply(int32_le_transitive(0, at(opened, i), k)) using {
+                    apply(int32_less_equal_transitive(0, at(opened, i), k)) using {
                         0 <= at(opened, i);
                         at(opened, i) <= k;
                     }
@@ -2296,7 +2296,7 @@ void arena_free(struct region* region) {
                 next: at(opened, i) + 1
             });
             have region->start <= region->end by {
-                apply(int32_le_transitive(region->start, at(opened, i) + 1, region->end)) using {
+                apply(int32_less_equal_transitive(region->start, at(opened, i) + 1, region->end)) using {
                     region->start <= at(opened, i) + 1;
                     at(opened, i) + 1 <= region->end;
                 }
@@ -2331,19 +2331,19 @@ void arena_free(struct region* region) {
         assumption();
     }
     have m == region->end by {
-        apply(int32_le_and_not_lt_implies_eq(m, region->end)) using {
+        apply(int32_less_equal_and_not_less_than_implies_equal(m, region->end)) using {
             m <= region->end;
             not (m < region->end);
         }
     }
     have region->start <= region->end by {
-        apply(int32_le_transitive(region->start, m, region->end)) using {
+        apply(int32_less_equal_transitive(region->start, m, region->end)) using {
             region->start <= m;
             m <= region->end;
         }
     }
     have 0 <= region->end by {
-        apply(int32_le_transitive(0, region->start, region->end)) using {
+        apply(int32_less_equal_transitive(0, region->start, region->end)) using {
             0 <= region->start;
             region->start <= region->end;
         }
@@ -2384,13 +2384,13 @@ void arena_free(struct region* region) {
             k < region->start;
         }
         have k < region->end by {
-            apply(int32_lt_le_transitive(k, region->start, region->end)) using {
+            apply(int32_less_than_less_equal_transitive(k, region->start, region->end)) using {
                 k < region->start;
                 region->start <= region->end;
             }
         }
         have k < arena->capacity by {
-            apply(int32_lt_le_transitive(k, region->end, arena->capacity)) using {
+            apply(int32_less_than_less_equal_transitive(k, region->end, arena->capacity)) using {
                 k < region->end;
                 region->end <= arena->capacity;
             }
@@ -2423,7 +2423,7 @@ void arena_free(struct region* region) {
             k < arena->capacity;
         }
         have 0 <= k by {
-            apply(int32_le_transitive(0, region->end, k)) using {
+            apply(int32_less_equal_transitive(0, region->end, k)) using {
                 0 <= region->end;
                 region->end <= k;
             }
@@ -2453,13 +2453,13 @@ void arena_free(struct region* region) {
         extract(region->start <= k);
         extract(k < region->end);
         have 0 <= k by {
-            apply(int32_le_transitive(0, region->start, k)) using {
+            apply(int32_less_equal_transitive(0, region->start, k)) using {
                 0 <= region->start;
                 region->start <= k;
             }
         }
         have k < arena->capacity by {
-            apply(int32_lt_le_transitive(k, region->end, arena->capacity)) using {
+            apply(int32_less_than_less_equal_transitive(k, region->end, arena->capacity)) using {
                 k < region->end;
                 region->end <= arena->capacity;
             }
@@ -2493,13 +2493,13 @@ void arena_free(struct region* region) {
         extract(0 <= k);
         extract(k < region->start);
         have k < region->end by {
-            apply(int32_lt_le_transitive(k, region->start, region->end)) using {
+            apply(int32_less_than_less_equal_transitive(k, region->start, region->end)) using {
                 k < region->start;
                 region->start <= region->end;
             }
         }
         have k < arena->capacity by {
-            apply(int32_lt_le_transitive(k, region->end, arena->capacity)) using {
+            apply(int32_less_than_less_equal_transitive(k, region->end, arena->capacity)) using {
                 k < region->end;
                 region->end <= arena->capacity;
             }
@@ -2533,7 +2533,7 @@ void arena_free(struct region* region) {
         extract(region->end <= k);
         extract(k < arena->capacity);
         have 0 <= k by {
-            apply(int32_le_transitive(0, region->end, k)) using {
+            apply(int32_less_equal_transitive(0, region->end, k)) using {
                 0 <= region->end;
                 region->end <= k;
             }
@@ -2628,13 +2628,13 @@ void arena_write(struct region* region, int32 index, int32 value) {
     }
     have 0 <= region->start + index by {
         rewrite(region->start == s);
-        apply(int32_le_transitive(0, s, s + index)) using {
+        apply(int32_less_equal_transitive(0, s, s + index)) using {
             0 <= s;
             s <= s + index;
         }
     }
     have s + index < c by {
-        apply(int32_lt_le_transitive(s + index, e, c)) using {
+        apply(int32_less_than_less_equal_transitive(s + index, e, c)) using {
             s + index < e;
             e <= c;
         }
@@ -2729,13 +2729,13 @@ int32 arena_read(struct region* region, int32 index) {
     }
     have 0 <= region->start + index by {
         rewrite(region->start == s);
-        apply(int32_le_transitive(0, s, s + index)) using {
+        apply(int32_less_equal_transitive(0, s, s + index)) using {
             0 <= s;
             s <= s + index;
         }
     }
     have s + index < c by {
-        apply(int32_lt_le_transitive(s + index, e, c)) using {
+        apply(int32_less_than_less_equal_transitive(s + index, e, c)) using {
             s + index < e;
             e <= c;
         }
@@ -4710,13 +4710,13 @@ int32 arena_pipeline(
         }
     }
     have r3.start < 2147483643 by {
-        apply(int32_lt_le_transitive(r3.start, 536870911, 2147483643)) using {
+        apply(int32_less_than_less_equal_transitive(r3.start, 536870911, 2147483643)) using {
             r3.start < 536870911;
             536870911 <= 2147483643;
         }
     }
     have r3.start <= 2147483643 by {
-        apply(int32_lt_implies_le(r3.start, 2147483643)) using {
+        apply(int32_less_than_implies_less_equal(r3.start, 2147483643)) using {
             r3.start < 2147483643;
         }
     }
@@ -4749,7 +4749,7 @@ int32 arena_pipeline(
         }
     }
     have r3.start <= 2147483644 by {
-        apply(int32_le_transitive(r3.start, 2147483643, 2147483644)) using {
+        apply(int32_less_equal_transitive(r3.start, 2147483643, 2147483644)) using {
             r3.start <= 2147483643;
             2147483643 <= 2147483644;
         }
@@ -5345,7 +5345,7 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
         arithmetic();
     }
     have after.live < 2147483647 by {
-        apply(int32_lt_le_transitive(after.live, old(st.live), 2147483647)) using {
+        apply(int32_less_than_less_equal_transitive(after.live, old(st.live), 2147483647)) using {
             after.live < old(st.live);
             old(st.live) <= 2147483647;
         }
@@ -5459,7 +5459,7 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
             simp();
         }
         have 0 <= k by {
-            apply(int32_le_transitive(0, reused->start, k)) using {
+            apply(int32_less_equal_transitive(0, reused->start, k)) using {
                 0 <= reused->start;
                 reused->start <= k;
             }

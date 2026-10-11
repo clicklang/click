@@ -83,7 +83,7 @@ int32 count_run(int32 n) {
                     cases {
                         (i <= 2 and run == 0) => {
                             have i == 2 by {
-                                apply(int32_le_and_not_lt_implies_eq(i, 2)) using {
+                                apply(int32_less_equal_and_not_less_than_implies_equal(i, 2)) using {
                                     i <= 2;
                                     not (i < 2);
                                 }

@@ -50,6 +50,38 @@ struct SpecAlgebraicPath {
 /// The interpretation of specification reads is lexical: ordinary expressions
 /// denote logical values, while `defined(...)` explicitly asks for validity.
 /// Both use the same expression walker and the same execution work budget.
+/// Where a specification is read: the state, the loop-entry state that
+/// `old` reads, and the bound algebraic names. Every evaluation step below
+/// reads one scope; the assumptions it decides under change along paths and
+/// are passed separately.
+#[derive(Clone, Copy)]
+struct SpecScope<'a> {
+    state: &'a CState,
+    loop_entry_state: Option<&'a CState>,
+    algebraic_bindings: &'a BTreeMap<String, AlgebraicTerm>,
+}
+
+static NO_ALGEBRAIC_BINDINGS: BTreeMap<String, AlgebraicTerm> = BTreeMap::new();
+
+impl<'a> SpecScope<'a> {
+    fn new(
+        state: &'a CState,
+        loop_entry_state: Option<&'a CState>,
+        algebraic_bindings: &'a BTreeMap<String, AlgebraicTerm>,
+    ) -> Self {
+        Self {
+            state,
+            loop_entry_state,
+            algebraic_bindings,
+        }
+    }
+
+    /// A scope with no bound algebraic names.
+    fn unbound(state: &'a CState, loop_entry_state: Option<&'a CState>) -> Self {
+        Self::new(state, loop_entry_state, &NO_ALGEBRAIC_BINDINGS)
+    }
+}
+
 struct SpecEvaluation<'a> {
     budget: &'a mut ExecutionBudget,
     checked_reads: bool,
@@ -212,11 +244,9 @@ pub(in crate::kernel) fn lower_spec_proposition_at_state_with_algebraic_bindings
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     lower_spec_proposition_at_state_with_algebraic_bindings_in(
-        state,
+        SpecScope::new(state, loop_entry_state, algebraic_bindings),
         proposition,
-        loop_entry_state,
         assumptions,
-        algebraic_bindings,
         &mut SpecEvaluation::logical(budget),
     )
 }
@@ -297,11 +327,9 @@ pub(crate) fn capture_spec_algebraic_value(
     assumptions: &PureFactContext,
 ) -> Result<AlgebraicTerm, String> {
     let paths = evaluate_spec_algebraic_at_state_with_bindings_in(
-        state,
+        SpecScope::unbound(state, entry_state),
         expression,
-        entry_state,
         assumptions,
-        &BTreeMap::new(),
         &mut SpecEvaluation::logical(&mut ExecutionBudget::beside_live_state()),
     )
     .map_err(|limit| {
@@ -387,11 +415,9 @@ pub(crate) fn capture_spec_integer_value_with_guards(
     assumptions: &PureFactContext,
 ) -> Result<(IntegerTerm, Vec<Proposition>), SpecCaptureRefusal> {
     let paths = evaluate_spec_integer_expression_paths_in(
-        state,
+        SpecScope::unbound(state, entry_state),
         expression,
-        entry_state,
         assumptions,
-        &BTreeMap::new(),
         &mut SpecEvaluation::logical(&mut ExecutionBudget::beside_live_state()),
     )
     .map_err(|limit| {
@@ -475,11 +501,9 @@ fn locate_spec_integer_capture_condition(
             || obligations.iter().any(|o| o.proposition() == proposition)
     };
     if let Ok(index_paths) = evaluate_spec_integer_range_fold_indices_in(
-        state,
+        SpecScope::unbound(state, entry_state),
         index,
-        entry_state,
         assumptions,
-        &BTreeMap::new(),
         &mut SpecEvaluation::logical(&mut ExecutionBudget::beside_live_state()),
     ) && index_paths
         .iter()
@@ -488,11 +512,9 @@ fn locate_spec_integer_capture_condition(
         return SpecCaptureSubterm::RangeEndpoint;
     }
     if let Ok(initial_paths) = evaluate_spec_integer_expression_paths_in(
-        state,
+        SpecScope::unbound(state, entry_state),
         initial,
-        entry_state,
         assumptions,
-        &BTreeMap::new(),
         &mut SpecEvaluation::logical(&mut ExecutionBudget::beside_live_state()),
     ) && initial_paths
         .iter()
@@ -533,11 +555,9 @@ fn lower_spec_proposition_at_state_with_loop_entry_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     lower_spec_proposition_at_state_with_algebraic_bindings_in(
-        state,
+        SpecScope::unbound(state, loop_entry_state),
         proposition,
-        loop_entry_state,
         assumptions,
-        &BTreeMap::new(),
         budget,
     )
 }
@@ -562,93 +582,59 @@ fn lower_spec_proposition_at_state_without_range_guards_in(
     } = proposition
     else {
         return lower_spec_proposition_at_state_with_algebraic_bindings_in(
-            state,
+            SpecScope::unbound(state, loop_entry_state),
             proposition,
-            loop_entry_state,
             assumptions,
-            &BTreeMap::new(),
             budget,
         );
     };
     lower_spec_memory_loadable_at_state_in(
-        state,
+        SpecScope::unbound(state, loop_entry_state),
         memory,
         base,
         start,
         end,
         *element_width,
-        loop_entry_state,
         assumptions,
-        &BTreeMap::new(),
         budget,
         false,
     )
 }
 
 fn lower_spec_proposition_at_state_with_algebraic_bindings_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     proposition: &SpecProposition,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
-    if let Some(paths) = lower_spec_negation_chain_in(
-        state,
-        proposition,
-        loop_entry_state,
-        assumptions,
-        algebraic_bindings,
-        budget,
-    )? {
+    if let Some(paths) = lower_spec_negation_chain_in(scope, proposition, assumptions, budget)? {
         return Ok(paths);
     }
-    if let Some(paths) = lower_spec_conjunction_left_spine_in(
-        state,
-        proposition,
-        loop_entry_state,
-        assumptions,
-        algebraic_bindings,
-        budget,
-    )? {
+    if let Some(paths) =
+        lower_spec_conjunction_left_spine_in(scope, proposition, assumptions, budget)?
+    {
         return Ok(paths);
     }
-    if let Some(paths) = lower_spec_universal_chain_in(
-        state,
-        proposition,
-        loop_entry_state,
-        assumptions,
-        algebraic_bindings,
-        budget,
-    )? {
+    if let Some(paths) = lower_spec_universal_chain_in(scope, proposition, assumptions, budget)? {
         return Ok(paths);
     }
-    if let Some(paths) = lower_simple_spec_implication_chain_in(
-        state,
-        proposition,
-        loop_entry_state,
-        assumptions,
-        algebraic_bindings,
-        budget,
-    )? {
+    if let Some(paths) =
+        lower_simple_spec_implication_chain_in(scope, proposition, assumptions, budget)?
+    {
         return Ok(paths);
     }
     lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
-        state,
+        scope,
         proposition,
-        loop_entry_state,
         assumptions,
-        algebraic_bindings,
         budget,
     )
 }
 
 fn lower_spec_negation_chain_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     proposition: &SpecProposition,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Option<Vec<SpecPropositionPath>>> {
     let mut count = 0;
@@ -662,11 +648,9 @@ fn lower_spec_negation_chain_in(
     }
 
     let mut paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
-        state,
+        scope,
         body,
-        loop_entry_state,
         assumptions,
-        algebraic_bindings,
         budget,
     )?;
     for _ in 0..count {
@@ -701,11 +685,9 @@ fn wrap_spec_negation_path(path: SpecPropositionPath) -> SpecPropositionPath {
 /// operand still sees the accumulated path context from the complete prefix,
 /// exactly as it does in the recursive binary case.
 fn lower_spec_conjunction_left_spine_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     proposition: &SpecProposition,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Option<Vec<SpecPropositionPath>>> {
     let mut right_operands = Vec::new();
@@ -719,11 +701,9 @@ fn lower_spec_conjunction_left_spine_in(
     }
 
     let mut paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
-        state,
+        scope,
         leftmost,
-        loop_entry_state,
         assumptions,
-        algebraic_bindings,
         budget,
     )?;
     for right in right_operands.into_iter().rev() {
@@ -735,19 +715,18 @@ fn lower_spec_conjunction_left_spine_in(
                 &left_path.obligations,
             );
             for right_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
-                state,
+                scope,
                 right,
-                loop_entry_state,
                 &right_assumptions,
-                algebraic_bindings,
                 budget,
             )? {
-                if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+                if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                     &left_path.facts,
                     &left_path.obligations,
                     &right_path.facts,
                     &right_path.obligations,
                     assumptions,
+                    &right_assumptions,
                 ) {
                     combined.push(SpecPropositionPath {
                         introductions: Vec::new(),
@@ -780,11 +759,9 @@ struct SpecUniversalBinder {
 /// propositions, and the state extensions for C-valued binders can be
 /// accumulated before lowering the innermost body.
 fn lower_spec_universal_chain_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     proposition: &SpecProposition,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Option<Vec<SpecPropositionPath>>> {
     let mut binders = Vec::new();
@@ -887,11 +864,9 @@ fn lower_spec_universal_chain_in(
     }
 
     let mut paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
-        state,
+        scope,
         body,
-        loop_entry_state,
         &quantified_assumptions,
-        algebraic_bindings,
         budget,
     )?;
     for binder in binders.into_iter().rev() {
@@ -954,11 +929,9 @@ fn wrap_spec_universal_path(
 /// ordinary recursive lowering remains the fallback for propositions whose
 /// antecedents need path routing, facts, or obligations.
 fn lower_simple_spec_implication_chain_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     proposition: &SpecProposition,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Option<Vec<SpecPropositionPath>>> {
     let mut antecedents = Vec::new();
@@ -976,11 +949,9 @@ fn lower_simple_spec_implication_chain_in(
     let antecedent_count = antecedents.len();
     for antecedent in &antecedents {
         let mut paths = lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
-            state,
+            scope,
             antecedent,
-            loop_entry_state,
             &chain_assumptions,
-            algebraic_bindings,
             budget,
         )?;
         if paths.len() != 1 {
@@ -995,11 +966,9 @@ fn lower_simple_spec_implication_chain_in(
     }
 
     let mut paths = lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
-        state,
+        scope,
         consequent,
-        loop_entry_state,
         &chain_assumptions,
-        algebraic_bindings,
         budget,
     )?;
     if paths.len() != 1 {
@@ -1033,11 +1002,9 @@ fn lower_simple_spec_implication_chain_in(
 }
 
 fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     proposition: &SpecProposition,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     match proposition {
@@ -1046,14 +1013,8 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             operator,
             right,
         } => {
-            let left_paths = evaluate_spec_integer_expression_paths_in(
-                state,
-                left,
-                loop_entry_state,
-                assumptions,
-                algebraic_bindings,
-                budget,
-            )?;
+            let left_paths =
+                evaluate_spec_integer_expression_paths_in(scope, left, assumptions, budget)?;
             let mut result = Vec::new();
             for left_path in left_paths {
                 let path_assumptions = assumptions_with_path_context(
@@ -1062,20 +1023,21 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     &left_path.obligations,
                 );
                 for right_path in evaluate_spec_integer_expression_paths_in(
-                    state,
+                    scope,
                     right,
-                    loop_entry_state,
                     &path_assumptions,
-                    algebraic_bindings,
                     budget,
                 )? {
-                    let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                        &left_path.facts,
-                        &left_path.obligations,
-                        &right_path.facts,
-                        &right_path.obligations,
-                        assumptions,
-                    ) else {
+                    let Some((facts, obligations)) =
+                        merge_execution_pure_facts_and_obligations_under(
+                            &left_path.facts,
+                            &left_path.obligations,
+                            &right_path.facts,
+                            &right_path.obligations,
+                            assumptions,
+                            &path_assumptions,
+                        )
+                    else {
                         continue;
                     };
                     let condition = match operator {
@@ -1120,36 +1082,30 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
         }
         SpecProposition::AlgebraicComparison { left, equal, right } => {
             lower_spec_algebraic_comparison_at_state_in(
-                state,
+                scope,
                 left,
                 *equal,
                 right,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )
         }
         SpecProposition::SequenceMembership { element, sequence } => {
             lower_spec_sequence_membership_at_state_in(
-                state,
+                scope,
                 element,
                 sequence,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )
         }
         SpecProposition::SequenceComparison { left, equal, right } => {
             lower_spec_sequence_comparison_at_state_in(
-                state,
+                scope,
                 left,
                 *equal,
                 right,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )
         }
@@ -1158,35 +1114,29 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             operator,
             right,
         } => lower_spec_comparison_proposition_at_state_in(
-            state,
+            scope,
             left,
             *operator,
             right,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
         ),
         SpecProposition::FloatClassification {
             expression,
             classification,
         } => lower_spec_float_classification_proposition_at_state_in(
-            state,
+            scope,
             expression,
             *classification,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
         ),
         SpecProposition::And(left, right) => {
             let mut paths = Vec::new();
             for left_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
-                state,
+                scope,
                 left,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )? {
                 let right_assumptions = assumptions_with_path_context(
@@ -1195,20 +1145,21 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     &left_path.obligations,
                 );
                 for right_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
-                    state,
+                    scope,
                     right,
-                    loop_entry_state,
                     &right_assumptions,
-                    algebraic_bindings,
                     budget,
                 )? {
-                    if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                        &left_path.facts,
-                        &left_path.obligations,
-                        &right_path.facts,
-                        &right_path.obligations,
-                        assumptions,
-                    ) {
+                    if let Some((facts, obligations)) =
+                        merge_execution_pure_facts_and_obligations_under(
+                            &left_path.facts,
+                            &left_path.obligations,
+                            &right_path.facts,
+                            &right_path.obligations,
+                            assumptions,
+                            &right_assumptions,
+                        )
+                    {
                         paths.push(SpecPropositionPath {
                             introductions: Vec::new(),
                             proposition: Proposition::And(
@@ -1223,22 +1174,14 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             }
             Ok(paths)
         }
-        SpecProposition::Or(left, right) => lower_spec_disjunction_at_state_in(
-            state,
-            left,
-            right,
-            loop_entry_state,
-            assumptions,
-            algebraic_bindings,
-            budget,
-        ),
+        SpecProposition::Or(left, right) => {
+            lower_spec_disjunction_at_state_in(scope, left, right, assumptions, budget)
+        }
         SpecProposition::Not(body) => {
             Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
-                state,
+                scope,
                 body,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )?
             .into_iter()
@@ -1268,11 +1211,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
         SpecProposition::Implies(left, right) => {
             let mut paths = Vec::new();
             for left_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
-                state,
+                scope,
                 left,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )? {
                 let right_assumptions = assumptions_with_path_context(
@@ -1282,11 +1223,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 )
                 .assume_proposition(left_path.proposition.clone());
                 for right_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
-                    state,
+                    scope,
                     right,
-                    loop_entry_state,
                     &right_assumptions,
-                    algebraic_bindings,
                     budget,
                 )? {
                     let guarded_right_obligations = right_path
@@ -1328,11 +1267,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             variable,
             body,
         } => Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
-            state,
+            scope,
             body,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
         )?
         .into_iter()
@@ -1375,11 +1312,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             algebraic_type,
             body,
         } => Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
-            state,
+            scope,
             body,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
         )?
         .into_iter()
@@ -1439,11 +1374,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     quantified_assumptions.assume_proposition(fact.proposition().clone());
             }
             Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
-                state,
+                scope,
                 body,
-                loop_entry_state,
                 &quantified_assumptions,
-                algebraic_bindings,
                 budget,
             )?
             .into_iter()
@@ -1493,11 +1426,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             c_type,
             body,
         } => Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
-            state,
+            scope,
             body,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
         )?
         .into_iter()
@@ -1540,11 +1471,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             body,
         } => {
             let body_paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
-                state,
+                scope,
                 body,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )?;
 
@@ -1583,11 +1512,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             body,
         } => {
             let body_paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
-                state,
+                scope,
                 body,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )?;
             let branches = body_paths
@@ -1630,11 +1557,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     quantified_assumptions.assume_proposition(fact.proposition().clone());
             }
             Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
-                state,
+                scope,
                 body,
-                loop_entry_state,
                 &quantified_assumptions,
-                algebraic_bindings,
                 budget,
             )?
             .into_iter()
@@ -1683,11 +1608,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             body,
         } => {
             Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
-                state,
+                scope,
                 body,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )?
             .into_iter()
@@ -1722,23 +1645,19 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             arguments,
             resource_state_dependent,
         } => lower_spec_predicate_proposition_at_state_in(
-            state,
+            scope,
             name,
             arguments,
             *resource_state_dependent,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
         ),
         SpecProposition::ResourceSeparate { left, right } => {
             lower_spec_resource_relation_at_state_in(
-                state,
+                scope,
                 left,
                 right,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
                 |left, right| Proposition::CResourceSeparate {
                     left: Box::new(left),
@@ -1748,12 +1667,10 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
         }
         SpecProposition::ResourceContains { parent, child } => {
             lower_spec_resource_relation_at_state_in(
-                state,
+                scope,
                 parent,
                 child,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
                 |parent, child| Proposition::CResourceContains {
                     parent: Box::new(parent),
@@ -1768,15 +1685,13 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             end,
             element_width,
         } => lower_spec_memory_loadable_at_state_in(
-            state,
+            scope,
             memory,
             base,
             start,
             end,
             *element_width,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
             true,
         ),
@@ -1786,9 +1701,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             bytes,
         } => {
             let selected = match memory {
-                SpecMemory::Current => state.memory(),
+                SpecMemory::Current => scope.state.memory(),
                 SpecMemory::FunctionEntry | SpecMemory::LoopEntry => {
-                    let Some(entry) = loop_entry_state else {
+                    let Some(entry) = scope.loop_entry_state else {
                         return Ok(Vec::new());
                     };
                     entry.memory()
@@ -1796,11 +1711,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 SpecMemory::Fixed(memory) => memory,
             };
             Ok(evaluate_spec_values_at_state_in(
-                state,
+                scope,
                 std::slice::from_ref(base),
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )?
             .into_iter()
@@ -1824,11 +1737,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
         SpecProposition::Defined(expression) => {
             let mut checked = SpecEvaluation::checked(budget);
             let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                state,
+                scope,
                 expression,
-                loop_entry_state,
                 &PureFactContext::new(),
-                algebraic_bindings,
                 &mut checked,
             )?;
             let mut normal_paths = paths.into_iter().map(|path| {
@@ -1902,13 +1813,13 @@ fn retain_required_integer_obligation(
 }
 
 fn evaluate_spec_integer_expression_paths_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     expression: &SpecIntegerExpression,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecIntegerPath>> {
+    let state = scope.state;
+    let loop_entry_state = scope.loop_entry_state;
     budget.consume_expression_step()?;
     match expression {
         SpecIntegerExpression::ResourceField(projection) => {
@@ -1942,33 +1853,27 @@ fn evaluate_spec_integer_expression_paths_in(
         }
         SpecIntegerExpression::PureFunctionApplication { name, arguments } => {
             evaluate_spec_integer_pure_function_application_paths_in(
-                state,
+                scope,
                 name,
                 arguments,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )
         }
         SpecIntegerExpression::AlgebraicMatch { scrutinee, arms } => {
             evaluate_spec_integer_algebraic_match_paths_in(
-                state,
+                scope,
                 scrutinee,
                 arms,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )
         }
         SpecIntegerExpression::FromMachine(machine) => {
             let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                state,
+                scope,
                 machine,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )?;
             // Preserve the complete domain of the C expression, including the
@@ -2019,75 +1924,61 @@ fn evaluate_spec_integer_expression_paths_in(
                 })
                 .collect()
         }
-        SpecIntegerExpression::Negate(inner) => evaluate_spec_integer_expression_paths_in(
-            state,
-            inner,
-            loop_entry_state,
-            assumptions,
-            algebraic_bindings,
-            budget,
-        )
-        .and_then(|paths| {
-            let mut result = Vec::new();
-            for mut path in paths {
-                if crate::instrumentation::numeric_operation_work_exceeded(integer_term_bits(
-                    &path.value,
-                )) {
-                    return Err(ExecutionLimit::Deadline);
-                }
-                path.value = IntegerTerm::negate(path.value);
-                result.push(path);
-            }
-            Ok(result)
-        }),
+        SpecIntegerExpression::Negate(inner) => {
+            evaluate_spec_integer_expression_paths_in(scope, inner, assumptions, budget).and_then(
+                |paths| {
+                    let mut result = Vec::new();
+                    for mut path in paths {
+                        if crate::instrumentation::numeric_operation_work_exceeded(
+                            integer_term_bits(&path.value),
+                        ) {
+                            return Err(ExecutionLimit::Deadline);
+                        }
+                        path.value = IntegerTerm::negate(path.value);
+                        result.push(path);
+                    }
+                    Ok(result)
+                },
+            )
+        }
         SpecIntegerExpression::Add(left, right) => evaluate_integer_binary_paths_in(
-            state,
+            scope,
             left,
             right,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
             IntegerBinaryOperation::Add,
         ),
         SpecIntegerExpression::Subtract(left, right) => evaluate_integer_binary_paths_in(
-            state,
+            scope,
             left,
             right,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
             IntegerBinaryOperation::Subtract,
         ),
         SpecIntegerExpression::Multiply(left, right) => evaluate_integer_binary_paths_in(
-            state,
+            scope,
             left,
             right,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
             IntegerBinaryOperation::Multiply,
         ),
         SpecIntegerExpression::TruncatingQuotient(left, right) => evaluate_integer_binary_paths_in(
-            state,
+            scope,
             left,
             right,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
             IntegerBinaryOperation::TruncatingQuotient,
         ),
         SpecIntegerExpression::TruncatingRemainder(left, right) => {
             evaluate_integer_binary_paths_in(
-                state,
+                scope,
                 left,
                 right,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
                 IntegerBinaryOperation::TruncatingRemainder,
             )
@@ -2099,33 +1990,28 @@ fn evaluate_spec_integer_expression_paths_in(
             item,
             body,
         } => {
-            let index_paths = evaluate_spec_integer_range_fold_indices_in(
-                state,
-                index,
-                loop_entry_state,
-                assumptions,
-                algebraic_bindings,
-                budget,
-            )?;
+            let index_paths =
+                evaluate_spec_integer_range_fold_indices_in(scope, index, assumptions, budget)?;
             let mut result = Vec::new();
             for (index, index_facts, index_obligations) in index_paths {
                 let index_assumptions =
                     assumptions_with_path_context(assumptions, &index_facts, &index_obligations);
                 for initial_path in evaluate_spec_integer_expression_paths_in(
-                    state,
+                    scope,
                     initial,
-                    loop_entry_state,
                     &index_assumptions,
-                    algebraic_bindings,
                     budget,
                 )? {
-                    let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                        &index_facts,
-                        &index_obligations,
-                        &initial_path.facts,
-                        &initial_path.obligations,
-                        assumptions,
-                    ) else {
+                    let Some((facts, obligations)) =
+                        merge_execution_pure_facts_and_obligations_under(
+                            &index_facts,
+                            &index_obligations,
+                            &initial_path.facts,
+                            &initial_path.obligations,
+                            assumptions,
+                            &index_assumptions,
+                        )
+                    else {
                         continue;
                     };
                     let body_assumptions =
@@ -2152,11 +2038,9 @@ fn evaluate_spec_integer_expression_paths_in(
                             ],
                             |budget| {
                                 evaluate_spec_integer_expression_paths_in(
-                                    state,
+                                    scope,
                                     body,
-                                    loop_entry_state,
                                     &empty_body_assumptions,
-                                    algebraic_bindings,
                                     budget,
                                 )
                             },
@@ -2208,11 +2092,9 @@ fn evaluate_spec_integer_expression_paths_in(
                         ],
                         |budget| {
                             evaluate_spec_integer_expression_paths_in(
-                                state,
+                                scope,
                                 body,
-                                loop_entry_state,
                                 &body_assumptions,
-                                algebraic_bindings,
                                 budget,
                             )
                         },
@@ -2790,11 +2672,9 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
 }
 
 fn evaluate_spec_integer_range_fold_indices_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     index: &SpecIntegerRangeFoldIndex,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<(IntegerRangeFoldIndex, ExecutionFacts, Vec<ProofObligation>)>> {
     match index {
@@ -2803,11 +2683,9 @@ fn evaluate_spec_integer_range_fold_indices_in(
             let unsigned64 = matches!(index, SpecIntegerRangeFoldIndex::UInt64 { .. });
             let mut result = Vec::new();
             for start_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                state,
+                scope,
                 start,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )? {
                 let start_assumptions = assumptions_with_path_context(
@@ -2816,20 +2694,21 @@ fn evaluate_spec_integer_range_fold_indices_in(
                     &start_path.obligations,
                 );
                 for end_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                    state,
+                    scope,
                     end,
-                    loop_entry_state,
                     &start_assumptions,
-                    algebraic_bindings,
                     budget,
                 )? {
-                    let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                        &start_path.facts,
-                        &start_path.obligations,
-                        &end_path.facts,
-                        &end_path.obligations,
-                        assumptions,
-                    ) else {
+                    let Some((facts, obligations)) =
+                        merge_execution_pure_facts_and_obligations_under(
+                            &start_path.facts,
+                            &start_path.obligations,
+                            &end_path.facts,
+                            &end_path.obligations,
+                            assumptions,
+                            &start_assumptions,
+                        )
+                    else {
                         continue;
                     };
                     // Each kind takes endpoints of its own type only.
@@ -2855,34 +2734,30 @@ fn evaluate_spec_integer_range_fold_indices_in(
         }
         SpecIntegerRangeFoldIndex::Integer { start, end } => {
             let mut result = Vec::new();
-            for start_path in evaluate_spec_integer_expression_paths_in(
-                state,
-                start,
-                loop_entry_state,
-                assumptions,
-                algebraic_bindings,
-                budget,
-            )? {
+            for start_path in
+                evaluate_spec_integer_expression_paths_in(scope, start, assumptions, budget)?
+            {
                 let start_assumptions = assumptions_with_path_context(
                     assumptions,
                     &start_path.facts,
                     &start_path.obligations,
                 );
                 for end_path in evaluate_spec_integer_expression_paths_in(
-                    state,
+                    scope,
                     end,
-                    loop_entry_state,
                     &start_assumptions,
-                    algebraic_bindings,
                     budget,
                 )? {
-                    let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                        &start_path.facts,
-                        &start_path.obligations,
-                        &end_path.facts,
-                        &end_path.obligations,
-                        assumptions,
-                    ) else {
+                    let Some((facts, obligations)) =
+                        merge_execution_pure_facts_and_obligations_under(
+                            &start_path.facts,
+                            &start_path.obligations,
+                            &end_path.facts,
+                            &end_path.obligations,
+                            assumptions,
+                            &start_assumptions,
+                        )
+                    else {
                         continue;
                     };
                     result.push((
@@ -2901,22 +2776,16 @@ fn evaluate_spec_integer_range_fold_indices_in(
 }
 
 fn evaluate_spec_integer_algebraic_match_paths_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     scrutinee: &SpecAlgebraicExpression,
     arms: &[SpecIntegerMatchArm],
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecIntegerPath>> {
-    let scrutinee_paths = evaluate_spec_algebraic_at_state_with_bindings_in(
-        state,
-        scrutinee,
-        loop_entry_state,
-        assumptions,
-        algebraic_bindings,
-        budget,
-    )?;
+    let state = scope.state;
+    let algebraic_bindings = scope.algebraic_bindings;
+    let scrutinee_paths =
+        evaluate_spec_algebraic_at_state_with_bindings_in(scope, scrutinee, assumptions, budget)?;
     let mut result = Vec::new();
     for scrutinee_path in scrutinee_paths {
         let mut facts = scrutinee_path.facts;
@@ -2969,11 +2838,13 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
             let mut body_paths =
                 budget.with_integer_bindings(&arm.binding_variables, &bindings, |budget| {
                     evaluate_spec_integer_expression_paths_in(
-                        &body_state,
+                        SpecScope {
+                            state: &body_state,
+                            algebraic_bindings: &body_algebraic_bindings,
+                            ..scope
+                        },
                         &arm.body,
-                        loop_entry_state,
                         &body_assumptions,
-                        &body_algebraic_bindings,
                         budget,
                     )
                 })?;
@@ -3301,41 +3172,28 @@ fn rewrite_integer_match_typed_fields(
 }
 
 fn evaluate_integer_binary_paths_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     left: &SpecIntegerExpression,
     right: &SpecIntegerExpression,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
     operation: IntegerBinaryOperation,
 ) -> ExecutionResult<Vec<SpecIntegerPath>> {
-    let left_paths = evaluate_spec_integer_expression_paths_in(
-        state,
-        left,
-        loop_entry_state,
-        assumptions,
-        algebraic_bindings,
-        budget,
-    )?;
+    let left_paths = evaluate_spec_integer_expression_paths_in(scope, left, assumptions, budget)?;
     let mut result = Vec::new();
     for left_path in left_paths {
         let path_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
-        for right_path in evaluate_spec_integer_expression_paths_in(
-            state,
-            right,
-            loop_entry_state,
-            &path_assumptions,
-            algebraic_bindings,
-            budget,
-        )? {
-            let Some((facts, mut obligations)) = merge_execution_pure_facts_and_obligations(
+        for right_path in
+            evaluate_spec_integer_expression_paths_in(scope, right, &path_assumptions, budget)?
+        {
+            let Some((facts, mut obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
                 &right_path.obligations,
                 assumptions,
+                &path_assumptions,
             ) else {
                 continue;
             };
@@ -3414,13 +3272,11 @@ fn integer_term_bits(term: &IntegerTerm) -> usize {
 
 #[allow(clippy::too_many_arguments)]
 fn lower_spec_algebraic_comparison_at_state_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     left: &SpecAlgebraicExpression,
     equal: bool,
     right: &SpecAlgebraicExpression,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     if super::functions::spec_algebraic_expression_is_obligation_free(left)
@@ -3439,33 +3295,27 @@ fn lower_spec_algebraic_comparison_at_state_in(
         }]);
     }
     let mut paths = Vec::new();
-    for left_path in evaluate_spec_algebraic_at_state_with_bindings_in(
-        state,
-        left,
-        loop_entry_state,
-        assumptions,
-        algebraic_bindings,
-        budget,
-    )? {
+    for left_path in
+        evaluate_spec_algebraic_at_state_with_bindings_in(scope, left, assumptions, budget)?
+    {
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
         for right_path in evaluate_spec_algebraic_at_state_with_bindings_in(
-            state,
+            scope,
             right,
-            loop_entry_state,
             &right_assumptions,
-            algebraic_bindings,
             budget,
         )? {
             if left_path.value.algebraic_type != right_path.value.algebraic_type {
                 continue;
             }
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
                 &right_path.obligations,
                 assumptions,
+                &right_assumptions,
             ) else {
                 continue;
             };
@@ -3566,23 +3416,22 @@ fn evaluate_spec_algebraic_at_state_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecAlgebraicPath>> {
     evaluate_spec_algebraic_at_state_with_bindings_in(
-        state,
+        SpecScope::unbound(state, loop_entry_state),
         expression,
-        loop_entry_state,
         assumptions,
-        &BTreeMap::new(),
         budget,
     )
 }
 
 fn evaluate_spec_algebraic_at_state_with_bindings_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     expression: &SpecAlgebraicExpression,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecAlgebraicPath>> {
+    let state = scope.state;
+    let loop_entry_state = scope.loop_entry_state;
+    let algebraic_bindings = scope.algebraic_bindings;
     budget.consume_expression_step()?;
     match &expression.node {
         SpecAlgebraicExpressionNode::ResourceField(projection) => {
@@ -3633,11 +3482,9 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
             }
             let mut result = Vec::new();
             for scrutinee_path in evaluate_spec_algebraic_at_state_with_bindings_in(
-                state,
+                scope,
                 scrutinee,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )? {
                 if !matches!(
@@ -3682,11 +3529,13 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                             &bindings,
                             |budget| {
                                 evaluate_spec_algebraic_at_state_with_bindings_in(
-                                    &body_state,
+                                    SpecScope {
+                                        state: &body_state,
+                                        algebraic_bindings: &body_algebraic_bindings,
+                                        ..scope
+                                    },
                                     &arm.body,
-                                    loop_entry_state,
                                     &body_assumptions,
-                                    &body_algebraic_bindings,
                                     budget,
                                 )
                             },
@@ -3771,22 +3620,25 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                         &case.fields,
                         |budget| {
                             evaluate_spec_algebraic_at_state_with_bindings_in(
-                                &body_state,
+                                SpecScope {
+                                    state: &body_state,
+                                    algebraic_bindings: &body_algebraic_bindings,
+                                    ..scope
+                                },
                                 &arm.body,
-                                loop_entry_state,
                                 &body_assumptions,
-                                &body_algebraic_bindings,
                                 budget,
                             )
                         },
                     )? {
                         if let Some((facts, obligations)) =
-                            merge_execution_pure_facts_and_obligations(
+                            merge_execution_pure_facts_and_obligations_under(
                                 &case_facts,
                                 &case_obligations,
                                 &body_path.facts,
                                 &body_path.obligations,
                                 assumptions,
+                                &body_assumptions,
                             )
                         {
                             result.push(SpecAlgebraicPath {
@@ -3820,20 +3672,19 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                     let path_assumptions =
                         assumptions_with_path_context(assumptions, &facts, &obligations);
                     for field_path in evaluate_spec_algebraic_value_at_state_in(
-                        state,
+                        scope,
                         field,
-                        loop_entry_state,
                         &path_assumptions,
-                        algebraic_bindings,
                         budget,
                     )? {
                         let Some((merged_facts, merged_obligations)) =
-                            merge_execution_pure_facts_and_obligations(
+                            merge_execution_pure_facts_and_obligations_under(
                                 &facts,
                                 &obligations,
                                 &field_path.facts,
                                 &field_path.obligations,
                                 assumptions,
+                                &path_assumptions,
                             )
                         else {
                             continue;
@@ -3876,20 +3727,19 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                     let path_assumptions =
                         assumptions_with_path_context(assumptions, &facts, &obligations);
                     for argument_path in evaluate_spec_pure_function_argument_paths_in(
-                        state,
+                        scope,
                         argument,
-                        loop_entry_state,
                         &path_assumptions,
-                        algebraic_bindings,
                         budget,
                     )? {
                         let Some((merged_facts, merged_obligations)) =
-                            merge_execution_pure_facts_and_obligations(
+                            merge_execution_pure_facts_and_obligations_under(
                                 &facts,
                                 &obligations,
                                 &argument_path.facts,
                                 &argument_path.obligations,
                                 assumptions,
+                                &path_assumptions,
                             )
                         else {
                             continue;
@@ -4010,36 +3860,29 @@ fn symbolic_algebraic_fields(
 }
 
 fn evaluate_spec_algebraic_value_at_state_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     value: &SpecAlgebraicValue,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecAlgebraicValuePath>> {
     match value {
-        SpecAlgebraicValue::Integer(expression) => Ok(evaluate_spec_integer_expression_paths_in(
-            state,
-            expression,
-            loop_entry_state,
-            assumptions,
-            algebraic_bindings,
-            budget,
-        )?
-        .into_iter()
-        .map(|path| SpecAlgebraicValuePath {
-            value: AlgebraicValue::Integer(path.value),
-            facts: path.facts,
-            obligations: path.obligations,
-        })
-        .collect()),
+        SpecAlgebraicValue::Integer(expression) => {
+            Ok(
+                evaluate_spec_integer_expression_paths_in(scope, expression, assumptions, budget)?
+                    .into_iter()
+                    .map(|path| SpecAlgebraicValuePath {
+                        value: AlgebraicValue::Integer(path.value),
+                        facts: path.facts,
+                        obligations: path.obligations,
+                    })
+                    .collect(),
+            )
+        }
         SpecAlgebraicValue::C(expression) => {
             Ok(evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                state,
+                scope,
                 expression,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )?
             .into_iter()
@@ -4052,11 +3895,9 @@ fn evaluate_spec_algebraic_value_at_state_in(
         }
         SpecAlgebraicValue::Algebraic(expression) => {
             Ok(evaluate_spec_algebraic_at_state_with_bindings_in(
-                state,
+                scope,
                 expression,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )?
             .into_iter()
@@ -4154,21 +3995,17 @@ fn algebraic_case_paths_in(
 }
 
 fn lower_spec_sequence_membership_at_state_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     element: &SpecExpression,
     sequence: &SpecSequenceExpression,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     let mut paths = Vec::new();
     for element_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-        state,
+        scope,
         element,
-        loop_entry_state,
         assumptions,
-        algebraic_bindings,
         budget,
     )? {
         let sequence_assumptions = assumptions_with_path_context(
@@ -4176,14 +4013,9 @@ fn lower_spec_sequence_membership_at_state_in(
             &element_path.facts,
             &element_path.obligations,
         );
-        for sequence_path in evaluate_spec_sequence_at_state_in(
-            state,
-            sequence,
-            loop_entry_state,
-            &sequence_assumptions,
-            algebraic_bindings,
-            budget,
-        )? {
+        for sequence_path in
+            evaluate_spec_sequence_at_state_in(scope, sequence, &sequence_assumptions, budget)?
+        {
             if sequence_path
                 .value
                 .element_type
@@ -4191,12 +4023,13 @@ fn lower_spec_sequence_membership_at_state_in(
             {
                 continue;
             }
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &element_path.facts,
                 &element_path.obligations,
                 &sequence_path.facts,
                 &sequence_path.obligations,
                 assumptions,
+                &sequence_assumptions,
             ) else {
                 continue;
             };
@@ -4283,46 +4116,33 @@ impl<'a> Iterator for SequenceElements<'a> {
 
 #[allow(clippy::too_many_arguments)]
 fn lower_spec_sequence_comparison_at_state_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     left: &SpecSequenceExpression,
     equal: bool,
     right: &SpecSequenceExpression,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     let mut paths = Vec::new();
-    for left_path in evaluate_spec_sequence_at_state_in(
-        state,
-        left,
-        loop_entry_state,
-        assumptions,
-        algebraic_bindings,
-        budget,
-    )? {
+    for left_path in evaluate_spec_sequence_at_state_in(scope, left, assumptions, budget)? {
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
-        for right_path in evaluate_spec_sequence_at_state_in(
-            state,
-            right,
-            loop_entry_state,
-            &right_assumptions,
-            algebraic_bindings,
-            budget,
-        )? {
+        for right_path in
+            evaluate_spec_sequence_at_state_in(scope, right, &right_assumptions, budget)?
+        {
             if !sequence_element_types_compatible(
                 left_path.value.element_type,
                 right_path.value.element_type,
             ) {
                 continue;
             }
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
                 &right_path.obligations,
                 assumptions,
+                &right_assumptions,
             ) else {
                 continue;
             };
@@ -4396,11 +4216,9 @@ pub(super) fn integer_sequence_element_equality(
 }
 
 fn evaluate_spec_sequence_at_state_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     expression: &SpecSequenceExpression,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecSequencePath>> {
     budget.consume_expression_step()?;
@@ -4413,20 +4231,19 @@ fn evaluate_spec_sequence_at_state_in(
                     let path_assumptions =
                         assumptions_with_path_context(assumptions, &facts, &obligations);
                     for element_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                        state,
+                        scope,
                         element,
-                        loop_entry_state,
                         &path_assumptions,
-                        algebraic_bindings,
                         budget,
                     )? {
                         let Some((merged_facts, merged_obligations)) =
-                            merge_execution_pure_facts_and_obligations(
+                            merge_execution_pure_facts_and_obligations_under(
                                 &facts,
                                 &obligations,
                                 &element_path.facts,
                                 &element_path.obligations,
                                 assumptions,
+                                &path_assumptions,
                             )
                         else {
                             continue;
@@ -4458,40 +4275,31 @@ fn evaluate_spec_sequence_at_state_in(
         }
         SpecSequenceExpression::Concat(left, right) => {
             let mut paths = Vec::new();
-            for left_path in evaluate_spec_sequence_at_state_in(
-                state,
-                left,
-                loop_entry_state,
-                assumptions,
-                algebraic_bindings,
-                budget,
-            )? {
+            for left_path in evaluate_spec_sequence_at_state_in(scope, left, assumptions, budget)? {
                 let right_assumptions = assumptions_with_path_context(
                     assumptions,
                     &left_path.facts,
                     &left_path.obligations,
                 );
-                for right_path in evaluate_spec_sequence_at_state_in(
-                    state,
-                    right,
-                    loop_entry_state,
-                    &right_assumptions,
-                    algebraic_bindings,
-                    budget,
-                )? {
+                for right_path in
+                    evaluate_spec_sequence_at_state_in(scope, right, &right_assumptions, budget)?
+                {
                     if !sequence_element_types_compatible(
                         left_path.value.element_type,
                         right_path.value.element_type,
                     ) {
                         continue;
                     }
-                    let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                        &left_path.facts,
-                        &left_path.obligations,
-                        &right_path.facts,
-                        &right_path.obligations,
-                        assumptions,
-                    ) else {
+                    let Some((facts, obligations)) =
+                        merge_execution_pure_facts_and_obligations_under(
+                            &left_path.facts,
+                            &left_path.obligations,
+                            &right_path.facts,
+                            &right_path.obligations,
+                            assumptions,
+                            &right_assumptions,
+                        )
+                    else {
                         continue;
                     };
                     paths.push(SpecSequencePath {
@@ -5491,20 +5299,16 @@ mod algebraic_term_tests {
 }
 
 fn lower_spec_float_classification_proposition_at_state_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     expression: &SpecExpression,
     classification: CFloatClassification,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     Ok(evaluate_spec_expression_paths_with_algebraic_bindings_in(
-        state,
+        scope,
         expression,
-        loop_entry_state,
         assumptions,
-        algebraic_bindings,
         budget,
     )?
     .into_iter()
@@ -5532,11 +5336,9 @@ struct SpecValuesPath {
 }
 
 fn evaluate_spec_values_at_state_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     expressions: &[SpecExpression],
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecValuesPath>> {
     let mut paths = vec![SpecValuesPath {
@@ -5550,19 +5352,18 @@ fn evaluate_spec_values_at_state_in(
             let path_assumptions =
                 assumptions_with_path_context(assumptions, &prefix.facts, &prefix.obligations);
             for value_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                state,
+                scope,
                 expression,
-                loop_entry_state,
                 &path_assumptions,
-                algebraic_bindings,
                 budget,
             )? {
-                let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+                let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                     &prefix.facts,
                     &prefix.obligations,
                     &value_path.facts,
                     &value_path.obligations,
                     assumptions,
+                    &path_assumptions,
                 ) else {
                     continue;
                 };
@@ -5581,11 +5382,9 @@ fn evaluate_spec_values_at_state_in(
 }
 
 fn evaluate_spec_resource_at_state_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     resource: &SpecResource,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<EvaluatedSpecResource>> {
     let (expressions, build): (Vec<SpecExpression>, SpecResourceBuilder) = match resource {
@@ -5668,17 +5467,14 @@ fn evaluate_spec_resource_at_state_in(
             )
         }
     };
-    Ok(evaluate_spec_values_at_state_in(
-        state,
-        &expressions,
-        loop_entry_state,
-        assumptions,
-        algebraic_bindings,
-        budget,
-    )?
-    .into_iter()
-    .filter_map(|path| build(path.values).map(|resource| (resource, path.facts, path.obligations)))
-    .collect())
+    Ok(
+        evaluate_spec_values_at_state_in(scope, &expressions, assumptions, budget)?
+            .into_iter()
+            .filter_map(|path| {
+                build(path.values).map(|resource| (resource, path.facts, path.obligations))
+            })
+            .collect(),
+    )
 }
 
 /// Whether a stated relation names a memory range whose byte extent this
@@ -5713,40 +5509,29 @@ fn separation_extent_is_impossible(
 /// opaque resources, and containment relations, contribute no range bounds.
 #[allow(clippy::too_many_arguments)]
 fn lower_spec_resource_relation_at_state_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     left: &SpecResource,
     right: &SpecResource,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
     relation: impl Fn(CResource, CResource) -> Proposition,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     let mut paths = Vec::new();
-    for (left, left_facts, left_obligations) in evaluate_spec_resource_at_state_in(
-        state,
-        left,
-        loop_entry_state,
-        assumptions,
-        algebraic_bindings,
-        budget,
-    )? {
+    for (left, left_facts, left_obligations) in
+        evaluate_spec_resource_at_state_in(scope, left, assumptions, budget)?
+    {
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_facts, &left_obligations);
-        for (right, right_facts, right_obligations) in evaluate_spec_resource_at_state_in(
-            state,
-            right,
-            loop_entry_state,
-            &right_assumptions,
-            algebraic_bindings,
-            budget,
-        )? {
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+        for (right, right_facts, right_obligations) in
+            evaluate_spec_resource_at_state_in(scope, right, &right_assumptions, budget)?
+        {
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_facts,
                 &left_obligations,
                 &right_facts,
                 &right_obligations,
                 assumptions,
+                &right_assumptions,
             ) else {
                 continue;
             };
@@ -5773,18 +5558,18 @@ fn lower_spec_resource_relation_at_state_in(
 
 #[allow(clippy::too_many_arguments)]
 fn lower_spec_memory_loadable_at_state_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     memory: &SpecMemory,
     base: &SpecExpression,
     start: &SpecExpression,
     end: &SpecExpression,
     element_width: u32,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
     enforce_range_guards: bool,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    let state = scope.state;
+    let loop_entry_state = scope.loop_entry_state;
     let memory = match memory {
         SpecMemory::Current => state.memory(),
         SpecMemory::FunctionEntry | SpecMemory::LoopEntry => match loop_entry_state {
@@ -5794,11 +5579,9 @@ fn lower_spec_memory_loadable_at_state_in(
         SpecMemory::Fixed(memory) => memory,
     };
     Ok(evaluate_spec_values_at_state_in(
-        state,
+        scope,
         &[base.clone(), start.clone(), end.clone()],
-        loop_entry_state,
         assumptions,
-        algebraic_bindings,
         budget,
     )?
     .into_iter()
@@ -5952,12 +5735,10 @@ fn lower_spec_memory_loadable_at_state_in(
 }
 
 fn evaluate_spec_integer_pure_function_application_paths_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     name: &str,
     arguments: &[SpecPureFunctionArgument],
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecIntegerPath>> {
     let mut paths = vec![(Vec::new(), ExecutionFacts::new(), Vec::new())];
@@ -5966,11 +5747,9 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
         for (values, facts, obligations) in paths {
             let path_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
             let argument_paths = evaluate_spec_pure_function_argument_paths_in(
-                state,
+                scope,
                 argument,
-                loop_entry_state,
                 &path_assumptions,
-                algebraic_bindings,
                 budget,
             )?;
             let domain = argument_paths
@@ -6068,31 +5847,25 @@ fn canonical_offset_sum(left: PointerOffsetTerm, right: PointerOffsetTerm) -> Po
 }
 
 fn lower_spec_disjunction_at_state_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     left: &SpecProposition,
     right: &SpecProposition,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     let mut paths = Vec::new();
     for left_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
-        state,
+        scope,
         left,
-        loop_entry_state,
         assumptions,
-        algebraic_bindings,
         budget,
     )? {
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
         let right_paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
-            state,
+            scope,
             right,
-            loop_entry_state,
             &right_assumptions,
-            algebraic_bindings,
             budget,
         )?;
         // Preserve the written disjunction whenever both sides lower, including
@@ -6105,12 +5878,13 @@ fn lower_spec_disjunction_at_state_in(
             continue;
         }
         for right_path in right_paths {
-            if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
                 &right_path.obligations,
                 assumptions,
+                &right_assumptions,
             ) {
                 paths.push(SpecPropositionPath {
                     introductions: Vec::new(),
@@ -6128,13 +5902,11 @@ fn lower_spec_disjunction_at_state_in(
 }
 
 fn lower_spec_comparison_proposition_at_state_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     left: &SpecExpression,
     operator: CComparisonOperator,
     right: &SpecExpression,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     if matches!(left, SpecExpression::AlgebraicMatch { .. })
@@ -6156,11 +5928,9 @@ fn lower_spec_comparison_proposition_at_state_in(
     }
     let mut paths = Vec::new();
     let left_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-        state,
+        scope,
         left,
-        loop_entry_state,
         assumptions,
-        algebraic_bindings,
         budget,
     )?;
     let left_path_count = left_paths.len();
@@ -6170,21 +5940,20 @@ fn lower_spec_comparison_proposition_at_state_in(
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
         let right_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-            state,
+            scope,
             right,
-            loop_entry_state,
             &right_assumptions,
-            algebraic_bindings,
             budget,
         )?;
         right_path_count = right_path_count.saturating_add(right_paths.len());
         for right_path in right_paths {
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
                 &right_path.obligations,
                 assumptions,
+                &right_assumptions,
             ) else {
                 merge_failure_count = merge_failure_count.saturating_add(1);
                 continue;
@@ -6212,15 +5981,15 @@ fn lower_spec_comparison_proposition_at_state_in(
 }
 
 fn lower_spec_predicate_proposition_at_state_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     name: &str,
     arguments: &[SpecPredicateArgument],
     resource_state_dependent: bool,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    let state = scope.state;
+    let loop_entry_state = scope.loop_entry_state;
     if name == MUTEX_HELD_PREDICATE_NAME {
         let [SpecPredicateArgument::Value(mutex)] = arguments else {
             return Ok(vec![invalid_mutex_held_path(
@@ -6230,11 +5999,9 @@ fn lower_spec_predicate_proposition_at_state_in(
             )]);
         };
         let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-            state,
+            scope,
             mutex,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
         )?;
         return Ok(paths
@@ -6311,11 +6078,9 @@ fn lower_spec_predicate_proposition_at_state_in(
             SpecPredicateArgument::ArrayRef { memory, pointer } => (pointer, Some(memory)),
         };
         let argument_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-            state,
+            scope,
             expression,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
         )?;
         let mut next_paths = Vec::new();
@@ -6416,11 +6181,9 @@ fn evaluate_spec_expression_paths_with_bindings_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     evaluate_spec_expression_paths_with_algebraic_bindings_in(
-        state,
+        SpecScope::new(state, None, algebraic_bindings),
         expression,
-        None,
         assumptions,
-        algebraic_bindings,
         budget,
     )
 }
@@ -6437,11 +6200,9 @@ fn evaluate_spec_integer_measure_paths_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecIntegerPath>> {
     evaluate_spec_integer_expression_paths_in(
-        state,
+        SpecScope::unbound(state, None),
         expression,
-        None,
         assumptions,
-        &BTreeMap::new(),
         budget,
     )
 }
@@ -6454,21 +6215,17 @@ fn evaluate_spec_expression_paths_with_loop_entry_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     evaluate_spec_expression_paths_with_algebraic_bindings_in(
-        state,
+        SpecScope::unbound(state, loop_entry_state),
         expression,
-        loop_entry_state,
         assumptions,
-        &BTreeMap::new(),
         budget,
     )
 }
 
 fn evaluate_spec_expression_paths_with_algebraic_bindings_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     expression: &SpecExpression,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut right_operands = Vec::new();
@@ -6482,40 +6239,33 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_in(
     }
     if right_operands.len() > 128 && matches!(current, SpecExpression::Value(_)) {
         return evaluate_spec_add_chain_paths_in(
-            state,
+            scope,
             current,
             &right_operands,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
         );
     }
     evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
-        state,
+        scope,
         expression,
-        loop_entry_state,
         assumptions,
-        algebraic_bindings,
         budget,
     )
 }
 
 fn evaluate_spec_add_chain_paths_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     base: &SpecExpression,
     right_operands: &[&SpecExpression],
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
+    let state = scope.state;
     let mut paths = evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
-        state,
+        scope,
         base,
-        loop_entry_state,
         assumptions,
-        algebraic_bindings,
         budget,
     )?;
     for right in right_operands.iter().rev() {
@@ -6528,19 +6278,18 @@ fn evaluate_spec_add_chain_paths_in(
                 &left_path.obligations,
             );
             for right_path in evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
-                state,
+                scope,
                 right,
-                loop_entry_state,
                 &right_assumptions,
-                algebraic_bindings,
                 budget,
             )? {
-                let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+                let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                     &left_path.facts,
                     &left_path.obligations,
                     &right_path.facts,
                     &right_path.obligations,
                     assumptions,
+                    &right_assumptions,
                 ) else {
                     continue;
                 };
@@ -6743,14 +6492,15 @@ mod aggregate_value_tests {
 /// Keep the optional Count-state selection off the recursive expression
 /// evaluator's stack. Ordinary expressions do not need an owned CState.
 fn evaluate_resource_count_paths(
-    state: &CState,
+    scope: SpecScope<'_>,
     name: &str,
     arguments: &[Option<SpecExpression>],
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
+    let state = scope.state;
+    let loop_entry_state = scope.loop_entry_state;
+    let algebraic_bindings = scope.algebraic_bindings;
     // A predicate records immutable observations, not execution custody. Restore
     // its captured read witness only inside this evaluator; no resource step
     // sees this context, and the numeric model remains the captured ledger.
@@ -6782,20 +6532,19 @@ fn evaluate_resource_count_paths(
             };
             let path_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
             for argument_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                state,
+                SpecScope::new(state, loop_entry_state, algebraic_bindings),
                 argument,
-                loop_entry_state,
                 &path_assumptions,
-                algebraic_bindings,
                 budget,
             )? {
                 let Some((merged_facts, merged_obligations)) =
-                    merge_execution_pure_facts_and_obligations(
+                    merge_execution_pure_facts_and_obligations_under(
                         &facts,
                         &obligations,
                         &argument_path.facts,
                         &argument_path.obligations,
                         assumptions,
+                        &path_assumptions,
                     )
                 else {
                     continue;
@@ -7069,13 +6818,14 @@ fn evaluate_resource_count_paths(
 }
 
 fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     expression: &SpecExpression,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
+    let state = scope.state;
+    let loop_entry_state = scope.loop_entry_state;
+    let algebraic_bindings = scope.algebraic_bindings;
     budget.consume_expression_step()?;
     let paths = match expression {
         SpecExpression::AggregateFieldValue {
@@ -7091,15 +6841,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 // Requirement setup can bind the caller's aggregate image as
                 // a plain pointer. It has no retired parameter value to expose.
                 return evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                    state,
+                    SpecScope::new(state, loop_entry_state, algebraic_bindings),
                     &SpecExpression::MemoryLoad {
                         memory: SpecMemory::Current,
                         pointer: pointer.clone(),
                         value_type: *value_type,
                     },
-                    loop_entry_state,
                     assumptions,
-                    algebraic_bindings,
                     budget,
                 );
             };
@@ -7116,25 +6864,21 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 entry.memory()
             };
             evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                state,
+                SpecScope::new(state, loop_entry_state, algebraic_bindings),
                 &SpecExpression::MemoryLoad {
                     memory: SpecMemory::Fixed(memory.clone()),
                     pointer: Box::new(pointer),
                     value_type: *value_type,
                 },
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )?
         }
         SpecExpression::IntegerToMachine { value, destination } => {
             let integer_paths = evaluate_spec_integer_expression_paths_in(
-                state,
+                SpecScope::new(state, loop_entry_state, algebraic_bindings),
                 value,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )?;
             let (lower, upper) = integer_machine_bounds(*destination);
@@ -7210,11 +6954,9 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             }
             let mut paths = Vec::new();
             for scrutinee_path in evaluate_spec_algebraic_at_state_with_bindings_in(
-                state,
+                SpecScope::new(state, loop_entry_state, algebraic_bindings),
                 scrutinee,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )? {
                 if !matches!(
@@ -7257,11 +6999,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             assumptions_with_path_context(assumptions, &facts, &obligations);
                         let mut body_paths =
                             evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                                &body_state,
+                                SpecScope::new(
+                                    &body_state,
+                                    loop_entry_state,
+                                    &body_algebraic_bindings,
+                                ),
                                 &arm.body,
-                                loop_entry_state,
                                 &body_assumptions,
-                                &body_algebraic_bindings,
                                 budget,
                             )?;
                         let Some(body_path) = body_paths.pop() else {
@@ -7354,20 +7098,19 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     let body_assumptions =
                         assumptions_with_path_context(assumptions, &case_facts, &case_obligations);
                     for body_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                        &body_state,
+                        SpecScope::new(&body_state, loop_entry_state, &body_algebraic_bindings),
                         &arm.body,
-                        loop_entry_state,
                         &body_assumptions,
-                        &body_algebraic_bindings,
                         budget,
                     )? {
                         if let Some((facts, obligations)) =
-                            merge_execution_pure_facts_and_obligations(
+                            merge_execution_pure_facts_and_obligations_under(
                                 &case_facts,
                                 &case_obligations,
                                 &body_path.facts,
                                 &body_path.obligations,
                                 assumptions,
+                                &body_assumptions,
                             )
                         {
                             paths.push(SpecExpressionPath {
@@ -7389,99 +7132,81 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             )
         }
         SpecExpression::CountedResourceCount { name, arguments } => evaluate_resource_count_paths(
-            state,
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
             name,
             arguments,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
         )?,
         SpecExpression::Add(left, right) => evaluate_spec_add_paths_in(
-            state,
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
             right,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
         )?,
         SpecExpression::Subtract(left, right) => evaluate_spec_subtract_paths_in(
-            state,
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
             right,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
         )?,
         SpecExpression::Multiply(left, right) => evaluate_spec_scalar_binary_paths_in(
-            state,
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
             right,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
             |left, right, facts, obligations| {
                 apply_c_multiply(left, right, facts, obligations, assumptions)
             },
         )?,
         SpecExpression::Divide(left, right) => evaluate_spec_scalar_binary_paths_in(
-            state,
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
             right,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
             |left, right, facts, obligations| {
                 apply_c_divide(left, right, facts, obligations, assumptions)
             },
         )?,
         SpecExpression::Remainder(left, right) => evaluate_spec_scalar_binary_paths_in(
-            state,
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
             right,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
             |left, right, facts, obligations| {
                 apply_c_remainder(left, right, facts, obligations, assumptions)
             },
         )?,
         SpecExpression::ShiftLeft(left, right) => evaluate_spec_scalar_binary_paths_in(
-            state,
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
             right,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
             |left, right, facts, obligations| {
                 apply_c_shift_left(left, right, facts, obligations, assumptions)
             },
         )?,
         SpecExpression::ShiftRight(left, right) => evaluate_spec_scalar_binary_paths_in(
-            state,
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
             right,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
             |left, right, facts, obligations| {
                 apply_c_shift_right(left, right, facts, obligations, assumptions)
             },
         )?,
         SpecExpression::BitwiseAnd(left, right) => evaluate_spec_scalar_binary_paths_in(
-            state,
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
             right,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
             |left, right, facts, obligations| {
                 apply_c_bitwise_binary(
@@ -7495,12 +7220,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             },
         )?,
         SpecExpression::BitwiseOr(left, right) => evaluate_spec_scalar_binary_paths_in(
-            state,
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
             right,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
             |left, right, facts, obligations| {
                 apply_c_bitwise_binary(
@@ -7514,12 +7237,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             },
         )?,
         SpecExpression::BitwiseXor(left, right) => evaluate_spec_scalar_binary_paths_in(
-            state,
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
             right,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
             |left, right, facts, obligations| {
                 apply_c_bitwise_binary(
@@ -7533,11 +7254,9 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             },
         )?,
         SpecExpression::Cast(expression, target_type) => evaluate_spec_scalar_unary_paths_in(
-            state,
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
             expression,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
             |value, facts, mut obligations| {
                 let outcome =
@@ -7552,11 +7271,9 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             },
         )?,
         SpecExpression::BitwiseNot(expression) => evaluate_spec_scalar_unary_paths_in(
-            state,
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
             expression,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
             apply_c_bitwise_not,
         )?,
@@ -7565,13 +7282,11 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             then_branch,
             else_branch,
         } => evaluate_spec_if_paths_in(
-            state,
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
             condition,
             then_branch,
             else_branch,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
         )?,
         SpecExpression::RangeFold {
@@ -7582,26 +7297,22 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             item,
             body,
         } => evaluate_spec_range_fold_paths_in(
-            state,
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
             start,
             end,
             initial,
             accumulator,
             item,
             body,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
         )?,
         SpecExpression::Let { name, value, body } => {
             let mut paths = Vec::new();
             for value_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                state,
+                SpecScope::new(state, loop_entry_state, algebraic_bindings),
                 value,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )? {
                 let mut body_state = state.clone();
@@ -7614,20 +7325,21 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     &value_path.obligations,
                 );
                 for body_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                    &body_state,
+                    SpecScope::new(&body_state, loop_entry_state, algebraic_bindings),
                     body,
-                    loop_entry_state,
                     &body_assumptions,
-                    algebraic_bindings,
                     budget,
                 )? {
-                    if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                        &value_path.facts,
-                        &value_path.obligations,
-                        &body_path.facts,
-                        &body_path.obligations,
-                        assumptions,
-                    ) {
+                    if let Some((facts, obligations)) =
+                        merge_execution_pure_facts_and_obligations_under(
+                            &value_path.facts,
+                            &value_path.obligations,
+                            &body_path.facts,
+                            &body_path.obligations,
+                            assumptions,
+                            &body_assumptions,
+                        )
+                    {
                         paths.push(SpecExpressionPath {
                             value: body_path.value,
                             facts,
@@ -7643,23 +7355,19 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             arguments,
             result_type,
         } => evaluate_spec_pure_function_application_paths_in(
-            state,
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
             name,
             arguments,
             *result_type,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
         )?,
         SpecExpression::LoopEntrySnapshot(expression) => {
             if let Some(loop_entry_state) = loop_entry_state {
                 evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                    loop_entry_state,
+                    SpecScope::new(loop_entry_state, Some(loop_entry_state), algebraic_bindings),
                     expression,
-                    Some(loop_entry_state),
                     assumptions,
-                    algebraic_bindings,
                     budget,
                 )?
             } else {
@@ -7671,13 +7379,11 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             elements,
             byte_width,
         } => evaluate_spec_pointer_offset_paths_in(
-            state,
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
             pointer,
             elements,
             *byte_width,
-            loop_entry_state,
             assumptions,
-            algebraic_bindings,
             budget,
         )?,
         SpecExpression::MemoryLoad {
@@ -7708,11 +7414,9 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     None
                 };
             for pointer_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                state,
+                SpecScope::new(state, loop_entry_state, algebraic_bindings),
                 entry_projection.as_ref().unwrap_or(pointer),
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )? {
                 let CValue::Pointer(pointer) = pointer_path.value else {
@@ -7765,13 +7469,11 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
 }
 
 fn evaluate_spec_pure_function_application_paths_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     name: &str,
     arguments: &[SpecPureFunctionArgument],
     result_type: CType,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = vec![(Vec::new(), ExecutionFacts::new(), Vec::new())];
@@ -7780,20 +7482,19 @@ fn evaluate_spec_pure_function_application_paths_in(
         for (values, facts, obligations) in paths {
             let path_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
             for argument_path in evaluate_spec_pure_function_argument_paths_in(
-                state,
+                scope,
                 argument,
-                loop_entry_state,
                 &path_assumptions,
-                algebraic_bindings,
                 budget,
             )? {
                 if let Some((merged_facts, merged_obligations)) =
-                    merge_execution_pure_facts_and_obligations(
+                    merge_execution_pure_facts_and_obligations_under(
                         &facts,
                         &obligations,
                         &argument_path.facts,
                         &argument_path.obligations,
                         assumptions,
+                        &path_assumptions,
                     )
                 {
                     let mut merged_values = values.clone();
@@ -7837,38 +7538,29 @@ fn evaluate_spec_pure_function_application_paths_in(
 }
 
 fn evaluate_spec_pure_function_argument_paths_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     argument: &SpecPureFunctionArgument,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPureFunctionArgumentPath>> {
+    let state = scope.state;
+    let loop_entry_state = scope.loop_entry_state;
     match argument {
-        SpecPureFunctionArgument::Integer(expression) => {
-            Ok(evaluate_spec_integer_expression_paths_in(
-                state,
-                expression,
-                loop_entry_state,
-                assumptions,
-                algebraic_bindings,
-                budget,
-            )?
-            .into_iter()
-            .map(|path| SpecPureFunctionArgumentPath {
-                value: PureFunctionArgument::Integer(path.value.into()),
-                facts: path.facts,
-                obligations: path.obligations,
-            })
-            .collect())
-        }
+        SpecPureFunctionArgument::Integer(expression) => Ok(
+            evaluate_spec_integer_expression_paths_in(scope, expression, assumptions, budget)?
+                .into_iter()
+                .map(|path| SpecPureFunctionArgumentPath {
+                    value: PureFunctionArgument::Integer(path.value.into()),
+                    facts: path.facts,
+                    obligations: path.obligations,
+                })
+                .collect(),
+        ),
         SpecPureFunctionArgument::Value(expression) => {
             let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                state,
+                scope,
                 expression,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )?;
             Ok(paths
@@ -7882,11 +7574,9 @@ fn evaluate_spec_pure_function_argument_paths_in(
         }
         SpecPureFunctionArgument::Algebraic(expression) => {
             Ok(evaluate_spec_algebraic_at_state_with_bindings_in(
-                state,
+                scope,
                 expression,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )?
             .into_iter()
@@ -7913,11 +7603,9 @@ fn evaluate_spec_pure_function_argument_paths_in(
                 SpecMemory::Fixed(memory) => memory,
             };
             Ok(evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                state,
+                scope,
                 pointer,
-                loop_entry_state,
                 assumptions,
-                algebraic_bindings,
                 budget,
             )?
             .into_iter()
@@ -8017,22 +7705,18 @@ fn c_value_from_bitvector_term(c_type: CType, term: Bitvector32Term) -> Option<C
 }
 
 fn evaluate_spec_pointer_offset_paths_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     pointer: &SpecExpression,
     elements: &SpecExpression,
     byte_width: u32,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
     for pointer_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-        state,
+        scope,
         pointer,
-        loop_entry_state,
         assumptions,
-        algebraic_bindings,
         budget,
     )? {
         let CValue::Pointer(pointer) = pointer_path.value else {
@@ -8046,11 +7730,9 @@ fn evaluate_spec_pointer_offset_paths_in(
             &pointer_path.obligations,
         );
         for element_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-            state,
+            scope,
             elements,
-            loop_entry_state,
             &element_assumptions,
-            algebraic_bindings,
             budget,
         )? {
             let (elements, unsigned, wide) = match element_path.value {
@@ -8059,12 +7741,13 @@ fn evaluate_spec_pointer_offset_paths_in(
                 CValue::UInt64(elements) => (elements, true, true),
                 _ => continue,
             };
-            let Some((mut facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((mut facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &pointer_path.facts,
                 &pointer_path.obligations,
                 &element_path.facts,
                 &element_path.obligations,
                 assumptions,
+                &element_assumptions,
             ) else {
                 continue;
             };
@@ -8121,41 +7804,34 @@ fn spec_value_paths_in(
 }
 
 fn evaluate_spec_add_paths_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     left: &SpecExpression,
     right: &SpecExpression,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
+    let state = scope.state;
     let mut paths = Vec::new();
     let left_step_width = spec_expression_pointer_step_width(state, left);
     let right_step_width = spec_expression_pointer_step_width(state, right);
-    for left_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-        state,
-        left,
-        loop_entry_state,
-        assumptions,
-        algebraic_bindings,
-        budget,
-    )? {
+    for left_path in
+        evaluate_spec_expression_paths_with_algebraic_bindings_in(scope, left, assumptions, budget)?
+    {
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
         for right_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-            state,
+            scope,
             right,
-            loop_entry_state,
             &right_assumptions,
-            algebraic_bindings,
             budget,
         )? {
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
                 &right_path.obligations,
                 assumptions,
+                &right_assumptions,
             ) else {
                 continue;
             };
@@ -8178,41 +7854,34 @@ fn evaluate_spec_add_paths_in(
 }
 
 fn evaluate_spec_subtract_paths_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     left: &SpecExpression,
     right: &SpecExpression,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
+    let state = scope.state;
     let mut paths = Vec::new();
     let left_step_width = spec_expression_pointer_step_width(state, left);
     let right_step_width = spec_expression_pointer_step_width(state, right);
-    for left_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-        state,
-        left,
-        loop_entry_state,
-        assumptions,
-        algebraic_bindings,
-        budget,
-    )? {
+    for left_path in
+        evaluate_spec_expression_paths_with_algebraic_bindings_in(scope, left, assumptions, budget)?
+    {
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
         for right_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-            state,
+            scope,
             right,
-            loop_entry_state,
             &right_assumptions,
-            algebraic_bindings,
             budget,
         )? {
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
                 &right_path.obligations,
                 assumptions,
+                &right_assumptions,
             ) else {
                 continue;
             };
@@ -8248,40 +7917,32 @@ fn spec_expression_pointer_step_width(state: &CState, expression: &SpecExpressio
 }
 
 fn evaluate_spec_scalar_binary_paths_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     left: &SpecExpression,
     right: &SpecExpression,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
     apply: impl Fn(CValue, CValue, ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
-    for left_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-        state,
-        left,
-        loop_entry_state,
-        assumptions,
-        algebraic_bindings,
-        budget,
-    )? {
+    for left_path in
+        evaluate_spec_expression_paths_with_algebraic_bindings_in(scope, left, assumptions, budget)?
+    {
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
         for right_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-            state,
+            scope,
             right,
-            loop_entry_state,
             &right_assumptions,
-            algebraic_bindings,
             budget,
         )? {
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
                 &right_path.obligations,
                 assumptions,
+                &right_assumptions,
             ) else {
                 continue;
             };
@@ -8300,21 +7961,17 @@ fn evaluate_spec_scalar_binary_paths_in(
 }
 
 fn evaluate_spec_scalar_unary_paths_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     expression: &SpecExpression,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
     apply: impl Fn(CValue, ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
     for path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-        state,
+        scope,
         expression,
-        loop_entry_state,
         assumptions,
-        algebraic_bindings,
         budget,
     )? {
         paths.extend(spec_value_paths_in(
@@ -8326,22 +7983,18 @@ fn evaluate_spec_scalar_unary_paths_in(
 }
 
 fn evaluate_spec_if_paths_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     condition: &SpecProposition,
     then_branch: &SpecExpression,
     else_branch: &SpecExpression,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
     for condition_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
-        state,
+        scope,
         condition,
-        loop_entry_state,
         assumptions,
-        algebraic_bindings,
         budget,
     )? {
         let branch_assumptions = assumptions_with_path_context(
@@ -8358,36 +8011,28 @@ fn evaluate_spec_if_paths_in(
 
         let branch_paths = match condition_truth {
             Some(true) => evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                state,
+                scope,
                 then_branch,
-                loop_entry_state,
                 &branch_assumptions,
-                algebraic_bindings,
                 budget,
             )?,
             Some(false) => evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                state,
+                scope,
                 else_branch,
-                loop_entry_state,
                 &branch_assumptions,
-                algebraic_bindings,
                 budget,
             )?,
             None => {
                 let then_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                    state,
+                    scope,
                     then_branch,
-                    loop_entry_state,
                     &branch_assumptions,
-                    algebraic_bindings,
                     budget,
                 )?;
                 let else_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                    state,
+                    scope,
                     else_branch,
-                    loop_entry_state,
                     &branch_assumptions,
-                    algebraic_bindings,
                     budget,
                 )?;
                 let mut branch_paths = Vec::new();
@@ -8421,12 +8066,13 @@ fn evaluate_spec_if_paths_in(
         };
 
         for branch_path in branch_paths {
-            if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &condition_path.facts,
                 &condition_path.obligations,
                 &branch_path.facts,
                 &branch_path.obligations,
                 assumptions,
+                &branch_assumptions,
             ) {
                 paths.push(SpecExpressionPath {
                     value: branch_path.value,
@@ -8440,25 +8086,21 @@ fn evaluate_spec_if_paths_in(
 }
 
 fn evaluate_spec_range_fold_paths_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     start: &SpecExpression,
     end: &SpecExpression,
     initial: &SpecExpression,
     accumulator: &str,
     item: &str,
     body: &SpecExpression,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
     for start_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-        state,
+        scope,
         start,
-        loop_entry_state,
         assumptions,
-        algebraic_bindings,
         budget,
     )? {
         let CValue::Int32(start) = start_path.value else {
@@ -8467,46 +8109,46 @@ fn evaluate_spec_range_fold_paths_in(
         let start_assumptions =
             assumptions_with_path_context(assumptions, &start_path.facts, &start_path.obligations);
         for end_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-            state,
+            scope,
             end,
-            loop_entry_state,
             &start_assumptions,
-            algebraic_bindings,
             budget,
         )? {
             let CValue::Int32(end) = end_path.value else {
                 continue;
             };
-            let Some((bound_facts, bound_obligations)) = merge_execution_pure_facts_and_obligations(
-                &start_path.facts,
-                &start_path.obligations,
-                &end_path.facts,
-                &end_path.obligations,
-                assumptions,
-            ) else {
+            let Some((bound_facts, bound_obligations)) =
+                merge_execution_pure_facts_and_obligations_under(
+                    &start_path.facts,
+                    &start_path.obligations,
+                    &end_path.facts,
+                    &end_path.obligations,
+                    assumptions,
+                    &start_assumptions,
+                )
+            else {
                 continue;
             };
             let bound_assumptions =
                 assumptions_with_path_context(assumptions, &bound_facts, &bound_obligations);
             for initial_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                state,
+                scope,
                 initial,
-                loop_entry_state,
                 &bound_assumptions,
-                algebraic_bindings,
                 budget,
             )? {
-                let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+                let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                     &bound_facts,
                     &bound_obligations,
                     &initial_path.facts,
                     &initial_path.obligations,
                     assumptions,
+                    &bound_assumptions,
                 ) else {
                     continue;
                 };
                 let Some(path) = evaluate_spec_range_fold_body_path_in(
-                    state,
+                    scope,
                     start.clone(),
                     end.clone(),
                     initial_path.value,
@@ -8515,9 +8157,7 @@ fn evaluate_spec_range_fold_paths_in(
                     body,
                     facts,
                     obligations,
-                    loop_entry_state,
                     assumptions,
-                    algebraic_bindings,
                     budget,
                 )?
                 else {
@@ -8531,7 +8171,7 @@ fn evaluate_spec_range_fold_paths_in(
 }
 
 fn evaluate_spec_range_fold_body_path_in(
-    state: &CState,
+    scope: SpecScope<'_>,
     start: Bitvector32Term,
     end: Bitvector32Term,
     initial: CValue,
@@ -8540,11 +8180,10 @@ fn evaluate_spec_range_fold_body_path_in(
     body: &SpecExpression,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
-    loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Option<SpecExpressionPath>> {
+    let state = scope.state;
     match (start.as_const(), end.as_const()) {
         (Some(start), Some(end)) => {
             let mut value = initial;
@@ -8557,11 +8196,12 @@ fn evaluate_spec_range_fold_body_path_in(
                 let body_assumptions =
                     assumptions_with_path_context(assumptions, &facts, &obligations);
                 let mut body_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                    &body_state,
+                    SpecScope {
+                        state: &body_state,
+                        ..scope
+                    },
                     body,
-                    loop_entry_state,
                     &body_assumptions,
-                    algebraic_bindings,
                     budget,
                 )?;
                 let Some(body_path) = body_paths.pop() else {
@@ -8571,12 +8211,13 @@ fn evaluate_spec_range_fold_body_path_in(
                     return Ok(None);
                 }
                 let Some((next_facts, next_obligations)) =
-                    merge_execution_pure_facts_and_obligations(
+                    merge_execution_pure_facts_and_obligations_under(
                         &facts,
                         &obligations,
                         &body_path.facts,
                         &body_path.obligations,
                         assumptions,
+                        &body_assumptions,
                     )
                 else {
                     return Ok(None);
@@ -8606,11 +8247,12 @@ fn evaluate_spec_range_fold_body_path_in(
             );
             let body_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
             let mut body_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                &body_state,
+                SpecScope {
+                    state: &body_state,
+                    ..scope
+                },
                 body,
-                loop_entry_state,
                 &body_assumptions,
-                algebraic_bindings,
                 budget,
             )?;
             let Some(body_path) = body_paths.pop() else {
@@ -9035,11 +8677,9 @@ mod integer_budget_tests {
 
         let result = crate::instrumentation::with_tactic_work_limits(limits, || {
             evaluate_spec_integer_expression_paths_in(
-                &CState::default(),
+                SpecScope::unbound(&CState::default(), None),
                 &expression,
-                None,
                 &PureFactContext::new(),
-                &BTreeMap::new(),
                 &mut SpecEvaluation::logical(&mut ExecutionBudget::default()),
             )
         });
@@ -9061,11 +8701,9 @@ mod integer_budget_tests {
         )));
 
         let paths = evaluate_spec_integer_expression_paths_in(
-            &state,
+            SpecScope::unbound(&state, None),
             &expression,
-            None,
             &PureFactContext::new(),
-            &BTreeMap::new(),
             &mut SpecEvaluation::logical(&mut ExecutionBudget::default()),
         )
         .expect("symbolic machine addition should produce paths");
@@ -9187,11 +8825,9 @@ mod integer_budget_tests {
         )));
         let evaluate = |expression| {
             evaluate_spec_integer_expression_paths_in(
-                &CState::default(),
+                SpecScope::unbound(&CState::default(), None),
                 &expression,
-                None,
                 &PureFactContext::new(),
-                &BTreeMap::new(),
                 &mut SpecEvaluation::logical(&mut ExecutionBudget::default()),
             )
             .unwrap()
@@ -9239,11 +8875,9 @@ mod integer_budget_tests {
             CValue::Int32(Bitvector32Term::Constant(7)),
         )));
         let paths = evaluate_spec_integer_expression_paths_in(
-            &CState::default(),
+            SpecScope::unbound(&CState::default(), None),
             &expression,
-            None,
             &PureFactContext::new(),
-            &BTreeMap::new(),
             &mut SpecEvaluation::logical(&mut ExecutionBudget::default()),
         )
         .unwrap();
@@ -9764,11 +9398,9 @@ mod integer_budget_tests {
             body: Box::new(body),
         };
         let paths = evaluate_spec_integer_expression_paths_in(
-            &CState::default(),
+            SpecScope::unbound(&CState::default(), None),
             &expression,
-            None,
             &PureFactContext::new(),
-            &BTreeMap::new(),
             &mut SpecEvaluation::logical(&mut ExecutionBudget::default()),
         )
         .expect("an empty range still typechecks its body");
@@ -9828,22 +9460,18 @@ mod integer_budget_tests {
             body: Box::new(body),
         };
         let paths = evaluate_spec_integer_expression_paths_in(
-            &CState::default(),
+            SpecScope::unbound(&CState::default(), None),
             &expression,
-            None,
             &PureFactContext::new(),
-            &BTreeMap::new(),
             &mut SpecEvaluation::logical(&mut ExecutionBudget::default()),
         )
         .expect("a symbolic body load should produce one scoped path");
         assert_eq!(paths.len(), 1);
         assert!(paths[0].obligations.is_empty());
         let checked = evaluate_spec_integer_expression_paths_in(
-            &CState::default(),
+            SpecScope::unbound(&CState::default(), None),
             &expression,
-            None,
             &PureFactContext::new(),
-            &BTreeMap::new(),
             &mut SpecEvaluation::checked(&mut ExecutionBudget::default()),
         )
         .expect("checked fold preserves the binder around read validity");

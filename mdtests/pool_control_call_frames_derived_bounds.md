@@ -31,7 +31,7 @@ theorem spare_slot_bound(capacity: int32, used: int32, slots: int32) {
         arithmetic_certificate {
         premise 0: to_integer(capacity) == to_integer(used) + to_integer(slots) => to_integer(capacity) == to_integer(used) + to_integer(slots);
         scale 0 by -1 => -to_integer(capacity) == -to_integer(used) - to_integer(slots);
-        eq_to_le 1 => -to_integer(capacity) <= -to_integer(used) - to_integer(slots);
+        less_equal_from_equal 1 => -to_integer(capacity) <= -to_integer(used) - to_integer(slots);
         premise 1: to_integer(capacity) <= 2147483647 => to_integer(capacity) <= 2147483647;
         add 2, 3 => -to_integer(capacity) + to_integer(capacity) <= -to_integer(used) - to_integer(slots) + 2147483647;
         premise 2: 1 <= to_integer(used) => 1 <= to_integer(used);
@@ -49,12 +49,12 @@ int32 pool_used(struct pool* pool) {
 }
 int32 forward(struct pool* pool) {
     owns control(pool);
-    requires 1 <= pool->used;
+    requires 0 < pool->used;
     ensures defined(pool->used + count(slot(pool)));
 } by {
     open(control(pool)) {
         have 0 <= pool->used by {
-            apply(int32_positive_is_nonnegative(pool->used)) using { 1 <= pool->used; }
+            apply(int32_positive_is_nonnegative(pool->used)) using { 0 < pool->used; }
             assumption();
         }
         have defined(pool->used + count(slot(pool))) by { assumption(); }
