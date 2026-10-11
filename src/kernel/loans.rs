@@ -81,14 +81,12 @@ pub(crate) struct StableViewDescription {
 }
 
 impl StableViewDescription {
-    pub(crate) fn loan(&self) -> LoanId {
-        self.loan
-    }
-
+    #[cfg(test)]
     pub(crate) fn viewed(&self) -> &CResourceFact {
         &self.viewed
     }
 
+    #[cfg(test)]
     pub(crate) fn support(&self) -> ResourceOccurrenceId {
         self.support
     }
@@ -713,6 +711,7 @@ fn reborrowed_authority(
 /// A read derived from ownership in the current context. This is useful for
 /// checking the owner's own computation, but it is not transferable loan
 /// authority and contains no loan identity.
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct OwnedResourceObservation {
     support: ResourceOccurrenceId,
@@ -720,6 +719,7 @@ pub(crate) struct OwnedResourceObservation {
 }
 
 impl OwnedResourceObservation {
+    #[cfg(test)]
     pub(crate) fn new(support: ResourceOccurrenceId, owned: &CResourceFact) -> Option<Self> {
         owned.is_own().then(|| Self {
             support,
@@ -727,10 +727,12 @@ impl OwnedResourceObservation {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn support(&self) -> ResourceOccurrenceId {
         self.support
     }
 
+    #[cfg(test)]
     pub(crate) fn viewed(&self) -> &CResourceFact {
         &self.viewed
     }
@@ -1070,8 +1072,6 @@ impl LoanRefusalSubject {
     pub(crate) fn for_resource(resource: CResourceFact) -> Self {
         Self::resource(resource)
     }
-
-    #[allow(dead_code)]
     fn range(range: CMemoryRange) -> Self {
         Self {
             range: Some(Box::new(range)),
@@ -1453,6 +1453,7 @@ enum LoanTransitionEvidence {
         loan: LoanId,
         holder: LoanParticipantId,
     },
+    #[cfg_attr(not(test), allow(dead_code))]
     RegisterDependency {
         parent: LoanScopeId,
         child: LoanScopeId,
@@ -1591,6 +1592,7 @@ impl CompositeLoanBacking {
     /// The ordinary same-composite lend: the caller owns the very composite
     /// the callee views, so the escrowed head is also the only description
     /// the loan permits and the exact restoration recipe.
+    #[cfg(test)]
     pub(crate) fn from_checked_expansion(
         support: ResourceOccurrenceId,
         head: CResourceFact,
@@ -2020,6 +2022,7 @@ pub(crate) fn concat_checked_loan_evidence(
 }
 
 impl CheckedLoanCallEvidenceSequence {
+    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.len
     }
@@ -3575,6 +3578,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
 impl StableViewTransferPlan {
     /// Add the call's implicit local views to the same checked entry trace as
     /// explicit resources. No owned fact is inserted into either context.
+    #[cfg(test)]
     pub(crate) fn lend_local_views(
         &mut self,
         memory: &super::CMemory,
@@ -4256,6 +4260,7 @@ impl LoanLedger {
     /// The mutex adapter consumes the actual resource occurrence before
     /// installing this successor. This opening grants lifetime use only;
     /// ordinary `lend` deliberately continues to reject mutex owners.
+    #[cfg(test)]
     pub(crate) fn lend_mutex_use(
         &self,
         lender: LoanParticipantId,
@@ -4391,6 +4396,7 @@ impl LoanLedger {
 
     /// End first, then describe the exact parent share the End transition
     /// restored. Neither the child receipt nor an equal pointer selects it.
+    #[cfg(test)]
     pub(crate) fn end_mutex_reborrow_with_parent(
         &self,
         opening: &MutexUseLoan,
@@ -4430,6 +4436,7 @@ impl LoanLedger {
     /// initialization's lifetime, but retains all closing and recovery rights.
     /// Call sites must lend/reborrow instead. The entry builder supplies the
     /// principal clause occurrence and installs the resulting use resource.
+    #[cfg(test)]
     pub(crate) fn borrowed_mutex_use_input(
         &self,
         holder: LoanParticipantId,
@@ -4562,6 +4569,7 @@ impl LoanLedger {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn reborrow_mutex_use(
         &self,
         parent: MutexUseBinding,
@@ -4617,6 +4625,7 @@ impl LoanLedger {
 
     /// Closing a child restores its pinned parent share through the ordinary
     /// End transition. A child has no escrow and cannot recover ownership.
+    #[cfg(test)]
     pub(crate) fn end_mutex_reborrow(
         &self,
         opening: &MutexUseLoan,
@@ -4640,6 +4649,7 @@ impl LoanLedger {
         self.apply(&self.end(opening.scope, holder)?)
     }
 
+    #[cfg(test)]
     pub(crate) fn recover_mutex_use(
         &self,
         opening: &MutexUseLoan,
@@ -4973,6 +4983,7 @@ impl LoanLedger {
 
     /// Removes a hold placed by its holder. Releasing restores the scope's
     /// ability to end, so it also receives a checked successor identity.
+    #[cfg(test)]
     pub(crate) fn release(
         &self,
         hold: LoanHoldId,
@@ -5041,6 +5052,7 @@ impl LoanLedger {
     }
 
     /// The scope a live hold restricts, if the hold exists.
+    #[cfg(test)]
     pub(crate) fn held_scope(&self, hold: LoanHoldId) -> Option<LoanScopeId> {
         self.storage.data.holds.get(&hold).map(|(scope, _)| *scope)
     }
@@ -5297,6 +5309,7 @@ impl LoanLedger {
         self.issue(LoanTransitionEvidence::End { scope, holder })
     }
 
+    #[cfg(test)]
     pub(crate) fn register_dependency(
         &self,
         parent: LoanScopeId,
@@ -5471,6 +5484,7 @@ impl LoanLedger {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn shares_storage_with(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.storage, &other.storage)
     }

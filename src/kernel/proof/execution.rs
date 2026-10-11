@@ -7788,7 +7788,6 @@ impl ExecutionProofCore {
     /// Records one statement theorem and the fact context it was proved
     /// under on the single open trace, once the theorem is checked to
     /// advance this frontier (`check_statement_evidence`).
-    #[allow(dead_code)]
     pub(crate) fn record_statement_transition(
         &mut self,
         function: &CFunction,

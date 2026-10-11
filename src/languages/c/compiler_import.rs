@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,6 +19,7 @@ use super::option_profile::OptionProfile;
 use super::provenance::CSourceMap;
 use super::syntax::PromiseAttributes;
 use super::target::CTarget;
+use crate::cli::write_file_atomically;
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
 
 const SCHEMA: u32 = 1;
@@ -392,12 +393,12 @@ fn create_lock_inner(config_path: &Path) -> Result<(), String> {
         return Err("import lock exceeds the supported size bound".into());
     }
     for (source, result) in &results {
-        atomic_write(
+        write_file_atomically(
             &resolve_artifact(&config, &source.artifact)?,
             &result.artifact,
         )?;
     }
-    atomic_write(&lock_path(config_path), &encoded)
+    write_file_atomically(&lock_path(config_path), &encoded)
 }
 
 fn read_config(config_path: &Path, use_for: ConfigUse) -> Result<(Config, Vec<u8>), String> {
@@ -1309,7 +1310,7 @@ fn query_compiler(config: &Config, arg: &str) -> Result<String, String> {
 fn abi_probe(config: &Config) -> Result<String, String> {
     let path = unique_temp_path("click-import-abi", ".c")?;
     let _cleanup = RemoveFile(path.clone());
-    atomic_write(&path, b"int click_import_abi_probe;\n")?;
+    write_file_atomically(&path, b"int click_import_abi_probe;\n")?;
     let mut args = fixed_args(config.c_target());
     args.extend([
         "-dM".into(),
@@ -1494,31 +1495,6 @@ fn unique_temp_path(prefix: &str, suffix: &str) -> Result<PathBuf, String> {
         .open(&path)
         .map_err(|e| format!("reserve temporary compiler input: {e}"))?;
     Ok(path)
-}
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let parent = path.parent().unwrap_or(Path::new("."));
-    fs::create_dir_all(parent)
-        .map_err(|e| format!("create directory {}: {e}", parent.display()))?;
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| format!("clock: {e}"))?
-        .as_nanos();
-    let temp = parent.join(format!(".click-import-{}-{nanos}.tmp", std::process::id()));
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temp)
-        .map_err(|e| format!("create temporary output: {e}"))?;
-    let _cleanup = RemoveFile(temp.clone());
-    file.write_all(bytes)
-        .map_err(|e| format!("write temporary output: {e}"))?;
-    file.sync_all()
-        .map_err(|e| format!("sync temporary output: {e}"))?;
-    drop(file);
-    fs::rename(&temp, path).map_err(|e| {
-        let _ = fs::remove_file(&temp);
-        format!("install {}: {e}", path.display())
-    })
 }
 fn read_bounded(path: &Path, max: usize, label: &str) -> Result<Vec<u8>, String> {
     let file = open_regular(path, label)?;

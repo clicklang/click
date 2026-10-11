@@ -894,7 +894,7 @@ impl ProofExecutionView<'_> {
     /// this per-outcome map because different arms may carry different
     /// observations; a non-branching frontier uses the shared presentation
     /// map directly.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(super) fn generated_load_bindings(
         &self,
         path_index: usize,
@@ -903,25 +903,6 @@ impl ProofExecutionView<'_> {
             .get(path_index)
             .map(|provenance| &provenance.generated_load_bindings)
             .unwrap_or(&self.execution.presentation.generated_load_bindings)
-    }
-
-    /// Exact source identity for one terminal outcome.  A variable is absent
-    /// when no source event was observed and ambiguous when sibling paths or
-    /// repeated producer observations disagree.
-    #[allow(dead_code)]
-    pub(super) fn generated_load_source_resolutions(
-        &self,
-        path_index: usize,
-    ) -> &PersistentMap<crate::kernel::Variable, crate::kernel::GeneratedLoadSourceResolution> {
-        self.outcome_provenance
-            .get(path_index)
-            .map(|provenance| &provenance.generated_load_source_resolutions)
-            .unwrap_or(
-                &self
-                    .execution
-                    .presentation
-                    .generated_load_source_resolutions,
-            )
     }
 
     /// Selects the leaf of a retained surface certificate that one checked
@@ -1041,7 +1022,7 @@ struct OutcomeProvenance {
     branch_decisions: ExecutionBranchDecisions,
     surface_propositions: SurfacePropositionMap,
     recorded_snapshots: RecordedSnapshots,
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     generated_load_bindings:
         PersistentMap<crate::kernel::Variable, crate::kernel::GeneratedLoadBinding>,
     generated_load_source_resolutions:

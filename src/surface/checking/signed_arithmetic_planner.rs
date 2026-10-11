@@ -5,8 +5,6 @@
 //! finite local derivation, and leaves all semantic validation to the kernel
 //! certificate checker.
 
-#![allow(dead_code)]
-
 use crate::kernel::proof::signed_arithmetic::{
     SignedArithmeticAtom, SignedArithmeticCarrier, SignedArithmeticCertificate,
     SignedArithmeticClaim, SignedArithmeticComparison, SignedArithmeticInterval,

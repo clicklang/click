@@ -1,20 +1,8 @@
-use std::env;
 use std::path::{Path, PathBuf};
 
 use click::languages::refresh_compiler_import;
 
 const USAGE: &str = "usage: click import lock <sidecar.click>\n\nRefreshes the checked compiler import artifact and its input lock.";
-
-fn main() {
-    if let Err(message) = entry() {
-        eprintln!("click import: {message}");
-        std::process::exit(1);
-    }
-}
-
-fn entry() -> Result<(), String> {
-    entry_with(env::args().skip(1))
-}
 
 pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
     let arguments = arguments.into_iter().collect::<Vec<_>>();

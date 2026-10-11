@@ -513,6 +513,43 @@ pub fn containing_directory(path: &Path) -> &Path {
         .unwrap_or_else(|| Path::new("."))
 }
 
+/// Replaces `path` with `bytes` so readers see the old file or the new one,
+/// never a partial write: the bytes go to a fresh temporary file beside it,
+/// are synced, and are renamed over it. Creates the parent directory.
+pub fn write_file_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let parent = containing_directory(path);
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("create directory `{}`: {error}", parent.display()))?;
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let temporary = parent.join(format!(
+        ".{name}.tmp-{}-{}-{nanos}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let result = (|| {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|error| format!("create `{}`: {error}", temporary.display()))?;
+        file.write_all(bytes)
+            .and_then(|()| file.sync_all())
+            .map_err(|error| format!("write `{}`: {error}", temporary.display()))?;
+        fs::rename(&temporary, path)
+            .map_err(|error| format!("replace `{}`: {error}", path.display()))
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
 /// Reads the C sources a sidecar declares with `verifying`, relative to the
 /// sidecar's directory.
 pub fn read_declared_sources(

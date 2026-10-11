@@ -44,7 +44,6 @@ mod iterated;
 pub(crate) use iterated::{IteratedStep, apply_iterated_step, plan_iterated_guard_store};
 // V0-V6 of the stable-view migration build the checked semantic spine before
 // V7 routes ordinary calls through it.
-#[allow(dead_code)]
 mod loans;
 #[cfg(test)]
 pub(crate) use loans::LoanLedger;
@@ -63,7 +62,6 @@ mod integer_truncation_laws;
 mod loops;
 mod memory_provenance;
 pub(crate) mod model_fields;
-#[allow(dead_code)]
 mod mutexes;
 mod named_authority;
 pub(crate) use integer_truncation_laws::{
@@ -98,7 +96,6 @@ pub(crate) use spec::{
 mod termination;
 // Checked internal fork/join; binding to imported pthread declarations is a
 // separate checkpoint, so no C execution path invokes these rules yet.
-#[allow(dead_code)]
 mod threads;
 
 pub use api::*;

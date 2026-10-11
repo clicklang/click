@@ -1217,7 +1217,6 @@ pub(crate) enum CExceptionalSignature {
     #[default]
     None,
     // Staged for kernel callers before any source importer can construct it.
-    #[allow(dead_code)]
     Int32,
 }
 
@@ -9927,12 +9926,10 @@ impl GeneratedLoadSourceEvent {
     /// Construct an event from one exact producer observation. Ambiguity is a
     /// property of the persistent resolution store, never an operation that
     /// execution can claim to have observed at one source occurrence.
-    #[allow(dead_code)]
     pub(crate) fn new(source: LoadSourceId, binding: GeneratedLoadBinding) -> Option<Self> {
         matches!(binding, GeneratedLoadBinding::Exact { .. }).then_some(Self { source, binding })
     }
-
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn source(&self) -> &LoadSourceId {
         &self.source
     }

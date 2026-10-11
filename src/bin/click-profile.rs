@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::env;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -68,13 +67,6 @@ options:
 The thresholds are reporting thresholds. What stops a run is deterministic:
 each tactic's work budget and the project's --work-limit. --time-limit only
 contains a hung or CPU-starved run.";
-
-fn main() {
-    if let Err(message) = entry() {
-        eprintln!("click-profile: {message}");
-        std::process::exit(1);
-    }
-}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Arguments {
@@ -332,10 +324,6 @@ fn is_retired_internal_tactic_name(name: &str) -> bool {
             | "advance"
             | "conjunction"
     )
-}
-
-fn entry() -> Result<(), String> {
-    entry_with(env::args().skip(1))
 }
 
 pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
@@ -606,7 +594,6 @@ fn runtime_assumptions(
 }
 
 #[cfg(test)]
-#[allow(dead_code)] // Used by the shared dispatcher regression matrix.
 pub(crate) fn verify_target_for_test(path: &Path) -> Result<(), String> {
     for target in profile_targets(path)? {
         let profile = profile_target(

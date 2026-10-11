@@ -7,8 +7,6 @@
 //! The surface migration can construct these nodes later without changing the
 //! kernel boundary.
 
-#![allow(dead_code)]
-
 use super::super::{
     Bitvector32Term, CComparisonOperator, CFloatClassification, CFloatCondition, ConditionTerm,
     Pointer, PointerBlock, PointerOffsetTerm, Proposition, SignedDefinedWidth,
@@ -659,7 +657,6 @@ pub(crate) struct SpecialArithmeticCertificate {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(dead_code)]
 pub(crate) enum SpecialArithmeticCheckError {
     InvalidIntegerProductBounds(usize),
     InvalidIntegerDivisionBounds(usize),
@@ -673,9 +670,6 @@ pub(crate) enum SpecialArithmeticCheckError {
     InvalidIntegerCastIdentity(usize),
     InvalidPremise(usize),
     InvalidNodeReference(usize),
-    InvalidRelation(usize),
-    InvalidAlignment(usize),
-    InvalidDefinedness(usize),
     InvalidOperator(usize),
     NodeResultMismatch(usize),
     WorkLimitExceeded,
@@ -2182,7 +2176,6 @@ fn tagged_form_inner<'a>(
         FinishAddRight {
             term: &'a Bitvector32Term,
             left: &'a Bitvector32Term,
-            right: &'a Bitvector32Term,
         },
         FinishSubtract {
             term: &'a Bitvector32Term,
@@ -2356,15 +2349,11 @@ fn tagged_form_inner<'a>(
                         &mut values,
                     );
                 } else {
-                    tasks.push(Task::FinishAddRight { term, left, right });
+                    tasks.push(Task::FinishAddRight { term, left });
                     tasks.push(Task::Visit(right));
                 }
             }
-            Task::FinishAddRight {
-                term,
-                left,
-                right: _,
-            } => {
+            Task::FinishAddRight { term, left } => {
                 let right_form = values.pop().flatten();
                 store(
                     term as *const _ as usize,

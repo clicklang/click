@@ -3,6 +3,7 @@ use super::prelude::*;
 pub(crate) mod order_reasoning;
 pub(crate) mod path_facts;
 mod substitution;
+#[cfg(test)]
 pub(in crate::kernel) use substitution::IntegerPureSubstitutionError;
 pub(in crate::kernel) use substitution::instantiate_integer_range_fold_step;
 pub(crate) use substitution::resolve_load_variables_from_registry;

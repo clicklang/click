@@ -2740,7 +2740,6 @@ fn substitute_integer_pure_term(
 /// range. The two binders are substituted through the existing
 /// capture-avoiding DAG walker, so a nested fold cannot capture either step
 /// value.
-#[allow(dead_code)]
 pub(in crate::kernel) fn instantiate_integer_range_fold_step(
     body: &IntegerTerm,
     accumulator: Variable,
