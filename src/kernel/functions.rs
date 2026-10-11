@@ -16360,9 +16360,8 @@ fn coerce_function_return_value(
         && matches!(pointer.c_type(), CType::Int32Pointer | CType::UInt8Pointer)
         && !pointer.pointer().block.is_function()
     {
-        return Some(CValue::typed_pointer(
-            pointer.pointer().clone(),
-            function.return_type(),
+        return Some(CValue::Pointer(
+            pointer.clone().with_type(function.return_type()),
         ));
     }
     coerce_c_value_with_pointee_constant(
@@ -16610,7 +16609,7 @@ fn type_function_address_value(
         {
             // Return and parameter qualifications belong to the callback
             // signature, not to the function-pointer object's pointee view.
-            CValue::typed_pointer(pointer.into_pointer(), function.function_pointer_type())
+            CValue::Pointer(pointer.with_type(function.function_pointer_type()))
         }
         value => value,
     }

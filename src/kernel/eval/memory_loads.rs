@@ -1679,7 +1679,7 @@ fn canonicalized_symbolic_load_value_with_identity(
         source,
         (purpose == LoadPurpose::Program).then_some(&pointer),
     );
-    Some(CValue::typed_pointer(pointer, pointer_value.c_type()))
+    Some(CValue::Pointer(pointer_value.clone().with_pointer(pointer)))
 }
 
 const LOAD_VARIABLE_BASE: u64 = 1 << 40;

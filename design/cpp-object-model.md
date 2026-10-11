@@ -166,6 +166,178 @@ bytes of one designated object under the selected language profile. It does
 not turn every byte of the enclosing allocation into one permissible array.
 This must use the same domain mechanism as ordinary typed pointers.
 
+### Checked pointer designation: representation and implementation
+
+This is the chosen implementation direction, not a claim of current enforcement.
+Keep `Pointer` as the address term used by cells, aliasing and byte ranges. Put
+semantic designation on `CPointerValue`, and retain it in memory lvalues until
+the executable access has been checked. Do not put designation in a memory-cell
+key: two differently designated pointers can still alias the same bytes.
+
+The value carries a shared immutable domain term. A bounded domain records a
+root object witness, an explicit subobject/array selection, its base address,
+element description, stride and extent. Position is derived from the pointer's
+address relative to that base; do not maintain a second independently mutable
+position. A scalar uses a one-element domain. An array element pointer retains
+the containing array's domain, while a pointer to one of that element's members
+selects that member's domain. Row selection in multidimensional arrays preserves
+the selected row's extent, not the flattened allocation's extent.
+
+A root witness comes from a checked declaration or admitted object-creation
+operation, or a symbolic interface requirement checked at calls. Allocation
+alone supplies storage; its native policy must justify any object established
+in that storage. An explicit field/base path
+selects a subobject of that root. A requested cast type, an overlapping typed
+cell or an ownership range cannot issue a witness. The bounded profile does not
+need a new globally fresh identity for every field: root identity plus declared
+path suffices while replacement/overlapping lifetimes remain unsupported.
+Nominal C++ declaration identity must remain attached to native object evidence;
+structural layout compatibility does not establish it.
+
+The carrier distinguishes an explicit domain from an unresolved domain term.
+Pointer inputs, pointer-valued loads and modular results can have unresolved
+semantic domains; unresolved is not an unrestricted domain. A checked access
+must resolve the relevant obligation or refuse. A constant null value has no
+object domain. Function pointers keep their separate signature rules. A missing
+domain during staged migration must not be advertised as checked pointer
+support or used as evidence to repair the padding bug.
+
+Domain descriptions do not contain mutable liveness or initialization booleans.
+Those properties belong to the current state and selected language operation.
+An old pointer can retain an object identity after its lifetime ends without
+making the object live again. Construction, destruction and Rust move/loan
+checks therefore remain separate. General same-storage replacement will need a
+generation distinction before it is admitted; do not invent transparent
+replacement behavior from matching addresses.
+
+#### Producers, transport and consumers
+
+| Operation | Required behavior |
+| --- | --- |
+| Address of a declaration or declared member | Select its checked object/domain, without allocating new storage or initializing it |
+| Array decay or element address | Retain the actual containing array domain; selecting an element does not create a larger array |
+| `&*p` in C | Preserve the input pointer's domain under the source cancellation rule; do not create a fresh one-element domain or require a value read |
+| Pointer arithmetic | Preserve the domain and check both the originating position and result; permit one-past formation but not access there |
+| Typed read/write or reference binding | Check designation, type/alignment and current lifetime, then the separately required initialization and authority |
+| Cast | Change the access type/qualifiers under native rules without changing the designated object or widening its domain |
+| Pointer copy, field store/load, aggregate copy | Transport the complete pointer value, including unresolved domain identity |
+| Address normalization | Rewrite the address spelling without rebasing the domain; a binder substitution maps address and domain terms together |
+| Havoc or modular unknown result | Forget the relevant value to a fresh symbolic value/domain pair; do not upgrade it to an unrestricted pointer |
+| Provenance-preserving representation copy | Transport the complete pointer value under the existing checked copy operation; raw bits alone cannot supply a domain |
+
+Lvalue formation must retain the carrier until the operation is known. Rejecting
+all one-past lvalues immediately would break `&*p` cancellation; dropping the
+carrier immediately would permit an invalid store even if reads were checked.
+The shared load observer can remain address-based, because observing a snapshot
+is not executing a native dereference. Executable reads and writes must cross a
+separate checked-access boundary before using that observer.
+
+Pointer subtraction requires the same semantic array domain; equal allocation
+identity alone is insufficient. Relational comparisons must use the selected
+language rule: ordering within an array and permitted ordering of record members
+are distinct cases. A byte representation view keeps the selected object identity
+but uses its permitted byte extent and unit stride. Retagging an integer pointer
+as a byte pointer must not retain an inappropriate integer stride, and casting
+back must not manufacture a typed array. The separate C++ byte-traversal profile
+choice below still applies.
+
+The existing pointer/integer round-trip and tagged-address support also belong
+in this migration. A provenance-preserving integer representation must retain
+the source domain; converting it back cannot manufacture a new domain from its
+numeric address. Arithmetic that destroys the retained representation evidence
+cannot regain it by a later cast. Until these paths transport designation, the
+checked profile must refuse their use to recover an executable pointer.
+
+#### Equality and substitution
+
+Distinguish native address comparison from equality of semantic pointer values.
+A native `p == q` comparison may hold where the address model permits it even
+when `p` and `q` have different domains. That condition can resolve aliasing and
+byte-cell lookup; it cannot justify replacing one executable pointer value with
+the other. Whole-value equality, stored-value reconciliation, retained proof
+keys and substitution must account for designation.
+
+Changing only `CPointerValue`'s Rust `Eq`/`Hash` is insufficient. The current
+`c_values_proven_equal_for_memory_resolution`, resource-value matching and typed
+rewrite paths sometimes compare or carry only raw addresses. Their callers must
+choose deliberately between address equality and full-value equality. Domain
+terms must participate in alpha keys, free/bound-variable collection, capture
+avoidance and memory canonicalization. Do not use a registry lookup whose
+mutable contents silently change the meaning of an already certified value.
+
+A pointer load's symbolic value/domain pair is tied to its exact defining
+snapshot and cell. Checked store/load or memory-frame evidence can transport the
+whole pair. An unrelated equality about the loaded address cannot select a
+sibling domain. This retains the existing indexed read-identity machinery,
+but requires an explicit distinction between read-address evidence and evidence
+about the complete value stored there.
+
+#### Interfaces and the constructor-padding proof
+
+Each native contract carries separate domain obligations alongside its existing
+permission and initialization obligations. Source entry assumes those domain
+obligations for symbolic values; the call checker must discharge exactly those
+same obligations for actual values. A raw pointer parameter's type alone does
+not require a live pointee. A native reference has its language-specific referent
+requirements. Typed access requirements in an existing contract can supply a
+valid-object/span obligation independently of the resource that supplies access
+authority. Bare byte ownership cannot establish a typed object or array.
+
+An array-span requirement means the requested positions belong to the pointer's
+actual domain; it does not resize the domain to the owned interval. Splitting or
+joining permissions leaves that requirement unchanged. In particular, owning
+both `pair.first` and `pair.second` cannot satisfy a two-element array requirement
+for a pointer obtained from `&pair.first`.
+
+A modular pointer result or pointer-valued output needs checked designation
+postconditions, just as initialization needs checked effects. These can preserve
+an input's domain, select a declared child, or describe a legitimately created
+object. An address-only postcondition `result == input` is insufficient to
+establish domain preservation. Initially, derive only relationships that the
+native interface/body checking actually certifies; keep unresolved results
+unusable for accesses that need missing evidence. Do not add a hidden promise
+that every pointer-returning helper preserves a particular input's domain.
+
+For `Restore`, establish the constructor destination's object and the input's
+live scalar object under matching entry/call obligations. In the supported
+non-overlapping object hierarchy, a live scalar cannot occupy arbitrary padding
+of an unrelated live/constructing object. The input may still designate a real
+field of that object; existing ownership obligations must reject forbidden
+aliasing in that case. Distinct symbolic names or distinct witness labels alone
+never establish separation. Unions, byte-array storage provision, replacement
+and other overlapping-object cases require their specific rules before they
+can use this argument. The destination's padding stays unwritten throughout.
+
+#### Delivery and validation order
+
+1. Replace metadata-dropping pointer transformations with complete-carrier
+   transformations. This preserves today's qualifier behavior and creates a
+   reviewable prerequisite; by itself it does not issue or check designation.
+2. Add domain terms and semantic equality/substitution support together. Cover
+   stored pointer values, loaded symbolic pairs, binder substitution, snapshot
+   identity and retained keys before enabling producers. Raw address equality
+   must remain available for aliasing.
+3. Retain domain information through lvalues and add checked declaration,
+   member and array producers plus arithmetic/read/write consumers. Enable a
+   coherent bounded path only when its casts, copies, loads and calls cannot
+   discard the evidence. Unsupported crossings must refuse, not fall back to
+   permissive address-only checks.
+4. Check domain requirements and result effects at modular boundaries, including
+   source body entry. Use those checked object relationships to repair the
+   unchanged constructor-padding proof.
+5. Close the sibling-pointer bug only after its direct, local, stored/reloaded,
+   cast, modular-call and equality-rewrite variants are rejected in ordinary,
+   expanded and retained verification. Preserve valid direct sibling access,
+   scalar `+0`, permitted one-past formation/comparison, array traversal and
+   supported pointer representation copies. Audit C, C++ and Rust producers.
+
+Queries must use the selected domain/object and existing indexed evidence.
+Domain transport cannot scan sibling declarations, unrelated cells, the whole
+fact environment or snapshot history. Use shared immutable descriptors and
+persistent state facts; measure deterministic work at multiple domain, sibling
+and unrelated-state sizes. A large array domain is a compact extent, not one
+new object record per element.
+
 ### Lifetime is not a single initialized flag
 
 Storage can exist before construction and after an object's lifetime. A scalar
@@ -522,7 +694,7 @@ block declaration metadata. Ordinary aggregate declarations, raw destination
 allocations, by-value parameter copies and actual copy-result allocations issue
 that evidence. Synthetic symbolic result blocks and constructor proof-entry raw
 markers do not. The metadata participates in snapshot identity and joins;
-resource semantics version 68 invalidates older retained artifacts. This step
+resource semantics version 69 invalidates older retained artifacts. This step
 preserves the existing scalar declaration behavior and grants no new access.
 The retained aggregate metadata is structural layout; it is not nominal C++
 class identity. Explicit embedded-record boundaries retain parent relationships,

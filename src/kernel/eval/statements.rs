@@ -2521,7 +2521,7 @@ fn execute_c_return_expression_paths(
                         CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome)
                     } else {
                         CStatementOutcome::Return {
-                            value: CValue::typed_pointer(resolved_pointer, pointer.c_type()),
+                            value: CValue::Pointer(pointer.clone().with_pointer(resolved_pointer)),
                             state: Box::new(resolved_state),
                         }
                     };

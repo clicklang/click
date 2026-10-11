@@ -361,9 +361,10 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
                 CValue::UInt128(term) => CValue::UInt128(canonicalize_atomic_loads(term)),
                 CValue::Float32(term) => CValue::Float32(canonicalize_atomic_loads(term)),
                 CValue::Float64(term) => CValue::Float64(canonicalize_atomic_loads(term)),
-                CValue::Pointer(pointer) => CValue::typed_pointer(
-                    canonicalize_pointer_loads(pointer.pointer()),
-                    pointer.c_type(),
+                CValue::Pointer(pointer) => CValue::Pointer(
+                    pointer
+                        .clone()
+                        .with_pointer(canonicalize_pointer_loads(pointer.pointer())),
                 ),
             };
             (key, value)
@@ -417,9 +418,10 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
             CValue::UInt128(term) => CValue::UInt128(canonicalize_atomic_loads(term)),
             CValue::Float32(term) => CValue::Float32(canonicalize_atomic_loads(term)),
             CValue::Float64(term) => CValue::Float64(canonicalize_atomic_loads(term)),
-            CValue::Pointer(pointer) => CValue::typed_pointer(
-                canonicalize_pointer_loads(pointer.pointer()),
-                pointer.c_type(),
+            CValue::Pointer(pointer) => CValue::Pointer(
+                pointer
+                    .clone()
+                    .with_pointer(canonicalize_pointer_loads(pointer.pointer())),
             ),
         };
         std::sync::Arc::make_mut(&mut canonical.union_cells).insert((key, *c_type), value);
@@ -7226,6 +7228,59 @@ mod opaque_pointer_frame_tests {
 mod canonical_numeric_run_tests {
     use super::*;
     use crate::kernel::primitives::{CellRun, IndexIntervals, RunValueMode};
+
+    #[test]
+    fn deep_canonicalization_preserves_pointer_value_qualifiers_in_cells_and_union_views() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let index = Pointer {
+            block: "qualified-canonical-index".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let source = intern_c_memory(
+            CMemory::new()
+                .with_block("qualified-canonical-index", 4)
+                .store(index.clone(), CValue::Int32(Bitvector32Term::Constant(1))),
+        );
+        let address = Pointer {
+            block: "qualified-canonical".into(),
+            offset: PointerOffsetTerm::Int32Scaled {
+                value: Box::new(Bitvector32Term::MemoryLoad(
+                    source,
+                    Box::new(index),
+                    LoadKind::Bits32,
+                )),
+                byte_width: 4,
+            },
+        };
+        let canonical_address = canonicalize_pointer_loads(&address);
+        assert_ne!(address, canonical_address);
+        let value = CValue::typed_pointer(address, CType::Int32Pointer)
+            .with_pointer_pointee_constant(true)
+            .with_pointer_pointee_volatile(true);
+        let cell = Pointer::symbolic(Variable(7_629_101));
+        // Use separate snapshots: a write through an unrelated symbolic
+        // address may alias and invalidate the earlier dense cell.
+        for (memory, union_view) in [
+            (CMemory::new().store(cell.clone(), value.clone()), false),
+            (
+                CMemory::new().store_union(cell.clone(), CType::Int32Pointer, value),
+                true,
+            ),
+        ] {
+            let canonical = canonical_c_memory_deep(&memory);
+            let value = if union_view {
+                canonical.known_union_value(&cell, CType::Int32Pointer)
+            } else {
+                canonical.known_value(&cell)
+            };
+            let Some(CValue::Pointer(pointer)) = value else {
+                panic!("canonicalization must retain the pointer cell");
+            };
+            assert_eq!(pointer.pointer(), &canonical_address);
+            assert!(pointer.pointee_constant());
+            assert!(pointer.pointee_volatile());
+        }
+    }
 
     #[test]
     fn deep_canonicalization_preserves_numeric_load_and_copy_runs() {

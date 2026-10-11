@@ -672,6 +672,14 @@ impl CPointerValue {
         self.pointer = pointer;
     }
 
+    /// Transform only the address, retaining all other pointer-value metadata.
+    /// Substitution of any future designation terms must map those terms
+    /// separately; arithmetic must not rebase the designated object's domain.
+    pub(crate) fn with_pointer(mut self, pointer: Pointer) -> Self {
+        self.replace_pointer(pointer);
+        self
+    }
+
     pub(crate) fn is_null(&self) -> bool {
         self.pointer.block == PointerBlock::Concrete("null".to_string())
             && self.pointer.offset == PointerOffsetTerm::Constant(0)

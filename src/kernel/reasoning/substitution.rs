@@ -5722,12 +5722,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_value(
         CValue::UInt128(bits) => CValue::UInt128(substitute_bitvector_variable(bits, from, to)),
         CValue::Float32(bits) => CValue::Float32(substitute_bitvector_variable(bits, from, to)),
         CValue::Float64(bits) => CValue::Float64(substitute_bitvector_variable(bits, from, to)),
-        CValue::Pointer(pointer) => CValue::typed_pointer(
+        CValue::Pointer(pointer) => CValue::Pointer(pointer.clone().with_pointer(
             substitute_bitvector_variable_in_pointer(pointer.pointer(), from, to),
-            pointer.c_type(),
-        )
-        .with_pointer_pointee_volatile(pointer.pointee_volatile())
-        .with_pointer_pointee_constant(pointer.pointee_constant()),
+        )),
     }
 }
 
@@ -8446,6 +8443,27 @@ mod pointee_const_return_tests {
             substitute_pointer_variable_in_c_value(&value, Variable(918), &Pointer::null());
         assert!(matches!(replaced, CValue::Pointer(pointer)
             if pointer.is_null() && pointer.pointee_constant() && pointer.pointee_volatile()));
+
+        let value = CValue::typed_pointer(
+            Pointer {
+                block: "qualified-substitution".into(),
+                offset: PointerOffsetTerm::Int32Scaled {
+                    value: Box::new(Bitvector32Term::Variable(Variable(919))),
+                    byte_width: 4,
+                },
+            },
+            CType::Int32Pointer,
+        )
+        .with_pointer_pointee_constant(true)
+        .with_pointer_pointee_volatile(true);
+        let replaced = substitute_bitvector_variable_in_c_value(
+            &value,
+            Variable(919),
+            &Bitvector32Term::Constant(1),
+        );
+        assert!(matches!(replaced, CValue::Pointer(pointer)
+            if pointer.offset.as_const() == Some(4)
+                && pointer.pointee_constant() && pointer.pointee_volatile()));
     }
 
     #[test]

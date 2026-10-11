@@ -51,7 +51,12 @@ the call checker now enforces the native structural destination requirement.
 The subsequent audit also reproduced a shared C/C++ soundness defect:
 [one-past member pointers can read sibling fields](../bugs/pointer-arithmetic-crosses-scalar-subobject.md).
 Checked pointer designation is now mandatory stabilization work, not merely an
-optional metadata cleanup. The design also records the concrete
+optional metadata cleanup. The [implementation design](../design/cpp-object-model.md#checked-pointer-designation-representation-and-implementation)
+now specifies separate address and semantic-value identities, domain-preserving
+transport, checked lvalue access and matching modular-call obligations. The first
+carrier-preservation prerequisite retains existing qualifiers through pointer
+transformations; domain issuance and enforcement remain pending. The design also
+records the concrete
 [byte-access source-profile choice](../design/cpp-object-model.md#byte-access-requires-an-explicit-source-profile-choice)
 that must be settled before expanding the cast-and-index byte writer.
 

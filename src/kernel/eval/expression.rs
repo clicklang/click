@@ -708,9 +708,8 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
         && pointer.block.is_function()
         && pointer.c_type() == CType::FunctionPointer(CallbackSignature::UNSPECIFIED)
     {
-        return Some(CValue::typed_pointer(
-            pointer.pointer().clone(),
-            CType::FunctionPointer(signature),
+        return Some(CValue::Pointer(
+            pointer.clone().with_type(CType::FunctionPointer(signature)),
         ));
     }
 

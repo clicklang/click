@@ -620,6 +620,17 @@ Taking the address of an indexed scalar-array cell uses the same typed lvalue
 path, so the resulting pointer retains the containing allocation and points at
 the flattened cell rather than at an aggregate temporary.
 
+`CPointerValue` retains the address, access type and pointee qualifiers.
+Transforming an existing value uses carrier-preserving operations:
+`with_pointer` changes only its address, and `with_type` changes only its access
+type. Pointer arithmetic, load naming, substitution and deep snapshot
+canonicalization must not reconstruct an existing value through the fresh
+`typed_pointer` constructor. Fresh allocations and genuinely new symbolic values
+still use that constructor. This preserves the current qualifiers; checked
+object/array designation is specified in the
+[object-model design](https://github.com/clicklang/click/blob/master/design/cpp-object-model.md#checked-pointer-designation-representation-and-implementation)
+and is not yet carried or enforced by these operations.
+
 Copyable by-value structs are the first exception to that address-first
 boundary. C0 retains each leaf field name, byte offset, and kernel type in a
 flattened `CAggregateLayout`; embedded fields use qualified names such as

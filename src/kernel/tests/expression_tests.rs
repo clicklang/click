@@ -1253,6 +1253,129 @@ fn pointer_values_preserve_their_exact_c_types_without_changing_address_identity
 }
 
 #[test]
+fn pointer_transformations_preserve_access_qualifiers() {
+    let address = Pointer {
+        block: "qualified-object".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let value = CValue::typed_pointer(address.clone(), CType::Int32Pointer)
+        .with_pointer_pointee_constant(true)
+        .with_pointer_pointee_volatile(true);
+    let mut state = CState::new().with_memory(CMemory::new().with_block("qualified-object", 8));
+    state.locals.set_typed_with_all_qualifiers(
+        "p",
+        value.clone(),
+        CType::Int32Pointer,
+        false,
+        true,
+        false,
+        true,
+    );
+    for (expression, expected_address, expected_type) in [
+        (
+            c_add(c_variable("p"), c_int32_literal(0)),
+            address.clone(),
+            CType::Int32Pointer,
+        ),
+        (
+            c_add(c_variable("p"), c_int32_literal(1)),
+            address.offset_by_bytes(4),
+            CType::Int32Pointer,
+        ),
+        (
+            c_pointer_offset_bytes(c_variable("p"), 4),
+            address.offset_by_bytes(4),
+            CType::Int32Pointer,
+        ),
+        (
+            c_cast_with_pointee_qualifiers(
+                CExpression::Value(value),
+                CType::UInt8Pointer,
+                true,
+                true,
+            ),
+            address,
+            CType::UInt8Pointer,
+        ),
+    ] {
+        let theorem = prove_c_expression_evaluation(state.clone(), expression)
+            .expect("qualified pointer transformation should evaluate");
+        let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
+            panic!("expected expression evaluation");
+        };
+        let CExpressionOutcome::Value(CValue::Pointer(pointer)) = outcome else {
+            panic!("qualified pointer transformation must produce a pointer: {outcome:?}");
+        };
+        assert_eq!(pointer.pointer(), &expected_address);
+        assert_eq!(pointer.c_type(), expected_type);
+        assert!(pointer.pointee_constant());
+        assert!(pointer.pointee_volatile());
+    }
+}
+
+#[test]
+fn pointer_arithmetic_store_reload_retains_const_and_rejects_implicit_discard() {
+    let address = Pointer {
+        block: "qualified-object".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let slot = Pointer {
+        block: "qualified-slot".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let mut state = CState::new()
+        .with_memory(
+            CMemory::new()
+                .with_block("qualified-object", 4)
+                .with_block("qualified-slot", 8),
+        )
+        .with_resource_context(own_memory_context(slot.clone(), 0, 2));
+    let value = CValue::typed_pointer(address.clone(), CType::Int32Pointer)
+        .with_pointer_pointee_constant(true);
+    state.locals.set_typed_with_all_qualifiers(
+        "p",
+        value,
+        CType::Int32Pointer,
+        false,
+        false,
+        false,
+        true,
+    );
+    let expression = c_add(c_variable("p"), c_int32_literal(0));
+    for destination_constant in [false, true] {
+        let statement = c_seq(
+            c_qualified_typed_store(
+                c_pointer_value(slot.clone()),
+                expression.clone(),
+                CType::Int32Pointer,
+                destination_constant,
+                false,
+            ),
+            c_return(c_typed_load(
+                c_pointer_value(slot.clone()),
+                CType::Int32Pointer,
+            )),
+        );
+        let theorem = prove_symbolic_c_execution(state.clone(), statement, PureFactContext::new())
+            .expect("pointer store should retain the conversion frontier");
+        let Proposition::CStatementExecutes { outcome, .. } = theorem.proposition() else {
+            panic!("expected statement execution");
+        };
+        if destination_constant {
+            assert!(
+                matches!(outcome, CStatementOutcome::Return { value: CValue::Pointer(pointer), .. }
+                if pointer.pointer() == &address && pointer.pointee_constant())
+            );
+        } else {
+            assert!(matches!(
+                outcome,
+                CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+            ));
+        }
+    }
+}
+
+#[test]
 fn explicit_wide_integer_pointer_cast_accepts_only_proven_null_without_origin() {
     let word = Bitvector32Term::Variable(Variable(4242));
     for value in [CValue::UInt64(word.clone()), CValue::Int64(word.clone())] {
