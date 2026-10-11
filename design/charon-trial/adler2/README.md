@@ -21,7 +21,7 @@ or touched sidecar here uses Rust syntax (`docs/reference/rust.md`,
 `adler2::algo::U32X4`, `bytes.len()` and `p.f`. It also takes the short proof forms,
 `have P;` and `by T(args);`. When the last one is
 converted, Click refuses the C-shaped spelling for a Rust source
-(`issues/design-review.md`, A4).
+(`issues/adler-syntax.md`).
 
 The two files in `src/` are byte-for-byte copies of adler2 2.0.1, revision
 `89a031a0f42eeff31c70dc598b398cbf31f1680f`. Their hashes match the
