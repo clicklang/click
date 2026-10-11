@@ -65,6 +65,7 @@ fn compute_proof(contract: &str) -> String {
     };
     let common_spec = if contract.contains("adler_spec_one(")
         || contract.contains("adler_four_byte_result_spec(")
+        || contract.contains("adler_serial_")
     {
         COMMON_ADLER_SPEC
     } else {
@@ -75,8 +76,13 @@ fn compute_proof(contract: &str) -> String {
     } else {
         ""
     };
+    let serial_tail_spec = if contract.contains("adler_serial_") {
+        SERIAL_TAIL_SPEC
+    } else {
+        ""
+    };
     format!(
-        "{}\n{common_spec}\n{four_byte_spec}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{count_bridge}\n{bounded_count}\n{contract}\n{getters}",
+        "{}\n{common_spec}\n{four_byte_spec}\n{serial_tail_spec}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{count_bridge}\n{bounded_count}\n{contract}\n{getters}",
         helper_library()
     )
 }
@@ -2121,6 +2127,10 @@ const PUBLIC_ONE_BYTE: &str =
 const PUBLIC_CONSTRUCTORS: &str =
     include_str!("../../design/charon-trial/adler2/public-constructors.click");
 const PUBLIC_EMPTY: &str = include_str!("../../design/charon-trial/adler2/public-empty.click");
+const PUBLIC_TWO_BYTE: &str =
+    include_str!("../../design/charon-trial/adler2/public-two-byte.click");
+const PUBLIC_THREE_BYTE: &str =
+    include_str!("../../design/charon-trial/adler2/public-three-byte.click");
 const PUBLIC_FOUR_BYTE: &str =
     include_str!("../../design/charon-trial/adler2/public-four-byte.click");
 
@@ -2257,6 +2267,14 @@ fn public_boundary_proof(length: usize) -> String {
         0 => format!(
             "{HELPERS}\n{COMMON_ADLER_SPEC}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{PUBLIC_EMPTY}"
         ),
+        2 => format!(
+            "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{PUBLIC_TWO_BYTE}",
+            compute_proof(TWO_BYTE_COMPUTE)
+        ),
+        3 => format!(
+            "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{PUBLIC_THREE_BYTE}",
+            compute_proof(THREE_BYTE_COMPUTE)
+        ),
         4 => format!(
             "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{PUBLIC_FOUR_BYTE}",
             compute_proof(FOUR_BYTE_COMPUTE)
@@ -2292,11 +2310,11 @@ fn charon_adler2_public_empty_needs_no_input_byte_authority() {
 }
 
 #[test]
-#[ignore = "nightly: empty/vector public checksum false claims and authority"]
+#[ignore = "nightly: empty/serial/vector public checksum false claims and authority"]
 fn charon_adler2_public_boundaries_reject_false_result_extent_and_preservation() {
     let p = adler2_helpers_project();
     let prepared = load_import(&p.config()).unwrap();
-    for length in [0, 4] {
+    for length in [0, 2, 3, 4] {
         let original = public_boundary_proof(length);
         let result = format!(
             "ensures to_integer(result) == old(adler_spec_checksum(data, {length}, 1, 0));"
@@ -2311,13 +2329,16 @@ fn charon_adler2_public_boundaries_reject_false_result_extent_and_preservation()
                 format!("requires data_len == {length}u64;"),
                 format!(
                     "requires data_len == {}u64;",
-                    if length == 0 { 1 } else { 3 }
+                    if length == 0 { 1 } else { length - 1 }
                 ),
             ),
         ];
-        if length == 4 {
-            mutations.push(("views data[0..4];".into(), "views data[0..3];".into()));
-            for i in 0..4 {
+        if length > 0 {
+            mutations.push((
+                format!("views data[0..{length}];"),
+                format!("views data[0..{}];", length - 1),
+            ));
+            for i in 0..length {
                 mutations.push((
                     format!("ensures data[{i}] == old(data[{i}]);"),
                     format!("ensures data[{i}] == old(data[{i}]) + 1;"),
@@ -2343,10 +2364,14 @@ fn charon_adler2_public_boundaries_reject_false_result_extent_and_preservation()
 }
 
 #[test]
-#[ignore = "nightly: complete empty/vector callees and public API tool agreement"]
+#[ignore = "nightly: complete empty/serial/vector callees and public API tool agreement"]
 fn charon_adler2_public_boundaries_tools_check_all_original_bodies() {
+    check_public_boundary_tools(&[0, 4]);
+}
+
+fn check_public_boundary_tools(lengths: &[usize]) {
     let p = adler2_helpers_project();
-    for length in [0, 4] {
+    for &length in lengths {
         let source = public_boundary_proof(length);
         fs::write(p.root.join("borrow.click"), &source).unwrap();
         // Profile checks the complete assembly, including the original compute
@@ -2367,10 +2392,11 @@ fn charon_adler2_public_boundaries_tools_check_all_original_bodies() {
             "{}",
             String::from_utf8_lossy(&audit.stderr)
         );
-        for name in [
+        let claims = [
             "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I11_write_slice",
             "__rust_q_I6_adler2_I13_adler32_slice",
-        ] {
+        ];
+        for name in claims {
             assert_cli(
                 &p,
                 &[
@@ -2382,5 +2408,92 @@ fn charon_adler2_public_boundaries_tools_check_all_original_bodies() {
             );
         }
         assert_cli(&p, &["verify"]);
+    }
+}
+
+const SERIAL_TAIL_SPEC: &str =
+    include_str!("../../design/charon-trial/adler2/serial-tail-spec.click");
+
+#[test]
+fn adler_serial_tail_native_results_match_the_common_spec() {
+    let source = format!("{COMMON_ADLER_SPEC}\n{SERIAL_TAIL_SPEC}");
+    click::surface::verify_c0_sources(&source, &[]).unwrap();
+}
+
+#[test]
+fn charon_adler2_public_serial_tails_match_two_and_three_byte_spec() {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    for length in [2, 3] {
+        let source = public_boundary_proof(length);
+        for name in [
+            "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I11_write_slice",
+            "__rust_q_I6_adler2_I13_adler32_slice",
+        ] {
+            verify_public_checksum_unit(&source, &prepared, name).unwrap();
+        }
+    }
+}
+
+#[test]
+#[ignore = "nightly: complete original serial-tail callees and public API tool agreement"]
+fn charon_adler2_public_serial_tails_tools_check_all_original_bodies() {
+    check_public_boundary_tools(&[2, 3]);
+}
+
+#[test]
+#[ignore = "nightly: serial-tail specification expansion and mutation checks"]
+fn adler_serial_tail_spec_expands_and_rejects_false_weights() {
+    let source = format!("{COMMON_ADLER_SPEC}\n{SERIAL_TAIL_SPEC}");
+    for claim in [
+        "adler_spec_two.ensures_0",
+        "adler_spec_two.ensures_1",
+        "adler_spec_three.ensures_0",
+        "adler_spec_three.ensures_1",
+        "adler_serial_byte_observation.ensures_0",
+        "adler_serial_two_native_result.ensures_0",
+        "adler_serial_three_native_result.ensures_0",
+        "adler_serial_two_result_spec.ensures_0",
+        "adler_serial_two_result_spec.ensures_1",
+        "adler_serial_three_result_spec.ensures_0",
+        "adler_serial_three_result_spec.ensures_1",
+    ] {
+        let expanded = click::surface::expand_c0_claim_source_by_label(&source, &[], claim)
+            .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
+        click::surface::verify_c0_sources(&expanded, &[]).unwrap();
+    }
+    for (before, after) in [
+        (
+            "2 + 2 * to_integer((int32)x0) + to_integer((int32)x1), 65521) by",
+            "2 + to_integer((int32)x0) + 2 * to_integer((int32)x1), 65521) by",
+        ),
+        (
+            "3 + 3 * to_integer((int32)x0) + 2 * to_integer((int32)x1) + to_integer((int32)x2), 65521) by",
+            "3 + to_integer((int32)x0) + 2 * to_integer((int32)x1) + 3 * to_integer((int32)x2), 65521) by",
+        ),
+        ("393126u32 + (1u32", "393125u32 + (1u32"),
+    ] {
+        let changed = source.replacen(before, after, 1);
+        assert_ne!(changed, source, "{before}");
+        let error = click::surface::verify_c0_sources(&changed, &[])
+            .expect_err("incorrect serial weights or modulus offset must be refused");
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: original serial-tail common field result rejection"]
+fn charon_adler2_serial_tails_reject_false_common_fields() {
+    for (contract, length) in [(TWO_BYTE_COMPUTE, 2), (THREE_BYTE_COMPUTE, 3)] {
+        for (field, spec, seed) in [("a", "adler_spec_a", "1"), ("b", "adler_spec_b", "1, 0")] {
+            let claim = format!(
+                "ensures to_integer(self->{field}) == old({spec}(bytes, {length}, {seed}));"
+            );
+            reject_compute(contract, &claim, &claim.replace("));", ")) + 1;"));
+        }
     }
 }

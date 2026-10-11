@@ -341,7 +341,7 @@ changes, and the Integer observation of its returned word is exactly
 [packing.click](packing.click) checks the narrow-field observations and the
 original `(B << 16) | A` order. Both 16-bit bounds are retained in the kernel
 packing law. Its conditional bridge connects fields satisfying the common A/B
-specification to the common packed checksum. The zero-, one-, and four-byte
+specification to the common packed checksum. The zero- through four-byte
 public entry points are checked below; general-length implementation correctness
 remains pending.
 
@@ -360,10 +360,12 @@ cargo nextest run --test rust_import --run-ignored all \
 [public-constructors.click](public-constructors.click) checks the unchanged
 `Default::default` and `Adler32::new` bodies in a shared fragment for the public API fixtures.
 [public-empty.click](public-empty.click),
-[public-one-byte.click](public-one-byte.click), and
+[public-one-byte.click](public-one-byte.click),
+[public-two-byte.click](public-two-byte.click),
+[public-three-byte.click](public-three-byte.click), and
 [public-four-byte.click](public-four-byte.click) compose those constructors,
 `Adler32::write_slice`, the original computation, and `Adler32::checksum` at
-`adler32_slice`. For zero, one, or four arbitrary input bytes, the returned
+`adler32_slice`. For every input length from zero through four, with arbitrary byte values, the returned
 word's Integer observation equals `adler_spec_checksum` on the entry byte
 snapshot, with initial A = 1 and B = 0. Every input byte is preserved.
 The empty public call also verifies without an input-byte view; it dereferences
@@ -374,7 +376,7 @@ helper bodies, packing lemmas, and common specification. Complete verification
 checks all original callee bodies. The ordinary gate checks the new API bodies;
 nightly checks cover complete assembly, wrong results, seeds and extents,
 insufficient byte views and false byte preservation, plus focused audit,
-contract expansion and re-verification. Full profiling checks the zero- and
+contract expansion and re-verification. Full profiling checks the empty, two-, three-, and
 four-byte assemblies before expansion. The Rust source and locked Charon
 artifact remain unchanged.
 
@@ -383,10 +385,15 @@ cargo nextest run --test rust_import --run-ignored all \
   -E 'test(charon_adler2_public_)'
 ```
 
-The two- and three-byte computation contracts still express native arithmetic
-results. Relate those results to the common field specification before extending
-public API composition to those serial-tail boundaries. General-length
-implementation correctness remains pending.
+[serial-tail-spec.click](serial-tail-spec.click) connects the unchanged two-
+and three-byte native results to the common field specification. It checks
+that each unsigned prefix addition stays within range, retains the ordered B
+weights, and removes the native `6 * MOD` offset under remainder. Checked
+two- and three-byte specification lemmas unfold the byte and weighted sums.
+The computation contracts retain their native results and byte preservation
+while also proving the common A/B results. These helpers have expansion and
+wrong-weight/offset regressions. General-length implementation correctness
+remains pending.
 
 ## Reproduce
 
@@ -435,7 +442,7 @@ Connect the optimized lane recurrences to the shared
 mathematical checksum specification in the [checksum assessment](../../rust-checksum-assessment.md).
 The constructor-state contracts for zero through four bytes provide exact
 result and byte-order checks. The shared getter proves exact packing, and the
-zero-, one-, and four-byte public entry points compose it with the constructor
+zero- through four-byte public entry points compose it with the constructor
 and computation. Bridge the two- and three-byte native results to the common
 specification, then extend that composition to those tails and the general loop.
 The general contract supplies induction and bounds rather than a checksum
