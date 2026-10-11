@@ -287,8 +287,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             &click_function_types,
             &predicate_definition_map,
             &click_function_definition_map,
-            &predicate_environment,
-            &click_function_environment,
+            SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )?;
     }
     reject_composite_resource_cycles(&resource_definitions)?;
@@ -1042,8 +1041,7 @@ fn validate_resource_definition<'a>(
     click_function_types: &BTreeMap<String, ClickFunctionType>,
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     click_function_definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(), ClickError> {
     let Some(composite_body) = definition.composite_body() else {
         return Ok(());
@@ -1052,7 +1050,8 @@ fn validate_resource_definition<'a>(
         for (_, _, arm) in resource_match_arm_scopes(
             definition,
             |name| {
-                click_function_environment
+                spec_definitions
+                    .functions
                     .algebraic_type_definitions
                     .get(name)
             },
@@ -1069,8 +1068,7 @@ fn validate_resource_definition<'a>(
                 click_function_types,
                 predicate_definitions,
                 click_function_definitions,
-                predicate_environment,
-                click_function_environment,
+                spec_definitions,
             )?;
         }
         return Ok(());
@@ -1089,8 +1087,7 @@ fn validate_resource_definition<'a>(
             click_function_types,
             predicate_definitions,
             click_function_definitions,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
         );
     }
     if let Some(view) = resource_body_fields_as_parameters(definition)? {
@@ -1105,8 +1102,7 @@ fn validate_resource_definition<'a>(
             click_function_types,
             predicate_definitions,
             click_function_definitions,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
         );
     }
     let mut variables = definition
@@ -1187,8 +1183,7 @@ fn validate_resource_definition<'a>(
         click_function_types,
         predicate_definitions,
         click_function_definitions,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
     )?;
     for resource in composite_body.contains() {
         validate_resource_clause(
@@ -1242,8 +1237,7 @@ fn validate_resource_definition<'a>(
             &prior_facts,
             predicate_definitions,
             click_function_definitions,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
         )?;
         prior_facts.push(fact);
     }
@@ -1262,8 +1256,7 @@ fn validate_iterated_resource_clauses(
     click_function_types: &BTreeMap<String, ClickFunctionType>,
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     click_function_definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(), ClickError> {
     let clauses = composite_body
         .contains()
@@ -1378,8 +1371,7 @@ fn validate_iterated_resource_clauses(
             &[],
             predicate_definitions,
             click_function_definitions,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
         )
         .map_err(|error| {
             ClickError::new(format!(
@@ -1489,8 +1481,7 @@ fn validate_resource_fact_memory_read_authority(
     prior_facts: &[&ClickProposition],
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     click_function_definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(), ClickError> {
     let mut reads = Vec::new();
     let mut visited_predicates = Vec::new();
@@ -1582,8 +1573,7 @@ fn validate_resource_fact_memory_read_authority(
             &values,
             &array_refs,
             &memory,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
             &mut Vec::new(),
             &mut scalar_assumptions,
             definition.name(),
@@ -1597,8 +1587,7 @@ fn validate_resource_fact_memory_read_authority(
         &values,
         &empty_array_refs,
         &empty_memory,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         &mut Vec::new(),
         &mut scalar_assumptions,
         definition.name(),
@@ -1616,8 +1605,7 @@ fn validate_resource_fact_memory_read_authority(
             &values,
             &array_refs,
             &memory,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
         );
         if !analysis.covered {
             return Err(ClickError::new(resource_fact_read_authority_error(
@@ -1637,8 +1625,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
     values: &BTreeMap<String, CValue>,
     array_refs: &ClickArrayRefs,
     memory: &CMemory,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     visited_predicates: &mut Vec<String>,
     assumptions: &mut Vec<ResourceFactScalarAssumption>,
     resource_name: &str,
@@ -1660,8 +1647,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
                     &state,
                     None,
                     &RecordedSnapshots::new(),
-                    predicate_environment,
-                    click_function_environment,
+                    spec_definitions,
                 )
             {
                 assumptions.push(ResourceFactScalarAssumption {
@@ -1678,8 +1664,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
                 values,
                 array_refs,
                 memory,
-                predicate_environment,
-                click_function_environment,
+                spec_definitions,
                 visited_predicates,
                 assumptions,
                 resource_name,
@@ -1693,8 +1678,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
                 values,
                 array_refs,
                 memory,
-                predicate_environment,
-                click_function_environment,
+                spec_definitions,
                 visited_predicates,
                 assumptions,
                 resource_name,
@@ -1705,8 +1689,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
                 values,
                 array_refs,
                 memory,
-                predicate_environment,
-                click_function_environment,
+                spec_definitions,
                 visited_predicates,
                 assumptions,
                 resource_name,
@@ -1735,8 +1718,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
                 values,
                 array_refs,
                 memory,
-                predicate_environment,
-                click_function_environment,
+                spec_definitions,
                 visited_predicates,
                 assumptions,
                 resource_name,
@@ -2622,8 +2604,7 @@ fn analyze_resource_fact_read_authority(
     values: &BTreeMap<String, CValue>,
     array_refs: &ClickArrayRefs,
     memory: &CMemory,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> ResourceFactReadAuthorityAnalysis {
     let mut notes = Vec::new();
     for resource in contained {
@@ -2664,8 +2645,7 @@ fn analyze_resource_fact_read_authority(
                     values,
                     array_refs,
                     memory,
-                    predicate_environment,
-                    click_function_environment,
+                    spec_definitions,
                 )
             }) {
                 return ResourceFactReadAuthorityAnalysis {
@@ -2681,8 +2661,7 @@ fn analyze_resource_fact_read_authority(
                 values,
                 array_refs,
                 memory,
-                predicate_environment,
-                click_function_environment,
+                spec_definitions,
             ) {
                 return ResourceFactReadAuthorityAnalysis {
                     covered: true,
@@ -2809,8 +2788,7 @@ fn symbolic_segment_covers_range(
     values: &BTreeMap<String, CValue>,
     array_refs: &ClickArrayRefs,
     memory: &CMemory,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> bool {
     let state = CState::new().with_memory(memory.clone());
     let evaluate = |expression: &CExpression| {
@@ -2823,8 +2801,7 @@ fn symbolic_segment_covers_range(
             &state,
             None,
             &RecordedSnapshots::new(),
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
             &BTreeSet::new(),
         )
     };
@@ -2863,8 +2840,7 @@ fn symbolic_segment_covers_index(
     values: &BTreeMap<String, CValue>,
     array_refs: &ClickArrayRefs,
     memory: &CMemory,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> bool {
     let state = CState::new().with_memory(memory.clone());
     let evaluate = |expression: &CExpression| {
@@ -2877,8 +2853,7 @@ fn symbolic_segment_covers_index(
             &state,
             None,
             &RecordedSnapshots::new(),
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
             &BTreeSet::new(),
         )
     };
@@ -3090,8 +3065,10 @@ mod read_authority_tests {
             values,
             &BTreeMap::new(),
             &CMemory::new(),
-            &PredicateEnvironment::new(&[]),
-            &ClickFunctionEnvironment::new(&[]),
+            SpecDefinitions::new(
+                &PredicateEnvironment::new(&[]),
+                &ClickFunctionEnvironment::new(&[]),
+            ),
         )
     }
 

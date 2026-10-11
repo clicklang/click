@@ -633,8 +633,7 @@ fn verify_click_file_theorems_with_environment(
     verify_theorem_definitions(
         TheoremEnvironment::with_standard_library(&[])?,
         file.theorem_definitions(),
-        &predicate_environment,
-        &click_function_environment,
+        SpecDefinitions::new(&predicate_environment, &click_function_environment),
         function_environment,
         &ResourceEnvironment::new(&combined_resource_definitions(file)?),
         function_source_registry,
@@ -662,8 +661,7 @@ pub fn verify_standard_library() -> Result<Vec<VerifiedPureTheorem>, ClickError>
     verify_theorem_definitions(
         TheoremEnvironment::new(&[]),
         standard_library_theorem_definitions()?,
-        &predicate_environment,
-        &click_function_environment,
+        SpecDefinitions::new(&predicate_environment, &click_function_environment),
         None,
         &ResourceEnvironment::new(&combined_resource_definitions(&empty)?),
         function_source_registry,
@@ -720,8 +718,7 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
         &parsed_sources,
         &external_and_user_function_blocks,
         file.contract_definitions(),
-        &predicate_environment,
-        &click_function_environment,
+        SpecDefinitions::new(&predicate_environment, &click_function_environment),
         &resource_environment,
     )?
     .with_byte_order(file.selected_c_target().byte_order());
@@ -768,14 +765,15 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
         &click_function_definitions,
         &combined_algebraic_type_definitions(&file)?,
     );
+    let spec_definitions =
+        SpecDefinitions::new(&predicate_environment, &click_function_environment);
     let resource_environment = ResourceEnvironment::new(&resource_definitions);
     let external_and_user_function_blocks = combined_external_function_blocks(&file)?;
     let mut function_environment = build_function_environment(
         &parsed_sources,
         &external_and_user_function_blocks,
         file.contract_definitions(),
-        &predicate_environment,
-        &click_function_environment,
+        spec_definitions,
         &resource_environment,
     )?
     .with_byte_order(file.selected_c_target().byte_order());
@@ -802,8 +800,7 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
         return verify_theorem_definitions(
             dependencies,
             std::slice::from_ref(theorem),
-            &predicate_environment,
-            &click_function_environment,
+            spec_definitions,
             Some(&function_environment),
             &resource_environment,
             registry,
@@ -811,8 +808,7 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
     }
     verify_theorem_definition(
         theorem,
-        &predicate_environment,
-        &click_function_environment,
+        spec_definitions,
         &theorem_environment,
         Some(&function_environment),
     )
@@ -2251,6 +2247,8 @@ fn verify_c0_sources_in_context(
             &click_function_definitions,
             &combined_algebraic_type_definitions(&file)?,
         );
+        let spec_definitions =
+            SpecDefinitions::new(&predicate_environment, &click_function_environment);
         let resource_environment = ResourceEnvironment::with_struct_layouts(
             &resource_definitions,
             &resource_struct_layouts,
@@ -2267,20 +2265,11 @@ fn verify_c0_sources_in_context(
         // object's value before and after a store to it, so those bodies are
         // refused before any body is lowered or recorded.
         reject_pure_bodies_reading_c_objects(
-            &predicate_environment,
-            &click_function_environment,
+            spec_definitions,
             &file_scope_object_names(click_source, c_sources, selected_target)?,
         )?;
-        register_kernel_pure_function_definitions(
-            &predicate_environment,
-            &click_function_environment,
-            &resource_struct_layouts,
-        )?;
-        register_kernel_fold_read_definitions(
-            &predicate_environment,
-            &click_function_environment,
-            &resource_struct_layouts,
-        );
+        register_kernel_pure_function_definitions(spec_definitions, &resource_struct_layouts)?;
+        register_kernel_fold_read_definitions(spec_definitions, &resource_struct_layouts);
         // Frame evidence may look through composite definitions to decide
         // that a call's mutable ranges or a store's written cell cannot
         // touch a loaded pointer inside a composite's footprint. Definitions
@@ -2291,21 +2280,16 @@ fn verify_c0_sources_in_context(
             &parsed_sources,
             &external_and_user_function_blocks,
             file.contract_definitions(),
-            &predicate_environment,
-            &click_function_environment,
+            spec_definitions,
             &resource_environment,
         )?;
         let modeled_mutex_definitions: BTreeMap<_, _> = if selected_thread_runtime
             == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
         {
-            composite_resource_definitions(
-                &resource_environment,
-                &predicate_environment,
-                &click_function_environment,
-            )?
-            .into_iter()
-            .map(|definition| (definition.name().to_string(), definition))
-            .collect()
+            composite_resource_definitions(&resource_environment, spec_definitions)?
+                .into_iter()
+                .map(|definition| (definition.name().to_string(), definition))
+                .collect()
         } else {
             BTreeMap::new()
         };
@@ -2358,8 +2342,7 @@ fn verify_c0_sources_in_context(
         let verified_theorems = verify_theorem_definitions(
             theorem_dependencies,
             &theorem_definitions,
-            &predicate_environment,
-            &click_function_environment,
+            spec_definitions,
             Some(&function_environment),
             &resource_environment,
             function_source_registry.clone(),
@@ -2380,8 +2363,7 @@ fn verify_c0_sources_in_context(
         record_assumed_theorem_certification_authority(
             assumed_theorem_certification_authorities(
                 &unselected_theorem_definitions,
-                &predicate_environment,
-                &click_function_environment,
+                spec_definitions,
             )?,
             &mut theorem_certification_facts,
             &mut theorem_certification_authorities,
@@ -2401,6 +2383,8 @@ fn verify_c0_sources_in_context(
             theorem_environment,
         )
     };
+    let spec_definitions =
+        SpecDefinitions::new(&predicate_environment, &click_function_environment);
 
     // Frame evidence may look through composite definitions to decide that a
     // call's mutable ranges or a store's written cell cannot touch a loaded
@@ -2409,12 +2393,7 @@ fn verify_c0_sources_in_context(
     // composite still needs its `observe(...)` chain before a user's
     // `separate(...)` goal can cite it.
     let _frame_composite_definitions = crate::kernel::arm_frame_composite_definitions(
-        composite_resource_definitions(
-            &resource_environment,
-            &predicate_environment,
-            &click_function_environment,
-        )
-        .unwrap_or_default(),
+        composite_resource_definitions(&resource_environment, spec_definitions).unwrap_or_default(),
     );
     check_verification_deadline()?;
     let mut verified = Vec::new();
@@ -2623,8 +2602,7 @@ fn verify_c0_sources_in_context(
             &function_block,
             parsed_function,
             &function_environment,
-            &predicate_environment,
-            &click_function_environment,
+            spec_definitions,
             &resource_environment,
             &theorem_environment,
             function_source_registry.clone(),
@@ -2674,8 +2652,7 @@ fn verify_c0_sources_in_context(
                     parsed_function,
                     &covered_claims,
                     &verification_function_environment,
-                    &predicate_environment,
-                    &click_function_environment,
+                    spec_definitions,
                     &resource_environment,
                     &theorem_environment,
                     function_source_registry.clone(),
@@ -2687,8 +2664,7 @@ fn verify_c0_sources_in_context(
                     parsed_function,
                     &covered_claims,
                     &verification_function_environment,
-                    &predicate_environment,
-                    &click_function_environment,
+                    spec_definitions,
                     &resource_environment,
                     &theorem_environment,
                     function_source_registry.clone(),
@@ -2732,8 +2708,10 @@ fn verify_c0_sources_in_context(
                             &claim,
                             &claim_label,
                             &verification_function_environment,
-                            &predicate_environment,
-                            &click_function_environment,
+                            SpecDefinitions::new(
+                                &predicate_environment,
+                                &click_function_environment,
+                            ),
                             &resource_environment,
                             &theorem_environment,
                             function_source_registry.clone(),
@@ -2747,8 +2725,7 @@ fn verify_c0_sources_in_context(
                         &claim,
                         &claim_label,
                         &verification_function_environment,
-                        &predicate_environment,
-                        &click_function_environment,
+                        spec_definitions,
                         &resource_environment,
                         &theorem_environment,
                         function_source_registry.clone(),
@@ -2761,8 +2738,7 @@ fn verify_c0_sources_in_context(
                         &claim,
                         &claim_label,
                         &verification_function_environment,
-                        &predicate_environment,
-                        &click_function_environment,
+                        spec_definitions,
                         &resource_environment,
                         &theorem_environment,
                         function_source_registry.clone(),
@@ -2836,8 +2812,7 @@ fn verify_c0_sources_in_context(
                         &certification_function_block,
                         parsed_function,
                         &resource_environment,
-                        &predicate_environment,
-                        &click_function_environment,
+                        spec_definitions,
                         &format!("{}.contract certification", function_block.signature.name()),
                         None,
                     )
@@ -2899,8 +2874,7 @@ fn verify_c0_sources_in_context(
                         &[],
                     ),
                     &standard_library_theorems[index..=index],
-                    &predicate_environment,
-                    &click_function_environment,
+                    spec_definitions,
                     None,
                     &resource_environment,
                     function_source_registry.clone(),
@@ -2949,8 +2923,7 @@ fn verify_c0_sources_in_context(
             parsed_function,
             &certification_state,
             &certification_arguments,
-            &predicate_environment,
-            &click_function_environment,
+            spec_definitions,
             &resource_environment,
             Some(ResourceFrameEntry {
                 assumptions: &assumptions_from_propositions(&certification_facts),
@@ -5248,8 +5221,7 @@ fn file_scope_object_names(
 /// verification. A name a parameter shadows is the parameter; a name bound by
 /// a `let`, a fold or a quantifier is removed by the collection itself.
 fn reject_pure_bodies_reading_c_objects(
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     file_scope_objects: &BTreeSet<String>,
 ) -> Result<(), ClickError> {
     fn read_object(
@@ -5270,7 +5242,7 @@ fn reject_pure_bodies_reading_c_objects(
         ))
         .with_kind(ClickErrorKind::Type)
     }
-    for definition in click_function_environment.definitions.values() {
+    for definition in spec_definitions.functions.definitions.values() {
         let mut referenced = BTreeSet::new();
         super::lowering::collect_contract_expression_referenced_names(
             definition.body(),
@@ -5284,7 +5256,7 @@ fn reject_pure_bodies_reading_c_objects(
             ));
         }
     }
-    for definition in predicate_environment.definitions.values() {
+    for definition in spec_definitions.predicates.definitions.values() {
         let mut referenced = BTreeSet::new();
         super::lowering::collect_click_proposition_referenced_names(
             definition.body(),
@@ -6799,8 +6771,7 @@ pub(in crate::surface) fn build_function_environment(
     parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
     function_blocks: &[FunctionBlock],
     contract_definitions: &[ContractDefinition],
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
 ) -> Result<CExecutionEnvironment, ClickError> {
     let mut environment = CExecutionEnvironment::new();
@@ -6813,8 +6784,7 @@ pub(in crate::surface) fn build_function_environment(
             function_block,
             &parsed_function,
             resource_environment,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
             &format!("{}.named contract", definition.name()),
             None,
         )
@@ -6831,8 +6801,7 @@ pub(in crate::surface) fn build_function_environment(
             &parsed_function,
             &state,
             &arguments,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
             resource_environment,
         )
         .map_err(|error| {
@@ -6873,8 +6842,7 @@ pub(in crate::surface) fn build_function_environment(
                 let (resource_requires, resource_ensures) = function_resource_summary(
                     function_block,
                     function,
-                    predicate_environment,
-                    click_function_environment,
+                    spec_definitions,
                     resource_environment,
                 )?;
                 let resource_constructors = function_resource_constructors(function_block)?;
@@ -6891,8 +6859,7 @@ pub(in crate::surface) fn build_function_environment(
                 ) = function_contract_summary(
                     function_block,
                     function,
-                    predicate_environment,
-                    click_function_environment,
+                    spec_definitions,
                     resource_environment,
                 )?;
                 let resource_derived_mutable_frame = !function_block.is_tactic_procedure()
@@ -6907,8 +6874,7 @@ pub(in crate::surface) fn build_function_environment(
                     .with_resource_constructors(resource_constructors)
                     .with_composite_resource_definitions(composite_resource_definitions(
                         resource_environment,
-                        predicate_environment,
-                        click_function_environment,
+                        spec_definitions,
                     )?)
                     .with_ordinary_abstract_families(ordinary_abstract_families(
                         resource_environment,
@@ -6975,8 +6941,7 @@ pub(in crate::surface) fn build_function_environment(
             function_block,
             &parsed_function,
             resource_environment,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
             &format!("{}.external contract", function_block.signature().name()),
             None,
         )?;
@@ -6985,8 +6950,7 @@ pub(in crate::surface) fn build_function_environment(
             &parsed_function,
             &state,
             &arguments,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
             resource_environment,
         )?;
         let mut rule =
@@ -7029,8 +6993,7 @@ fn is_recognized_representation_copy_block(
 pub(in crate::surface) fn function_resource_summary(
     function_block: &FunctionBlock,
     parsed_function: &syntax::C0Function,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
 ) -> Result<(Vec<CResourceSpec>, Vec<CResourceSpec>), ClickError> {
     let borrowed_resources = function_block
@@ -7161,8 +7124,7 @@ pub(in crate::surface) fn function_resource_summary(
                         )
                     }),
                     &condition,
-                    predicate_environment,
-                    click_function_environment,
+                    spec_definitions,
                 )
                 .map_err(ClickError::new)
             })
@@ -7266,8 +7228,7 @@ pub(in crate::surface) fn ordinary_abstract_families(
 
 pub(in crate::surface) fn composite_resource_definitions(
     resource_environment: &ResourceEnvironment,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Vec<CCompositeResourceDefinition>, ClickError> {
     let mut definitions = Vec::new();
     // Resource-match Integer binders are logical atoms in the lowered arm
@@ -7330,14 +7291,12 @@ pub(in crate::surface) fn composite_resource_definitions(
             .collect();
         let condition = lower_composite_resource_condition(
             definition,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
             resource_environment.struct_layouts(),
         )?;
         let (facts, fact_source_indices) = lower_composite_resource_facts(
             definition,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
             resource_environment.struct_layouts(),
         )?;
         let witnesses = body
@@ -7360,7 +7319,7 @@ pub(in crate::surface) fn composite_resource_definitions(
             proposition_contains_liveness_claim(
                 fact,
                 &owned_bases,
-                predicate_environment,
+                spec_definitions.predicates,
                 &mut BTreeSet::new(),
             )
         });
@@ -7383,7 +7342,8 @@ pub(in crate::surface) fn composite_resource_definitions(
             let scopes = validation::resource_match_arm_scopes(
                 definition,
                 |name| {
-                    click_function_environment
+                    spec_definitions
+                        .functions
                         .algebraic_type_definitions
                         .get(name)
                 },
@@ -7429,8 +7389,7 @@ pub(in crate::surface) fn composite_resource_definitions(
                     .collect::<Result<Vec<_>, _>>()?;
                 let (facts, _) = lower_composite_resource_facts_with_bindings(
                     &arm,
-                    predicate_environment,
-                    click_function_environment,
+                    spec_definitions,
                     &bindings,
                     &integer_binding_variables,
                     resource_environment.struct_layouts(),
