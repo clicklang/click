@@ -24,6 +24,13 @@ writing it out (or running `click expand --claim` on the same claim) and
 reading line 6657: either the printer nests a term more deeply than the
 parser accepts, or a printed term needs fewer parentheses than it gets.
 
+Also reproduced on master `486e8097` with a small theorem: a flat sum of
+24 occurrences of an Integer parameter `a`, asserted equal to `24 * a`
+in a `have ... by { arithmetic(); }`, verifies. Expanding that arithmetic
+site fails with the same parenthesis-depth diagnostic. The source printer
+adds one parenthesis pair at every left-associated addition node.
+The full Adler claim still fails in `click expand` at line 6745.
+
 Acceptance:
 
 - the printer and the parser agree: whatever `click expand` and the audit
