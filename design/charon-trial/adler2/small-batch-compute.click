@@ -476,7 +476,14 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
   rewrite(adler_spec_b(bytes, (int32)(uint32)(bytes_len - bytes_len % 4u64), to_integer(a), to_integer(b)) == adler_spec_b(bytes, ((int32)(uint32)(bytes_len - bytes_len % 4u64) - (int32)(uint32)__rust_mir_62_remaining), to_integer(a), to_integer(b)));
   assumption();
  }
+ have 0 <= adler_lane_b(to_integer(b) + to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(a), to_integer(a_vec._0[1]), to_integer(a_vec._0[2]), to_integer(a_vec._0[3]), to_integer(b_vec._0[0]), to_integer(b_vec._0[1]), to_integer(b_vec._0[2]), to_integer(b_vec._0[3])) by {
+  have (int32)(uint32)(bytes_len - bytes_len % 4u64) == ((int32)(uint32)(bytes_len - bytes_len % 4u64) - (int32)(uint32)__rust_mir_62_remaining) by { rewrite((int32)(uint32)__rust_mir_62_remaining == 0); normalize(); }
+  have to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) == to_integer(((int32)(uint32)(bytes_len - bytes_len % 4u64) - (int32)(uint32)__rust_mir_62_remaining)) by { simp() using { (int32)(uint32)(bytes_len - bytes_len % 4u64) == ((int32)(uint32)(bytes_len - bytes_len % 4u64) - (int32)(uint32)__rust_mir_62_remaining); } }
+  rewrite(to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) == to_integer(((int32)(uint32)(bytes_len - bytes_len % 4u64) - (int32)(uint32)__rust_mir_62_remaining))); assumption();
+ }
  mark vector_prefix;
+ have truncating_remainder(adler_lane_b(to_integer(at(vector_prefix, b)) + to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(at(vector_prefix, a)), to_integer(at(vector_prefix, a_vec._0[1])), to_integer(at(vector_prefix, a_vec._0[2])), to_integer(at(vector_prefix, a_vec._0[3])), to_integer(at(vector_prefix, b_vec._0[0])), to_integer(at(vector_prefix, b_vec._0[1])), to_integer(at(vector_prefix, b_vec._0[2])), to_integer(at(vector_prefix, b_vec._0[3]))), 65521) == adler_spec_b(bytes, (int32)(uint32)(bytes_len - bytes_len % 4u64), to_integer(at(vector_prefix, a)), to_integer(at(vector_prefix, b))) by { simp(); }
+ have 0 <= adler_lane_b(to_integer(at(vector_prefix, b)) + to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(at(vector_prefix, a)), to_integer(at(vector_prefix, a_vec._0[1])), to_integer(at(vector_prefix, a_vec._0[2])), to_integer(at(vector_prefix, a_vec._0[3])), to_integer(at(vector_prefix, b_vec._0[0])), to_integer(at(vector_prefix, b_vec._0[1])), to_integer(at(vector_prefix, b_vec._0[2])), to_integer(at(vector_prefix, b_vec._0[3]))) by { simp(); }
  have truncating_remainder(adler_lane_a(to_integer(at(vector_prefix, a)), to_integer(at(vector_prefix, a_vec._0[0])), to_integer(at(vector_prefix, a_vec._0[1])), to_integer(at(vector_prefix, a_vec._0[2])), to_integer(at(vector_prefix, a_vec._0[3]))), 65521) == adler_spec_a(bytes, (int32)(uint32)(bytes_len - bytes_len % 4u64), to_integer(at(vector_prefix, a))) by { simp(); }
  apply(uint32_to_integer_bounds(at(vector_prefix, a))) using {};
  apply(uint32_to_integer_bounds(at(vector_prefix, a_vec._0[0]))) using {};
@@ -535,11 +542,24 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  have to_integer(at(reduction_a, a_vec._0[1])) == to_integer(at(vector_prefix, a_vec._0[1])) by { simp(); }
  have to_integer(at(reduction_a, a_vec._0[2])) == to_integer(at(vector_prefix, a_vec._0[2])) by { simp(); }
  have to_integer(at(reduction_a, a_vec._0[3])) == to_integer(at(vector_prefix, a_vec._0[3])) by { simp(); }
+ execute_until(assignment(__rust_mir_86, 0)); step();
+ mark reduction_b;
+ have to_integer(at(reduction_b, b_vec._0[0])) == to_integer(at(vector_prefix, b_vec._0[0])) by { simp(); }
+ have to_integer(at(reduction_b, b_vec._0[1])) == to_integer(at(vector_prefix, b_vec._0[1])) by { simp(); }
+ have to_integer(at(reduction_b, b_vec._0[2])) == to_integer(at(vector_prefix, b_vec._0[2])) by { simp(); }
+ have to_integer(at(reduction_b, b_vec._0[3])) == to_integer(at(vector_prefix, b_vec._0[3])) by { simp(); }
  execute_until(assignment(__rust_mir_88, 0));
  have __rust_checked_77 == at(deferred_b, b) + at(deferred_b, __rust_mir_76) by { simp(); }
  have to_integer(__rust_checked_77) == to_integer(at(deferred_b, b) + at(deferred_b, __rust_mir_76)) by { simp() using { __rust_checked_77 == at(deferred_b, b) + at(deferred_b, __rust_mir_76); } }
  have to_integer(__rust_checked_77) == to_integer(at(vector_prefix, b)) + to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(at(vector_prefix, a)) by { arithmetic() using { to_integer(__rust_checked_77) == to_integer(at(deferred_b, b) + at(deferred_b, __rust_mir_76)); to_integer(at(deferred_b, b) + at(deferred_b, __rust_mir_76)) == to_integer(at(deferred_b, b)) + to_integer(at(deferred_b, __rust_mir_76)); to_integer(at(deferred_b, b)) == to_integer(at(vector_prefix, b)); to_integer(at(deferred_b, __rust_mir_76)) == to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(at(vector_prefix, a)); } }
 
+ apply(uint32_to_integer_bounds(__rust_checked_77)) using {};
+ have 0 <= to_integer(at(vector_prefix, b)) + to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(at(vector_prefix, a)) by { arithmetic() using { 0 <= to_integer(__rust_checked_77); to_integer(__rust_checked_77) == to_integer(at(vector_prefix, b)) + to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(at(vector_prefix, a)); } }
+ apply(uint32_to_integer_bounds(at(vector_prefix, b_vec._0[0]))) using {};
+ apply(uint32_to_integer_bounds(at(vector_prefix, b_vec._0[1]))) using {};
+ apply(uint32_to_integer_bounds(at(vector_prefix, b_vec._0[2]))) using {};
+ apply(uint32_to_integer_bounds(at(vector_prefix, b_vec._0[3]))) using {};
+ apply(adler_lane_b_reduction(to_integer(at(vector_prefix, b)) + to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(at(vector_prefix, a)), to_integer(at(vector_prefix, a_vec._0[1])), to_integer(at(vector_prefix, a_vec._0[2])), to_integer(at(vector_prefix, a_vec._0[3])), to_integer(at(vector_prefix, b_vec._0[0])), to_integer(at(vector_prefix, b_vec._0[1])), to_integer(at(vector_prefix, b_vec._0[2])), to_integer(at(vector_prefix, b_vec._0[3])))) using { 0 <= to_integer(at(vector_prefix, b)) + to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(at(vector_prefix, a)); 0 <= to_integer(at(vector_prefix, a_vec._0[1])); 0 <= to_integer(at(vector_prefix, a_vec._0[2])); 0 <= to_integer(at(vector_prefix, a_vec._0[3])); 0 <= to_integer(at(vector_prefix, b_vec._0[0])); 0 <= to_integer(at(vector_prefix, b_vec._0[1])); 0 <= to_integer(at(vector_prefix, b_vec._0[2])); 0 <= to_integer(at(vector_prefix, b_vec._0[3])); 0 <= adler_lane_b(to_integer(at(vector_prefix, b)) + to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(at(vector_prefix, a)), to_integer(at(vector_prefix, a_vec._0[1])), to_integer(at(vector_prefix, a_vec._0[2])), to_integer(at(vector_prefix, a_vec._0[3])), to_integer(at(vector_prefix, b_vec._0[0])), to_integer(at(vector_prefix, b_vec._0[1])), to_integer(at(vector_prefix, b_vec._0[2])), to_integer(at(vector_prefix, b_vec._0[3]))); };
  have __rust_checked_82 == 65521u32 by { simp(); }
  have 65521u32 == __rust_checked_82 by { simp() using { __rust_checked_82 == 65521u32; } }
  have b_vec._0[0] < __rust_checked_82 by { simp(); }
@@ -562,8 +582,6 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  have to_integer(b_vec._0[2]) <= 65520 by { arithmetic() using { to_integer(b_vec._0[2]) < 65521; } }
  apply(uint32_less_than_to_integer(b_vec._0[3], 65521u32)) using { b_vec._0[3] < 65521u32; }
  have to_integer(b_vec._0[3]) <= 65520 by { arithmetic() using { to_integer(b_vec._0[3]) < 65521; } }
- mark weighted_b;
- execute_until(assignment(__rust_mir_91, 0));
  have to_integer(a) == to_integer(at(vector_prefix, a)) by { simp(); }
  have __rust_checked_84 == 65521u32 by { simp(); }
  have a_vec._0[0] == at(reduction_a, a_vec._0[0]) % __rust_checked_84 by { simp(); }
@@ -591,6 +609,41 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  have truncating_remainder(to_integer(at(reduction_a, a_vec._0[3])), 65521) == truncating_remainder(to_integer(at(vector_prefix, a_vec._0[3])), 65521) by { rewrite(to_integer(at(reduction_a, a_vec._0[3])) == to_integer(at(vector_prefix, a_vec._0[3]))); simp(); }
  have to_integer(a_vec._0[3]) == truncating_remainder(to_integer(at(vector_prefix, a_vec._0[3])), 65521) by { arithmetic() using { to_integer(a_vec._0[3]) == to_integer(at(reduction_a, a_vec._0[3]) % 65521u32); to_integer(at(reduction_a, a_vec._0[3]) % 65521u32) == truncating_remainder(to_integer(at(reduction_a, a_vec._0[3])), to_integer(65521u32)); truncating_remainder(to_integer(at(reduction_a, a_vec._0[3])), 65521) == truncating_remainder(to_integer(at(vector_prefix, a_vec._0[3])), 65521); } }
  have truncating_remainder(adler_lane_a(to_integer(a), to_integer(a_vec._0[0]), to_integer(a_vec._0[1]), to_integer(a_vec._0[2]), to_integer(a_vec._0[3])), 65521) == adler_spec_a(bytes, (int32)(uint32)(bytes_len - bytes_len % 4u64), to_integer(at(vector_prefix, a))) by { rewrite(to_integer(a) == to_integer(at(vector_prefix, a))); rewrite(to_integer(a_vec._0[0]) == truncating_remainder(to_integer(at(vector_prefix, a_vec._0[0])), 65521)); rewrite(to_integer(a_vec._0[1]) == truncating_remainder(to_integer(at(vector_prefix, a_vec._0[1])), 65521)); rewrite(to_integer(a_vec._0[2]) == truncating_remainder(to_integer(at(vector_prefix, a_vec._0[2])), 65521)); rewrite(to_integer(a_vec._0[3]) == truncating_remainder(to_integer(at(vector_prefix, a_vec._0[3])), 65521)); arithmetic() using { truncating_remainder(adler_lane_a(to_integer(at(vector_prefix, a)), to_integer(at(vector_prefix, a_vec._0[0])), to_integer(at(vector_prefix, a_vec._0[1])), to_integer(at(vector_prefix, a_vec._0[2])), to_integer(at(vector_prefix, a_vec._0[3]))), 65521) == truncating_remainder(adler_lane_a(to_integer(at(vector_prefix, a)), truncating_remainder(to_integer(at(vector_prefix, a_vec._0[0])), 65521), truncating_remainder(to_integer(at(vector_prefix, a_vec._0[1])), 65521), truncating_remainder(to_integer(at(vector_prefix, a_vec._0[2])), 65521), truncating_remainder(to_integer(at(vector_prefix, a_vec._0[3])), 65521)), 65521); truncating_remainder(adler_lane_a(to_integer(at(vector_prefix, a)), to_integer(at(vector_prefix, a_vec._0[0])), to_integer(at(vector_prefix, a_vec._0[1])), to_integer(at(vector_prefix, a_vec._0[2])), to_integer(at(vector_prefix, a_vec._0[3]))), 65521) == adler_spec_a(bytes, (int32)(uint32)(bytes_len - bytes_len % 4u64), to_integer(at(vector_prefix, a))); } }
+ have b_vec._0[0] == at(reduction_b, b_vec._0[0]) % __rust_checked_82 by { simp(); }
+ have b_vec._0[0] == at(reduction_b, b_vec._0[0]) % 65521u32 by { rewrite(b_vec._0[0] == at(reduction_b, b_vec._0[0]) % __rust_checked_82); simp() using { __rust_checked_82 == 65521u32; } }
+ apply(uint32_remainder_to_integer(at(reduction_b, b_vec._0[0]), 65521u32)) using { 65521u32 != 0u32; to_integer(65521u32) != 0; };
+ have to_integer(b_vec._0[0]) == to_integer(at(reduction_b, b_vec._0[0]) % 65521u32) by { simp() using { b_vec._0[0] == at(reduction_b, b_vec._0[0]) % 65521u32; } }
+ have truncating_remainder(to_integer(at(reduction_b, b_vec._0[0])), 65521) == truncating_remainder(to_integer(at(vector_prefix, b_vec._0[0])), 65521) by { rewrite(to_integer(at(reduction_b, b_vec._0[0])) == to_integer(at(vector_prefix, b_vec._0[0]))); simp(); }
+ have to_integer(b_vec._0[0]) == truncating_remainder(to_integer(at(vector_prefix, b_vec._0[0])), 65521) by { arithmetic() using { to_integer(b_vec._0[0]) == to_integer(at(reduction_b, b_vec._0[0]) % 65521u32); to_integer(at(reduction_b, b_vec._0[0]) % 65521u32) == truncating_remainder(to_integer(at(reduction_b, b_vec._0[0])), to_integer(65521u32)); truncating_remainder(to_integer(at(reduction_b, b_vec._0[0])), 65521) == truncating_remainder(to_integer(at(vector_prefix, b_vec._0[0])), 65521); } }
+ have b_vec._0[1] == at(reduction_b, b_vec._0[1]) % __rust_checked_82 by { simp(); }
+ have b_vec._0[1] == at(reduction_b, b_vec._0[1]) % 65521u32 by { rewrite(b_vec._0[1] == at(reduction_b, b_vec._0[1]) % __rust_checked_82); simp() using { __rust_checked_82 == 65521u32; } }
+ apply(uint32_remainder_to_integer(at(reduction_b, b_vec._0[1]), 65521u32)) using { 65521u32 != 0u32; to_integer(65521u32) != 0; };
+ have to_integer(b_vec._0[1]) == to_integer(at(reduction_b, b_vec._0[1]) % 65521u32) by { simp() using { b_vec._0[1] == at(reduction_b, b_vec._0[1]) % 65521u32; } }
+ have truncating_remainder(to_integer(at(reduction_b, b_vec._0[1])), 65521) == truncating_remainder(to_integer(at(vector_prefix, b_vec._0[1])), 65521) by { rewrite(to_integer(at(reduction_b, b_vec._0[1])) == to_integer(at(vector_prefix, b_vec._0[1]))); simp(); }
+ have to_integer(b_vec._0[1]) == truncating_remainder(to_integer(at(vector_prefix, b_vec._0[1])), 65521) by { arithmetic() using { to_integer(b_vec._0[1]) == to_integer(at(reduction_b, b_vec._0[1]) % 65521u32); to_integer(at(reduction_b, b_vec._0[1]) % 65521u32) == truncating_remainder(to_integer(at(reduction_b, b_vec._0[1])), to_integer(65521u32)); truncating_remainder(to_integer(at(reduction_b, b_vec._0[1])), 65521) == truncating_remainder(to_integer(at(vector_prefix, b_vec._0[1])), 65521); } }
+ have b_vec._0[2] == at(reduction_b, b_vec._0[2]) % __rust_checked_82 by { simp(); }
+ have b_vec._0[2] == at(reduction_b, b_vec._0[2]) % 65521u32 by { rewrite(b_vec._0[2] == at(reduction_b, b_vec._0[2]) % __rust_checked_82); simp() using { __rust_checked_82 == 65521u32; } }
+ apply(uint32_remainder_to_integer(at(reduction_b, b_vec._0[2]), 65521u32)) using { 65521u32 != 0u32; to_integer(65521u32) != 0; };
+ have to_integer(b_vec._0[2]) == to_integer(at(reduction_b, b_vec._0[2]) % 65521u32) by { simp() using { b_vec._0[2] == at(reduction_b, b_vec._0[2]) % 65521u32; } }
+ have truncating_remainder(to_integer(at(reduction_b, b_vec._0[2])), 65521) == truncating_remainder(to_integer(at(vector_prefix, b_vec._0[2])), 65521) by { rewrite(to_integer(at(reduction_b, b_vec._0[2])) == to_integer(at(vector_prefix, b_vec._0[2]))); simp(); }
+ have to_integer(b_vec._0[2]) == truncating_remainder(to_integer(at(vector_prefix, b_vec._0[2])), 65521) by { arithmetic() using { to_integer(b_vec._0[2]) == to_integer(at(reduction_b, b_vec._0[2]) % 65521u32); to_integer(at(reduction_b, b_vec._0[2]) % 65521u32) == truncating_remainder(to_integer(at(reduction_b, b_vec._0[2])), to_integer(65521u32)); truncating_remainder(to_integer(at(reduction_b, b_vec._0[2])), 65521) == truncating_remainder(to_integer(at(vector_prefix, b_vec._0[2])), 65521); } }
+ have b_vec._0[3] == at(reduction_b, b_vec._0[3]) % __rust_checked_82 by { simp(); }
+ have b_vec._0[3] == at(reduction_b, b_vec._0[3]) % 65521u32 by { rewrite(b_vec._0[3] == at(reduction_b, b_vec._0[3]) % __rust_checked_82); simp() using { __rust_checked_82 == 65521u32; } }
+ apply(uint32_remainder_to_integer(at(reduction_b, b_vec._0[3]), 65521u32)) using { 65521u32 != 0u32; to_integer(65521u32) != 0; };
+ have to_integer(b_vec._0[3]) == to_integer(at(reduction_b, b_vec._0[3]) % 65521u32) by { simp() using { b_vec._0[3] == at(reduction_b, b_vec._0[3]) % 65521u32; } }
+ have truncating_remainder(to_integer(at(reduction_b, b_vec._0[3])), 65521) == truncating_remainder(to_integer(at(vector_prefix, b_vec._0[3])), 65521) by { rewrite(to_integer(at(reduction_b, b_vec._0[3])) == to_integer(at(vector_prefix, b_vec._0[3]))); simp(); }
+ have to_integer(b_vec._0[3]) == truncating_remainder(to_integer(at(vector_prefix, b_vec._0[3])), 65521) by { arithmetic() using { to_integer(b_vec._0[3]) == to_integer(at(reduction_b, b_vec._0[3]) % 65521u32); to_integer(at(reduction_b, b_vec._0[3]) % 65521u32) == truncating_remainder(to_integer(at(reduction_b, b_vec._0[3])), to_integer(65521u32)); truncating_remainder(to_integer(at(reduction_b, b_vec._0[3])), 65521) == truncating_remainder(to_integer(at(vector_prefix, b_vec._0[3])), 65521); } }
+ have __rust_checked_79 == 65521u32 by { simp(); }
+ have b == __rust_checked_77 % __rust_checked_79 by { simp(); }
+ have b == __rust_checked_77 % 65521u32 by { rewrite(b == __rust_checked_77 % __rust_checked_79); simp() using { __rust_checked_79 == 65521u32; } }
+ apply(uint32_remainder_to_integer(__rust_checked_77, 65521u32)) using { 65521u32 != 0u32; to_integer(65521u32) != 0; };
+ have to_integer(b) == to_integer(__rust_checked_77 % 65521u32) by { simp() using { b == __rust_checked_77 % 65521u32; } }
+ have truncating_remainder(to_integer(__rust_checked_77), 65521) == truncating_remainder(to_integer(at(vector_prefix, b)) + to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(at(vector_prefix, a)), 65521) by { rewrite(to_integer(__rust_checked_77) == to_integer(at(vector_prefix, b)) + to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(at(vector_prefix, a))); simp(); }
+ have to_integer(b) == truncating_remainder(to_integer(at(vector_prefix, b)) + to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(at(vector_prefix, a)), 65521) by { arithmetic() using { to_integer(b) == to_integer(__rust_checked_77 % 65521u32); to_integer(__rust_checked_77 % 65521u32) == truncating_remainder(to_integer(__rust_checked_77), to_integer(65521u32)); truncating_remainder(to_integer(__rust_checked_77), 65521) == truncating_remainder(to_integer(at(vector_prefix, b)) + to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(at(vector_prefix, a)), 65521); } }
+ have truncating_remainder(adler_lane_b(to_integer(b), to_integer(a_vec._0[1]), to_integer(a_vec._0[2]), to_integer(a_vec._0[3]), to_integer(b_vec._0[0]), to_integer(b_vec._0[1]), to_integer(b_vec._0[2]), to_integer(b_vec._0[3])), 65521) == adler_spec_b(bytes, (int32)(uint32)(bytes_len - bytes_len % 4u64), to_integer(at(vector_prefix, a)), to_integer(at(vector_prefix, b))) by { rewrite(to_integer(b) == truncating_remainder(to_integer(at(vector_prefix, b)) + to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(at(vector_prefix, a)), 65521)); rewrite(to_integer(a_vec._0[1]) == truncating_remainder(to_integer(at(vector_prefix, a_vec._0[1])), 65521)); rewrite(to_integer(a_vec._0[2]) == truncating_remainder(to_integer(at(vector_prefix, a_vec._0[2])), 65521)); rewrite(to_integer(a_vec._0[3]) == truncating_remainder(to_integer(at(vector_prefix, a_vec._0[3])), 65521)); rewrite(to_integer(b_vec._0[0]) == truncating_remainder(to_integer(at(vector_prefix, b_vec._0[0])), 65521)); rewrite(to_integer(b_vec._0[1]) == truncating_remainder(to_integer(at(vector_prefix, b_vec._0[1])), 65521)); rewrite(to_integer(b_vec._0[2]) == truncating_remainder(to_integer(at(vector_prefix, b_vec._0[2])), 65521)); rewrite(to_integer(b_vec._0[3]) == truncating_remainder(to_integer(at(vector_prefix, b_vec._0[3])), 65521)); arithmetic() using { truncating_remainder(adler_lane_b(to_integer(at(vector_prefix, b)) + to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(at(vector_prefix, a)), to_integer(at(vector_prefix, a_vec._0[1])), to_integer(at(vector_prefix, a_vec._0[2])), to_integer(at(vector_prefix, a_vec._0[3])), to_integer(at(vector_prefix, b_vec._0[0])), to_integer(at(vector_prefix, b_vec._0[1])), to_integer(at(vector_prefix, b_vec._0[2])), to_integer(at(vector_prefix, b_vec._0[3]))), 65521) == truncating_remainder(adler_lane_b(truncating_remainder(to_integer(at(vector_prefix, b)) + to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(at(vector_prefix, a)), 65521), truncating_remainder(to_integer(at(vector_prefix, a_vec._0[1])), 65521), truncating_remainder(to_integer(at(vector_prefix, a_vec._0[2])), 65521), truncating_remainder(to_integer(at(vector_prefix, a_vec._0[3])), 65521), truncating_remainder(to_integer(at(vector_prefix, b_vec._0[0])), 65521), truncating_remainder(to_integer(at(vector_prefix, b_vec._0[1])), 65521), truncating_remainder(to_integer(at(vector_prefix, b_vec._0[2])), 65521), truncating_remainder(to_integer(at(vector_prefix, b_vec._0[3])), 65521)), 65521); truncating_remainder(adler_lane_b(to_integer(at(vector_prefix, b)) + to_integer((int32)(uint32)(bytes_len - bytes_len % 4u64)) * to_integer(at(vector_prefix, a)), to_integer(at(vector_prefix, a_vec._0[1])), to_integer(at(vector_prefix, a_vec._0[2])), to_integer(at(vector_prefix, a_vec._0[3])), to_integer(at(vector_prefix, b_vec._0[0])), to_integer(at(vector_prefix, b_vec._0[1])), to_integer(at(vector_prefix, b_vec._0[2])), to_integer(at(vector_prefix, b_vec._0[3]))), 65521) == adler_spec_b(bytes, (int32)(uint32)(bytes_len - bytes_len % 4u64), to_integer(at(vector_prefix, a)), to_integer(at(vector_prefix, b))); } }
+ mark weighted_b;
+ have truncating_remainder(adler_lane_b(to_integer(at(weighted_b, b)), to_integer(at(weighted_b, a_vec._0[1])), to_integer(at(weighted_b, a_vec._0[2])), to_integer(at(weighted_b, a_vec._0[3])), to_integer(at(weighted_b, b_vec._0[0])), to_integer(at(weighted_b, b_vec._0[1])), to_integer(at(weighted_b, b_vec._0[2])), to_integer(at(weighted_b, b_vec._0[3]))), 65521) == adler_spec_b(bytes, (int32)(uint32)(bytes_len - bytes_len % 4u64), to_integer(at(vector_prefix, a)), to_integer(at(vector_prefix, b))) by { simp(); }
+ execute_until(assignment(__rust_mir_91, 0));
  have __rust_checked_85 == 65521u32 by { simp(); }
  have 65521u32 == __rust_checked_85 by { simp() using { __rust_checked_85 == 65521u32; } }
  have a_vec._0[0] < __rust_checked_85 by { simp(); }
@@ -613,6 +666,13 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  have to_integer(b_vec._0[3]) == to_integer(at(weighted_b, b_vec._0[3])) * 4 by { simp(); }
  have to_integer(at(weighted_b, b_vec._0[3])) <= 65520 by { simp(); }
  have to_integer(b_vec._0[3]) <= 262080 by { arithmetic() using { to_integer(b_vec._0[3]) == to_integer(at(weighted_b, b_vec._0[3])) * 4; to_integer(at(weighted_b, b_vec._0[3])) <= 65520; } }
+ mark correction_b;
+ have to_integer(at(correction_b, b_vec._0[1])) == to_integer(at(weighted_b, b_vec._0[1])) * 4 by { simp(); }
+ have to_integer(at(correction_b, a_vec._0[1])) == to_integer(at(weighted_b, a_vec._0[1])) by { simp(); }
+ have to_integer(at(correction_b, b_vec._0[2])) == to_integer(at(weighted_b, b_vec._0[2])) * 4 by { simp(); }
+ have to_integer(at(correction_b, a_vec._0[2])) == to_integer(at(weighted_b, a_vec._0[2])) by { simp(); }
+ have to_integer(at(correction_b, b_vec._0[3])) == to_integer(at(weighted_b, b_vec._0[3])) * 4 by { simp(); }
+ have to_integer(at(correction_b, a_vec._0[3])) == to_integer(at(weighted_b, a_vec._0[3])) by { simp(); }
  apply(adler_recombine_lane_1(a_vec._0[1], b_vec._0[1])) using { a_vec._0[1] < 65521u32; to_integer(b_vec._0[1]) <= 262080; }
  apply(adler_recombine_lane_2(a_vec._0[2], b_vec._0[2])) using { a_vec._0[2] < 65521u32; to_integer(b_vec._0[2]) <= 262080; }
  apply(adler_recombine_lane_3(a_vec._0[3], b_vec._0[3])) using { a_vec._0[3] < 65521u32; to_integer(b_vec._0[3]) <= 262080; }
@@ -620,7 +680,65 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  have 65521u32 - a_vec._0[2] <= 4294967295u32 / 2u32 by { arithmetic() using { 65521u32 - a_vec._0[2] <= 65521u32; } }
  apply(adler_recombine_difference(a_vec._0[3])) using { a_vec._0[3] < 65521u32; }
  have 65521u32 - a_vec._0[3] <= 4294967295u32 / 3u32 by { arithmetic() using { 65521u32 - a_vec._0[3] <= 65521u32; } }
+ have to_integer(at(correction_b, b_vec._0[1]) + (65521u32 - at(correction_b, a_vec._0[1]))) == to_integer(at(correction_b, b_vec._0[1])) + (65521 - to_integer(at(correction_b, a_vec._0[1]))) * 1 by { simp(); }
+ have to_integer(at(correction_b, b_vec._0[2]) + ((65521u32 - at(correction_b, a_vec._0[2])) * 2u32)) == to_integer(at(correction_b, b_vec._0[2])) + (65521 - to_integer(at(correction_b, a_vec._0[2]))) * 2 by { simp(); }
+ have to_integer(at(correction_b, b_vec._0[3]) + ((65521u32 - at(correction_b, a_vec._0[3])) * 3u32)) == to_integer(at(correction_b, b_vec._0[3])) + (65521 - to_integer(at(correction_b, a_vec._0[3]))) * 3 by { simp(); }
+ execute_until(assignment(__rust_mir_94, 0));
+ have __rust_mir_89 == (65521u32 - at(correction_b, a_vec._0[1])) by { simp(); }
+ have b_vec._0[1] == at(correction_b, b_vec._0[1]) by { simp(); }
+ mark correction_add_1;
+ have at(correction_add_1, __rust_mir_89) == (65521u32 - at(correction_b, a_vec._0[1])) by { simp(); }
+ have at(correction_add_1, b_vec._0[1]) == at(correction_b, b_vec._0[1]) by { simp(); }
+ step();
+ have __rust_mir_94 == at(correction_add_1, b_vec._0[1]) + at(correction_add_1, __rust_mir_89) by { simp(); }
+ have __rust_mir_94 == at(correction_b, b_vec._0[1]) + (65521u32 - at(correction_b, a_vec._0[1])) by { rewrite(__rust_mir_94 == at(correction_add_1, b_vec._0[1]) + at(correction_add_1, __rust_mir_89)); rewrite(at(correction_add_1, b_vec._0[1]) == at(correction_b, b_vec._0[1])); rewrite(at(correction_add_1, __rust_mir_89) == (65521u32 - at(correction_b, a_vec._0[1]))); simp(); }
+ mark correction_store_1;
+ have at(correction_store_1, __rust_mir_94) == at(correction_b, b_vec._0[1]) + (65521u32 - at(correction_b, a_vec._0[1])) by { simp(); }
+ execute_until(assignment(__rust_mir_102, 0));
+ have __rust_mir_95 == ((65521u32 - at(correction_b, a_vec._0[2])) * 2u32) by { simp(); }
+ have b_vec._0[2] == at(correction_b, b_vec._0[2]) by { simp(); }
+ mark correction_add_2;
+ have at(correction_add_2, __rust_mir_95) == ((65521u32 - at(correction_b, a_vec._0[2])) * 2u32) by { simp(); }
+ have at(correction_add_2, b_vec._0[2]) == at(correction_b, b_vec._0[2]) by { simp(); }
+ step();
+ have __rust_mir_102 == at(correction_add_2, b_vec._0[2]) + at(correction_add_2, __rust_mir_95) by { simp(); }
+ have __rust_mir_102 == at(correction_b, b_vec._0[2]) + ((65521u32 - at(correction_b, a_vec._0[2])) * 2u32) by { rewrite(__rust_mir_102 == at(correction_add_2, b_vec._0[2]) + at(correction_add_2, __rust_mir_95)); rewrite(at(correction_add_2, b_vec._0[2]) == at(correction_b, b_vec._0[2])); rewrite(at(correction_add_2, __rust_mir_95) == ((65521u32 - at(correction_b, a_vec._0[2])) * 2u32)); simp(); }
+ mark correction_store_2;
+ have at(correction_store_2, __rust_mir_102) == at(correction_b, b_vec._0[2]) + ((65521u32 - at(correction_b, a_vec._0[2])) * 2u32) by { simp(); }
+ execute_until(assignment(__rust_mir_104, 0)); step();
+ have __rust_mir_104 == 65521u32 - at(correction_b, a_vec._0[3]) by { simp(); }
+ execute_until(assignment(__rust_mir_108, 0));
+ mark correction_multiply_3;
+ have at(correction_multiply_3, __rust_mir_104) == 65521u32 - at(correction_b, a_vec._0[3]) by { simp(); }
+ step();
+ have __rust_mir_108 == at(correction_multiply_3, __rust_mir_104) * 3u32 by { simp(); }
+ have __rust_mir_108 == (65521u32 - at(correction_b, a_vec._0[3])) * 3u32 by { rewrite(__rust_mir_108 == at(correction_multiply_3, __rust_mir_104) * 3u32); rewrite(at(correction_multiply_3, __rust_mir_104) == 65521u32 - at(correction_b, a_vec._0[3])); simp(); }
+ execute_until(assignment(__rust_mir_103, 0)); step();
+ have __rust_mir_103 == (65521u32 - at(correction_b, a_vec._0[3])) * 3u32 by { simp() using { __rust_mir_108 == (65521u32 - at(correction_b, a_vec._0[3])) * 3u32; } }
+ execute_until(assignment(__rust_mir_110, 0));
+ have b_vec._0[3] == at(correction_b, b_vec._0[3]) by { simp(); }
+ mark correction_add_3;
+ have at(correction_add_3, __rust_mir_103) == ((65521u32 - at(correction_b, a_vec._0[3])) * 3u32) by { simp(); }
+ have at(correction_add_3, b_vec._0[3]) == at(correction_b, b_vec._0[3]) by { simp(); }
+ step();
+ have __rust_mir_110 == at(correction_add_3, b_vec._0[3]) + at(correction_add_3, __rust_mir_103) by { simp(); }
+ have __rust_mir_110 == at(correction_b, b_vec._0[3]) + ((65521u32 - at(correction_b, a_vec._0[3])) * 3u32) by { rewrite(__rust_mir_110 == at(correction_add_3, b_vec._0[3]) + at(correction_add_3, __rust_mir_103)); rewrite(at(correction_add_3, b_vec._0[3]) == at(correction_b, b_vec._0[3])); rewrite(at(correction_add_3, __rust_mir_103) == ((65521u32 - at(correction_b, a_vec._0[3])) * 3u32)); simp(); }
+ mark correction_store_3;
+ have at(correction_store_3, __rust_mir_110) == at(correction_b, b_vec._0[3]) + ((65521u32 - at(correction_b, a_vec._0[3])) * 3u32) by { simp(); }
  execute_until(loop(3));
+ have b_vec._0[1] == at(correction_store_1, __rust_mir_94) by { simp(); }
+ have b_vec._0[1] == at(correction_b, b_vec._0[1]) + (65521u32 - at(correction_b, a_vec._0[1])) by { rewrite(b_vec._0[1] == at(correction_store_1, __rust_mir_94)); rewrite(at(correction_store_1, __rust_mir_94) == at(correction_b, b_vec._0[1]) + (65521u32 - at(correction_b, a_vec._0[1]))); simp(); }
+ have to_integer(b_vec._0[1]) == to_integer(at(correction_b, b_vec._0[1]) + (65521u32 - at(correction_b, a_vec._0[1]))) by { simp() using { b_vec._0[1] == at(correction_b, b_vec._0[1]) + (65521u32 - at(correction_b, a_vec._0[1])); } }
+ have to_integer(b_vec._0[1]) == to_integer(at(weighted_b, b_vec._0[1])) * 4 + (65521 - to_integer(at(weighted_b, a_vec._0[1]))) * 1 by { arithmetic() using { to_integer(b_vec._0[1]) == to_integer(at(correction_b, b_vec._0[1]) + (65521u32 - at(correction_b, a_vec._0[1]))); to_integer(at(correction_b, b_vec._0[1]) + (65521u32 - at(correction_b, a_vec._0[1]))) == to_integer(at(correction_b, b_vec._0[1])) + (65521 - to_integer(at(correction_b, a_vec._0[1]))) * 1; to_integer(at(correction_b, b_vec._0[1])) == to_integer(at(weighted_b, b_vec._0[1])) * 4; to_integer(at(correction_b, a_vec._0[1])) == to_integer(at(weighted_b, a_vec._0[1])); } }
+ have b_vec._0[2] == at(correction_store_2, __rust_mir_102) by { simp(); }
+ have b_vec._0[2] == at(correction_b, b_vec._0[2]) + ((65521u32 - at(correction_b, a_vec._0[2])) * 2u32) by { rewrite(b_vec._0[2] == at(correction_store_2, __rust_mir_102)); rewrite(at(correction_store_2, __rust_mir_102) == at(correction_b, b_vec._0[2]) + ((65521u32 - at(correction_b, a_vec._0[2])) * 2u32)); simp(); }
+ have to_integer(b_vec._0[2]) == to_integer(at(correction_b, b_vec._0[2]) + ((65521u32 - at(correction_b, a_vec._0[2])) * 2u32)) by { simp() using { b_vec._0[2] == at(correction_b, b_vec._0[2]) + ((65521u32 - at(correction_b, a_vec._0[2])) * 2u32); } }
+ have to_integer(b_vec._0[2]) == to_integer(at(weighted_b, b_vec._0[2])) * 4 + (65521 - to_integer(at(weighted_b, a_vec._0[2]))) * 2 by { arithmetic() using { to_integer(b_vec._0[2]) == to_integer(at(correction_b, b_vec._0[2]) + ((65521u32 - at(correction_b, a_vec._0[2])) * 2u32)); to_integer(at(correction_b, b_vec._0[2]) + ((65521u32 - at(correction_b, a_vec._0[2])) * 2u32)) == to_integer(at(correction_b, b_vec._0[2])) + (65521 - to_integer(at(correction_b, a_vec._0[2]))) * 2; to_integer(at(correction_b, b_vec._0[2])) == to_integer(at(weighted_b, b_vec._0[2])) * 4; to_integer(at(correction_b, a_vec._0[2])) == to_integer(at(weighted_b, a_vec._0[2])); } }
+ have b_vec._0[3] == at(correction_store_3, __rust_mir_110) by { simp(); }
+ have b_vec._0[3] == at(correction_b, b_vec._0[3]) + ((65521u32 - at(correction_b, a_vec._0[3])) * 3u32) by { rewrite(b_vec._0[3] == at(correction_store_3, __rust_mir_110)); rewrite(at(correction_store_3, __rust_mir_110) == at(correction_b, b_vec._0[3]) + ((65521u32 - at(correction_b, a_vec._0[3])) * 3u32)); simp(); }
+ have to_integer(b_vec._0[3]) == to_integer(at(correction_b, b_vec._0[3]) + ((65521u32 - at(correction_b, a_vec._0[3])) * 3u32)) by { simp() using { b_vec._0[3] == at(correction_b, b_vec._0[3]) + ((65521u32 - at(correction_b, a_vec._0[3])) * 3u32); } }
+ have to_integer(b_vec._0[3]) == to_integer(at(weighted_b, b_vec._0[3])) * 4 + (65521 - to_integer(at(weighted_b, a_vec._0[3]))) * 3 by { arithmetic() using { to_integer(b_vec._0[3]) == to_integer(at(correction_b, b_vec._0[3]) + ((65521u32 - at(correction_b, a_vec._0[3])) * 3u32)); to_integer(at(correction_b, b_vec._0[3]) + ((65521u32 - at(correction_b, a_vec._0[3])) * 3u32)) == to_integer(at(correction_b, b_vec._0[3])) + (65521 - to_integer(at(correction_b, a_vec._0[3]))) * 3; to_integer(at(correction_b, b_vec._0[3])) == to_integer(at(weighted_b, b_vec._0[3])) * 4; to_integer(at(correction_b, a_vec._0[3])) == to_integer(at(weighted_b, a_vec._0[3])); } }
+ have to_integer(b_vec._0[0]) == to_integer(at(weighted_b, b_vec._0[0])) * 4 by { simp(); }
  have a <= 65520u32 by { assumption(); }
  apply(uint32_less_equal_to_integer(a, 65520u32)) using { a <= 65520u32; }
  execute_until(assignment(__rust_mir_121, 0));
@@ -749,6 +867,8 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  apply(uint32_widened_add_guard_by_integer_bound(b, __rust_mir_133)) using { to_integer(b) + to_integer(__rust_mir_133) <= 4294967295; }
  execute_until(assignment(__rust_mir_134, 0));
  mark small_sum_b_0;
+ have to_integer(at(small_sum_b_0, b)) == to_integer(at(weighted_b, b)) by { simp(); }
+ have to_integer(at(small_sum_b_0, __rust_mir_133)) == to_integer(b_vec._0[0]) by { simp(); }
  have to_integer(at(small_sum_b_0, b)) <= 65520 by { simp() using { to_integer(b) <= 65520; } }
  have to_integer(at(small_sum_b_0, __rust_mir_133)) <= 262080 by { simp() using { to_integer(__rust_mir_133) <= 262080; } }
  have to_integer(at(small_sum_b_0, b)) + to_integer(at(small_sum_b_0, __rust_mir_133)) <= 4294967295 by { arithmetic() using { to_integer(at(small_sum_b_0, b)) <= 65520; to_integer(at(small_sum_b_0, __rust_mir_133)) <= 262080; } }
@@ -758,6 +878,10 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  have to_integer(__rust_mir_134) <= 327600 by { rewrite(__rust_mir_134 == at(small_sum_b_0, b) + at(small_sum_b_0, __rust_mir_133)); rewrite(to_integer(at(small_sum_b_0, b) + at(small_sum_b_0, __rust_mir_133)) == to_integer(at(small_sum_b_0, b)) + to_integer(at(small_sum_b_0, __rust_mir_133))); arithmetic() using { to_integer(at(small_sum_b_0, b)) <= 65520; to_integer(at(small_sum_b_0, __rust_mir_133)) <= 262080; } }
  execute_until(assignment(b, 5)); step();
  have to_integer(b) <= 327600 by { simp() using { to_integer(__rust_mir_134) <= 327600; } }
+ have to_integer(__rust_mir_134) == to_integer(at(small_sum_b_0, b)) + to_integer(at(small_sum_b_0, __rust_mir_133)) by { simp() using { __rust_mir_134 == at(small_sum_b_0, b) + at(small_sum_b_0, __rust_mir_133); to_integer(at(small_sum_b_0, b) + at(small_sum_b_0, __rust_mir_133)) == to_integer(at(small_sum_b_0, b)) + to_integer(at(small_sum_b_0, __rust_mir_133)); } }
+ have to_integer(b) == to_integer(__rust_mir_134) by { simp(); }
+ have to_integer(b) == to_integer(at(weighted_b, b)) + to_integer(b_vec._0[0]) by { arithmetic() using { to_integer(b) == to_integer(__rust_mir_134); to_integer(__rust_mir_134) == to_integer(at(small_sum_b_0, b)) + to_integer(at(small_sum_b_0, __rust_mir_133)); to_integer(at(small_sum_b_0, b)) == to_integer(at(weighted_b, b)); to_integer(at(small_sum_b_0, __rust_mir_133)) == to_integer(b_vec._0[0]); } }
+
  step(); step(); step(); step(); step(); step(); step(); step();
  have to_integer(b_vec._0[1]) <= 327601 by { simp(); }
  execute_until(assignment(__rust_mir_133, 0));
@@ -769,6 +893,8 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  apply(uint32_widened_add_guard_by_integer_bound(b, __rust_mir_133)) using { to_integer(b) + to_integer(__rust_mir_133) <= 4294967295; }
  execute_until(assignment(__rust_mir_134, 0));
  mark small_sum_b_1;
+ have to_integer(at(small_sum_b_1, b)) == to_integer(at(weighted_b, b)) + to_integer(b_vec._0[0]) by { simp(); }
+ have to_integer(at(small_sum_b_1, __rust_mir_133)) == to_integer(b_vec._0[1]) by { simp(); }
  have to_integer(at(small_sum_b_1, b)) <= 327600 by { simp() using { to_integer(b) <= 327600; } }
  have to_integer(at(small_sum_b_1, __rust_mir_133)) <= 327601 by { simp() using { to_integer(__rust_mir_133) <= 327601; } }
  have to_integer(at(small_sum_b_1, b)) + to_integer(at(small_sum_b_1, __rust_mir_133)) <= 4294967295 by { arithmetic() using { to_integer(at(small_sum_b_1, b)) <= 327600; to_integer(at(small_sum_b_1, __rust_mir_133)) <= 327601; } }
@@ -778,6 +904,10 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  have to_integer(__rust_mir_134) <= 655201 by { rewrite(__rust_mir_134 == at(small_sum_b_1, b) + at(small_sum_b_1, __rust_mir_133)); rewrite(to_integer(at(small_sum_b_1, b) + at(small_sum_b_1, __rust_mir_133)) == to_integer(at(small_sum_b_1, b)) + to_integer(at(small_sum_b_1, __rust_mir_133))); arithmetic() using { to_integer(at(small_sum_b_1, b)) <= 327600; to_integer(at(small_sum_b_1, __rust_mir_133)) <= 327601; } }
  execute_until(assignment(b, 5)); step();
  have to_integer(b) <= 655201 by { simp() using { to_integer(__rust_mir_134) <= 655201; } }
+ have to_integer(__rust_mir_134) == to_integer(at(small_sum_b_1, b)) + to_integer(at(small_sum_b_1, __rust_mir_133)) by { simp() using { __rust_mir_134 == at(small_sum_b_1, b) + at(small_sum_b_1, __rust_mir_133); to_integer(at(small_sum_b_1, b) + at(small_sum_b_1, __rust_mir_133)) == to_integer(at(small_sum_b_1, b)) + to_integer(at(small_sum_b_1, __rust_mir_133)); } }
+ have to_integer(b) == to_integer(__rust_mir_134) by { simp(); }
+ have to_integer(b) == to_integer(at(weighted_b, b)) + to_integer(b_vec._0[0]) + to_integer(b_vec._0[1]) by { arithmetic() using { to_integer(b) == to_integer(__rust_mir_134); to_integer(__rust_mir_134) == to_integer(at(small_sum_b_1, b)) + to_integer(at(small_sum_b_1, __rust_mir_133)); to_integer(at(small_sum_b_1, b)) == to_integer(at(weighted_b, b)) + to_integer(b_vec._0[0]); to_integer(at(small_sum_b_1, __rust_mir_133)) == to_integer(b_vec._0[1]); } }
+
  step(); step(); step(); step(); step(); step(); step(); step();
  have to_integer(b_vec._0[2]) <= 393122 by { simp(); }
  execute_until(assignment(__rust_mir_133, 0));
@@ -789,6 +919,8 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  apply(uint32_widened_add_guard_by_integer_bound(b, __rust_mir_133)) using { to_integer(b) + to_integer(__rust_mir_133) <= 4294967295; }
  execute_until(assignment(__rust_mir_134, 0));
  mark small_sum_b_2;
+ have to_integer(at(small_sum_b_2, b)) == to_integer(at(weighted_b, b)) + to_integer(b_vec._0[0]) + to_integer(b_vec._0[1]) by { simp(); }
+ have to_integer(at(small_sum_b_2, __rust_mir_133)) == to_integer(b_vec._0[2]) by { simp(); }
  have to_integer(at(small_sum_b_2, b)) <= 655201 by { simp() using { to_integer(b) <= 655201; } }
  have to_integer(at(small_sum_b_2, __rust_mir_133)) <= 393122 by { simp() using { to_integer(__rust_mir_133) <= 393122; } }
  have to_integer(at(small_sum_b_2, b)) + to_integer(at(small_sum_b_2, __rust_mir_133)) <= 4294967295 by { arithmetic() using { to_integer(at(small_sum_b_2, b)) <= 655201; to_integer(at(small_sum_b_2, __rust_mir_133)) <= 393122; } }
@@ -798,6 +930,10 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  have to_integer(__rust_mir_134) <= 1048323 by { rewrite(__rust_mir_134 == at(small_sum_b_2, b) + at(small_sum_b_2, __rust_mir_133)); rewrite(to_integer(at(small_sum_b_2, b) + at(small_sum_b_2, __rust_mir_133)) == to_integer(at(small_sum_b_2, b)) + to_integer(at(small_sum_b_2, __rust_mir_133))); arithmetic() using { to_integer(at(small_sum_b_2, b)) <= 655201; to_integer(at(small_sum_b_2, __rust_mir_133)) <= 393122; } }
  execute_until(assignment(b, 5)); step();
  have to_integer(b) <= 1048323 by { simp() using { to_integer(__rust_mir_134) <= 1048323; } }
+ have to_integer(__rust_mir_134) == to_integer(at(small_sum_b_2, b)) + to_integer(at(small_sum_b_2, __rust_mir_133)) by { simp() using { __rust_mir_134 == at(small_sum_b_2, b) + at(small_sum_b_2, __rust_mir_133); to_integer(at(small_sum_b_2, b) + at(small_sum_b_2, __rust_mir_133)) == to_integer(at(small_sum_b_2, b)) + to_integer(at(small_sum_b_2, __rust_mir_133)); } }
+ have to_integer(b) == to_integer(__rust_mir_134) by { simp(); }
+ have to_integer(b) == to_integer(at(weighted_b, b)) + to_integer(b_vec._0[0]) + to_integer(b_vec._0[1]) + to_integer(b_vec._0[2]) by { arithmetic() using { to_integer(b) == to_integer(__rust_mir_134); to_integer(__rust_mir_134) == to_integer(at(small_sum_b_2, b)) + to_integer(at(small_sum_b_2, __rust_mir_133)); to_integer(at(small_sum_b_2, b)) == to_integer(at(weighted_b, b)) + to_integer(b_vec._0[0]) + to_integer(b_vec._0[1]); to_integer(at(small_sum_b_2, __rust_mir_133)) == to_integer(b_vec._0[2]); } }
+
  step(); step(); step(); step(); step(); step(); step(); step();
  have to_integer(b_vec._0[3]) <= 458643 by { simp(); }
  execute_until(assignment(__rust_mir_133, 0));
@@ -809,6 +945,8 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  apply(uint32_widened_add_guard_by_integer_bound(b, __rust_mir_133)) using { to_integer(b) + to_integer(__rust_mir_133) <= 4294967295; }
  execute_until(assignment(__rust_mir_134, 0));
  mark small_sum_b_3;
+ have to_integer(at(small_sum_b_3, b)) == to_integer(at(weighted_b, b)) + to_integer(b_vec._0[0]) + to_integer(b_vec._0[1]) + to_integer(b_vec._0[2]) by { simp(); }
+ have to_integer(at(small_sum_b_3, __rust_mir_133)) == to_integer(b_vec._0[3]) by { simp(); }
  have to_integer(at(small_sum_b_3, b)) <= 1048323 by { simp() using { to_integer(b) <= 1048323; } }
  have to_integer(at(small_sum_b_3, __rust_mir_133)) <= 458643 by { simp() using { to_integer(__rust_mir_133) <= 458643; } }
  have to_integer(at(small_sum_b_3, b)) + to_integer(at(small_sum_b_3, __rust_mir_133)) <= 4294967295 by { arithmetic() using { to_integer(at(small_sum_b_3, b)) <= 1048323; to_integer(at(small_sum_b_3, __rust_mir_133)) <= 458643; } }
@@ -818,11 +956,17 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  have to_integer(__rust_mir_134) <= 1506966 by { rewrite(__rust_mir_134 == at(small_sum_b_3, b) + at(small_sum_b_3, __rust_mir_133)); rewrite(to_integer(at(small_sum_b_3, b) + at(small_sum_b_3, __rust_mir_133)) == to_integer(at(small_sum_b_3, b)) + to_integer(at(small_sum_b_3, __rust_mir_133))); arithmetic() using { to_integer(at(small_sum_b_3, b)) <= 1048323; to_integer(at(small_sum_b_3, __rust_mir_133)) <= 458643; } }
  execute_until(assignment(b, 5)); step();
  have to_integer(b) <= 1506966 by { simp() using { to_integer(__rust_mir_134) <= 1506966; } }
+ have to_integer(__rust_mir_134) == to_integer(at(small_sum_b_3, b)) + to_integer(at(small_sum_b_3, __rust_mir_133)) by { simp() using { __rust_mir_134 == at(small_sum_b_3, b) + at(small_sum_b_3, __rust_mir_133); to_integer(at(small_sum_b_3, b) + at(small_sum_b_3, __rust_mir_133)) == to_integer(at(small_sum_b_3, b)) + to_integer(at(small_sum_b_3, __rust_mir_133)); } }
+ have to_integer(b) == to_integer(__rust_mir_134) by { simp(); }
+ have to_integer(b) == to_integer(at(weighted_b, b)) + to_integer(b_vec._0[0]) + to_integer(b_vec._0[1]) + to_integer(b_vec._0[2]) + to_integer(b_vec._0[3]) by { arithmetic() using { to_integer(b) == to_integer(__rust_mir_134); to_integer(__rust_mir_134) == to_integer(at(small_sum_b_3, b)) + to_integer(at(small_sum_b_3, __rust_mir_133)); to_integer(at(small_sum_b_3, b)) == to_integer(at(weighted_b, b)) + to_integer(b_vec._0[0]) + to_integer(b_vec._0[1]) + to_integer(b_vec._0[2]); to_integer(at(small_sum_b_3, __rust_mir_133)) == to_integer(b_vec._0[3]); } }
+
  step(); step(); step(); step(); step(); step(); step(); step();
  have remainder_len == bytes_len % 4u64 by { assumption(); }
  apply(adler_small_tail_metadata(bytes_len)) using { bytes_len <= 22207u64; }
  have remainder_len <= 3u64 by { rewrite(remainder_len == bytes_len % 4u64); assumption(); }
  have remainder_len <= 2147483647u64 by { normalize() using { remainder_len <= 3u64; } }
+ have to_integer(b) == adler_lane_b(to_integer(at(weighted_b, b)), to_integer(at(weighted_b, a_vec._0[1])), to_integer(at(weighted_b, a_vec._0[2])), to_integer(at(weighted_b, a_vec._0[3])), to_integer(at(weighted_b, b_vec._0[0])), to_integer(at(weighted_b, b_vec._0[1])), to_integer(at(weighted_b, b_vec._0[2])), to_integer(at(weighted_b, b_vec._0[3]))) by { unfold(adler_lane_b(to_integer(at(weighted_b, b)), to_integer(at(weighted_b, a_vec._0[1])), to_integer(at(weighted_b, a_vec._0[2])), to_integer(at(weighted_b, a_vec._0[3])), to_integer(at(weighted_b, b_vec._0[0])), to_integer(at(weighted_b, b_vec._0[1])), to_integer(at(weighted_b, b_vec._0[2])), to_integer(at(weighted_b, b_vec._0[3])))); arithmetic() using { to_integer(b) == to_integer(at(weighted_b, b)) + to_integer(b_vec._0[0]) + to_integer(b_vec._0[1]) + to_integer(b_vec._0[2]) + to_integer(b_vec._0[3]); to_integer(b_vec._0[0]) == to_integer(at(weighted_b, b_vec._0[0])) * 4; to_integer(b_vec._0[1]) == to_integer(at(weighted_b, b_vec._0[1])) * 4 + (65521 - to_integer(at(weighted_b, a_vec._0[1]))) * 1; to_integer(b_vec._0[2]) == to_integer(at(weighted_b, b_vec._0[2])) * 4 + (65521 - to_integer(at(weighted_b, a_vec._0[2]))) * 2; to_integer(b_vec._0[3]) == to_integer(at(weighted_b, b_vec._0[3])) * 4 + (65521 - to_integer(at(weighted_b, a_vec._0[3]))) * 3; } }
+ have truncating_remainder(to_integer(b), 65521) == adler_spec_b(bytes, (int32)(uint32)(bytes_len - bytes_len % 4u64), to_integer(at(vector_prefix, a)), to_integer(at(vector_prefix, b))) by { rewrite(to_integer(b) == adler_lane_b(to_integer(at(weighted_b, b)), to_integer(at(weighted_b, a_vec._0[1])), to_integer(at(weighted_b, a_vec._0[2])), to_integer(at(weighted_b, a_vec._0[3])), to_integer(at(weighted_b, b_vec._0[0])), to_integer(at(weighted_b, b_vec._0[1])), to_integer(at(weighted_b, b_vec._0[2])), to_integer(at(weighted_b, b_vec._0[3])))); assumption(); }
  execute_until(loop(5));
  apply(adler_small_prefix_within_full(bytes_len)) using { bytes_len <= 22207u64; }
  apply(adler_small_signed_tail(bytes_len)) using { bytes_len <= 22207u64; }
