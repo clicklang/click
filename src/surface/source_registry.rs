@@ -528,6 +528,7 @@ mod tests {
                 exceptional_type: None,
                 diverges: false,
                 declared_loadable_bytes: Vec::new(),
+                rust_spelling: Default::default(),
             },
             external: true,
             parameter_struct_casts: BTreeMap::new(),

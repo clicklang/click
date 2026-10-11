@@ -1547,12 +1547,7 @@ fn charon_chunk_lane_results_tools_recheck_expanded_certificate() {
     let p = chunk_lane_project();
     for args in [
         vec!["verify"],
-        vec![
-            "expand",
-            "--claim",
-            "__rust_q_I4_quad_I4_walk.contract",
-            "--in-place",
-        ],
+        vec!["expand", "--claim", "quad::walk.contract", "--in-place"],
         vec!["verify"],
         vec!["profile"],
     ] {

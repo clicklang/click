@@ -49,10 +49,13 @@ Remaining:
   in `src/surface/tests/surface_syntax.rs`, which compares the two
   spellings and becomes the refusal's test. The five frozen originals are
   hash-pinned and stay.
-- Claim labels, diagnostics and `click expand` print the importer's names
-  and C-shaped places for a Rust sidecar (`__rust_q_I4_quad_I4_walk.contract`,
-  `bytes_len`, `views bytes[0u64..bytes_len]`). They parse back; they are
-  not what the sidecar writes.
+- Claim labels and diagnostics print a Rust item's path
+  (`quad::walk.contract`), and `--claim` and `--trace-proof` take it. A
+  function with a Rust signature prints its slice lengths, casts and
+  fields as Rust does, in diagnostics and `click expand`. Still printed as
+  the kernel spells it: a kernel term's own form in the proof context
+  (`load(bytes)`, `UInt64From32(x)`), and an operator method's importer
+  name, whose trait suffix is not length-prefixed.
 
 Lifetimes and tuple fields (`self.0`) are accepted. An array or slice by
 value, a reference to a reference, a non-scalar slice element and a generic

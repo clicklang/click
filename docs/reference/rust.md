@@ -192,6 +192,11 @@ left out, `fn pick<'a>(value: &'a u32) -> u32`; the contract does not use
 them, and a type parameter is refused, as the importer refuses a generic
 function. A tuple struct's field is named by its position, `self.0`.
 
+A diagnostic about a function whose signature is written this way, and the
+proof `click expand` writes for it, spell its places the same way: a
+slice's length `bytes.len()`, a cast `(x as u32)`, and a field through a
+reference `p.field`.
+
 <!-- verified-example: tests/fixtures/rust-verification/references.click -->
 ```click
 verifying "borrow.rs";
@@ -292,8 +297,10 @@ too, as the importer does: the method of `impl MulAssign<u32> for Lanes` is
 An item of a crate import is named by its path from the crate:
 `fn quad::walk(bytes: &[u8]) -> u32`, a type `quad::Quad`, and
 `impl adler2::algo::U32X4 { ... }`. The path stands for the name the
-importer gives the item (`__rust_q_I4_quad_I4_walk`), which is what a claim
-label and a diagnostic still print. The importer names an inherent method by the
+importer gives the item (`__rust_q_I4_quad_I4_walk`). A diagnostic prints
+the path, `quad::walk.contract`, and `--claim` and `--trace-proof` take it;
+an operator method, whose importer name ends in its trait's suffix, keeps
+that name. The importer names an inherent method by the
 module its `impl` block is in, which Rust does not write: the method is
 found in the import by its type and name, of which Rust allows one.
 

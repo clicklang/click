@@ -646,6 +646,7 @@ fn expand_program_prepared_claim_source_by_label_context(
         Some(project) => resolve_click_project_context(project, &sources)?,
         None => parse_source_with_c_layouts_context(click_source, &sources)?,
     };
+    let claim_label = &*resolve_rust_claim_label(&file, claim_label);
     for theorem in file.theorem_definitions() {
         if project.is_some() && !file.theorem_is_selected(theorem.name()) {
             continue;
@@ -2962,13 +2963,16 @@ fn expand_selected_tactics_context(
         return rewrite_verified_pure_theorem(source, &verified, theorem_name, *ensure_index)
             .map(|rewritten| SelectedTacticExpansion::whole_rewrite(source, rewritten));
     }
-    let reference_result = match &site {
+    let site_signature = match &site {
         ProofSite::FunctionClaim { function_name, .. }
         | ProofSite::LoopPhase { function_name, .. } => proof_function_blocks(&file)
             .find(|block| block.signature().name() == function_name)
-            .is_some_and(|block| block.signature().returns_reference()),
-        ProofSite::TheoremEnsure { .. } => false,
+            .map(|block| block.signature().clone()),
+        ProofSite::TheoremEnsure { .. } => None,
     };
+    let reference_result = site_signature
+        .as_ref()
+        .is_some_and(FunctionSignature::returns_reference);
     let _reference_result_source =
         super::diagnostics::ReferenceResultSourceScope::enter(reference_result);
     let whole = selected
@@ -3051,6 +3055,9 @@ fn expand_selected_tactics_context(
         let span = edit_span(target);
         (span.start, std::cmp::Reverse(span.end))
     });
+    // The certificate is printed as the claim's own function spells its
+    // places, whichever function the verification checked last.
+    super::diagnostics::enter_rust_spelling(site_signature.as_ref());
     let mut edits: Vec<(Range<usize>, String)> = Vec::new();
     for target in selected {
         let owned_span = edit_span(&target);
@@ -4547,11 +4554,30 @@ fn positions_at_offsets(
     positions
 }
 
+/// A Rust function is named by its path, `quad::walk.contract`, or by the
+/// name the importer gives it; this is the label under the importer's name.
+fn resolve_rust_claim_label<'a>(
+    file: &ClickFile,
+    claim_label: &'a str,
+) -> std::borrow::Cow<'a, str> {
+    if let Some((function, rest)) = claim_label.split_once('.')
+        && function.contains("::")
+        && let Some(block) = file.function_blocks().iter().find(|block| {
+            super::rust_names::rust_display_name(block.signature().name()).as_deref()
+                == Some(function)
+        })
+    {
+        return format!("{}.{rest}", block.signature().name()).into();
+    }
+    claim_label.into()
+}
+
 fn c0_tactic_source_positions_file(
     file: &ClickFile,
     click_source: &str,
     claim_label: &str,
 ) -> Result<Vec<SourcePosition>, ClickError> {
+    let claim_label = &*resolve_rust_claim_label(file, claim_label);
     let tokens = scan_source_tokens(click_source)?;
     for theorem in file.theorem_definitions() {
         if !file.theorem_is_selected(theorem.name()) {

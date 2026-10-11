@@ -95,7 +95,11 @@ impl SnapshotLabels {
                 _ => continue,
             };
             if let Bitvector32Term::Variable(variable) = term {
-                labels.source_name(*variable, parameter.name().to_string());
+                labels.source_name(
+                    *variable,
+                    crate::surface::diagnostics::rust_variable_spelling(parameter.name())
+                        .unwrap_or_else(|| parameter.name().to_string()),
+                );
                 labels.source_types.insert(*variable, value.c_type());
             }
         }

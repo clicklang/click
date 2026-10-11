@@ -14,6 +14,7 @@ use click::cli::{
     read_lone_sidecar_project, read_mdtest_project_if_needed, select_targets, shell_quote,
     source_refs,
 };
+use click::surface::claim_label_matches;
 use click::surface::{
     C0VerificationSession, ClickProject, SourcePosition, c0_incremental_selection,
     c0_prepared_project_smart_tactic_source_sites, c0_prepared_project_tactic_source_position,
@@ -1256,7 +1257,7 @@ fn select_claim_sites(sites: &[AuditSite], claims: &[String]) -> Result<Vec<Audi
     for claim in claims {
         let paths = sites
             .iter()
-            .filter(|site| site.claim == *claim)
+            .filter(|site| claim_label_matches(&site.claim, claim))
             .map(|site| site.click_path.clone())
             .collect::<BTreeSet<_>>();
         if paths.is_empty() {
@@ -1288,10 +1289,13 @@ fn select_claim_sites(sites: &[AuditSite], claims: &[String]) -> Result<Vec<Audi
             ));
         }
     }
-    let requested = claims.iter().collect::<BTreeSet<_>>();
     Ok(sites
         .iter()
-        .filter(|site| requested.contains(&site.claim))
+        .filter(|site| {
+            claims
+                .iter()
+                .any(|claim| claim_label_matches(&site.claim, claim))
+        })
         .cloned()
         .collect())
 }

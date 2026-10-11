@@ -287,7 +287,14 @@ impl Printer<'_> {
         depth: usize,
     ) -> Option<String> {
         if signed == Some(true) && matches!(value, Bitvector32Term::UInt32From64(_)) {
-            return Some(format!("(int32)({})", self.bitvector(value, depth)?));
+            return Some({
+                let value = self.bitvector(value, depth)?;
+                if crate::surface::diagnostics::rust_spelling() {
+                    format!("({value} as i32)")
+                } else {
+                    format!("(int32)({value})")
+                }
+            });
         }
         if let Bitvector32Term::Constant(value) = value {
             return match signed {
@@ -364,9 +371,14 @@ impl Printer<'_> {
                     self.bitvector(b, depth)?
                 ))
             }
-            Bitvector32Term::UInt32From64(value) => {
-                Some(format!("(uint32)({})", self.bitvector(value, depth)?))
-            }
+            Bitvector32Term::UInt32From64(value) => Some({
+                let value = self.bitvector(value, depth)?;
+                if crate::surface::diagnostics::rust_spelling() {
+                    format!("({value} as u32)")
+                } else {
+                    format!("(uint32)({value})")
+                }
+            }),
             _ => None,
         }
     }
