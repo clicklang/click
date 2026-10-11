@@ -29,5 +29,5 @@ int32 run() { ensures result == 0; } by { execute(); simp(); }
 ```
 
 ```expect
-fail: Requires separate(
+fail: Requires memory(
 ```

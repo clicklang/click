@@ -1062,7 +1062,6 @@ struct ProofDiagnosticProofState(
     KernelProofHandle,
     Arc<ProofNode>,
     Vec<(Variable, String)>,
-    Option<SurfacePropositionMap>,
     Option<CState>,
     Option<crate::surface::proof_trace::ChildArgumentTrace>,
     Option<(&'static str, Box<Proposition>, Option<String>)>,
@@ -1124,7 +1123,12 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
                 labels.source_name(variable, name.clone());
             }
         }
-        if let Some(state) = &self.4 {
+        for (name, value) in self.0.state().locals().algebraic_values.iter() {
+            if let crate::kernel::SpecAlgebraicExpressionNode::Variable(variable) = value.node {
+                labels.source_name(variable, name.clone());
+            }
+        }
+        if let Some(state) = &self.3 {
             labels.register_current_state(state);
         }
         if let Some(branch) = self.0.state().open_branches().get(self.0.focused_branch())
@@ -1139,40 +1143,10 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         }
     }
 
-    fn source_fact(&self, fact: &Proposition) -> Option<String> {
-        // Pure theorem parameters are immutable. Execution spellings require
-        // a checked snapshot mapping and must not be reused as current reads.
-        let surface = self.3.as_ref()?.surfaces(fact).next()?;
-        Some(crate::surface::printing::source_click_proposition(surface))
-    }
-
-    fn source_goal(&self) -> Option<String> {
-        let branch = self
-            .0
-            .state()
-            .open_branches()
-            .get(self.0.focused_branch())?;
-        let Obligation::Proposition(goal) = &branch.obligation else {
-            return None;
-        };
-        let surface = goal.surface.as_deref()?;
-        let source = crate::surface::diagnostics::with_refusal_spelling(|| {
-            crate::surface::printing::source_click_proposition(surface)
-        });
-        // Raw kernel values in an otherwise written surface expression can
-        // be abbreviated as `…`. Let the state-aware printer recover their
-        // local names instead of treating that abbreviation as an exact goal.
-        (!source.contains("__click_") && !source.contains('…')).then_some(source)
-    }
-
     fn failed_requirement(&self) -> Option<(&str, &Proposition)> {
-        self.6
+        self.5
             .as_ref()
             .map(|(label, fact, _)| (*label, fact.as_ref()))
-    }
-
-    fn failed_requirement_declaration(&self) -> Option<&str> {
-        self.6.as_ref()?.2.as_deref()
     }
 
     fn kernel_goal(&self) -> Option<&Proposition> {
@@ -1234,7 +1208,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             have_body_contains,
             target,
         )?;
-        if let Some(comparison) = &self.5 {
+        if let Some(comparison) = &self.4 {
             comparison.append_to(&mut trace, labels);
         }
         crate::surface::proof_trace::append_legend(&mut trace, labels);
@@ -1315,6 +1289,7 @@ impl Proof<'_> {
                 false,
                 trace_path_lineage(&self.node, self.focused_branch_id()),
                 Box::new(self.node.clone()),
+                Some(Box::new(self.diagnostic_state())),
             );
         }
     }
@@ -1333,6 +1308,7 @@ impl Proof<'_> {
                 true,
                 trace_path_lineage(&self.node, self.focused_branch_id()),
                 Box::new(self.node.clone()),
+                Some(Box::new(self.diagnostic_state())),
             );
         }
     }
@@ -1350,6 +1326,7 @@ impl Proof<'_> {
                 path_index,
                 trace_path_lineage(&self.node, self.focused_branch_id()),
                 Box::new(self.node.clone()),
+                Some(Box::new(self.diagnostic_state())),
             );
         }
     }
@@ -1386,43 +1363,9 @@ impl Proof<'_> {
         }
     }
 
-    /// Use the same checked source recovery for every fact added to a trace.
-    /// A snapshot-anchored form is a fallback, not a replacement for a
-    /// shorter source form that already denotes this exact kernel fact.
+    /// Retain the checked proposition; all presentation happens at rendering.
     fn checked_trace_fact(&self, kernel: Proposition) -> crate::surface::proof_trace::TraceFact {
-        let mut source = self.branch_execution().and_then(|execution| {
-            let forms = &execution.presentation.surface_propositions;
-            let anchor = ProgramPointRef {
-                region: CodeRegionRef::Statement(execution.core.frontier.next_statement_index),
-                kind: ProgramPointKind::Entry,
-            };
-            self.available_surface_fact(forms, None, &kernel)
-                .or_else(|| self.available_surface_fact(forms, Some(&anchor), &kernel))
-                .map(|surface| crate::surface::printing::source_click_proposition(&surface))
-                .filter(|source| !source.contains("__click_"))
-        });
-        let mut surface_view = None;
-        if source.is_none()
-            && let Some((rendered, exact)) = self.trace_surface_fact(&kernel)
-        {
-            if exact {
-                source = Some(rendered);
-            } else {
-                surface_view = Some(rendered);
-            }
-        }
-        let pointer_view = match &kernel {
-            Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
-                self.trace_pointer_pair(left, right)
-            }
-            _ => None,
-        };
-        crate::surface::proof_trace::TraceFact {
-            kernel,
-            source,
-            surface_view,
-            pointer_view,
-        }
+        crate::surface::proof_trace::TraceFact { kernel }
     }
 
     fn record_trace_branch(
@@ -1430,28 +1373,16 @@ impl Proof<'_> {
         marker: &Arc<ProofNode>,
         arms: [BranchId; 2],
         path_facts: &[Vec<Proposition>; 2],
-        condition: &ClickProposition,
+        _condition: &ClickProposition,
     ) {
         if !crate::surface::proof_trace::enabled_for(self.claim_label()) {
             return;
         }
-        let then_source = crate::surface::printing::source_click_proposition(condition);
-        let else_source = crate::surface::printing::source_click_proposition(
-            &ClickProposition::Not(Box::new(condition.clone())),
-        );
-        self.record_trace_split(
-            marker,
-            arms,
-            path_facts,
-            "branch",
-            ["then", "else"],
-            [Some(then_source), Some(else_source)],
-        );
+        self.record_trace_split(marker, arms, path_facts, "branch", ["then", "else"]);
     }
 
     /// Records a two-arm split for the trace: the tactic that opened it, how
-    /// its arms are spelled, and the facts each arm assumes. `arm_sources`
-    /// spells each arm's first fact as the user wrote it.
+    /// its arms are spelled, and the checked facts each arm assumes.
     fn record_trace_split(
         &self,
         marker: &Arc<ProofNode>,
@@ -1459,7 +1390,6 @@ impl Proof<'_> {
         path_facts: &[Vec<Proposition>; 2],
         kind: &str,
         arm_names: [&'static str; 2],
-        arm_sources: [Option<String>; 2],
     ) {
         if !crate::surface::proof_trace::enabled_for(self.claim_label()) {
             return;
@@ -1469,31 +1399,12 @@ impl Proof<'_> {
             .path()
             .unwrap_or_else(|| format!("checked branch {}", marker.depth));
         let facts = |index: usize| {
-            let focused = self.focus_branch(arms[index]).ok();
             path_facts[index]
                 .iter()
                 .filter(|fact| crate::surface::proof_trace::visible_checked_fact(fact))
                 .take(8)
                 .cloned()
-                .enumerate()
-                .map(|(fact_index, kernel)| {
-                    let mut fact = if let Some(proof) = &focused {
-                        proof.checked_trace_fact(kernel)
-                    } else {
-                        crate::surface::proof_trace::TraceFact {
-                            kernel,
-                            source: None,
-                            surface_view: None,
-                            pointer_view: None,
-                        }
-                    };
-                    if fact_index == 0
-                        && let Some(source) = &arm_sources[index]
-                    {
-                        fact.source = Some(source.clone());
-                    }
-                    fact
-                })
+                .map(|kernel| crate::surface::proof_trace::TraceFact { kernel })
                 .collect()
         };
         crate::surface::proof_trace::record_branch(
@@ -1536,12 +1447,7 @@ impl Proof<'_> {
                     if let Some(proof) = &focused {
                         proof.checked_trace_fact(kernel)
                     } else {
-                        crate::surface::proof_trace::TraceFact {
-                            kernel,
-                            source: None,
-                            surface_view: None,
-                            pointer_view: None,
-                        }
+                        crate::surface::proof_trace::TraceFact { kernel }
                     }
                 })
                 .collect()
@@ -1561,27 +1467,40 @@ impl Proof<'_> {
 impl Proof<'_> {
     fn diagnostic_state(&self) -> ProofDiagnosticProofState {
         let source_names = match self.context.as_ref() {
-            ProofContext::Pure(context) => context
-                .theorem_context
-                .values
-                .iter()
-                .filter_map(|(name, value)| {
-                    diagnostic_value_variable(value).map(|variable| (variable, name.clone()))
-                })
-                .collect(),
-            ProofContext::FixedState(_) | ProofContext::Execution(_) => Vec::new(),
-        };
-        let surface_facts = match self.context.as_ref() {
             ProofContext::Pure(context) => {
-                Some(context.theorem_context.surface_requirements.clone())
+                let mut names: Vec<_> = context
+                    .theorem_context
+                    .values
+                    .iter()
+                    .filter_map(|(name, value)| {
+                        diagnostic_value_variable(value).map(|variable| (variable, name.clone()))
+                    })
+                    .collect();
+                names.extend(context.theorem_context.diagnostic_names.iter().cloned());
+                names.extend(
+                    context
+                        .theorem_context
+                        .declaration_bindings
+                        .iter()
+                        .filter_map(|(name, expression)| {
+                            let ContractExpression::AlgebraicVariable { binder_index, .. } =
+                                expression
+                            else {
+                                return None;
+                            };
+                            crate::surface::lowering::algebraic_binder_variable(*binder_index)
+                                .ok()
+                                .map(|variable| (variable, name.clone()))
+                        }),
+                );
+                names
             }
-            _ => None,
+            ProofContext::FixedState(_) | ProofContext::Execution(_) => Vec::new(),
         };
         ProofDiagnosticProofState(
             self.state.clone(),
             self.node.clone(),
             source_names,
-            surface_facts,
             match self.context.as_ref() {
                 // Fixed-state subproofs have no execution branch, but their
                 // live locals still name the values their goals contain.
@@ -2573,8 +2492,8 @@ impl<'a> Proof<'a> {
     ) -> ClickError {
         let reason = message.into();
         let mut diagnostic_state = self.diagnostic_state();
-        diagnostic_state.5 = comparison;
-        diagnostic_state.6 = requirement;
+        diagnostic_state.4 = comparison;
+        diagnostic_state.5 = requirement;
         let location = self
             .site
             .path()

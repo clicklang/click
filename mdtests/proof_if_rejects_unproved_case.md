@@ -19,6 +19,7 @@ theorem not_always_zero(x: int32) {
 fail: could not establish `x == 0`
   stage: proof step
   location: tactic 0 > else arm tactic 1
+  goal: x == 0
   recent premises (showing 1 of 1):
     x != 0
 ```

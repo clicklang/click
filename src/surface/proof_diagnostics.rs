@@ -14,18 +14,11 @@ pub(crate) mod render;
 /// handle rather than cloning the goal, environment, or derivation history.
 pub(crate) trait ProofDiagnosticState: Send + Sync {
     fn register_names(&self, _labels: &mut render::SnapshotLabels) {}
-    fn source_goal(&self) -> Option<String> {
-        None
-    }
-    fn source_fact(&self, _fact: &Proposition) -> Option<String> {
-        None
-    }
+
     fn failed_requirement(&self) -> Option<(&str, &Proposition)> {
         None
     }
-    fn failed_requirement_declaration(&self) -> Option<&str> {
-        None
-    }
+
     fn kernel_goal(&self) -> Option<&Proposition>;
     fn premises(&self, limit: usize) -> Vec<&Proposition>;
     fn premise_count(&self) -> usize;
@@ -108,34 +101,18 @@ impl PartialEq for ProofFailureDiagnostic {
 
 impl Eq for ProofFailureDiagnostic {}
 
-/// Render the exact rejected requirement, rather than a guessed nearby fact.
-/// Ordinary errors prefer source spelling; traces always include typed reads.
+/// Requirements use exactly the same proposition policy as facts and goals.
 pub(crate) fn render_failed_requirement(
     state: &dyn ProofDiagnosticState,
     labels: &mut render::SnapshotLabels,
-    tracing: bool,
 ) -> String {
     let Some((label, proposition)) = state.failed_requirement() else {
         return String::new();
     };
     state.register_names(labels);
-    let source = render::render_simple_click_fact_labeled(proposition, labels)
-        .or_else(|| render::render_partial_click_fact_labeled(proposition, labels));
-    if tracing {
-        let checked = render::render_trace_fact_labeled(proposition, labels);
-        return match source {
-            Some(source) => format!("{label}: {source}\n  checked requirement: {checked}"),
-            None => format!("{label} (checked): {checked}"),
-        };
-    }
-    source.map_or_else(
-        || match state.failed_requirement_declaration() {
-            Some(declaration) if label == "required body fact" =>
-                format!("required body fact (declaration): {declaration}"),
-            Some(declaration) => format!("declaration being evaluated: {declaration}\n  trace the proof to inspect its unproved prerequisite"),
-            None => format!("inspect the {label} with --trace-proof"),
-        },
-        |source| format!("{label}: {source}"),
+    format!(
+        "{label}: {}",
+        render::render_proposition_labeled(proposition, labels)
     )
 }
 
@@ -192,81 +169,28 @@ fn render_diagnostic_labeled(
     // line, so a premise that reads exactly like the goal could be about
     // another state entirely — which is the one thing a reader compares these
     // lines to decide.
-    let tracing = crate::surface::proof_trace::enabled_for(&diagnostic.claim_label);
     if let Some(state) = &diagnostic.state {
-        let requirement = render_failed_requirement(state.as_ref(), labels, tracing);
+        let requirement = render_failed_requirement(state.as_ref(), labels);
         if !requirement.is_empty() {
             rendered.push_str("\n  ");
             rendered.push_str(&requirement);
         }
     }
-    if summary.is_some()
-        && let Some(goal) = diagnostic.kernel_goal()
-    {
-        if let Some(source) = diagnostic
-            .state
-            .as_ref()
-            .and_then(|state| state.source_goal())
-        {
-            // A summary that already quotes the goal in the user's spelling
-            // (a failed `simp` does) is not followed by a second copy of it.
-            if !summary.is_some_and(|summary| summary.contains(&format!("`{source}`"))) {
-                rendered.push_str("\n  goal: ");
-                rendered.push_str(&source);
-            }
-        } else if let Some(source) = render::render_simple_click_fact_labeled(goal, labels) {
-            rendered.push_str("\n  goal: ");
-            rendered.push_str(&source);
-        } else if let Some(partial) = render::render_partial_click_fact_labeled(goal, labels) {
-            rendered.push_str("\n  goal (partial): ");
-            rendered.push_str(&partial);
-        } else if !tracing {
-            rendered.push_str("\n  goal has no exact Click spelling at this frontier");
-        }
-    }
-    // A rewrite can remove the source presentation while leaving a readable
-    // fallback. Neither spelling determines the checked argument identities.
-    // Always show the actual goal in a trace, using the facts' shared labels.
-    if tracing && let Some(goal) = diagnostic.kernel_goal() {
-        rendered.push_str("\n  checked goal: ");
-        rendered.push_str(&render::render_trace_fact_labeled(goal, labels));
+    if let Some(goal) = diagnostic.kernel_goal() {
+        rendered.push_str("\n  goal: ");
+        rendered.push_str(&render::render_proposition_labeled(goal, labels));
     }
     if summary.is_some() {
         let premises = diagnostic.premises(8);
         if !premises.is_empty() {
-            let total = diagnostic.premise_count();
             rendered.push_str(&format!(
-                "\n  recent premises (showing {} of {total}):",
-                premises.len()
+                "\n  recent premises (showing {} of {}):",
+                premises.len(),
+                diagnostic.premise_count()
             ));
-            let mut omitted = false;
             for premise in &premises {
-                if let Some(text) = diagnostic
-                    .state
-                    .as_ref()
-                    .and_then(|state| state.source_fact(premise))
-                    .or_else(|| render::render_simple_click_fact_labeled(premise, labels))
-                    .or_else(|| render::render_partial_click_fact_labeled(premise, labels))
-                {
-                    rendered.push_str("\n    ");
-                    if text.contains("<unnamed ") {
-                        rendered.push_str("(partial) ");
-                    }
-                    let mut end = text.len().min(2048);
-                    while end > 0 && !text.is_char_boundary(end) {
-                        end -= 1;
-                    }
-                    rendered.push_str(&text[..end]);
-                    if end < text.len() {
-                        rendered.push('…');
-                    }
-                } else {
-                    omitted = true;
-                }
-            }
-            if omitted {
-                rendered
-                    .push_str("\n    some premises have no exact Click spelling at this frontier");
+                rendered.push_str("\n    ");
+                rendered.push_str(&render::render_proposition_labeled(premise, labels));
             }
         }
         if diagnostic.premise_count() > premises.len() {
@@ -295,6 +219,9 @@ fn render_diagnostic_labeled(
         if search_failures.len() > 8 {
             rendered.push_str("\n    … <additional search candidates omitted>");
         }
+    }
+    if summary.is_some() && !crate::surface::proof_trace::enabled_for(&diagnostic.claim_label) {
+        rendered.push_str(&labels.trace_legend());
     }
     const MAX_REPORT_BYTES: usize = 64 * 1024;
     if rendered.len() > MAX_REPORT_BYTES {
@@ -400,7 +327,7 @@ mod tests {
             value_type: CType::Int32,
         });
         let mut labels = render::SnapshotLabels::default();
-        let report = render_failed_requirement(&state, &mut labels, true);
+        let report = render_failed_requirement(&state, &mut labels);
         assert!(report.contains("unproved prerequisite"), "{report}");
         assert!(report.contains("snapshot#1"), "{report}");
         let legend = labels.trace_legend();
@@ -567,9 +494,6 @@ mod tests {
                     call_source: None,
                     facts: vec![crate::surface::proof_trace::TraceFact {
                         kernel: at(memory.clone()),
-                        source: None,
-                        surface_view: None,
-                        pointer_view: None,
                     }],
                     more_facts: 0,
                     frontier: None,
@@ -589,11 +513,11 @@ mod tests {
             };
             let report = crate::surface::ClickError::with_diagnostic("failed", diagnostic).report();
             assert!(
-                report.contains("checked goal: viewable(memory=snapshot#1"),
+                report.contains("goal: viewable(memory=snapshot#1"),
                 "{report}"
             );
             assert!(
-                report.contains("adds (internal): viewable(memory=snapshot#1"),
+                report.contains("adds: viewable(memory=snapshot#1"),
                 "{report}"
             );
         });

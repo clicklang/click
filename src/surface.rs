@@ -8083,7 +8083,7 @@ impl ClickError {
             .missing_tactic_requirement()
             .map(|required| format!("requirement `{required}` not satisfied"));
         let reason = requirement_reason.as_deref().unwrap_or(reason);
-        let (mut report, reason, certification_obligation) = if self.kind == ClickErrorKind::Proof
+        let (mut report, reason, _certification_obligation) = if self.kind == ClickErrorKind::Proof
             && let Some(rest) = reason.strip_prefix("could not certify contract for `")
             && let Some((function, detail)) = rest.split_once("`: ")
         {
@@ -8150,31 +8150,29 @@ impl ClickError {
         if let Some(diagnostic) = &self.diagnostic
             && let Some(state) = diagnostic.state.as_ref()
         {
-            let requirement = proof_diagnostics::render_failed_requirement(
-                state.as_ref(),
-                &mut proof_diagnostics::render::SnapshotLabels::ambient(),
-                false,
-            );
-            if !requirement.is_empty() && !proof_trace::enabled_for(&diagnostic.claim_label) {
-                context.push(requirement);
-            }
-            let source_goal = state.source_goal();
-            if let Some(goal) = &source_goal
-                && !certification_obligation
-                && self.missing_tactic_requirement().is_none()
-            {
-                context.push(format!("goal: {goal}"));
+            let mut labels = proof_diagnostics::render::SnapshotLabels::ambient();
+            state.register_names(&mut labels);
+            if !proof_trace::enabled_for(&diagnostic.claim_label) {
+                let requirement =
+                    proof_diagnostics::render_failed_requirement(state.as_ref(), &mut labels);
+                if !requirement.is_empty() {
+                    context.push(requirement);
+                }
+                if let Some(goal) = state.kernel_goal() {
+                    context.push(format!(
+                        "goal: {}",
+                        proof_diagnostics::render::render_proposition_labeled(goal, &mut labels)
+                    ));
+                }
+                let legend = labels.trace_legend();
+                if !legend.is_empty() {
+                    context.push(legend);
+                }
             }
             if self.failed_tactic == Some("assumption()")
-                && matches!(state.kernel_goal(), Some(Proposition::Exists { .. }))
+                && let Some(Proposition::Exists { name, .. }) = state.kernel_goal()
             {
-                let binder = source_goal
-                    .as_deref()
-                    .and_then(|goal| goal.strip_prefix("exists ("))
-                    .and_then(|rest| rest.split_once(':'))
-                    .map(|(name, _)| name.trim())
-                    .filter(|name| !name.is_empty())
-                    .unwrap_or("name");
+                let binder = if name.is_empty() { "name" } else { name };
                 context.push(format!(
                     "help: choose a witness with `witness({binder} = <value>);`, then prove its body"
                 ));

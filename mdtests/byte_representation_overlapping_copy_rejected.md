@@ -31,5 +31,5 @@ int f() {
 ```
 
 ```expect
-fail: separate(
+fail:  separate memory(
 ```

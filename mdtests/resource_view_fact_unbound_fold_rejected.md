@@ -30,5 +30,5 @@ int32 make_readback(int32 p[]) {
 ```
 
 ```expect
-fail: missing pure fact: load(p) == 0 is true
+fail: missing pure fact: int32 =(load A=read<Bits32>(snapshot#1, pointer=p), 0) is true
 ```

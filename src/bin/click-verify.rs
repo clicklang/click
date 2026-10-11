@@ -1856,12 +1856,13 @@ mod tests {
     }
 
     #[test]
-    fn refused_transport_names_the_cell_and_loop_counter_without_kernel_notation() {
+    fn refused_transport_names_the_cell_and_prints_checked_effects() {
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("mdtests/loop_binder_instance_footprint_includes_its_memory.md");
         let report =
             entry_with([fixture.display().to_string()]).expect_err("the loop may write the cell");
-        assert_source_diagnostic(&report);
+        assert!(report.contains("memory-effects("), "{report}");
+        assert!(report.contains("label definitions"), "{report}");
         assert!(report.contains("store to occupied[start]"), "{report}");
         assert!(report.contains("i >= end"), "{report}");
         assert!(report.contains("at(pre, occupied[start])"), "{report}");
@@ -1870,7 +1871,7 @@ mod tests {
             report
                 .matches("some effect facts have no exact Click spelling")
                 .count(),
-            1,
+            0,
             "{report}"
         );
     }

@@ -20,5 +20,5 @@ theorem bare_instantiate_missing_guard(n: int32, m: int32, k: int32) {
 ```
 
 ```expect
-fail: `instantiate` without `using` needs each instantiated guard as an exact fact, and `k < n is true` is not one
+fail: `instantiate` without `using` needs each instantiated guard as an exact fact, and `k < n` is not one
 ```

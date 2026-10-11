@@ -26,6 +26,7 @@ struct Capture {
 }
 
 struct TraceRetainedPath {
+    names: Option<Box<dyn ProofDiagnosticState>>,
     claim: String,
     completed: bool,
     /// A loop phase's path, recorded while the function's own
@@ -98,12 +99,6 @@ pub(super) struct TraceCallSource {
 
 pub(super) struct TraceFact {
     pub kernel: Proposition,
-    /// A form re-lowered to this exact fact at the checked step.
-    pub source: Option<String>,
-    /// A structural, source-facing rendering of the checked kernel fact.
-    /// Unlike `source`, this is presentation, not a validated citation.
-    pub surface_view: Option<String>,
-    pub pointer_view: Option<[PointerTraceView; 2]>,
 }
 
 /// Source spelling recovered against the read's own state. The memory is
@@ -111,7 +106,6 @@ pub(super) struct TraceFact {
 #[derive(Clone)]
 pub(super) struct PointerTraceView {
     pub text: String,
-    pub mixed_snapshots: bool,
     pub snapshot: Option<(SharedCMemory, Option<String>)>,
 }
 
@@ -129,44 +123,6 @@ impl PointerTraceView {
             Some(point) => format!("at({}, {text})", trace_text(&point, 128)),
             None => text,
         }
-    }
-}
-
-fn render_pointer_pair(
-    pair: &[PointerTraceView; 2],
-    labels: &mut SnapshotLabels,
-) -> (String, String) {
-    let points = [pair[0].point(labels), pair[1].point(labels)];
-    let uniform = match (&points[0], &points[1]) {
-        (Some(a), Some(b))
-            if a == b
-                && pair[0]
-                    .snapshot
-                    .as_ref()
-                    .zip(pair[1].snapshot.as_ref())
-                    .is_some_and(|((left, _), (right, _))| left == right) =>
-        {
-            Some(a)
-        }
-        (Some(a), None) | (None, Some(a)) => Some(a),
-        _ => None,
-    };
-    if let Some(point) = uniform
-        && !pair.iter().any(|value| value.mixed_snapshots)
-    {
-        (
-            format!(" at {}", trace_text(point, 128)),
-            format!(
-                "{} == {}",
-                trace_text(&pair[0].text, 240),
-                trace_text(&pair[1].text, 240)
-            ),
-        )
-    } else {
-        (
-            String::new(),
-            format!("{} == {}", pair[0].render(labels), pair[1].render(labels)),
-        )
     }
 }
 
@@ -267,8 +223,14 @@ impl ChildArgumentTrace {
                 "\n    potentially relevant known equalities (selected by shared supplied value):",
             );
             for pointer in &self.related {
-                let name = self.value(pointer, labels);
-                output.push_str(&format!("\n      {actual} == {name}"));
+                let fact = Proposition::ConditionIs(
+                    ConditionTerm::pointer_equal(self.actual.clone(), pointer.clone()),
+                    true,
+                );
+                output.push_str(&format!(
+                    "\n      {}",
+                    render::render_proposition_labeled(&fact, labels)
+                ));
             }
             output.push_str(
                 "\n    selection is diagnostic guidance, not an explanation of why equality failed",
@@ -292,23 +254,6 @@ pub(super) fn pointer_definition(pointer: &Pointer) -> Option<Bitvector32Term> {
     })
 }
 
-fn append_pointer_definition(output: &mut String, pointer: &Pointer, labels: &mut SnapshotLabels) {
-    if pointer == &Pointer::null() {
-        output.push_str(&format!(
-            "\n      {}: null pointer (0)",
-            labels.pointer_value_name(pointer)
-        ));
-    }
-    if let Some(Bitvector32Term::MemoryLoad(memory, address, _)) = pointer_definition(pointer) {
-        let name = labels.pointer_value_name(pointer);
-        let snapshot = labels.snapshot_name(memory.memory());
-        let address = labels.pointer_value_name(&address);
-        output.push_str(&format!(
-            "\n      {name}: defining pointer read at {snapshot}, address {address}"
-        ));
-    }
-}
-
 /// The generated equation connecting a canonical load value to its raw
 /// memory read is checker bookkeeping, not an additional surface premise.
 /// The surface condition that caused the read is reported separately.
@@ -321,7 +266,6 @@ pub(super) fn visible_checked_fact(fact: &Proposition) -> bool {
 /// These facts come from the certification context at the failed check.
 pub(super) struct CertificationTraceState {
     goal: Proposition,
-    source_goal: Option<String>,
     available: Vec<Proposition>,
     available_count: usize,
 }
@@ -330,7 +274,6 @@ impl CertificationTraceState {
     pub(super) fn from_failure(failure: &ContractPathPreparationFailure) -> Option<Self> {
         Some(Self {
             goal: failure.obligation.clone()?,
-            source_goal: failure.source_goal.clone(),
             available: failure.available.clone(),
             available_count: failure.available_count,
         })
@@ -350,10 +293,6 @@ fn traced_read(term: &Bitvector32Term) -> Option<(SharedCMemory, Pointer)> {
 }
 
 impl ProofDiagnosticState for CertificationTraceState {
-    fn source_goal(&self) -> Option<String> {
-        self.source_goal.clone()
-    }
-
     fn kernel_goal(&self) -> Option<&Proposition> {
         Some(&self.goal)
     }
@@ -422,13 +361,7 @@ impl ProofDiagnosticState for CertificationTraceState {
             shown, self.available_count,
         ));
         for fact in relevant {
-            let source = render::render_simple_click_fact_labeled(fact, labels);
-            let description = source.unwrap_or_else(|| {
-                format!(
-                    "internal fact (no exact Click spelling): {}",
-                    render::render_trace_fact_labeled(fact, labels)
-                )
-            });
+            let description = render::render_proposition_labeled(fact, labels);
             let description = trace_text(&description, 512);
             if output.len() + description.len() > MAX_RENDER_BYTES {
                 output.push_str("\n    … <trace output limit reached>");
@@ -599,8 +532,9 @@ pub(super) fn record_accepted_path(
     nested: bool,
     lineage: Vec<TracePathNode>,
     retained: Box<dyn Any>,
+    names: Option<Box<dyn ProofDiagnosticState>>,
 ) {
-    record_retained_path(claim, path_index, nested, true, lineage, retained);
+    record_retained_path(claim, path_index, nested, true, lineage, retained, names);
 }
 
 pub(super) fn record_unfinished_path(
@@ -608,8 +542,9 @@ pub(super) fn record_unfinished_path(
     path_index: usize,
     lineage: Vec<TracePathNode>,
     retained: Box<dyn Any>,
+    names: Option<Box<dyn ProofDiagnosticState>>,
 ) {
-    record_retained_path(claim, path_index, true, false, lineage, retained);
+    record_retained_path(claim, path_index, true, false, lineage, retained, names);
 }
 
 fn record_retained_path(
@@ -619,12 +554,14 @@ fn record_retained_path(
     completed: bool,
     lineage: Vec<TracePathNode>,
     retained: Box<dyn Any>,
+    names: Option<Box<dyn ProofDiagnosticState>>,
 ) {
     CAPTURE.with(|slot| {
         let mut slot = slot.borrow_mut();
         let Some(capture) = slot.as_mut() else { return };
         if capture.retained_paths.len() < MAX_STEPS {
             capture.retained_paths.push(TraceRetainedPath {
+                names,
                 claim: claim.to_owned(),
                 completed,
                 nested,
@@ -677,6 +614,9 @@ pub(super) fn render(
                 .filter(|path| path.claim == claim)
             {
                 let mut path_labels = SnapshotLabels::default();
+                if let Some(names) = &path.names {
+                    names.register_names(&mut path_labels);
+                }
                 let (alternative, reached) = render_lineage(
                     capture,
                     &path.lineage,
@@ -731,6 +671,9 @@ pub(crate) fn render_accepted(
                 have_body_contains(&path.claim, indices, position)
             };
             let mut path_labels = SnapshotLabels::default();
+            if let Some(names) = &path.names {
+                names.register_names(&mut path_labels);
+            }
             let (mut report, reached) = render_lineage(
                 capture,
                 &path.lineage,
@@ -1118,64 +1061,10 @@ fn append_added_facts(
         if !visible_checked_fact(&fact.kernel) {
             continue;
         }
-        if let Some(pair) = &fact.pointer_view {
-            let (point, expression) = render_pointer_pair(pair, labels);
-            output.push_str(&format!("\n{indent}adds{point}: {expression}"));
-            continue;
-        }
-        let source = fact.source.clone().or_else(|| {
-            if fact.surface_view.is_some() {
-                None
-            } else {
-                render::render_simple_click_fact_labeled(&fact.kernel, labels)
-            }
-        });
-        if let Some(source) = source {
-            output.push_str(&format!("\n{indent}adds: {}", trace_text(&source, 240)));
-            if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) =
-                &fact.kernel
-                && (pointer_definition(left).is_some() || pointer_definition(right).is_some())
-            {
-                let left_name = labels.pointer_value_name(left);
-                let right_name = labels.pointer_value_name(right);
-                output.push_str(&format!(
-                    "\n{indent}  checked values: {left_name} == {right_name}"
-                ));
-                append_pointer_definition(output, left, labels);
-                append_pointer_definition(output, right, labels);
-            }
-        } else if let Some(surface) = &fact.surface_view {
-            output.push_str(&format!(
-                "\n{indent}adds (surface view): {}",
-                trace_text(surface, 240)
-            ));
-        } else if matches!(
-            &fact.kernel,
-            Proposition::ConditionIs(
-                ConditionTerm::IntegerEqual(..)
-                    | ConditionTerm::IntegerNotEqual(..)
-                    | ConditionTerm::IntegerLessThan(..)
-                    | ConditionTerm::IntegerLessEqual(..)
-                    | ConditionTerm::IntegerGreaterThan(..)
-                    | ConditionTerm::IntegerGreaterEqual(..),
-                _
-            )
-        ) {
-            // Numeric observations are often captured theorem arguments,
-            // rather than source expressions at the current frontier.
-            // Show their bounded identity in an explicitly requested trace.
-            let internal = render::render_internal_proposition_labeled(&fact.kernel, labels);
-            output.push_str(&format!(
-                "\n{indent}adds (internal): {}",
-                trace_text(&internal, 512)
-            ));
-        } else {
-            let text = render::render_trace_fact_labeled(&fact.kernel, labels);
-            output.push_str(&format!(
-                "\n{indent}adds (internal): {}",
-                trace_text(&text, 2048)
-            ));
-        }
+        output.push_str(&format!(
+            "\n{indent}adds: {}",
+            render::render_proposition_labeled(&fact.kernel, labels)
+        ));
     }
 }
 
@@ -1227,95 +1116,6 @@ mod tests {
         assert!(text.len() <= MAX_RENDER_BYTES);
     }
 
-    #[test]
-    fn pointer_facts_group_one_snapshot_and_qualify_mixed_reads() {
-        let first = crate::kernel::intern_c_memory(CMemory::new());
-        let second = crate::kernel::intern_c_memory(CMemory::new().with_block("changed", 1));
-        let a = PointerTraceView {
-            mixed_snapshots: false,
-            text: "p->left".into(),
-            snapshot: Some((first.clone(), Some("before_rotation".into()))),
-        };
-        let b = PointerTraceView {
-            mixed_snapshots: false,
-            text: "sibling->left".into(),
-            snapshot: Some((second, Some("after_rotation".into()))),
-        };
-        let rid = PointerTraceView {
-            mixed_snapshots: false,
-            text: "rid".into(),
-            snapshot: None,
-        };
-        let mut labels = SnapshotLabels::default();
-        assert_eq!(
-            render_pointer_pair(&[a.clone(), rid], &mut labels),
-            (" at before_rotation".into(), "p->left == rid".into())
-        );
-        assert_eq!(
-            render_pointer_pair(&[a.clone(), b], &mut labels),
-            (
-                String::new(),
-                "at(before_rotation, p->left) == at(after_rotation, sibling->left)".into()
-            )
-        );
-        let unnamed = PointerTraceView {
-            mixed_snapshots: false,
-            text: "p->left".into(),
-            snapshot: Some((first, None)),
-        };
-        assert_eq!(unnamed.render(&mut labels), "at(snapshot#1, p->left)");
-        assert_eq!(unnamed.render(&mut labels), "at(snapshot#1, p->left)");
-        let mixed_base = PointerTraceView {
-            text: "at(before_rotation, sibling)->left".into(),
-            mixed_snapshots: true,
-            snapshot: unnamed.snapshot.clone(),
-        };
-        assert_eq!(
-            render_pointer_pair(&[mixed_base, a.clone()], &mut labels).0,
-            ""
-        );
-        let bounded = PointerTraceView {
-            text: "λ".repeat(MAX_RENDER_BYTES),
-            mixed_snapshots: false,
-            snapshot: Some((
-                crate::kernel::intern_c_memory(CMemory::new()),
-                Some("λ".repeat(MAX_RENDER_BYTES)),
-            )),
-        };
-        assert!(bounded.render(&mut labels).len() < 400);
-        // Exhausting report labels must not turn two different memories into
-        // a shared snapshot merely because both print as untracked.
-        let mut exhausted = SnapshotLabels::default();
-        for index in 0..32 {
-            exhausted.snapshot_name(&CMemory::new().with_block(format!("padding{index}"), 1));
-        }
-        let untracked = |block: &str| PointerTraceView {
-            text: "p->left".into(),
-            mixed_snapshots: false,
-            snapshot: Some((
-                crate::kernel::intern_c_memory(CMemory::new().with_block(block, 1)),
-                None,
-            )),
-        };
-        let (heading, expression) =
-            render_pointer_pair(&[untracked("one"), untracked("two")], &mut exhausted);
-        assert!(heading.is_empty());
-        assert!(expression.contains("snapshot<untracked>"));
-        // Source views take precedence over the unqualified citation.
-        let fact = TraceFact {
-            kernel: Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(Pointer::null(), Pointer::null()),
-                true,
-            ),
-            source: Some("misleading current spelling".into()),
-            surface_view: None,
-            pointer_view: Some([a.clone(), a]),
-        };
-        let mut report = String::new();
-        append_added_facts(&mut report, &[fact], &mut labels, "  ");
-        assert_eq!(report, "\n  adds at before_rotation: p->left == p->left");
-    }
-
     // Identical source spellings must not hide distinct reads, and the
     // refusal must reuse the same value labels as the preceding facts.
     #[test]
@@ -1334,21 +1134,15 @@ mod tests {
                 ConditionTerm::pointer_equal(value, rid.clone()),
                 true,
             ),
-            source: Some("p->left == rid".into()),
-            surface_view: None,
-            pointer_view: None,
         });
         let mut labels = SnapshotLabels::default();
+        // A proof-local name must not hide the read's defining snapshot.
+        labels.immutable_pointer_name(&a, "saved");
         let mut report = String::new();
         append_added_facts(&mut report, &facts, &mut labels, "  ");
-        assert!(
-            report.contains("checked values: value#1 == value#2"),
-            "{report}"
-        );
-        assert!(
-            report.contains("checked values: value#4 == value#2"),
-            "{report}"
-        );
+        assert!(report.contains("adds: value#1 = value#2"), "{report}");
+        assert!(report.contains("adds: value#3 = value#2"), "{report}");
+        append_legend(&mut report, &mut labels);
         assert!(report.contains("snapshot#1"), "{report}");
         assert!(report.contains("snapshot#2"), "{report}");
         let comparison = ChildArgumentTrace {
@@ -1362,11 +1156,11 @@ mod tests {
         .render(&mut labels);
         assert!(comparison.contains("supplied: value#2"), "{comparison}");
         assert!(
-            comparison.contains("required: at(snapshot#2, pointer_read(address value#3))"),
+            comparison.contains("required: at(snapshot#2, pointer_read(address value#4))"),
             "{comparison}"
         );
         assert!(
-            comparison.contains("value#2 == at(snapshot#1, pointer_read(address value#3))"),
+            comparison.contains("value#2 = value#1 is true"),
             "{comparison}"
         );
         assert!(comparison.contains("potentially relevant"));
@@ -1402,6 +1196,94 @@ mod tests {
         );
     }
 
+    #[test]
+    fn facts_requirements_and_goals_share_read_identity_display() {
+        use crate::kernel::{CValue, LoadKind, Variable};
+        use crate::surface::proof_diagnostics::{
+            ProofDiagnosticOrigin, ProofFailureDiagnostic, render_terminal_message,
+            render_trace_context_labeled,
+        };
+        struct State(Proposition);
+        impl ProofDiagnosticState for State {
+            fn kernel_goal(&self) -> Option<&Proposition> {
+                Some(&self.0)
+            }
+            fn failed_requirement(&self) -> Option<(&str, &Proposition)> {
+                Some(("required", &self.0))
+            }
+            fn premises(&self, _: usize) -> Vec<&Proposition> {
+                vec![&self.0]
+            }
+            fn premise_count(&self) -> usize {
+                1
+            }
+        }
+        let pointer = Pointer::symbolic(Variable(782001));
+        let first = CMemory::new();
+        let second = first.clone().store(
+            pointer.clone(),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(9)),
+        );
+        let fact = |memory| {
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector64Equal(
+                    Box::new(Bitvector32Term::MemoryLoad(
+                        crate::kernel::intern_c_memory(memory),
+                        Box::new(pointer.clone()),
+                        LoadKind::Bits64,
+                    )),
+                    Box::new(Bitvector32Term::UInt64Constant(3)),
+                ),
+                true,
+            )
+        };
+        let earlier = fact(first);
+        let later = fact(second);
+        let diagnostic = ProofFailureDiagnostic {
+            origin: ProofDiagnosticOrigin {
+                stage: "proof step".into(),
+                location: "test".into(),
+                source_tactic_path: None,
+            },
+            claim_label: "same_display".into(),
+            reason: "missing".into(),
+            state: Some(std::sync::Arc::new(State(earlier.clone()))),
+        };
+        let ordinary = render_terminal_message("missing", &diagnostic, &[]);
+        let mut labels = SnapshotLabels::default();
+        let context = render_trace_context_labeled(&diagnostic, &[], &mut labels);
+        let mut added = String::new();
+        append_added_facts(
+            &mut added,
+            &[TraceFact { kernel: earlier }, TraceFact { kernel: later }],
+            &mut labels,
+            "",
+        );
+        let goal = context
+            .lines()
+            .find_map(|l| l.strip_prefix("goal: "))
+            .unwrap();
+        assert!(
+            goal.contains("read<Bits64>(snapshot#1, pointer=value#1)"),
+            "{goal}"
+        );
+        assert!(ordinary.contains(&format!("goal: {goal}")), "{ordinary}");
+        assert!(
+            ordinary.contains(&format!("required: {goal}")),
+            "{ordinary}"
+        );
+        assert!(ordinary.contains(&format!("\n    {goal}")), "{ordinary}");
+        assert!(added.contains(&format!("adds: {goal}")), "{added}");
+        assert!(
+            added.contains("read<Bits64>(snapshot#2, pointer=value#1)"),
+            "{added}"
+        );
+        assert!(
+            ordinary.contains("snapshot#1 = initial empty memory"),
+            "{ordinary}"
+        );
+    }
+
     fn loadable_at(memory: CMemory) -> Proposition {
         Proposition::CMemoryLoadable {
             memory,
@@ -1428,15 +1310,9 @@ mod tests {
                     facts: vec![
                         TraceFact {
                             kernel: loadable_at(first.clone()),
-                            source: None,
-                            surface_view: None,
-                            pointer_view: None,
                         },
                         TraceFact {
                             kernel: loadable_at(second.clone()),
-                            source: None,
-                            surface_view: None,
-                            pointer_view: None,
                         },
                     ],
                     more_facts: 0,
@@ -1462,10 +1338,7 @@ mod tests {
             )
             .unwrap();
             assert!(goal.contains("snapshot#1"), "{goal}");
-            assert!(
-                trace.matches("adds (internal): viewable(").count() == 2,
-                "{trace}"
-            );
+            assert!(trace.matches("adds: viewable(").count() == 2, "{trace}");
             assert!(trace.contains("snapshot#2"), "{trace}");
         });
     }
@@ -1485,13 +1358,10 @@ mod tests {
                 ),
                 true,
             ),
-            source: None,
-            surface_view: None,
-            pointer_view: None,
         };
         let mut output = String::new();
         append_added_facts(&mut output, &[fact], &mut SnapshotLabels::default(), "  ");
-        assert!(output.contains("adds (internal):"), "{output}");
+        assert!(output.contains("adds:"), "{output}");
         assert!(!output.contains("no exact Click spelling"), "{output}");
         assert!(output.len() < 1024, "{output}");
     }
@@ -1544,69 +1414,6 @@ mod tests {
     }
 
     #[test]
-    fn exact_click_fact_takes_precedence_over_internal_rendering() {
-        with_proof_trace("f", || {
-            record(
-                1,
-                TraceStep {
-                    header: "\n    source tactic 0: have".into(),
-                    source_tactic_path: None,
-                    call_source: None,
-                    facts: vec![TraceFact {
-                        kernel: Proposition::ConditionIs(
-                            crate::kernel::ConditionTerm::Constant(true),
-                            true,
-                        ),
-                        source: Some("x == x".into()),
-                        surface_view: Some("different rendering".into()),
-                        pointer_view: None,
-                    }],
-                    more_facts: 0,
-                    frontier: None,
-                    resources: Vec::new(),
-                    more_resources: 0,
-                },
-            );
-            let report = render(
-                "f",
-                &[TracePathNode {
-                    node: 1,
-                    selected_arm: None,
-                }],
-                &mut SnapshotLabels::default(),
-                &|_| None,
-                &|_, _| None,
-                &|_, _| false,
-                None,
-            )
-            .unwrap();
-            assert!(report.contains("adds: x == x"), "{report}");
-            assert!(!report.contains("different rendering"), "{report}");
-            assert!(!report.contains("no exact Click spelling"), "{report}");
-        });
-    }
-
-    #[test]
-    fn trace_prints_surface_view_when_exact_citation_is_unavailable() {
-        let mut output = String::new();
-        append_added_facts(
-            &mut output,
-            &[TraceFact {
-                kernel: Proposition::ConditionIs(ConditionTerm::Constant(true), true),
-                source: None,
-                surface_view: Some("0 <= unmarked(visited, 0, n)".into()),
-                pointer_view: None,
-            }],
-            &mut SnapshotLabels::default(),
-            "  ",
-        );
-        assert_eq!(
-            output,
-            "\n  adds (surface view): 0 <= unmarked(visited, 0, n)"
-        );
-    }
-
-    #[test]
     fn trace_omits_generated_load_binding_beside_surface_branch_fact() {
         let memory = crate::kernel::intern_c_memory(CMemory::new());
         let pointer = Pointer {
@@ -1637,24 +1444,13 @@ mod tests {
             &[
                 TraceFact {
                     kernel: Proposition::ConditionIs(ConditionTerm::Constant(true), true),
-                    source: Some("at(statement(0).entry, visited[cur]) == 0".into()),
-                    surface_view: None,
-                    pointer_view: None,
                 },
-                TraceFact {
-                    kernel: defining,
-                    source: None,
-                    surface_view: None,
-                    pointer_view: None,
-                },
+                TraceFact { kernel: defining },
             ],
             &mut SnapshotLabels::default(),
             "  ",
         );
-        assert_eq!(
-            output,
-            "\n  adds: at(statement(0).entry, visited[cur]) == 0"
-        );
+        assert_eq!(output, "\n  adds: true");
     }
 
     #[test]
@@ -1687,9 +1483,6 @@ mod tests {
                                     ConditionTerm::Constant(true),
                                     true,
                                 ),
-                                source: Some("x != 0".into()),
-                                surface_view: None,
-                                pointer_view: None,
                             }],
                         ),
                         (
@@ -1697,11 +1490,8 @@ mod tests {
                             vec![TraceFact {
                                 kernel: Proposition::ConditionIs(
                                     ConditionTerm::Constant(false),
-                                    false,
+                                    true,
                                 ),
-                                source: Some("x == 0".into()),
-                                surface_view: None,
-                                pointer_view: None,
                             }],
                         ),
                     ],
@@ -1723,9 +1513,6 @@ mod tests {
                     ],
                     facts: vec![TraceFact {
                         kernel: Proposition::ConditionIs(ConditionTerm::Constant(true), true),
-                        source: Some("stable".into()),
-                        surface_view: None,
-                        pointer_view: None,
                     }],
                     more_facts: 0,
                     continuation_arm: None,
@@ -1746,9 +1533,9 @@ mod tests {
             )
             .unwrap();
             assert!(trace.contains("tactic@1: branch (then arm)"), "{trace}");
-            assert!(trace.contains("adds: x != 0"), "{trace}");
+            assert!(trace.contains("adds: true"), "{trace}");
             assert!(trace.contains("then step"), "{trace}");
-            assert!(!trace.contains("adds: x == 0"), "{trace}");
+            assert!(!trace.contains("adds: false"), "{trace}");
             assert!(!trace.contains("else step"), "{trace}");
             assert!(!trace.contains("discarded candidate"), "{trace}");
             let summary = render(
@@ -1764,7 +1551,7 @@ mod tests {
                 Some(&SourcePosition::new(3, 1)),
             )
             .unwrap();
-            assert!(summary.contains("adds: stable"), "{summary}");
+            assert!(summary.contains("adds: true"), "{summary}");
             assert!(!summary.contains("then step"), "{summary}");
             assert!(!summary.contains("else step"), "{summary}");
         });
@@ -1780,12 +1567,7 @@ mod tests {
                     header: "source tactic 2: have x == x".into(),
                     source_tactic_path: Some(vec![2]),
                     call_source: None,
-                    facts: vec![TraceFact {
-                        kernel: fact,
-                        source: Some("x == x".into()),
-                        surface_view: None,
-                        pointer_view: None,
-                    }],
+                    facts: vec![TraceFact { kernel: fact }],
                     more_facts: 0,
                     frontier: None,
                     resources: Vec::new(),
@@ -1829,7 +1611,7 @@ mod tests {
             )
             .unwrap();
             assert!(report.contains("source tactic 2: have x == x"), "{report}");
-            assert!(report.contains("adds: x == x"), "{report}");
+            assert!(report.contains("adds: true"), "{report}");
             assert!(
                 !report.contains("have body tactic 1: normalize()"),
                 "{report}"
@@ -1883,9 +1665,6 @@ mod tests {
                             ),
                             true,
                         ),
-                        source: None,
-                        surface_view: None,
-                        pointer_view: None,
                     }],
                     ..step("source tactic 0: accepted".into())
                 },
@@ -1913,6 +1692,7 @@ mod tests {
                     },
                 ],
                 Box::new(()),
+                None,
             );
             let report = crate::surface::accepted_proof_trace(
                 &|_, _| None,
@@ -1958,6 +1738,7 @@ mod tests {
                     selected_arm: None,
                 }],
                 Box::new(()),
+                None,
             );
             let locate = |path: &[usize]| {
                 let line = path[0] + 2;

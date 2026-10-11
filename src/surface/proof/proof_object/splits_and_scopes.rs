@@ -495,7 +495,6 @@ impl<'a> Proof<'a> {
             &[Vec::new(), Vec::new()],
             "both",
             ["left", "right"],
-            [None, None],
         );
         Ok((successor, split, ids))
     }
@@ -527,22 +526,13 @@ impl<'a> Proof<'a> {
     ) -> Result<(Self, SplitId, [BranchId; 2]), ClickError> {
         let kernel = self.lower_surface_proposition(&disjunction, "`cases` disjunction")?;
         // The trace shows the disjunct each arm assumes.
-        let traced_arms = crate::surface::proof_trace::enabled_for(self.claim_label()).then(|| {
-            let facts = match &kernel {
+        let traced_arms =
+            crate::surface::proof_trace::enabled_for(self.claim_label()).then(|| match &kernel {
                 Proposition::Or(left, right) => {
                     [vec![left.as_ref().clone()], vec![right.as_ref().clone()]]
                 }
                 _ => [Vec::new(), Vec::new()],
-            };
-            let sources = match &disjunction {
-                ClickProposition::Or(left, right) => [
-                    Some(crate::surface::printing::source_click_proposition(left)),
-                    Some(crate::surface::printing::source_click_proposition(right)),
-                ],
-                _ => [None, None],
-            };
-            (facts, sources)
-        });
+            });
         let (state, split, ids) = self
             .state
             .split_proposition_cases(kernel)
@@ -581,15 +571,8 @@ impl<'a> Proof<'a> {
                 split_branches: ids.to_vec(),
             }),
         };
-        if let Some((facts, sources)) = traced_arms {
-            successor.record_trace_split(
-                &successor.node,
-                ids,
-                &facts,
-                "cases",
-                ["left", "right"],
-                sources,
-            );
+        if let Some(facts) = traced_arms {
+            successor.record_trace_split(&successor.node, ids, &facts, "cases", ["left", "right"]);
         }
         Ok((successor, split, ids))
     }
@@ -640,21 +623,7 @@ impl<'a> Proof<'a> {
             }),
         };
         if let Some(facts) = traced_arms {
-            successor.record_trace_split(
-                &successor.node,
-                ids,
-                &facts,
-                "if",
-                ["then", "else"],
-                [
-                    Some(crate::surface::printing::source_click_proposition(
-                        &condition,
-                    )),
-                    Some(crate::surface::printing::source_click_proposition(
-                        &else_surface,
-                    )),
-                ],
-            );
+            successor.record_trace_split(&successor.node, ids, &facts, "if", ["then", "else"]);
         }
         Ok((successor, split, ids))
     }

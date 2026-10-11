@@ -2527,50 +2527,26 @@ impl<'a> Proof<'a> {
             .check_equality_rewrite(&goal, &equality)
             .map_err(|message| {
                 let (parameters, arguments) = naming_tables();
-                let names = (parameters.as_slice(), arguments.as_slice());
-                let spelled_equality = crate::surface::diagnostics::describe_pure_fact_spelled(
-                    &equality, names.0, names.1,
-                );
-                let spelled_goal = crate::surface::diagnostics::describe_pure_fact_spelled(
-                    &goal, names.0, names.1,
-                );
-                let mut message =
-                    format!("{message}\n  equality: {spelled_equality}\n  goal: {spelled_goal}");
-                // The source spelling of a read is its address, and two reads
-                // of one address at two states spell the same. When that
-                // happens the two lines above are the same text and say
-                // nothing, so add the rendering that labels the memory each
-                // side reads and say why it is there.
-                if spelled_equality == spelled_goal && equality.as_ref() != goal.as_ref() {
-                    // Why they differ is one question with one answer: the
-                    // resource tracker names the step in between.
-                    if let Some(mismatch) =
-                        crate::surface::diagnostics::describe_proposition_version_mismatch(
-                            &goal,
-                            &[equality.as_ref()],
-                            "the equality was stated",
-                            names.0,
-                            names.1,
-                        )
-                    {
-                        message.push_str(&format!("\n  {mismatch}"));
-                    }
-                    let mut labels =
-                        crate::surface::proof_diagnostics::render::SnapshotLabels::ambient();
-                    message.push_str(&format!(
-                        "\n  the two spell alike but are different propositions; with each \
-                         memory labelled they read\n  equality: {}\n  goal: {}",
-                        crate::surface::proof_diagnostics::render::render_proposition_labeled(
-                            &equality,
-                            &mut labels
-                        ),
-                        crate::surface::proof_diagnostics::render::render_proposition_labeled(
-                            &goal,
-                            &mut labels
-                        ),
-                    ));
+                let mut reason = message;
+                if let Some(mismatch) =
+                    crate::surface::diagnostics::describe_proposition_version_mismatch(
+                        &goal,
+                        &[equality.as_ref()],
+                        "the equality was stated",
+                        &parameters,
+                        &arguments,
+                    )
+                {
+                    reason.push_str(&format!("\n  {mismatch}"));
                 }
-                self.step_error(message)
+                // The structured diagnostic renders the requested equality and
+                // current goal together, with the same names and label map as
+                // premises and trace additions.
+                self.step_error_with_requirement(
+                    reason,
+                    None,
+                    Some(("equality", equality.clone(), None)),
+                )
             })?;
         let surface_goal = self.surface_goal().and_then(|surface_goal| {
             let candidate =

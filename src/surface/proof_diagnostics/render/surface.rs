@@ -2,11 +2,27 @@
 //! diagnostic-only partial rendering labels them with explicit placeholders.
 use super::*;
 
+#[cfg(test)]
 pub(super) fn render(proposition: &Proposition, labels: &SnapshotLabels) -> Option<String> {
     Printer {
         labels,
         remaining: 512,
         unnamed: None,
+        explicit_identity: false,
+    }
+    .proposition(proposition, 0)
+    .filter(|text| text.len() <= 2048)
+}
+
+/// Readable display only when it preserves every checked operand identity.
+/// Source citation recovery is separate: an unqualified source read may be a
+/// valid citation at one point without identifying its snapshot in a report.
+pub(super) fn display(proposition: &Proposition, labels: &SnapshotLabels) -> Option<String> {
+    Printer {
+        labels,
+        remaining: 512,
+        unnamed: None,
+        explicit_identity: true,
     }
     .proposition(proposition, 0)
     .filter(|text| text.len() <= 2048)
@@ -17,6 +33,7 @@ pub(super) fn integer(value: &IntegerTerm, labels: &SnapshotLabels) -> Option<St
         labels,
         remaining: 512,
         unnamed: None,
+        explicit_identity: false,
     }
     .integer(value, 0)
     .filter(|text| text.len() <= 2048)
@@ -24,18 +41,21 @@ pub(super) fn integer(value: &IntegerTerm, labels: &SnapshotLabels) -> Option<St
 
 struct Printer<'a> {
     labels: &'a SnapshotLabels,
+    explicit_identity: bool,
     remaining: usize,
     unnamed: Option<&'a mut HashMap<Variable, String>>,
 }
 
 /// A presentation-only partial spelling. Exact citation rendering above
 /// still refuses unnamed operands. Share report-local placeholder identities.
+#[cfg(test)]
 pub(super) fn partial(proposition: &Proposition, labels: &mut SnapshotLabels) -> Option<String> {
     let mut unnamed = std::mem::take(&mut labels.anonymous_names);
     let text = Printer {
         labels,
         remaining: 512,
         unnamed: Some(&mut unnamed),
+        explicit_identity: false,
     }
     .proposition(proposition, 0)
     .filter(|text| text.len() <= 2048);
@@ -106,6 +126,13 @@ impl Printer<'_> {
         let (left, right, positive, negative) = match condition {
             ConditionTerm::Constant(value) => return Some((value == &polarity).to_string()),
             ConditionTerm::PointerEqual(left, right) => {
+                if self.explicit_identity
+                    && [left, right]
+                        .iter()
+                        .any(|p| crate::surface::proof_trace::pointer_definition(p).is_some())
+                {
+                    return None;
+                }
                 // Without retained pointee types, do not claim two different
                 // named pointers form a well-typed source comparison.
                 if left != right && **left != Pointer::null() && **right != Pointer::null() {
@@ -295,6 +322,9 @@ impl Printer<'_> {
             Bitvector32Term::Int64Constant(value) => Some(format!("{value}i64")),
             Bitvector32Term::UInt64Constant(value) => Some(format!("{value}u64")),
             Bitvector32Term::Variable(variable) => {
+                if self.explicit_identity && crate::kernel::is_load_variable(variable) {
+                    return None;
+                }
                 if let Some(name) = self.labels.source_name_for(*variable) {
                     return Some(name.to_owned());
                 }
@@ -347,6 +377,9 @@ impl Printer<'_> {
         pointer: &Pointer,
         kind: crate::kernel::LoadKind,
     ) -> Option<String> {
+        if self.explicit_identity {
+            return None;
+        }
         let (point, naming) = self.labels.source_memory_context(memory)?;
         if point.len() > 256 {
             return None;
@@ -402,6 +435,11 @@ impl Printer<'_> {
         pointer: &crate::kernel::CPointerValue,
         naming: &NamingTables,
     ) -> Option<String> {
+        if self.explicit_identity
+            && crate::surface::proof_trace::pointer_definition(pointer.pointer()).is_some()
+        {
+            return None;
+        }
         naming
             .0
             .iter()
@@ -430,6 +468,9 @@ impl Printer<'_> {
                 element_type,
             } => {
                 if pointer.c_type().pointee_type() != Some(*element_type) {
+                    return None;
+                }
+                if self.explicit_identity {
                     return None;
                 }
                 let (point, naming) = self.labels.source_memory_context(memory)?;
@@ -571,13 +612,13 @@ mod tests {
             let fact = equality(term);
             assert!(render(&fact, &labels).is_none());
             let text = super::super::render_proposition_labeled(&fact, &mut labels);
-            if depth < 32 {
-                assert!(text.contains("<unnamed A>"), "{text}");
-                assert!(text.ends_with(" == 0"), "{text}");
+            if depth < 96 {
+                assert!(text.contains("value A"), "{text}");
             } else {
-                assert_eq!(text, "fact has no exact Click spelling at this frontier");
+                assert!(text.contains("<proof proposition truncated>"), "{text}");
             }
-            assert!(text.len() <= 2048);
+            assert!(!text.contains("no exact Click spelling"), "{text}");
+            assert!(text.len() < 32 * 1024);
         }
     }
 

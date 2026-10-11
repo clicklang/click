@@ -39,6 +39,8 @@ int pick(int a, int b, int c) {
 
 ```expect
 fail: `rewrite` equality does not occur in the current goal
-  equality: a == b is true
-  goal: c == c is true
+  stage: proof step
+  location: tactic 0 > have body tactic 1
+  equality: a == b
+  goal: c == c
 ```
