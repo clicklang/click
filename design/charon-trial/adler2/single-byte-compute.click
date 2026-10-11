@@ -241,7 +241,7 @@ impl adler2::Adler32 {
      premise 0: to_integer(a) == to_integer(1u32 + old((bytes[0] as u32))) => to_integer(a) == to_integer(1u32 + old((bytes[0] as u32)));
      premise 1: to_integer(1u32 + old((bytes[0] as u32))) == to_integer(1u32) + to_integer(old((bytes[0] as u32))) => to_integer(1u32 + old((bytes[0] as u32))) == to_integer(1u32) + to_integer(old((bytes[0] as u32)));
      add 0, 1 => to_integer(a) + to_integer(1u32 + old((bytes[0] as u32))) == to_integer(1u32 + old((bytes[0] as u32))) + (to_integer(1u32) + to_integer(old((bytes[0] as u32))));
-     eq_to_le 2 => to_integer(a) + to_integer(1u32 + old((bytes[0] as u32))) <= to_integer(1u32 + old((bytes[0] as u32))) + (to_integer(1u32) + to_integer(old((bytes[0] as u32))));
+     less_equal_from_equal 2 => to_integer(a) + to_integer(1u32 + old((bytes[0] as u32))) <= to_integer(1u32 + old((bytes[0] as u32))) + (to_integer(1u32) + to_integer(old((bytes[0] as u32))));
      premise 2: to_integer(old((bytes[0] as u32))) <= 255 => to_integer(old((bytes[0] as u32))) <= 255;
      add 4, 3 => to_integer(old((bytes[0] as u32))) + (to_integer(a) + to_integer(1u32 + old((bytes[0] as u32)))) <= 255 + (to_integer(1u32 + old((bytes[0] as u32))) + (to_integer(1u32) + to_integer(old((bytes[0] as u32)))));
      conclusion 5;

@@ -31,7 +31,7 @@ theorem spare_slot_bound(capacity: int32, used: int32, slots: int32) {
         arithmetic_certificate {
         premise 0: to_integer(capacity) == to_integer(used) + to_integer(slots) => to_integer(capacity) == to_integer(used) + to_integer(slots);
         scale 0 by -1 => -to_integer(capacity) == -to_integer(used) - to_integer(slots);
-        eq_to_le 1 => -to_integer(capacity) <= -to_integer(used) - to_integer(slots);
+        less_equal_from_equal 1 => -to_integer(capacity) <= -to_integer(used) - to_integer(slots);
         premise 1: to_integer(capacity) <= 2147483647 => to_integer(capacity) <= 2147483647;
         add 2, 3 => -to_integer(capacity) + to_integer(capacity) <= -to_integer(used) - to_integer(slots) + 2147483647;
         premise 2: 1 <= to_integer(used) => 1 <= to_integer(used);

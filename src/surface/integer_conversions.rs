@@ -1767,7 +1767,7 @@ mod tests {
             verify_c0_sources(&source, &[]).unwrap_or_else(|error| panic!("{}", error.message()));
             let expanded =
                 expand_c0_claim_source_by_label(&source, &[], "pinned.ensures_0").unwrap();
-            assert!(expanded.contains("eq_from_bounds"), "{expanded}");
+            assert!(expanded.contains("equal_from_bounds"), "{expanded}");
             verify_c0_sources(&expanded, &[]).unwrap();
             assert!(
                 verify_c0_sources(&source.replace("ensures x == b", "ensures x == b + 1"), &[])

@@ -7722,7 +7722,10 @@ impl Parser {
                 }
             }
             "simp" => {
-                self.expect_empty_tactic_args(&name)?;
+                // `simp;` is `simp();`, as it is after `by`.
+                if self.peek() == Some(&Token::LParen) {
+                    self.expect_empty_tactic_args(&name)?;
+                }
                 if self.peek_ident() == Some("using") {
                     let premises = self.parse_exact_premises()?;
                     self.skip_redundant_semicolon();
@@ -8448,7 +8451,7 @@ impl Parser {
                         result,
                     }
                 }
-                "eq_to_le" => {
+                "less_equal_from_equal" => {
                     let source = self.expect_index("equality source")?;
                     let reverse = if self.peek_ident() == Some("reverse") {
                         self.position += 1;
@@ -8465,7 +8468,7 @@ impl Parser {
                         result,
                     }
                 }
-                "eq_from_bounds" => {
+                "equal_from_bounds" => {
                     let lower = self.expect_index("lower bound")?;
                     self.expect(Token::Comma)?;
                     let upper = self.expect_index("upper bound")?;
@@ -8478,7 +8481,7 @@ impl Parser {
                         result,
                     }
                 }
-                "lt_from_neq" => {
+                "less_than_from_not_equal" => {
                     let bound = self.expect_index("non-strict bound")?;
                     self.expect(Token::Comma)?;
                     let disequal = self.expect_index("disequality")?;
@@ -8835,7 +8838,7 @@ impl Parser {
                         result,
                     });
                 }
-                "eq_to_le" => {
+                "less_equal_from_equal" => {
                     let source = self.expect_index("equality source")?;
                     let reverse = if self.peek_ident() == Some("reverse") {
                         self.position += 1;
@@ -8852,7 +8855,7 @@ impl Parser {
                         result,
                     });
                 }
-                "eq_from_bounds" => {
+                "equal_from_bounds" => {
                     let lower = self.expect_index("lower bound")?;
                     self.expect(Token::Comma)?;
                     let upper = self.expect_index("upper bound")?;

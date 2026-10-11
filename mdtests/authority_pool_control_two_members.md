@@ -132,7 +132,7 @@ void give_back(struct pool* pool, struct payload* p) {
             arithmetic_certificate {
                 premise 0: to_integer(pool->capacity) == to_integer(pool->checked_out) + to_integer(count(slot(pool))) => to_integer(pool->capacity) == to_integer(pool->checked_out) + to_integer(count(slot(pool)));
                 scale 0 by -1 => -to_integer(pool->capacity) == -to_integer(pool->checked_out) - to_integer(count(slot(pool)));
-                eq_to_le 1 => -to_integer(pool->capacity) <= -to_integer(pool->checked_out) - to_integer(count(slot(pool)));
+                less_equal_from_equal 1 => -to_integer(pool->capacity) <= -to_integer(pool->checked_out) - to_integer(count(slot(pool)));
                 premise 1: to_integer(pool->capacity) <= 2147483647 => to_integer(pool->capacity) <= 2147483647;
                 add 2, 3 => -to_integer(pool->capacity) + to_integer(pool->capacity) <= -to_integer(pool->checked_out) - to_integer(count(slot(pool))) + 2147483647;
                 premise 2: 1 <= to_integer(pool->checked_out) => 1 <= to_integer(pool->checked_out);
