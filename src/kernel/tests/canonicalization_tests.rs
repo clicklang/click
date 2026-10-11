@@ -22,19 +22,7 @@ fn collect_offset_load_variables_from_value(
 ) {
     match value {
         CValue::Void => {}
-        CValue::Bool(term)
-        | CValue::Int8(term)
-        | CValue::Int16(term)
-        | CValue::Int32(term)
-        | CValue::UInt8(term)
-        | CValue::UInt16(term)
-        | CValue::UInt32(term)
-        | CValue::Int64(term)
-        | CValue::UInt64(term)
-        | CValue::Int128(term)
-        | CValue::UInt128(term)
-        | CValue::Float32(term)
-        | CValue::Float64(term) => {
+        crate::kernel::arithmetic_c_value!(term) => {
             collect_offset_load_variables_from_term(term, load_variables);
         }
         CValue::Pointer(pointer) => {

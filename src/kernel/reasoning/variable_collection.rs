@@ -2245,18 +2245,7 @@ fn collect_bitvector_integer_variables_seen(
             }
             collect_bitvector_integer_variables_seen(right, variables, seen);
         }
-        Bitvector32Term::BitwiseNot(value)
-        | Bitvector32Term::Int64From32(value)
-        | Bitvector32Term::MachineIntegerCast { value, .. }
-        | Bitvector32Term::UInt64From32(value)
-        | Bitvector32Term::UInt32From64(value)
-        | Bitvector32Term::Int64FromUInt32(value)
-        | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value)
-        | Bitvector32Term::Int64BitwiseNot(value)
-        | Bitvector32Term::UInt64BitwiseNot(value)
-        | Bitvector32Term::Float32Negate(value)
-        | Bitvector32Term::Float64Negate(value) => {
+        crate::kernel::unary_machine_term!(value) => {
             collect_bitvector_integer_variables_seen(value, variables, seen)
         }
         Bitvector32Term::Float32Binary { left, right, .. }
@@ -2899,18 +2888,7 @@ pub(crate) fn collect_bitvector_variables(
             collect_bitvector_variables(left, variables);
             collect_bitvector_variables(right, variables);
         }
-        Bitvector32Term::BitwiseNot(value)
-        | Bitvector32Term::Int64BitwiseNot(value)
-        | Bitvector32Term::UInt64BitwiseNot(value)
-        | Bitvector32Term::Int64From32(value)
-        | Bitvector32Term::MachineIntegerCast { value, .. }
-        | Bitvector32Term::UInt64From32(value)
-        | Bitvector32Term::UInt32From64(value)
-        | Bitvector32Term::Int64FromUInt32(value)
-        | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value)
-        | Bitvector32Term::Float32Negate(value)
-        | Bitvector32Term::Float64Negate(value) => {
+        crate::kernel::unary_machine_term!(value) => {
             collect_bitvector_variables(value, variables);
         }
         Bitvector32Term::If {
@@ -3022,18 +3000,7 @@ fn collect_bitvector_capture_variables_seen(
             }
             collect_bitvector_capture_variables_seen(right, variables, integer_seen);
         }
-        Bitvector32Term::BitwiseNot(value)
-        | Bitvector32Term::Int64BitwiseNot(value)
-        | Bitvector32Term::UInt64BitwiseNot(value)
-        | Bitvector32Term::Int64From32(value)
-        | Bitvector32Term::MachineIntegerCast { value, .. }
-        | Bitvector32Term::UInt64From32(value)
-        | Bitvector32Term::UInt32From64(value)
-        | Bitvector32Term::Int64FromUInt32(value)
-        | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value)
-        | Bitvector32Term::Float32Negate(value)
-        | Bitvector32Term::Float64Negate(value) => {
+        crate::kernel::unary_machine_term!(value) => {
             collect_bitvector_capture_variables_seen(value, variables, integer_seen)
         }
         Bitvector32Term::If {
@@ -3726,18 +3693,7 @@ fn collect_bitvector_scope_summary(
             summary.merge(collect_bitvector_scope_summary(right, summaries));
             summary
         }
-        Bitvector32Term::BitwiseNot(value)
-        | Bitvector32Term::Int64BitwiseNot(value)
-        | Bitvector32Term::UInt64BitwiseNot(value)
-        | Bitvector32Term::Int64From32(value)
-        | Bitvector32Term::MachineIntegerCast { value, .. }
-        | Bitvector32Term::UInt64From32(value)
-        | Bitvector32Term::UInt32From64(value)
-        | Bitvector32Term::Int64FromUInt32(value)
-        | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value)
-        | Bitvector32Term::Float32Negate(value)
-        | Bitvector32Term::Float64Negate(value) => {
+        crate::kernel::unary_machine_term!(value) => {
             collect_bitvector_scope_summary(value, summaries)
         }
         Bitvector32Term::If {
@@ -4294,18 +4250,7 @@ fn collect_bitvector_binder_variables_seen(
                 integer_seen,
             );
         }
-        Bitvector32Term::BitwiseNot(value)
-        | Bitvector32Term::Int64BitwiseNot(value)
-        | Bitvector32Term::UInt64BitwiseNot(value)
-        | Bitvector32Term::Int64From32(value)
-        | Bitvector32Term::MachineIntegerCast { value, .. }
-        | Bitvector32Term::UInt64From32(value)
-        | Bitvector32Term::UInt32From64(value)
-        | Bitvector32Term::Int64FromUInt32(value)
-        | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value)
-        | Bitvector32Term::Float32Negate(value)
-        | Bitvector32Term::Float64Negate(value) => {
+        crate::kernel::unary_machine_term!(value) => {
             collect_bitvector_binder_variables_seen(
                 value,
                 integer_variables,
