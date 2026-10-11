@@ -4,7 +4,8 @@
 //! existing arithmetic nodes.  It never searches the ambient proof state: the
 //! caller supplies the exact premise slice.  In particular, two-premise
 //! combinations are solved by a bounded two-dimensional integer calculation,
-//! rather than by an LP solver or a growing coefficient search.
+//! rather than by an LP solver or a growing coefficient search, and a third
+//! order premise only ever joins such a pair whole.
 
 use crate::kernel::Proposition;
 use crate::kernel::proof::integer_arithmetic::{
@@ -20,6 +21,9 @@ use std::collections::{BTreeMap, BTreeSet};
 /// turning this bounded planner into an ambient scan.
 const MAX_SELECTED_PREMISES: usize = 64;
 const MAX_PAIR_ATTEMPTS: usize = 4_096;
+/// The largest selected slice the three-premise route reads: a `using` list
+/// written for one step, not an ambient context.
+const MAX_TRIPLE_CLAIMS: usize = 16;
 
 pub(in crate::surface) fn plan_integer_affine_certificate(
     goal: &Proposition,
@@ -142,6 +146,74 @@ fn plan_from_selected_claims(
             if let Some(certificate) =
                 plan_from_two_premises(&claims[left], &claims[right], expected)
             {
+                return Some(certificate);
+            }
+        }
+    }
+    plan_from_three_premises(claims, expected)
+}
+
+/// A third order premise taken whole beside a pair: an order chain
+/// `a < b`, `b <= c`, `c <= d` proves `a < d`. For each listed order claim
+/// `c`, the pair solver is asked for `expected - c`, and `c` is added back
+/// with the kernel's `Add` node. Every candidate is a fixed triple of the
+/// listed claims, bounded by [`MAX_TRIPLE_CLAIMS`] and the pair attempt
+/// budget; there is no coefficient search for the third premise.
+fn plan_from_three_premises(
+    claims: &[(usize, IntegerAffineClaim)],
+    expected: &IntegerAffineClaim,
+) -> Option<IntegerArithmeticCertificate> {
+    if expected.relation != IntegerAffineRelation::LessEqual || claims.len() > MAX_TRIPLE_CLAIMS {
+        return None;
+    }
+    let mut attempts = 0usize;
+    for (whole, (whole_index, whole_claim)) in claims.iter().enumerate() {
+        if whole_claim.relation != IntegerAffineRelation::LessEqual {
+            continue;
+        }
+        let mut terms = expected.terms.clone();
+        for (atom, coefficient) in &whole_claim.terms {
+            let value = terms.get(atom).cloned().unwrap_or_else(BigInt::zero) - coefficient;
+            if value.is_zero() {
+                terms.remove(atom);
+            } else {
+                terms.insert(atom.clone(), value);
+            }
+        }
+        let residual = IntegerAffineClaim {
+            relation: IntegerAffineRelation::LessEqual,
+            terms,
+            constant: &expected.constant - &whole_claim.constant,
+        };
+        let rest = claims
+            .iter()
+            .enumerate()
+            .filter(|(position, _)| *position != whole)
+            .map(|(_, claim)| claim)
+            .collect::<Vec<_>>();
+        for left in 0..rest.len() {
+            for right in (left + 1)..rest.len() {
+                if attempts == MAX_PAIR_ATTEMPTS {
+                    return None;
+                }
+                attempts += 1;
+                charge_planner_work(1)?;
+                let Some(mut certificate) =
+                    plan_from_two_premises(rest[left], rest[right], &residual)
+                else {
+                    continue;
+                };
+                let pair = certificate.conclusion;
+                certificate.nodes.push(IntegerArithmeticNode::Premise {
+                    index: *whole_index,
+                    result: whole_claim.clone(),
+                });
+                certificate.nodes.push(IntegerArithmeticNode::Add {
+                    left: pair,
+                    right: certificate.nodes.len() - 1,
+                    result: expected.clone(),
+                });
+                certificate.conclusion = certificate.nodes.len() - 1;
                 return Some(certificate);
             }
         }

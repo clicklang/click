@@ -6294,21 +6294,38 @@ impl ResourceNormalizationIndex {
             | CResource::MutexUse(_)
             | CResource::Publication(_) => {}
             CResource::Memory(range) if range.wide_bounds().is_some() => {
-                let (start, end) = range.bound_terms();
-                keys.push(ResourceNormalizationKey::MemoryNativeStart(
-                    range.base().clone(),
-                    range.element_width(),
-                    fact.is_own(),
-                    start.clone(),
-                ));
-                keys.push(ResourceNormalizationKey::MemoryNativeEnd(
-                    range.base().clone(),
-                    range.element_width(),
-                    fact.is_own(),
-                    end.clone(),
-                ));
+                if let Some((base, start, end)) = wide_normalization_form(range) {
+                    keys.push(ResourceNormalizationKey::MemoryNativeStart(
+                        base.clone(),
+                        range.element_width(),
+                        fact.is_own(),
+                        start,
+                    ));
+                    keys.push(ResourceNormalizationKey::MemoryNativeEnd(
+                        base,
+                        range.element_width(),
+                        fact.is_own(),
+                        end,
+                    ));
+                }
             }
             CResource::Memory(range) => {
+                // A window at a 64-bit index from its root, a piece a call
+                // handed back, also meets its wide neighbours there.
+                if let Some((base, start, end)) = wide_normalization_form(range) {
+                    keys.push(ResourceNormalizationKey::MemoryNativeStart(
+                        base.clone(),
+                        range.element_width(),
+                        fact.is_own(),
+                        start,
+                    ));
+                    keys.push(ResourceNormalizationKey::MemoryNativeEnd(
+                        base,
+                        range.element_width(),
+                        fact.is_own(),
+                        end,
+                    ));
+                }
                 if self.byte_endpoints
                     && let Some(start) =
                         memory_normalization_relative_byte_position(range, range.start())
@@ -6420,21 +6437,36 @@ impl ResourceNormalizationIndex {
             | CResource::MutexUse(_)
             | CResource::Publication(_) => {}
             CResource::Memory(range) if range.wide_bounds().is_some() => {
-                let (start, end) = range.bound_terms();
-                keys.push(ResourceNormalizationKey::MemoryNativeEnd(
-                    range.base().clone(),
-                    range.element_width(),
-                    fact.is_own(),
-                    start.clone(),
-                ));
-                keys.push(ResourceNormalizationKey::MemoryNativeStart(
-                    range.base().clone(),
-                    range.element_width(),
-                    fact.is_own(),
-                    end.clone(),
-                ));
+                if let Some((base, start, end)) = wide_normalization_form(range) {
+                    keys.push(ResourceNormalizationKey::MemoryNativeEnd(
+                        base.clone(),
+                        range.element_width(),
+                        fact.is_own(),
+                        start,
+                    ));
+                    keys.push(ResourceNormalizationKey::MemoryNativeStart(
+                        base,
+                        range.element_width(),
+                        fact.is_own(),
+                        end,
+                    ));
+                }
             }
             CResource::Memory(range) => {
+                if let Some((base, start, end)) = wide_normalization_form(range) {
+                    keys.push(ResourceNormalizationKey::MemoryNativeEnd(
+                        base.clone(),
+                        range.element_width(),
+                        fact.is_own(),
+                        start,
+                    ));
+                    keys.push(ResourceNormalizationKey::MemoryNativeStart(
+                        base,
+                        range.element_width(),
+                        fact.is_own(),
+                        end,
+                    ));
+                }
                 let roots = related_pointer_roots(range.base(), assumptions);
                 let owned = fact.is_own();
                 for start in std::iter::once(range.start().clone())
@@ -8979,30 +9011,132 @@ fn exact_shifted_endpoint(
 /// a carry would leave a retained owned fact over cells the requirement
 /// consumed, and distinct owned facts are assumed separate, so a store through
 /// one would not invalidate a load through the other.
+/// The wide normalization spelling of a range: its base with any trailing
+/// unsigned 64-bit element index moved into the bounds, `(x + i)[s..e]` as
+/// `x[i + s..i + e]`, with the sums formed as [`wide_range_rebased`] forms
+/// them so two pieces that abut meet at one term. An `Int32` range takes
+/// part only at such a base and with nonnegative constant bounds. The form is
+/// a lookup key; the merge it proposes is checked by [`merge_memory_ranges`].
+pub(super) fn wide_normalization_form(
+    range: &CMemoryRange,
+) -> Option<(Pointer, Bitvector32Term, Bitvector32Term)> {
+    let width = i64::from(range.element_width());
+    let (root, index) = match &range.base().offset {
+        PointerOffsetTerm::Add(rest, last) => match last.as_ref() {
+            PointerOffsetTerm::Int64Scaled {
+                value,
+                byte_width,
+                unsigned: true,
+            } if *byte_width == width => (
+                Pointer {
+                    block: range.base().block.clone(),
+                    offset: rest.as_ref().clone(),
+                },
+                Some(value.as_ref().clone()),
+            ),
+            _ => (range.base().clone(), None),
+        },
+        _ => (range.base().clone(), None),
+    };
+    let (start, end) = match range.wide_bounds() {
+        Some((start, end)) => (start.clone(), end.clone()),
+        None => {
+            index.as_ref()?;
+            let constant = |bound: &Bitvector32Term| {
+                let value = bound.as_const()?;
+                (value as i32 >= 0).then(|| Bitvector32Term::UInt64Constant(u64::from(value)))
+            };
+            (constant(range.start())?, constant(range.end())?)
+        }
+    };
+    let Some(index) = index else {
+        return Some((root, start, end));
+    };
+    let shifted = |bound: Bitvector32Term| {
+        if bound.uint64_as_const() == Some(0) {
+            index.clone()
+        } else {
+            Bitvector32Term::uint64_add(index.clone(), bound)
+        }
+    };
+    Some((root, shifted(start), shifted(end)))
+}
+
+/// A range's bounds as unsigned 64-bit values: a wide range's own, and an
+/// `Int32` range's when each is shown to lie in `0..=INT_MAX`.
+fn wide_range_bound_pair(
+    range: &CMemoryRange,
+    assumptions: &PureFactContext,
+) -> Option<(Bitvector32Term, Bitvector32Term)> {
+    match range.wide_bounds() {
+        Some((start, end)) => Some((start.clone(), end.clone())),
+        None => Some((
+            checked_native_range_endpoint(range.start(), assumptions)?,
+            checked_native_range_endpoint(range.end(), assumptions)?,
+        )),
+    }
+}
+
+/// `range` restated as a wide range at `base`, when its own base is `base`
+/// advanced by an unsigned 64-bit element index `i`
+/// ([`PureFactContext::wide_element_index_of_access`]): `(base + i)[s..e]`
+/// is `base[i + s..i + e]`. The sums do not wrap for a range the context
+/// holds: `i` and `e` are each at most `i64::MAX / width`, the extent guard
+/// of a held wide range, so their sum is below 2^64.
+fn wide_range_rebased(
+    range: &CMemoryRange,
+    base: &Pointer,
+    assumptions: &PureFactContext,
+) -> Option<CMemoryRange> {
+    let width = range.element_width();
+    let index = assumptions.wide_element_index_of_access(range.base(), base, width)?;
+    let (start, end) = wide_range_bound_pair(range, assumptions)?;
+    let shifted = |bound: Bitvector32Term| {
+        if bound.uint64_as_const() == Some(0) {
+            index.clone()
+        } else if index.uint64_as_const() == Some(0) {
+            bound
+        } else {
+            Bitvector32Term::uint64_add(index.clone(), bound)
+        }
+    };
+    Some(CMemoryRange::new_wide(
+        base.clone(),
+        shifted(start),
+        shifted(end),
+        width,
+    ))
+}
+
 pub(in crate::kernel) fn split_memory_range(
     available: &CMemoryRange,
     required: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<Vec<CMemoryRange>> {
     if available.wide_bounds().is_some() || required.wide_bounds().is_some() {
-        if available.element_width() != required.element_width()
-            || !pointers_proven_equal_for_memory_resolution(
-                available.base(),
-                required.base(),
-                assumptions,
-            )
-        {
+        if available.element_width() != required.element_width() {
             return None;
         }
-        let bounds = |range: &CMemoryRange| match range.wide_bounds() {
-            Some((start, end)) => Some((start.clone(), end.clone())),
-            None => Some((
-                checked_native_range_endpoint(range.start(), assumptions)?,
-                checked_native_range_endpoint(range.end(), assumptions)?,
-            )),
+        let (start, end) = wide_range_bound_pair(available, assumptions)?;
+        // A window at another spelling of the base, `(bytes + index)[0..4]`
+        // inside `bytes[0..length]`, is restated at the available base. Its
+        // coverage is what bounds `index + 4` by the available end.
+        let same_base = pointers_proven_equal_for_memory_resolution(
+            available.base(),
+            required.base(),
+            assumptions,
+        );
+        let (first, last) = if same_base {
+            wide_range_bound_pair(required, assumptions)?
+        } else {
+            if !memory_range_covers(available, required, assumptions) {
+                return None;
+            }
+            wide_range_bound_pair(
+                &wide_range_rebased(required, available.base(), assumptions)?,
+                assumptions,
+            )?
         };
-        let (start, end) = bounds(available)?;
-        let (first, last) = bounds(required)?;
         let holds = |lower: &Bitvector32Term, upper: &Bitvector32Term| {
             lower == upper
                 || assumptions.decide(&ConditionTerm::uint64_less_equal(
@@ -9010,7 +9144,9 @@ pub(in crate::kernel) fn split_memory_range(
                     upper.clone(),
                 )) == Some(true)
         };
-        if !holds(&start, &first) || !holds(&first, &last) || !holds(&last, &end) {
+        // Coverage of a rebased window already placed it inside the available
+        // range; its sums need not be decided again.
+        if same_base && (!holds(&start, &first) || !holds(&first, &last) || !holds(&last, &end)) {
             return None;
         }
         let equal = |left: &Bitvector32Term, right: &Bitvector32Term| {
@@ -9626,18 +9762,24 @@ fn merge_memory_ranges(
     assumptions: &PureFactContext,
 ) -> Option<CMemoryRange> {
     if left.wide_bounds().is_some() || right.wide_bounds().is_some() {
-        if left.element_width() != right.element_width() || left.base() != right.base() {
+        if left.element_width() != right.element_width() {
             return None;
         }
-        let bounds = |range: &CMemoryRange| match range.wide_bounds() {
-            Some((start, end)) => Some((start.clone(), end.clone())),
-            None => Some((
-                checked_native_range_endpoint(range.start(), assumptions)?,
-                checked_native_range_endpoint(range.end(), assumptions)?,
-            )),
+        // A piece at another spelling of the base, a window a call returned,
+        // is restated at the left piece's base before the endpoints meet.
+        let (left, right) = if left.base() == right.base() {
+            (left.clone(), right.clone())
+        } else if let Some(right) = wide_range_rebased(right, left.base(), assumptions) {
+            (left.clone(), right)
+        } else {
+            (
+                wide_range_rebased(left, right.base(), assumptions)?,
+                right.clone(),
+            )
         };
-        let (first, middle) = bounds(left)?;
-        let (next, last) = bounds(right)?;
+        let left = &left;
+        let (first, middle) = wide_range_bound_pair(left, assumptions)?;
+        let (next, last) = wide_range_bound_pair(&right, assumptions)?;
         let equal = |a: &Bitvector32Term, b: &Bitvector32Term| {
             a == b
                 || assumptions.decide(&ConditionTerm::uint64_equal(a.clone(), b.clone()))

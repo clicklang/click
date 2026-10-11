@@ -874,15 +874,18 @@ impl MemoryFactEntries {
             let paired = self.index.clone();
             let requested = range.clone();
             let assumptions = self.assumptions.clone();
-            // Fragments are chained in 32-bit element coordinates; a wide
-            // range is not assembled from fragments yet.
-            let bounds = range.int32_bounds();
-            let target = bounds
-                .and_then(|(_, end)| memory_candidate_coordinate(range, end))
-                .map(|(base, end)| base.offset_by_elements(end, range.element_width()));
-            let mut cursor = bounds
-                .and_then(|(start, _)| memory_candidate_coordinate(range, start))
-                .map(|(base, start)| base.offset_by_elements(start, range.element_width()));
+            // Fragments are chained from the request's start address to its
+            // end: in 32-bit element coordinates for an `Int32` range, and at
+            // the range's own start and end pointers for a wide one.
+            let (mut cursor, target) = match range.int32_bounds() {
+                Some((start, end)) => (
+                    memory_candidate_coordinate(range, start)
+                        .map(|(base, start)| base.offset_by_elements(start, range.element_width())),
+                    memory_candidate_coordinate(range, end)
+                        .map(|(base, end)| base.offset_by_elements(end, range.element_width())),
+                ),
+                None => (Some(range.start_pointer()), Some(range.end_pointer())),
+            };
             let mut visited = BTreeSet::new();
             streams.push(Box::new(std::iter::from_fn(move || {
                 let pointer = cursor.take()?;
@@ -919,6 +922,16 @@ impl MemoryFactEntries {
                 {
                     cursor = if available.wide_bounds().is_some() {
                         Some(aligned.end_pointer())
+                    } else if requested.wide_bounds().is_some()
+                        && let Some((root, start, end)) =
+                            super::resource_algebra::wide_normalization_form(available)
+                    {
+                        // A window at a 64-bit index ends where its wide
+                        // neighbour starts, spelled as that neighbour is.
+                        Some(
+                            CMemoryRange::new_wide(root, start, end, available.element_width())
+                                .end_pointer(),
+                        )
                     } else {
                         memory_candidate_coordinate(available, available.end()).map(
                             |(base, end)| base.offset_by_elements(end, available.element_width()),

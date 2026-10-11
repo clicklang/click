@@ -2818,6 +2818,51 @@ fn stores_beside_many_owned_ranges_scale_near_linearly() {
     // `composition_store_separation_uses_checked_aliases_without_scanning_other_owners`.
 }
 
+/// [`stores_beside_many_owned_ranges`] with the stored array held as a wide
+/// range, `owns value[0..length]` for a `size_t` length: each constant-index
+/// store finds its cell in a 64-bit range (`design/typed-indices.md`, step 3).
+fn stores_beside_many_owned_size_t_ranges(size: usize) -> (String, String) {
+    let (c_source, click_source) = stores_beside_many_owned_ranges(size);
+    let c_source = c_source.replace(
+        "int32* read_acquired(int32* (*acquire)(), int32* value)",
+        "int32* read_acquired(int32* (*acquire)(), int32* value, unsigned long length)",
+    );
+    let click_source = click_source
+        .replace(
+            "int32* read_acquired(int32* (*acquire)(), int32* value) {",
+            "int32* read_acquired(int32* (*acquire)(), int32* value, uint64 length) {",
+        )
+        .replace(
+            &format!("    owns value[0..{size}];\n"),
+            &format!("    requires {size}u64 <= length;\n    owns value[0..length];\n"),
+        );
+    assert!(
+        c_source.contains("unsigned long length") && click_source.contains("owns value[0..length]")
+    );
+    (c_source, click_source)
+}
+
+#[test]
+fn stores_beside_many_owned_size_t_ranges_scale_near_linearly() {
+    let samples = [2, 4, 8, 16]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = stores_beside_many_owned_size_t_ranges(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("acquire.c", c_source.as_str())])
+            });
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "size {size} owned size_t range store fixture failed: {}",
+                    error.message()
+                )
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+    assert_near_linear_scaling("stores beside many owned size_t ranges", &samples);
+}
+
 /// The frozen byte-representation round trip
 /// (`mdtests/byte_representation_roundtrip.md`) beside `unrelated` live heap
 /// allocations, each null-checked with every failure path freeing the earlier
@@ -4900,6 +4945,58 @@ fn stores_to_bounded_unordered_size_t_indices_are_near_linear() {
             .skip(1)
             .all(|pair| within(pair[0].work, pair[1].work)),
         "stores to bounded unordered size_t indices are not near linear: {:?}; named work: {}",
+        samples.iter().map(|sample| sample.work).collect::<Vec<_>>(),
+        named_growth_diagnostic(&samples)
+    );
+}
+
+/// `N` calls that each hand the callee the owned window `bytes + index` of
+/// an owned `size_t` range: each call splits the caller's range around the
+/// window and rejoins it when the window comes back.
+fn owned_size_t_window_calls(calls: usize) -> (String, String) {
+    let call_lines = "    set_four(bytes + index);\n".repeat(calls);
+    let c_source = format!(
+        "void set_four(unsigned char *chunk) {{ chunk[0] = 1; }}\n\
+         void write(unsigned char *bytes, unsigned long length, unsigned long index) {{\n\
+         {call_lines}}}\n"
+    );
+    let steps = "    step();\n".repeat(calls);
+    let click_source = format!(
+        "verifying \"write.c\";\n\n\
+         void set_four(uint8* chunk) {{\n    owns chunk[0..4];\n}} by {{ execute(); simp(); }}\n\n\
+         void write(uint8* bytes, uint64 length, uint64 index) {{\n    \
+         requires index <= length;\n    requires 4u64 <= length - index;\n    \
+         owns bytes[0..length];\n}} by {{\n{steps}    execute();\n    simp();\n}}\n"
+    );
+    (c_source, click_source)
+}
+
+#[test]
+fn owned_size_t_window_calls_are_near_linear() {
+    let samples = [4, 8, 16, 32]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = owned_size_t_window_calls(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("write.c", c_source.as_str())])
+            });
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "{size} owned size_t window calls should verify: {}",
+                    error.message()
+                )
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+    // A linear curve doubles per doubling; a quadratic one quadruples.
+    let within = |low: usize, high: usize| high.saturating_mul(4) <= low.saturating_mul(9);
+    assert!(
+        samples
+            .windows(2)
+            .skip(1)
+            .all(|pair| within(pair[0].work, pair[1].work)),
+        "owned size_t window calls are not near linear: {:?}; named work: {}",
         samples.iter().map(|sample| sample.work).collect::<Vec<_>>(),
         named_growth_diagnostic(&samples)
     );
