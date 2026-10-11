@@ -376,6 +376,18 @@ fn equality_is_vacuous(equality: &Proposition) -> bool {
     }
 }
 
+/// Exact address congruence preserves the observed C access width. The
+/// machine carrier kind does not distinguish int32 from a pointer word.
+fn rewritten_load(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    rewritten: Pointer,
+    kind: LoadKind,
+) -> Bitvector32Term {
+    crate::kernel::eval::transport_load_access_width(memory, pointer, memory, &rewritten);
+    Bitvector32Term::MemoryLoad(memory.clone(), Box::new(rewritten), kind)
+}
+
 /// `rewrite` looks through a load variable: the rewritten term may occur
 /// inside the address of the load the variable stands for. Rewriting that
 /// address and taking the canonical form of the rewritten load gives the
@@ -406,10 +418,8 @@ fn rewrite_through_load_variable(
     if rewritten == pointer {
         return None;
     }
-    Some(crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
-        memory,
-        Box::new(rewritten),
-        kind,
+    Some(crate::kernel::canonical_term(&rewritten_load(
+        &memory, &pointer, rewritten, kind,
     )))
 }
 
@@ -441,9 +451,10 @@ fn rewrite_through_registered_pointer_read(
     if let Some(CValue::Pointer(value)) = source.known_value(&rewritten_address) {
         return Some(value.pointer().clone());
     }
-    let read = Bitvector32Term::MemoryLoad(
-        source.clone(),
-        Box::new(rewritten_address.clone()),
+    let read = rewritten_load(
+        &source,
+        &address,
+        rewritten_address.clone(),
         crate::kernel::LoadKind::Bits32,
     );
     // An already named read can use its canonical identity. A cold rewrite
@@ -485,11 +496,8 @@ fn rewrite_through_loaded_pointer_block(
             rewrite_through_loaded_pointer_block(&address, rewrite_pointer, depth - 1)?
         }
     };
-    let load = crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
-        memory,
-        Box::new(rewritten_address),
-        kind,
-    ));
+    let load =
+        crate::kernel::canonical_term(&rewritten_load(&memory, &address, rewritten_address, kind));
     let named = match load {
         Bitvector32Term::Variable(variable) => variable,
         load @ Bitvector32Term::MemoryLoad(_, _, _) => {
@@ -937,11 +945,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
                             .collect(),
                     }
                 }
-                Bitvector32Term::MemoryLoad(memory, pointer, kind) => Bitvector32Term::MemoryLoad(
-                    memory.clone(),
-                    Box::new(rewrite_pointer(pointer)),
-                    *kind,
-                ),
+                Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
+                    rewritten_load(memory, pointer, rewrite_pointer(pointer), *kind)
+                }
                 Bitvector32Term::PointerAddress(pointer) => {
                     Bitvector32Term::PointerAddress(Box::new(rewrite_pointer(pointer)))
                 }
@@ -1264,11 +1270,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 )
             };
             match term {
-                Bitvector32Term::MemoryLoad(memory, pointer, kind) => Bitvector32Term::MemoryLoad(
-                    memory.clone(),
-                    Box::new(rewrite_pointer(pointer)),
-                    *kind,
-                ),
+                Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
+                    rewritten_load(memory, pointer, rewrite_pointer(pointer), *kind)
+                }
                 Bitvector32Term::Variable(_) => {
                     rewrite_through_load_variable(term, rewrite_pointer)
                         .unwrap_or_else(|| term.clone())
@@ -1709,12 +1713,13 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
             // The memory snapshot is fixed, but its address is an ordinary
             // expression: exact equality substitution is congruent there too.
-            Bitvector32Term::MemoryLoad(memory, pointer, kind) => Bitvector32Term::MemoryLoad(
-                memory.clone(),
-                Box::new(Pointer {
+            Bitvector32Term::MemoryLoad(memory, pointer, kind) => rewritten_load(
+                memory,
+                pointer,
+                Pointer {
                     block: pointer.block.clone(),
                     offset: rewrite_offset(&pointer.offset, from, to),
-                }),
+                },
                 *kind,
             ),
             Bitvector32Term::PointerAddress(pointer) => {
@@ -3002,6 +3007,84 @@ mod tests {
             assert_eq!(root.as_ref(), &y);
         }
         assert!(costs.iter().all(|work| *work == costs[0]), "{costs:?}");
+    }
+
+    #[test]
+    fn equality_address_rewrites_preserve_observed_load_widths() {
+        let _session = VerificationSession::enter();
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let index = Bitvector32Term::Variable(Variable(193_101));
+        let next = Bitvector32Term::Variable(Variable(193_102));
+        let source_offset = PointerOffsetTerm::scale_int32(index.clone(), 4);
+        let target_offset = PointerOffsetTerm::scale_int32(next.clone(), 4);
+        for route in 0..3 {
+            let source = Pointer {
+                block: format!("width-equality-{route}").into(),
+                offset: source_offset.clone(),
+            };
+            let target = Pointer {
+                block: source.block.clone(),
+                offset: target_offset.clone(),
+            };
+            let cited = match route {
+                0 => equality(index.clone(), next.clone()),
+                1 => Proposition::ConditionIs(
+                    ConditionTerm::PointerOffsetEqual(
+                        Box::new(source_offset.clone()),
+                        Box::new(target_offset.clone()),
+                    ),
+                    true,
+                ),
+                _ => Proposition::ConditionIs(
+                    ConditionTerm::PointerEqual(Box::new(source.clone()), Box::new(target.clone())),
+                    true,
+                ),
+            };
+            let facts = ProofFacts::default().with_fact(cited.clone());
+            let read = Bitvector32Term::MemoryLoad(
+                memory.clone(),
+                Box::new(source.clone()),
+                LoadKind::Bits32,
+            );
+            let goal = equality(read.clone(), Bitvector32Term::Constant(7));
+            facts.check_equality_rewrite(&goal, &cited).unwrap();
+            assert_eq!(
+                crate::kernel::eval::recorded_load_access_width(&memory, &target),
+                None
+            );
+            crate::kernel::eval::symbolic_load_value(&memory, &source, CType::Int32).unwrap();
+            let result = facts.check_equality_rewrite(&goal, &cited).unwrap();
+            assert_eq!(
+                result.proposition(),
+                &equality(
+                    Bitvector32Term::MemoryLoad(
+                        memory.clone(),
+                        Box::new(target.clone()),
+                        LoadKind::Bits32
+                    ),
+                    Bitvector32Term::Constant(7),
+                )
+            );
+            assert_eq!(
+                crate::kernel::eval::recorded_load_access_width(&memory, &target),
+                Some(4)
+            );
+            // Registered scalar-load expansion must retain the same observation.
+            let (named, _) = crate::kernel::load_variable_for_term(&read).unwrap();
+            facts
+                .check_equality_rewrite(
+                    &equality(
+                        Bitvector32Term::Variable(named),
+                        Bitvector32Term::Constant(7),
+                    ),
+                    &cited,
+                )
+                .unwrap();
+            assert_eq!(
+                crate::kernel::eval::recorded_load_access_width(&memory, &target),
+                Some(4)
+            );
+        }
     }
 
     #[test]

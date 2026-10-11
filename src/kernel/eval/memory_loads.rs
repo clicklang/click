@@ -2425,6 +2425,48 @@ fn record_load_access_width(memory: &CMemory, pointer: &Pointer, bytes: u32) {
     }
 }
 
+/// Preserve an existing typed observation when substitution changes its
+/// snapshot or address. A kind alone supplies no width here: Bits32 also
+/// encodes pointer words. Destination observations can only widen.
+pub(crate) fn transport_load_access_width(
+    source: &SharedCMemory,
+    source_pointer: &Pointer,
+    destination: &SharedCMemory,
+    destination_pointer: &Pointer,
+) {
+    if source == destination && source_pointer == destination_pointer {
+        return;
+    }
+    if let Some(bytes) = recorded_load_access_width(source, source_pointer) {
+        let bytes = rewritten_address_access_width(destination, destination_pointer)
+            .map_or(bytes, |known| bytes.max(known));
+        record_load_access_width(destination, destination_pointer, bytes);
+    }
+}
+
+/// Rewriters may retain `128 + 3 * 4` where a typed address producer folded
+/// the same exact offset to `140`. Inspect that one checked constant spelling
+/// too; symbolic equality never enters this lookup.
+fn rewritten_address_access_width(memory: &SharedCMemory, pointer: &Pointer) -> Option<u32> {
+    let known = |pointer: &Pointer| {
+        recorded_load_access_width(memory, pointer)
+            .into_iter()
+            .chain(recorded_load_access_width_at_address(pointer))
+            .max()
+    };
+    let original = known(pointer);
+    if matches!(pointer.offset, PointerOffsetTerm::Constant(_)) {
+        return original;
+    }
+    let constant = pointer.offset.as_const().and_then(|offset| {
+        known(&Pointer {
+            block: pointer.block.clone(),
+            offset: PointerOffsetTerm::Constant(offset),
+        })
+    });
+    original.into_iter().chain(constant).max()
+}
+
 /// Says that a load of `bytes` bytes happens at this address, the way
 /// [`symbolic_load_value`] says it for a typed C load.
 ///
@@ -2487,7 +2529,8 @@ pub(crate) fn load_term_access_width(
     pointer: &Pointer,
     kind: LoadKind,
 ) -> u32 {
-    recorded_load_access_width(memory, pointer)
+    let observed = recorded_load_access_width(memory, pointer);
+    observed
         .unwrap_or_else(|| kind.unrecorded_access_byte_width())
         .max(kind.byte_width())
 }
@@ -2850,11 +2893,7 @@ fn is_store_fact(condition: &ConditionTerm, value: bool) -> bool {
     load.2.reads_value(&value)
         && matches!(
             value,
-            CValue::Int8(recorded) | CValue::Int16(recorded)
-            | CValue::Int32(recorded)
-            | CValue::UInt8(recorded)
-            | CValue::UInt16(recorded)
-            | CValue::UInt32(recorded)
+            crate::kernel::integer32_c_value!(recorded)
                 if &recorded == stored
         )
 }
@@ -2989,12 +3028,7 @@ pub(crate) fn canonical_condition(condition: &ConditionTerm) -> ConditionTerm {
                 offset: canonical_offset_term(&right.offset),
             }),
         ),
-        ConditionTerm::IntegerLessThan(_, _)
-        | ConditionTerm::IntegerLessEqual(_, _)
-        | ConditionTerm::IntegerGreaterThan(_, _)
-        | ConditionTerm::IntegerGreaterEqual(_, _)
-        | ConditionTerm::IntegerEqual(_, _)
-        | ConditionTerm::IntegerNotEqual(_, _) => condition.clone(),
+        crate::kernel::integer_comparison_condition!(_, _) => condition.clone(),
     }
 }
 
@@ -3303,12 +3337,9 @@ fn substitute_load_variables(
             }
             Task::VisitCondition(condition) => match condition {
                 ConditionTerm::AlgebraicEqual(_, _) => condition_results.push(condition.clone()),
-                ConditionTerm::IntegerLessThan(_, _)
-                | ConditionTerm::IntegerLessEqual(_, _)
-                | ConditionTerm::IntegerGreaterThan(_, _)
-                | ConditionTerm::IntegerGreaterEqual(_, _)
-                | ConditionTerm::IntegerEqual(_, _)
-                | ConditionTerm::IntegerNotEqual(_, _) => condition_results.push(condition.clone()),
+                crate::kernel::integer_comparison_condition!(_, _) => {
+                    condition_results.push(condition.clone())
+                }
                 ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {
                     condition_results.push(condition.clone())
                 }
@@ -3744,19 +3775,7 @@ fn term_mentions_a_memory_load(term: &Bitvector32Term) -> bool {
             .scaled_values()
             .into_iter()
             .any(term_mentions_a_memory_load),
-        Bitvector32Term::Add(left, right)
-        | Bitvector32Term::Subtract(left, right)
-        | Bitvector32Term::Multiply(left, right)
-        | Bitvector32Term::Divide(left, right)
-        | Bitvector32Term::UnsignedDivide(left, right)
-        | Bitvector32Term::Remainder(left, right)
-        | Bitvector32Term::UnsignedRemainder(left, right)
-        | Bitvector32Term::ShiftLeft(left, right)
-        | Bitvector32Term::ArithmeticShiftRight(left, right)
-        | Bitvector32Term::LogicalShiftRight(left, right)
-        | Bitvector32Term::BitwiseAnd(left, right)
-        | Bitvector32Term::BitwiseOr(left, right)
-        | Bitvector32Term::BitwiseXor(left, right) => {
+        crate::kernel::binary_bitvector32_term!(left, right) => {
             term_mentions_a_memory_load(left) || term_mentions_a_memory_load(right)
         }
         Bitvector32Term::Float32Binary { left, right, .. }
@@ -3772,26 +3791,7 @@ fn term_mentions_a_memory_load(term: &Bitvector32Term) -> bool {
         | Bitvector32Term::UInt64FromInt64(value)
         | Bitvector32Term::Int64BitwiseNot(value)
         | Bitvector32Term::UInt64BitwiseNot(value) => term_mentions_a_memory_load(value),
-        Bitvector32Term::Int64Add(left, right)
-        | Bitvector32Term::Int64Subtract(left, right)
-        | Bitvector32Term::Int64Multiply(left, right)
-        | Bitvector32Term::Int64Divide(left, right)
-        | Bitvector32Term::Int64Remainder(left, right)
-        | Bitvector32Term::Int64ShiftLeft(left, right)
-        | Bitvector32Term::Int64ArithmeticShiftRight(left, right)
-        | Bitvector32Term::Int64BitwiseAnd(left, right)
-        | Bitvector32Term::Int64BitwiseOr(left, right)
-        | Bitvector32Term::Int64BitwiseXor(left, right)
-        | Bitvector32Term::UInt64Add(left, right)
-        | Bitvector32Term::UInt64Subtract(left, right)
-        | Bitvector32Term::UInt64Multiply(left, right)
-        | Bitvector32Term::UInt64Divide(left, right)
-        | Bitvector32Term::UInt64Remainder(left, right)
-        | Bitvector32Term::UInt64ShiftLeft(left, right)
-        | Bitvector32Term::UInt64LogicalShiftRight(left, right)
-        | Bitvector32Term::UInt64BitwiseAnd(left, right)
-        | Bitvector32Term::UInt64BitwiseOr(left, right)
-        | Bitvector32Term::UInt64BitwiseXor(left, right) => {
+        crate::kernel::binary_wide_term!(left, right) => {
             term_mentions_a_memory_load(left) || term_mentions_a_memory_load(right)
         }
         Bitvector32Term::BitwiseNot(value)
@@ -3827,30 +3827,7 @@ fn condition_mentions_a_memory_load(condition: &ConditionTerm) -> bool {
         // the memory-free fast path for this logical condition.
         ConditionTerm::AlgebraicEqual(_, _) => true,
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => false,
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right)
-        | ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
+        crate::kernel::binary_bitvector_condition!(left, right) => {
             term_mentions_a_memory_load(left) || term_mentions_a_memory_load(right)
         }
         ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
@@ -3867,12 +3844,7 @@ fn condition_mentions_a_memory_load(condition: &ConditionTerm) -> bool {
             offset_mentions_a_memory_load(&left.offset)
                 || offset_mentions_a_memory_load(&right.offset)
         }
-        ConditionTerm::IntegerLessThan(_, _)
-        | ConditionTerm::IntegerLessEqual(_, _)
-        | ConditionTerm::IntegerGreaterThan(_, _)
-        | ConditionTerm::IntegerGreaterEqual(_, _)
-        | ConditionTerm::IntegerEqual(_, _)
-        | ConditionTerm::IntegerNotEqual(_, _) => false,
+        crate::kernel::integer_comparison_condition!(_, _) => false,
     }
 }
 
@@ -3930,6 +3902,11 @@ pub(crate) fn load_variable_for_exact_cell(
     kind: LoadKind,
     bytes: u32,
 ) -> Variable {
+    let bytes = rewritten_address_access_width(memory, pointer)
+        .map_or(bytes.max(kind.byte_width()), |known| {
+            bytes.max(kind.byte_width()).max(known)
+        });
+    record_load_access_width(memory, pointer, bytes);
     mint_load_variable_identity(memory, pointer, kind, memory, bytes)
 }
 
@@ -4582,6 +4559,93 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn load_width_substitution_preserves_typed_observations_without_inference() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let from = Variable(946_100);
+        let source = crate::kernel::intern_c_memory(CMemory::new().store(
+            CMemory::local_pointer("width-substitution-snapshot"),
+            CValue::Int32(Bitvector32Term::Variable(from)),
+        ));
+        let address = |base| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::add(
+                PointerOffsetTerm::Constant(base),
+                PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(from), 4),
+            ),
+        };
+        let rewrite = |pointer: &Pointer| {
+            crate::kernel::reasoning::substitute_bitvector_variable(
+                &Bitvector32Term::MemoryLoad(
+                    source.clone(),
+                    Box::new(pointer.clone()),
+                    LoadKind::Bits32,
+                ),
+                from,
+                &Bitvector32Term::Constant(3),
+            )
+        };
+        let parts = |term| {
+            let Bitvector32Term::MemoryLoad(memory, pointer, kind) = term else {
+                panic!("expected load")
+            };
+            (memory, pointer, kind)
+        };
+        let unknown = address(0);
+        let (memory, pointer, kind) = parts(rewrite(&unknown));
+        assert_eq!(recorded_load_access_width(&memory, &pointer), None);
+        assert_eq!(
+            load_term_access_width(&memory, &pointer, kind),
+            crate::kernel::C_POINTER_BYTE_WIDTH
+        );
+
+        let typed = address(64);
+        symbolic_load_value(&source, &typed, CType::Int32).unwrap();
+        let (memory, pointer, kind) = parts(rewrite(&typed));
+        assert_ne!(memory, source, "snapshot terms were substituted too");
+        assert_eq!(load_term_access_width(&memory, &pointer, kind), 4);
+        let replacement = Bitvector32Term::Variable(Variable(946_101));
+        let source_index = Bitvector32Term::Variable(from);
+        let mut walker = crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(
+            &source_index,
+            &replacement,
+        );
+        let walked = walker.bits(&Bitvector32Term::MemoryLoad(
+            source.clone(),
+            Box::new(typed.clone()),
+            LoadKind::Bits32,
+        ));
+        assert!(walker.refusal().is_none());
+        let (memory, pointer, kind) = parts(walked);
+        assert_eq!(load_term_access_width(&memory, &pointer, kind), 4);
+
+        let conflicting = address(128);
+        symbolic_load_value(&source, &conflicting, CType::Int32).unwrap();
+        // Use the actual substituted spelling, which removes the old index.
+        let destination = Pointer {
+            block: conflicting.block.clone(),
+            offset: PointerOffsetTerm::Constant(140),
+        };
+        symbolic_load_value(&source, &destination, CType::Int64).unwrap();
+        let (memory, pointer, kind) = parts(rewrite(&conflicting));
+        assert_eq!(load_term_access_width(&memory, &pointer, kind), 8);
+        assert_eq!(recorded_load_access_width(&source, &destination), Some(8));
+        let fixed_index = Bitvector32Term::Constant(3);
+        let mut walker = crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(
+            &source_index,
+            &fixed_index,
+        );
+        let walked = walker.bits(&Bitvector32Term::MemoryLoad(
+            source.clone(),
+            Box::new(conflicting),
+            LoadKind::Bits32,
+        ));
+        assert!(walker.refusal().is_none());
+        let (memory, pointer, kind) = parts(walked);
+        assert_eq!(memory, source);
+        assert_eq!(load_term_access_width(&memory, &pointer, kind), 8);
+    }
 
     #[test]
     fn legacy_pointer_loads_do_not_issue_designations_from_numeric_read_names() {

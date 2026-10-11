@@ -11,10 +11,10 @@ fn walk(bytes: &[u8]) -> usize {
         k < bytes.len() implies bytes[k] == old(bytes[k])
     };
 } by {
-    have bytes.len() % 4u64 <= bytes.len() by { normalize(); }
+    have bytes.len() % 4u64 <= bytes.len() by normalize();
     execute_until(loop(0));
-    have iter_remaining == bytes.len() - bytes.len() % 4u64 by { simp(); }
-    have (bytes.len() - bytes.len() % 4u64) % 4u64 == 0u64 by { simp(); }
+    have iter_remaining == bytes.len() - bytes.len() % 4u64;
+    have (bytes.len() - bytes.len() % 4u64) % 4u64 == 0u64;
     have iter_remaining % 4u64 == 0u64 by {
         rewrite(iter_remaining == bytes.len() - bytes.len() % 4u64); simp();
     }
@@ -39,7 +39,7 @@ fn walk(bytes: &[u8]) -> usize {
         invariant iter_remaining % 4u64 == 0u64;
         invariant iter_cursor == bytes + ((bytes.len() - bytes.len() % 4u64) - iter_remaining);
         preserve by {
-            have 4u64 <= iter_remaining by { simp(); }
+            have 4u64 <= iter_remaining;
             mark iteration;
             have (bytes.len() - bytes.len() % 4u64) - iter_remaining < bytes.len() by {
                 arithmetic() using {
@@ -56,7 +56,7 @@ fn walk(bytes: &[u8]) -> usize {
                 }
             }
             execute_until(read(1)); step();
-            have iter_remaining == at(iteration, iter_remaining) - 4u64 by { simp(); }
+            have iter_remaining == at(iteration, iter_remaining) - 4u64;
             have (at(iteration, iter_remaining) - 4u64) % 4u64 == at(iteration, iter_remaining % 4u64) by {
                 normalize() using { 4u64 <= at(iteration, iter_remaining); }
             }
@@ -119,8 +119,8 @@ fn walk(bytes: &[u8]) -> usize {
     have iter_remaining % 4u64 == iter_remaining by {
         normalize() using { iter_remaining < 4u64; }
     }
-    have iter_remaining == 0u64 by { simp(); }
-    have iter_cursor == iter_tail by { simp(); }
+    have iter_remaining == 0u64;
+    have iter_cursor == iter_tail;
     execute();
     have forall (k: uint64) {
         k < bytes.len() implies bytes[k] == old(bytes[k])

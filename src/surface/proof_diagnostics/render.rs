@@ -95,7 +95,11 @@ impl SnapshotLabels {
                 _ => continue,
             };
             if let Bitvector32Term::Variable(variable) = term {
-                labels.source_name(*variable, parameter.name().to_string());
+                labels.source_name(
+                    *variable,
+                    crate::surface::diagnostics::rust_variable_spelling(parameter.name())
+                        .unwrap_or_else(|| parameter.name().to_string()),
+                );
                 labels.source_types.insert(*variable, value.c_type());
             }
         }
@@ -989,12 +993,7 @@ impl Renderer<'_> {
                 let name = self.variable_name(*v, "condition");
                 self.push(&name);
             }
-            ConditionTerm::IntegerLessThan(a, b)
-            | ConditionTerm::IntegerLessEqual(a, b)
-            | ConditionTerm::IntegerGreaterThan(a, b)
-            | ConditionTerm::IntegerGreaterEqual(a, b)
-            | ConditionTerm::IntegerEqual(a, b)
-            | ConditionTerm::IntegerNotEqual(a, b) => {
+            crate::kernel::integer_comparison_condition!(a, b) => {
                 self.push("integer-condition(");
                 self.integer_shared(a);
                 self.push(match c {

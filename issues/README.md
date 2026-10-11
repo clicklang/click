@@ -25,7 +25,7 @@ the complexity contract and scaling-regression policy. Proposals without a
 failing deterministic curve are not open roadmap items; when the user requests
 an issue, scope it narrowly to the evidence.
 
-## P1: before launch (7)
+## P1: before launch (8)
 
 The launch strategy is to complete P1, deliver the minimum viable rbtree
 (MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
@@ -62,6 +62,7 @@ synchronization, and graph coverage remain P2.
 Program import and execution:
 
 - [Support safe Rust and verify a shared C/Rust checksum specification](rust-support.md)
+- [Write the Adler sidecars in Rust syntax, then refuse the C-shaped spelling](adler-syntax.md)
 
 The completed [basic C++ example](../examples/basic-cpp/README.md) verifies
 references, checked scoped cleanup, and a modular caller. The unchanged
@@ -90,9 +91,8 @@ Specification and proof:
 
 - [Verify the Linux rbtree example on the recursive structure models](rbtree-example.md)
 
-## P2: after launch (21)
+## P2: after launch (20)
 
-- [Design review of the proof language: open items](design-review.md)
 - [Make `step` simple across a call precondition](simplify-step.md)
 - [Reject `result` inside entry snapshots](result-accepted-in-entry-snapshots.md)
 

@@ -140,6 +140,9 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
         first: PointerInRangeEvidence,
         last: PointerInRangeEvidence,
     },
+    JoinReadAgreement {
+        arms: Vec<(MemoryDagCell, MemoryDagCell)>,
+    },
     LoopHavocRanges {
         ranges: Vec<RangeDisjointFromPointerEvidence>,
     },
@@ -163,14 +166,11 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::kernel) enum MemoryDagAssumptionKind {
     StoreCommonBaseDistinctness,
-    StoreExplicitRange,
     StoreGeneralDistinctness,
     HeapFreeResourceSeparation,
-    CallHavocRangeSeparation,
     /// A cell held by memory the caller kept owning across the call
     /// (`CMemoryDerivation::CallHavoc::kept_by_caller`).
     CallHavocKeptByCaller,
-    LoopHavocRangeSeparation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -208,9 +208,20 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
         bytes: u32,
         membership: Box<PointerInRangeEvidence>,
     },
+    /// An indexed access whose additive base is equal to the selected range's
+    /// base, including loads from snapshots joined by checked memory history.
+    /// The displacement is exact pointer arithmetic, not a modular index sum.
+    EquivalentBase {
+        base: Pointer,
+        displacement: PointerOffsetTerm,
+        membership: Box<PointerInRangeEvidence>,
+    },
     /// Existing structural constant/affine membership. Retaining this cheap
     /// form keeps ordinary store edges out of the symbolic bound producer.
     Shallow,
+    /// An exact signed delta against relative endpoints. Re-derivation
+    /// checks the delta's non-wrap requirements before affine membership.
+    ExactRelative { delta: ExactElementDelta },
     Indexed {
         index: Bitvector32Term,
         lower: RangeBoundEvidence,
@@ -278,6 +289,7 @@ impl AccessInRangeEvidence {
 pub(in crate::kernel) enum RangeBoundEvidence {
     Intrinsic,
     SignedOrderPath(Vec<SignedOrderDerivationStep>),
+    EndpointEdge(SignedOrderDerivationStep),
     /// `left < base + 1` and `base < right` imply `left < right` over
     /// signed int32. The second strict bound also proves that `base + 1`
     /// does not wrap.
@@ -290,7 +302,13 @@ pub(in crate::kernel) enum RangeBoundEvidence {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) enum RangeDisjointFromPointerEvidence {
     DistinctBlocks,
-    ExactSeparationFact(Proposition),
+    SeparatedRanges {
+        authority: StoreSeparatedRangesAuthority,
+        range_member: CMemoryRange,
+        access_member: CMemoryRange,
+        range_membership: RangeInRangeEvidence,
+        membership: AccessInRangeEvidence,
+    },
     DirectConstantOutside {
         index: i64,
         /// The access width the index was judged against. A range is a byte
@@ -301,10 +319,175 @@ pub(in crate::kernel) enum RangeDisjointFromPointerEvidence {
         start: i64,
         end: i64,
     },
+    /// An exact element delta at or after the nonwrapping range end. The
+    /// access may be wider than one element because every byte goes forward.
+    AfterEnd {
+        delta: ExactElementDelta,
+        start_nonnegative: RangeBoundEvidence,
+        ordered_end: RangeBoundEvidence,
+        after_end: RangeBoundEvidence,
+    },
     ForwardOffset {
         offset: Bitvector32Term,
         positive: PositiveTermEvidence,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::kernel) enum RangeInRangeEvidence {
+    ExactArithmetic,
+    OrderedSameBase {
+        bounds: [RangeBoundEvidence; 4],
+        parent_extent_guard: Option<Proposition>,
+    },
+    BoundedAccess(AccessInRangeEvidence),
+}
+
+impl RangeInRangeEvidence {
+    fn ordered_parent_extent_guard(parent: &CMemoryRange) -> Option<Option<Proposition>> {
+        match memory_range_byte_count_extent(
+            parent.start().clone(),
+            parent.end().clone(),
+            parent.element_width(),
+        ) {
+            MemoryRangeExtent::ConstantValid => Some(None),
+            MemoryRangeExtent::ConstantInvalid { .. } => None,
+            MemoryRangeExtent::Guards(guards) => {
+                // The ordered subset bounds establish the forward condition.
+                // Retain the separate byte-fit premise to exclude scaled wrap.
+                let [_, fits]: [Proposition; 2] = guards.try_into().ok()?;
+                Some(Some(fits))
+            }
+        }
+    }
+
+    fn ordered_conditions(
+        range: &CMemoryRange,
+        parent: &CMemoryRange,
+    ) -> Option<[ConditionTerm; 4]> {
+        if range.base() != parent.base()
+            || range.element_width() == 0
+            || range.element_width() != parent.element_width()
+            || range.int32_bounds().is_none()
+            || parent.int32_bounds().is_none()
+        {
+            return None;
+        }
+        Some([
+            ConditionTerm::signed_less_equal(0u32.into(), parent.start().clone()),
+            ConditionTerm::signed_less_equal(parent.start().clone(), range.start().clone()),
+            ConditionTerm::signed_less_equal(range.start().clone(), range.end().clone()),
+            ConditionTerm::signed_less_equal(range.end().clone(), parent.end().clone()),
+        ])
+    }
+
+    fn for_ordered_range(
+        range: &CMemoryRange,
+        parent: &CMemoryRange,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        let [nonnegative, starts_inside, ordered, ends_inside] =
+            Self::ordered_conditions(range, parent)?.map(|condition| {
+                RangeBoundEvidence::for_selected_condition(&condition, assumptions)
+            });
+        let bounds = [nonnegative?, starts_inside?, ordered?, ends_inside?];
+        let parent_extent_guard = Self::ordered_parent_extent_guard(parent)?;
+        if let Some(guard) = &parent_extent_guard {
+            if !assumptions.contains_assumed_exact(guard) {
+                return None;
+            }
+            if crate::kernel::assumptions::implicit_reasoning_provenance_capturing() {
+                crate::kernel::record_implicit_reasoning_provenance(assumptions, guard);
+            }
+        }
+        for bound in &bounds {
+            bound.record_provenance(assumptions);
+        }
+        Some(Self::OrderedSameBase {
+            bounds,
+            parent_extent_guard,
+        })
+    }
+
+    fn bounded_access(range: &CMemoryRange) -> Option<(Pointer, u32)> {
+        if range.int32_bounds().is_none() {
+            return None;
+        }
+        // This fallback covers a concrete write footprint. A modular affine
+        // endpoint difference alone does not establish an ordered extent.
+        let start = range.signed_constant_start()?;
+        let end = range.signed_constant_end()?;
+        let count = end.checked_sub(start)?;
+        let bytes = u32::try_from(count)
+            .ok()?
+            .checked_mul(range.element_width())?;
+        (bytes != 0).then(|| {
+            (
+                range
+                    .base()
+                    .offset_by_elements(range.start().clone(), range.element_width()),
+                bytes,
+            )
+        })
+    }
+
+    pub(in crate::kernel) fn for_range(
+        range: &CMemoryRange,
+        parent: &CMemoryRange,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        if crate::kernel::assumptions::memory_range_shallowly_contained_with_facts(
+            range,
+            parent,
+            assumptions,
+        ) {
+            return Some(Self::ExactArithmetic);
+        }
+        if let Some(proof) = Self::for_ordered_range(range, parent, assumptions) {
+            return Some(proof);
+        }
+        let (first, bytes) = Self::bounded_access(range)?;
+        AccessInRangeEvidence::for_access(&first, bytes, parent, assumptions)
+            .map(Self::BoundedAccess)
+    }
+
+    fn checks(
+        &self,
+        range: &CMemoryRange,
+        parent: &CMemoryRange,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        match self {
+            Self::ExactArithmetic => {
+                crate::kernel::assumptions::memory_range_shallowly_contained_with_facts(
+                    range,
+                    parent,
+                    assumptions,
+                )
+            }
+            Self::OrderedSameBase {
+                bounds,
+                parent_extent_guard,
+            } => {
+                Self::ordered_conditions(range, parent).is_some_and(|conditions| {
+                    bounds
+                        .iter()
+                        .zip(conditions)
+                        .all(|(bound, condition)| bound.checks(&condition, assumptions))
+                }) && Self::ordered_parent_extent_guard(parent).is_some_and(|expected| {
+                    &expected == parent_extent_guard
+                        && expected
+                            .as_ref()
+                            .is_none_or(|guard| assumptions.contains_assumed_exact(guard))
+                })
+            }
+            Self::BoundedAccess(membership) => {
+                Self::bounded_access(range).is_some_and(|(first, bytes)| {
+                    membership.checks(&first, bytes, parent, assumptions)
+                })
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -319,6 +502,9 @@ impl MemoryDagHopJustification {
         match self {
             Self::AssumptionDependent(_) => false,
             Self::SeededStores { hops } => hops.iter().all(Self::is_typed),
+            Self::JoinReadAgreement { arms } => arms
+                .iter()
+                .all(|(left, right)| left.has_only_typed_hops() && right.has_only_typed_hops()),
             _ => true,
         }
     }
@@ -487,7 +673,7 @@ impl MemoryDagHopJustification {
                 derivation,
                 CMemoryDerivation::LocalLifetimeEnded { block, .. }
                     if pointer.block != *block
-                        && pointers_proven_distinct_for_memory_resolution(
+                        && pointers_in_distinct_objects_for_memory_resolution(
                             &Pointer {
                                 block: block.clone(),
                                 offset: PointerOffsetTerm::Constant(0),
@@ -537,6 +723,17 @@ impl MemoryDagHopJustification {
                         range,
                         assumptions,
                     )
+            }
+            Self::JoinReadAgreement { arms } => {
+                let CMemoryDerivation::BranchJoin { base, incoming } = derivation else {
+                    return false;
+                };
+                arms.len() == incoming.len()
+                    && arms.iter().zip(incoming).all(|((left, right), memory)| {
+                        left.node() == right.node()
+                            && left.checks_walk_from(base, pointer, bytes, assumptions)
+                            && right.checks_walk_from(memory, pointer, bytes, assumptions)
+                    })
             }
             Self::LoopHavocRanges { ranges } => {
                 let CMemoryDerivation::LoopHavoc {
@@ -632,6 +829,53 @@ impl PositiveTermEvidence {
 }
 
 impl RangeDisjointFromPointerEvidence {
+    pub(in crate::kernel) fn for_after_end(
+        range: &CMemoryRange,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        if bytes == 0 || range.int32_bounds().is_none() {
+            return None;
+        }
+        let delta = pointer.exact_element_delta_from_base(
+            range.base(),
+            range.element_width(),
+            Some(assumptions),
+        )?;
+        let index = delta.as_index_term()?;
+        let proof = Self::AfterEnd {
+            delta,
+            start_nonnegative: RangeBoundEvidence::for_selected_condition(
+                &ConditionTerm::signed_less_equal(
+                    Bitvector32Term::Constant(0),
+                    range.start().clone(),
+                ),
+                assumptions,
+            )?,
+            ordered_end: RangeBoundEvidence::for_selected_condition(
+                &ConditionTerm::signed_less_equal(range.start().clone(), range.end().clone()),
+                assumptions,
+            )?,
+            after_end: RangeBoundEvidence::for_selected_condition(
+                &ConditionTerm::signed_less_equal(range.end().clone(), index),
+                assumptions,
+            )?,
+        };
+        if let Self::AfterEnd {
+            start_nonnegative,
+            ordered_end,
+            after_end,
+            ..
+        } = &proof
+        {
+            start_nonnegative.record_provenance(assumptions);
+            ordered_end.record_provenance(assumptions);
+            after_end.record_provenance(assumptions);
+        }
+        Some(proof)
+    }
+
     /// `bytes` is the access width being checked, and it must be the one the
     /// producer judged: a route that only clears one element is not a proof
     /// about a wider access.
@@ -644,14 +888,34 @@ impl RangeDisjointFromPointerEvidence {
     ) -> bool {
         match self {
             Self::DistinctBlocks => range.base.blocks_proven_distinct(pointer),
-            Self::ExactSeparationFact(fact) => {
-                assumptions.prop_facts.contains(fact)
-                    && exact_separation_fact_covers_range_and_pointer(
-                        fact,
-                        range,
-                        pointer,
-                        assumptions,
-                    )
+            Self::SeparatedRanges {
+                authority,
+                range_member,
+                access_member,
+                range_membership,
+                membership,
+            } => {
+                let authority_checks = match authority {
+                    StoreSeparatedRangesAuthority::ExactProposition(fact) => {
+                        assumptions.prop_facts.contains(fact)
+                            && fact.memory_separation().is_some_and(|(left, right)| {
+                                left == range_member && right == access_member
+                                    || right == range_member && left == access_member
+                            })
+                    }
+                    StoreSeparatedRangesAuthority::ResourceComposition(resources) => {
+                        assumptions.resource_compositions.contains(resources)
+                            && resources.proves_owned_memory_ranges_separate_shallow(
+                                range_member,
+                                access_member,
+                            )
+                    }
+                };
+                authority_checks
+                    && !assumptions
+                        .memory_ranges_overlap_after_base_equality(range_member, access_member)
+                    && range_membership.checks(range, range_member, assumptions)
+                    && membership.checks(pointer, bytes, access_member, assumptions)
             }
             Self::DirectConstantOutside {
                 index,
@@ -683,6 +947,43 @@ impl RangeDisjointFromPointerEvidence {
                         &Bitvector32Term::add(offset.clone(), range.start().clone()),
                         assumptions,
                     )
+            }
+            Self::AfterEnd {
+                delta,
+                start_nonnegative,
+                ordered_end,
+                after_end,
+            } => {
+                bytes != 0
+                    && range.int32_bounds().is_some()
+                    && pointer
+                        .exact_element_delta_from_base(
+                            range.base(),
+                            range.element_width(),
+                            Some(assumptions),
+                        )
+                        .as_ref()
+                        == Some(delta)
+                    && start_nonnegative.checks(
+                        &ConditionTerm::signed_less_equal(
+                            Bitvector32Term::Constant(0),
+                            range.start().clone(),
+                        ),
+                        assumptions,
+                    )
+                    && ordered_end.checks(
+                        &ConditionTerm::signed_less_equal(
+                            range.start().clone(),
+                            range.end().clone(),
+                        ),
+                        assumptions,
+                    )
+                    && delta.as_index_term().is_some_and(|index| {
+                        after_end.checks(
+                            &ConditionTerm::signed_less_equal(range.end().clone(), index),
+                            assumptions,
+                        )
+                    })
             }
         }
     }
@@ -815,11 +1116,82 @@ pub(in crate::kernel) fn memory_dag_cell_lookups_fingerprint() -> u64 {
 }
 
 impl RangeBoundEvidence {
+    // The retained proof is also the exact dependency list for transport
+    // certificates. Checking with a captured context must keep its bounds.
+    fn record_provenance(&self, assumptions: &PureFactContext) {
+        if !crate::kernel::assumptions::implicit_reasoning_provenance_capturing() {
+            return;
+        }
+        let record = |step: &SignedOrderDerivationStep| {
+            crate::kernel::record_implicit_reasoning_provenance(assumptions, &step.premise);
+        };
+        match self {
+            Self::Intrinsic => {}
+            Self::EndpointEdge(step) => record(step),
+            Self::SignedOrderPath(path) => path.iter().for_each(record),
+            Self::StrictUpperViaSuccessor {
+                to_successor,
+                successor_base_to_upper,
+            } => {
+                record(to_successor);
+                successor_base_to_upper.iter().for_each(record);
+            }
+        }
+    }
+
+    fn intrinsically_true(condition: &ConditionTerm) -> bool {
+        condition == &ConditionTerm::Constant(true)
+            || matches!(condition, ConditionTerm::Bitvector32SignedLessEqual(left, right) if left == right)
+    }
+
+    fn intrinsic_connection(from: &Bitvector32Term, to: &Bitvector32Term) -> Option<bool> {
+        if from == to {
+            Some(false)
+        } else {
+            signed_bitvector_constant(from)
+                .zip(signed_bitvector_constant(to))
+                .and_then(|(from, to)| (from <= to).then_some(from < to))
+        }
+    }
+
+    // An endpoint-local route for hot framing queries. A selected order edge
+    // may connect through constants, but no unrelated facts are enumerated.
+    fn for_selected_condition(
+        condition: &ConditionTerm,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        if Self::intrinsically_true(condition) {
+            return Some(Self::Intrinsic);
+        }
+        let (left, right, strict) = condition_as_order_fact(condition, true)?;
+        if let Some(step) = assumptions.exact_direct_order_step(&left, &right, strict) {
+            return Some(Self::SignedOrderPath(vec![step]));
+        }
+        assumptions
+            .signed_order_bound_entries(&left)
+            .chain(assumptions.signed_order_bound_entries(&right))
+            .find_map(|(endpoint, other, edge_strict, forward)| {
+                let (lower, upper) = if forward {
+                    (endpoint, other)
+                } else {
+                    (other, endpoint)
+                };
+                let before = Self::intrinsic_connection(&left, &lower)?;
+                let after = Self::intrinsic_connection(&upper, &right)?;
+                if strict && !edge_strict && !before && !after {
+                    return None;
+                }
+                assumptions
+                    .exact_direct_order_step(&lower, &upper, edge_strict)
+                    .map(Self::EndpointEdge)
+            })
+    }
+
     fn for_true_condition(
         condition: &ConditionTerm,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
-        if condition == &ConditionTerm::Constant(true) {
+        if Self::intrinsically_true(condition) {
             return Some(Self::Intrinsic);
         }
         let (left, right, strict) = condition_as_order_fact(condition, true)?;
@@ -862,7 +1234,17 @@ impl RangeBoundEvidence {
 
     fn checks(&self, condition: &ConditionTerm, assumptions: &PureFactContext) -> bool {
         match self {
-            Self::Intrinsic => condition == &ConditionTerm::Constant(true),
+            Self::Intrinsic => Self::intrinsically_true(condition),
+            Self::EndpointEdge(step) => {
+                condition_as_order_fact(condition, true).is_some_and(|(left, right, strict)| {
+                    Self::intrinsic_connection(&left, &step.lower)
+                        .zip(Self::intrinsic_connection(&step.upper, &right))
+                        .is_some_and(|(before, after)| {
+                            (!strict || before || step.strict || after)
+                                && assumptions.checks_exact_order_step(step)
+                        })
+                })
+            }
             Self::SignedOrderPath(path) => {
                 condition_as_order_fact(condition, true).is_some_and(|(left, right, strict)| {
                     assumptions.checks_exact_signed_order_path(path, &left, &right, strict)
@@ -961,6 +1343,50 @@ impl PointerInRangeEvidence {
                     membership: Box::new(membership),
                 })
             })
+            .or_else(|| Self::for_equivalent_base(pointer, range, assumptions))
+    }
+
+    fn for_equivalent_base(
+        pointer: &Pointer,
+        range: &CMemoryRange,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        if pointer.block != range.base().block {
+            return None;
+        }
+        let PointerOffsetTerm::Add(left, right) = &pointer.offset else {
+            return None;
+        };
+        [
+            (left.as_ref(), right.as_ref()),
+            (right.as_ref(), left.as_ref()),
+        ]
+        .into_iter()
+        .find_map(|(base_offset, displacement)| {
+            let base = Pointer {
+                block: pointer.block.clone(),
+                offset: base_offset.clone(),
+            };
+            if base == *range.base() {
+                return None;
+            }
+            let alias = Pointer {
+                block: range.base().block.clone(),
+                offset: PointerOffsetTerm::add(range.base().offset.clone(), displacement.clone()),
+            };
+            let membership = Self::for_pointer_direct(&alias, range, assumptions)?;
+            // An equal base helps only when this displacement
+            // supplies a checked member of the selected range.
+            // Do not resolve load histories for failed members.
+            if !pointers_proven_equal_for_memory_resolution(&base, range.base(), assumptions) {
+                return None;
+            }
+            Some(Self::EquivalentBase {
+                base,
+                displacement: displacement.clone(),
+                membership: Box::new(membership),
+            })
+        })
     }
 
     fn for_pointer_direct(
@@ -968,6 +1394,50 @@ impl PointerInRangeEvidence {
         range: &CMemoryRange,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
+        // Try exact selected bounds before the broader shallow rule,
+        // which may consult offset equality and memory history. The
+        // exact delta refuses an index obtained only by modular folding.
+        let delta = range
+            .wide_bounds()
+            .is_none()
+            .then(|| {
+                pointer.exact_element_delta_from_base(
+                    range.base(),
+                    range.element_width(),
+                    Some(assumptions),
+                )
+            })
+            .flatten();
+        if let Some(index) = delta.as_ref().and_then(ExactElementDelta::as_index_term)
+            && let (Some(lower), Some(upper)) = (
+                RangeBoundEvidence::for_selected_condition(
+                    &ConditionTerm::signed_less_equal(range.start().clone(), index.clone()),
+                    assumptions,
+                ),
+                RangeBoundEvidence::for_selected_condition(
+                    &ConditionTerm::signed_less_than(index.clone(), range.end().clone()),
+                    assumptions,
+                ),
+            )
+        {
+            lower.record_provenance(assumptions);
+            upper.record_provenance(assumptions);
+            return Some(Self::Indexed {
+                index,
+                lower,
+                upper,
+            });
+        }
+        if let Some(delta) = delta
+            && crate::kernel::assumptions::element_delta_in_range_by_affine_arithmetic(
+                &delta,
+                range.start(),
+                range.end(),
+                assumptions,
+            )
+        {
+            return Some(Self::ExactRelative { delta });
+        }
         if crate::kernel::assumptions::pointer_in_memory_range_shallow_with_facts(
             pointer,
             range,
@@ -975,20 +1445,25 @@ impl PointerInRangeEvidence {
         ) {
             return Some(Self::Shallow);
         }
-        // A wide range has the one membership rule the shallow check just
-        // applied; the signed 32-bit index evidence below does not read it.
         if range.wide_bounds().is_some() {
             return None;
         }
-        let index =
-            pointer.element_index_from_base_with_width(range.base(), range.element_width())?;
+        let index = pointer
+            .exact_element_delta_from_base(range.base(), range.element_width(), Some(assumptions))?
+            .as_index_term()?;
         let lower_condition =
             ConditionTerm::signed_less_equal(range.start().clone(), index.clone());
         let upper_condition = ConditionTerm::signed_less_than(index.clone(), range.end().clone());
+        let lower = RangeBoundEvidence::for_true_condition(&lower_condition, assumptions);
+        let upper = RangeBoundEvidence::for_true_condition(&upper_condition, assumptions);
+        let lower = lower?;
+        let upper = upper?;
+        lower.record_provenance(assumptions);
+        upper.record_provenance(assumptions);
         Some(Self::Indexed {
+            lower,
+            upper,
             index,
-            lower: RangeBoundEvidence::for_true_condition(&lower_condition, assumptions)?,
-            upper: RangeBoundEvidence::for_true_condition(&upper_condition, assumptions)?,
         })
     }
 
@@ -998,10 +1473,40 @@ impl PointerInRangeEvidence {
         range: &CMemoryRange,
         assumptions: &PureFactContext,
     ) -> bool {
+        if let Self::EquivalentBase {
+            base,
+            displacement,
+            membership,
+        } = self
+        {
+            let original = Pointer {
+                block: base.block.clone(),
+                offset: PointerOffsetTerm::add(base.offset.clone(), displacement.clone()),
+            };
+            let alias = Pointer {
+                block: range.base().block.clone(),
+                offset: PointerOffsetTerm::add(range.base().offset.clone(), displacement.clone()),
+            };
+            let reversed = Pointer {
+                block: base.block.clone(),
+                offset: PointerOffsetTerm::add(displacement.clone(), base.offset.clone()),
+            };
+            return (*pointer == original || *pointer == reversed)
+                && base.block == range.base().block
+                && pointers_proven_equal_for_memory_resolution(base, range.base(), assumptions)
+                && matches!(
+                    membership.as_ref(),
+                    Self::Shallow | Self::ExactRelative { .. } | Self::Indexed { .. }
+                )
+                && membership.checks(&alias, range, assumptions);
+        }
         if let Self::GraphAlias { alias, membership } = self {
             return !pointer.blocks_proven_distinct(alias)
                 && assumptions.pointers_known_equal(pointer, alias)
-                && matches!(membership.as_ref(), Self::Shallow | Self::Indexed { .. })
+                && matches!(
+                    membership.as_ref(),
+                    Self::Shallow | Self::ExactRelative { .. } | Self::Indexed { .. }
+                )
                 && membership.checks(alias, range, assumptions);
         }
         if let Self::ShiftedExactAlias {
@@ -1016,7 +1521,10 @@ impl PointerInRangeEvidence {
                     base.clone(),
                     alias.clone(),
                 )) == Some(true)
-                && matches!(membership.as_ref(), Self::Shallow | Self::Indexed { .. })
+                && matches!(
+                    membership.as_ref(),
+                    Self::Shallow | Self::ExactRelative { .. } | Self::Indexed { .. }
+                )
                 && membership.checks(&alias.offset_by_bytes(*bytes), range, assumptions);
         }
         if let Self::ExactAlias {
@@ -1027,8 +1535,28 @@ impl PointerInRangeEvidence {
         {
             return *condition == ConditionTerm::pointer_equal(pointer.clone(), alias.clone())
                 && assumptions.exact_condition_value(condition) == Some(true)
-                && matches!(membership.as_ref(), Self::Shallow | Self::Indexed { .. })
+                && matches!(
+                    membership.as_ref(),
+                    Self::Shallow | Self::ExactRelative { .. } | Self::Indexed { .. }
+                )
                 && membership.checks(alias, range, assumptions);
+        }
+        if let Self::ExactRelative { delta } = self {
+            return range.wide_bounds().is_none()
+                && pointer
+                    .exact_element_delta_from_base(
+                        range.base(),
+                        range.element_width(),
+                        Some(assumptions),
+                    )
+                    .as_ref()
+                    == Some(delta)
+                && crate::kernel::assumptions::element_delta_in_range_by_affine_arithmetic(
+                    delta,
+                    range.start(),
+                    range.end(),
+                    assumptions,
+                );
         }
         let Self::Indexed {
             index: retained_index,
@@ -1046,8 +1574,9 @@ impl PointerInRangeEvidence {
         if range.int32_bounds().is_none() {
             return false;
         }
-        let Some(index) =
-            pointer.element_index_from_base_with_width(range.base(), range.element_width())
+        let Some(index) = pointer
+            .exact_element_delta_from_base(range.base(), range.element_width(), Some(assumptions))
+            .and_then(|delta| delta.as_index_term())
         else {
             return false;
         };
@@ -1390,6 +1919,63 @@ fn memory_dag_cell_source_walk(
     }
 }
 
+/// Compare just the two paths back to their nearest common snapshot. Arena
+/// ids decrease on every edge, so walking the newer endpoint finds that
+/// common ancestor without inspecting its history. Every hop carries the
+/// same local typed certificate as an ordinary read-preservation query.
+pub(super) fn join_read_agreement(
+    base: &SharedCMemory,
+    incoming: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+    evidence: &super::step_effect::Evidence<'_>,
+) -> Option<(MemoryDagCell, MemoryDagCell)> {
+    let mut left = base.clone();
+    let mut right = incoming.clone();
+    let mut left_path = Vec::new();
+    let mut right_path = Vec::new();
+    while left != right {
+        crate::instrumentation::record_deterministic_work(1);
+        let (current, path) = if left.arena_id() > right.arena_id() {
+            (&mut left, &mut left_path)
+        } else {
+            (&mut right, &mut right_path)
+        };
+        let _lookup = CellLookupGuard::enter(current, pointer)?;
+        let derivation = current.derivation()?;
+        let super::step_effect::StepEffect::Separate(super::step_effect::Separation::Cell(
+            justification,
+        )) = super::step_effect::affects(
+            &derivation,
+            current,
+            super::Resource::Cell { pointer, bytes },
+            evidence,
+        )
+        else {
+            return None;
+        };
+        if !justification.is_typed() {
+            return None;
+        }
+        path.push(MemoryDagHop {
+            derived: current.clone(),
+            derivation: derivation.clone(),
+            justification,
+        });
+        *current = derivation.base().clone();
+    }
+    Some((
+        MemoryDagCell::Unwritten {
+            node: left,
+            path: left_path,
+        },
+        MemoryDagCell::Unwritten {
+            node: right,
+            path: right_path,
+        },
+    ))
+}
+
 #[cfg(test)]
 mod wide_range_reader_tests {
     use super::*;
@@ -1421,5 +2007,171 @@ mod wide_range_reader_tests {
             positive: PositiveTermEvidence::Constant,
         };
         assert!(!forward.checks(&wide, &base, 4, &facts));
+    }
+}
+
+#[cfg(test)]
+mod equivalent_base_membership_tests {
+    use super::*;
+
+    #[test]
+    fn equivalent_base_membership_checks_displacement_before_load_histories() {
+        let mut samples = Vec::new();
+        for count in [16, 128, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let at = |id| Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Variable(Variable(id)),
+            };
+            let mut memory = CMemory::new();
+            for i in 0..count {
+                memory = memory.store(at(9_896_000 + i), CValue::Int32((i as u32).into()));
+            }
+            let snapshot = intern_c_memory(memory);
+            let loaded_base = |id| Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int64(
+                    Bitvector32Term::MemoryLoad(
+                        snapshot.clone(),
+                        Box::new(at(id)),
+                        crate::kernel::LoadKind::Bits64,
+                    ),
+                    4,
+                    true,
+                ),
+            };
+            let base = loaded_base(9_895_001);
+            let selected = loaded_base(9_895_002).offset_by_bytes(64);
+            let range = CMemoryRange::new_with_element_width(base, 0u32.into(), 2u32.into(), 4);
+            // The general producer also tries other aliases, whose load histories
+            // may be relevant. This measures only the selected EquivalentBase
+            // candidate, which must reject displacement before resolving its base.
+            // Sixteen elements cannot fit [0..2); the reversed Add arm has a
+            // native64 displacement without a signed32 membership index. Neither
+            // failed candidate needs equality between its history-derived bases.
+            let (proof, work) = crate::instrumentation::measure_deterministic_work(|| {
+                PointerInRangeEvidence::for_equivalent_base(
+                    &selected,
+                    &range,
+                    &PureFactContext::new(),
+                )
+            });
+            assert!(proof.is_none());
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0] == pair[1]),
+            "failed equivalent-base displacement resolved load histories: {samples:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod ordered_range_tests {
+    use super::*;
+
+    #[test]
+    fn symbolic_same_base_containment_retains_exact_ordered_extents() {
+        let mut samples = Vec::new();
+        for unrelated in [16, 128, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let base = Pointer::symbolic(Variable(9_896_000));
+            let length = Bitvector32Term::Variable(Variable(9_896_001));
+            let capacity = Bitvector32Term::Variable(Variable(9_896_002));
+            let child = CMemoryRange::new(base.clone(), 0u32.into(), length.clone());
+            let parent = CMemoryRange::new(base.clone(), 0u32.into(), capacity.clone());
+            let lower = Proposition::ConditionIs(
+                ConditionTerm::signed_less_equal(0u32.into(), length.clone()),
+                true,
+            );
+            let upper = Proposition::ConditionIs(
+                ConditionTerm::signed_less_equal(length.clone(), capacity.clone()),
+                true,
+            );
+            let fits = Proposition::ConditionIs(
+                ConditionTerm::unsigned_less_equal(capacity.clone(), 1_073_741_823u32.into()),
+                true,
+            );
+            let mut assumptions = PureFactContext::new()
+                .assume_proposition(lower.clone())
+                .assume_proposition(upper.clone())
+                .assume_proposition(fits.clone());
+            for id in 0..unrelated {
+                assumptions = assumptions.assume_condition(
+                    ConditionTerm::signed_less_than(
+                        Bitvector32Term::Variable(Variable(9_896_100 + id * 2)),
+                        Bitvector32Term::Variable(Variable(9_896_101 + id * 2)),
+                    ),
+                    true,
+                );
+            }
+            let ((proof, premises), work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    crate::kernel::collect_reasoning_provenance(|| {
+                        crate::kernel::capture_implicit_reasoning_provenance(|| {
+                            RangeInRangeEvidence::for_range(&child, &parent, &assumptions)
+                        })
+                    })
+                });
+            let proof = proof.expect("selected length bounds cover the complete symbolic range");
+            assert!(matches!(
+                &proof,
+                RangeInRangeEvidence::OrderedSameBase { .. }
+            ));
+            assert!(premises.contains(&lower));
+            assert!(premises.contains(&upper));
+            assert!(premises.contains(&fits));
+            let captured = premises
+                .into_iter()
+                .fold(PureFactContext::new(), PureFactContext::assume_proposition);
+            assert!(proof.checks(&child, &parent, &captured));
+            for bound in [&lower, &upper, &fits] {
+                let missing = captured.without_exact_fact(bound);
+                assert!(!proof.checks(&child, &parent, &missing));
+                assert!(
+                    RangeInRangeEvidence::for_ordered_range(&child, &parent, &missing).is_none()
+                );
+            }
+            let overflowing_parent =
+                CMemoryRange::new(base.clone(), 0u32.into(), 1_073_741_825u32.into());
+            let overflowing_context = captured.clone().assume_condition(
+                ConditionTerm::signed_less_equal(length.clone(), 1_073_741_825u32.into()),
+                true,
+            );
+            assert!(!proof.checks(&child, &overflowing_parent, &overflowing_context));
+            assert!(
+                RangeInRangeEvidence::for_ordered_range(
+                    &child,
+                    &overflowing_parent,
+                    &overflowing_context,
+                )
+                .is_none()
+            );
+            let reversed = CMemoryRange::new(base.clone(), length.clone(), 0u32.into());
+            let negative = CMemoryRange::new(base.clone(), u32::MAX.into(), length.clone());
+            let wide = CMemoryRange::new_wide(
+                base.clone(),
+                Bitvector32Term::UInt64Constant(0),
+                Bitvector32Term::UInt64Constant(1),
+                4,
+            );
+            let other_base = CMemoryRange::new(
+                Pointer::symbolic(Variable(9_896_003)),
+                0u32.into(),
+                length.clone(),
+            );
+            let other_stride = CMemoryRange::new_with_element_width(base, 0u32.into(), length, 8);
+            for changed in [reversed, negative, wide, other_base, other_stride] {
+                assert!(!proof.checks(&changed, &parent, &captured));
+                assert!(
+                    RangeInRangeEvidence::for_ordered_range(&changed, &parent, &captured).is_none()
+                );
+            }
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0] == pair[1]),
+            "selected extent evidence visited unrelated bounds: {samples:?}"
+        );
     }
 }

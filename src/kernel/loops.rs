@@ -463,15 +463,13 @@ fn is_modeled_pthread_call(function_name: &str, environment: &CExecutionEnvironm
 }
 
 fn authority_call_refusal_path() -> CStatementExecutionPath {
-    CStatementExecutionPath {
-        loop_invariant_correspondence: Default::default(),
-        outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+    CStatementExecutionPath::new(
+        CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
             super::functions::AUTHORITY_ASSUMED_CALL_REFUSAL.to_string(),
         )),
-        facts: Vec::new().into(),
-        obligations: Vec::new(),
-        loan_evidence: empty_checked_loan_evidence_sequence(),
-    }
+        Vec::new().into(),
+        Vec::new(),
+    )
 }
 
 pub(super) fn execute_c_call_assign_paths(
@@ -573,16 +571,13 @@ pub(super) fn execute_c_call_assign_paths(
     }
     if function_name == "realloc" {
         if environment.selected_call_contract.is_some() {
-            return Ok(vec![CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            return Ok(vec![CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
                     "step(Contract) requires a function-pointer call".to_string(),
                 )),
-                facts: Vec::new().into(),
-                obligations: Vec::new(),
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }]);
+                Vec::new().into(),
+                Vec::new(),
+            )]);
         }
         return execute_c_realloc_assign_paths(state, target, arguments, assumptions, budget);
     }
@@ -602,16 +597,13 @@ pub(super) fn execute_c_call_assign_paths(
     }
 
     let Some(function) = environment.get_function(function_name) else {
-        return Ok(vec![CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::UnknownFunction(
+        return Ok(vec![CStatementExecutionPath::new(
+            CStatementOutcome::RuntimeError(CRuntimeError::UnknownFunction(
                 function_name.to_string(),
             )),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     };
 
     let original_destination = state.aggregate_destination.clone();
@@ -630,15 +622,13 @@ pub(super) fn execute_c_call_assign_paths(
                     Some(CLocalBinding::AggregateObject { constant: true, .. })
                 )
         }) else {
-            return Ok(vec![CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            return Ok(vec![CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
                     "construction call requires a compatible writable destination".into(),
                 )),
-                facts: Vec::new().into(),
-                obligations: Vec::new(),
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }]);
+                Vec::new().into(),
+                Vec::new(),
+            )]);
         };
         selected_state = state
             .clone()
@@ -972,16 +962,13 @@ pub(super) fn execute_c_call_paths(
     }
 
     let Some(function) = environment.get_function(function_name) else {
-        return Ok(vec![CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::UnknownFunction(
+        return Ok(vec![CStatementExecutionPath::new(
+            CStatementOutcome::RuntimeError(CRuntimeError::UnknownFunction(
                 function_name.to_string(),
             )),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     };
 
     let paths = execute_c_function_call_paths(
@@ -1031,15 +1018,13 @@ fn unbound_modeled_pthread_call(
     {
         return None;
     }
-    Some(CStatementExecutionPath {
-        loop_invariant_correspondence: Default::default(),
-        outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
+    Some(CStatementExecutionPath::new(
+        CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
             "modeled-pthread `{function_name}` has no checked C transition yet"
         ))),
-        facts: Vec::new().into(),
-        obligations: Vec::new(),
-        loan_evidence: empty_checked_loan_evidence_sequence(),
-    })
+        Vec::new().into(),
+        Vec::new(),
+    ))
 }
 
 /// Other workers may change an unlocked payload before the next parent
@@ -1147,15 +1132,13 @@ fn execute_modeled_pthread_mutex_paths(
         || arguments.len() != expected_arity
         || !selected_is_valid
     {
-        return Ok(vec![CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: refusal(
+        return Ok(vec![CStatementExecutionPath::new(
+            refusal(
                 "modeled-pthread mutex call has unsupported arguments or pending thread authority",
             ),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     }
     let mut paths = Vec::new();
     for mut path in super::functions::evaluate_c_arguments_paths(
@@ -1601,15 +1584,13 @@ fn execute_modeled_pthread_create_paths(
         || arguments.len() != 4
         || target.is_none()
     {
-        return Ok(vec![CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: refusal(
+        return Ok(vec![CStatementExecutionPath::new(
+            refusal(
                 "modeled-pthread create requires a direct, assigned four-argument call with no unresolved earlier create",
             ),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     }
     let mut paths = Vec::new();
     for mut path in super::functions::evaluate_c_arguments_paths(
@@ -1637,15 +1618,13 @@ fn execute_modeled_pthread_create_paths(
         } else if let CValue::Pointer(callback) = &path.values[2] {
             if let PointerBlock::Function(worker_name) = &callback.block {
                 let Some(worker) = environment.get_verified_function_rule(worker_name) else {
-                    paths.push(CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome: refusal(
+                    paths.push(CStatementExecutionPath::new(
+                        refusal(
                             "modeled-pthread create requires the direct worker's verified contract",
                         ),
-                        facts: path.facts,
-                        obligations: path.obligations,
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                        path.facts,
+                        path.obligations,
+                    ));
                     continue;
                 };
                 let callback_type =
@@ -1657,15 +1636,11 @@ fn execute_modeled_pthread_create_paths(
                 if callback.c_type() != callback_type
                     || worker.function.function_pointer_type() != callback_type
                 {
-                    paths.push(CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome: refusal(
-                            "modeled-pthread create requires a void *(*)(void *) worker",
-                        ),
-                        facts: path.facts,
-                        obligations: path.obligations,
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                    paths.push(CStatementExecutionPath::new(
+                        refusal("modeled-pthread create requires a void *(*)(void *) worker"),
+                        path.facts,
+                        path.obligations,
+                    ));
                     continue;
                 }
                 let termination = environment.get_verified_function_termination_rule(worker_name);
@@ -1788,13 +1763,11 @@ fn execute_modeled_pthread_create_paths(
         } else {
             refusal("modeled-pthread create requires a direct worker address")
         };
-        paths.push(CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
+        paths.push(CStatementExecutionPath::new(
             outcome,
-            facts: path.facts,
-            obligations: path.obligations,
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        });
+            path.facts,
+            path.obligations,
+        ));
     }
     budget.check_path_width(paths.len())?;
     Ok(paths)
@@ -1812,13 +1785,11 @@ fn execute_modeled_pthread_join_paths(
         CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(message.to_string()))
     };
     if environment.selected_call_contract.is_some() || arguments.len() != 2 {
-        return Ok(vec![CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: refusal("modeled-pthread join requires its direct two-argument C call"),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+        return Ok(vec![CStatementExecutionPath::new(
+            refusal("modeled-pthread join requires its direct two-argument C call"),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     }
     let mut paths = Vec::new();
     for mut path in super::functions::evaluate_c_arguments_paths(
@@ -1877,13 +1848,11 @@ fn execute_modeled_pthread_join_paths(
         } else {
             refusal("modeled-pthread join handle does not name a live child")
         };
-        paths.push(CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
+        paths.push(CStatementExecutionPath::new(
             outcome,
-            facts: path.facts,
-            obligations: path.obligations,
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        });
+            path.facts,
+            path.obligations,
+        ));
     }
     budget.check_path_width(paths.len())?;
     Ok(paths)
@@ -1945,14 +1914,7 @@ fn execute_c_indirect_call_assign_paths(
                 }
                 CFunctionOutcome::RuntimeError(error) => CStatementOutcome::RuntimeError(error),
             };
-            CStatementExecutionPath {
-                loop_invariant_correspondence: Default::default(),
-                outcome,
-                facts: path.facts,
-                obligations: path.obligations,
-
-                loan_evidence: empty_checked_loan_evidence_sequence(),
-            }
+            CStatementExecutionPath::new(outcome, path.facts, path.obligations)
         })
         .collect())
 }
@@ -1969,15 +1931,13 @@ fn execute_c_indirect_call_paths(
 ) -> ExecutionResult<Vec<CFunctionPath>> {
     budget.install_c_byte_order(environment.byte_order());
     if function_type == CType::FunctionPointer(CallbackSignature::UNSPECIFIED) {
-        return Ok(vec![CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+        return Ok(vec![CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                 "indirect calls require a supported callback signature".into(),
             )),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }]);
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     }
     let mut paths = Vec::new();
     for target_path in evaluate_c_expression_paths(
@@ -2014,26 +1974,20 @@ fn execute_c_indirect_call_paths(
                                 .iter()
                                 .any(|contract| contract.name() == selected.as_ref())
                         {
-                            paths.push(CFunctionPath {
-                                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
-                                    format!("contract `{selected}` is not established for this callback with its call signature"))),
-                                facts, obligations,
-
-                                loan_evidence: empty_checked_loan_evidence_sequence(),});
+                            paths.push(CFunctionPath::new(CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                                    format!("contract `{selected}` is not established for this callback with its call signature"))), facts, obligations));
                             continue;
                         }
                         if contracts.is_empty() {
-                            paths.push(CFunctionPath {
-                                outcome: CFunctionOutcome::RuntimeError(
+                            paths.push(CFunctionPath::new(
+                                CFunctionOutcome::RuntimeError(
                                     CRuntimeError::AbstractFunctionPointerCall(
                                         function_name.to_string(),
                                     ),
                                 ),
                                 facts,
                                 obligations,
-
-                                loan_evidence: empty_checked_loan_evidence_sequence(),
-                            });
+                            ));
                             continue;
                         }
                         for mut call_path in execute_c_function_contracts_paths(
@@ -2059,63 +2013,49 @@ fn execute_c_indirect_call_paths(
             }
             CExpressionOutcome::Value(_) => vec![Err(CRuntimeError::TypeMismatch)],
             CExpressionOutcome::UndefinedBehavior(error) => {
-                paths.push(CFunctionPath {
-                    outcome: CFunctionOutcome::UndefinedBehavior(error),
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::UndefinedBehavior(error),
                     facts,
                     obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                ));
                 continue;
             }
             CExpressionOutcome::RuntimeError(error) => {
-                paths.push(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(error),
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(error),
                     facts,
                     obligations,
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                ));
                 continue;
             }
         };
 
         for target_name in target_names {
             let Ok(target_name) = target_name else {
-                paths.push(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(target_name.unwrap_err()),
-                    facts: facts.clone(),
-                    obligations: obligations.clone(),
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(target_name.unwrap_err()),
+                    facts.clone(),
+                    obligations.clone(),
+                ));
                 continue;
             };
             let Some(function) = environment.get_function(&target_name) else {
-                paths.push(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(CRuntimeError::UnknownFunction(
-                        target_name,
-                    )),
-                    facts: facts.clone(),
-                    obligations: obligations.clone(),
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(CRuntimeError::UnknownFunction(target_name)),
+                    facts.clone(),
+                    obligations.clone(),
+                ));
                 continue;
             };
             if function.function_pointer_type() != function_type {
-                paths.push(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
-                        format!(
-                            "function pointer target `{}` has an incompatible signature",
-                            function.name()
-                        ),
-                    )),
-                    facts: facts.clone(),
-                    obligations: obligations.clone(),
-
-                    loan_evidence: empty_checked_loan_evidence_sequence(),
-                });
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
+                        "function pointer target `{}` has an incompatible signature",
+                        function.name()
+                    ))),
+                    facts.clone(),
+                    obligations.clone(),
+                ));
                 continue;
             }
             let target_assumptions =
@@ -2397,24 +2337,18 @@ pub(super) fn execute_c_statement_verification_paths(
                         }
                     }
                     CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                        paths.push(CStatementExecutionPath {
-                            loop_invariant_correspondence: Default::default(),
-                            outcome: CStatementOutcome::UndefinedBehavior(undefined_behavior),
+                        paths.push(CStatementExecutionPath::new(
+                            CStatementOutcome::UndefinedBehavior(undefined_behavior),
                             facts,
                             obligations,
-
-                            loan_evidence: empty_checked_loan_evidence_sequence(),
-                        })
+                        ))
                     }
                     CExpressionOutcome::RuntimeError(error) => {
-                        paths.push(CStatementExecutionPath {
-                            loop_invariant_correspondence: Default::default(),
-                            outcome: CStatementOutcome::RuntimeError(error),
+                        paths.push(CStatementExecutionPath::new(
+                            CStatementOutcome::RuntimeError(error),
                             facts,
                             obligations,
-
-                            loan_evidence: empty_checked_loan_evidence_sequence(),
-                        })
+                        ))
                     }
                 }
             }
@@ -5629,14 +5563,11 @@ fn execute_c_while_exit_paths(
                 // not an exit, it is a refusal that carries the guard's own
                 // outcome.
                 if let Some(outcome) = assumption.undecided_outcome() {
-                    paths.push(CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome: outcome.clone(),
+                    paths.push(CStatementExecutionPath::new(
+                        outcome.clone(),
                         facts,
                         obligations,
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                    ));
                     continue;
                 }
                 exits.push(LoopExitFacts::unabstracted(
@@ -5743,14 +5674,7 @@ fn execute_c_while_exit_paths(
                 // strictly less than `!condition`, and the loop would export
                 // an exit state the C never reaches that way.
                 if let CConditionBranch::Undecided(outcome) = branch {
-                    paths.push(CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome,
-                        facts,
-                        obligations,
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    });
+                    paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
                     continue;
                 }
                 // D7 applied to refutation at the loop exit, the same way the
@@ -5842,14 +5766,11 @@ fn execute_c_while_exit_paths(
                     .with_context("loop has neither a safe exit nor a safe iteration"),
             );
         }
-        paths.push(CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: CStatementOutcome::VerificationDiverges,
-            facts: whole_loop_effect_facts.into(),
+        paths.push(CStatementExecutionPath::new(
+            CStatementOutcome::VerificationDiverges,
+            whole_loop_effect_facts.into(),
             obligations,
-
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        });
+        ));
     }
     budget.check_path_width(paths.len())?;
     Ok(paths)
@@ -7230,7 +7151,13 @@ pub(super) fn prepare_loop_top_state(
             let Proposition::CMemoryEffectSummary { mutable_ranges, .. } = summary else {
                 return false;
             };
-            assumptions.ranges_proven_disjoint_from_pointer(mutable_ranges, pointer)
+            crate::kernel::memory_provenance::typed_ranges_disjoint_from_pointer_evidence(
+                mutable_ranges,
+                pointer,
+                crate::kernel::reasoning::cell_access_byte_width(value),
+                assumptions,
+            )
+            .is_some()
         }) || kept_by_function(
             pointer,
             crate::kernel::reasoning::cell_access_byte_width(value),
@@ -7248,7 +7175,13 @@ pub(super) fn prepare_loop_top_state(
             let Proposition::CMemoryEffectSummary { mutable_ranges, .. } = summary else {
                 return false;
             };
-            assumptions.ranges_proven_disjoint_from_pointer(mutable_ranges, pointer)
+            crate::kernel::memory_provenance::typed_ranges_disjoint_from_pointer_evidence(
+                mutable_ranges,
+                pointer,
+                crate::kernel::reasoning::cell_access_byte_width(value),
+                assumptions,
+            )
+            .is_some()
         });
         if is_stable {
             std::sync::Arc::make_mut(&mut framed_memory.union_cells)
@@ -10041,25 +9974,7 @@ pub(super) fn collect_address_taken_in_expression(
         CExpression::TypedLoad { pointer, .. } => {
             collect_address_taken_in_expression(pointer, names)
         }
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::And(left, right)
-        | CExpression::Or(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right)
-        | CExpression::Index(left, right) => {
+        crate::kernel::binary_c_expression!(left, right) => {
             collect_address_taken_in_expression(left, names);
             collect_address_taken_in_expression(right, names);
         }
@@ -10096,25 +10011,7 @@ pub(super) fn collect_variable_names(expression: &CExpression, names: &mut BTree
         | CExpression::Not(inner)
         | CExpression::Load(inner) => collect_variable_names(inner, names),
         CExpression::TypedLoad { pointer, .. } => collect_variable_names(pointer, names),
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::And(left, right)
-        | CExpression::Or(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right)
-        | CExpression::Index(left, right) => {
+        crate::kernel::binary_c_expression!(left, right) => {
             collect_variable_names(left, names);
             collect_variable_names(right, names);
         }

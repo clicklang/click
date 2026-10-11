@@ -1544,6 +1544,32 @@ fn charon_adler2_small_batch_compute_rejects_false_recombined_prefix_a() {
 }
 
 #[test]
+#[ignore = "nightly: original B reduction and weighted scalar recombination rejections"]
+fn charon_adler2_small_batch_compute_rejects_false_recombined_prefix_b() {
+    let total = "(int32)(uint32)(bytes_len - bytes_len % 4u64)";
+    let a_seed = "to_integer(at(vector_prefix, a))";
+    let b_seed = "to_integer(at(vector_prefix, b))";
+    let weighted = "to_integer(at(weighted_b, b_vec._0[3])) * 4 + (65521 - to_integer(at(weighted_b, a_vec._0[3]))) * 3";
+    reject_compute(
+        SMALL_BATCH_COMPUTE,
+        &format!("have to_integer(b_vec._0[3]) == {weighted} by"),
+        &format!(
+            "have to_integer(b_vec._0[3]) == {} by",
+            weighted.replace(" * 3", " * 2")
+        ),
+    );
+    reject_compute(
+        SMALL_BATCH_COMPUTE,
+        &format!(
+            "have truncating_remainder(to_integer(b), 65521) == adler_spec_b(bytes, {total}, {a_seed}, {b_seed}) by"
+        ),
+        &format!(
+            "have truncating_remainder(to_integer(b), 65521) == adler_spec_b(bytes, {total}, {a_seed}, {b_seed} + 1) by"
+        ),
+    );
+}
+
+#[test]
 #[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_batch_compute_requires_canonical_a() {
     reject_compute(
@@ -2075,6 +2101,7 @@ fn adler_lane_state_expands_and_rejects_false_relations() {
         "adler_prefix_a_step_four.ensures_0",
         "adler_prefix_a_step_one.ensures_0",
         "adler_prefix_b_step_four.ensures_0",
+        "adler_prefix_b_step_one.ensures_0",
     ] {
         let expanded = click::surface::expand_c0_claim_source_by_label(&source, &[], claim)
             .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
@@ -2096,6 +2123,10 @@ fn adler_lane_state_expands_and_rejects_false_relations() {
         (
             "adler_spec_b(bytes, n + 4, a_seed, b_seed) by",
             "adler_spec_b(bytes, n + 4, a_seed, b_seed + 1) by",
+        ),
+        (
+            "adler_spec_b(bytes, n + 1, a_seed, b_seed) by",
+            "adler_spec_b(bytes, n + 1, a_seed, b_seed + 1) by",
         ),
         ("requires 0 <= b_rep;", ""),
         ("requires n <= 2147483643;", "requires n <= 2147483644;"),
@@ -2733,6 +2764,10 @@ fn adler_count_byte_observations_reject_wrong_positions_and_missing_guards() {
         (
             "== to_integer((int32)bytes[(int32)(uint32)count + lane]) by",
             "== to_integer((int32)bytes[(int32)(uint32)count + lane + 1]) by",
+        ),
+        (
+            "bytes[((int32)(uint32)total - (int32)(uint32)remaining) - 1]) by",
+            "bytes[((int32)(uint32)total - (int32)(uint32)remaining)]) by",
         ),
         ("requires count <= 22204u64;", ""),
         ("requires lane <= 3;", ""),

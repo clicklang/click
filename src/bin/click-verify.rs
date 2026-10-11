@@ -19,6 +19,7 @@ use click::cli::{
 use click::instrumentation::VerificationPhase;
 use click::languages::c::source as c_source;
 use click::languages::c::target::CTarget;
+use click::surface::rust_display_name;
 #[cfg(test)]
 use click::surface::verify_c0_sources;
 use click::surface::{
@@ -833,18 +834,19 @@ fn trace_unit(
             program_prepared_project_selected_proof_names(project, import).map_err(click_message)?
         }
     };
+    // A Rust item is named by its path, `quad::walk`, or by the name the
+    // importer gives it.
     let selects = |kind: &str, name: &str| {
-        names.iter().any(|selected| {
-            selected
-                .strip_prefix(kind)
-                .and_then(|rest| rest.strip_prefix(':'))
-                == Some(name)
+        names.iter().find_map(|selected| {
+            let selected = selected.strip_prefix(kind)?.strip_prefix(':')?;
+            (selected == name || rust_display_name(selected).as_deref() == Some(name))
+                .then(|| selected.to_owned())
         })
     };
-    if selects("function", requested) {
-        Ok(TraceUnit::Function(requested.to_owned()))
-    } else if selects("theorem", requested) {
-        Ok(TraceUnit::Theorem(requested.to_owned()))
+    if let Some(function) = selects("function", requested) {
+        Ok(TraceUnit::Function(function))
+    } else if let Some(theorem) = selects("theorem", requested) {
+        Ok(TraceUnit::Theorem(theorem))
     } else {
         Err(format!("`{requested}` is not a selected proof"))
     }

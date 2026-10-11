@@ -208,12 +208,7 @@ impl Printer<'_> {
                 };
                 return Some(format!("{} {op} {bound}", self.bitvector(a, depth)?));
             }
-            ConditionTerm::IntegerEqual(a, b)
-            | ConditionTerm::IntegerNotEqual(a, b)
-            | ConditionTerm::IntegerLessThan(a, b)
-            | ConditionTerm::IntegerLessEqual(a, b)
-            | ConditionTerm::IntegerGreaterThan(a, b)
-            | ConditionTerm::IntegerGreaterEqual(a, b) => {
+            crate::kernel::integer_comparison_condition!(a, b) => {
                 let (positive, negative) = match condition {
                     ConditionTerm::IntegerEqual(..) => ("==", "!="),
                     ConditionTerm::IntegerNotEqual(..) => ("!=", "=="),
@@ -287,7 +282,14 @@ impl Printer<'_> {
         depth: usize,
     ) -> Option<String> {
         if signed == Some(true) && matches!(value, Bitvector32Term::UInt32From64(_)) {
-            return Some(format!("(int32)({})", self.bitvector(value, depth)?));
+            return Some({
+                let value = self.bitvector(value, depth)?;
+                if crate::surface::diagnostics::rust_spelling() {
+                    format!("({value} as i32)")
+                } else {
+                    format!("(int32)({value})")
+                }
+            });
         }
         if let Bitvector32Term::Constant(value) = value {
             return match signed {
@@ -364,9 +366,14 @@ impl Printer<'_> {
                     self.bitvector(b, depth)?
                 ))
             }
-            Bitvector32Term::UInt32From64(value) => {
-                Some(format!("(uint32)({})", self.bitvector(value, depth)?))
-            }
+            Bitvector32Term::UInt32From64(value) => Some({
+                let value = self.bitvector(value, depth)?;
+                if crate::surface::diagnostics::rust_spelling() {
+                    format!("({value} as u32)")
+                } else {
+                    format!("(uint32)({value})")
+                }
+            }),
             _ => None,
         }
     }

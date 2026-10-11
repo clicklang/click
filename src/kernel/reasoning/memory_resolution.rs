@@ -688,6 +688,39 @@ pub(in crate::kernel) fn pointers_proven_distinct_for_memory_resolution(
     })
 }
 
+/// Whole-object separation, without treating starting-address inequality or
+/// separation of narrow owned ranges as separation of the containing objects.
+/// One exact point/base alias may identify a structurally distinct object;
+/// keyed alias lookup never traverses other aliases or unrelated facts.
+pub(in crate::kernel) fn pointers_in_distinct_objects_for_memory_resolution(
+    left: &Pointer,
+    right: &Pointer,
+    assumptions: &PureFactContext,
+) -> bool {
+    if left.blocks_proven_distinct(right) {
+        return true;
+    }
+    let through_alias = |pointer: &Pointer, other: &Pointer| {
+        let base = Pointer {
+            block: pointer.block.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        crate::instrumentation::record_deterministic_work(1);
+        assumptions
+            .exact_pointer_aliases(pointer)
+            .chain(
+                std::iter::once(&base)
+                    .filter(|_| base != *pointer)
+                    .flat_map(|base| assumptions.exact_pointer_aliases(base)),
+            )
+            .any(|alias| {
+                crate::instrumentation::record_deterministic_work(1);
+                alias.blocks_proven_distinct(other)
+            })
+    };
+    through_alias(left, right) || through_alias(right, left)
+}
+
 fn pointers_proven_distinct_for_memory_resolution_unmemoized(
     left: &Pointer,
     right: &Pointer,
@@ -2213,7 +2246,9 @@ pub(in crate::kernel) fn memories_proven_equal_for_memory_resolution(
     // The cell comparison below reads an entry neither side holds as
     // agreement, which holds only between maps over one underlying state
     // (see `snapshot_objects_agree`).
-    if left.forgotten.forgotten_from != right.forgotten.forgotten_from {
+    if left.forgotten.forgotten_from != right.forgotten.forgotten_from
+        || left.forgotten.join_inputs != right.forgotten.join_inputs
+    {
         return false;
     }
     left.cells
@@ -2582,6 +2617,7 @@ fn snapshot_objects_agree(left: &CMemory, right: &CMemory, pointer: &Pointer) ->
     // same reason; two snapshots with different marks are related by the
     // recorded history or not at all.
     left.forgotten.forgotten_from == right.forgotten.forgotten_from
+        && left.forgotten.join_inputs == right.forgotten.join_inputs
         && left
             .blocks
             .iter()
@@ -2803,6 +2839,7 @@ pub(in crate::kernel) fn memories_match_for_pointer_load(
     // the same order on both sides.
     let candidates = AliasCandidates::of_block(&pointer.block);
     left.forgotten.forgotten_from == right.forgotten.forgotten_from
+        && left.forgotten.join_inputs == right.forgotten.join_inputs
         && observable_blocks_match_for_load(left, right, pointer, &candidates)
         && retirements_agree_for_load(left, right, pointer)
         && observable_heap_metadata_matches_for_load(left, right, pointer, &candidates)
@@ -3496,6 +3533,8 @@ fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointe
         // names a changed load `old(...)`.
         std::sync::Arc::make_mut(&mut canonical.forgotten).forgotten_from =
             memory.forgotten.forgotten_from;
+        std::sync::Arc::make_mut(&mut canonical.forgotten).join_inputs =
+            memory.forgotten.join_inputs.clone();
     }
     // Only the cells below decide what a load reads. Declaring a block writes
     // nothing, so the block list stays the load's own block plus the havoc
@@ -4151,9 +4190,10 @@ fn one_element_gap_separates_bytes(
     assumptions: &PureFactContext,
 ) -> bool {
     if left.block != right.block {
-        // Two addresses in different blocks are separated by the block
-        // ladder, which needs no width: distinct objects share no byte.
-        return true;
+        // Different symbolic coordinates can name nearby addresses in one
+        // allocation. Only whole-object separation supplies a width-free gap;
+        // narrow owned members establish distinct starts, not this gap.
+        return pointers_in_distinct_objects_for_memory_resolution(left, right, assumptions);
     }
     // Two offsets whose difference is a multiple of some stride at least as
     // wide as both accesses are separated by the inequality alone: a

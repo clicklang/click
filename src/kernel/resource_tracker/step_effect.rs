@@ -198,7 +198,8 @@ pub(in crate::kernel) fn separation_check(
 ) -> SeparationCheck {
     match resource {
         Resource::Cell { .. } => match step {
-            CMemoryDerivation::CallHavoc { .. }
+            CMemoryDerivation::BranchJoin { .. }
+            | CMemoryDerivation::CallHavoc { .. }
             | CMemoryDerivation::LoopHavoc {
                 mutable_ranges: Some(_),
                 ..
@@ -239,6 +240,7 @@ pub(in crate::kernel) fn separation_check(
             | CMemoryDerivation::LocalLifetimeEnded { .. }
             | CMemoryDerivation::HeapFreed { .. }
             | CMemoryDerivation::ContractAllocationRetired { .. }
+            | CMemoryDerivation::BranchJoin { .. }
             | CMemoryDerivation::CallHavoc { .. }
             | CMemoryDerivation::LoopHavoc { .. } => SeparationCheck::WholeBlockAgreement,
         },
@@ -264,6 +266,7 @@ pub(in crate::kernel) fn separation_check(
             | CMemoryDerivation::ObjectInitializationRecorded { .. }
             | CMemoryDerivation::CellsForgotten { .. }
             | CMemoryDerivation::LocalLifetimeEnded { .. }
+            | CMemoryDerivation::BranchJoin { .. }
             | CMemoryDerivation::CallHavoc { .. }
             | CMemoryDerivation::LoopHavoc {
                 mutable_ranges: Some(_),
@@ -287,7 +290,7 @@ pub(in crate::kernel) fn separation_check(
 /// verdict from the same premises.
 fn cell_effect(
     step: &CMemoryDerivation,
-    produced: &SharedCMemory,
+    _produced: &SharedCMemory,
     pointer: &Pointer,
     bytes: u32,
     evidence: &Evidence<'_>,
@@ -297,6 +300,19 @@ fn cell_effect(
     let unknown =
         || StepEffect::NotShownSeparate(separation_check(step, Resource::Cell { pointer, bytes }));
     match step {
+        CMemoryDerivation::BranchJoin { base, incoming } => {
+            let arms = incoming
+                .iter()
+                .map(|memory| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    super::cell_source::join_read_agreement(base, memory, pointer, bytes, evidence)
+                })
+                .collect::<Option<Vec<_>>>();
+            match arms {
+                Some(arms) => hop(MemoryDagHopJustification::JoinReadAgreement { arms }),
+                None => unknown(),
+            }
+        }
         CMemoryDerivation::Store {
             pointer: write,
             value,
@@ -354,7 +370,7 @@ fn cell_effect(
             // its base address, using retained range membership evidence.
             if pointer.block != *block
                 && extended_dag_bridging_active()
-                && pointers_proven_distinct_for_memory_resolution(
+                && pointers_in_distinct_objects_for_memory_resolution(
                     &Pointer {
                         block: block.clone(),
                         offset: PointerOffsetTerm::Constant(0),
@@ -501,14 +517,6 @@ fn cell_effect(
                 Some((range.clone(), first, last))
             }) {
                 hop(MemoryDagHopJustification::CallHavocKeptRange { range, first, last })
-            } else if assumptions.ranges_proven_disjoint_from_pointer_for_frame(
-                mutable_ranges,
-                pointer,
-                produced.memory(),
-            ) {
-                hop(MemoryDagHopJustification::AssumptionDependent(
-                    MemoryDagAssumptionKind::CallHavocRangeSeparation,
-                ))
             } else if kept_by_caller
                 .as_ref()
                 .is_some_and(|kept| kept.holds_access(pointer, bytes, assumptions))
@@ -542,14 +550,6 @@ fn cell_effect(
                 assumptions,
             ) {
                 hop(MemoryDagHopJustification::LoopHavocRanges { ranges })
-            } else if assumptions.ranges_proven_disjoint_from_pointer_for_frame(
-                mutable_ranges,
-                pointer,
-                produced.memory(),
-            ) {
-                hop(MemoryDagHopJustification::AssumptionDependent(
-                    MemoryDagAssumptionKind::LoopHavocRangeSeparation,
-                ))
             } else {
                 unknown()
             }
@@ -657,12 +657,6 @@ fn store_cell_effect(
         )
     {
         hop(justification)
-    } else if explicit_dag_check_active()
-        && assumptions.pointers_proven_disjoint_by_shallow_explicit_range(write, pointer)
-    {
-        hop(MemoryDagHopJustification::AssumptionDependent(
-            MemoryDagAssumptionKind::StoreExplicitRange,
-        ))
     } else if extended_dag_bridging_active()
         && address_inequality_separates_bytes
         && pointers_proven_distinct_for_memory_resolution(write, pointer, assumptions)
@@ -1002,6 +996,7 @@ fn block_effect(step: &CMemoryDerivation, block: &PointerBlock) -> StepEffect {
         // The state is the same but the cell map is not, and the edge names no
         // cell, so nothing says the dropped values were not this block's.
         CMemoryDerivation::CellsForgotten { .. } => stops(None),
+        CMemoryDerivation::BranchJoin { .. } => unknown(),
         CMemoryDerivation::CallHavoc { mutable_ranges, .. }
         | CMemoryDerivation::LoopHavoc {
             mutable_ranges: Some(mutable_ranges),
@@ -1093,6 +1088,7 @@ fn footprint_effect(step: &CMemoryDerivation, ranges: Option<&[CMemoryRange]>) -
         return unknown();
     };
     match step {
+        CMemoryDerivation::BranchJoin { .. } => unknown(),
         CMemoryDerivation::Store { pointer, value, .. } => {
             if !memory_block_may_alias(&pointer.block)
                 && !ranges

@@ -700,12 +700,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                             *right,
                         )
                     }
-                    ConditionTerm::IntegerLessThan(_, _)
-                    | ConditionTerm::IntegerLessEqual(_, _)
-                    | ConditionTerm::IntegerGreaterThan(_, _)
-                    | ConditionTerm::IntegerGreaterEqual(_, _)
-                    | ConditionTerm::IntegerEqual(_, _)
-                    | ConditionTerm::IntegerNotEqual(_, _) => {
+                    crate::kernel::integer_comparison_condition!(_, _) => {
                         let _ = write!(identity, "icond{condition:?};");
                     }
                     ConditionTerm::Float32(condition) => {
@@ -2222,8 +2217,13 @@ fn call_havoc_keeps_cell(
         };
     }
     let bytes = crate::kernel::reasoning::cell_access_byte_width(value);
-    if assumptions.ranges_directly_disjoint_from_access(mutable_ranges, pointer, bytes)
-        || assumptions.ranges_proven_disjoint_from_pointer(mutable_ranges, pointer)
+    if crate::kernel::memory_provenance::typed_ranges_disjoint_from_pointer_evidence(
+        mutable_ranges,
+        pointer,
+        bytes,
+        assumptions,
+    )
+    .is_some()
     {
         return CallHavocCellRule::Separate;
     }
@@ -3242,7 +3242,7 @@ impl CMemory {
             if pointers_proven_equal_for_memory_resolution(allocation, root, assumptions) {
                 return false;
             }
-            if let Some(bytes) = bytes.as_const().and_then(|bytes| u32::try_from(bytes).ok()) {
+            if let Some(bytes) = bytes.as_const() {
                 return crate::kernel::memory_provenance::write_access_is_disjoint_from_load(
                     allocation,
                     bytes,
@@ -4140,7 +4140,12 @@ impl CMemory {
         sibling_memories: &[&CMemory],
         ledger: Option<&crate::kernel::loans::LoanLedger>,
     ) -> Result<Self, String> {
-        let diagnostic_base = self.clone();
+        let mut incoming = std::iter::once(&self)
+            .chain(sibling_memories.iter().copied())
+            .map(intern_c_memory_ref)
+            .collect::<Vec<_>>();
+        incoming.sort_by_key(SharedCMemory::arena_id);
+        incoming.dedup();
         let Some(first) = sibling_memories.first() else {
             return Err("an interface memory join has no sibling states".to_string());
         };
@@ -4413,6 +4418,13 @@ impl CMemory {
         // abstraction depend on which arm it was computed from, so arms that
         // forgot from different snapshots on the way could never rejoin.
         forgotten.forgotten_from = None;
+        forgotten.join_inputs = incoming
+            .iter()
+            .map(|memory| ForgottenFrom {
+                content_hash: c_memory_content_hash(memory.memory()),
+                arena_id: memory.arena_id(),
+            })
+            .collect();
         self.heap = std::sync::Arc::new(CHeapMemory {
             live_allocations,
             deallocated_allocations,
@@ -4428,12 +4440,12 @@ impl CMemory {
             pending_reallocations,
         });
         self.forget_zero_readings_under(forgotten_blocks.iter());
-        self.record_diagnostic_transform(
-            "join branch memories",
-            std::iter::once(diagnostic_base)
-                .chain(sibling_memories.iter().map(|memory| (*memory).clone()))
-                .collect(),
-            Vec::new(),
+        record_c_memory_derivation(
+            &mut self,
+            CMemoryDerivation::BranchJoin {
+                base: incoming[0].clone(),
+                incoming,
+            },
         );
         Ok(self)
     }
@@ -6597,23 +6609,17 @@ impl CMemory {
                     &normalized_pointer,
                     assumptions,
                 )
-                // The three range rungs. A field cell survives a store into
-                // an array it is separated from: separation facts plus range
-                // membership decide the cross-base pairs offset reasoning
-                // cannot, and `access_byte_overlap` has no counterpart for
-                // them — it answers `Unknown` for every pair with no common
-                // additive base, which is exactly the pairs these exist to
-                // decide. They place an access by its *first element*, so
-                // they carry the same confusion one level up; that is
-                // reported rather than fixed here, because the membership
-                // evidence takes no access width and the retained
-                // certificate has no field for one.
-                || assumptions.pointers_proven_disjoint_by_explicit_range_for_memory_resolution(
-                    &normalized_cell_pointer,
+                // A range partition keeps the cached value only when both
+                // complete accesses fit their separated ranges. Starting
+                // address membership alone cannot preserve its later bytes.
+                || crate::kernel::memory_provenance::typed_store_separated_ranges_evidence(
                     &normalized_pointer,
+                    bytes,
+                    &normalized_cell_pointer,
+                    crate::kernel::reasoning::cell_access_byte_width(cell_value),
+                    assumptions,
                 )
-                || assumptions
-                    .pointers_directly_disjoint_by_range(&normalized_cell_pointer, &normalized_pointer)
+                .is_some()
                 // Last: a separating composition owns the written address and
                 // this cell's address through two different members, so the
                 // partition invariant keeps the cell. Kept here beside the
@@ -6680,10 +6686,14 @@ impl CMemory {
                     &normalized_pointer,
                     assumptions,
                 )
-                || assumptions.pointers_directly_disjoint_by_range(
-                    &normalized_cell_pointer,
+                || crate::kernel::memory_provenance::typed_store_separated_ranges_evidence(
                     &normalized_pointer,
+                    bytes,
+                    &normalized_cell_pointer,
+                    cell_type.byte_width().max(1),
+                    assumptions,
                 )
+                .is_some()
                 || crate::kernel::memory_provenance::owned_composition_store_separated_evidence(
                     &normalized_pointer,
                     bytes,

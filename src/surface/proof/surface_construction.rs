@@ -425,27 +425,56 @@ fn checked_surface_comparison_fact_in_state_with_availability(
             .into_iter()
             .filter_map(|(variable, name)| name.map(|name| (variable, name)))
             .collect::<BTreeMap<_, _>>();
-        if !names.is_empty()
-            && let Some(surface) = synthesize_surface_proposition_with_bound_variable_names(
+        if !names.is_empty() {
+            let exact_scoped_candidate = |surface: &ClickProposition| {
+                let Ok(resolved) = substitute_click_proposition(surface, &binding_values) else {
+                    return false;
+                };
+                lower_fixed_state_proposition_with_assumptions(
+                    &resolved,
+                    assumptions,
+                    parameters,
+                    arguments,
+                    view.old_reference_state(state),
+                    state,
+                    None,
+                    view.recorded_snapshots,
+                    predicate_environment,
+                    click_function_environment,
+                )
+                .is_ok_and(|lowered| lowered == *kernel && fact_is_available(&lowered))
+            };
+            // A named historical premise can mix an introduced binder with
+            // a local's iteration-entry value. Prefer its recorded spelling.
+            if let Some(surface) = view.surface_propositions.surfaces(kernel).find(|surface| {
+                (proposition_contains_at_expression(surface)
+                    || proposition_contains_old_expression(surface))
+                    && exact_scoped_candidate(surface)
+            }) {
+                return Ok(surface.clone());
+            }
+            if let Some(surface) = synthesize_surface_proposition_with_bound_variable_names(
                 kernel, parameters, arguments, state, &names,
-            )
-            && let Ok(resolved) = substitute_click_proposition(&surface, &binding_values)
-            && let Ok(lowered) = lower_fixed_state_proposition_with_assumptions(
-                &resolved,
-                assumptions,
-                parameters,
-                arguments,
-                view.old_reference_state(state),
-                state,
-                None,
-                view.recorded_snapshots,
-                predicate_environment,
-                click_function_environment,
-            )
-            && lowered == *kernel
-            && fact_is_available(&lowered)
-        {
-            return Ok(surface);
+            ) && exact_scoped_candidate(&surface)
+            {
+                return Ok(surface);
+            }
+            // An immutable old scalar has no memory-load snapshot to index.
+            // Try the same bounded source points as snapshot transport, with
+            // this scope's lexical binder names. Checking the resolved form
+            // must recover the exact available fact at the selected point.
+            for (selector, snapshot) in view
+                .recorded_snapshots
+                .recent(super::smart_closures::MAX_TRANSPORT_SOURCE_POINTS)
+            {
+                if let Some(surface) = synthesize_surface_proposition_with_bound_variable_names(
+                    kernel, parameters, arguments, snapshot, &names,
+                ) && let Ok(anchored) = surface_at_snapshot(&surface, selector)
+                    && exact_scoped_candidate(&anchored)
+                {
+                    return Ok(anchored);
+                }
+            }
         }
     }
     // A snapshot-indexed form paired with this exact available kernel fact

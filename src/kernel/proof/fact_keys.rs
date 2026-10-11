@@ -306,15 +306,9 @@ pub(crate) fn snapshot_blind_proposition_key(
 
 fn snapshot_blind_proposition_key_one(proposition: &Proposition) -> SnapshotBlindPropositionKey {
     match proposition {
-        Proposition::ConditionIs(
-            ConditionTerm::IntegerLessThan(_, _)
-            | ConditionTerm::IntegerLessEqual(_, _)
-            | ConditionTerm::IntegerGreaterThan(_, _)
-            | ConditionTerm::IntegerGreaterEqual(_, _)
-            | ConditionTerm::IntegerEqual(_, _)
-            | ConditionTerm::IntegerNotEqual(_, _),
-            _,
-        ) => SnapshotBlindPropositionKey::Exact(proposition.clone()),
+        Proposition::ConditionIs(crate::kernel::integer_comparison_condition!(_, _), _) => {
+            SnapshotBlindPropositionKey::Exact(proposition.clone())
+        }
         Proposition::ConditionIs(condition, value) => {
             SnapshotBlindPropositionKey::Condition(snapshot_blind_condition_key(condition), *value)
         }
@@ -471,12 +465,7 @@ fn snapshot_blind_condition_key(condition: &ConditionTerm) -> SnapshotBlindCondi
             snapshot_blind_pointer_key(left),
             snapshot_blind_pointer_key(right),
         ),
-        ConditionTerm::IntegerLessThan(_, _)
-        | ConditionTerm::IntegerLessEqual(_, _)
-        | ConditionTerm::IntegerGreaterThan(_, _)
-        | ConditionTerm::IntegerGreaterEqual(_, _)
-        | ConditionTerm::IntegerEqual(_, _)
-        | ConditionTerm::IntegerNotEqual(_, _) => {
+        crate::kernel::integer_comparison_condition!(_, _) => {
             unreachable!("integer conditions use the exact proposition index")
         }
     }
@@ -746,12 +735,7 @@ pub(crate) fn integer_condition_alpha_key(
         return None;
     };
     let (left, right) = match condition {
-        ConditionTerm::IntegerLessThan(left, right)
-        | ConditionTerm::IntegerLessEqual(left, right)
-        | ConditionTerm::IntegerGreaterThan(left, right)
-        | ConditionTerm::IntegerGreaterEqual(left, right)
-        | ConditionTerm::IntegerEqual(left, right)
-        | ConditionTerm::IntegerNotEqual(left, right) => (left, right),
+        crate::kernel::integer_comparison_condition!(left, right) => (left, right),
         _ => return None,
     };
     if !matches!(left.as_ref(), IntegerTerm::RangeFold { .. })

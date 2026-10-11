@@ -361,6 +361,8 @@ pub(crate) enum Change {
     /// Cached cell values were dropped; the state is the same, the form is
     /// not.
     CellsForgotten,
+    /// Incoming branch memories are joined; a read needs agreement in every arm.
+    BranchJoin,
     /// An object's initialized-byte metadata was extended.
     ObjectInitializationRecorded,
     /// Nothing: the recorded history starts here.
@@ -433,6 +435,7 @@ impl Change {
                 Self::ObjectInitializationRecorded
             }
             CMemoryDerivation::CellsForgotten { .. } => Self::CellsForgotten,
+            CMemoryDerivation::BranchJoin { .. } => Self::BranchJoin,
         }
     }
 }
@@ -1013,20 +1016,59 @@ fn cell_last_same_point(
     if let Some(hit) = CELL_EPOCH_MEMO.with(|memo| memo.borrow().get(&key).cloned()) {
         return hit;
     }
-    let epoch = crate::instrumentation::measure_operation(
-        "kernel",
-        "canonical form",
-        "cell epoch walk",
-        || cell_source_for_naming(memory, pointer, bytes).map(|cell| cell.node().clone()),
-    );
-    CELL_EPOCH_MEMO.with(|memo| {
-        let mut memo = memo.borrow_mut();
-        if memo.len() >= 100_000 {
-            memo.clear();
-        }
-        memo.insert(key, epoch.clone());
-    });
-    epoch
+    // Naming needs only the endpoint, not a retained path. Reuse a cached
+    // prefix and memoize each newly visited node, so the next statement pays
+    // for its own memory delta rather than the entire execution history.
+    crate::instrumentation::measure_operation("kernel", "canonical form", "cell epoch walk", || {
+        with_extended_dag_bridging(|| {
+            let assumptions = PureFactContext::new();
+            let evidence = step_effect::Evidence {
+                assumptions: &assumptions,
+                cross_loop_havoc: false,
+            };
+            let mut current = memory.clone();
+            let mut visited = Vec::new();
+            let result = loop {
+                let current_key = (current.clone(), pointer.clone(), bytes);
+                if let Some(hit) =
+                    CELL_EPOCH_MEMO.with(|memo| memo.borrow().get(&current_key).cloned())
+                {
+                    break hit;
+                }
+                crate::instrumentation::record_deterministic_work(1);
+                visited.push(current_key);
+                let Some(_lookup) = cell_source::CellLookupGuard::enter(&current, pointer) else {
+                    break None;
+                };
+                let Some(derivation) = current.derivation() else {
+                    break Some(current);
+                };
+                match step_effect::affects(
+                    &derivation,
+                    &current,
+                    Resource::Cell { pointer, bytes },
+                    &evidence,
+                ) {
+                    step_effect::StepEffect::Separate(step_effect::Separation::Cell(_)) => {
+                        current = derivation.base().clone()
+                    }
+                    _ => break Some(current),
+                }
+            };
+            CELL_EPOCH_MEMO.with(|memo| {
+                let mut memo = memo.borrow_mut();
+                if memo.len() >= 100_000 {
+                    memo.clear();
+                }
+                if result.is_some() {
+                    for key in visited {
+                        memo.insert(key, result.clone());
+                    }
+                }
+            });
+            result
+        })
+    })
 }
 
 /// The cell walk exactly as naming runs it: no ambient facts, and loop havoc
@@ -1234,12 +1276,7 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
             left.for_each_bitvector_term(|term| collect_bitvector_reads(term, reads));
             right.for_each_bitvector_term(|term| collect_bitvector_reads(term, reads));
         }
-        ConditionTerm::IntegerLessThan(left, right)
-        | ConditionTerm::IntegerLessEqual(left, right)
-        | ConditionTerm::IntegerGreaterThan(left, right)
-        | ConditionTerm::IntegerGreaterEqual(left, right)
-        | ConditionTerm::IntegerEqual(left, right)
-        | ConditionTerm::IntegerNotEqual(left, right) => {
+        crate::kernel::integer_comparison_condition!(left, right) => {
             collect_integer_reads(left, reads);
             collect_integer_reads(right, reads);
         }
@@ -1255,30 +1292,7 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
             collect_offset_reads(&right.offset, reads);
         }
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right)
-        | ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
+        crate::kernel::binary_bitvector_condition!(left, right) => {
             collect_bitvector_reads(left, reads);
             collect_bitvector_reads(right, reads);
         }
@@ -1331,11 +1345,7 @@ fn collect_integer_node_reads(
             collect_bitvector_reads(machine.value(), reads);
         }
         IntegerTerm::Negate(inner) => collect_shared_integer_reads(inner, reads, seen),
-        IntegerTerm::Add(left, right)
-        | IntegerTerm::Subtract(left, right)
-        | IntegerTerm::Multiply(left, right)
-        | IntegerTerm::TruncatingQuotient(left, right)
-        | IntegerTerm::TruncatingRemainder(left, right) => {
+        crate::kernel::binary_integer_term!(left, right) => {
             collect_shared_integer_reads(left, reads, seen);
             collect_shared_integer_reads(right, reads, seen);
         }
@@ -1409,19 +1419,7 @@ fn collect_bitvector_reads(term: &Bitvector32Term, reads: &mut Vec<ResourceRead>
                 );
             }
         }
-        Bitvector32Term::Add(left, right)
-        | Bitvector32Term::Subtract(left, right)
-        | Bitvector32Term::Multiply(left, right)
-        | Bitvector32Term::Divide(left, right)
-        | Bitvector32Term::UnsignedDivide(left, right)
-        | Bitvector32Term::Remainder(left, right)
-        | Bitvector32Term::UnsignedRemainder(left, right)
-        | Bitvector32Term::ShiftLeft(left, right)
-        | Bitvector32Term::ArithmeticShiftRight(left, right)
-        | Bitvector32Term::LogicalShiftRight(left, right)
-        | Bitvector32Term::BitwiseAnd(left, right)
-        | Bitvector32Term::BitwiseOr(left, right)
-        | Bitvector32Term::BitwiseXor(left, right) => {
+        crate::kernel::binary_bitvector32_term!(left, right) => {
             collect_bitvector_reads(left, reads);
             collect_bitvector_reads(right, reads);
         }

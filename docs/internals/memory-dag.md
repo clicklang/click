@@ -91,6 +91,7 @@ kinds:
 
 | Edge | Meaning |
 | --- | --- |
+| `BranchJoin` | An abstraction of all incoming memories. A selected read crosses only when typed preservation paths connect every input to a common snapshot; cache presence is irrelevant. |
 | `Store` | One pointer was assigned a value. No fact context is recorded on the edge. |
 | `LoopHavoc` | A loop may have changed memory; verified whole-loop effects carry a checked write set. |
 | `CallHavoc` | A call may have changed the callee's owned ranges, and none of the memory its caller kept owning. |
@@ -106,7 +107,8 @@ pre-allocation identity instead of recording a backward edge.
 
 ## What a snapshot's identity is
 
-A snapshot is its known cells plus the snapshot it was forgotten from.
+A snapshot includes its known cells, the snapshot it was forgotten from, and
+the incoming identities of its most recent branch join.
 
 Interning by content is what lets one node stand for every execution that
 reaches it, and a load reads its name from the snapshot it happens at. Both
@@ -141,6 +143,12 @@ unchanged, and only there:
 Later stores carry the mark they were given, and so do the projections used
 for load naming: the pointer-observable form may drop cells this load is
 proven not to read, but not the mark.
+
+An interface join retains the identities of all incoming snapshots in
+`join_inputs`, including through read projections. Two joins with empty cell
+maps must not become the same snapshot when their incoming histories differ.
+The persistent set hashes incoming content hashes without recursively walking
+their histories; equality also checks their exact arena identities.
 
 A load's name is not usually this snapshot's hash, because
 `load_variable_for_cell_with_origin` first asks the resource tracker for the

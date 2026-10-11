@@ -576,44 +576,14 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
             | Bitvector32Term::UInt32From64(_)
             | Bitvector32Term::UInt64FromInt32(_)
             | Bitvector32Term::UInt64FromInt64(_)
-            | Bitvector32Term::Int64Add(_, _)
-            | Bitvector32Term::Int64Subtract(_, _)
-            | Bitvector32Term::Int64Multiply(_, _)
-            | Bitvector32Term::Int64Divide(_, _)
-            | Bitvector32Term::Int64Remainder(_, _)
-            | Bitvector32Term::Int64ShiftLeft(_, _)
-            | Bitvector32Term::Int64ArithmeticShiftRight(_, _)
-            | Bitvector32Term::Int64BitwiseAnd(_, _)
-            | Bitvector32Term::Int64BitwiseOr(_, _)
-            | Bitvector32Term::Int64BitwiseXor(_, _)
+            | crate::kernel::binary_int64_term!(_, _)
             | Bitvector32Term::Int64BitwiseNot(_)
-            | Bitvector32Term::UInt64Add(_, _)
-            | Bitvector32Term::UInt64Subtract(_, _)
-            | Bitvector32Term::UInt64Multiply(_, _)
-            | Bitvector32Term::UInt64Divide(_, _)
-            | Bitvector32Term::UInt64Remainder(_, _)
-            | Bitvector32Term::UInt64ShiftLeft(_, _)
-            | Bitvector32Term::UInt64LogicalShiftRight(_, _)
-            | Bitvector32Term::UInt64BitwiseAnd(_, _)
-            | Bitvector32Term::UInt64BitwiseOr(_, _)
-            | Bitvector32Term::UInt64BitwiseXor(_, _)
+            | crate::kernel::binary_uint64_term!(_, _)
             | Bitvector32Term::UInt64BitwiseNot(_) => {}
             Bitvector32Term::Variable(variable) => {
                 variables.insert(*variable);
             }
-            Bitvector32Term::Add(left, right)
-            | Bitvector32Term::Subtract(left, right)
-            | Bitvector32Term::Multiply(left, right)
-            | Bitvector32Term::Divide(left, right)
-            | Bitvector32Term::UnsignedDivide(left, right)
-            | Bitvector32Term::Remainder(left, right)
-            | Bitvector32Term::UnsignedRemainder(left, right)
-            | Bitvector32Term::ShiftLeft(left, right)
-            | Bitvector32Term::ArithmeticShiftRight(left, right)
-            | Bitvector32Term::LogicalShiftRight(left, right)
-            | Bitvector32Term::BitwiseAnd(left, right)
-            | Bitvector32Term::BitwiseOr(left, right)
-            | Bitvector32Term::BitwiseXor(left, right) => {
+            crate::kernel::binary_bitvector32_term!(left, right) => {
                 collect_shallow_term_variables(left, variables);
                 collect_shallow_term_variables(right, variables);
             }

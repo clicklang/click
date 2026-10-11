@@ -291,18 +291,8 @@ pub(in crate::kernel) fn apply_c_add(
     }
     match (left, right) {
         (
-            left @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)),
-            right @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)),
+            left @ (crate::kernel::integer32_c_value!(_)),
+            right @ (crate::kernel::integer32_c_value!(_)),
         ) if scalar_uses_uint32(&left, &right) => {
             let facts = facts;
             let Some(left) = promote_c_uint32_path_value(left) else {
@@ -318,16 +308,8 @@ pub(in crate::kernel) fn apply_c_add(
             }]
         }
         (
-            left @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)),
-            right @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)),
+            left @ (crate::kernel::int_promoted_c_value!(_)),
+            right @ (crate::kernel::int_promoted_c_value!(_)),
         ) => {
             let facts = facts;
             let Some(left) = promote_c_int32_path_value(left) else {
@@ -338,17 +320,7 @@ pub(in crate::kernel) fn apply_c_add(
             };
             apply_c_int32_add(left, right, facts, obligations, assumptions)
         }
-        (
-            CValue::Pointer(pointer),
-            offset @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)
-            | CValue::Int64(_)
-            | CValue::UInt64(_)),
-        ) => {
+        (CValue::Pointer(pointer), offset @ (crate::kernel::integer64_c_value!(_))) => {
             let mut facts = facts;
             let Some((offset, unsigned, wide)) = pointer_index_term(offset, &facts, assumptions)
             else {
@@ -376,17 +348,7 @@ pub(in crate::kernel) fn apply_c_add(
                 assumptions,
             )
         }
-        (
-            offset @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)
-            | CValue::Int64(_)
-            | CValue::UInt64(_)),
-            CValue::Pointer(pointer),
-        ) => {
+        (offset @ (crate::kernel::integer64_c_value!(_)), CValue::Pointer(pointer)) => {
             let mut facts = facts;
             let Some((offset, unsigned, wide)) = pointer_index_term(offset, &facts, assumptions)
             else {
@@ -793,24 +755,8 @@ pub(in crate::kernel) fn apply_c_multiply(
     if let Some(width @ (ScalarWidth::Int64 | ScalarWidth::UInt64)) = scalar_width(&left, &right) {
         return apply_c_wide_multiply(left, right, width, facts, obligations, assumptions);
     }
-    let scalar_left = matches!(
-        left,
-        CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)
-    );
-    let scalar_right = matches!(
-        right,
-        CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)
-    );
+    let scalar_left = matches!(left, crate::kernel::integer32_c_value!(_));
+    let scalar_right = matches!(right, crate::kernel::integer32_c_value!(_));
     if !scalar_left || !scalar_right {
         return vec![c_type_mismatch_expression_path(facts, obligations)];
     }
@@ -1279,24 +1225,8 @@ pub(in crate::kernel) fn apply_c_divide(
     if let Some(width @ (ScalarWidth::Int64 | ScalarWidth::UInt64)) = scalar_width(&left, &right) {
         return apply_c_wide_divide(left, right, width, facts, obligations, assumptions);
     }
-    let scalar_left = matches!(
-        left,
-        CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)
-    );
-    let scalar_right = matches!(
-        right,
-        CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)
-    );
+    let scalar_left = matches!(left, crate::kernel::integer32_c_value!(_));
+    let scalar_right = matches!(right, crate::kernel::integer32_c_value!(_));
     if !scalar_left || !scalar_right {
         return vec![c_type_mismatch_expression_path(facts, obligations)];
     }
@@ -1335,24 +1265,8 @@ pub(in crate::kernel) fn apply_c_remainder(
     if let Some(width @ (ScalarWidth::Int64 | ScalarWidth::UInt64)) = scalar_width(&left, &right) {
         return apply_c_wide_remainder(left, right, width, facts, obligations, assumptions);
     }
-    let scalar_left = matches!(
-        left,
-        CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)
-    );
-    let scalar_right = matches!(
-        right,
-        CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)
-    );
+    let scalar_left = matches!(left, crate::kernel::integer32_c_value!(_));
+    let scalar_right = matches!(right, crate::kernel::integer32_c_value!(_));
     if !scalar_left || !scalar_right {
         return vec![c_type_mismatch_expression_path(facts, obligations)];
     }
@@ -1419,24 +1333,8 @@ pub(in crate::kernel) fn apply_c_bitwise_binary(
             obligations,
         }];
     }
-    let scalar_left = matches!(
-        left,
-        CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)
-    );
-    let scalar_right = matches!(
-        right,
-        CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)
-    );
+    let scalar_left = matches!(left, crate::kernel::integer32_c_value!(_));
+    let scalar_right = matches!(right, crate::kernel::integer32_c_value!(_));
     if !scalar_left || !scalar_right {
         return vec![c_type_mismatch_expression_path(facts, obligations)];
     }
@@ -1922,18 +1820,8 @@ fn apply_c_comparison(
             )
         }
         (
-            left @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)),
-            right @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)),
+            left @ (crate::kernel::integer32_c_value!(_)),
+            right @ (crate::kernel::integer32_c_value!(_)),
         ) if scalar_uses_uint32(&left, &right) => {
             let facts = facts;
             let Some(left) = promote_c_uint32_path_value(left) else {
@@ -1950,16 +1838,8 @@ fn apply_c_comparison(
             )
         }
         (
-            left @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)),
-            right @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)),
+            left @ (crate::kernel::int_promoted_c_value!(_)),
+            right @ (crate::kernel::int_promoted_c_value!(_)),
         ) => {
             let facts = facts;
             let Some(left) = promote_c_int32_path_value(left) else {
@@ -2019,16 +1899,8 @@ pub(in crate::kernel) fn apply_c_subtract(
     }
     match (left, right) {
         (
-            left @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)),
-            right @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)),
+            left @ (crate::kernel::int_promoted_c_value!(_)),
+            right @ (crate::kernel::int_promoted_c_value!(_)),
         ) => {
             let facts = facts;
             let Some(left) = promote_c_int32_path_value(left) else {
@@ -2040,18 +1912,8 @@ pub(in crate::kernel) fn apply_c_subtract(
             apply_c_int32_subtract(left, right, facts, obligations, assumptions)
         }
         (
-            left @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)),
-            right @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)),
+            left @ (crate::kernel::integer32_c_value!(_)),
+            right @ (crate::kernel::integer32_c_value!(_)),
         ) if scalar_uses_uint32(&left, &right) => {
             let facts = facts;
             let Some(left) = promote_c_uint32_path_value(left) else {
@@ -2066,14 +1928,7 @@ pub(in crate::kernel) fn apply_c_subtract(
                 obligations,
             }]
         }
-        (
-            CValue::Pointer(pointer),
-            right @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)),
-        ) => {
+        (CValue::Pointer(pointer), right @ (crate::kernel::int_promoted_c_value!(_))) => {
             let facts = facts;
             let Some(right) = promote_c_int32_path_value(right) else {
                 return Vec::new();
@@ -4727,18 +4582,8 @@ pub(in crate::kernel) fn apply_c_equal(
             )
         }
         (
-            left @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)),
-            right @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)),
+            left @ (crate::kernel::integer32_c_value!(_)),
+            right @ (crate::kernel::integer32_c_value!(_)),
         ) if scalar_uses_uint32(&left, &right) => {
             let facts = facts;
             let Some(left) = promote_c_uint32_path_value(left) else {
@@ -4755,16 +4600,8 @@ pub(in crate::kernel) fn apply_c_equal(
             )
         }
         (
-            left @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)),
-            right @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)),
+            left @ (crate::kernel::int_promoted_c_value!(_)),
+            right @ (crate::kernel::int_promoted_c_value!(_)),
         ) => {
             let facts = facts;
             let Some(left) = promote_c_int32_path_value(left) else {
@@ -4907,18 +4744,8 @@ pub(in crate::kernel) fn apply_c_not_equal(
             )
         }
         (
-            left @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)),
-            right @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)),
+            left @ (crate::kernel::integer32_c_value!(_)),
+            right @ (crate::kernel::integer32_c_value!(_)),
         ) if scalar_uses_uint32(&left, &right) => {
             let facts = facts;
             let Some(left) = promote_c_uint32_path_value(left) else {
@@ -4935,16 +4762,8 @@ pub(in crate::kernel) fn apply_c_not_equal(
             )
         }
         (
-            left @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)),
-            right @ (CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)),
+            left @ (crate::kernel::int_promoted_c_value!(_)),
+            right @ (crate::kernel::int_promoted_c_value!(_)),
         ) => {
             let facts = facts;
             let Some(left) = promote_c_int32_path_value(left) else {

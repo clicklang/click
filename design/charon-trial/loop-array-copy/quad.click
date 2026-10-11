@@ -15,7 +15,7 @@ fn quad::walk(bytes: &[u8]) -> u32 {
     have viewable(bytes[0..16]) by {
         transport(at(function.entry, viewable(bytes[0..16])), viewable(bytes[0..16])) using { at(function.entry, viewable(bytes[0..16])); }
     }
-    have __rust_mir_6_remaining == 16 by { simp(); }
+    have __rust_mir_6_remaining == 16;
     have __rust_mir_6_cursor == bytes + (16 - __rust_mir_6_remaining) by { rewrite(__rust_mir_6_remaining == 16); simp(); }
     loop {
         decreases __rust_mir_6_remaining;
@@ -27,27 +27,27 @@ fn quad::walk(bytes: &[u8]) -> u32 {
         invariant __rust_mir_6_remaining % 4 == 0;
         invariant __rust_mir_6_cursor == bytes + (16 - __rust_mir_6_remaining);
         preserve by {
-            have 4 <= __rust_mir_6_remaining by { simp(); }
+            have 4 <= __rust_mir_6_remaining;
             have 0 <= 16 - __rust_mir_6_remaining by { arithmetic() using { 0 <= __rust_mir_6_remaining; __rust_mir_6_remaining <= 16; 4 <= __rust_mir_6_remaining; } }
             have (16 - __rust_mir_6_remaining) + 4 <= 16 by { arithmetic() using { 0 <= __rust_mir_6_remaining; __rust_mir_6_remaining <= 16; 4 <= __rust_mir_6_remaining; } }
             have 16 - __rust_mir_6_remaining <= 12 by { arithmetic() using { 4 <= __rust_mir_6_remaining; __rust_mir_6_remaining <= 16; } }
             mark iteration;
             execute_until(assignment(chunk, 0)); step();
             execute_until(assignment(_byte, 0));
-            have lanes.lanes[0] == chunk[0] by { simp(); }
-            have lanes.lanes[1] == chunk[1] by { simp(); }
-            have lanes.lanes[2] == chunk[2] by { simp(); }
-            have lanes.lanes[3] == chunk[3] by { simp(); }
+            have lanes.lanes[0] == chunk[0];
+            have lanes.lanes[1] == chunk[1];
+            have lanes.lanes[2] == chunk[2];
+            have lanes.lanes[3] == chunk[3];
 
-            have array[0] == chunk[0] by { simp(); }
-            have array[1] == chunk[1] by { simp(); }
-            have array[2] == chunk[2] by { simp(); }
-            have array[3] == chunk[3] by { simp(); }
+            have array[0] == chunk[0];
+            have array[1] == chunk[1];
+            have array[2] == chunk[2];
+            have array[3] == chunk[3];
             execute_until(back_edge());
             have viewable(bytes[0..16]) by {
                 transport(at(iteration, viewable(bytes[0..16])), viewable(bytes[0..16])) using { at(iteration, viewable(bytes[0..16])); }
             }
-            have __rust_mir_6_remaining == at(iteration, __rust_mir_6_remaining) - 4 by { simp(); }
+            have __rust_mir_6_remaining == at(iteration, __rust_mir_6_remaining) - 4;
             have (at(iteration, __rust_mir_6_remaining) - 4) % 4 == at(iteration, __rust_mir_6_remaining % 4) by {
                 normalize() using { at(iteration, 4 <= __rust_mir_6_remaining); }
             }
@@ -61,7 +61,7 @@ fn quad::walk(bytes: &[u8]) -> u32 {
             have __rust_mir_6_remaining <= 16 by {
                 arithmetic() using { at(iteration, 4 <= __rust_mir_6_remaining); at(iteration, __rust_mir_6_remaining <= 16); __rust_mir_6_remaining == at(iteration, __rust_mir_6_remaining) - 4; }
             }
-            have __rust_mir_6_cursor == at(iteration, __rust_mir_6_cursor) + 4 by { simp(); }
+            have __rust_mir_6_cursor == at(iteration, __rust_mir_6_cursor) + 4;
             have 16 - __rust_mir_6_remaining == at(iteration, 16 - __rust_mir_6_remaining) + 4 by {
                 arithmetic() using {
                     __rust_mir_6_remaining == at(iteration, __rust_mir_6_remaining) - 4;

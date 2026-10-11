@@ -2774,6 +2774,7 @@ fn verify_c0_sources_in_context(
     let mut early_thread_termination_published = false;
     for function_block in ordered_function_blocks {
         crate::surface::enter_ambient_declaration(function_block.signature().name());
+        super::diagnostics::enter_rust_spelling(Some(function_block.signature()));
         check_verification_deadline()?;
         // Load-variable origins are first-seen per verified function: an
         // origin minted while verifying an earlier function belongs to a

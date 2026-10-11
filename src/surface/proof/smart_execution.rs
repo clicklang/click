@@ -220,6 +220,14 @@ impl<'a> Proof<'a> {
             &execution.core.effect_facts,
             &source_kernel,
         );
+        // Introduced binders belong to this proposition scope, rather than
+        // the outer execution frontier. Their existing lexical names let
+        // the planner spell selected guards in the generated `using` list;
+        // the ordinary transport checker still lowers and checks each one.
+        let mut view = execution.view(context);
+        view.proof_bindings = self
+            .proposition_obligation()
+            .map(|goal| &goal.surface_bindings);
         let premises = match plan_explicit_fact_transport(
             source,
             &source_kernel,
@@ -228,7 +236,7 @@ impl<'a> Proof<'a> {
             &transition_facts,
             context.parsed_function.parameters(),
             context.arguments,
-            execution.view(context),
+            view,
             &execution.core.state,
             context.predicate_environment,
             context.click_function_environment,

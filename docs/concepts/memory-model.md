@@ -182,7 +182,10 @@ occupied stay initialized, so a later read of them is an initialized value the
 facts may leave unknown rather than a read of uninitialized storage. A join,
 of a C `if` or of a proof `if` or `match`, keeps a value every incoming path
 holds for the same cell, since that is the cell's value whichever path was
-taken, and forgets the rest
+taken. It also preserves an uncached read when the recorded paths from every
+incoming memory show that its complete byte range is unchanged. This uses the
+same checked read-preservation rule as other memory transitions, and does not
+require restating the fact in the branch interface. It forgets the rest
 (`mdtests/a_join_keeps_a_cell_both_arms_agree_on.md`,
 `mdtests/a_join_forgets_a_cell_the_arms_disagree_on.md`). It
 keeps a byte initialized only when every incoming path initialized it, and a

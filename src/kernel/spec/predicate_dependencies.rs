@@ -101,16 +101,7 @@ pub(in crate::kernel) fn observes_resource_state(proposition: &SpecProposition) 
                 SpecExpression::IntegerToMachine { value, .. } => {
                     pending.push(Node::Integer(value))
                 }
-                SpecExpression::Add(left, right)
-                | SpecExpression::Subtract(left, right)
-                | SpecExpression::Multiply(left, right)
-                | SpecExpression::Divide(left, right)
-                | SpecExpression::Remainder(left, right)
-                | SpecExpression::ShiftLeft(left, right)
-                | SpecExpression::ShiftRight(left, right)
-                | SpecExpression::BitwiseAnd(left, right)
-                | SpecExpression::BitwiseOr(left, right)
-                | SpecExpression::BitwiseXor(left, right) => {
+                crate::kernel::binary_spec_expression!(left, right) => {
                     pending.extend([Node::Expression(left), Node::Expression(right)]);
                 }
                 SpecExpression::BitwiseNot(inner)
@@ -168,11 +159,7 @@ pub(in crate::kernel) fn observes_resource_state(proposition: &SpecProposition) 
                     pending.push(Node::Expression(expression))
                 }
                 SpecIntegerExpression::Negate(inner) => pending.push(Node::Integer(inner)),
-                SpecIntegerExpression::Add(left, right)
-                | SpecIntegerExpression::Subtract(left, right)
-                | SpecIntegerExpression::Multiply(left, right)
-                | SpecIntegerExpression::TruncatingQuotient(left, right)
-                | SpecIntegerExpression::TruncatingRemainder(left, right) => {
+                crate::kernel::binary_spec_integer_expression!(left, right) => {
                     pending.extend([Node::Integer(left), Node::Integer(right)]);
                 }
                 SpecIntegerExpression::AlgebraicMatch { scrutinee, arms } => {

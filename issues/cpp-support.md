@@ -21,11 +21,14 @@ remaining work, not a claim that the consolidated model is implemented.
 The returned composed-observer regression is repaired: proof-entry input names
 now use already checked explicit separation facts, without initializing raw
 outputs. Ordinary, expanded and retained verification preserve the original
-value and frame claims. The PR 646
-[constructor-input regression](../bugs/raw-construction-destination-hides-initialized-input.md)
-remains a baseline blocker; field ownership does not establish separation from
-a raw destination's padding. The design does not count those failing RAII proofs
-as delivered validation.
+value and frame claims. The PR 646 constructor-input repair now restores the
+unchanged constructor and scalar-unwind integration tests. Matching native
+object-input requirements authenticate the destination and scalar referent;
+indexed ownership composition supplies complete field separation even when
+the receiver and input use different pointer blocks. These facts justify the
+bounded padding exclusion while retaining the full unwritten output footprint.
+All four original cleanup Markdown fixtures and `basic-cpp` also pass. The repair
+preserves their source, contracts and value/frame claims.
 
 The [constructor-padding implementation sequence](../design/cpp-object-model.md#constructor-padding-implementation-sequence)
 requires declared storage layouts, preserved subobject boundaries and checked
@@ -42,7 +45,8 @@ size. C++ declarations and child boundaries now retain their nominal import iden
 Native scalar and record references, receivers, and the bounded constructor scalar
 input profile retain separate validity requirements, checked both at symbolic entry
 and actual calls. Native member selection preserves the enclosing root and explicit
-path. The unchanged RAII proofs remain the integration acceptance gate.
+path. Object-validity witnesses and complete-width ownership separation jointly
+justify the constructor input read; neither fact alone supplies the repair.
 Keep object-validity facts separate from permissions and initialization. Audit
 which native interfaces supply those facts and check them at calls; explicit
 raw-storage requirements are needed only where native guarantees are insufficient.

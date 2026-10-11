@@ -168,7 +168,9 @@ This must use the same domain mechanism as ordinary typed pointers.
 
 ### Checked pointer designation: representation and implementation
 
-This is the chosen implementation direction, not a claim of current enforcement.
+This describes the implemented bounded input/member path and the remaining
+general pointer enforcement work. It does not claim that every pointer access
+is checked against a designation.
 Keep `Pointer` as the address term used by cells, aliasing and byte ranges. Put
 semantic designation on `CPointerValue`, and retain it in memory lvalues until
 the executable access has been checked. Do not put designation in a memory-cell
@@ -322,9 +324,11 @@ can use this argument. The destination's padding stays unwritten throughout.
    coherent bounded path only when its casts, copies, loads and calls cannot
    discard the evidence. Unsupported crossings must refuse, not fall back to
    permissive address-only checks.
-4. Check domain requirements and result effects at modular boundaries, including
-   source body entry. Use those checked object relationships to repair the
-   unchanged constructor-padding proof.
+4. Check native input-domain requirements at actual calls and symbolic body
+   entry. Use authenticated object relationships together with checked
+   complete-width ownership separation to repair the unchanged constructor
+   input read. Modular pointer-result and pointer-output designation effects
+   remain a separate requirement before broader producer activation.
 5. Close the sibling-pointer bug only after its direct, local, stored/reloaded,
    cast, modular-call and equality-rewrite variants are rejected in ordinary,
    expanded and retained verification. Preserve valid direct sibling access,
@@ -374,9 +378,23 @@ promise designation preservation. An unknown summary output therefore cannot
 satisfy a new native object-input requirement. Ordinary C/C++ pointer arithmetic
 and access enforcement, array/global producers and the broader result-effect
 migration remain open; this bounded path does not close the sibling-pointer bug.
-The unchanged constructor-padding proofs remain the integration acceptance gate.
+The unchanged constructor and scalar-unwind integration tests, all four original
+cleanup Markdown fixtures, and `basic-cpp` pass. These acceptance cases retain
+the original source, contracts and value/frame claims.
 
 Queries must use the selected domain/object and existing indexed evidence.
+Separation used to frame a read must cover its complete byte span and the
+complete changed span. Unequal starting addresses, or ownership of narrower
+cells at those addresses, do not establish that separation. Stores, lifetime
+ends and call/loop effects must retain evidence that rechecks those extents.
+Range membership must use exact byte displacement, not a wrapping scalar index
+with the same residue. When a range proof consumes bounds, its certificate must
+retain those selected premises so checking does not depend on ambient facts.
+Substitution and checked rewriting must preserve the recorded width of each
+typed observation, including quantified loads. Combining observations keeps
+the wider extent; an unrecorded load keeps its conservative width. These width
+facts describe observations and do not establish object designation or access
+authority.
 Domain transport cannot scan sibling declarations, unrelated cells, the whole
 fact environment or snapshot history. Use shared immutable descriptors and
 persistent state facts; measure deterministic work at multiple domain, sibling
@@ -682,20 +700,19 @@ The C++ scalar and lifetime modules and Rust move lowering retain the language
 evidence; moving all their policies into an undifferentiated kernel flag would
 be a regression.
 
-The recent failures expose boundary inconsistencies rather than evidence that
+The recent failures exposed boundary inconsistencies rather than evidence that
 typed cells must be replaced: proof-entry naming could initialize raw output;
 copy checking lost useful separation context; execution byte reads and logical
 byte reads had different available relations. The output-initialization work
-changes the first two boundaries, but its CI also exposed constructor-input and
-returned-observer regressions. The returned observer is repaired by retrying
-logical input naming with checked explicit separation facts; its unchanged
-ordinary, expanded and retained proofs and negative mutation checks pass. The
-[constructor-input bug](../bugs/raw-construction-destination-hides-initialized-input.md)
-remains: existing RAII proofs lose initialized input reads at the padding
-boundary. Neither repair may weaken existing contracts. The third inconsistency
-is the concrete missing semantic bridge. The object/access-domain audit also
-confirmed the pointer-designation defect above; it must be repaired before
-claiming the bounded model stable.
+repairs the first two boundaries. Its returned-observer regression is repaired
+by naming logical inputs with checked explicit separation facts. The constructor
+repair combines authenticated nominal-record and scalar input requirements
+with complete-width separation from distinct owned members of a valid
+composition, including members in different pointer blocks. The unchanged
+constructor and scalar-unwind integration tests, four cleanup Markdown fixtures
+and `basic-cpp` pass.
+Neither repair changes source contracts or initializes padding. The byte/word
+semantic bridge and broader pointer designation enforcement remain open.
 
 ### Audit ledger
 
@@ -705,22 +722,24 @@ Source admission, execution and proof checking each have separate obligations.
 | Path reviewed | Evidence inspected | Result / required action |
 | --- | --- | --- |
 | Standard byte identity | `cpp/scalar.rs`, `cpp/validity.rs`, exporter cast checks and pinned-declaration tests | Nominal identity and scalar backing are checked; this does not establish traversal semantics |
-| Member address and arithmetic | `cpp/lowering.rs`, `CPointerValue`, `eval/operators.rs` and `eval/memory_loads.rs`; original C/C++ probes | Confirmed missing designation check; fix before claiming this bounded pointer model stable |
+| Member address and arithmetic | `cpp/lowering.rs`, `CPointerValue`, `eval/operators.rs` and `eval/memory_loads.rs`; original C/C++ probes | Native declaration/member producers retain authenticated root/path selection; general arithmetic/access enforcement and the sibling-pointer defect remain open |
 | Construction return | `cpp/construction.rs` and the implemented construction design | Preserve value-only/copy-equivalent admission; kernel destination identity alone is insufficient for source return identity |
-| Entry initialization | Raw markers, naming, checked entry facts and the constructor regression | Keep raw output unwritten; do not infer complete storage separation from field owners with padding gaps |
-| Returned observer | Recorded proof trace and unchanged integration test | Input naming now uses already checked explicit full-range separation; ordinary, expanded, retained and negative checks pass, while padding remains unresolved |
+| Entry initialization | Raw markers, naming, checked entry facts and the constructor regression | Keep raw output and padding unwritten; the constructor repair requires authenticated object witnesses and complete field separation, including indexed cross-block ownership composition |
+| Returned observer | Recorded proof trace and unchanged integration test | Input naming now uses already checked explicit full-range separation; ordinary, expanded, retained and negative checks pass; constructor padding uses the separate bounded object-input rule |
 | Byte/word values | `eval/byte_view.rs`, declared scalar metadata and exact modular word refusal | Direct execution has a bounded encoding law; logical/modular observations still need the shared bridge above |
 | Rust availability | `rust/lowering/moves.rs` storage events and checked live/drop flags | Preserve value consumption independently of bytes and storage; a C++ move must not reuse Rust's consuming semantics |
 | Scalar initialization | Shared initialized declaration, conversion and const-freezing protocol | Retain the distinct initialization transition; ownership and a named logical cell cannot replace it |
 
-The constructor-padding question remains open at the implementation boundary.
-Splitting a raw marker into only value fields would make padding fall through
-the external-memory read path unless another checked guard protects it. Keeping
-the full marker while asserting separation from only the field owners is also
-invalid. A sound repair needs explicit object/extent/lifecycle evidence or a
-representation that separately protects padding and justifies the other input
-objects. The new designation work must establish that evidence; the audit does
-not authorize either shortcut.
+The bounded constructor-padding rule retains the complete raw marker and never
+initializes or discards its padding. Matching entry/call requirements establish
+the destination's nominal record and the input's live scalar object. In the
+admitted non-overlapping hierarchy, a scalar cannot occupy arbitrary record
+padding; complete separation from every value field therefore excludes the raw
+destination. Indexed ownership composition supplies that field separation
+across the receiver and input blocks. A field-owner partition without those
+object witnesses is insufficient, as are distinct pointer names, address
+inequality, or separation covering only part of a field. Unions, replacement
+lifetimes and other overlapping-object profiles remain outside this rule.
 
 ### Constructor-padding implementation sequence
 
@@ -774,16 +793,24 @@ The implementation sequence is:
    those requirements from authenticated declarations or retained input domains.
    They do not fix the unknown extent of a constructor's containing allocation.
    Selection and initialization completion remain separate transitions.
-5. Use those checked facts to decide the input read while retaining the full raw
-   footprint and unwritten padding. Re-run the original constructor and RAII
-   proofs and the hostile padding, sibling, alias and no-op cases before closing
-   the regression.
+5. **Bounded padding rule implemented:** combine authenticated destination and
+   scalar-input witnesses with checked separation from every complete value
+   field. The composition lookup selects owned members through their block
+   indexes, supports distinct receiver/input blocks, and refuses reused members,
+   views and mergeable string-literal ownership. The cross-block query retains
+   at most two matches per side and checks at most four candidate pairs; a miss
+   leaves separation unproven. Complete raw footprints and padding remain
+   unwritten. The unchanged constructor and scalar-unwind integration tests
+   pass, as do all four original cleanup Markdown fixtures and `basic-cpp`.
+   Preserve these and the hostile padding, alias, missing-write and no-op cases
+   as regression coverage.
 
 Do not silently add full-extent separation as a stronger contract precondition
 or derive it from field ownership. It must follow from admitted object-domain
 rules with caller evidence. Exact result/frame claims remain the acceptance
-target. Complete declaration metadata alone is a prerequisite, not a fix for
-`Restore` or a claim that object validity is enforced.
+target. Declaration metadata alone remains insufficient: the repair also requires
+checked scalar/record input validity and complete-width separation, with the
+same requirements at symbolic entry and actual calls.
 
 The recommended boundary keeps permission, object validity and initialization
 as separate shared facts. Native declarations, references and other admitted

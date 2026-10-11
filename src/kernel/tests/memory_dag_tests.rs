@@ -1639,15 +1639,19 @@ fn call_havoc_retains_exact_separation_and_positive_offset_steps() {
             hop.justification
         );
     };
+    assert_eq!(ranges.len(), 2);
+    assert!(matches!(
+        &ranges[0],
+        RangeDisjointFromPointerEvidence::SeparatedRanges {
+            authority: StoreSeparatedRangesAuthority::ExactProposition(fact), ..
+        } if fact == &separation
+    ));
     assert_eq!(
-        ranges,
-        &vec![
-            RangeDisjointFromPointerEvidence::ExactSeparationFact(separation),
-            RangeDisjointFromPointerEvidence::ForwardOffset {
-                offset: Bitvector32Term::Variable(Variable(203)),
-                positive: PositiveTermEvidence::OneLowerBound(lower_bound),
-            },
-        ]
+        ranges[1],
+        RangeDisjointFromPointerEvidence::ForwardOffset {
+            offset: Bitvector32Term::Variable(Variable(203)),
+            positive: PositiveTermEvidence::OneLowerBound(lower_bound),
+        }
     );
     assert!(evidence.is_fully_typed());
     let goal = Proposition::ConditionIs(ConditionTerm::equal(load(&called), load(&base)), true);
@@ -4777,5 +4781,363 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
     assert!(
         costs.iter().all(|cost| *cost <= 250),
         "indexed lifetime separation grew with unrelated members: {costs:?}"
+    );
+}
+
+#[test]
+fn cross_block_narrow_owners_do_not_separate_wider_accesses() {
+    let _session = crate::kernel::VerificationSession::enter();
+    use crate::kernel::memory_provenance::{
+        typed_store_separated_ranges_evidence, write_access_is_disjoint_from_load,
+    };
+    let write = Pointer::symbolic(Variable(945_100));
+    let read = Pointer::symbolic(Variable(945_101));
+    let bytes = |base, count| CMemoryRange::new_with_element_width(base, 0u32.into(), count, 1);
+    let mut costs = Vec::new();
+    for count in [16u64, 128, 1024] {
+        let mut resources = ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own_memory(bytes(write.clone(), 1u32.into())))
+            .unchecked_with_fact(CResourceFact::own_memory(bytes(read.clone(), 1u32.into())))
+            .unchecked_with_fact(CResourceFact::view_memory(bytes(read.clone(), 8u32.into())));
+        for index in 0..count {
+            resources = resources.unchecked_with_fact(CResourceFact::own_memory(bytes(
+                CMemory::frame_local_pointer(index + 1, "unrelated-width-owner"),
+                8u32.into(),
+            )));
+        }
+        let narrow =
+            PureFactContext::new().assume_proposition(Proposition::CResourceComposition(resources));
+        assert!(pointers_proven_distinct_for_memory_resolution(
+            &write, &read, &narrow
+        ));
+        let ((), cost) = crate::instrumentation::measure_deterministic_work(|| {
+            assert_eq!(
+                access_byte_overlap(&write, 1, &read, 8, &narrow),
+                AccessByteOverlap::Unknown,
+            );
+            assert!(!write_access_is_disjoint_from_load(
+                &write, 1, &read, 8, &narrow
+            ));
+            assert!(typed_store_separated_ranges_evidence(&write, 1, &read, 8, &narrow).is_none());
+        });
+        costs.push(cost);
+        crate::kernel::eval::declare_load_access_width(&read, 8);
+        let before = CMemory::new();
+        let after = before
+            .clone()
+            .store(write.clone(), CValue::UInt8(7u32.into()));
+        assert!(
+            !crate::kernel::reasoning::memories_match_for_pointer_load_under_assumptions(
+                &before, &after, &read, &narrow,
+            )
+        );
+        let load = |memory: &CMemory| {
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(memory),
+                Box::new(read.clone()),
+                crate::kernel::LoadKind::Bits64,
+            )
+        };
+        assert!(!with_extended_dag_bridging(
+            || checked_atomic_load_equality(&load(&before), &load(&after), &narrow,)
+        ));
+        let cached = CMemory::new().store(
+            read.clone(),
+            CValue::Int64(Bitvector32Term::Int64Constant(0)),
+        );
+        let stored = cached.without_possible_aliasing_cells(&write, 1, &narrow);
+        assert_eq!(stored.known_value(&read), None);
+        let union = CMemory::new().store_union(
+            read.clone(),
+            CType::Int64,
+            CValue::Int64(Bitvector32Term::Int64Constant(0)),
+        );
+        assert_eq!(
+            union
+                .without_possible_aliasing_cells(&write, 1, &narrow)
+                .known_union_value(&read, CType::Int64),
+            None
+        );
+
+        let full = PureFactContext::new().assume_proposition(Proposition::CResourceComposition(
+            ResourceContext::new()
+                .unchecked_with_fact(CResourceFact::own_memory(bytes(write.clone(), 1u32.into())))
+                .unchecked_with_fact(CResourceFact::own_memory(bytes(read.clone(), 8u32.into()))),
+        ));
+        assert!(write_access_is_disjoint_from_load(
+            &write, 1, &read, 8, &full
+        ));
+        let proof = typed_store_separated_ranges_evidence(&write, 1, &read, 8, &full).unwrap();
+        let step = crate::kernel::intern_c_memory_ref(&after)
+            .derivation()
+            .unwrap();
+        assert!(proof.checks(step.as_ref(), &read, 8, &full));
+        assert!(!proof.checks(step.as_ref(), &read, 8, &narrow));
+        assert_eq!(
+            cached
+                .without_possible_aliasing_cells(&write, 1, &full)
+                .known_value(&read),
+            Some(CValue::Int64(Bitvector32Term::Int64Constant(0)))
+        );
+        assert_eq!(
+            union
+                .without_possible_aliasing_cells(&write, 1, &full)
+                .known_union_value(&read, CType::Int64),
+            Some(CValue::Int64(Bitvector32Term::Int64Constant(0)))
+        );
+    }
+    assert!(
+        costs.iter().all(|cost| *cost <= costs[0] + 32),
+        "unrelated ownership scan: {costs:?}"
+    );
+}
+
+#[test]
+fn havoc_and_effect_summaries_require_complete_separated_read_extents() {
+    let _session = crate::kernel::VerificationSession::enter();
+    use crate::kernel::memory_provenance::typed_ranges_disjoint_from_pointer_evidence;
+    let write = Pointer::symbolic(Variable(945_200));
+    let read = Pointer::symbolic(Variable(945_201));
+    let bytes = |base, count| CMemoryRange::new_with_element_width(base, 0u32.into(), count, 1);
+    let write_range = bytes(write.clone(), 1u32.into());
+    crate::kernel::eval::declare_load_access_width(&read, 8);
+    for composition in [false, true] {
+        for extent in [1u32, 8] {
+            let read_range = bytes(read.clone(), extent.into());
+            let authority = if composition {
+                Proposition::CResourceComposition(
+                    ResourceContext::new()
+                        .unchecked_with_fact(CResourceFact::own_memory(write_range.clone()))
+                        .unchecked_with_fact(CResourceFact::own_memory(read_range.clone()))
+                        .unchecked_with_fact(CResourceFact::view_memory(bytes(
+                            read.clone(),
+                            8u32.into(),
+                        ))),
+                )
+            } else {
+                Proposition::CResourceSeparate {
+                    left: Box::new(CResource::Memory(write_range.clone())),
+                    right: Box::new(CResource::Memory(read_range)),
+                }
+            };
+            let assumptions = PureFactContext::new().assume_proposition(authority);
+            let full = extent == 8;
+            let evidence = typed_ranges_disjoint_from_pointer_evidence(
+                std::slice::from_ref(&write_range),
+                &read,
+                8,
+                &assumptions,
+            );
+            assert_eq!(evidence.is_some(), full);
+            if let Some(evidence) = evidence {
+                assert!(evidence[0].checks(&write_range, &read, 8, &assumptions));
+                assert!(!evidence[0].checks(&write_range, &read, 16, &assumptions));
+                assert!(!evidence[0].checks(&write_range, &read, 8, &PureFactContext::new()));
+            }
+            let before = CMemory::new();
+            let load = |memory: &CMemory| {
+                Bitvector32Term::MemoryLoad(
+                    crate::kernel::intern_c_memory_ref(memory),
+                    Box::new(read.clone()),
+                    crate::kernel::LoadKind::Bits64,
+                )
+            };
+            let called = before.clone().with_call_memory_havoc(
+                Variable(945_202),
+                std::slice::from_ref(&write_range),
+                &assumptions,
+                None,
+            );
+            assert_eq!(
+                with_extended_dag_bridging(|| checked_atomic_load_equality(
+                    &load(&before),
+                    &load(&called),
+                    &assumptions,
+                )),
+                full
+            );
+            let cached = before.clone().store(
+                read.clone(),
+                CValue::Int64(Bitvector32Term::Int64Constant(9)),
+            );
+            let called_cache = cached.with_call_memory_havoc(
+                Variable(945_203),
+                std::slice::from_ref(&write_range),
+                &assumptions,
+                None,
+            );
+            assert_eq!(called_cache.known_value(&read).is_some(), full);
+            let looped = before.clone().with_loop_memory_havoc_preserving_loans(
+                Variable(945_204),
+                &BTreeSet::new(),
+                Some(std::slice::from_ref(&write_range)),
+                None,
+            );
+            assert_eq!(
+                crate::kernel::explicit_atomic_equality_from_memory_derivations(
+                    &load(&before),
+                    &load(&looped),
+                    &assumptions,
+                ),
+                full
+            );
+            // These marker snapshots have no havoc edge. Only the explicit
+            // effect summary can transport the observation between them.
+            let after = before.clone().with_block("call-havoc:extent-summary", 0);
+            let summaries = assumptions.assume_proposition(Proposition::CMemoryEffectSummary {
+                before: before.clone(),
+                after: after.clone(),
+                mutable_ranges: vec![write_range.clone()],
+            });
+            let condition =
+                |memory| ConditionTerm::equal(load(memory), Bitvector32Term::Int64Constant(9));
+            assert_eq!(
+                summaries.conditions_equal_modulo_proven_snapshots(
+                    &condition(&before),
+                    &condition(&after),
+                ),
+                full
+            );
+        }
+    }
+}
+
+#[test]
+fn retained_range_separation_ignores_unrelated_fact_buckets() {
+    let _session = crate::kernel::VerificationSession::enter();
+    use crate::kernel::memory_provenance::typed_ranges_disjoint_from_pointer_evidence;
+    let write = Pointer::symbolic(Variable(945_210));
+    let read = Pointer::symbolic(Variable(945_211));
+    let bytes = |base, count| CMemoryRange::new_with_element_width(base, 0u32.into(), count, 1);
+    let written = bytes(write, 1u32.into());
+    let mut costs = Vec::new();
+    for count in [16u64, 128, 1024] {
+        let mut assumptions =
+            PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+                left: Box::new(CResource::Memory(written.clone())),
+                right: Box::new(CResource::Memory(bytes(read.clone(), 8u32.into()))),
+            });
+        for index in 0..count {
+            assumptions = assumptions.assume_proposition(Proposition::CResourceSeparate {
+                left: Box::new(CResource::Memory(bytes(
+                    Pointer::symbolic(Variable(950_000 + index * 2)),
+                    1u32.into(),
+                ))),
+                right: Box::new(CResource::Memory(bytes(
+                    Pointer::symbolic(Variable(950_001 + index * 2)),
+                    1u32.into(),
+                ))),
+            });
+        }
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let evidence = typed_ranges_disjoint_from_pointer_evidence(
+                std::slice::from_ref(&written),
+                &read,
+                8,
+                &assumptions,
+            )
+            .unwrap();
+            assert!(evidence[0].checks(&written, &read, 8, &assumptions));
+            assert!(
+                typed_ranges_disjoint_from_pointer_evidence(
+                    std::slice::from_ref(&written),
+                    &read,
+                    16,
+                    &assumptions,
+                )
+                .is_none()
+            );
+        });
+        costs.push(work);
+    }
+    assert!(
+        costs[2] <= costs[0].saturating_mul(2).saturating_add(40),
+        "selected range evidence must not scan unrelated facts: {costs:?}"
+    );
+}
+
+#[test]
+fn pointer_read_single_store_aligns_same_block_parameter_aliases() {
+    let mut samples = Vec::new();
+    for unrelated in [16, 128, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let parameter = |id| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(id)), 4),
+        };
+        let p = parameter(98_480);
+        let q = parameter(98_481);
+        let original = intern_c_memory(CMemory::new());
+        let materialized = intern_c_memory(
+            original
+                .memory()
+                .clone()
+                .with_seeded_cells(p.clone(), 4, CType::Int32, 0, 2, original.clone())
+                .with_seeded_cells(
+                    p.offset_by_bytes(8),
+                    4,
+                    CType::Int32,
+                    0,
+                    2,
+                    original.clone(),
+                )
+                .with_seeded_cells(
+                    p.offset_by_bytes(16),
+                    4,
+                    CType::Int32,
+                    0,
+                    2,
+                    original.clone(),
+                ),
+        );
+        let current = intern_c_memory(materialized.memory().clone().store(
+            q.offset_by_bytes(8),
+            CValue::typed_pointer(Pointer::null(), CType::Int32Pointer),
+        ));
+        let mut context = PureFactContext::new();
+        for index in 0..unrelated {
+            context = context.assume_condition(
+                ConditionTerm::pointer_equal(
+                    Pointer::symbolic(Variable(98_500 + index * 2)),
+                    Pointer::symbolic(Variable(98_501 + index * 2)),
+                ),
+                true,
+            );
+        }
+        let sibling = context.clone();
+        let context = context.assume_condition(ConditionTerm::pointer_equal(p.clone(), q), true);
+        let before = Pointer::loaded_value(&original, &p);
+        let after = Pointer::loaded_value(&current, &p);
+        let argument =
+            |pointer| AlgebraicValue::C(CValue::typed_pointer(pointer, CType::Int32Pointer));
+        let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.register_pointer_read(&before, &original, &p);
+            context.register_pointer_read(&after, &current, &p);
+            resource_arguments_proven_equal(
+                &argument(before.clone()),
+                &argument(after.clone()),
+                &context,
+            )
+        });
+        assert!(
+            equal,
+            "a full eight-byte read survives an adjacent alias store after scalar materialization"
+        );
+        samples.push(work);
+        sibling.register_pointer_read(&before, &original, &p);
+        sibling.register_pointer_read(&after, &current, &p);
+        assert!(!sibling.pointers_known_equal(&before, &after));
+        // An eight-byte read at either offset overlaps the written right field.
+        for address in [p.offset_by_bytes(4), p.offset_by_bytes(8)] {
+            let before = Pointer::loaded_value(&original, &address);
+            let after = Pointer::loaded_value(&current, &address);
+            context.register_pointer_read(&before, &original, &address);
+            context.register_pointer_read(&after, &current, &address);
+            assert!(!context.pointers_known_equal(&before, &after));
+        }
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "one-store alias admission visited unrelated facts: {samples:?}"
     );
 }

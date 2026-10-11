@@ -201,11 +201,7 @@ fn collect_spec_integer_carriers(
         SpecIntegerExpression::Negate(value) => {
             collect_spec_integer_carriers(value, variables, integer_seen)
         }
-        SpecIntegerExpression::Add(left, right)
-        | SpecIntegerExpression::Subtract(left, right)
-        | SpecIntegerExpression::Multiply(left, right)
-        | SpecIntegerExpression::TruncatingQuotient(left, right)
-        | SpecIntegerExpression::TruncatingRemainder(left, right) => {
+        crate::kernel::binary_spec_integer_expression!(left, right) => {
             collect_spec_integer_carriers(left, variables, integer_seen);
             if variables.exhausted() {
                 return;
@@ -300,16 +296,7 @@ fn collect_spec_expression_carriers(
                 collect_spec_expression_carriers(argument, variables, integer_seen);
             }
         }
-        SpecExpression::Add(left, right)
-        | SpecExpression::Subtract(left, right)
-        | SpecExpression::Multiply(left, right)
-        | SpecExpression::Divide(left, right)
-        | SpecExpression::Remainder(left, right)
-        | SpecExpression::ShiftLeft(left, right)
-        | SpecExpression::ShiftRight(left, right)
-        | SpecExpression::BitwiseAnd(left, right)
-        | SpecExpression::BitwiseOr(left, right)
-        | SpecExpression::BitwiseXor(left, right) => {
+        crate::kernel::binary_spec_expression!(left, right) => {
             collect_spec_expression_carriers(left, variables, integer_seen);
             if variables.exhausted() {
                 return;
@@ -427,25 +414,7 @@ fn collect_spec_c_expression_carriers(expression: &CExpression, variables: &mut 
             }
             collect_spec_c_expression_carriers(else_branch, variables);
         }
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::And(left, right)
-        | CExpression::Or(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right)
-        | CExpression::Index(left, right) => {
+        crate::kernel::binary_c_expression!(left, right) => {
             collect_spec_c_expression_carriers(left, variables);
             if variables.exhausted() {
                 return;

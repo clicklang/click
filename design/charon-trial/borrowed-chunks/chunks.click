@@ -8,12 +8,12 @@ fn cover(bytes: &[u8]) -> usize {
         0 <= k and k < (int32)(uint32)bytes.len() implies bytes[k] == old(bytes[k])
     };
 } by {
-    have bytes.len() % 4u64 <= bytes.len() by { normalize(); }
+    have bytes.len() % 4u64 <= bytes.len() by normalize();
     have bytes.len() - bytes.len() % 4u64 <= bytes.len() by { normalize() using { bytes.len() % 4u64 <= bytes.len(); } }
     have bytes.len() - bytes.len() % 4u64 <= 1000u64 by { normalize() using { bytes.len() - bytes.len() % 4u64 <= bytes.len(); bytes.len() <= 1000u64; } }
     have bytes.len() - bytes.len() % 4u64 <= 2147483647u64 by { normalize() using { bytes.len() - bytes.len() % 4u64 <= 1000u64; } }
     have 0 <= (int32)(uint32)(bytes.len() - bytes.len() % 4u64) by { normalize() using { bytes.len() - bytes.len() % 4u64 <= 2147483647u64; } }
-    have ((int32)(uint32)(bytes.len() - bytes.len() % 4u64)) <= 1000 by { simp(); }
+    have ((int32)(uint32)(bytes.len() - bytes.len() % 4u64)) <= 1000;
     have bytes.len() <= 2147483647u64 by { normalize() using { bytes.len() <= 1000u64; } }
     have ((int32)(uint32)(bytes.len() - bytes.len() % 4u64)) <= (int32)(uint32)bytes.len() by { normalize() using { bytes.len() - bytes.len() % 4u64 <= bytes.len(); bytes.len() <= 2147483647u64; } }
     execute_until(loop(0));
@@ -25,7 +25,7 @@ fn cover(bytes: &[u8]) -> usize {
     }
     have bytes.len() <= 2147483647u64 by { normalize() using { bytes.len() <= 1000u64; } }
     have (((int32)(uint32)(bytes.len() - bytes.len() % 4u64)) % 4) == 0 by { normalize() using { bytes.len() <= 2147483647u64; } }
-    have chunks_remaining == (int32)(uint32)(bytes.len() - bytes.len() % 4u64) by { simp(); }
+    have chunks_remaining == (int32)(uint32)(bytes.len() - bytes.len() % 4u64);
     have chunks_remaining % 4 == 0 by {
         rewrite(chunks_remaining == (int32)(uint32)(bytes.len() - bytes.len() % 4u64)); simp();
     }
@@ -47,7 +47,7 @@ fn cover(bytes: &[u8]) -> usize {
         invariant chunks_cursor == bytes + ((int32)(uint32)(bytes.len() - bytes.len() % 4u64) - chunks_remaining);
         invariant 0 <= ((int32)(uint32)(bytes.len() - bytes.len() % 4u64) - chunks_remaining) and ((int32)(uint32)(bytes.len() - bytes.len() % 4u64) - chunks_remaining) <= 1000;
         preserve by {
-            have 4 <= chunks_remaining by { simp(); }
+            have 4 <= chunks_remaining;
             mark iteration;
             have ((int32)(uint32)(bytes.len() - bytes.len() % 4u64) - chunks_remaining) + 4 <= (int32)(uint32)bytes.len() by {
                 arithmetic() using {
@@ -65,7 +65,7 @@ fn cover(bytes: &[u8]) -> usize {
                     0 <= (int32)(uint32)bytes.len();
                 }
             }
-            have chunks_remaining == at(iteration, chunks_remaining) - 4 by { simp(); }
+            have chunks_remaining == at(iteration, chunks_remaining) - 4;
             have (at(iteration, chunks_remaining) - 4) % 4 == at(iteration, chunks_remaining % 4) by {
                 normalize() using { at(iteration, 4 <= chunks_remaining); }
             }
@@ -85,7 +85,7 @@ fn cover(bytes: &[u8]) -> usize {
                     ((int32)(uint32)(bytes.len() - bytes.len() % 4u64)) <= 1000;
                 }
             }
-            have chunks_cursor == at(iteration, chunks_cursor) + 4 by { simp(); }
+            have chunks_cursor == at(iteration, chunks_cursor) + 4;
             have ((int32)(uint32)(bytes.len() - bytes.len() % 4u64) - chunks_remaining) == at(iteration, (int32)(uint32)(bytes.len() - bytes.len() % 4u64) - chunks_remaining) + 4 by {
                 arithmetic() using {
                     chunks_remaining == at(iteration, chunks_remaining) - 4;
@@ -112,15 +112,15 @@ fn cover(bytes: &[u8]) -> usize {
     have chunks_remaining < 4 by {
         cases {
             not (0 < chunks_remaining) => {
-                have chunks_remaining <= 0 by { simp(); }
+                have chunks_remaining <= 0;
                 arithmetic() using { chunks_remaining <= 0; }
             }
             not (4 <= chunks_remaining) => { simp(); }
         }
     }
     have chunks_remaining % 4 == chunks_remaining by { normalize() using { 0 <= chunks_remaining; chunks_remaining < 4; } }
-    have chunks_remaining == 0 by { simp(); }
-    have chunks_cursor == chunks_tail by { simp(); }
+    have chunks_remaining == 0;
+    have chunks_cursor == chunks_tail;
     execute();
     have forall (k: int32) {
         0 <= k and k < (int32)(uint32)bytes.len() implies bytes[k] == old(bytes[k])

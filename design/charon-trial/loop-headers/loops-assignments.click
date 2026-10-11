@@ -5,7 +5,7 @@ fn count(n: i32) -> i32 {
     ensures result == n;
 } by {
     execute_until(assignment(i, 0)); step();
-    have i == 0 by { simp(); }
+    have i == 0;
     execute_until(loop(0));
     loop {
         decreases n - i;
@@ -20,7 +20,7 @@ fn accumulate(n: i32, value: i32) -> i32 {
     ensures result == n;
 } by {
     execute_until(assignment(i, 0)); step();
-    have i == 0 by { simp(); }
+    have i == 0;
     execute_until(loop(0));
     loop {
         decreases n - i;
@@ -35,7 +35,7 @@ fn walk(bytes: &[u8]) -> usize {
     ensures result == bytes.len();
 } by {
     execute_until(assignment(i, 0)); step();
-    have i == 0 by { simp(); }
+    have i == 0;
     execute_until(loop(0));
     loop {
         decreases bytes.len() - i;

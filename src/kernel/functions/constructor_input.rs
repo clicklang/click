@@ -156,9 +156,13 @@ mod tests {
         let function = required_function();
         let mut arguments = vec![CExpression::Value(raw.clone())];
         assert!(
-            bind_c_function_arguments(&CState::new(), &raw_function(), &[raw.clone()]).is_some()
+            bind_c_function_arguments(&CState::new(), &raw_function(), std::slice::from_ref(&raw))
+                .is_some()
         );
-        assert!(bind_c_function_arguments(&CState::new(), &function, &[raw.clone()]).is_none());
+        assert!(
+            bind_c_function_arguments(&CState::new(), &function, std::slice::from_ref(&raw))
+                .is_none()
+        );
         let state = assume_scalar_object_inputs(
             CState::new(),
             function.contract_interface(),
@@ -173,17 +177,19 @@ mod tests {
         let CExpression::Value(actual) = &arguments[0] else {
             panic!()
         };
-        assert!(bind_c_function_arguments(&state, &function, &[actual.clone()]).is_some());
+        assert!(
+            bind_c_function_arguments(&state, &function, std::slice::from_ref(actual)).is_some()
+        );
         assert!(
             bind_c_contract_arguments(
                 &state,
                 function.contract_interface(),
-                &[actual.clone()],
+                std::slice::from_ref(actual),
                 None
             )
             .is_some()
         );
-        assert!(bind_c_function_arguments(&state, &function, &[raw.clone()]).is_none());
+        assert!(bind_c_function_arguments(&state, &function, std::slice::from_ref(&raw)).is_none());
         assert!(
             bind_c_contract_arguments(&state, function.contract_interface(), &[raw], None)
                 .is_none()
@@ -358,7 +364,8 @@ mod member_tests {
             element_type: CType::Int32,
         }]);
         let actual = CValue::Pointer(member.clone());
-        let callee = bind_c_function_arguments(&caller, &function, &[actual.clone()]).unwrap();
+        let callee =
+            bind_c_function_arguments(&caller, &function, std::slice::from_ref(&actual)).unwrap();
         assert_eq!(callee.locals.get("pointer"), Some(&actual));
         assert!(
             bind_c_contract_arguments(&caller, function.contract_interface(), &[actual], None)
@@ -467,7 +474,10 @@ mod member_tests {
         }]);
         let address = Pointer::symbolic(Variable(940_300));
         let raw = CValue::typed_pointer(address.clone(), CType::Int32Pointer);
-        assert!(bind_c_function_arguments(&CState::new(), &function, &[raw.clone()]).is_none());
+        assert!(
+            bind_c_function_arguments(&CState::new(), &function, std::slice::from_ref(&raw))
+                .is_none()
+        );
         let mut arguments = vec![CExpression::Value(raw.clone())];
         let state = assume_scalar_object_inputs(
             CState::new(),
@@ -478,12 +488,14 @@ mod member_tests {
         let CExpression::Value(actual) = &arguments[0] else {
             panic!()
         };
-        assert!(bind_c_function_arguments(&state, &function, &[actual.clone()]).is_some());
+        assert!(
+            bind_c_function_arguments(&state, &function, std::slice::from_ref(actual)).is_some()
+        );
         assert!(
             bind_c_contract_arguments(
                 &state,
                 function.contract_interface(),
-                &[actual.clone()],
+                std::slice::from_ref(actual),
                 None
             )
             .is_some()

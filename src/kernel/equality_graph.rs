@@ -1991,6 +1991,81 @@ mod tests {
         assert!(graph.pointer_at_base(&base, &unrelated).is_none());
     }
 
+    // Every pointer equality query registers both addresses. Repeating a
+    // query reuses the registered address nodes: it neither grows the graph
+    // nor renormalizes and recloses the offsets, so its work is a fraction of
+    // the first query's and linear in the offsets it reinterns.
+    #[test]
+    fn repeated_address_queries_reuse_registered_addresses() {
+        let mut costs = Vec::new();
+        for size in [8u64, 32, 128] {
+            let mut graph = EqualityGraph::default();
+            assert!(graph.add_equality(&at(symbolic(1), 0), &at(symbolic(2), 16)));
+            // An unrelated offset equality enables registered comparisons.
+            graph.add_int32_equality(&index(1), &index(2));
+            // Distinct indices give the sides different affine forms, so the
+            // query reaches address registration, whose normal form of each
+            // offset is a fresh flattened term.
+            let offset = |first: u64| {
+                (0..size).fold(PointerOffsetTerm::Constant(0), |sum, item| {
+                    PointerOffsetTerm::Add(
+                        Box::new(sum),
+                        Box::new(PointerOffsetTerm::Int32Scaled {
+                            value: Box::new(index(first + item)),
+                            byte_width: 4,
+                        }),
+                    )
+                })
+            };
+            let left = Pointer {
+                block: symbolic(1),
+                offset: offset(1_000),
+            };
+            let right = Pointer {
+                block: symbolic(2),
+                offset: offset(5_000),
+            };
+            let (first, first_work) = crate::instrumentation::measure_deterministic_work(|| {
+                graph.are_equal(&left, &right)
+            });
+            let nodes = graph
+                .state
+                .lock()
+                .expect("equality graph")
+                .terms
+                .node_count();
+            let (repeated, repeated_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    graph.are_equal(&left, &right)
+                });
+            assert_eq!(first, repeated);
+            assert_eq!(
+                graph
+                    .state
+                    .lock()
+                    .expect("equality graph")
+                    .terms
+                    .node_count(),
+                nodes,
+                "a repeated query must not register new nodes"
+            );
+            // Reinterning the raw offsets is about half the first query;
+            // renormalizing and reinterning both normal forms would be more.
+            assert!(
+                repeated_work * 5 <= first_work * 3,
+                "repeated {repeated_work}, first {first_work}"
+            );
+            costs.push((size, repeated_work));
+        }
+        for pair in costs.windows(2) {
+            let ((small, small_work), (large, large_work)) = (pair[0], pair[1]);
+            assert!(
+                large_work <= small_work * (large / small) as usize * 2,
+                "{costs:?}"
+            );
+        }
+    }
+
     #[test]
     fn offsets_spelled_differently_share_one_normal_form() {
         let nested = PointerOffsetTerm::Add(
@@ -2966,13 +3041,17 @@ mod tests {
 
     #[test]
     fn cross_snapshot_load_equality_requires_a_supplied_conclusion() {
-        // The store goes through a pointer structure cannot separate from the
-        // cell; only a stated disequality does. The two reads therefore get
-        // different names, and only the path's facts make them one value.
+        // Structure cannot separate the store from the read. Their addresses
+        // being unequal alone does not exclude overlapping bytes; complete
+        // range separation lets a checked caller establish load equality,
+        // which the equality graph still needs supplied explicitly.
         let cell = Pointer {
             block: PointerBlock::Heap(95_001),
             offset: PointerOffsetTerm::Constant(0),
         };
+        // Registered names retain their own width. The hand-built numeric
+        // projections also need the producer's address-level width record.
+        crate::kernel::eval::declare_load_access_width(&cell, 8);
         let other = at(symbolic(95_003), 0);
         let before = crate::kernel::CMemory::new().with_block(PointerBlock::Heap(95_001), 16);
         let after = before
@@ -2996,8 +3075,10 @@ mod tests {
         // Pointer comparison never searches memory history, even when a
         // separate frame derivation could prove the cell unchanged.
         assert!(!classes.are_equal(&left, &right));
-        let separated = PureFactContext::new()
-            .assume_condition(ConditionTerm::pointer_equal(other, cell.clone()), false);
+        let address_only = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_equal(other.clone(), cell.clone()),
+            false,
+        );
         let load = |pointer: &Pointer| {
             let PointerBlock::Symbolic(variable) = &pointer.block else {
                 unreachable!()
@@ -3006,9 +3087,50 @@ mod tests {
                 crate::kernel::registered_load_origin_for_variable(variable).unwrap();
             Bitvector32Term::MemoryLoad(memory, Box::new(address), crate::kernel::LoadKind::Bits32)
         };
-        assert!(crate::kernel::reasoning::memory_resolution::bitvector_terms_proven_equal_for_memory_resolution(
+        assert!(!crate::kernel::reasoning::memory_resolution::bitvector_terms_proven_equal_for_memory_resolution(
+            &load(&left), &load(&right), &address_only,
+        ));
+        // The registered origins retain an eight-byte access width, even
+        // though their numeric projection below is Bits32.
+        let byte_range = |base, bytes| {
+            crate::kernel::CMemoryRange::new_with_element_width(
+                base,
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(bytes),
+                1,
+            )
+        };
+        let separated = address_only.clone().assume_proposition(
+            crate::kernel::Proposition::CResourceSeparate {
+                left: Box::new(crate::kernel::CResource::Memory(byte_range(other, 4))),
+                right: Box::new(crate::kernel::CResource::Memory(byte_range(cell, 8))),
+            },
+        );
+        // The shallow resolver does not spend the explicit range proof.
+        assert!(!crate::kernel::reasoning::memory_resolution::bitvector_terms_proven_equal_for_memory_resolution(
             &load(&left), &load(&right), &separated,
         ));
+        assert!(
+            !crate::kernel::explicit_atomic_equality_from_memory_derivations(
+                &load(&left),
+                &load(&right),
+                &address_only,
+            )
+        );
+        // A checked caller uses the explicit atomic proof path, which retains
+        // the complete separation witness for independent checking.
+        let capture = crate::kernel::memory_provenance::CheckedLoadEqualityCapture::start();
+        assert!(
+            crate::kernel::memory_provenance::checked_recorded_atomic_load_equality(
+                &load(&left),
+                &load(&right),
+                &separated,
+            )
+        );
+        let equalities = capture.finish();
+        assert_eq!(equalities.len(), 1);
+        assert!(equalities[0].checks(&separated));
+        assert!(!equalities[0].checks(&address_only));
         assert!(!classes.are_equal(&left, &right));
         // A checked caller can contribute that conclusion explicitly.
         classes.add_equality(&left, &right);

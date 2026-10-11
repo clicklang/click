@@ -1837,113 +1837,6 @@ impl PureFactContext {
                 ))
     }
 
-    pub(in crate::kernel) fn pointers_directly_disjoint_by_range(
-        &self,
-        left: &Pointer,
-        right: &Pointer,
-    ) -> bool {
-        if self.pointers_proven_equal_ignoring_memory_separation(left, right) {
-            return false;
-        }
-        let contains = |pointer: &Pointer, range: &CMemoryRange| {
-            if range.wide_bounds().is_some() {
-                self.pointer_access_in_wide_range(pointer, range.element_width(), range)
-            } else {
-                self.pointer_in_range_with_width(
-                    pointer,
-                    range.base(),
-                    range.start(),
-                    range.end(),
-                    range.element_width(),
-                )
-            }
-        };
-        let direct = self
-            .memory_separation_candidates(&left.block, &right.block)
-            .find_map(|(proposition, left_range, right_range)| {
-                let contained = contains(left, left_range) && contains(right, right_range)
-                    || contains(right, left_range) && contains(left, right_range);
-                (contained
-                    && !self.memory_ranges_overlap_after_base_equality(left_range, right_range))
-                .then_some(proposition)
-            });
-        if let Some(proposition) = direct {
-            record_implicit_reasoning_provenance(self, proposition);
-            return true;
-        }
-        if let Some((resources, _, _)) = self.composition_separated_members(
-            &left.block,
-            &right.block,
-            |range| contains(left, range),
-            |range| contains(right, range),
-            |left_range, right_range| {
-                !self.memory_ranges_overlap_after_base_equality(left_range, right_range)
-            },
-        ) {
-            record_implicit_reasoning_provenance(
-                self,
-                &Proposition::CResourceComposition(resources.clone()),
-            );
-            return true;
-        }
-        false
-    }
-
-    pub(in crate::kernel) fn pointers_proven_disjoint_by_shallow_explicit_range(
-        &self,
-        left: &Pointer,
-        right: &Pointer,
-    ) -> bool {
-        if self.pointers_proven_equal_ignoring_memory_separation(left, right) {
-            return false;
-        }
-        let contains = |pointer: &Pointer, range: &CMemoryRange| {
-            // A wide range has its one membership rule.
-            if range.wide_bounds().is_some() {
-                return self.pointer_access_in_wide_range(pointer, range.element_width(), range);
-            }
-            self.pointer_in_range_by_shallow_fact_graph_with_width(
-                pointer,
-                range.base(),
-                range.start(),
-                range.end(),
-                range.element_width(),
-            )
-        };
-        self.memory_separation_candidates(&left.block, &right.block)
-            .any(|(proposition, left_range, right_range)| {
-                let proved = contains(left, left_range) && contains(right, right_range)
-                    || contains(right, left_range) && contains(left, right_range);
-                let proved = proved
-                    && !self.memory_ranges_overlap_after_base_equality(left_range, right_range);
-                if proved {
-                    record_implicit_reasoning_provenance(self, proposition);
-                }
-                proved
-            })
-            || self
-                .composition_separated_members(
-                    &left.block,
-                    &right.block,
-                    |range| contains(left, range),
-                    |range| contains(right, range),
-                    |left_range, right_range| {
-                        !self.memory_ranges_overlap_after_base_equality(left_range, right_range)
-                    },
-                )
-                .inspect(|(resources, _, _)| {
-                    record_implicit_reasoning_provenance(
-                        self,
-                        &Proposition::CResourceComposition((*resources).clone()),
-                    );
-                })
-                .is_some()
-            || self
-                .resource_compositions
-                .iter()
-                .any(|resources| resources.proves_owned_pointers_separate_shallow(left, right))
-    }
-
     pub(in crate::kernel) fn pointer_in_range_by_shallow_fact_graph_with_width(
         &self,
         pointer: &Pointer,
@@ -3702,6 +3595,7 @@ impl PureFactContext {
     /// composite still needs its `observe(...)` chain. Deliberately kept off
     /// the ordinary prover, whose per-cell store-drop callers must not pay
     /// for an expansion they never need.
+    #[cfg(test)]
     pub(in crate::kernel) fn ranges_proven_disjoint_from_pointer_for_frame(
         &self,
         ranges: &[CMemoryRange],
@@ -4017,6 +3911,7 @@ impl PureFactContext {
     /// `range` inside `available` by one bounded decision per endpoint: the
     /// bases share an element index and the indexed bounds decide
     /// `available.start <= range.start` and `range.end <= available.end`.
+    #[cfg(test)]
     fn memory_range_contained_by_decided_endpoints(
         &self,
         range: &CMemoryRange,
@@ -4051,6 +3946,7 @@ impl PureFactContext {
     /// variables the live facts use. Nested composites stay folded, so a
     /// cell below the frontier is framed only through a live observation or
     /// an unfold, never by the kernel reading inside a folded body.
+    #[cfg(test)]
     fn frame_frontier_compositions(&self, memory: &CMemory) -> Vec<ResourceContext> {
         // Cheap gates first: this runs on the store cell-drop path, so a
         // composition with nothing composite to look through must cost a

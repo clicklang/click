@@ -83,6 +83,9 @@ struct PlaceScope {
     /// The fields of each struct a pointer field reaches, by struct name, so
     /// a read through a loaded pointer is a place too.
     structs: BTreeMap<String, Vec<crate::surface::FieldPlace>>,
+    /// An expansion scope's function: whether its signature is written in
+    /// Rust syntax, and its slice parameters (`enter_rust_spelling`).
+    rust_spelling: Option<Option<std::rc::Rc<[String]>>>,
 }
 
 thread_local! {
@@ -160,6 +163,12 @@ impl ParameterPlaceScope {
                 }).collect(),
                 carriers: shapes,
                 structs: block.pointee_field_places().clone(),
+                rust_spelling: Some(
+                    block
+                        .signature()
+                        .rust_slice_parameters()
+                        .map(std::rc::Rc::<[String]>::from),
+                ),
             })
         });
         Self(())
@@ -3238,6 +3247,7 @@ fn describe_cell_cause(
         resource_tracker::Change::ObjectInitializationRecorded => {
             "a step in between recorded initialized bytes.".to_string()
         }
+        resource_tracker::Change::BranchJoin => "branch memory join".into(),
         resource_tracker::Change::CellsForgotten => {
             "a step in between dropped the cell values it had cached.".to_string()
         }
@@ -3642,6 +3652,7 @@ fn describe_step(
         resource_tracker::Change::ObjectInitializationRecorded => {
             "a step recording initialized bytes".to_string()
         }
+        resource_tracker::Change::BranchJoin => "branch memory join".into(),
         resource_tracker::Change::CellsForgotten => {
             "a step that dropped its cached cell values".to_string()
         }
@@ -4655,6 +4666,72 @@ thread_local! {
     static REFERENCE_RESULT_SOURCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+thread_local! {
+    /// The slice parameters of the function being checked when its
+    /// signature is written in Rust syntax; `None` for the C-shaped spelling.
+    static RUST_SPELLING: std::cell::RefCell<Option<std::rc::Rc<[String]>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Prints the places of a function whose signature is written in Rust
+/// syntax as its sidecar writes them: a slice's length `bytes.len()`, a cast
+/// `(value as u32)`, and a field through a reference `p.field`. Like the
+/// ambient naming, it stays set after the function's check, for a failure
+/// rendered later; the next declaration replaces it. The parser reads each
+/// form back in such a function, so `click expand` prints through it too.
+pub(crate) fn enter_rust_spelling(signature: Option<&super::FunctionSignature>) {
+    let spelling = signature
+        .and_then(super::FunctionSignature::rust_slice_parameters)
+        .map(std::rc::Rc::<[String]>::from);
+    RUST_SPELLING.with(|slot| *slot.borrow_mut() = spelling);
+}
+
+/// The slice parameters of the function whose places are printed, when its
+/// signature is written in Rust syntax: an expansion's own function, else
+/// the function last checked.
+fn rust_slice_parameters() -> Option<std::rc::Rc<[String]>> {
+    REFERENCE_CARRIERS
+        .with(|scopes| {
+            scopes
+                .borrow()
+                .iter()
+                .rev()
+                .find_map(|scope| scope.rust_spelling.clone())
+        })
+        .unwrap_or_else(|| RUST_SPELLING.with(|slot| slot.borrow().clone()))
+}
+
+pub(crate) fn rust_spelling() -> bool {
+    rust_slice_parameters().is_some()
+}
+
+/// The Rust spelling of the variable `name`: `bytes.len()` for the length
+/// of the slice parameter `bytes`.
+pub(crate) fn rust_variable_spelling(name: &str) -> Option<String> {
+    let slice = name.strip_suffix("_len")?;
+    rust_slice_parameters()?
+        .iter()
+        .any(|known| known == slice)
+        .then(|| format!("{slice}.len()"))
+}
+
+/// The Rust name of the scalar type `c_type`, `u32` for `uint32`.
+fn rust_scalar_spelling(c_type: &CType) -> Option<&'static str> {
+    Some(match c_type {
+        CType::Int8 => "i8",
+        CType::Int16 => "i16",
+        CType::Int32 => "i32",
+        CType::UInt8 => "u8",
+        CType::UInt16 => "u16",
+        CType::UInt32 => "u32",
+        CType::Int64 => "i64",
+        CType::UInt64 => "u64",
+        CType::Int128 => "i128",
+        CType::UInt128 => "u128",
+        _ => return None,
+    })
+}
+
 /// Kernel reference results carry addresses. Function-directed proof printing
 /// must spell that carrier as `&result`, and a load through it as `result`.
 pub(super) struct ReferenceResultSourceScope(bool);
@@ -4679,7 +4756,7 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
         {
             "&result".into()
         }
-        CExpression::Variable(name) => name.clone(),
+        CExpression::Variable(name) => rust_variable_spelling(name).unwrap_or_else(|| name.clone()),
         CExpression::FunctionAddress(name) => format!("&{name}"),
         CExpression::Cast {
             expression,
@@ -4702,6 +4779,11 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
                     "((struct {struct_name} *){})",
                     describe_c_expression(expression)
                 );
+            }
+            if rust_spelling()
+                && let Some(spelling) = rust_scalar_spelling(target_type)
+            {
+                return format!("({} as {spelling})", describe_c_expression(expression));
             }
             let spelling = match target_type {
                 CType::Int8 => "int8".to_string(),
@@ -4950,6 +5032,17 @@ pub(super) fn object_at_address(rendered: &str) -> Option<&str> {
 pub(super) fn describe_field_place(base: &str, field: &str) -> String {
     match object_at_address(base) {
         Some(object) => format!("{object}.{field}"),
+        // Rust writes a field through a reference with `.`, and a tuple
+        // field, which the importer names `_0`, by its position.
+        None if rust_spelling() => {
+            let field = field
+                .strip_prefix('_')
+                .filter(|position| {
+                    !position.is_empty() && position.bytes().all(|byte| byte.is_ascii_digit())
+                })
+                .unwrap_or(field);
+            format!("{base}.{field}")
+        }
         None => format!("{base}->{field}"),
     }
 }
@@ -5319,6 +5412,12 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                     pointee_struct,
                     ..
                 } => {
+                    if pointee_struct.is_none()
+                        && rust_spelling()
+                        && let Some(spelling) = rust_scalar_spelling(target_type)
+                    {
+                        return format!("({operand} as {spelling})");
+                    }
                     let spelling = pointee_struct
                         .as_ref()
                         .map(|name| format!("struct {name} *"))

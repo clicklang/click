@@ -39,25 +39,7 @@ pub(in crate::surface) fn c_expression_uses_variable(
             pointer: expression,
             ..
         } => c_expression_uses_variable(expression, variable),
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::And(left, right)
-        | CExpression::Or(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right)
-        | CExpression::Index(left, right) => {
+        crate::kernel::binary_c_expression!(left, right) => {
             c_expression_uses_variable(left, variable)
                 || c_expression_uses_variable(right, variable)
         }
@@ -100,17 +82,7 @@ pub(in crate::surface) fn contains_old_expression(expression: &ContractExpressio
         ContractExpression::Field { base, .. } => contains_old_expression(base),
         ContractExpression::ArrayIndex { base, .. } => contains_old_expression(base),
         ContractExpression::At { expression, .. } => contains_old_expression(expression),
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right)
-        | ContractExpression::Divide(left, right)
-        | ContractExpression::Remainder(left, right)
-        | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right)
-        | ContractExpression::Index(left, right) => {
+        crate::surface::binary_contract_expression!(left, right) => {
             contains_old_expression(left) || contains_old_expression(right)
         }
         ContractExpression::BitwiseNot(expression) => contains_old_expression(expression),
@@ -176,17 +148,7 @@ pub(in crate::surface) fn contains_resource_count(expression: &ContractExpressio
         }
         | ContractExpression::BitwiseNot(base) => contains_resource_count(base),
         ContractExpression::ArrayIndex { base, .. } => contains_resource_count(base),
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right)
-        | ContractExpression::Divide(left, right)
-        | ContractExpression::Remainder(left, right)
-        | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right)
-        | ContractExpression::Index(left, right) => {
+        crate::surface::binary_contract_expression!(left, right) => {
             contains_resource_count(left) || contains_resource_count(right)
         }
         ContractExpression::If {
@@ -386,17 +348,7 @@ pub(in crate::surface) fn collect_resource_count_families(
             }
             | ContractExpression::BitwiseNot(base) => collect_expression(base, families),
             ContractExpression::ArrayIndex { base, .. } => collect_expression(base, families),
-            ContractExpression::Add(left, right)
-            | ContractExpression::Subtract(left, right)
-            | ContractExpression::Multiply(left, right)
-            | ContractExpression::Divide(left, right)
-            | ContractExpression::Remainder(left, right)
-            | ContractExpression::ShiftLeft(left, right)
-            | ContractExpression::ShiftRight(left, right)
-            | ContractExpression::BitwiseAnd(left, right)
-            | ContractExpression::BitwiseOr(left, right)
-            | ContractExpression::BitwiseXor(left, right)
-            | ContractExpression::Index(left, right) => {
+            crate::surface::binary_contract_expression!(left, right) => {
                 collect_expression(left, families);
                 collect_expression(right, families);
             }
@@ -626,17 +578,7 @@ pub(in crate::surface) fn contains_at_expression(expression: &ContractExpression
         ContractExpression::Old(expression) | ContractExpression::BitwiseNot(expression) => {
             contains_at_expression(expression)
         }
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right)
-        | ContractExpression::Divide(left, right)
-        | ContractExpression::Remainder(left, right)
-        | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right)
-        | ContractExpression::Index(left, right) => {
+        crate::surface::binary_contract_expression!(left, right) => {
             contains_at_expression(left) || contains_at_expression(right)
         }
         ContractExpression::If {
@@ -744,17 +686,7 @@ pub(in crate::surface) fn collect_click_function_calls(
         let mut pending = vec![expression];
         while let Some(expression) = pending.pop() {
             match expression {
-                ContractExpression::Add(left, right)
-                | ContractExpression::Subtract(left, right)
-                | ContractExpression::Multiply(left, right)
-                | ContractExpression::Divide(left, right)
-                | ContractExpression::Remainder(left, right)
-                | ContractExpression::ShiftLeft(left, right)
-                | ContractExpression::ShiftRight(left, right)
-                | ContractExpression::BitwiseAnd(left, right)
-                | ContractExpression::BitwiseOr(left, right)
-                | ContractExpression::BitwiseXor(left, right)
-                | ContractExpression::Index(left, right) => {
+                crate::surface::binary_contract_expression!(left, right) => {
                     pending.push(right);
                     pending.push(left);
                 }
@@ -815,17 +747,7 @@ fn collect_click_function_calls_one(expression: &ContractExpression, calls: &mut
         ContractExpression::At { expression, .. } => {
             collect_click_function_calls(expression, calls)
         }
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right)
-        | ContractExpression::Divide(left, right)
-        | ContractExpression::Remainder(left, right)
-        | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right)
-        | ContractExpression::Index(left, right) => {
+        crate::surface::binary_contract_expression!(left, right) => {
             collect_click_function_calls(left, calls);
             collect_click_function_calls(right, calls);
         }
@@ -1346,17 +1268,7 @@ fn validate_recursive_calls_in_expression(
         ContractExpression::At { expression, .. } => {
             recurse(expression, lower_bounds, structural_subterms)
         }
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right)
-        | ContractExpression::Divide(left, right)
-        | ContractExpression::Remainder(left, right)
-        | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right)
-        | ContractExpression::Index(left, right) => {
+        crate::surface::binary_contract_expression!(left, right) => {
             recurse(left, lower_bounds, structural_subterms)?;
             recurse(right, lower_bounds, structural_subterms)
         }

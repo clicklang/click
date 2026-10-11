@@ -171,7 +171,12 @@ impl PureFactContext {
                 let matches = endpoint_matches(before, left) && endpoint_matches(after, right)
                     || endpoint_matches(before, right) && endpoint_matches(after, left);
                 matches
-                    && (self.ranges_directly_disjoint_from_pointer(mutable_ranges, pointer)
+                    && (crate::kernel::memory_provenance::typed_ranges_disjoint_from_pointer_evidence(
+                        mutable_ranges,
+                        pointer,
+                        crate::kernel::load_access_width_at_address_or_widest(pointer),
+                        self,
+                    ).is_some()
                         || crate::kernel::primitives::CallKeptRanges::recorded_on(after)
                             .is_some_and(|kept| {
                                 kept.holds_access(

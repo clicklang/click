@@ -1957,36 +1957,6 @@ pub(super) fn with_extended_dag_bridging<T>(body: impl FnOnce() -> T) -> T {
     result
 }
 
-pub(in crate::kernel) fn exact_separation_fact_covers_range_and_pointer(
-    fact: &Proposition,
-    range: &CMemoryRange,
-    pointer: &Pointer,
-    assumptions: &PureFactContext,
-) -> bool {
-    let Some((left, right)) = fact.memory_separation() else {
-        return false;
-    };
-    let (left, right) = (left.clone(), right.clone());
-    if assumptions.memory_ranges_overlap_after_base_equality(&left, &right) {
-        return false;
-    }
-    super::assumptions::memory_range_shallowly_contained_with_facts(range, &left, assumptions)
-        && super::assumptions::pointer_in_memory_range_shallow_with_facts(
-            pointer,
-            &right,
-            assumptions,
-        )
-        || super::assumptions::memory_range_shallowly_contained_with_facts(
-            range,
-            &right,
-            assumptions,
-        ) && super::assumptions::pointer_in_memory_range_shallow_with_facts(
-            pointer,
-            &left,
-            assumptions,
-        )
-}
-
 pub(in crate::kernel) fn forward_range_offset_from_pointer(
     range: &CMemoryRange,
     pointer: &Pointer,
@@ -2039,6 +2009,23 @@ pub(in crate::kernel) fn access_element_span(bytes: u32, element_width: u32) -> 
     (element_width > 0).then(|| i64::from(bytes.div_ceil(element_width).max(1)))
 }
 
+// Probe the original indexed spelling as well as one exact concrete alias.
+// Aliases only choose buckets; retained membership still authenticates the
+// original address and every byte of the access.
+fn separation_index_blocks(pointer: &Pointer, assumptions: &PureFactContext) -> Vec<PointerBlock> {
+    let mut blocks = vec![pointer.block.clone()];
+    if let Some(alias) = assumptions.exact_pointer_aliases(pointer).find(|alias| {
+        !matches!(
+            alias.block,
+            PointerBlock::Symbolic(_) | PointerBlock::FunctionSymbolic(_)
+        )
+    }) && alias.block != pointer.block
+    {
+        blocks.push(alias.block.clone());
+    }
+    blocks
+}
+
 /// Whether the `bytes` bytes at `pointer` can be shown to miss every byte of
 /// `range`.
 ///
@@ -2055,13 +2042,96 @@ pub(in crate::kernel) fn typed_range_disjoint_from_pointer_evidence(
     if range.base.blocks_proven_distinct(pointer) {
         return Some(RangeDisjointFromPointerEvidence::DistinctBlocks);
     }
-    if let Some(fact) = assumptions.prop_facts.iter().find(|fact| {
-        exact_separation_fact_covers_range_and_pointer(fact, range, pointer, assumptions)
+    let range_memberships = std::cell::RefCell::new(Vec::new());
+    let contained = |member: &CMemoryRange| {
+        let Some(membership) = RangeInRangeEvidence::for_range(range, member, assumptions) else {
+            return false;
+        };
+        range_memberships
+            .borrow_mut()
+            .push((member.clone(), membership));
+        true
+    };
+    let separated = |range_member: &CMemoryRange, access_member: &CMemoryRange| {
+        !assumptions.memory_ranges_overlap_after_base_equality(range_member, access_member)
+    };
+    let range_blocks = separation_index_blocks(range.base(), assumptions);
+    let access_blocks = separation_index_blocks(pointer, assumptions);
+    for (fact, left, right) in range_blocks.iter().flat_map(|range_block| {
+        access_blocks.iter().flat_map(move |access_block| {
+            assumptions.memory_separation_candidates(range_block, access_block)
+        })
     }) {
-        crate::kernel::record_implicit_reasoning_provenance(assumptions, fact);
-        return Some(RangeDisjointFromPointerEvidence::ExactSeparationFact(
-            fact.clone(),
-        ));
+        if fact.memory_separation().is_none() {
+            continue;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        for (range_member, access_member) in [(left, right), (right, left)] {
+            if !contained(range_member) || !separated(range_member, access_member) {
+                continue;
+            }
+            let Some(membership) =
+                AccessInRangeEvidence::for_access(pointer, bytes, access_member, assumptions)
+            else {
+                continue;
+            };
+            crate::kernel::record_implicit_reasoning_provenance(assumptions, fact);
+            let range_membership =
+                range_memberships
+                    .borrow()
+                    .iter()
+                    .find_map(|(member, membership)| {
+                        (member == range_member).then(|| membership.clone())
+                    })?;
+            return Some(RangeDisjointFromPointerEvidence::SeparatedRanges {
+                authority: StoreSeparatedRangesAuthority::ExactProposition(fact.clone()),
+                range_member: range_member.clone(),
+                access_member: access_member.clone(),
+                range_membership,
+                membership,
+            });
+        }
+    }
+    let memberships = std::cell::RefCell::new(Vec::new());
+    let composition = range_blocks.iter().find_map(|range_block| {
+        access_blocks.iter().find_map(|access_block| {
+            assumptions.composition_separated_members(
+                range_block,
+                access_block,
+                contained,
+                |member| {
+                    let Some(membership) =
+                        AccessInRangeEvidence::for_access(pointer, bytes, member, assumptions)
+                    else {
+                        return false;
+                    };
+                    memberships.borrow_mut().push((member.clone(), membership));
+                    true
+                },
+                separated,
+            )
+        })
+    });
+    if let Some((resources, range_member, access_member)) = composition {
+        let range_membership = range_memberships
+            .into_inner()
+            .into_iter()
+            .find_map(|(member, membership)| (member == *range_member).then_some(membership))?;
+        let membership = memberships
+            .into_inner()
+            .into_iter()
+            .find_map(|(member, membership)| (member == *access_member).then_some(membership))?;
+        crate::kernel::record_implicit_reasoning_provenance(
+            assumptions,
+            &Proposition::CResourceComposition(resources.clone()),
+        );
+        return Some(RangeDisjointFromPointerEvidence::SeparatedRanges {
+            authority: StoreSeparatedRangesAuthority::ResourceComposition(resources.clone()),
+            range_member: range_member.clone(),
+            access_member: access_member.clone(),
+            range_membership,
+            membership,
+        });
     }
     // Native footprints need native separation evidence, never a signed
     // forward-offset certificate. Distinct blocks and exact facts above
@@ -2084,6 +2154,11 @@ pub(in crate::kernel) fn typed_range_disjoint_from_pointer_evidence(
             end,
         });
     }
+    if let Some(evidence) =
+        RangeDisjointFromPointerEvidence::for_after_end(range, pointer, bytes, assumptions)
+    {
+        return Some(evidence);
+    }
     // The forward-offset route proves the range begins strictly after this
     // address, which is a gap of one element. That clears an access only as
     // wide as an element; anything wider reaches into the range's first one.
@@ -2103,52 +2178,46 @@ pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
     load_bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<MemoryDagHopJustification> {
-    if crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-        write,
-        pointer,
-        assumptions,
-    ) {
+    if write == pointer || assumptions.pointers_known_equal(write, pointer) {
         return None;
     }
-    // A single stated equality can give an opaque read the spelling used by
-    // the range index. Membership retains and checks that equality; this
-    // lookup grants neither a separation nor memory access on its own.
-    let resolved_write = assumptions
-        .exact_pointer_aliases(write)
-        .find(|alias| {
-            !matches!(
-                alias.block,
-                PointerBlock::Symbolic(_) | PointerBlock::FunctionSymbolic(_)
-            )
+    // Select a checked full-access candidate before asking the deeper
+    // memory-derived equality question. A missing authority cannot
+    // justify this hop, so resolving its addresses would be wasted work.
+    let write_blocks = separation_index_blocks(write, assumptions);
+    let load_blocks = separation_index_blocks(pointer, assumptions);
+    let stated = write_blocks
+        .iter()
+        .flat_map(|write_block| {
+            load_blocks.iter().flat_map(move |load_block| {
+                assumptions.memory_separation_candidates(write_block, load_block)
+            })
         })
-        .unwrap_or(write);
-    let resolved_load = assumptions
-        .exact_pointer_aliases(pointer)
-        .find(|alias| {
-            !matches!(
-                alias.block,
-                PointerBlock::Symbolic(_) | PointerBlock::FunctionSymbolic(_)
-            )
-        })
-        .unwrap_or(pointer);
-    let stated = assumptions
-        .memory_separation_candidates(&resolved_write.block, &resolved_load.block)
         .find_map(|(proposition, left, right)| {
             proposition.memory_separation()?;
+            let memberships = |write_range, load_range| {
+                let write_membership = AccessInRangeEvidence::for_access(
+                    write,
+                    write_bytes,
+                    write_range,
+                    assumptions,
+                )?;
+                let load_membership = AccessInRangeEvidence::for_access(
+                    pointer,
+                    load_bytes,
+                    load_range,
+                    assumptions,
+                )?;
+                Some((write_membership, load_membership))
+            };
             let (orientation, write_membership, load_membership) =
-                if let (Some(write_membership), Some(load_membership)) = (
-                    AccessInRangeEvidence::for_access(write, write_bytes, left, assumptions),
-                    AccessInRangeEvidence::for_access(pointer, load_bytes, right, assumptions),
-                ) {
+                if let Some((write_membership, load_membership)) = memberships(left, right) {
                     (
                         StoreSeparatedRangeOrientation::WriteLeftLoadRight,
                         write_membership,
                         load_membership,
                     )
-                } else if let (Some(write_membership), Some(load_membership)) = (
-                    AccessInRangeEvidence::for_access(write, write_bytes, right, assumptions),
-                    AccessInRangeEvidence::for_access(pointer, load_bytes, left, assumptions),
-                ) {
+                } else if let Some((write_membership, load_membership)) = memberships(right, left) {
                     (
                         StoreSeparatedRangeOrientation::WriteRightLoadLeft,
                         write_membership,
@@ -2157,7 +2226,13 @@ pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
                 } else {
                     return None;
                 };
-            if assumptions.memory_ranges_overlap_after_base_equality(left, right) {
+            if assumptions.memory_ranges_overlap_after_base_equality(left, right)
+                || crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                    write,
+                    pointer,
+                    assumptions,
+                )
+            {
                 return None;
             }
             crate::kernel::record_implicit_reasoning_provenance(assumptions, proposition);
@@ -2175,19 +2250,54 @@ pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
     }
     // The composition law asked on demand: an owned member holding the
     // written address and a different one holding the read.
-    let (resources, left, right) = assumptions.composition_separated_members(
-        &write.block,
-        &pointer.block,
-        |range| AccessInRangeEvidence::for_access(write, write_bytes, range, assumptions).is_some(),
-        |range| {
-            AccessInRangeEvidence::for_access(pointer, load_bytes, range, assumptions).is_some()
-        },
-        |left, right| !assumptions.memory_ranges_overlap_after_base_equality(left, right),
-    )?;
-    let write_membership =
-        AccessInRangeEvidence::for_access(write, write_bytes, left, assumptions)?;
-    let load_membership =
-        AccessInRangeEvidence::for_access(pointer, load_bytes, right, assumptions)?;
+    let write_memberships = std::cell::RefCell::new(Vec::new());
+    let load_memberships = std::cell::RefCell::new(Vec::new());
+    let (resources, left, right) = write_blocks.iter().find_map(|write_block| {
+        load_blocks.iter().find_map(|load_block| {
+            assumptions.composition_separated_members(
+                write_block,
+                load_block,
+                |range| {
+                    let Some(membership) =
+                        AccessInRangeEvidence::for_access(write, write_bytes, range, assumptions)
+                    else {
+                        return false;
+                    };
+                    write_memberships
+                        .borrow_mut()
+                        .push((range.clone(), membership));
+                    true
+                },
+                |range| {
+                    let Some(membership) =
+                        AccessInRangeEvidence::for_access(pointer, load_bytes, range, assumptions)
+                    else {
+                        return false;
+                    };
+                    load_memberships
+                        .borrow_mut()
+                        .push((range.clone(), membership));
+                    true
+                },
+                |left, right| !assumptions.memory_ranges_overlap_after_base_equality(left, right),
+            )
+        })
+    })?;
+    if crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+        write,
+        pointer,
+        assumptions,
+    ) {
+        return None;
+    }
+    let write_membership = write_memberships
+        .into_inner()
+        .into_iter()
+        .find_map(|(member, membership)| (member == *left).then_some(membership))?;
+    let load_membership = load_memberships
+        .into_inner()
+        .into_iter()
+        .find_map(|(member, membership)| (member == *right).then_some(membership))?;
     crate::kernel::record_implicit_reasoning_provenance(
         assumptions,
         &Proposition::CResourceComposition(resources.clone()),
@@ -2935,11 +3045,7 @@ impl LoadCellWalks {
             matches!(
                 cell.resolved_value(pointer, kind),
                 Some(
-                    CValue::Int8(value) | CValue::Int16(value)
-                        | CValue::Int32(value)
-                        | CValue::UInt8(value)
-                        | CValue::UInt16(value)
-                        | CValue::UInt32(value)
+                    crate::kernel::integer32_c_value!(value)
                 ) if &value == other
             )
         };
@@ -3201,12 +3307,7 @@ pub(crate) fn resolve_load_along_memory_derivations(
         let cell = memory_dag_cell_source(memory, pointer, bytes, assumptions, true)?;
         if let Some(value) = cell.resolved_value(pointer, kind) {
             return match value {
-                CValue::Int8(value)
-                | CValue::Int16(value)
-                | CValue::Int32(value)
-                | CValue::UInt8(value)
-                | CValue::UInt16(value)
-                | CValue::UInt32(value) => Some(value),
+                crate::kernel::integer32_c_value!(value) => Some(value),
                 _ => None,
             };
         }
@@ -3277,7 +3378,7 @@ pub(crate) fn explicit_atomic_equality_from_memory_derivations(
             matches!(
                 memory_dag_cell_source(memory, pointer, bytes, assumptions, true)
                     .and_then(|cell| cell.resolved_value(pointer, *kind)),
-                Some(CValue::Int8(resolved) | CValue::Int16(resolved) | CValue::Int32(resolved) | CValue::UInt8(resolved) | CValue::UInt16(resolved) | CValue::UInt32(resolved))
+                Some(crate::kernel::integer32_c_value!(resolved))
                     if resolved == *value
             )
         };
@@ -3392,7 +3493,11 @@ pub(crate) fn write_access_is_disjoint_from_load(
     if write_bytes == 0 || read_bytes == 0 {
         return false;
     }
-    if write.blocks_proven_distinct(read) {
+    if crate::kernel::reasoning::pointers_in_distinct_objects_for_memory_resolution(
+        write,
+        read,
+        assumptions,
+    ) {
         return true;
     }
     use crate::kernel::reasoning::{AccessByteOverlap, access_byte_overlap};
@@ -3477,17 +3582,17 @@ fn c_memory_load_is_directly_unchanged(
                         pointer,
                         assumptions,
                     );
-                // The direct check decides most disjointness structurally;
-                // ranges owned through composites need the bounded deep
-                // prover, exactly as the mutates-only arm's per-write
-                // distinctness already does.
+                // Separation must cover the entire observation, including
+                // when an owned member is wider than its starting address.
                 let disjoint = after_matches
-                    && (assumptions.ranges_directly_disjoint_from_pointer(mutable_ranges, pointer)
-                        || assumptions.ranges_proven_disjoint_from_pointer_for_frame(
-                            mutable_ranges,
-                            pointer,
-                            before,
-                        ));
+                    && typed_ranges_disjoint_from_pointer_evidence(
+                        mutable_ranges,
+                        pointer,
+                        crate::kernel::load_access_width_at_address_or_widest(pointer)
+                            .max(kind.byte_width()),
+                        assumptions,
+                    )
+                    .is_some();
                 before_matches && after_matches && disjoint
             }
             Proposition::CHeapAllocationFreed {
@@ -4049,39 +4154,7 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &Bitvector32Term) -> bo
                 Bitvector32Term::PointerAddress(pointer) => {
                     pending.push(Node::Offset(&pointer.offset, depth + 1));
                 }
-                Bitvector32Term::Add(left, right)
-                | Bitvector32Term::Subtract(left, right)
-                | Bitvector32Term::Multiply(left, right)
-                | Bitvector32Term::Divide(left, right)
-                | Bitvector32Term::UnsignedDivide(left, right)
-                | Bitvector32Term::Remainder(left, right)
-                | Bitvector32Term::UnsignedRemainder(left, right)
-                | Bitvector32Term::ShiftLeft(left, right)
-                | Bitvector32Term::ArithmeticShiftRight(left, right)
-                | Bitvector32Term::LogicalShiftRight(left, right)
-                | Bitvector32Term::BitwiseAnd(left, right)
-                | Bitvector32Term::BitwiseOr(left, right)
-                | Bitvector32Term::BitwiseXor(left, right)
-                | Bitvector32Term::Int64Add(left, right)
-                | Bitvector32Term::Int64Subtract(left, right)
-                | Bitvector32Term::Int64Multiply(left, right)
-                | Bitvector32Term::Int64Divide(left, right)
-                | Bitvector32Term::Int64Remainder(left, right)
-                | Bitvector32Term::Int64ShiftLeft(left, right)
-                | Bitvector32Term::Int64ArithmeticShiftRight(left, right)
-                | Bitvector32Term::Int64BitwiseAnd(left, right)
-                | Bitvector32Term::Int64BitwiseOr(left, right)
-                | Bitvector32Term::Int64BitwiseXor(left, right)
-                | Bitvector32Term::UInt64Add(left, right)
-                | Bitvector32Term::UInt64Subtract(left, right)
-                | Bitvector32Term::UInt64Multiply(left, right)
-                | Bitvector32Term::UInt64Divide(left, right)
-                | Bitvector32Term::UInt64Remainder(left, right)
-                | Bitvector32Term::UInt64ShiftLeft(left, right)
-                | Bitvector32Term::UInt64LogicalShiftRight(left, right)
-                | Bitvector32Term::UInt64BitwiseAnd(left, right)
-                | Bitvector32Term::UInt64BitwiseOr(left, right)
-                | Bitvector32Term::UInt64BitwiseXor(left, right) => {
+                crate::kernel::binary_machine_term!(left, right) => {
                     pending.push(Node::Term(right, depth + 1));
                     pending.push(Node::Term(left, depth + 1));
                 }
@@ -4090,18 +4163,7 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &Bitvector32Term) -> bo
                     pending.push(Node::Term(right, depth + 1));
                     pending.push(Node::Term(left, depth + 1));
                 }
-                Bitvector32Term::BitwiseNot(value)
-                | Bitvector32Term::Int64From32(value)
-                | Bitvector32Term::MachineIntegerCast { value, .. }
-                | Bitvector32Term::Int64FromUInt32(value)
-                | Bitvector32Term::UInt64From32(value)
-                | Bitvector32Term::UInt32From64(value)
-                | Bitvector32Term::UInt64FromInt32(value)
-                | Bitvector32Term::UInt64FromInt64(value)
-                | Bitvector32Term::Int64BitwiseNot(value)
-                | Bitvector32Term::UInt64BitwiseNot(value)
-                | Bitvector32Term::Float32Negate(value)
-                | Bitvector32Term::Float64Negate(value) => {
+                crate::kernel::unary_machine_term!(value) => {
                     pending.push(Node::Term(value, depth + 1));
                 }
                 Bitvector32Term::If {
@@ -4139,36 +4201,8 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &Bitvector32Term) -> bo
             Node::Condition(condition, depth) => match condition {
                 ConditionTerm::AlgebraicEqual(_, _) => return false,
                 ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
-                ConditionTerm::IntegerLessThan(_, _)
-                | ConditionTerm::IntegerLessEqual(_, _)
-                | ConditionTerm::IntegerGreaterThan(_, _)
-                | ConditionTerm::IntegerGreaterEqual(_, _)
-                | ConditionTerm::IntegerEqual(_, _)
-                | ConditionTerm::IntegerNotEqual(_, _) => return false,
-                ConditionTerm::Bitvector32SignedLessThan(left, right)
-                | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-                | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-                | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-                | ConditionTerm::Bitvector32Equal(left, right)
-                | ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-                | ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-                | ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-                | ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-                | ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
-                | ConditionTerm::Bitvector64SignedLessThan(left, right)
-                | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-                | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-                | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-                | ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-                | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-                | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-                | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-                | ConditionTerm::Bitvector64Equal(left, right)
-                | ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-                | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-                | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-                | ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-                | ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
+                crate::kernel::integer_comparison_condition!(_, _) => return false,
+                crate::kernel::binary_bitvector_condition!(left, right) => {
                     pending.push(Node::Term(right, depth + 1));
                     pending.push(Node::Term(left, depth + 1));
                 }
@@ -4268,18 +4302,7 @@ fn cell_integer_for_read(
         return None;
     }
     match cell {
-        CValue::Int8(value)
-        | CValue::Int16(value)
-        | CValue::Int32(value)
-        | CValue::UInt8(value)
-        | CValue::UInt16(value)
-        | CValue::UInt32(value)
-        | CValue::Int64(value)
-        | CValue::UInt64(value)
-            if &value != load =>
-        {
-            Some(value)
-        }
+        crate::kernel::integer64_c_value!(value) if &value != load => Some(value),
         _ => None,
     }
 }
@@ -4791,12 +4814,9 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
             }
             AtomicCanonicalizationTask::VisitCondition(condition) => match condition {
                 ConditionTerm::AlgebraicEqual(_, _) => condition_results.push(condition.clone()),
-                ConditionTerm::IntegerLessThan(_, _)
-                | ConditionTerm::IntegerLessEqual(_, _)
-                | ConditionTerm::IntegerGreaterThan(_, _)
-                | ConditionTerm::IntegerGreaterEqual(_, _)
-                | ConditionTerm::IntegerEqual(_, _)
-                | ConditionTerm::IntegerNotEqual(_, _) => condition_results.push(condition.clone()),
+                crate::kernel::integer_comparison_condition!(_, _) => {
+                    condition_results.push(condition.clone())
+                }
                 ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {
                     condition_results.push(condition.clone())
                 }
@@ -5517,19 +5537,7 @@ pub(crate) fn c_condition_fact_has_memory(fact: &Proposition) -> bool {
         match term {
             Bitvector32Term::MemoryLoad(_, _, _) => true,
             Bitvector32Term::PointerAddress(pointer) => offset_has_memory(&pointer.offset),
-            Bitvector32Term::Add(left, right)
-            | Bitvector32Term::Subtract(left, right)
-            | Bitvector32Term::Multiply(left, right)
-            | Bitvector32Term::Divide(left, right)
-            | Bitvector32Term::UnsignedDivide(left, right)
-            | Bitvector32Term::Remainder(left, right)
-            | Bitvector32Term::UnsignedRemainder(left, right)
-            | Bitvector32Term::ShiftLeft(left, right)
-            | Bitvector32Term::ArithmeticShiftRight(left, right)
-            | Bitvector32Term::LogicalShiftRight(left, right)
-            | Bitvector32Term::BitwiseAnd(left, right)
-            | Bitvector32Term::BitwiseOr(left, right)
-            | Bitvector32Term::BitwiseXor(left, right) => {
+            crate::kernel::binary_bitvector32_term!(left, right) => {
                 bitvector_has_memory(left) || bitvector_has_memory(right)
             }
             Bitvector32Term::Float32Binary { left, right, .. }
@@ -5548,26 +5556,7 @@ pub(crate) fn c_condition_fact_has_memory(fact: &Proposition) -> bool {
             | Bitvector32Term::Int64FromUInt32(term)
             | Bitvector32Term::UInt64FromInt32(term)
             | Bitvector32Term::UInt64FromInt64(term) => bitvector_has_memory(term),
-            Bitvector32Term::Int64Add(left, right)
-            | Bitvector32Term::Int64Subtract(left, right)
-            | Bitvector32Term::Int64Multiply(left, right)
-            | Bitvector32Term::Int64Divide(left, right)
-            | Bitvector32Term::Int64Remainder(left, right)
-            | Bitvector32Term::Int64ShiftLeft(left, right)
-            | Bitvector32Term::Int64ArithmeticShiftRight(left, right)
-            | Bitvector32Term::Int64BitwiseAnd(left, right)
-            | Bitvector32Term::Int64BitwiseOr(left, right)
-            | Bitvector32Term::Int64BitwiseXor(left, right)
-            | Bitvector32Term::UInt64Add(left, right)
-            | Bitvector32Term::UInt64Subtract(left, right)
-            | Bitvector32Term::UInt64Multiply(left, right)
-            | Bitvector32Term::UInt64Divide(left, right)
-            | Bitvector32Term::UInt64Remainder(left, right)
-            | Bitvector32Term::UInt64ShiftLeft(left, right)
-            | Bitvector32Term::UInt64LogicalShiftRight(left, right)
-            | Bitvector32Term::UInt64BitwiseAnd(left, right)
-            | Bitvector32Term::UInt64BitwiseOr(left, right)
-            | Bitvector32Term::UInt64BitwiseXor(left, right) => {
+            crate::kernel::binary_wide_term!(left, right) => {
                 bitvector_has_memory(left) || bitvector_has_memory(right)
             }
             Bitvector32Term::If {
@@ -5616,30 +5605,7 @@ pub(crate) fn c_condition_fact_has_memory(fact: &Proposition) -> bool {
         return false;
     };
     match condition {
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right)
-        | ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
+        crate::kernel::binary_bitvector_condition!(left, right) => {
             bitvector_has_memory(left) || bitvector_has_memory(right)
         }
         ConditionTerm::AlgebraicEqual(_, _) => true,
@@ -5675,32 +5641,7 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
             left.for_each_bitvector_term(|term| collect_bitvector_memories(term, memories));
             right.for_each_bitvector_term(|term| collect_bitvector_memories(term, memories));
         }
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right)
-        | ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
-            collect_binary(left, right)
-        }
+        crate::kernel::binary_bitvector_condition!(left, right) => collect_binary(left, right),
         ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
             float_condition
                 .for_each_bitvector_term(|term| collect_bitvector_memories(term, memories));
@@ -5723,12 +5664,7 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
         }
         ConditionTerm::Constant(_)
         | ConditionTerm::Variable(_)
-        | ConditionTerm::IntegerLessThan(_, _)
-        | ConditionTerm::IntegerLessEqual(_, _)
-        | ConditionTerm::IntegerGreaterThan(_, _)
-        | ConditionTerm::IntegerGreaterEqual(_, _)
-        | ConditionTerm::IntegerEqual(_, _)
-        | ConditionTerm::IntegerNotEqual(_, _) => {}
+        | crate::kernel::integer_comparison_condition!(_, _) => {}
     }
 }
 
@@ -5759,39 +5695,7 @@ fn collect_bitvector_memories(term: &Bitvector32Term, memories: &mut Vec<SharedC
                 memories.push(memory.clone());
             }
         }
-        Bitvector32Term::Add(left, right)
-        | Bitvector32Term::Subtract(left, right)
-        | Bitvector32Term::Multiply(left, right)
-        | Bitvector32Term::Divide(left, right)
-        | Bitvector32Term::UnsignedDivide(left, right)
-        | Bitvector32Term::Remainder(left, right)
-        | Bitvector32Term::UnsignedRemainder(left, right)
-        | Bitvector32Term::ShiftLeft(left, right)
-        | Bitvector32Term::ArithmeticShiftRight(left, right)
-        | Bitvector32Term::LogicalShiftRight(left, right)
-        | Bitvector32Term::BitwiseAnd(left, right)
-        | Bitvector32Term::BitwiseOr(left, right)
-        | Bitvector32Term::BitwiseXor(left, right)
-        | Bitvector32Term::Int64Add(left, right)
-        | Bitvector32Term::Int64Subtract(left, right)
-        | Bitvector32Term::Int64Multiply(left, right)
-        | Bitvector32Term::Int64Divide(left, right)
-        | Bitvector32Term::Int64Remainder(left, right)
-        | Bitvector32Term::Int64ShiftLeft(left, right)
-        | Bitvector32Term::Int64ArithmeticShiftRight(left, right)
-        | Bitvector32Term::Int64BitwiseAnd(left, right)
-        | Bitvector32Term::Int64BitwiseOr(left, right)
-        | Bitvector32Term::Int64BitwiseXor(left, right)
-        | Bitvector32Term::UInt64Add(left, right)
-        | Bitvector32Term::UInt64Subtract(left, right)
-        | Bitvector32Term::UInt64Multiply(left, right)
-        | Bitvector32Term::UInt64Divide(left, right)
-        | Bitvector32Term::UInt64Remainder(left, right)
-        | Bitvector32Term::UInt64ShiftLeft(left, right)
-        | Bitvector32Term::UInt64LogicalShiftRight(left, right)
-        | Bitvector32Term::UInt64BitwiseAnd(left, right)
-        | Bitvector32Term::UInt64BitwiseOr(left, right)
-        | Bitvector32Term::UInt64BitwiseXor(left, right) => {
+        crate::kernel::binary_machine_term!(left, right) => {
             collect_bitvector_memories(left, memories);
             collect_bitvector_memories(right, memories);
         }
@@ -5983,12 +5887,7 @@ fn transport_framed_atomic_condition(
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => return None,
         // Mathematical integers carry no snapshot-dependent loads, so this
         // memory transport path has no authority to rewrite them.
-        ConditionTerm::IntegerLessThan(_, _)
-        | ConditionTerm::IntegerLessEqual(_, _)
-        | ConditionTerm::IntegerGreaterThan(_, _)
-        | ConditionTerm::IntegerGreaterEqual(_, _)
-        | ConditionTerm::IntegerEqual(_, _)
-        | ConditionTerm::IntegerNotEqual(_, _) => return None,
+        crate::kernel::integer_comparison_condition!(_, _) => return None,
     })
 }
 
@@ -6118,6 +6017,13 @@ fn transport_framed_atomic_bitvector(
                     assumptions,
                 )?,
             };
+            let destination = crate::kernel::intern_c_memory(after.clone());
+            crate::kernel::eval::transport_load_access_width(
+                memory,
+                pointer,
+                &destination,
+                &transported_pointer,
+            );
             if memories_match_for_pointer_load(memory, after, pointer)
                 || memory_materializes_atomic_load(after, memory, pointer, *kind)
                 || assumptions.is_some_and(|(assumptions, direct)| {
@@ -7740,3 +7646,6 @@ mod wide_range_reader_tests {
 
 #[cfg(test)]
 mod pointer_designation_tests;
+
+#[cfg(test)]
+mod range_transport_tests;

@@ -1403,11 +1403,7 @@ fn collect_spec_integer_expression_c_variables(
         SpecIntegerExpression::Negate(inner) => {
             collect_spec_integer_expression_c_variables(inner, reads)
         }
-        SpecIntegerExpression::Add(left, right)
-        | SpecIntegerExpression::Subtract(left, right)
-        | SpecIntegerExpression::Multiply(left, right)
-        | SpecIntegerExpression::TruncatingQuotient(left, right)
-        | SpecIntegerExpression::TruncatingRemainder(left, right) => {
+        crate::kernel::binary_spec_integer_expression!(left, right) => {
             collect_spec_integer_expression_c_variables(left, reads)?;
             collect_spec_integer_expression_c_variables(right, reads)
         }
@@ -1441,16 +1437,7 @@ fn collect_spec_expression_c_variables(
             collect_c_expression_variables(expression, &mut reads.variables);
             Ok(())
         }
-        SpecExpression::Add(left, right)
-        | SpecExpression::Subtract(left, right)
-        | SpecExpression::Multiply(left, right)
-        | SpecExpression::Divide(left, right)
-        | SpecExpression::Remainder(left, right)
-        | SpecExpression::ShiftLeft(left, right)
-        | SpecExpression::ShiftRight(left, right)
-        | SpecExpression::BitwiseAnd(left, right)
-        | SpecExpression::BitwiseOr(left, right)
-        | SpecExpression::BitwiseXor(left, right)
+        crate::kernel::binary_spec_expression!(left, right)
         | SpecExpression::PointerOffset {
             pointer: left,
             elements: right,

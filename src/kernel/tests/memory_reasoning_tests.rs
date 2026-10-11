@@ -955,8 +955,18 @@ fn target_directed_transport_preserves_pointer_field_across_disjoint_buffer_writ
         ),
         4,
     );
+    // Bits32 projects this pointer-valued field's complete pointer word.
+    crate::kernel::eval::declare_load_access_width(&field_pointer, 8);
+    let narrow_separation = Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(memory_range(field_pointer.clone(), 0, 1))),
+        right: Box::new(CResource::Memory(memory_range(
+            written_pointer.clone(),
+            0,
+            1,
+        ))),
+    };
     let separation = Proposition::CResourceSeparate {
-        left: Box::new(CResource::Memory(memory_range(field_pointer, 0, 1))),
+        left: Box::new(CResource::Memory(memory_range(field_pointer, 0, 2))),
         right: Box::new(CResource::Memory(memory_range(written_pointer, 0, 1))),
     };
     let assumptions = PureFactContext::new().assume_proposition(separation.clone());
@@ -964,6 +974,15 @@ fn target_directed_transport_preserves_pointer_field_across_disjoint_buffer_writ
     let target = Proposition::ConditionIs(
         ConditionTerm::pointer_offset_equal(current_offset, old_offset),
         true,
+    );
+
+    assert!(
+        prove_c_condition_fact_target_transport(
+            &source,
+            &target,
+            &PureFactContext::new().assume_proposition(narrow_separation),
+        )
+        .is_none()
     );
 
     let theorem = prove_c_condition_fact_target_transport(&source, &target, &assumptions)
@@ -1796,6 +1815,7 @@ fn disjoint_ranges_frame_metadata_across_symbolic_index_store() {
 
 #[test]
 fn equivalent_field_derived_bases_frame_symbolic_index_store() {
+    let _session = crate::kernel::VerificationSession::enter();
     let owner = Pointer {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(87)), 4),
@@ -1822,7 +1842,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
         offset: PointerOffsetTerm::scale_int32(
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(execution_memory.clone()),
-                Box::new(owner_data_cell),
+                Box::new(owner_data_cell.clone()),
                 crate::kernel::LoadKind::Bits32,
             ),
             4,
@@ -1851,7 +1871,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
                 Bitvector32Term::Constant(4),
             ))),
             right: Box::new(CResource::Memory(CMemoryRange::new(
-                resource_data,
+                resource_data.clone(),
                 Bitvector32Term::Constant(0),
                 capacity,
             ))),
@@ -1859,8 +1879,84 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
         .assume_proposition(Proposition::CMemoryMutatesOnly {
             before: execution_memory.clone(),
             after: after_memory.clone(),
-            writes: vec![(written_cell, 4)],
+            writes: vec![(written_cell.clone(), 4)],
         });
+
+    // The retained evidence carries the snapshot-equivalent additive base,
+    // and still checks the complete width of each access in its own range.
+    let proof = crate::kernel::memory_provenance::typed_store_separated_ranges_evidence(
+        &written_cell,
+        4,
+        &metadata_cell,
+        4,
+        &assumptions,
+    )
+    .expect("an unchanged field load preserves the array's range spelling");
+    let step = crate::kernel::intern_c_memory_ref(&after_memory)
+        .derivation()
+        .unwrap();
+    assert!(proof.checks(step.as_ref(), &metadata_cell, 4, &assumptions));
+    assert!(!proof.checks(step.as_ref(), &metadata_cell, 20, &assumptions));
+    assert!(!proof.checks(step.as_ref(), &metadata_cell, 4, &PureFactContext::new()));
+    let reversed_write = Pointer {
+        block: written_cell.block.clone(),
+        offset: PointerOffsetTerm::add(
+            PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(88)), 4),
+            execution_data.offset.clone(),
+        ),
+    };
+    let reversed_proof = crate::kernel::memory_provenance::typed_store_separated_ranges_evidence(
+        &reversed_write,
+        4,
+        &metadata_cell,
+        4,
+        &assumptions,
+    )
+    .expect("the equivalent base may be either operand of the pointer sum");
+    let reversed_step = crate::kernel::primitives::CMemoryDerivation::Store {
+        base: crate::kernel::intern_c_memory_ref(&execution_memory),
+        pointer: reversed_write,
+        value: int32(7),
+    };
+    assert!(reversed_proof.checks(&reversed_step, &metadata_cell, 4, &assumptions));
+    assert!(
+        crate::kernel::memory_provenance::typed_store_separated_ranges_evidence(
+            &written_cell,
+            8,
+            &metadata_cell,
+            4,
+            &assumptions,
+        )
+        .is_none(),
+        "the last array element is not known to contain eight bytes"
+    );
+    let changed_memory = execution_memory
+        .clone()
+        .store(owner_data_cell.clone(), int32(0));
+    let changed_data = Pointer {
+        block: resource_data.block.clone(),
+        offset: PointerOffsetTerm::scale_int32(
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory(changed_memory),
+                Box::new(owner_data_cell),
+                crate::kernel::LoadKind::Bits32,
+            ),
+            4,
+        ),
+    };
+    let changed_write =
+        changed_data.offset_by_int32_elements(Bitvector32Term::Variable(Variable(88)));
+    assert!(
+        crate::kernel::memory_provenance::typed_store_separated_ranges_evidence(
+            &changed_write,
+            4,
+            &metadata_cell,
+            4,
+            &assumptions,
+        )
+        .is_none(),
+        "a write to the defining field invalidates the equivalent base"
+    );
 
     assert!(assumptions.proves(&Proposition::ConditionIs(
         ConditionTerm::equal(
@@ -2838,6 +2934,7 @@ fn direct_condition_transport_uses_relative_separate_range() {
         Bitvector32Term::Variable(Variable(93)),
         Bitvector32Term::Variable(Variable(92)),
     );
+    crate::kernel::eval::declare_load_access_width(&data, 4);
     let fact = Proposition::ConditionIs(
         ConditionTerm::equal(
             Bitvector32Term::MemoryLoad(
@@ -2858,7 +2955,7 @@ fn direct_condition_transport_uses_relative_separate_range() {
             Bitvector32Term::Constant(1),
         )],
     };
-    let assumptions = with_nonnegative_owner_and_data_indices(PureFactContext::new())
+    let without_nonnegative = PureFactContext::new()
         .assume_condition(
             ConditionTerm::signed_less_than(
                 data_index_from_owner.clone(),
@@ -2879,6 +2976,20 @@ fn direct_condition_transport_uses_relative_separate_range() {
             ))),
         })
         .assume_proposition(effect.clone());
+
+    assert!(prove_c_condition_fact_direct_transport(&fact, &after, &without_nonnegative).is_none());
+    let assumptions = with_nonnegative_owner_and_data_indices(without_nonnegative.clone());
+    let written = CMemoryRange::new(owner.clone(), 0u32.into(), 1u32.into());
+    let evidence = crate::kernel::memory_provenance::typed_ranges_disjoint_from_pointer_evidence(
+        std::slice::from_ref(&written),
+        &data,
+        4,
+        &assumptions,
+    )
+    .expect("the typed scalar read is completely separated");
+    assert!(evidence[0].checks(&written, &data, 4, &assumptions));
+    assert!(!evidence[0].checks(&written, &data, 4, &without_nonnegative));
+    assert!(!evidence[0].checks(&written, &data, 12, &assumptions));
 
     let theorem = prove_c_condition_fact_direct_transport(&fact, &after, &assumptions)
         .expect("relative exact separation should directly frame the data load");
@@ -2927,6 +3038,7 @@ fn direct_condition_transport_uses_indexed_relative_separate_range() {
         Bitvector32Term::Variable(Variable(92)),
     );
     let length = Bitvector32Term::Variable(Variable(95));
+    crate::kernel::eval::declare_load_access_width(&data_one, 4);
     let fact = Proposition::ConditionIs(
         ConditionTerm::equal(
             Bitvector32Term::MemoryLoad(
@@ -2947,7 +3059,7 @@ fn direct_condition_transport_uses_indexed_relative_separate_range() {
             Bitvector32Term::Constant(1),
         )],
     };
-    let assumptions = with_nonnegative_owner_and_data_indices(PureFactContext::new())
+    let without_nonnegative = PureFactContext::new()
         .assume_condition(
             ConditionTerm::signed_less_equal(Bitvector32Term::Constant(2), length.clone()),
             true,
@@ -2965,6 +3077,20 @@ fn direct_condition_transport_uses_indexed_relative_separate_range() {
             ))),
         })
         .assume_proposition(effect.clone());
+
+    assert!(prove_c_condition_fact_direct_transport(&fact, &after, &without_nonnegative).is_none());
+    let assumptions = with_nonnegative_owner_and_data_indices(without_nonnegative.clone());
+    let written = CMemoryRange::new(owner.clone(), 0u32.into(), 1u32.into());
+    let evidence = crate::kernel::memory_provenance::typed_ranges_disjoint_from_pointer_evidence(
+        std::slice::from_ref(&written),
+        &data_one,
+        4,
+        &assumptions,
+    )
+    .expect("the typed scalar read is completely separated");
+    assert!(evidence[0].checks(&written, &data_one, 4, &assumptions));
+    assert!(!evidence[0].checks(&written, &data_one, 4, &without_nonnegative));
+    assert!(!evidence[0].checks(&written, &data_one, 8, &assumptions));
 
     let theorem = prove_c_condition_fact_direct_transport(&fact, &after, &assumptions)
         .expect("an indexed pointer in a relative separate range should be directly framed");

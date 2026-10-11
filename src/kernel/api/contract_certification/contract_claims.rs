@@ -786,14 +786,7 @@ fn materialized_load_is_unchanged(
         _ => None,
     };
     let load = match value {
-        CValue::Int8(bits)
-        | CValue::Int16(bits)
-        | CValue::Int32(bits)
-        | CValue::UInt8(bits)
-        | CValue::UInt16(bits)
-        | CValue::UInt32(bits)
-        | CValue::Int64(bits)
-        | CValue::UInt64(bits) => load_of(bits),
+        crate::kernel::integer64_c_value!(bits) => load_of(bits),
         // A pointer-typed cell materialized from a load scales the load (or
         // its load variable) by the pointee width, as the kernel's own
         // symbolic pointer loads do.
