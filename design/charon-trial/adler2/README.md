@@ -532,7 +532,7 @@ reductions, weighted recombination, both four-lane scalar sums, the zero-to-thre
 byte scalar tail, and final 16-bit stores. Both output fields remain below
 65,521. No generated processed count supplies the induction or ranking.
 
-The original vector loop also carries a functional A invariant:
+The original vector loop carries functional A and B invariants:
 `(a + A0 + A1 + A2 + A3) % MOD` equals the shared A specification at
 `prefix_length - remaining`. The proof initializes this relation for the empty
 prefix from any canonical A seed, identifies each constructor lane with its
@@ -540,10 +540,18 @@ original input byte, and combines the checked native additions with the
 four-byte specification recurrence. At loop exit it establishes the relation
 for the whole four-byte prefix. Loop closure explicitly checks the signed
 prefix subtraction's safety and every invariant and ranking obligation.
-This covers A through the vector loop; B, reduction/recombination transport,
-the scalar tail, and the final checksum postconditions remain pending.
-Nightly mutations reject a duplicated lane byte in the A transition and a
-changed seed in the completed-prefix relation.
+B uses the representative
+`b + n*a + 4*(B0+B1+B2+B3) + 6*MOD - A1 - 2*A2 - 3*A3`, where
+`n = prefix_length - remaining` and the scalar seeds stay unchanged during
+this loop. Its nonnegative representative and residue are initialized at the
+empty prefix and preserved by the ordered four-byte update. The `n*a` term
+accounts for the original scalar contribution deferred until after the loop.
+A checked signed-count lemma transports its exact Integer advance, and the
+loop exit establishes both residues for the completed four-byte prefix.
+Reduction/recombination transport, the scalar tail, and the final checksum
+postconditions remain pending. Nightly mutations reject a duplicated lane
+byte in the A transition, a changed completed-prefix A seed, an incorrect B
+byte weight, and an omitted B seed contribution.
 
 The fixture is assembled with the existing helper bodies, recombination
 lemmas, iterator bounds, the common specification and lane-state lemmas,
