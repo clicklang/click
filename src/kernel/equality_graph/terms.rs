@@ -224,6 +224,11 @@ pub(super) struct TermClasses {
     // A displacement definition is permanent for one raw address spelling.
     // Repeated queries reuse it without re-registering its base or closure.
     registered_address_shifts: PersistentSet<(u64, u64)>,
+    // The address node of each registered (block, raw offset) spelling. Its
+    // affine definition is permanent, so a repeated registration (every
+    // pointer equality query registers both sides) returns it after interning
+    // the offset, without renormalizing or reclosing. Keys are shallow IDs.
+    registered_addresses: PersistentMap<(u64, u64), u64>,
     // One offset witness per exact block in each address class. When address
     // classes merge, a shared block proves its two offsets equal. Small-side
     // class union visits only moved witnesses, never ambient pointer facts.
@@ -360,6 +365,11 @@ impl TermClasses {
         std::mem::take(&mut self.read_merges)
     }
 
+    #[cfg(test)]
+    pub(super) fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
     fn address_without_shift(
         &mut self,
         block: PointerBlock,
@@ -369,6 +379,12 @@ impl TermClasses {
         // the original syntax connected to its definitional normal form so
         // whole-offset premises and affine addresses share these applications.
         let raw = self.intern(&offset);
+        if let Some(block_id) = self.load_blocks.get(&block)
+            && let Some(id) = self.registered_addresses.get(&(*block_id, raw)).copied()
+        {
+            self.register_pending_loads();
+            return (id, false, raw);
+        }
         let normalized = AffineOffset::of(&offset).and_then(|value| value.to_offset_term());
         let operand = normalized.as_ref().map_or(raw, |term| self.intern(term));
         self.register_pending_loads();
@@ -385,6 +401,7 @@ impl TermClasses {
         let node = Node::Address(block_id, operand);
         let new = !self.nodes.contains_key(&node);
         let id = self.intern_node(node);
+        self.registered_addresses.insert((block_id, raw), id);
         let mut uses = self.address_uses.get(&block).cloned().unwrap_or_default();
         if !uses.contains_key(&id) {
             uses.insert(id, Arc::new(offset));

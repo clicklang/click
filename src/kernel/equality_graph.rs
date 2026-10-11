@@ -1991,6 +1991,81 @@ mod tests {
         assert!(graph.pointer_at_base(&base, &unrelated).is_none());
     }
 
+    // Every pointer equality query registers both addresses. Repeating a
+    // query reuses the registered address nodes: it neither grows the graph
+    // nor renormalizes and recloses the offsets, so its work is a fraction of
+    // the first query's and linear in the offsets it reinterns.
+    #[test]
+    fn repeated_address_queries_reuse_registered_addresses() {
+        let mut costs = Vec::new();
+        for size in [8u64, 32, 128] {
+            let mut graph = EqualityGraph::default();
+            assert!(graph.add_equality(&at(symbolic(1), 0), &at(symbolic(2), 16)));
+            // An unrelated offset equality enables registered comparisons.
+            graph.add_int32_equality(&index(1), &index(2));
+            // Distinct indices give the sides different affine forms, so the
+            // query reaches address registration, whose normal form of each
+            // offset is a fresh flattened term.
+            let offset = |first: u64| {
+                (0..size).fold(PointerOffsetTerm::Constant(0), |sum, item| {
+                    PointerOffsetTerm::Add(
+                        Box::new(sum),
+                        Box::new(PointerOffsetTerm::Int32Scaled {
+                            value: Box::new(index(first + item)),
+                            byte_width: 4,
+                        }),
+                    )
+                })
+            };
+            let left = Pointer {
+                block: symbolic(1),
+                offset: offset(1_000),
+            };
+            let right = Pointer {
+                block: symbolic(2),
+                offset: offset(5_000),
+            };
+            let (first, first_work) = crate::instrumentation::measure_deterministic_work(|| {
+                graph.are_equal(&left, &right)
+            });
+            let nodes = graph
+                .state
+                .lock()
+                .expect("equality graph")
+                .terms
+                .node_count();
+            let (repeated, repeated_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    graph.are_equal(&left, &right)
+                });
+            assert_eq!(first, repeated);
+            assert_eq!(
+                graph
+                    .state
+                    .lock()
+                    .expect("equality graph")
+                    .terms
+                    .node_count(),
+                nodes,
+                "a repeated query must not register new nodes"
+            );
+            // Reinterning the raw offsets is about half the first query;
+            // renormalizing and reinterning both normal forms would be more.
+            assert!(
+                repeated_work * 5 <= first_work * 3,
+                "repeated {repeated_work}, first {first_work}"
+            );
+            costs.push((size, repeated_work));
+        }
+        for pair in costs.windows(2) {
+            let ((small, small_work), (large, large_work)) = (pair[0], pair[1]);
+            assert!(
+                large_work <= small_work * (large / small) as usize * 2,
+                "{costs:?}"
+            );
+        }
+    }
+
     #[test]
     fn offsets_spelled_differently_share_one_normal_form() {
         let nested = PointerOffsetTerm::Add(
