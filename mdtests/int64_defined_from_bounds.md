@@ -1,7 +1,7 @@
 # `int64` definedness from the operands' bounds is an explicit step
 
 `defined(a + b)` and `defined(a - b)` over `int64` lower to the negated
-signed-overflow condition. The `int64_defined` node of the `special`
+signed-overflow condition. The `int64_defined` node of the `rules`
 arithmetic-certificate family proves it: each operand starts from the width
 range of its root constructor (a constant is itself, a value widened from
 `unsigned int` lies in `[0, 2^32)`, one widened from `int` in
@@ -50,7 +50,7 @@ int64 sum(int64 a, int64 b) {
     ensures result == a + b;
 } by {
     have defined(a + b) by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: a < 100 => a < 100;
             premise 1: b == 1 => b == 1;
             int64_defined bounds [0, 1] => defined(a + b);
@@ -68,7 +68,7 @@ int64 difference(int64 a, int64 b) {
     ensures result == a - b;
 } by {
     have defined(a - b) by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: -5 <= a => -5 <= a;
             premise 1: 0 <= b => 0 <= b;
             premise 2: not (b > 7) => not (b > 7);
@@ -112,7 +112,7 @@ int64 mixed(uint32 tag, int64 b) {
     ensures result == tag + b;
 } by {
     have defined(tag + b) by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: b < 100 => b < 100;
             int64_defined bounds [0] => defined(tag + b);
             conclusion 0;

@@ -49,7 +49,7 @@ theorem adler_lane_iterator_count_bounds(consumed: Integer, divisor: Integer) {
     requires divisor <= 4;
     requires divisor != 0;
     ensures 0 <= truncating_quotient(consumed, divisor) by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: 0 <= consumed => 0 <= consumed;
             premise 1: consumed <= 22208 => consumed <= 22208;
             premise 2: 4 <= divisor => 4 <= divisor;
@@ -59,7 +59,7 @@ theorem adler_lane_iterator_count_bounds(consumed: Integer, divisor: Integer) {
         }
     }
     ensures truncating_quotient(consumed, divisor) <= 5552 by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: 0 <= consumed => 0 <= consumed;
             premise 1: consumed <= 22208 => consumed <= 22208;
             premise 2: 4 <= divisor => 4 <= divisor;
@@ -121,7 +121,7 @@ theorem adler_lane_iterator_count_before_next(consumed: Integer, divisor: Intege
     requires divisor <= 4;
     requires divisor != 0;
     ensures truncating_quotient(consumed, divisor) <= 5551 by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: 0 <= consumed => 0 <= consumed;
             premise 1: consumed <= 22204 => consumed <= 22204;
             premise 2: 4 <= divisor => 4 <= divisor;
@@ -157,7 +157,7 @@ theorem adler_lane_iterator_quotient_shift(consumed: Integer, increment: Integer
     requires 0 <= consumed;
     requires 0 <= increment;
     ensures truncating_quotient(consumed + 4 * increment, 4) == truncating_quotient(consumed, 4) + increment by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: 0 <= consumed => 0 <= consumed;
             premise 1: 0 <= increment => 0 <= increment;
             integer_quotient_shift bounds [0, 1] => truncating_quotient(consumed + 4 * increment, 4) == truncating_quotient(consumed, 4) + increment;

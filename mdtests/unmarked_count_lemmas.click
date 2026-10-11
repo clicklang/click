@@ -209,7 +209,7 @@ theorem unmarked_point_update(
                 assumption();
             } else {
                 have j < hi - 1 by {
-                    apply(int32_le_and_neq_implies_lt(j, hi - 1)) using {
+                    apply(int32_less_equal_and_not_equal_implies_less_than(j, hi - 1)) using {
                         j <= hi - 1;
                         j != hi - 1;
                     }

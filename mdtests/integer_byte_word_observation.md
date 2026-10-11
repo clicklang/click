@@ -10,7 +10,7 @@ theorem byte_word_observation(value: uint8) {
         have (int32)value <= 255;
         apply(int32_less_equal_to_integer(0, (int32)value));
         apply(int32_less_equal_to_integer((int32)value, 255));
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: 0 <= to_integer((int32)value) => 0 <= to_integer((int32)value);
             premise 1: to_integer((int32)value) <= 255 => to_integer((int32)value) <= 255;
             integer_cast_identity bounds [0, 1] => to_integer(value) == to_integer((int32)value);

@@ -17,7 +17,7 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
 
  apply(adler_spec_one(bytes));
  apply(adler_byte_bounds(bytes[0]));
- have to_integer((uint32)bytes[0]) == to_integer((int32)bytes[0]) by { arithmetic_certificate special {
+ have to_integer((uint32)bytes[0]) == to_integer((int32)bytes[0]) by { arithmetic_certificate rules {
  premise 0: 0 <= to_integer((int32)bytes[0]) => 0 <= to_integer((int32)bytes[0]);
  premise 1: to_integer((int32)bytes[0]) <= 255 => to_integer((int32)bytes[0]) <= 255;
  integer_cast_identity bounds [0, 1] => to_integer((uint32)bytes[0]) == to_integer((int32)bytes[0]); conclusion 0;
@@ -298,12 +298,12 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  have to_integer(__rust_mir_151) <= 65535 by { arithmetic() using { to_integer(__rust_mir_151) < 65521; } }
  mark reduced_b;
  execute();
- have to_integer(self->a) == to_integer(at(reduced_a, __rust_mir_149)) by { arithmetic_certificate special {
+ have to_integer(self->a) == to_integer(at(reduced_a, __rust_mir_149)) by { arithmetic_certificate rules {
  premise 0: 0 <= to_integer(at(reduced_a, __rust_mir_149)) => 0 <= to_integer(at(reduced_a, __rust_mir_149));
  premise 1: to_integer(at(reduced_a, __rust_mir_149)) <= 65535 => to_integer(at(reduced_a, __rust_mir_149)) <= 65535;
  integer_cast_identity bounds [0, 1] => to_integer(self->a) == to_integer(at(reduced_a, __rust_mir_149)); conclusion 0;
  } }
- have to_integer(self->b) == to_integer(at(reduced_b, __rust_mir_151)) by { arithmetic_certificate special {
+ have to_integer(self->b) == to_integer(at(reduced_b, __rust_mir_151)) by { arithmetic_certificate rules {
  premise 0: 0 <= to_integer(at(reduced_b, __rust_mir_151)) => 0 <= to_integer(at(reduced_b, __rust_mir_151));
  premise 1: to_integer(at(reduced_b, __rust_mir_151)) <= 65535 => to_integer(at(reduced_b, __rust_mir_151)) <= 65535;
  integer_cast_identity bounds [0, 1] => to_integer(self->b) == to_integer(at(reduced_b, __rust_mir_151)); conclusion 0;

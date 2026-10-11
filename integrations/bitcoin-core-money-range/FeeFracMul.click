@@ -8,7 +8,7 @@ int128 FeeFrac_Mul(int64 a, int32 b) {
     ensures to_integer(result) == to_integer(a) * to_integer(b);
 } by {
     have -170141183460469231731687303715884105728 <= to_integer(a) * to_integer(b) by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: -9223372036854775808 <= to_integer(a) => -9223372036854775808 <= to_integer(a);
             premise 1: to_integer(a) <= 9223372036854775807 => to_integer(a) <= 9223372036854775807;
             premise 2: -2147483648 <= to_integer(b) => -2147483648 <= to_integer(b);
@@ -18,7 +18,7 @@ int128 FeeFrac_Mul(int64 a, int32 b) {
         }
     }
     have to_integer(a) * to_integer(b) <= 170141183460469231731687303715884105727 by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: -9223372036854775808 <= to_integer(a) => -9223372036854775808 <= to_integer(a);
             premise 1: to_integer(a) <= 9223372036854775807 => to_integer(a) <= 9223372036854775807;
             premise 2: -2147483648 <= to_integer(b) => -2147483648 <= to_integer(b);

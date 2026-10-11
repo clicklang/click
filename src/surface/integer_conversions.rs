@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn uint32_product_bound_guard_expands_and_rejects_wrapped_or_signed_bounds() {
-        let source = "theorem bounded(a: uint32, b: uint32) { requires to_integer(a) * to_integer(b) <= 4294967295; ensures b == 0u32 or a <= 4294967295u32 / b by { apply(uint32_mul_guard_by_integer_bound(a, b)) using { to_integer(a) * to_integer(b) <= 4294967295; } } }";
+        let source = "theorem bounded(a: uint32, b: uint32) { requires to_integer(a) * to_integer(b) <= 4294967295; ensures b == 0u32 or a <= 4294967295u32 / b by { apply(uint32_multiply_guard_by_integer_bound(a, b)) using { to_integer(a) * to_integer(b) <= 4294967295; } } }";
         verify_c0_sources(source, &[]).unwrap();
         let expanded = expand_c0_claim_source_by_label(source, &[], "bounded.ensures_0").unwrap();
         verify_c0_sources(&expanded, &[]).unwrap();
@@ -90,7 +90,7 @@ mod tests {
         }
         let missing = source.replace("requires to_integer(a) * to_integer(b) <= 4294967295;", "");
         assert!(verify_c0_sources(&missing, &[]).is_err());
-        let forged = "theorem uint32_mul_guard_by_integer_bound(a: uint32, b: uint32) { requires to_integer(a) * to_integer(b) <= 4294967296; ensures b == 0u32 or a <= 4294967295u32 / b; }";
+        let forged = "theorem uint32_multiply_guard_by_integer_bound(a: uint32, b: uint32) { requires to_integer(a) * to_integer(b) <= 4294967296; ensures b == 0u32 or a <= 4294967295u32 / b; }";
         assert!(verify_c0_sources(forged, &[]).is_err());
     }
 
@@ -291,7 +291,7 @@ mod tests {
 
     #[test]
     fn uint32_small_remainder_expands_and_requires_strict_unsigned_evidence() {
-        let source = "theorem lane(value: uint32, divisor: uint32) { requires value < divisor; ensures value % divisor == value by { apply(uint32_remainder_of_lt(value, divisor)); } }";
+        let source = "theorem lane(value: uint32, divisor: uint32) { requires value < divisor; ensures value % divisor == value by { apply(uint32_less_than_divisor_implies_remainder_is_value(value, divisor)); } }";
         verify_c0_sources(source, &[]).unwrap();
         let expanded = expand_c0_claim_source_by_label(source, &[], "lane.ensures_0").unwrap();
         verify_c0_sources(&expanded, &[]).unwrap();
@@ -300,7 +300,7 @@ mod tests {
             source.replace("value < divisor", "value <= divisor"),
             source.replace("value < divisor", "divisor != 0u32"),
             source.replace("== value by", "== divisor by"),
-            source.replace("of_lt(value, divisor)", "of_lt(divisor, value)"),
+            source.replace("is_value(value, divisor)", "is_value(divisor, value)"),
             source.replace("requires value < divisor;", "requires divisor == 0u32;"),
             expanded.replace("requires value < divisor;", ""),
             expanded.replace(
@@ -348,12 +348,12 @@ mod tests {
                 "to_integer(left) <= to_integer(right)",
             ),
             (
-                "uint32_less_equal_of_to_integer",
+                "uint32_to_integer_less_equal_implies_less_equal",
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
             ),
             (
-                "uint32_equal_of_to_integer",
+                "uint32_to_integer_equal_implies_equal",
                 "to_integer(left) == to_integer(right)",
                 "left == right",
             ),
@@ -786,7 +786,7 @@ mod tests {
     ensures self->{field} == old(self->{field});
 }} by {{
     execute();
-    have to_integer(result) == to_integer(self->{field}) by {{ arithmetic_certificate special {{
+    have to_integer(result) == to_integer(self->{field}) by {{ arithmetic_certificate rules {{
         premise 0: {lower} <= to_integer(self->{field}) => {lower} <= to_integer(self->{field});
         premise 1: to_integer(self->{field}) <= {upper} => to_integer(self->{field}) <= {upper};
         integer_cast_identity bounds [0, 1] => to_integer(result) == to_integer(self->{field}); conclusion 0;
@@ -837,7 +837,7 @@ mod tests {
                 r#"verifying "cast.c";
 {destination} cast({source_ty} value) {{ {contract} }} by {{
     execute();
-    arithmetic_certificate special {{
+    arithmetic_certificate rules {{
         premise 0: {lower} <= to_integer(value) => {lower} <= to_integer(value);
         premise 1: to_integer(value) <= {upper} => to_integer(value) <= {upper};
         integer_cast_identity bounds [0, 1] => to_integer(result) == to_integer(value); conclusion 0;
@@ -985,7 +985,7 @@ mod tests {
                 "to_integer(left) <= to_integer(right)",
             ),
             (
-                "uint64_less_equal_of_to_integer",
+                "uint64_to_integer_less_equal_implies_less_equal",
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
             ),
@@ -995,7 +995,7 @@ mod tests {
                 "to_integer(left) < to_integer(right)",
             ),
             (
-                "uint64_less_than_of_to_integer",
+                "uint64_to_integer_less_than_implies_less_than",
                 "to_integer(left) < to_integer(right)",
                 "left < right",
             ),
@@ -1143,7 +1143,7 @@ mod tests {
     fn signed_integer_order_bridges_recheck_source_guards_and_expansion() {
         for (name, ty, guard, goal) in [
             (
-                "int32_less_equal_of_to_integer",
+                "int32_to_integer_less_equal_implies_less_equal",
                 "int32",
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
@@ -1167,13 +1167,13 @@ mod tests {
                 "to_integer(left) >= to_integer(right)",
             ),
             (
-                "int64_less_equal_of_to_integer",
+                "int64_to_integer_less_equal_implies_less_equal",
                 "int64",
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
             ),
             (
-                "int64_equal_of_to_integer",
+                "int64_to_integer_equal_implies_equal",
                 "int64",
                 "to_integer(left) == to_integer(right)",
                 "left == right",
@@ -1208,7 +1208,7 @@ mod tests {
                 }
                 source.push_str("ensures x <= y by { ");
                 for _ in 0..size {
-                    source.push_str(&format!("have x <= y by {{ apply({ty}_less_equal_of_to_integer(x, y)) using {{ to_integer(x) <= to_integer(y); }} }} "));
+                    source.push_str(&format!("have x <= y by {{ apply({ty}_to_integer_less_equal_implies_less_equal(x, y)) using {{ to_integer(x) <= to_integer(y); }} }} "));
                 }
                 source.push_str("assumption(); } }");
                 let (result, work) = crate::instrumentation::measure_deterministic_work(|| {

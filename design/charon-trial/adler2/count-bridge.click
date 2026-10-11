@@ -10,7 +10,7 @@ theorem adler_count_observation(r: uint64) {
   have 0u64 <= r by { normalize(); }
   apply(uint64_less_equal_to_integer(0u64, r)) using { 0u64 <= r; }
   apply(uint64_less_equal_to_integer(r, 22208u64)) using { r <= 22208u64; }
-  arithmetic_certificate special {
+  arithmetic_certificate rules {
    premise 0: 0 <= to_integer(r) => 0 <= to_integer(r);
    premise 1: to_integer(r) <= 22208 => to_integer(r) <= 22208;
    integer_cast_identity bounds [0, 1] => to_integer((int32)(uint32)r) == to_integer(r);
@@ -28,9 +28,9 @@ theorem adler_count_bounds(r: uint64) {
   have 0 <= to_integer((int32)(uint32)r) by { rewrite(to_integer((int32)(uint32)r) == to_integer(r)); assumption(); }
   have to_integer((int32)(uint32)r) <= 22208 by { rewrite(to_integer((int32)(uint32)r) == to_integer(r)); assumption(); }
   both {
-   apply(int32_less_equal_of_to_integer(0, (int32)(uint32)r)) using { 0 <= to_integer((int32)(uint32)r); }
+   apply(int32_to_integer_less_equal_implies_less_equal(0, (int32)(uint32)r)) using { 0 <= to_integer((int32)(uint32)r); }
   } and {
-   apply(int32_less_equal_of_to_integer((int32)(uint32)r, 22208)) using { to_integer((int32)(uint32)r) <= 22208; }
+   apply(int32_to_integer_less_equal_implies_less_equal((int32)(uint32)r, 22208)) using { to_integer((int32)(uint32)r) <= 22208; }
   }
  }
 }
@@ -47,7 +47,7 @@ theorem adler_count_at_least(r: uint64, k: uint64) {
    rewrite(to_integer((int32)(uint32)r) == to_integer(r));
    assumption();
   }
-  apply(int32_less_equal_of_to_integer((int32)(uint32)k, (int32)(uint32)r)) using { to_integer((int32)(uint32)k) <= to_integer((int32)(uint32)r); }
+  apply(int32_to_integer_less_equal_implies_less_equal((int32)(uint32)k, (int32)(uint32)r)) using { to_integer((int32)(uint32)k) <= to_integer((int32)(uint32)r); }
  }
 }
 theorem adler_count_step(r: uint64, k: uint64) {
@@ -74,7 +74,7 @@ theorem adler_count_step(r: uint64, k: uint64) {
    rewrite(to_integer((int32)(uint32)k) == to_integer(k));
    normalize();
   }
-  apply(int32_equal_of_to_integer((int32)(uint32)(r - k), (int32)(uint32)r - (int32)(uint32)k)) using { to_integer((int32)(uint32)(r - k)) == to_integer((int32)(uint32)r - (int32)(uint32)k); }
+  apply(int32_to_integer_equal_implies_equal((int32)(uint32)(r - k), (int32)(uint32)r - (int32)(uint32)k)) using { to_integer((int32)(uint32)(r - k)) == to_integer((int32)(uint32)r - (int32)(uint32)k); }
  }
 }
 theorem adler_count_lane_step(r: uint64) {
@@ -109,7 +109,7 @@ theorem adler_count_zero(r: uint64) {
   have to_integer((int32)(uint32)r) == 0 by { rewrite((int32)(uint32)r == 0); normalize(); }
   have to_integer(r) == 0 by { arithmetic() using { to_integer((int32)(uint32)r) == to_integer(r); to_integer((int32)(uint32)r) == 0; } }
   have to_integer(r) == to_integer(0u64) by { normalize() using { to_integer(r) == 0; } }
-  apply(uint64_equal_of_to_integer(r, 0u64)) using { to_integer(r) == to_integer(0u64); }
+  apply(uint64_to_integer_equal_implies_equal(r, 0u64)) using { to_integer(r) == to_integer(0u64); }
  }
 }
 

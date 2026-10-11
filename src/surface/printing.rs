@@ -810,7 +810,7 @@ fn write_special_arithmetic_certificate(
     indent: usize,
 ) {
     let prefix = "    ".repeat(indent);
-    line(output, &prefix, "arithmetic_certificate special {");
+    line(output, &prefix, "arithmetic_certificate rules {");
     let body = "    ".repeat(indent + 1);
     for (index, premise) in certificate.premises.iter().enumerate() {
         line(

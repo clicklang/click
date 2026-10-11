@@ -2641,7 +2641,7 @@ fn smart_nonstrict_then_strict_transitivity_closes_a_pure_goal() {
     "#;
 
     verify_c0_sources(click_source, &[]).expect(
-        "a non-strict leg followed by a strict leg should close through `int32_le_lt_transitive`",
+        "a non-strict leg followed by a strict leg should close through `int32_less_equal_less_than_transitive`",
     );
 }
 
@@ -2655,7 +2655,7 @@ fn apply_le_lt_transitive_requires_its_nonstrict_leg_listed() {
             requires x < y;
 
             ensures 0 < y by {
-                apply(int32_le_lt_transitive(0, x, y)) using {
+                apply(int32_less_equal_less_than_transitive(0, x, y)) using {
                     x < y
                 };
                 assumption();
@@ -2697,7 +2697,7 @@ fn apply_lt_le_transitive_rejects_a_false_constant_leg() {
             requires 2 <= bound;
 
             ensures 2 < bound by {
-                apply(int32_lt_le_transitive(2, 2, bound)) using {
+                apply(int32_less_than_less_equal_transitive(2, 2, bound)) using {
                     2 <= bound
                 };
                 assumption();

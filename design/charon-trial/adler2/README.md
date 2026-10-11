@@ -101,7 +101,7 @@ the optimized state to the specification; they do not establish the general
 checksum postcondition.
 
 The multiplication helper also exports the exact Integer product for each lane.
-`uint32_mul_to_integer` uses the original native quotient guard, including its
+`uint32_multiply_to_integer` uses the original native quotient guard, including its
 zero-factor branch, to justify the non-wrapping observation. This lets caller
 proofs carry numeric lane ceilings through the original `*=` body: for example,
 a reduced lane at most 65520, multiplied by four, has an Integer observation at

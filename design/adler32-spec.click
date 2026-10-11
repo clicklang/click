@@ -62,14 +62,14 @@ theorem adler_weight_shift(bytes: uint8[], n: int32, w0: int32, w1: int32) {
    peel(adler_weighted_sum(bytes, n, w0)) using { 0 <= n - 1; n - 1 < 2147483647; }
    peel(adler_byte_sum(bytes, n)) using { 0 <= n - 1; n - 1 < 2147483647; }
    have (adler_weighted_sum(bytes, n - 1, w1) + (to_integer(w1) - to_integer(n - 1)) * to_integer((int32)bytes[n - 1])) - (adler_weighted_sum(bytes, n - 1, w0) + (to_integer(w0) - to_integer(n - 1)) * to_integer((int32)bytes[n - 1])) == (adler_weighted_sum(bytes, n - 1, w1) - adler_weighted_sum(bytes, n - 1, w0)) + (to_integer(w1) - to_integer(w0)) * to_integer((int32)bytes[n - 1]) by {
-    arithmetic_certificate special {
+    arithmetic_certificate rules {
      integer_polynomial_identity bounds [] => (adler_weighted_sum(bytes, n - 1, w1) + (to_integer(w1) - to_integer(n - 1)) * to_integer((int32)bytes[n - 1])) - (adler_weighted_sum(bytes, n - 1, w0) + (to_integer(w0) - to_integer(n - 1)) * to_integer((int32)bytes[n - 1])) == (adler_weighted_sum(bytes, n - 1, w1) - adler_weighted_sum(bytes, n - 1, w0)) + (to_integer(w1) - to_integer(w0)) * to_integer((int32)bytes[n - 1]);
      conclusion 0;
     }
    }
    rewrite((adler_weighted_sum(bytes, n - 1, w1) + (to_integer(w1) - to_integer(n - 1)) * to_integer((int32)bytes[n - 1])) - (adler_weighted_sum(bytes, n - 1, w0) + (to_integer(w0) - to_integer(n - 1)) * to_integer((int32)bytes[n - 1])) == (adler_weighted_sum(bytes, n - 1, w1) - adler_weighted_sum(bytes, n - 1, w0)) + (to_integer(w1) - to_integer(w0)) * to_integer((int32)bytes[n - 1]));
    rewrite(adler_weighted_sum(bytes, n - 1, w1) - adler_weighted_sum(bytes, n - 1, w0) == (to_integer(w1) - to_integer(w0)) * adler_byte_sum(bytes, n - 1));
-   arithmetic_certificate special {
+   arithmetic_certificate rules {
     integer_polynomial_identity bounds [] => (to_integer(w1) - to_integer(w0)) * adler_byte_sum(bytes, n - 1) + (to_integer(w1) - to_integer(w0)) * to_integer((int32)bytes[n - 1]) == (to_integer(w1) - to_integer(w0)) * (adler_byte_sum(bytes, n - 1) + to_integer((int32)bytes[n - 1]));
     conclusion 0;
    }
@@ -235,7 +235,7 @@ theorem adler_spec_b_canonical(bytes: uint8[], n: int32, a0: Integer, b0: Intege
   have n <= 2147483647 by { normalize(); }
   apply(int32_less_equal_to_integer(n, 2147483647)) using { n <= 2147483647; }
   have 0 <= to_integer(n) * a0 by {
-   arithmetic_certificate special {
+   arithmetic_certificate rules {
     premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
     premise 1: to_integer(n) <= 2147483647 => to_integer(n) <= 2147483647;
     premise 2: 0 <= a0 => 0 <= a0;
@@ -468,7 +468,7 @@ theorem adler_sum_concat(bytes: uint8[], prefix: int32, suffix: int32) {
     to_integer(2147483647 - (suffix - 1)) == to_integer(2147483647) - to_integer(suffix - 1);
     to_integer(suffix - 1) == to_integer(suffix) - to_integer(1);
    } }
-   apply(int32_less_equal_of_to_integer(prefix, 2147483647 - (suffix - 1)));
+   apply(int32_to_integer_less_equal_implies_less_equal(prefix, 2147483647 - (suffix - 1)));
    have prefix <= 2147483647 - (suffix - 1) by { assumption(); }
    apply(int32_nonnegative_add_within_max_is_defined(prefix, suffix - 1));
    have defined(prefix + (suffix - 1)) by { assumption(); }
@@ -486,7 +486,7 @@ theorem adler_sum_concat(bytes: uint8[], prefix: int32, suffix: int32) {
     to_integer((prefix + suffix) - 1) == to_integer(prefix + suffix) - to_integer(1);
     to_integer(suffix - 1) == to_integer(suffix) - to_integer(1);
    } }
-   apply(int32_equal_of_to_integer((prefix + suffix) - 1, prefix + (suffix - 1)));
+   apply(int32_to_integer_equal_implies_equal((prefix + suffix) - 1, prefix + (suffix - 1)));
    have (prefix + suffix) - 1 == prefix + (suffix - 1) by { assumption(); }
    apply(adler_sum_append(bytes, prefix + suffix));
    apply(adler_sum_append(bytes + prefix, suffix));
@@ -546,7 +546,7 @@ theorem adler_weighted_concat(bytes: uint8[], prefix: int32, suffix: int32, weig
     to_integer(2147483647 - (suffix - 1)) == to_integer(2147483647) - to_integer(suffix - 1);
     to_integer(suffix - 1) == to_integer(suffix) - to_integer(1);
    } }
-   apply(int32_less_equal_of_to_integer(prefix, 2147483647 - (suffix - 1)));
+   apply(int32_to_integer_less_equal_implies_less_equal(prefix, 2147483647 - (suffix - 1)));
    have prefix <= 2147483647 - (suffix - 1) by { assumption(); }
    apply(int32_nonnegative_add_within_max_is_defined(prefix, suffix - 1));
    have defined(prefix + (suffix - 1)) by { assumption(); }
@@ -564,7 +564,7 @@ theorem adler_weighted_concat(bytes: uint8[], prefix: int32, suffix: int32, weig
     to_integer((prefix + suffix) - 1) == to_integer(prefix + suffix) - to_integer(1);
     to_integer(suffix - 1) == to_integer(suffix) - to_integer(1);
    } }
-   apply(int32_equal_of_to_integer((prefix + suffix) - 1, prefix + (suffix - 1)));
+   apply(int32_to_integer_equal_implies_equal((prefix + suffix) - 1, prefix + (suffix - 1)));
    have (prefix + suffix) - 1 == prefix + (suffix - 1) by { assumption(); }
    apply(adler_weighted_append(bytes, prefix + suffix, weight_end));
    apply(adler_weighted_append(bytes + prefix, suffix, weight_end - prefix));
@@ -668,7 +668,7 @@ theorem adler_seed_polynomial(x: Integer, y: Integer, k: Integer, z: Integer, qa
  ensures y + k * x + z == (rb + k * ra + z) + 65521 * (qb + k * qa) by {
   rewrite(y == qb * 65521 + rb);
   rewrite(x == qa * 65521 + ra);
-  arithmetic_certificate special {
+  arithmetic_certificate rules {
    integer_polynomial_identity bounds [] => (qb * 65521 + rb) + k * (qa * 65521 + ra) + z == (rb + k * ra + z) + 65521 * (qb + k * qa); conclusion 0;
   }
  }
@@ -687,14 +687,14 @@ theorem adler_residue_seed_update(x: Integer, y: Integer, k: Integer, z: Integer
   apply(integer_nonnegative_dividend_remainder(x, 65521)) using { 65521 != 0; 0 <= x; }
   apply(integer_nonnegative_dividend_remainder(y, 65521)) using { 65521 != 0; 0 <= y; }
   apply(integer_positive_divisor_remainder_upper(x, 65521)) using { 65521 != 0; 0 < 65521; }
-  have 0 <= k * x by { arithmetic_certificate special {
+  have 0 <= k * x by { arithmetic_certificate rules {
    premise 0: 0 <= k => 0 <= k;
    premise 1: k <= 2147483647 => k <= 2147483647;
    premise 2: 0 <= x => 0 <= x;
    premise 3: x <= 549755879424 => x <= 549755879424;
    integer_product_bounds bounds [0, 1, 2, 3] => 0 <= k * x; conclusion 0;
   } }
-  have 0 <= k * truncating_remainder(x, 65521) by { arithmetic_certificate special {
+  have 0 <= k * truncating_remainder(x, 65521) by { arithmetic_certificate rules {
    premise 0: 0 <= k => 0 <= k;
    premise 1: k <= 2147483647 => k <= 2147483647;
    premise 2: 0 <= truncating_remainder(x, 65521) => 0 <= truncating_remainder(x, 65521);
@@ -733,7 +733,7 @@ theorem adler_concat_index_partition(prefix: int32, suffix: int32) {
    to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix);
    to_integer(0) <= to_integer(suffix);
   } }
-  apply(int32_less_equal_of_to_integer(prefix, prefix + suffix));
+  apply(int32_to_integer_less_equal_implies_less_equal(prefix, prefix + suffix));
   have prefix <= prefix + suffix by { assumption(); }
   apply(int32_nonnegative_subtract_within_value_is_defined(prefix + suffix, prefix));
   have defined((prefix + suffix) - prefix) by { assumption(); }
@@ -742,7 +742,7 @@ theorem adler_concat_index_partition(prefix: int32, suffix: int32) {
    to_integer((prefix + suffix) - prefix) == to_integer(prefix + suffix) - to_integer(prefix);
    to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix);
   } }
-  apply(int32_equal_of_to_integer((prefix + suffix) - prefix, suffix));
+  apply(int32_to_integer_equal_implies_equal((prefix + suffix) - prefix, suffix));
   both { assumption(); } and { assumption(); }
  }
 }
@@ -782,7 +782,7 @@ theorem adler_weighted_prefix_concat(bytes: uint8[], prefix: int32, suffix: int3
 
 theorem adler_join_seed_polynomial(a0: Integer, b0: Integer, p: Integer, s: Integer, sp: Integer, wp: Integer, wt: Integer) {
  ensures b0 + (p + s) * a0 + (wp + s * sp + wt) == (b0 + p * a0 + wp) + s * (a0 + sp) + wt by {
-  arithmetic_certificate special {
+  arithmetic_certificate rules {
    integer_polynomial_identity bounds [] => b0 + (p + s) * a0 + (wp + s * sp + wt) == (b0 + p * a0 + wp) + s * (a0 + sp) + wt; conclusion 0;
   }
  }
@@ -810,7 +810,7 @@ theorem adler_spec_b_concat(bytes: uint8[], prefix: int32, suffix: int32, a0: In
   apply(int32_less_equal_to_integer(suffix, 2147483647));
   have 0 <= to_integer(prefix) by { simp() using { to_integer(0) <= to_integer(prefix); } }
   have to_integer(prefix) <= 2147483647 by { simp() using { to_integer(prefix) <= to_integer(2147483647); } }
-  have 0 <= to_integer(prefix) * a0 by { arithmetic_certificate special {
+  have 0 <= to_integer(prefix) * a0 by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer(prefix) => 0 <= to_integer(prefix);
    premise 1: to_integer(prefix) <= 2147483647 => to_integer(prefix) <= 2147483647;
    premise 2: 0 <= a0 => 0 <= a0;

@@ -7,7 +7,7 @@ is a mathematical product.
 ```click
 theorem false_machine_product(x: uint32, y: uint32) {
     ensures to_integer(x * y) == to_integer(x) * to_integer(y) by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             integer_polynomial_identity bounds [] => to_integer(x * y) == to_integer(x) * to_integer(y);
             conclusion 0;
         }

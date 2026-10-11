@@ -75,7 +75,7 @@ theorem adler_signed_small_prefix(n: uint64) {
   have n - n % 4u64 <= n by { normalize() using { n % 4u64 <= n; } }
   have n - n % 4u64 <= 2147483647u64 by { normalize() using { n - n % 4u64 <= n; n <= 22207u64; } }
   have to_integer((int32)(uint32)(n - n % 4u64)) == to_integer(n - n % 4u64) by {
-   arithmetic_certificate special {
+   arithmetic_certificate rules {
     premise 0: 0 <= to_integer(n - n % 4u64) => 0 <= to_integer(n - n % 4u64);
     premise 1: to_integer(n - n % 4u64) <= 22204 => to_integer(n - n % 4u64) <= 22204;
     integer_cast_identity bounds [0, 1] => to_integer((int32)(uint32)(n - n % 4u64)) == to_integer(n - n % 4u64);
@@ -85,9 +85,9 @@ theorem adler_signed_small_prefix(n: uint64) {
   have 0 <= to_integer((int32)(uint32)(n - n % 4u64)) by { rewrite(to_integer((int32)(uint32)(n - n % 4u64)) == to_integer(n - n % 4u64)); assumption(); }
   have to_integer((int32)(uint32)(n - n % 4u64)) <= 22204 by { rewrite(to_integer((int32)(uint32)(n - n % 4u64)) == to_integer(n - n % 4u64)); assumption(); }
   both {
-   apply(int32_less_equal_of_to_integer(0, (int32)(uint32)(n - n % 4u64))) using { 0 <= to_integer((int32)(uint32)(n - n % 4u64)); }
+   apply(int32_to_integer_less_equal_implies_less_equal(0, (int32)(uint32)(n - n % 4u64))) using { 0 <= to_integer((int32)(uint32)(n - n % 4u64)); }
   } and {
-   apply(int32_less_equal_of_to_integer((int32)(uint32)(n - n % 4u64), 22204)) using { to_integer((int32)(uint32)(n - n % 4u64)) <= 22204; }
+   apply(int32_to_integer_less_equal_implies_less_equal((int32)(uint32)(n - n % 4u64), 22204)) using { to_integer((int32)(uint32)(n - n % 4u64)) <= 22204; }
   }
  }
 }
@@ -117,7 +117,7 @@ theorem adler_int32_multiple_of_four(n: int32, q: Integer) {
    rewrite(to_integer(n) == q * 4);
    assumption();
   }
-  apply(int32_equal_of_to_integer(n % 4, 0)) using { to_integer(n % 4) == 0; }
+  apply(int32_to_integer_equal_implies_equal(n % 4, 0)) using { to_integer(n % 4) == 0; }
  }
 }
 
@@ -142,7 +142,7 @@ theorem adler_small_prefix_divisible(n: uint64) {
   have n - n % 4u64 <= n by { normalize() using { n % 4u64 <= n; } }
   have n - n % 4u64 <= 2147483647u64 by { normalize() using { n - n % 4u64 <= n; n <= 22207u64; } }
   have to_integer((int32)(uint32)(n - n % 4u64)) == to_integer(n - n % 4u64) by {
-   arithmetic_certificate special {
+   arithmetic_certificate rules {
     premise 0: 0 <= to_integer(n - n % 4u64) => 0 <= to_integer(n - n % 4u64);
     premise 1: to_integer(n - n % 4u64) <= 22204 => to_integer(n - n % 4u64) <= 22204;
     integer_cast_identity bounds [0, 1] => to_integer((int32)(uint32)(n - n % 4u64)) == to_integer(n - n % 4u64);
@@ -165,11 +165,11 @@ theorem adler_uint64_bounded_equality(left: uint64, right: uint64) {
  requires to_integer(right) <= 2147483647;
  ensures left == right by {
   have to_integer(left) <= to_integer(9223372036854775807u64) by { arithmetic() using { to_integer(left) <= 2147483647; } }
-  have left <= 9223372036854775807u64 by { apply(uint64_less_equal_of_to_integer(left, 9223372036854775807u64)) using { to_integer(left) <= to_integer(9223372036854775807u64); } }
+  have left <= 9223372036854775807u64 by { apply(uint64_to_integer_less_equal_implies_less_equal(left, 9223372036854775807u64)) using { to_integer(left) <= to_integer(9223372036854775807u64); } }
   have to_integer(right) <= to_integer(9223372036854775807u64) by { arithmetic() using { to_integer(right) <= 2147483647; } }
-  have right <= 9223372036854775807u64 by { apply(uint64_less_equal_of_to_integer(right, 9223372036854775807u64)) using { to_integer(right) <= to_integer(9223372036854775807u64); } }
+  have right <= 9223372036854775807u64 by { apply(uint64_to_integer_less_equal_implies_less_equal(right, 9223372036854775807u64)) using { to_integer(right) <= to_integer(9223372036854775807u64); } }
   have to_integer((int64)left) == to_integer(left) by {
-   arithmetic_certificate special {
+   arithmetic_certificate rules {
     premise 0: 0 <= to_integer(left) => 0 <= to_integer(left);
     premise 1: to_integer(left) <= 2147483647 => to_integer(left) <= 2147483647;
     integer_cast_identity bounds [0, 1] => to_integer((int64)left) == to_integer(left);
@@ -177,7 +177,7 @@ theorem adler_uint64_bounded_equality(left: uint64, right: uint64) {
    }
   }
   have to_integer((int64)right) == to_integer(right) by {
-   arithmetic_certificate special {
+   arithmetic_certificate rules {
     premise 0: 0 <= to_integer(right) => 0 <= to_integer(right);
     premise 1: to_integer(right) <= 2147483647 => to_integer(right) <= 2147483647;
     integer_cast_identity bounds [0, 1] => to_integer((int64)right) == to_integer(right);
@@ -189,7 +189,7 @@ theorem adler_uint64_bounded_equality(left: uint64, right: uint64) {
    rewrite(to_integer((int64)right) == to_integer(right));
    assumption();
   }
-  have (int64)left == (int64)right by { apply(int64_equal_of_to_integer((int64)left, (int64)right)) using { to_integer((int64)left) == to_integer((int64)right); } }
+  have (int64)left == (int64)right by { apply(int64_to_integer_equal_implies_equal((int64)left, (int64)right)) using { to_integer((int64)left) == to_integer((int64)right); } }
   simp() using { (int64)left == (int64)right; }
  }
 }
@@ -223,7 +223,7 @@ theorem adler_small_tail_metadata(n: uint64) {
   apply(uint64_remainder_to_integer(n, 4u64)) using { 4u64 != 0u64; to_integer(4u64) != 0; }
   apply(integer_positive_divisor_remainder_upper(to_integer(n), 4)) using { 4 != 0; 0 < 4; }
   have to_integer(n % 4u64) <= to_integer(3u64) by { rewrite(to_integer(n % 4u64) == truncating_remainder(to_integer(n), to_integer(4u64))); assumption(); }
-  apply(uint64_less_equal_of_to_integer(n % 4u64, 3u64)) using { to_integer(n % 4u64) <= to_integer(3u64); }
+  apply(uint64_to_integer_less_equal_implies_less_equal(n % 4u64, 3u64)) using { to_integer(n % 4u64) <= to_integer(3u64); }
  }
 }
 
@@ -231,7 +231,7 @@ theorem adler_small_native_prefix(n: uint64) {
  requires n <= 22207u64;
  ensures n - n % 4u64 <= 22204u64 by {
   apply(adler_unsigned_small_partition(n)) using { n <= 22207u64; }
-  apply(uint64_less_equal_of_to_integer(n - n % 4u64, 22204u64)) using { to_integer(n - n % 4u64) <= 22204; }
+  apply(uint64_to_integer_less_equal_implies_less_equal(n - n % 4u64, 22204u64)) using { to_integer(n - n % 4u64) <= 22204; }
  }
 }
 theorem adler_index_observation(n: uint64) {
@@ -240,7 +240,7 @@ theorem adler_index_observation(n: uint64) {
   have 0u64 <= n by { normalize(); }
   apply(uint64_less_equal_to_integer(0u64, n)) using { 0u64 <= n; }
   apply(uint64_less_equal_to_integer(n, 2147483647u64)) using { n <= 2147483647u64; }
-  arithmetic_certificate special {
+  arithmetic_certificate rules {
    premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
    premise 1: to_integer(n) <= 2147483647 => to_integer(n) <= 2147483647;
    integer_cast_identity bounds [0, 1] => to_integer((int32)(uint32)n) == to_integer(n);
@@ -260,9 +260,9 @@ theorem adler_small_signed_tail(n: uint64) {
   have 0 <= to_integer((int32)(uint32)(n % 4u64)) by { rewrite(to_integer((int32)(uint32)(n % 4u64)) == to_integer(n % 4u64)); assumption(); }
   have to_integer((int32)(uint32)(n % 4u64)) <= 3 by { rewrite(to_integer((int32)(uint32)(n % 4u64)) == to_integer(n % 4u64)); assumption(); }
   both {
-   apply(int32_less_equal_of_to_integer(0, (int32)(uint32)(n % 4u64))) using { 0 <= to_integer((int32)(uint32)(n % 4u64)); }
+   apply(int32_to_integer_less_equal_implies_less_equal(0, (int32)(uint32)(n % 4u64))) using { 0 <= to_integer((int32)(uint32)(n % 4u64)); }
   } and {
-   apply(int32_less_equal_of_to_integer((int32)(uint32)(n % 4u64), 3)) using { to_integer((int32)(uint32)(n % 4u64)) <= 3; }
+   apply(int32_to_integer_less_equal_implies_less_equal((int32)(uint32)(n % 4u64), 3)) using { to_integer((int32)(uint32)(n % 4u64)) <= 3; }
   }
  }
 }
@@ -292,7 +292,7 @@ theorem adler_signed_partition_identity(n: uint64) {
    rewrite(to_integer((int32)(uint32)(n % 4u64)) == to_integer(n % 4u64));
    arithmetic() using { to_integer(n - n % 4u64) == to_integer(n) - to_integer(n % 4u64); }
   }
-  apply(int32_equal_of_to_integer((int32)(uint32)n, (int32)(uint32)(n - n % 4u64) + (int32)(uint32)(n % 4u64))) using { to_integer((int32)(uint32)n) == to_integer((int32)(uint32)(n - n % 4u64) + (int32)(uint32)(n % 4u64)); }
+  apply(int32_to_integer_equal_implies_equal((int32)(uint32)n, (int32)(uint32)(n - n % 4u64) + (int32)(uint32)(n % 4u64))) using { to_integer((int32)(uint32)n) == to_integer((int32)(uint32)(n - n % 4u64) + (int32)(uint32)(n % 4u64)); }
  }
 }
 
@@ -370,9 +370,9 @@ theorem adler_small_prefix_within_full(n: uint64) {
   have 0 <= to_integer((int32)(uint32)n) by { rewrite(to_integer((int32)(uint32)n) == to_integer(n)); assumption(); }
   have to_integer((int32)(uint32)n) <= 22207 by { rewrite(to_integer((int32)(uint32)n) == to_integer(n)); simp() using { to_integer(n) <= to_integer(22207u64); } }
   both {
-   apply(int32_less_equal_of_to_integer(0, (int32)(uint32)n)) using { 0 <= to_integer((int32)(uint32)n); }
+   apply(int32_to_integer_less_equal_implies_less_equal(0, (int32)(uint32)n)) using { 0 <= to_integer((int32)(uint32)n); }
   } and {
-   apply(int32_less_equal_of_to_integer((int32)(uint32)n, 22207)) using { to_integer((int32)(uint32)n) <= 22207; }
+   apply(int32_to_integer_less_equal_implies_less_equal((int32)(uint32)n, 22207)) using { to_integer((int32)(uint32)n) <= 22207; }
   }
  }
  ensures (int32)(uint32)(n - n % 4u64) <= (int32)(uint32)n by {
@@ -389,7 +389,7 @@ theorem adler_small_prefix_within_full(n: uint64) {
    rewrite(to_integer((int32)(uint32)n) == to_integer(n));
    assumption();
   }
-  apply(int32_less_equal_of_to_integer((int32)(uint32)(n - n % 4u64), (int32)(uint32)n)) using { to_integer((int32)(uint32)(n - n % 4u64)) <= to_integer((int32)(uint32)n); }
+  apply(int32_to_integer_less_equal_implies_less_equal((int32)(uint32)(n - n % 4u64), (int32)(uint32)n)) using { to_integer((int32)(uint32)(n - n % 4u64)) <= to_integer((int32)(uint32)n); }
  }
 }
 
@@ -415,7 +415,7 @@ theorem adler_small_tail_indices(n: uint64) {
    rewrite(to_integer((int32)(uint32)n) == to_integer(n));
    assumption();
   }
-  apply(int32_less_equal_of_to_integer((int32)(uint32)(n % 4u64), (int32)(uint32)n)) using { to_integer((int32)(uint32)(n % 4u64)) <= to_integer((int32)(uint32)n); }
+  apply(int32_to_integer_less_equal_implies_less_equal((int32)(uint32)(n % 4u64), (int32)(uint32)n)) using { to_integer((int32)(uint32)(n % 4u64)) <= to_integer((int32)(uint32)n); }
  }
  ensures (int32)(uint32)n - (int32)(uint32)(n % 4u64) == (int32)(uint32)(n - n % 4u64) by {
   apply(adler_small_prefix_within_full(n)) using { n <= 22207u64; }
@@ -441,7 +441,7 @@ theorem adler_small_tail_indices(n: uint64) {
    rewrite(to_integer((int32)(uint32)(n - n % 4u64)) == to_integer(n - n % 4u64));
    arithmetic() using { to_integer(n - n % 4u64) == to_integer(n) - to_integer(n % 4u64); }
   }
-  apply(int32_equal_of_to_integer((int32)(uint32)n - (int32)(uint32)(n % 4u64), (int32)(uint32)(n - n % 4u64))) using { to_integer((int32)(uint32)n - (int32)(uint32)(n % 4u64)) == to_integer((int32)(uint32)(n - n % 4u64)); }
+  apply(int32_to_integer_equal_implies_equal((int32)(uint32)n - (int32)(uint32)(n % 4u64), (int32)(uint32)(n - n % 4u64))) using { to_integer((int32)(uint32)n - (int32)(uint32)(n % 4u64)) == to_integer((int32)(uint32)(n - n % 4u64)); }
  }
  ensures (int32)(uint32)n - (int32)(uint32)(n - n % 4u64) == (int32)(uint32)(n % 4u64) by {
   apply(adler_small_prefix_within_full(n)) using { n <= 22207u64; }
@@ -467,6 +467,6 @@ theorem adler_small_tail_indices(n: uint64) {
    rewrite(to_integer((int32)(uint32)(n - n % 4u64)) == to_integer(n - n % 4u64));
    arithmetic() using { to_integer(n - n % 4u64) == to_integer(n) - to_integer(n % 4u64); }
   }
-  apply(int32_equal_of_to_integer((int32)(uint32)n - (int32)(uint32)(n - n % 4u64), (int32)(uint32)(n % 4u64))) using { to_integer((int32)(uint32)n - (int32)(uint32)(n - n % 4u64)) == to_integer((int32)(uint32)(n % 4u64)); }
+  apply(int32_to_integer_equal_implies_equal((int32)(uint32)n - (int32)(uint32)(n - n % 4u64), (int32)(uint32)(n % 4u64))) using { to_integer((int32)(uint32)n - (int32)(uint32)(n - n % 4u64)) == to_integer((int32)(uint32)(n % 4u64)); }
  }
 }

@@ -54,7 +54,7 @@ void object_retain(struct object *obj) {
         to_integer(refs) + to_integer(slack) == 3;
         to_integer(1) <= to_integer(slack);
     };
-    have refs <= 2 by apply(int32_less_equal_of_to_integer(refs, 2));
+    have refs <= 2 by apply(int32_to_integer_less_equal_implies_less_equal(refs, 2));
     have defined(refs + 1) by simp;
     have defined(slack - 1) by simp;
     have to_integer(refs + 1) == to_integer(refs) + to_integer(1) by {

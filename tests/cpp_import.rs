@@ -11264,7 +11264,7 @@ const WIDE_NARROWING_SOURCE: &str =
 
 fn cast_identity_certificate(original: &str, lo: &str, hi: &str) -> String {
     format!(
-        r#"arithmetic_certificate special {{
+        r#"arithmetic_certificate rules {{
         premise 0: {lo} <= {original} => {lo} <= {original};
         premise 1: {original} <= {hi} => {original} <= {hi};
         integer_cast_identity bounds [0, 1] => to_integer(result) == {original};
@@ -12491,7 +12491,7 @@ fn wide_division_operand_bounds_certify_native_narrowing() {
         let import = load_import(&project.config()).unwrap();
         let certificate = |goal: &str| {
             format!(
-                r#"arithmetic_certificate special {{
+                r#"arithmetic_certificate rules {{
             premise 0: -9223372036854775808 <= to_integer(a) => -9223372036854775808 <= to_integer(a);
             premise 1: to_integer(a) <= 9223372036854775807 => to_integer(a) <= 9223372036854775807;
             premise 2: 1 <= to_integer(b) => 1 <= to_integer(b);
@@ -12522,18 +12522,18 @@ fn wide_division_operand_bounds_certify_native_narrowing() {
     have {lower} by {{ {lower_cert} }}
     have {upper} by {{ {upper_cert} }}
     execute();
-    have {lo} <= {observed} by {{ arithmetic_certificate special {{
+    have {lo} <= {observed} by {{ arithmetic_certificate rules {{
         premise 0: {observed} == {expression} => {observed} == {expression};
         premise 1: {lower} => {lower};
         integer_relation_transport bounds [0, 1] => {lo} <= {observed}; conclusion 0;
     }} }}
-    have {observed} <= {hi} by {{ arithmetic_certificate special {{
+    have {observed} <= {hi} by {{ arithmetic_certificate rules {{
         premise 0: {observed} == {expression} => {observed} == {expression};
         premise 1: {upper} => {upper};
         integer_relation_transport bounds [0, 1] => {observed} <= {hi}; conclusion 0;
     }} }}
     have to_integer(result) == {observed} by {{ {cast_cert} }}
-    have to_integer(result) == {expression} by {{ arithmetic_certificate special {{
+    have to_integer(result) == {expression} by {{ arithmetic_certificate rules {{
         premise 0: {observed} == {expression} => {observed} == {expression};
         premise 1: to_integer(result) == {observed} => to_integer(result) == {observed};
         integer_relation_transport bounds [0, 1] => to_integer(result) == {expression}; conclusion 0;
@@ -12588,11 +12588,11 @@ int128 {name}(int128 a, int128 b) {{
     requires 1 <= to_integer(b);
     ensures 0 == 0;
 }} by {{
-    have to_integer(b) != 0 by {{ arithmetic_certificate special {{
+    have to_integer(b) != 0 by {{ arithmetic_certificate rules {{
         premise 0: 1 <= to_integer(b) => 1 <= to_integer(b);
         integer_bound_exclusion bounds [0] => to_integer(b) != 0; conclusion 0;
     }} }}
-    have to_integer(b) != -1 by {{ arithmetic_certificate special {{
+    have to_integer(b) != -1 by {{ arithmetic_certificate rules {{
         premise 0: 1 <= to_integer(b) => 1 <= to_integer(b);
         integer_bound_exclusion bounds [0] => to_integer(b) != -1; conclusion 0;
     }} }}
@@ -12651,18 +12651,18 @@ fn wide_narrowing_integer_ranges_reflect_into_native_correction_bounds() {
 }} by {{
     execute();
     have to_integer(result) == to_integer(a) by {{ {cert} }}
-    have -100 <= to_integer(result) by {{ arithmetic_certificate special {{
+    have -100 <= to_integer(result) by {{ arithmetic_certificate rules {{
         premise 0: to_integer(result) == to_integer(a) => to_integer(result) == to_integer(a);
         premise 1: -100 <= to_integer(a) => -100 <= to_integer(a);
         integer_relation_transport bounds [0, 1] => -100 <= to_integer(result); conclusion 0;
     }} }}
-    have to_integer(result) <= 100 by {{ arithmetic_certificate special {{
+    have to_integer(result) <= 100 by {{ arithmetic_certificate rules {{
         premise 0: to_integer(result) == to_integer(a) => to_integer(result) == to_integer(a);
         premise 1: to_integer(a) <= 100 => to_integer(a) <= 100;
         integer_relation_transport bounds [0, 1] => to_integer(result) <= 100; conclusion 0;
     }} }}
-    apply({ty}_less_equal_of_to_integer(-100{suffix}, result));
-    apply({ty}_less_equal_of_to_integer(result, 100{suffix}));
+    apply({ty}_to_integer_less_equal_implies_less_equal(-100{suffix}, result));
+    apply({ty}_to_integer_less_equal_implies_less_equal(result, 100{suffix}));
     simp();
 }}"#
         );

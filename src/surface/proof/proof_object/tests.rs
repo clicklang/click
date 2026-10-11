@@ -4231,14 +4231,14 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
     )
     .expect("the theorem conclusion should lower");
     let application = TheoremApplication {
-        name: "int32_lt_implies_le".to_string(),
+        name: "int32_less_than_implies_less_equal".to_string(),
         arguments: vec![
             ContractExpression::CFragment(CExpression::Value(left)),
             ContractExpression::CFragment(CExpression::Value(right)),
         ],
     };
     let missing_application = TheoremApplication {
-        name: "int32_lt_implies_le".to_string(),
+        name: "int32_less_than_implies_less_equal".to_string(),
         arguments: application.arguments.iter().cloned().rev().collect(),
     };
     let mut selection_allocation_baseline = None;
@@ -5085,14 +5085,14 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
     )
     .expect("the exact premise should lower");
     let application = TheoremApplication {
-        name: "int32_lt_implies_le".to_string(),
+        name: "int32_less_than_implies_less_equal".to_string(),
         arguments: vec![
             ContractExpression::CFragment(CExpression::Value(left)),
             ContractExpression::CFragment(CExpression::Value(right)),
         ],
     };
     let missing_application = TheoremApplication {
-        name: "int32_lt_implies_le".to_string(),
+        name: "int32_less_than_implies_less_equal".to_string(),
         arguments: application.arguments.iter().cloned().rev().collect(),
     };
     let pure_facts = vec![kernel_premise.clone()];
@@ -5230,7 +5230,7 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
     )
     .expect("the exact theorem premise should lower");
     let application = TheoremApplication {
-        name: "int32_lt_implies_le".to_string(),
+        name: "int32_less_than_implies_less_equal".to_string(),
         arguments: vec![
             ContractExpression::CFragment(CExpression::Value(left)),
             ContractExpression::CFragment(CExpression::Value(right)),
@@ -5554,14 +5554,14 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
     )
     .expect("the theorem conclusion should lower");
     let application = TheoremApplication {
-        name: "int32_lt_implies_le".to_string(),
+        name: "int32_less_than_implies_less_equal".to_string(),
         arguments: vec![
             ContractExpression::CFragment(CExpression::Value(left)),
             ContractExpression::CFragment(CExpression::Value(right)),
         ],
     };
     let missing_application = TheoremApplication {
-        name: "int32_lt_implies_le".to_string(),
+        name: "int32_less_than_implies_less_equal".to_string(),
         arguments: application.arguments.iter().cloned().rev().collect(),
     };
     let mut surface_propositions = SurfacePropositionMap::default();
@@ -5769,7 +5769,7 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
                 ensures result <= upper;
             } by {
                 execute();
-                apply(int32_lt_implies_le(result, upper)) using {
+                apply(int32_less_than_implies_less_equal(result, upper)) using {
                     result < upper;
                 }
                 simp();
@@ -6921,11 +6921,6 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         right: expression(Bitvector32Term::Constant(i32::MAX as u32)),
     };
     let positive_premise = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::Constant(1)),
-        operator: ComparisonOperator::LessEqual,
-        right: expression(value.clone()),
-    };
-    let strictly_positive_premise = ClickProposition::Comparison {
         left: expression(Bitvector32Term::Constant(0)),
         operator: ComparisonOperator::LessThan,
         right: expression(value.clone()),
@@ -6996,11 +6991,6 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         operator: ComparisonOperator::LessEqual,
         right: expression(value.clone()),
     };
-    let surface_nonnegative_ge_goal = ClickProposition::Comparison {
-        left: expression(value.clone()),
-        operator: ComparisonOperator::GreaterEqual,
-        right: expression(Bitvector32Term::Constant(0)),
-    };
     let surface_successor_lower_goal = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::GreaterEqual,
@@ -7037,7 +7027,6 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
     let kernel_premise = lower(&premise);
     let kernel_definedness_premise = lower(&definedness_premise);
     let kernel_positive_premise = lower(&positive_premise);
-    let kernel_strictly_positive_premise = lower(&strictly_positive_premise);
     let kernel_successor_lower_premise = lower(&successor_lower_premise);
     let kernel_strong_constant_lower_premise = lower(&strong_constant_lower_premise);
     let kernel_negated_successor_premise = lower(&negated_successor_premise);
@@ -7069,7 +7058,7 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         ),
         (
             lower(&surface_one_plus_defined_goal),
-            "int32_one_plus_below_max_is_defined",
+            "int32_increment_left_below_max_is_defined",
             "one-plus definedness",
             &definedness_premise,
             &kernel_definedness_premise,
@@ -7077,7 +7066,7 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         ),
         (
             lower(&surface_one_plus_strict_goal),
-            "int32_one_plus_strictly_increases",
+            "int32_increment_left_strictly_increases",
             "one-plus strict increase",
             &definedness_premise,
             &kernel_definedness_premise,
@@ -7092,16 +7081,8 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
             ArithmeticProofShape::Direct,
         ),
         (
-            lower(&surface_nonnegative_ge_goal),
-            "int32_strictly_positive_is_nonnegative",
-            "strictly positive to nonnegative",
-            &strictly_positive_premise,
-            &kernel_strictly_positive_premise,
-            ArithmeticProofShape::Direct,
-        ),
-        (
             lower(&surface_adjacent_strict_goal),
-            "int32_successor_le_implies_lt",
+            "int32_increment_less_equal_implies_less_than",
             "adjacent strict lower bound",
             &successor_lower_premise,
             &kernel_successor_lower_premise,
@@ -7109,7 +7090,7 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         ),
         (
             lower(&surface_nonnegative_goal),
-            "int32_le_transitive",
+            "int32_less_equal_transitive",
             "constant lower-bound weakening",
             &strong_constant_lower_premise,
             &kernel_strong_constant_lower_premise,
@@ -7117,7 +7098,7 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         ),
         (
             lower(&surface_successor_lower_goal),
-            "int32_ge_transitive",
+            "int32_greater_equal_transitive",
             "negated strict successor bound",
             &negated_successor_premise,
             &kernel_negated_successor_premise,
@@ -7151,12 +7132,6 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
             &kernel_strong_constant_lower_premise,
         )
         .expect("the exact stronger constant lower bound should be indexed");
-    surface_propositions
-        .record_lowering(
-            &strictly_positive_premise,
-            &kernel_strictly_positive_premise,
-        )
-        .expect("the exact strictly-positive premise should be indexed");
     surface_propositions
         .record_lowering(
             &negated_successor_premise,
@@ -7229,7 +7204,7 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
                     ] if matches!(
                         first.steps(),
                         [ProofStep::ApplyTheoremUsing { application, premises }]
-                            if application.name == "int32_not_lt_implies_ge"
+                            if application.name == "int32_not_less_than_implies_greater_equal"
                                 && premises == std::slice::from_ref(surface_premise)
                     ) && matches!(second.steps(), [ProofStep::Normalize])
                         && application.name == theorem_name
@@ -7245,7 +7220,7 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
                             application: second,
                             premises: second_premises,
                         },
-                    ] if first.name == "int32_le_lt_transitive"
+                    ] if first.name == "int32_less_equal_less_than_transitive"
                         && first_premises == std::slice::from_ref(surface_premise)
                         && second.name == theorem_name
                         && second_premises
@@ -7308,7 +7283,7 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
                     ] if matches!(
                         first.steps(),
                         [ProofStep::ApplyTheoremUsing { application, premises }]
-                            if application.name == "int32_not_lt_implies_ge"
+                            if application.name == "int32_not_less_than_implies_greater_equal"
                             && premises == std::slice::from_ref(surface_premise)
                     ) && matches!(second.steps(), [ProofStep::Normalize])
                         && application.name == theorem_name
@@ -7324,7 +7299,7 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
                             application: second,
                             premises: second_premises,
                         },
-                    ] if first.name == "int32_le_lt_transitive"
+                    ] if first.name == "int32_less_equal_less_than_transitive"
                         && first_premises == std::slice::from_ref(surface_premise)
                         && second.name == theorem_name
                         && second_premises
@@ -7439,7 +7414,7 @@ fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
         assert!(matches!(
             closed.certificate().steps(),
             [ProofStep::ApplyTheoremUsing { application, premises }]
-                if application.name == "int32_increment_strict_greater_lower_bound"
+                if application.name == "int32_increment_greater_than_lower_bound"
                     && premises.as_slice() == expected_premises
         ));
         assert!(root.state.shares_state_with(&retained_root.state));
@@ -7509,7 +7484,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                 operator: ComparisonOperator::GreaterThan,
                 right: expression(lower.clone()),
             },
-            "int32_increment_strict_greater_lower_bound",
+            "int32_increment_greater_than_lower_bound",
             "strict-greater lower bound",
         ),
         (
@@ -7707,9 +7682,9 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             [
                 ProofStep::ApplyTheoremUsing { application: first, premises: first_premises },
                 ProofStep::ApplyTheoremUsing { application: second, premises: second_premises },
-            ] if first.name == "int32_lt_implies_le"
+            ] if first.name == "int32_less_than_implies_less_equal"
                 && first_premises == std::slice::from_ref(&strict_lower_premise)
-                && second.name == "int32_increment_strict_greater_lower_bound"
+                && second.name == "int32_increment_greater_than_lower_bound"
                 && second_premises.len() == 2
                 && second_premises[1] == upper_premise
         ));
@@ -7758,8 +7733,8 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             [
                 ProofStep::ApplyTheoremUsing { application: first, .. },
                 ProofStep::ApplyTheoremUsing { application: second, .. },
-            ] if first.name == "int32_lt_implies_le"
-                && second.name == "int32_increment_strict_greater_lower_bound"
+            ] if first.name == "int32_less_than_implies_less_equal"
+                && second.name == "int32_increment_greater_than_lower_bound"
         ));
         assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
         assert!(pure_root.certificate().steps().is_empty());
@@ -7864,7 +7839,7 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_theorem_application() {
         assert!(matches!(
             closed.certificate().steps(),
             [ProofStep::ApplyTheoremUsing { application, premises }]
-                if application.name == "int32_le_and_not_lt_implies_eq"
+                if application.name == "int32_less_equal_and_not_less_than_implies_equal"
                     && premises.as_slice() == selected
         ));
         assert!(root.state.shares_state_with(&retained_root.state));
@@ -7961,7 +7936,7 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_theorem_application() {
         assert!(matches!(
             pure_closed.certificate().steps(),
             [ProofStep::ApplyTheoremUsing { application, premises }]
-                if application.name == "int32_le_and_not_lt_implies_eq"
+                if application.name == "int32_less_equal_and_not_less_than_implies_equal"
                 && premises.as_slice() == selected
         ));
         assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
@@ -8069,7 +8044,7 @@ fn ge_and_not_gt_equality_simp_retains_one_indexed_theorem_application() {
         assert!(matches!(
             closed.certificate().steps(),
             [ProofStep::ApplyTheoremUsing { application, premises }]
-                if application.name == "int32_ge_and_not_gt_implies_eq"
+                if application.name == "int32_greater_equal_and_not_greater_than_implies_equal"
                     && premises.as_slice() == selected
         ));
         assert!(root.state.shares_state_with(&retained_root.state));
@@ -8175,7 +8150,7 @@ fn le_and_neq_strict_simp_retains_one_indexed_theorem_application() {
         assert!(matches!(
             closed.certificate().steps(),
             [ProofStep::ApplyTheoremUsing { application, premises }]
-                if application.name == "int32_le_and_neq_implies_lt"
+                if application.name == "int32_less_equal_and_not_equal_implies_less_than"
                     && premises.as_slice() == selected
         ));
         assert!(root.state.shares_state_with(&retained_root.state));
@@ -8887,7 +8862,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
                         && matches!(
                             proof.steps(),
                             [ProofStep::ApplyTheoremUsing { application, premises }]
-                                if application.name == "int32_successor_le_implies_lt"
+                                if application.name == "int32_increment_less_equal_implies_less_than"
                                 && premises == selected
                         )
                 ));
@@ -8955,7 +8930,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
                         && matches!(
                             proof.steps(),
                             [ProofStep::ApplyTheoremUsing { application, premises }]
-                                if application.name == "int32_successor_le_implies_lt"
+                                if application.name == "int32_increment_less_equal_implies_less_than"
                                 && premises == selected
                         )
                 ));
@@ -9015,14 +8990,14 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
     )
     .expect("the pure theorem conclusion should lower");
     let application = TheoremApplication {
-        name: "int32_lt_implies_le".to_string(),
+        name: "int32_less_than_implies_less_equal".to_string(),
         arguments: vec![
             ContractExpression::CFragment(CExpression::Value(left)),
             ContractExpression::CFragment(CExpression::Value(right)),
         ],
     };
     let missing_application = TheoremApplication {
-        name: "int32_lt_implies_le".to_string(),
+        name: "int32_less_than_implies_less_equal".to_string(),
         arguments: application.arguments.iter().cloned().rev().collect(),
     };
 
@@ -9233,7 +9208,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
         &theorem_environment,
     );
     let application = TheoremApplication {
-        name: "int32_lt_implies_le".to_string(),
+        name: "int32_less_than_implies_less_equal".to_string(),
         arguments: vec![
             ContractExpression::CFragment(CExpression::Value(left)),
             ContractExpression::CFragment(CExpression::Value(right)),

@@ -3,7 +3,7 @@
 This is the `int32` form of
 [`int64_defined_from_bounds.md`](int64_defined_from_bounds.md).
 `defined(a + b)` and `defined(a - b)` over `int32` lower to the negated
-signed-overflow condition. The `int32_defined` node of the `special`
+signed-overflow condition. The `int32_defined` node of the `rules`
 arithmetic-certificate family proves it with the same checker as
 `int64_defined`, parameterized by width: each operand starts from the width
 range of its root constructor (a constant is itself; `char` and `short`
@@ -90,7 +90,7 @@ int32 sum(int32 a, int32 b) {
     ensures result == a + b;
 } by {
     have defined(a + b) by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: a < 100 => a < 100;
             premise 1: b == 1 => b == 1;
             int32_defined bounds [0, 1] => defined(a + b);
@@ -108,7 +108,7 @@ int32 difference(int32 a, int32 b) {
     ensures result == a - b;
 } by {
     have defined(a - b) by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: -5 <= a => -5 <= a;
             premise 1: 0 <= b => 0 <= b;
             premise 2: not (b > 7) => not (b > 7);

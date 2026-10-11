@@ -6,7 +6,7 @@ theorem adler_helper_byte_observation(value: uint8) {
   have (int32)value <= 255 by { simp(); }
   apply(int32_less_equal_to_integer(0, (int32)value));
   apply(int32_less_equal_to_integer((int32)value, 255));
-  arithmetic_certificate special {
+  arithmetic_certificate rules {
    premise 0: 0 <= to_integer((int32)value) => 0 <= to_integer((int32)value);
    premise 1: to_integer((int32)value) <= 255 => to_integer((int32)value) <= 255;
    integer_cast_identity bounds [0, 1] => to_integer((uint32)value) == to_integer((int32)value);
@@ -170,25 +170,25 @@ void __rust_q_I6_adler2_I4_algo_I5_U32X4_rem_assign_u32(struct __rust_q_I6_adler
     apply(uint32_less_than_to_integer(self->_0[3], quotient));
     have old(self->_0[0]) < quotient implies self->_0[0] == old(self->_0[0]) by {
         if old(self->_0[0]) < quotient {
-            apply(uint32_remainder_of_lt(old(self->_0[0]), quotient));
+            apply(uint32_less_than_divisor_implies_remainder_is_value(old(self->_0[0]), quotient));
             simp();
         } else { simp(); }
     }
     have old(self->_0[1]) < quotient implies self->_0[1] == old(self->_0[1]) by {
         if old(self->_0[1]) < quotient {
-            apply(uint32_remainder_of_lt(old(self->_0[1]), quotient));
+            apply(uint32_less_than_divisor_implies_remainder_is_value(old(self->_0[1]), quotient));
             simp();
         } else { simp(); }
     }
     have old(self->_0[2]) < quotient implies self->_0[2] == old(self->_0[2]) by {
         if old(self->_0[2]) < quotient {
-            apply(uint32_remainder_of_lt(old(self->_0[2]), quotient));
+            apply(uint32_less_than_divisor_implies_remainder_is_value(old(self->_0[2]), quotient));
             simp();
         } else { simp(); }
     }
     have old(self->_0[3]) < quotient implies self->_0[3] == old(self->_0[3]) by {
         if old(self->_0[3]) < quotient {
-            apply(uint32_remainder_of_lt(old(self->_0[3]), quotient));
+            apply(uint32_less_than_divisor_implies_remainder_is_value(old(self->_0[3]), quotient));
             simp();
         } else { simp(); }
     }
@@ -219,13 +219,13 @@ void __rust_q_I6_adler2_I4_algo_I5_U32X4_mul_assign_u32(struct __rust_q_I6_adler
     ensures to_integer(self->_0[3]) <= 4294967295;
 } by {
     execute();
-    apply(uint32_mul_to_integer(old(self->_0[0]), rhs));
+    apply(uint32_multiply_to_integer(old(self->_0[0]), rhs));
     apply(uint32_to_integer_bounds(self->_0[0]));
-    apply(uint32_mul_to_integer(old(self->_0[1]), rhs));
+    apply(uint32_multiply_to_integer(old(self->_0[1]), rhs));
     apply(uint32_to_integer_bounds(self->_0[1]));
-    apply(uint32_mul_to_integer(old(self->_0[2]), rhs));
+    apply(uint32_multiply_to_integer(old(self->_0[2]), rhs));
     apply(uint32_to_integer_bounds(self->_0[2]));
-    apply(uint32_mul_to_integer(old(self->_0[3]), rhs));
+    apply(uint32_multiply_to_integer(old(self->_0[3]), rhs));
     apply(uint32_to_integer_bounds(self->_0[3]));
     simp();
 }

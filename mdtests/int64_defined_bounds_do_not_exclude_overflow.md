@@ -21,7 +21,7 @@ int64 sum(int64 a, int64 b) {
     ensures result == a + b;
 } by {
     have defined(a + b) by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: a < 100 => a < 100;
             int64_defined bounds [0] => defined(a + b);
             conclusion 0;

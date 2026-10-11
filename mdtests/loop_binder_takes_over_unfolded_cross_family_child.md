@@ -60,7 +60,7 @@ void drain(int32 n) {
                         assumption();
                     }
                     have n - 1 >= 0 by {
-                        apply(int32_le_implies_reversed_ge(0, n - 1)) using {
+                        apply(int32_less_equal_implies_reversed_greater_equal(0, n - 1)) using {
                             0 <= n - 1;
                         }
                         assumption();

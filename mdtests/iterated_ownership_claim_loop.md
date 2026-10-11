@@ -94,11 +94,11 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 apply(int32_increment_strictly_increases(i, end)) using {
                     i < end;
                 }
-                apply(int32_successor_le_implies_lt(i, k)) using {
+                apply(int32_increment_less_equal_implies_less_than(i, k)) using {
                     i < i + 1;
                     i + 1 <= k;
                 }
-                apply(int32_lt_implies_le(i, k)) using {
+                apply(int32_less_than_implies_less_equal(i, k)) using {
                     i < k;
                 }
                 have n <= k by {
@@ -148,7 +148,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 apply(int32_increment_strictly_increases(at(opened, i), end)) using {
                     at(opened, i) < end;
                 }
-                apply(int32_successor_le_implies_lt(at(opened, i), k)) using {
+                apply(int32_increment_less_equal_implies_less_than(at(opened, i), k)) using {
                     at(opened, i) < at(opened, i) + 1;
                     at(opened, i) + 1 <= k;
                 }

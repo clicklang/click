@@ -433,7 +433,7 @@ impl MachineIntegerType {
 }
 
 /// A signed machine width whose `defined(a + b)` and `defined(a - b)` the
-/// `special` arithmetic certificate's `int32_defined` / `int64_defined` rule
+/// `rules` arithmetic certificate's `int32_defined` / `int64_defined` rule
 /// establishes from the operands' constant bounds. One checker serves both
 /// widths; this names which one a node claims.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

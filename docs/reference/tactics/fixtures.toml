@@ -135,7 +135,7 @@ needle = "apply(nonnegative_body(y));"
 [[form]]
 id = "apply-theorem-using"
 path = "mdtests/produced_population_count_in_ensured_predicate.md"
-needle = "apply(int32_ge_and_not_gt_implies_eq(amount, 0)) using {"
+needle = "apply(int32_greater_equal_and_not_greater_than_implies_equal(amount, 0)) using {"
 
 [[form]]
 id = "have"

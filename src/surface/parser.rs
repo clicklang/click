@@ -54,6 +54,11 @@ const CONTRACT_LET_RECURSION_LIMIT: usize = 8;
 /// mutex's protected resource now comes from its checked initialization, so
 /// the spelling is refused with that direction.
 const RETIRED_GUARDED_BY: &str = "`guarded_by` is retired: a mutex protects the resource its checked `pthread_mutex_init` step deposits, so remove the clause and pass the resource to that step";
+/// `special` named the pointer, finite-float, definedness, and exact
+/// Integer rule family of `arithmetic_certificate`; the family is now spelled
+/// `rules`, and the old spelling is refused with that direction.
+const RETIRED_SPECIAL_CERTIFICATE: &str =
+    "`arithmetic_certificate special` is retired: write `arithmetic_certificate rules { ... }`";
 
 /// The index shape and scalar element type of a C global or static array
 /// visible to one function's contract. Resource lowering only knows parameter
@@ -8039,9 +8044,11 @@ impl Parser {
         let parsed = if self.peek_ident() == Some("signed_int32") {
             self.position += 1;
             self.parse_signed_int32_certificate_body()
-        } else if self.peek_ident() == Some("special") {
+        } else if self.peek_ident() == Some("rules") {
             self.position += 1;
             self.parse_special_arithmetic_certificate_body()
+        } else if self.peek_ident() == Some("special") {
+            Err(self.error(RETIRED_SPECIAL_CERTIFICATE))
         } else {
             self.parse_arithmetic_certificate_body()
         };
@@ -8055,10 +8062,10 @@ impl Parser {
         let mut nodes = Vec::new();
         let mut conclusion = None;
         while self.peek() != Some(&Token::RBrace) {
-            let keyword = self.expect_ident("special arithmetic certificate node")?;
+            let keyword = self.expect_ident("`rules` arithmetic certificate node")?;
             match keyword.as_str() {
                 "premise" => {
-                    let index = self.expect_index("special premise index")?;
+                    let index = self.expect_index("`rules` premise index")?;
                     self.expect(Token::Colon)?;
                     let proposition_start = self.position;
                     let proposition = self.parse_proposition()?;
@@ -8073,12 +8080,12 @@ impl Parser {
                         &self.tokens[result_start..result_end],
                     ) {
                         return Err(self.error(format!(
-                            "special arithmetic premise {index} must repeat the same proposition on both sides"
+                            "`rules` arithmetic premise {index} must repeat the same proposition on both sides"
                         )));
                     }
                     if index > premises.len() {
                         return Err(self.error(format!(
-                            "special arithmetic premise indices must be contiguous; expected {} but found {index}",
+                            "`rules` arithmetic premise indices must be contiguous; expected {} but found {index}",
                             premises.len()
                         )));
                     }
@@ -8087,7 +8094,7 @@ impl Parser {
                     }
                     if premises[index].replace(proposition).is_some() {
                         return Err(self.error(format!(
-                            "special arithmetic premise {index} is declared more than once"
+                            "`rules` arithmetic premise {index} is declared more than once"
                         )));
                     }
                 }
@@ -8262,7 +8269,7 @@ impl Parser {
                 "conclusion" => {
                     if conclusion.is_some() {
                         return Err(self.error(
-                            "special arithmetic certificate may contain only one `conclusion` line",
+                            "`rules` arithmetic certificate may contain only one `conclusion` line",
                         ));
                     }
                     conclusion = Some(self.expect_index("conclusion node")?);
@@ -8270,17 +8277,17 @@ impl Parser {
                 }
                 _ => {
                     return Err(self.error(format!(
-                        "unknown special arithmetic certificate node `{keyword}`"
+                        "unknown `rules` arithmetic certificate node `{keyword}`"
                     )));
                 }
             }
         }
         self.expect(Token::RBrace)?;
         let conclusion = conclusion.ok_or_else(|| {
-            self.error("special arithmetic certificate must end with `conclusion N;`")
+            self.error("`rules` arithmetic certificate must end with `conclusion N;`")
         })?;
         if nodes.is_empty() {
-            return Err(self.error("special arithmetic certificate must contain a node"));
+            return Err(self.error("`rules` arithmetic certificate must contain a node"));
         }
         let premises = premises
             .into_iter()
@@ -8288,7 +8295,7 @@ impl Parser {
             .map(|(index, premise)| {
                 premise.ok_or_else(|| {
                     self.error(format!(
-                        "special arithmetic premise indices must be contiguous; missing {index}"
+                        "`rules` arithmetic premise indices must be contiguous; missing {index}"
                     ))
                 })
             })
