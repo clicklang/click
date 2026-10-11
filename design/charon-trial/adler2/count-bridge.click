@@ -156,3 +156,32 @@ theorem adler_count_chunk_byte_observation(bytes: uint8[], count: uint64, lane: 
   normalize();
  }
 }
+
+# After Next has consumed four bytes, recover their positions from the actual
+# remaining count. No auxiliary processed count supplies the input position.
+theorem adler_count_previous_chunk_byte_observation(bytes: uint8[], total: uint64, remaining: uint64, lane: int32) {
+ requires remaining <= total;
+ requires 4u64 <= total - remaining;
+ requires total <= 22204u64;
+ requires 0 <= (int32)(uint32)remaining;
+ requires (int32)(uint32)remaining <= (int32)(uint32)total;
+ requires (int32)(uint32)total <= 22204;
+ requires 0 <= lane;
+ requires lane <= 3;
+ ensures to_integer((int32)(bytes + (total - remaining - 4u64))[lane]) == to_integer((int32)bytes[((int32)(uint32)total - (int32)(uint32)remaining) - 4 + lane]) by {
+  have total <= 22208u64 by { normalize() using { total <= 22204u64; } }
+  have total - remaining <= 22208u64 by { arithmetic() using { remaining <= total; total <= 22204u64; } }
+  have total - remaining - 4u64 <= 22204u64 by { arithmetic() using { remaining <= total; 4u64 <= total - remaining; total <= 22204u64; } }
+  apply(adler_count_step(total, remaining)) using { remaining <= total; total <= 22208u64; }
+  apply(adler_count_lane_step(total - remaining)) using { 4u64 <= total - remaining; total - remaining <= 22208u64; }
+  apply(adler_count_chunk_byte_observation(bytes, total - remaining - 4u64, lane)) using { total - remaining - 4u64 <= 22204u64; 0 <= lane; lane <= 3; }
+  have (int32)(uint32)(total - remaining - 4u64) == ((int32)(uint32)total - (int32)(uint32)remaining) - 4 by {
+   rewrite((int32)(uint32)(total - remaining - 4u64) == (int32)(uint32)(total - remaining) - 4);
+   rewrite((int32)(uint32)(total - remaining) == (int32)(uint32)total - (int32)(uint32)remaining);
+   normalize();
+  }
+  have ((int32)(uint32)total - (int32)(uint32)remaining) - 4 == (int32)(uint32)(total - remaining - 4u64) by { normalize() using { (int32)(uint32)(total - remaining - 4u64) == ((int32)(uint32)total - (int32)(uint32)remaining) - 4; } }
+  rewrite(((int32)(uint32)total - (int32)(uint32)remaining) - 4 == (int32)(uint32)(total - remaining - 4u64));
+  assumption();
+ }
+}

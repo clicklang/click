@@ -1430,6 +1430,21 @@ fn charon_adler2_small_batch_compute_proves_original_body() {
 }
 
 #[test]
+#[ignore = "nightly: original vector constructor input-position rejections"]
+fn charon_adler2_small_batch_compute_rejects_wrong_constructor_input_positions() {
+    reject_compute(
+        SMALL_BATCH_COMPUTE,
+        "have __rust_mir_69 == bytes + ((bytes_len - bytes_len % 4u64) - __rust_mir_62_remaining - 4u64) by",
+        "have __rust_mir_69 == bytes + ((bytes_len - bytes_len % 4u64) - __rust_mir_62_remaining - 3u64) by",
+    );
+    reject_compute(
+        SMALL_BATCH_COMPUTE,
+        "to_integer(at(vector_a, __rust_mir_68._0[3])) == to_integer((int32)bytes[(((int32)(uint32)(bytes_len - bytes_len % 4u64) - (int32)(uint32)__rust_mir_62_remaining) - 4) + 3]) by",
+        "to_integer(at(vector_a, __rust_mir_68._0[3])) == to_integer((int32)bytes[(((int32)(uint32)(bytes_len - bytes_len % 4u64) - (int32)(uint32)__rust_mir_62_remaining) - 4) + 2]) by",
+    );
+}
+
+#[test]
 #[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_batch_compute_requires_canonical_a() {
     reject_compute(
@@ -2627,6 +2642,33 @@ fn adler_count_byte_observations_reject_wrong_positions_and_missing_guards() {
         assert_ne!(changed, COUNT_BRIDGE, "{before}");
         let error = click::surface::verify_c0_sources(&changed, &[])
             .expect_err("different bytes and missing signed-index guards must be refused");
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+fn adler_remaining_count_byte_observations_reject_wrong_positions_and_missing_guards() {
+    for (before, after) in [
+        (
+            "bytes[((int32)(uint32)total - (int32)(uint32)remaining) - 4 + lane]) by",
+            "bytes[((int32)(uint32)total - (int32)(uint32)remaining) - 4 + lane + 1]) by",
+        ),
+        (
+            "ensures to_integer((int32)(bytes + (total - remaining - 4u64))[lane])",
+            "ensures to_integer((int32)(bytes + (total - remaining - 3u64))[lane])",
+        ),
+        (" requires remaining <= total;", ""),
+        (" requires 0 <= (int32)(uint32)remaining;", ""),
+        (" requires total <= 22204u64;", ""),
+    ] {
+        let changed = COUNT_BRIDGE.replacen(before, after, 1);
+        assert_ne!(changed, COUNT_BRIDGE, "{before}");
+        let error = click::surface::verify_c0_sources(&changed, &[])
+            .expect_err("wrong previous-chunk positions and missing guards must be refused");
         assert!(
             !error.message().contains("budget exhausted"),
             "{}",

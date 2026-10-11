@@ -67,8 +67,10 @@ equal byte addresses for the full native count and its checked signed index,
 using equality of exact values rather than low-bit truncation. Source-proved
 read bridges connect the native count and all four positions in its chunk to
 the signed byte observations used by the common spec, with checked signed-index
-guards. The original small-batch vector loop also checks each constructor lane’s
-native and Integer value against its shared subslice. One- and four-byte prefix
+guards. The original small-batch vector loop checks each constructor lane’s
+native and Integer value against its shared subslice and its position in the
+original input. That position is derived from the actual remaining count after
+`Next`, with checked native and signed subtraction bounds. One- and four-byte prefix
 lemmas preserve
 the A residue against the common specification; a four-byte B prefix lemma
 checks the ordered weighted update under explicit index and nonnegative
@@ -79,9 +81,11 @@ state and checks the four-byte advance and remaining-length bounds. Establishing
 and carrying these premises through the arbitrary-length computation’s nested
 loops and reductions remains incomplete. Full original-computation smart audits
 currently exhaust the standard ten-minute run bound before completing a site,
-while ordinary verification succeeds. Investigate that audit cost before
-extending the loop proof; the standalone byte-observation claims pass complete
-audits and the new constructor-observation steps are explicit simple proofs.
+while ordinary verification succeeds. This is an audit-tool limitation, not a
+reported proof failure; continue checksum proof work with ordinary verification
+and retain audit coverage where it completes. The standalone native-count and
+chunk-position observation claims pass complete audits. The loop bridge uses
+scoped native byte equalities and explicit Integer premises.
 The unchanged Rust one- through four-byte computations prove both fields equal
 the shared specification on the entry byte snapshot, starting from A = 1 and
 B = 0. The four-byte bridge checks the native unsigned recombination and its
