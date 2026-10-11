@@ -136,8 +136,9 @@ Remaining:
   verify over the 64-bit iterator counts again. The small-batch and
   four-byte proofs read a count through its `(int32)(uint32)` view
   (`design/charon-trial/adler2/count-bridge.click`), because their bound
-  libraries are still stated over `int32` counts. A refusal whose range is reached through a loaded pointer prints a byte
-  spelling, `((char *)s)[...]`, instead of the element place.
+  libraries are still stated over `int32` counts. A refusal whose range is reached through a loaded pointer names the
+  element, `s->data[s->len]`
+  (`mdtests/a_refused_read_through_a_loaded_pointer_names_its_element.md`).
 
 Done when: no contract casts an index, and a slice contract states no bound
 on its length.

@@ -2169,6 +2169,9 @@ pub(super) fn describe_memory_range(
     if let Some(description) = describe_parameter_relative_range(range, parameters, arguments) {
         return description;
     }
+    if let Some(description) = describe_indexed_base_range(range, parameters, arguments) {
+        return description;
+    }
     // A range over a named object starts at the object itself (`g[0..4]`),
     // not at a pointer to it.
     let base = match named_object_block(&range.base().block, parameters, arguments) {
@@ -2205,6 +2208,48 @@ pub(super) fn describe_memory_range(
         describe_bitvector_with_context(range.start(), parameters, arguments),
         describe_bitvector_with_context(range.end(), parameters, arguments)
     )
+}
+
+/// A range whose base is another pointer advanced by a scaled index, the
+/// address of `p[i]` for an index `i` of the range's element width, spelled
+/// from that pointer: `s->data[s->len]` for the one element at the address a
+/// read through a loaded pointer forms, rather than an unnamed base. Only a
+/// base the describer can name takes part.
+fn describe_indexed_base_range(
+    range: &CMemoryRange,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> Option<String> {
+    let width = i64::from(range.element_width());
+    let PointerOffsetTerm::Add(rest, last) = &range.base().offset else {
+        return None;
+    };
+    let index = match last.as_ref() {
+        PointerOffsetTerm::Int64Scaled {
+            value, byte_width, ..
+        }
+        | PointerOffsetTerm::Int32Scaled { value, byte_width }
+            if *byte_width == width =>
+        {
+            value.as_ref()
+        }
+        _ => return None,
+    };
+    let root = Pointer {
+        block: range.base().block.clone(),
+        offset: rest.as_ref().clone(),
+    };
+    let base = describe_pointer(&root, parameters, arguments);
+    if base.contains("the pointer value at this program point") || base.contains('…') {
+        return None;
+    }
+    let index = describe_bitvector_with_context(index, parameters, arguments);
+    let bounds = range.int32_bounds()?;
+    match (bounds.0.as_const(), bounds.1.as_const()) {
+        (Some(0), Some(1)) => Some(format!("{base}[{index}]")),
+        (Some(start), Some(end)) => Some(format!("{base}[({index} + {start})..({index} + {end})]")),
+        _ => None,
+    }
 }
 
 /// The source name of the object a block holds: a local, global or static
