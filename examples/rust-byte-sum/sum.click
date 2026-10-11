@@ -91,13 +91,13 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
             }
             have i < 1000u64 by {
-                apply(uint64_lt_le_transitive(i, bytes.len(), 1000u64)) using {
+                apply(uint64_less_than_less_equal_transitive(i, bytes.len(), 1000u64)) using {
                     i < bytes.len();
                     bytes.len() <= 1000u64;
                 }
             }
             have i < 18446744073709551615u64 by {
-                apply(uint64_lt_transitive(i, 1000u64, 18446744073709551615u64)) using {
+                apply(uint64_less_than_transitive(i, 1000u64, 18446744073709551615u64)) using {
                     i < 1000u64;
                     1000u64 < 18446744073709551615u64;
                 }
@@ -164,7 +164,7 @@ fn sum(bytes: &[u8]) -> i32 {
         }
     }
     have i == bytes.len() by {
-        apply(uint64_le_and_not_lt_implies_eq(i, bytes.len())) using {
+        apply(uint64_less_equal_and_not_less_than_implies_equal(i, bytes.len())) using {
             i <= bytes.len();
             not i < bytes.len();
         }

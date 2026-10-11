@@ -1445,7 +1445,7 @@ that nested derivation.
 The first such derived predecessor path now crosses the seam without
 flattening its intermediate theorem. From an exact `1 <= value` premise, the
 smart query constructs a scoped `Have` that applies
-`int32_successor_le_implies_lt(0, value)` to establish `0 < value`, then
+`int32_increment_less_equal_implies_less_than(0, value)` to establish `0 < value`, then
 applies either `int32_positive_predecessor_is_nonnegative` or
 `int32_positive_predecessor_strictly_decreases` to the original goal. Every
 application and the scope are accepted by `Proof` as they are selected; the
@@ -1464,7 +1464,7 @@ theorem seam. Search retains either the exact `left <= right` and
 `not (left < right)` pair or the exact `left >= right` and
 `not (left > right)` pair, selects their Surface spellings through fixed-size
 polarity probes, and applies the corresponding
-`int32_le_and_not_lt_implies_eq` or `int32_ge_and_not_gt_implies_eq` theorem
+`int32_less_equal_and_not_less_than_implies_equal` or `int32_greater_equal_and_not_greater_than_implies_equal` theorem
 once to the immutable `Proof`. Evidence selection uses exact assumed-fact
 membership rather than asking the order solver for an equivalent orientation,
 so it cannot silently replace the source-supported named rule with its dual.
@@ -1476,21 +1476,20 @@ premise subsets leave their ancestor untouched, and deterministic
 regressions observe no ordinary construction check and independently verify
 the expanded theorem steps.
 
-The two one-premise positive-to-nonnegative decisions now cross the same seam.
-From an exact indexed `1 <= value` or `0 < value` source edge, atomic search
-retains `int32_positive_is_nonnegative(value)` or
-`int32_strictly_positive_is_nonnegative(value)` and submits that application
+The one-premise positive-to-nonnegative decision now crosses the same seam.
+From an exact indexed `0 < value` source edge, atomic search retains
+`int32_positive_is_nonnegative(value)` and submits that application
 to the immutable `Proof`; it does not return a bare fact and rediscover the
 theorem during certificate lowering. Fixed-state and restricted-pure paths retain
 the accepted application, rejected premise omission leaves the root
 unchanged, and the existing 16-through-4096 single-premise arithmetic curve
 bounds both paths logarithmically. Ordinary source verification performs no
-construction check, while expansion independently verifies both serialized
-applications.
+construction check, while expansion independently verifies the serialized
+application.
 
 The exact nonstrict-plus-unequal decision now crosses the theorem seam too.
 Atomic search retains the source-supported `left <= right` and
-`left != right` facts and submits one `int32_le_and_neq_implies_lt`
+`left != right` facts and submits one `int32_less_equal_and_not_equal_implies_less_than`
 application to the immutable `Proof`. Fixed-size polarity probes recover a
 Surface spelling for the negated equality without scanning ambient facts.
 The fixed-state descendant contains exactly that accepted application, the
@@ -2098,7 +2097,7 @@ expansion check must still reject a corrupted printed certificate.
 The pure and fixed-state `simp` consumers now retain the first composed typed
 arithmetic derivation: from `not (value < 2)` they build a scoped proof of
 `value >= 2`, a normalized constant bound `2 >= 1`, and the final
-`int32_ge_transitive` application. Every operation advances the same
+`int32_greater_equal_transitive` application. Every operation advances the same
 immutable `Proof`; ordinary verification performs no construction check,
 while expansion independently checks the emitted nested `have` certificate.
 
@@ -2113,12 +2112,12 @@ paths.
 The same theorem-application seam now covers the direct adjacent-bound rule
 `lower + 1 <= value` to `lower < value`. The kernel retains the exact
 non-strict source edge, and pure, fixed-state, and outcome `simp` submit
-`int32_successor_le_implies_lt` directly to `Proof`. This one-step case shares
+`int32_increment_less_equal_implies_less_than` directly to `Proof`. This one-step case shares
 the same deterministic unrelated-fact curve and expansion check.
 
 Constant lower-bound weakening now crosses the seam too. For
 `stronger <= value` proving `weaker <= value`, the kernel retains the exact
-stronger source edge and `Proof` checks one `int32_le_transitive` application;
+stronger source edge and `Proof` checks one `int32_less_equal_transitive` application;
 the context-free constant leg remains an internal requirement of that named
 simple theorem. The symmetric strict upper-bound form was already covered by
 the retained signed-order path's context-free constant tail. Source
@@ -2127,7 +2126,7 @@ lower-bound case joins the 16-through-4096 persistent-update curve.
 
 The theorem-application seam now also carries facts proved by one step into a
 later step on the same `Proof`. From the exact source `value <= 3`, smart
-`simp` checks `int32_le_lt_transitive(value, 3, 5)`, retains its conclusion
+`simp` checks `int32_less_equal_less_than_transitive(value, 3, 5)`, retains its conclusion
 `value < 5` in the successor proof state, and then checks
 `int32_increment_upper_bound(value, 5)` against that successor. The accepted
 certificate is exactly those two applications (plus the pure proof's terminal
@@ -2160,8 +2159,8 @@ Previously `defined(1 + value)` had a semantic result but no explicit
 certificate, while `value < 1 + value` reconstructed the `value + 1` theorem
 and then failed round-trip validation because the kernel goal retained the opposite
 operand order. Atomic search now records either
-`int32_one_plus_below_max_is_defined` or
-`int32_one_plus_strictly_increases` together with the exact maximum-bound
+`int32_increment_left_below_max_is_defined` or
+`int32_increment_left_strictly_increases` together with the exact maximum-bound
 edge. `Proof` checks that selected application directly; reversed premise
 spelling, no round-trip validation, independent expansion, omitted-premise
 transactionality, and the shared 16-through-4096 curve are pinned.
@@ -2223,8 +2222,8 @@ an inherited context it cannot account for still falls back transactionally.
 
 The theorem-application seam now retains a two-rule arithmetic composition
 for a post-execution claim. From exact `lower < value` and `value < upper`
-facts, smart `simp` first applies `int32_lt_implies_le`, then applies
-`int32_increment_strict_greater_lower_bound` on the resulting Proof. The
+facts, smart `simp` first applies `int32_less_than_implies_less_equal`, then applies
+`int32_increment_greater_than_lower_bound` on the resulting Proof. The
 second proof step consumes the checked fact added by the first; ordinary
 verification neither rebuilds nor independently checks the sequence.
 
@@ -3676,7 +3675,7 @@ otherwise complete checked theorem application merely because that unrelated
 fact has no Surface spelling.
 
 The shifted-loop regression now retains both the component transport and the
-`int32_le_and_not_lt_implies_eq` sibling on one grouped Proof, observes no
+`int32_less_equal_and_not_less_than_implies_equal` sibling on one grouped Proof, observes no
 outcome compatibility construction during the final `simp`, expands the
 transport explicitly, and independently reverifies it. Remaining effect-facing
 residue centers on statement/effect equations and richer predicate/resource
@@ -3818,7 +3817,7 @@ facts or program points.
 
 The plain and resource-framed branch-continuation claims now avoid both outcome
 fallback spans. Their expansions retain the selected
-`int32_increment_strict_greater_lower_bound` application, independently
+`int32_increment_greater_than_lower_bound` application, independently
 check, and fail after that application is deleted. A 16-through-4,096 curve
 pins logarithmic allocation while one recorded premise supplies the common
 anchor and one branch-exported premise is recovered there.

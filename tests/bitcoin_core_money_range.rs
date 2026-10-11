@@ -297,12 +297,12 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
 } by {
     have 1 <= d by { arithmetic() using { d > 0; } }
     apply(int32_less_equal_to_integer(1, d));
-    have to_integer(d) != 0 by { arithmetic_certificate special {
+    have to_integer(d) != 0 by { arithmetic_certificate rules {
         premise 0: 1 <= to_integer(d) => 1 <= to_integer(d);
         integer_bound_exclusion bounds [0] => to_integer(d) != 0;
         conclusion 0;
     } }
-    have to_integer(d) != -1 by { arithmetic_certificate special {
+    have to_integer(d) != -1 by { arithmetic_certificate rules {
         premise 0: 1 <= to_integer(d) => 1 <= to_integer(d);
         integer_bound_exclusion bounds [0] => to_integer(d) != -1;
         conclusion 0;
@@ -3065,7 +3065,7 @@ theorem uint64_predecessor_below(n: uint64) {{
         have to_integer(n - 1u64) <= to_integer(n) by {{
             arithmetic() using {{ to_integer(n - 1u64) == to_integer(n) - 1; }}
         }}
-        apply(uint64_less_equal_of_to_integer(n - 1u64, n));
+        apply(uint64_to_integer_less_equal_implies_less_equal(n - 1u64, n));
     }}
 }}
 int32& {pop_back}(struct span__int__value_unsigned_long_18446744073709551615& span) {{
@@ -3213,7 +3213,7 @@ theorem uint64_predecessor_below(n: uint64) {{
         have to_integer(n - 1u64) <= to_integer(n) by {{
             arithmetic() using {{ to_integer(n - 1u64) == to_integer(n) - 1; }}
         }}
-        apply(uint64_less_equal_of_to_integer(n - 1u64, n));
+        apply(uint64_to_integer_less_equal_implies_less_equal(n - 1u64, n));
     }}
 }}
 int32& {pop_back}(struct span__int__value_unsigned_long_18446744073709551615& span) {{

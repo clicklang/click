@@ -203,7 +203,7 @@ theorem adler_prefix_b_step_four(bytes: uint8[], n: int32, a_seed: Integer, b_se
   apply(int32_add_to_integer(n, 4)) using { defined(n + 4); };
   apply(int32_less_equal_to_integer(0, n));
   apply(int32_less_equal_to_integer(n, 2147483643));
-  have 0 <= to_integer(n) * a_seed by { arithmetic_certificate special {
+  have 0 <= to_integer(n) * a_seed by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
    premise 1: to_integer(n) <= 2147483643 => to_integer(n) <= 2147483643;
    premise 2: 0 <= a_seed => 0 <= a_seed;
@@ -220,7 +220,7 @@ theorem adler_prefix_b_step_four(bytes: uint8[], n: int32, a_seed: Integer, b_se
   have 0 <= (4 * to_integer((int32)bytes[n]) + 3 * to_integer((int32)bytes[n + 1])) by arithmetic() using { 0 <= to_integer((int32)bytes[n]); 0 <= to_integer((int32)bytes[n + 1]); };
   have 0 <= ((4 * to_integer((int32)bytes[n]) + 3 * to_integer((int32)bytes[n + 1])) + 2 * to_integer((int32)bytes[n + 2])) by arithmetic() using { 0 <= (4 * to_integer((int32)bytes[n]) + 3 * to_integer((int32)bytes[n + 1])); 0 <= to_integer((int32)bytes[n + 2]); };
   have 0 <= (4 * to_integer((int32)bytes[n]) + 3 * to_integer((int32)bytes[n + 1]) + 2 * to_integer((int32)bytes[n + 2]) + to_integer((int32)bytes[n + 3])) by arithmetic() using { 0 <= ((4 * to_integer((int32)bytes[n]) + 3 * to_integer((int32)bytes[n + 1])) + 2 * to_integer((int32)bytes[n + 2])); 0 <= to_integer((int32)bytes[n + 3]); };
-  have (to_integer(n) + to_integer(4)) * a_seed == to_integer(n) * a_seed + 4 * a_seed by { arithmetic_certificate special { integer_polynomial_identity bounds [] => (to_integer(n) + to_integer(4)) * a_seed == to_integer(n) * a_seed + 4 * a_seed; conclusion 0; } }
+  have (to_integer(n) + to_integer(4)) * a_seed == to_integer(n) * a_seed + 4 * a_seed by { arithmetic_certificate rules { integer_polynomial_identity bounds [] => (to_integer(n) + to_integer(4)) * a_seed == to_integer(n) * a_seed + 4 * a_seed; conclusion 0; } }
   have (b_seed + to_integer(n + 4) * a_seed + adler_weighted_sum(bytes, n + 4, n + 4)) == (b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)) + 4 * (a_seed + adler_byte_sum(bytes, n)) + (4 * to_integer((int32)bytes[n]) + 3 * to_integer((int32)bytes[n + 1]) + 2 * to_integer((int32)bytes[n + 2]) + to_integer((int32)bytes[n + 3])) by {
    rewrite(to_integer(n + 4) == to_integer(n) + to_integer(4));
    rewrite((to_integer(n) + to_integer(4)) * a_seed == to_integer(n) * a_seed + 4 * a_seed);
@@ -274,7 +274,7 @@ theorem adler_prefix_b_step_one(bytes: uint8[], n: int32, a_seed: Integer, b_see
   apply(int32_add_to_integer(n, 1)) using { defined(n + 1); };
   apply(int32_less_equal_to_integer(0, n));
   apply(int32_less_equal_to_integer(n, 2147483646));
-  have 0 <= to_integer(n) * a_seed by { arithmetic_certificate special {
+  have 0 <= to_integer(n) * a_seed by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
    premise 1: to_integer(n) <= 2147483646 => to_integer(n) <= 2147483646;
    premise 2: 0 <= a_seed => 0 <= a_seed;
@@ -285,7 +285,7 @@ theorem adler_prefix_b_step_one(bytes: uint8[], n: int32, a_seed: Integer, b_see
   have 0 <= b_seed + to_integer(n) * a_seed by arithmetic() using { 0 <= b_seed; 0 <= to_integer(n) * a_seed; };
   have 0 <= (b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)) by arithmetic() using { 0 <= b_seed + to_integer(n) * a_seed; 0 <= adler_weighted_sum(bytes, n, n); };
   apply(adler_byte_bounds(bytes[n]));
-  have (to_integer(n) + to_integer(1)) * a_seed == to_integer(n) * a_seed + a_seed by { arithmetic_certificate special { integer_polynomial_identity bounds [] => (to_integer(n) + to_integer(1)) * a_seed == to_integer(n) * a_seed + a_seed; conclusion 0; } }
+  have (to_integer(n) + to_integer(1)) * a_seed == to_integer(n) * a_seed + a_seed by { arithmetic_certificate rules { integer_polynomial_identity bounds [] => (to_integer(n) + to_integer(1)) * a_seed == to_integer(n) * a_seed + a_seed; conclusion 0; } }
   have (b_seed + to_integer(n + 1) * a_seed + adler_weighted_sum(bytes, n + 1, n + 1)) == (b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)) + (a_seed + adler_byte_sum(bytes, n)) + to_integer((int32)bytes[n]) by {
    rewrite(to_integer(n + 1) == to_integer(n) + to_integer(1));
    rewrite((to_integer(n) + to_integer(1)) * a_seed == to_integer(n) * a_seed + a_seed);

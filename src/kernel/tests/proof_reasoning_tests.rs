@@ -768,37 +768,11 @@ fn int32_ge_and_not_gt_equality_derivation_retains_both_exact_premises() {
 fn int32_positive_is_nonnegative_derivation_retains_its_exact_premise() {
     let value = Bitvector32Term::Variable(Variable(90_004));
     let positive = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(Bitvector32Term::Constant(1), value.clone()),
-        true,
-    );
-    let goal = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), value),
-        true,
-    );
-    let assumptions = PureFactContext::new().assume_proposition(positive.clone());
-
-    let derivation = assumptions
-        .derive_simp_proposition(&goal)
-        .expect("1 <= value should derive 0 <= value");
-    assert_eq!(
-        derivation
-            .int32_positive_is_nonnegative_step()
-            .map(SignedOrderDerivationStep::premise),
-        Some(&positive)
-    );
-    assert!(derivation.check(&assumptions));
-    assert!(!derivation.check(&PureFactContext::new()));
-}
-
-#[test]
-fn int32_strictly_positive_is_nonnegative_derivation_retains_its_exact_premise() {
-    let value = Bitvector32Term::Variable(Variable(90_005));
-    let positive = Proposition::ConditionIs(
         ConditionTerm::signed_less_than(Bitvector32Term::Constant(0), value.clone()),
         true,
     );
     let goal = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(value, Bitvector32Term::Constant(0)),
+        ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), value.clone()),
         true,
     );
     let assumptions = PureFactContext::new().assume_proposition(positive.clone());
@@ -808,12 +782,27 @@ fn int32_strictly_positive_is_nonnegative_derivation_retains_its_exact_premise()
         .expect("0 < value should derive 0 <= value");
     assert_eq!(
         derivation
-            .int32_strictly_positive_is_nonnegative_step()
+            .int32_positive_is_nonnegative_step()
             .map(SignedOrderDerivationStep::premise),
         Some(&positive)
     );
     assert!(derivation.check(&assumptions));
     assert!(!derivation.check(&PureFactContext::new()));
+
+    let reversed_goal = Proposition::ConditionIs(
+        ConditionTerm::signed_greater_equal(value, Bitvector32Term::Constant(0)),
+        true,
+    );
+    let reversed = assumptions
+        .derive_simp_proposition(&reversed_goal)
+        .expect("0 < value should derive value >= 0");
+    assert_eq!(
+        reversed
+            .int32_positive_is_nonnegative_step()
+            .map(SignedOrderDerivationStep::premise),
+        Some(&positive)
+    );
+    assert!(reversed.check(&assumptions));
 }
 
 #[test]
@@ -1414,25 +1403,6 @@ fn int32_nonnegative_predecessor_upper_bound_axiom_has_the_exact_implications() 
                 Box::new(conclusion),
             )),
         )
-    );
-}
-
-#[test]
-fn int32_strictly_positive_is_nonnegative_axiom_has_the_exact_implication() {
-    let value = Bitvector32Term::Variable(Variable(90_023));
-    let theorem = prove_int32_strictly_positive_is_nonnegative(value.clone());
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(Bitvector32Term::Constant(0), value.clone()),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(value, Bitvector32Term::Constant(0)),
-        true,
-    );
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(Box::new(premise), Box::new(conclusion))
     );
 }
 
@@ -2093,7 +2063,7 @@ fn int32_positive_is_nonnegative_axiom_has_the_exact_implication() {
     let value = Bitvector32Term::Variable(Variable(90_040));
     let theorem = prove_int32_positive_is_nonnegative(value.clone());
     let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(Bitvector32Term::Constant(1), value.clone()),
+        ConditionTerm::signed_less_than(Bitvector32Term::Constant(0), value.clone()),
         true,
     );
     let conclusion = Proposition::ConditionIs(
@@ -10036,9 +10006,9 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
         "uint64_divide_to_integer",
         "uint64_remainder_to_integer",
         "uint64_less_than_to_integer",
-        "uint64_not_greater_equal_of_less_than",
+        "uint64_less_than_implies_not_greater_equal",
         "uint64_less_equal_to_integer",
-        "uint64_less_equal_of_to_integer",
+        "uint64_to_integer_less_equal_implies_less_equal",
     ] {
         for a in [
             0,
@@ -10074,9 +10044,8 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
                     "uint64_subtract_to_integer" => a.checked_sub(b).is_some(),
                     "uint64_multiply_to_integer" => a.checked_mul(b).is_some(),
                     "uint64_divide_to_integer" | "uint64_remainder_to_integer" => b != 0,
-                    "uint64_less_than_to_integer" | "uint64_not_greater_equal_of_less_than" => {
-                        a < b
-                    }
+                    "uint64_less_than_to_integer"
+                    | "uint64_less_than_implies_not_greater_equal" => a < b,
                     _ => a <= b,
                 };
                 assert_eq!(truth(guard), allowed, "{name}/{a}/{b}");

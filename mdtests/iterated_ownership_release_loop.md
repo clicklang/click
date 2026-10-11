@@ -113,13 +113,13 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                         }
                         assumption();
                     }
-                    apply(int32_le_lt_transitive(0, i, k)) using { 0 <= i; i < k; }
-                    apply(int32_lt_implies_le(0, k)) using { 0 < k; }
-                    apply(int32_lt_le_transitive(k, end, capacity)) using {
+                    apply(int32_less_equal_less_than_transitive(0, i, k)) using { 0 <= i; i < k; }
+                    apply(int32_less_than_implies_less_equal(0, k)) using { 0 < k; }
+                    apply(int32_less_than_less_equal_transitive(k, end, capacity)) using {
                         k < end;
                         end <= capacity;
                     }
-                    apply(int32_lt_transitive(i, k, capacity)) using { i < k; k < capacity; }
+                    apply(int32_less_than_transitive(i, k, capacity)) using { i < k; k < capacity; }
                     transport(
                         at(opened, occupied[k]) == 0,
                         occupied[k] == 0
@@ -134,7 +134,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                     assumption();
                 } else {
                     have i == k by {
-                        apply(int32_le_and_not_lt_implies_eq(i, k)) using {
+                        apply(int32_less_equal_and_not_less_than_implies_equal(i, k)) using {
                             i <= k;
                             not (i < k);
                         }
@@ -169,8 +169,8 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
             close_invariants();
         }
     }
-    apply(int32_le_implies_reversed_ge(start, i)) using { start <= i; }
-    apply(int32_ge_and_not_gt_implies_eq(i, start)) using {
+    apply(int32_less_equal_implies_reversed_greater_equal(start, i)) using { start <= i; }
+    apply(int32_greater_equal_and_not_greater_than_implies_equal(i, start)) using {
         i >= start;
         not (i > start);
     }

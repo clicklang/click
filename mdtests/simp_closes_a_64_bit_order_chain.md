@@ -3,7 +3,7 @@
 `simp()` proves an order goal from a chain of `uint64` or `int64` order
 facts, as it does for `int32`: the kernel records the facts its 64-bit order
 walk used, and `simp` writes them out as the standard library's
-transitivity lemmas (`uint64_lt_le_transitive` and its siblings), each link
+transitivity lemmas (`uint64_less_than_less_equal_transitive` and its siblings), each link
 stated with `have`. A fact spelled from the other side, `c >= b`, takes part
 as `b <= c` does.
 
@@ -30,7 +30,7 @@ theorem signed_links(a: int64, b: int64, c: int64, d: int64) {
 theorem written_from_the_other_side(a: uint64, b: uint64, c: uint64) {
     requires a < b;
     requires c >= b;
-    ensures a < c by { apply(uint64_lt_le_transitive(a, b, c)) using { a < b; c >= b; } }
+    ensures a < c by { apply(uint64_less_than_less_equal_transitive(a, b, c)) using { a < b; c >= b; } }
 }
 ```
 

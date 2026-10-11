@@ -69,7 +69,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
             have i < end by simp;
             have start <= m by simp;
             have 0 <= m by {
-                apply(int32_le_transitive(0, start, m)) using {
+                apply(int32_less_equal_transitive(0, start, m)) using {
                     0 <= start;
                     start <= m;
                 }
@@ -79,7 +79,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                 assumption();
             }
             have i < capacity by {
-                apply(int32_lt_le_transitive(i, end, capacity)) using {
+                apply(int32_less_than_less_equal_transitive(i, end, capacity)) using {
                     i < end;
                     end <= capacity;
                 }
@@ -116,12 +116,12 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                     }
                 } else {
                     have k <= at(opened, i) by {
-                        apply(int32_lt_successor_implies_le(k, at(opened, i))) using {
+                        apply(int32_less_than_increment_implies_less_equal(k, at(opened, i))) using {
                             k < at(opened, i) + 1;
                         }
                     }
                     have k == at(opened, i) by {
-                        apply(int32_le_and_not_lt_implies_eq(k, at(opened, i))) using {
+                        apply(int32_less_equal_and_not_less_than_implies_equal(k, at(opened, i))) using {
                             k <= at(opened, i);
                             not (k < at(opened, i));
                         }
@@ -182,7 +182,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
         assumption();
     }
     have n == end by {
-        apply(int32_le_and_not_lt_implies_eq(n, end)) using {
+        apply(int32_less_equal_and_not_less_than_implies_equal(n, end)) using {
             n <= end;
             not (n < end);
         }

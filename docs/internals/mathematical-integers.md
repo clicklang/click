@@ -43,7 +43,7 @@ operation is defined; an unsigned equality must account for modular arithmetic.
 No unconditional conversion distribution rule is sound.
 
 The checked `uint32_less_equal_to_integer` and
-`uint32_less_equal_of_to_integer` laws preserve and reflect unsigned non-strict
+`uint32_to_integer_less_equal_implies_less_equal` laws preserve and reflect unsigned non-strict
 order. Each requires the corresponding order premise. Unlike signed casts,
 these observations retain values above `2147483647` through `4294967295`.
 The proved library theorem `uint32_to_integer_bounds(value)` supplies
@@ -59,7 +59,7 @@ bounds `value % divisor` strictly below it for every u32 dividend. Combining
 these with `uint32_to_integer_bounds` bounds the remainder's Integer observation
 without changing its unsigned meaning or defining division by zero.
 
-`uint32_remainder_of_lt(value, divisor)` proves `value % divisor == value`
+`uint32_less_than_divisor_implies_remainder_is_value(value, divisor)` proves `value % divisor == value`
 under the strict native unsigned premise `value < divisor`. This premise also
 excludes a zero divisor. It preserves exact byte lane values through Adler32's
 reduction without a signed cast or a change to the Rust implementation.
@@ -172,7 +172,7 @@ rechecks those steps without rerunning the planner. Profiling and audit use the
 same checked boundary.
 
 A bounded nonlinear rule is available explicitly: the `integer_product_bounds`
-node in the special arithmetic family consumes four named constant-endpoint
+node in the `rules` arithmetic family consumes four named constant-endpoint
 inequalities for the two operands. Multiplication is monotone in each operand
 when the other is fixed, with its direction set by that operand's sign; its
 extrema on a rectangle therefore occur at the four corners. The kernel checks
@@ -654,7 +654,7 @@ artifacts, and retained audit use the shared kernel behavior.
 
 ## Truncating division bounds
 
-The explicit `integer_division_bounds` node in the special arithmetic family
+The explicit `integer_division_bounds` node in the `rules` arithmetic family
 checks a non-strict constant bound on `truncating_quotient(n, d)` or
 `truncating_remainder(n, d)`. Four named premises supply constant-endpoint
 numerator lower/upper and divisor lower/upper bounds, in that order. Both
@@ -735,7 +735,7 @@ cannot exclude unsigned wrapping.
 | `uint64_divide_to_integer` | `b != 0u64 and B != 0` | `to_integer(a / b) == truncating_quotient(A, B)` |
 | `uint64_remainder_to_integer` | `b != 0u64 and B != 0` | `to_integer(a % b) == truncating_remainder(A, B)` |
 | `uint64_less_equal_to_integer` | `a <= b` | `A <= B` |
-| `uint64_less_equal_of_to_integer` | `A <= B` | `a <= b` |
+| `uint64_to_integer_less_equal_implies_less_equal` | `A <= B` | `a <= b` |
 
 Here `A = to_integer(a)`, `B = to_integer(b)` and
 `UINT64_MAX = 18446744073709551615`. Each is a kernel standard theorem with
@@ -758,12 +758,12 @@ explicit order-bridge applications retain deterministic scaling. See the checked
 ## Restoring signed native facts
 
 Signed `int32` and `int64` observations preserve and reflect non-strict order.
-The standard-library `int32_less_equal_of_to_integer` and
-`int64_less_equal_of_to_integer` lemmas restore native order from an exact
+The standard-library `int32_to_integer_less_equal_implies_less_equal` and
+`int64_to_integer_less_equal_implies_less_equal` lemmas restore native order from an exact
 Integer comparison. `int64_less_equal_to_integer` supplies the forward direction,
-matching the existing int32 bridge. `int64_equal_of_to_integer` extends the
+matching the existing int32 bridge. `int64_to_integer_equal_implies_equal` extends the
 existing int32 injectivity bridge to the full signed 64-bit carrier.
-`uint32_equal_of_to_integer` is the same injectivity bridge for the unsigned
+`uint32_to_integer_equal_implies_equal` is the same injectivity bridge for the unsigned
 32-bit carrier: equal pattern bits do not depend on signedness, and every
 pattern has one unsigned Integer value.
 
@@ -784,7 +784,7 @@ certificate references are refused. See the checked
 
 ## Bounds excluding constants
 
-The explicit `integer_bound_exclusion bounds [i] => P` special certificate
+The explicit `integer_bound_exclusion bounds [i] => P` `rules` certificate
 excludes a constant strictly outside one named non-strict Integer bound. From
 `lo <= x` it can establish `x != c` when `c < lo`; from `x <= hi` it can
 establish `x != c` when `hi < c`. Equality at the endpoint is refused. The
@@ -807,7 +807,7 @@ them to the contract. See the checked
 
 ## Range-checked modulo cast identities
 
-The explicit `integer_cast_identity` node in the special arithmetic certificate
+The explicit `integer_cast_identity` node in the `rules` arithmetic certificate
 family proves that a typed modulo cast preserves its mathematical value.
 Its result equates the cast's full-width Integer observation with the exact
 source observation, in either direction. Two named premises must have the
@@ -848,7 +848,7 @@ and retained audit. The source profile remains unchanged; the current artifact s
 
 ## Bounded polynomial identities and quotient shifts
 
-The explicit `special` node
+The explicit `rules` node
 `integer_polynomial_identity bounds [] => L == R;` checks an equality in the
 Integer ring. It expands addition, subtraction, negation, and multiplication;
 all other roots, including truncating quotients, pure applications, folds, and
@@ -951,7 +951,7 @@ theorem observed_quotient_correction(q: int64, quotient: Integer) {
 
 The proof-backed `int32_less_than_to_integer` lemma transfers a strict native
 comparison without asking native affine arithmetic to expand a narrowed wide
-operand. It follows from `int32_less_equal_of_to_integer`: if the mathematical
+operand. It follows from `int32_to_integer_less_equal_implies_less_equal`: if the mathematical
 order were reversed or equal, reflecting that non-strict order would contradict
 the strict native premise. No new kernel axiom or machine range assumption is
 needed.

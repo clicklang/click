@@ -63,7 +63,7 @@ void *fill_range(void *argument) {
                 } else {
                     extract(k <= index);
                     have k == index by {
-                        apply(int32_le_and_not_lt_implies_eq(k, index)) using {
+                        apply(int32_less_equal_and_not_less_than_implies_equal(k, index)) using {
                             k <= index;
                             not (k < index);
                         }
@@ -110,7 +110,7 @@ void *fill_range(void *argument) {
                 extract(job->begin <= k);
                 extract(k < index);
                 have k <= at(iteration, index) by {
-                    apply(int32_lt_successor_implies_le(k, at(iteration, index))) using {
+                    apply(int32_less_than_increment_implies_less_equal(k, at(iteration, index))) using {
                         k < index;
                     }
                 }

@@ -158,13 +158,13 @@ void arena_write(struct region* region, int32 index, int32 value) {
     }
     have 0 <= region->start + index by {
         rewrite(region->start == s);
-        apply(int32_le_transitive(0, s, s + index)) using {
+        apply(int32_less_equal_transitive(0, s, s + index)) using {
             0 <= s;
             s <= s + index;
         }
     }
     have s + index < c by {
-        apply(int32_lt_le_transitive(s + index, e, c)) using {
+        apply(int32_less_than_less_equal_transitive(s + index, e, c)) using {
             s + index < e;
             e <= c;
         }

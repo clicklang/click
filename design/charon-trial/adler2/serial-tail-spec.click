@@ -3,7 +3,7 @@ theorem adler_serial_byte_observation(value: uint8) {
  ensures to_integer((uint32)value) == to_integer((int32)value)
      and 0 <= to_integer((uint32)value) and to_integer((uint32)value) <= 255 by {
   apply(adler_byte_bounds(value));
-  have to_integer((uint32)value) == to_integer((int32)value) by { arithmetic_certificate special {
+  have to_integer((uint32)value) == to_integer((int32)value) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer((int32)value) => 0 <= to_integer((int32)value);
    premise 1: to_integer((int32)value) <= 255 => to_integer((int32)value) <= 255;
    integer_cast_identity bounds [0, 1] => to_integer((uint32)value) == to_integer((int32)value);

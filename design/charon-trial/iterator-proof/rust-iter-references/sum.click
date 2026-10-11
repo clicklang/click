@@ -59,13 +59,13 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
             }
             have (bytes.len() - iter_remaining) < 1000u64 by {
-                apply(uint64_lt_le_transitive((bytes.len() - iter_remaining), bytes.len(), 1000u64)) using {
+                apply(uint64_less_than_less_equal_transitive((bytes.len() - iter_remaining), bytes.len(), 1000u64)) using {
                     (bytes.len() - iter_remaining) < bytes.len();
                     bytes.len() <= 1000u64;
                 }
             }
             have (bytes.len() - iter_remaining) < 18446744073709551615u64 by {
-                apply(uint64_lt_transitive((bytes.len() - iter_remaining), 1000u64, 18446744073709551615u64)) using {
+                apply(uint64_less_than_transitive((bytes.len() - iter_remaining), 1000u64, 18446744073709551615u64)) using {
                     (bytes.len() - iter_remaining) < 1000u64;
                     1000u64 < 18446744073709551615u64;
                 }

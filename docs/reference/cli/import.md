@@ -892,7 +892,7 @@ a trivial postcondition. `!=` is also admitted for the existing 32/64-bit
 scalar profile.
 
 The `wide-narrowing` fixture proves when existing C++ modulo casts preserve
-full mathematical values. The explicit `integer_cast_identity` special
+full mathematical values. The explicit `integer_cast_identity` `rules`
 arithmetic certificate consumes two named constant-endpoint bounds on the
 source observation, checking both against the destination range. Both signed
 and unsigned 128-bit values narrow to signed/unsigned 32/64-bit results.

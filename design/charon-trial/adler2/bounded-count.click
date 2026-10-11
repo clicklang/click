@@ -5,7 +5,7 @@ theorem adler_bounded_count(count: uint64) {
  ensures to_integer((int32)(uint32)count) == to_integer(count) by {
   apply(uint64_to_integer_bounds(count));
   apply(uint64_less_equal_to_integer(count, 2147483647u64));
-  arithmetic_certificate special {
+  arithmetic_certificate rules {
    premise 0: 0 <= to_integer(count) => 0 <= to_integer(count);
    premise 1: to_integer(count) <= 2147483647 => to_integer(count) <= 2147483647;
    integer_cast_identity bounds [0, 1] => to_integer((int32)(uint32)count) == to_integer(count);
@@ -16,7 +16,7 @@ theorem adler_bounded_count(count: uint64) {
   apply(uint64_to_integer_bounds(count));
   apply(uint64_less_equal_to_integer(count, 2147483647u64));
   have to_integer((int32)(uint32)count) == to_integer(count) by {
-   arithmetic_certificate special {
+   arithmetic_certificate rules {
     premise 0: 0 <= to_integer(count) => 0 <= to_integer(count);
     premise 1: to_integer(count) <= 2147483647 => to_integer(count) <= 2147483647;
     integer_cast_identity bounds [0, 1] => to_integer((int32)(uint32)count) == to_integer(count);
@@ -24,13 +24,13 @@ theorem adler_bounded_count(count: uint64) {
    }
   }
   have 0 <= to_integer((int32)(uint32)count) by { rewrite(to_integer((int32)(uint32)count) == to_integer(count)); assumption(); }
-  apply(int32_less_equal_of_to_integer(0, (int32)(uint32)count)); assumption();
+  apply(int32_to_integer_less_equal_implies_less_equal(0, (int32)(uint32)count)); assumption();
  }
  ensures (uint64)(int32)(uint32)count == count by {
   apply(uint64_to_integer_bounds(count));
   apply(uint64_less_equal_to_integer(count, 2147483647u64));
   have to_integer((int32)(uint32)count) == to_integer(count) by {
-   arithmetic_certificate special {
+   arithmetic_certificate rules {
     premise 0: 0 <= to_integer(count) => 0 <= to_integer(count);
     premise 1: to_integer(count) <= 2147483647 => to_integer(count) <= 2147483647;
     integer_cast_identity bounds [0, 1] => to_integer((int32)(uint32)count) == to_integer(count);
@@ -40,7 +40,7 @@ theorem adler_bounded_count(count: uint64) {
   have 0 <= to_integer((int32)(uint32)count) by { rewrite(to_integer((int32)(uint32)count) == to_integer(count)); assumption(); }
   have to_integer((int32)(uint32)count) <= 2147483647 by { rewrite(to_integer((int32)(uint32)count) == to_integer(count)); assumption(); }
   have to_integer((uint64)(int32)(uint32)count) == to_integer((int32)(uint32)count) by {
-   arithmetic_certificate special {
+   arithmetic_certificate rules {
     premise 0: 0 <= to_integer((int32)(uint32)count) => 0 <= to_integer((int32)(uint32)count);
     premise 1: to_integer((int32)(uint32)count) <= 2147483647 => to_integer((int32)(uint32)count) <= 2147483647;
     integer_cast_identity bounds [0, 1] => to_integer((uint64)(int32)(uint32)count) == to_integer((int32)(uint32)count);
@@ -48,7 +48,7 @@ theorem adler_bounded_count(count: uint64) {
    }
   }
   have to_integer((uint64)(int32)(uint32)count) == to_integer(count) by { rewrite(to_integer((uint64)(int32)(uint32)count) == to_integer((int32)(uint32)count)); assumption(); }
-  apply(uint64_equal_of_to_integer((uint64)(int32)(uint32)count, count)); assumption();
+  apply(uint64_to_integer_equal_implies_equal((uint64)(int32)(uint32)count, count)); assumption();
  }
 }
 
@@ -71,7 +71,7 @@ theorem adler_bounded_count_lower(count: uint64, low: int32) {
   have low <= 2147483647 by normalize();
   apply(int32_less_equal_to_integer(low, 2147483647));
   have to_integer((uint64)low) == to_integer(low) by {
-   arithmetic_certificate special {
+   arithmetic_certificate rules {
     premise 0: 0 <= to_integer(low) => 0 <= to_integer(low);
     premise 1: to_integer(low) <= 2147483647 => to_integer(low) <= 2147483647;
     integer_cast_identity bounds [0, 1] => to_integer((uint64)low) == to_integer(low);
@@ -84,7 +84,7 @@ theorem adler_bounded_count_lower(count: uint64, low: int32) {
    rewrite(to_integer(low) == to_integer((uint64)low));
    assumption();
   }
-  apply(int32_less_equal_of_to_integer(low, (int32)(uint32)count)); assumption();
+  apply(int32_to_integer_less_equal_implies_less_equal(low, (int32)(uint32)count)); assumption();
  }
 }
 
@@ -98,7 +98,7 @@ theorem adler_bounded_count_upper(count: uint64, high: int32) {
   have high <= 2147483647 by normalize();
   apply(int32_less_equal_to_integer(high, 2147483647));
   have to_integer((uint64)high) == to_integer(high) by {
-   arithmetic_certificate special {
+   arithmetic_certificate rules {
     premise 0: 0 <= to_integer(high) => 0 <= to_integer(high);
     premise 1: to_integer(high) <= 2147483647 => to_integer(high) <= 2147483647;
     integer_cast_identity bounds [0, 1] => to_integer((uint64)high) == to_integer(high);
@@ -111,7 +111,7 @@ theorem adler_bounded_count_upper(count: uint64, high: int32) {
    rewrite(to_integer(high) == to_integer((uint64)high));
    assumption();
   }
-  apply(int32_less_equal_of_to_integer((int32)(uint32)count, high)); assumption();
+  apply(int32_to_integer_less_equal_implies_less_equal((int32)(uint32)count, high)); assumption();
  }
 }
 
@@ -125,7 +125,7 @@ theorem adler_bounded_count_native_lower(count: uint64, low: int32) {
   have low <= 2147483647 by normalize();
   apply(int32_less_equal_to_integer(low, 2147483647));
   have to_integer((uint64)low) == to_integer(low) by {
-   arithmetic_certificate special {
+   arithmetic_certificate rules {
     premise 0: 0 <= to_integer(low) => 0 <= to_integer(low);
     premise 1: to_integer(low) <= 2147483647 => to_integer(low) <= 2147483647;
     integer_cast_identity bounds [0, 1] => to_integer((uint64)low) == to_integer(low);
@@ -138,6 +138,6 @@ theorem adler_bounded_count_native_lower(count: uint64, low: int32) {
    rewrite(to_integer(count) == to_integer((int32)(uint32)count));
    assumption();
   }
-  apply(uint64_less_equal_of_to_integer((uint64)low, count)); assumption();
+  apply(uint64_to_integer_less_equal_implies_less_equal((uint64)low, count)); assumption();
  }
 }

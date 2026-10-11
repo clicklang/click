@@ -22,7 +22,7 @@ theorem adler_lane_half_product_5551(n: Integer, divisor: Integer) {
         have 1 <= n + 1 by arithmetic() using { 0 <= n; };
         have n + 1 <= 5552 by arithmetic() using { n <= 5551; };
         have 0 <= n * (n + 1) by {
-            arithmetic_certificate special {
+            arithmetic_certificate rules {
                 premise 0: 0 <= n => 0 <= n;
                 premise 1: n <= 5551 => n <= 5551;
                 premise 2: 1 <= n + 1 => 1 <= n + 1;
@@ -32,7 +32,7 @@ theorem adler_lane_half_product_5551(n: Integer, divisor: Integer) {
             }
         }
         have n * (n + 1) <= 30819152 by {
-            arithmetic_certificate special {
+            arithmetic_certificate rules {
                 premise 0: 0 <= n => 0 <= n;
                 premise 1: n <= 5551 => n <= 5551;
                 premise 2: 1 <= n + 1 => 1 <= n + 1;
@@ -41,7 +41,7 @@ theorem adler_lane_half_product_5551(n: Integer, divisor: Integer) {
                 conclusion 0;
             }
         }
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: 0 <= n * (n + 1) => 0 <= n * (n + 1);
             premise 1: n * (n + 1) <= 30819152 => n * (n + 1) <= 30819152;
             premise 2: 2 <= divisor => 2 <= divisor;
@@ -87,7 +87,7 @@ theorem adler_lane_half_product_5552(n: Integer, divisor: Integer) {
         have 1 <= n + 1 by arithmetic() using { 0 <= n; };
         have n + 1 <= 5553 by arithmetic() using { n <= 5552; };
         have 0 <= n * (n + 1) by {
-            arithmetic_certificate special {
+            arithmetic_certificate rules {
                 premise 0: 0 <= n => 0 <= n;
                 premise 1: n <= 5552 => n <= 5552;
                 premise 2: 1 <= n + 1 => 1 <= n + 1;
@@ -97,7 +97,7 @@ theorem adler_lane_half_product_5552(n: Integer, divisor: Integer) {
             }
         }
         have n * (n + 1) <= 30830256 by {
-            arithmetic_certificate special {
+            arithmetic_certificate rules {
                 premise 0: 0 <= n => 0 <= n;
                 premise 1: n <= 5552 => n <= 5552;
                 premise 2: 1 <= n + 1 => 1 <= n + 1;
@@ -106,7 +106,7 @@ theorem adler_lane_half_product_5552(n: Integer, divisor: Integer) {
                 conclusion 0;
             }
         }
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: 0 <= n * (n + 1) => 0 <= n * (n + 1);
             premise 1: n * (n + 1) <= 30830256 => n * (n + 1) <= 30830256;
             premise 2: 2 <= divisor => 2 <= divisor;
@@ -246,7 +246,7 @@ theorem adler_lane_triangle_successor(n: Integer) {
         have n + 1 <= 5552 by arithmetic() using { n <= 5551; };
         have 0 <= n + 1 by arithmetic() using { 0 <= n; };
         have 0 <= n * (n + 1) by {
-            arithmetic_certificate special {
+            arithmetic_certificate rules {
                 premise 0: 0 <= n => 0 <= n;
                 premise 1: n <= 5551 => n <= 5551;
                 premise 2: 1 <= n + 1 => 1 <= n + 1;
@@ -256,7 +256,7 @@ theorem adler_lane_triangle_successor(n: Integer) {
             }
         }
         have (n + 1) * ((n + 1) + 1) == n * (n + 1) + 2 * (n + 1) by {
-            arithmetic_certificate special {
+            arithmetic_certificate rules {
                 integer_polynomial_identity bounds [] => (n + 1) * ((n + 1) + 1) == n * (n + 1) + 2 * (n + 1);
                 conclusion 0;
             }
@@ -264,7 +264,7 @@ theorem adler_lane_triangle_successor(n: Integer) {
         unfold(adler_lane_triangle(n + 1));
         unfold(adler_lane_triangle(n));
         rewrite((n + 1) * ((n + 1) + 1) == n * (n + 1) + 2 * (n + 1));
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: 0 <= n * (n + 1) => 0 <= n * (n + 1);
             premise 1: 0 <= n + 1 => 0 <= n + 1;
             integer_quotient_shift bounds [0, 1] => truncating_quotient(n * (n + 1) + 2 * (n + 1), 2) == truncating_quotient(n * (n + 1), 2) + (n + 1);
@@ -282,7 +282,7 @@ theorem adler_lane_b_ceiling_successor(n: Integer) {
         unfold(adler_lane_b_ceiling(n));
         unfold(adler_lane_a_ceiling(n + 1));
         rewrite(adler_lane_triangle(n + 1) == adler_lane_triangle(n) + (n + 1));
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             integer_polynomial_identity bounds [] => 65520 + 65520 * (n + 1) + 255 * (adler_lane_triangle(n) + (n + 1)) == (65520 + 65520 * n + 255 * adler_lane_triangle(n)) + (65520 + 255 * (n + 1));
             conclusion 0;
         }

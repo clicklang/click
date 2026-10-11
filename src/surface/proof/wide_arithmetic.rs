@@ -781,9 +781,9 @@ impl<'a> Proof<'a> {
         let applied = proof
             .apply_step(apply(
                 &carrier.theorem(match goal_relation {
-                    Relation::Less => "less_than_of_to_integer",
-                    Relation::LessEqual => "less_equal_of_to_integer",
-                    Relation::Equal => "equal_of_to_integer",
+                    Relation::Less => "to_integer_less_than_implies_less_than",
+                    Relation::LessEqual => "to_integer_less_equal_implies_less_equal",
+                    Relation::Equal => "to_integer_equal_implies_equal",
                 }),
                 vec![goal_lower, goal_upper],
                 vec![observed_goal],

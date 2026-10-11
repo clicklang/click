@@ -199,7 +199,7 @@ int32 owned_string_set(
     unfold(owned_string(owner));
     unfold(terminated_at);
     have index < owner->cap by {
-        apply(int32_lt_transitive(index, owner->len, owner->cap)) using {
+        apply(int32_less_than_transitive(index, owner->len, owner->cap)) using {
             index < owner->len;
             owner->len < owner->cap;
         }
@@ -488,7 +488,7 @@ int32 owned_string_pop(struct owned_string* owner) {
     unfold(owned_string(owner));
     have 0 <= (owner->len - 1) by {
         have 0 < owner->len by {
-            apply(int32_successor_le_implies_lt(0, owner->len)) using {
+            apply(int32_increment_less_equal_implies_less_than(0, owner->len)) using {
                 1 <= owner->len;
             }
             assumption();
@@ -500,7 +500,7 @@ int32 owned_string_pop(struct owned_string* owner) {
     }
     have (owner->len - 1) < owner->len by {
         have 0 < owner->len by {
-            apply(int32_successor_le_implies_lt(0, owner->len)) using {
+            apply(int32_increment_less_equal_implies_less_than(0, owner->len)) using {
                 1 <= owner->len;
             }
             assumption();
@@ -525,7 +525,7 @@ int32 owned_string_pop(struct owned_string* owner) {
         assumption();
     }
     have owner->len < owner->cap by {
-        apply(int32_lt_transitive(at(statement(5).entry, (owner->len - 1)), at(statement(5).entry, owner->len), at(statement(5).entry, owner->cap))) using {
+        apply(int32_less_than_transitive(at(statement(5).entry, (owner->len - 1)), at(statement(5).entry, owner->len), at(statement(5).entry, owner->cap))) using {
             at(statement(5).entry, (owner->len - 1)) < at(statement(5).entry, owner->len);
             at(statement(5).entry, owner->len) < at(statement(5).entry, owner->cap);
         }
@@ -600,7 +600,7 @@ int32 owned_string_clear(struct owned_string* owner) {
     }
     have 0 <= owner->len;
     have owner->len < owner->cap by {
-        apply(int32_le_lt_transitive(at(statement(0).entry, 0), at(statement(0).entry, owner->len), at(statement(0).entry, owner->cap))) using {
+        apply(int32_less_equal_less_than_transitive(at(statement(0).entry, 0), at(statement(0).entry, owner->len), at(statement(0).entry, owner->cap))) using {
             at(statement(0).entry, 0) <= at(statement(0).entry, owner->len);
             at(statement(0).entry, owner->len) < at(statement(0).entry, owner->cap);
         }
@@ -655,7 +655,7 @@ int32 owned_string_pipeline(
     have (owner->len + 1) < owner->cap by {
         rewrite(owner->cap == capacity);
         rewrite(owner->len == 0);
-        apply(int32_successor_le_implies_lt(1, at(statement(2).entry, capacity))) using {
+        apply(int32_increment_less_equal_implies_less_than(1, at(statement(2).entry, capacity))) using {
             at(statement(2).entry, 2) <= at(statement(2).entry, capacity);
         }
         assumption();

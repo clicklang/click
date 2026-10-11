@@ -80,7 +80,7 @@ int32 sum(int32 a[], int32 n) {
             have i <= n by {
                 if n < 1073741823 {
                     have n != 1073741823 by {
-                        apply(int32_lt_implies_neq(n, 1073741823)) using {
+                        apply(int32_less_than_implies_not_equal(n, 1073741823)) using {
                             n < 1073741823;
                         }
                     }
@@ -90,7 +90,7 @@ int32 sum(int32 a[], int32 n) {
                         have n <= 1073741823 by {
                             assumption();
                         }
-                        apply(int32_le_and_not_lt_implies_eq(n, 1073741823)) using {
+                        apply(int32_less_equal_and_not_less_than_implies_equal(n, 1073741823)) using {
                             n <= 1073741823;
                             not n < 1073741823;
                         }
@@ -238,7 +238,7 @@ int32 sum(int32 a[], int32 n) {
             }
             have i < 2147483647 by {
                 have i < 1000 by {
-                    apply(int32_lt_le_transitive(i, n, 1000)) using {
+                    apply(int32_less_than_less_equal_transitive(i, n, 1000)) using {
                         i < n;
                         n <= 1000;
                     }
@@ -246,7 +246,7 @@ int32 sum(int32 a[], int32 n) {
                 have 1000 < 2147483647 by {
                     normalize();
                 }
-                apply(int32_lt_transitive(i, 1000, 2147483647)) using {
+                apply(int32_less_than_transitive(i, 1000, 2147483647)) using {
                     i < 1000;
                     1000 < 2147483647;
                 }
@@ -361,7 +361,7 @@ int32 sum(int32 a[], int32 n) {
                 intro();
                 intro();
                 have k < n by {
-                    apply(int32_lt_le_transitive(k, i, n)) using {
+                    apply(int32_less_than_less_equal_transitive(k, i, n)) using {
                         k < i;
                         i <= n;
                     }
@@ -435,7 +435,7 @@ int32 sum(int32 a[], int32 n) {
         }
     }
     have i == n by {
-        apply(int32_le_and_not_lt_implies_eq(i, n)) using {
+        apply(int32_less_equal_and_not_less_than_implies_equal(i, n)) using {
             i <= n;
             not i < n;
         }

@@ -10,7 +10,7 @@ theorem too_tight_product(x: Integer, y: Integer) {
     requires -4 <= y;
     requires y <= 5;
     ensures x * y <= 14 by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: -2 <= x => -2 <= x;
             premise 1: x <= 3 => x <= 3;
             premise 2: -4 <= y => -4 <= y;

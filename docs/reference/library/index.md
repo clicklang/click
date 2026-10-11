@@ -223,8 +223,8 @@ spec enum Nat {
 
 `to_integer(n)` observes a `Nat` as an exact Integer. `to_nat(z)` requires
 `z >= 0` and remains symbolic even for large values. These conversions have
-checked builtin meanings; the ordinary recursive `nat_to_integer` function
-is independent. The laws below relate the two domains without coercions.
+checked builtin meanings, and the laws below relate the two domains without
+coercions.
 
 ### `nat_integer_zero`
 
@@ -272,43 +272,6 @@ theorem integer_nat_round_trip(z: Integer) {
 ```click
 theorem integer_to_nat_zero() {
     ensures to_nat(0) == Nat::Zero;
-}
-```
-
-### `nat_to_integer`
-
-```click
-function nat_to_integer(value: Nat) -> Integer
-    decreases value
-{
-    match value {
-        Nat::Zero => 0,
-        Nat::Succ(previous) => nat_to_integer(previous) + 1,
-    }
-}
-```
-
-**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_nat.md).
-
-### `nat_to_integer_zero`
-
-```click
-theorem nat_to_integer_zero() {
-    ensures nat_to_integer(Nat::Zero) == 0 by {
-        unfold(nat_to_integer(Nat::Zero));
-        normalize();
-    }
-}
-```
-
-### `nat_to_integer_succ`
-
-```click
-theorem nat_to_integer_succ(n: Nat) {
-    ensures nat_to_integer(Nat::Succ(n)) == nat_to_integer(n) + 1 by {
-        unfold(nat_to_integer(Nat::Succ(n)));
-        normalize();
-    }
 }
 ```
 
@@ -860,10 +823,10 @@ theorem int32_increment_greater_equal_lower_bound(value: int32, lower: int32, up
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_increment_strict_greater_lower_bound`
+### `int32_increment_greater_than_lower_bound`
 
 ```click
-theorem int32_increment_strict_greater_lower_bound(value: int32, lower: int32, upper: int32) {
+theorem int32_increment_greater_than_lower_bound(value: int32, lower: int32, upper: int32) {
     requires value >= lower;
     requires value < upper;
 
@@ -894,10 +857,10 @@ theorem int32_increment_preserves_order(value: int32, lower: int32, upper: int32
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_successor_le_implies_lt`
+### `int32_increment_less_equal_implies_less_than`
 
 ```click
-theorem int32_successor_le_implies_lt(lower: int32, value: int32) {
+theorem int32_increment_less_equal_implies_less_than(lower: int32, value: int32) {
     requires lower < lower + 1;
     requires lower + 1 <= value;
 
@@ -911,10 +874,10 @@ theorem int32_successor_le_implies_lt(lower: int32, value: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_lt_successor_implies_le`
+### `int32_less_than_increment_implies_less_equal`
 
 ```click
-theorem int32_lt_successor_implies_le(value: int32, upper: int32) {
+theorem int32_less_than_increment_implies_less_equal(value: int32, upper: int32) {
     requires value < upper + 1;
 
     ensures value <= upper;
@@ -931,7 +894,7 @@ theorem int32_lt_successor_implies_le(value: int32, upper: int32) {
 
 ```click
 theorem int32_positive_is_nonnegative(value: int32) {
-    requires 1 <= value;
+    requires 0 < value;
 
     ensures 0 <= value;
 }
@@ -943,10 +906,10 @@ theorem int32_positive_is_nonnegative(value: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_lt_implies_le`
+### `int32_less_than_implies_less_equal`
 
 ```click
-theorem int32_lt_implies_le(left: int32, right: int32) {
+theorem int32_less_than_implies_less_equal(left: int32, right: int32) {
     requires left < right;
 
     ensures left <= right;
@@ -959,10 +922,10 @@ theorem int32_lt_implies_le(left: int32, right: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_lt_implies_neq`
+### `int32_less_than_implies_not_equal`
 
 ```click
-theorem int32_lt_implies_neq(left: int32, right: int32) {
+theorem int32_less_than_implies_not_equal(left: int32, right: int32) {
     requires left < right;
 
     ensures left != right;
@@ -975,10 +938,10 @@ theorem int32_lt_implies_neq(left: int32, right: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_not_lt_implies_ge`
+### `int32_not_less_than_implies_greater_equal`
 
 ```click
-theorem int32_not_lt_implies_ge(left: int32, right: int32) {
+theorem int32_not_less_than_implies_greater_equal(left: int32, right: int32) {
     requires not (left < right);
 
     ensures left >= right;
@@ -986,22 +949,6 @@ theorem int32_not_lt_implies_ge(left: int32, right: int32) {
 ```
 
 **Meaning:** Given its listed requirements, proves `left >= right`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `int32_strictly_positive_is_nonnegative`
-
-```click
-theorem int32_strictly_positive_is_nonnegative(value: int32) {
-    requires 0 < value;
-
-    ensures value >= 0;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `value >= 0`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -1023,10 +970,10 @@ theorem int32_increment_below_max_is_defined(value: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_one_plus_below_max_is_defined`
+### `int32_increment_left_below_max_is_defined`
 
 ```click
-theorem int32_one_plus_below_max_is_defined(value: int32) {
+theorem int32_increment_left_below_max_is_defined(value: int32) {
     requires value < 2147483647;
 
     ensures defined(1 + value);
@@ -1039,10 +986,10 @@ theorem int32_one_plus_below_max_is_defined(value: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_one_plus_strictly_increases`
+### `int32_increment_left_strictly_increases`
 
 ```click
-theorem int32_one_plus_strictly_increases(value: int32) {
+theorem int32_increment_left_strictly_increases(value: int32) {
     requires value < 2147483647;
 
     ensures value < 1 + value;
@@ -1216,7 +1163,7 @@ theorem uint32_nonzero_to_integer(value: uint32) {
   have 1 <= to_integer(value) by {
    arithmetic() using { 0 <= to_integer(0u32 % value); to_integer(0u32 % value) < to_integer(value); }
   }
-  arithmetic_certificate special {
+  arithmetic_certificate rules {
    premise 0: 1 <= to_integer(value) => 1 <= to_integer(value);
    integer_bound_exclusion bounds [0] => to_integer(value) != 0;
    conclusion 0;
@@ -1257,10 +1204,10 @@ Unsigned remainder agrees with Integer truncating remainder when both evaluation
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_mul_to_integer`
+### `uint32_multiply_to_integer`
 
 ```click
-theorem uint32_mul_to_integer(left: uint32, right: uint32) {
+theorem uint32_multiply_to_integer(left: uint32, right: uint32) {
     requires right == 0u32 or left <= 4294967295u32 / right;
     ensures to_integer(left * right) == to_integer(left) * to_integer(right);
 }
@@ -1270,16 +1217,16 @@ Unsigned multiplication agrees with Integer multiplication under the native no-o
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_mul_guard_by_integer_bound`
+### `uint32_multiply_guard_by_integer_bound`
 
 ```click
-theorem uint32_mul_guard_by_integer_bound(left: uint32, right: uint32) {
+theorem uint32_multiply_guard_by_integer_bound(left: uint32, right: uint32) {
     requires to_integer(left) * to_integer(right) <= 4294967295;
     ensures right == 0u32 or left <= 4294967295u32 / right;
 }
 ```
 
-A mathematical product bound establishes the native checked-multiplication guard used by Rust. The zero right operand needs no division. Combine this rule with `uint32_mul_to_integer` to prove an exact product from Integer bounds; bounding the already wrapped machine product is insufficient.
+A mathematical product bound establishes the native checked-multiplication guard used by Rust. The zero right operand needs no division. Combine this rule with `uint32_multiply_to_integer` to prove an exact product from Integer bounds; bounding the already wrapped machine product is insufficient.
 
 **Verified use:** [`mdtests/integer_uint32_product_bound_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_uint32_product_bound_guard.md).
 
@@ -1363,10 +1310,10 @@ Native uint64 non-strict order implies exact Integer observation order, includin
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_less_equal_of_to_integer`
+### `uint64_to_integer_less_equal_implies_less_equal`
 
 ```click
-theorem uint64_less_equal_of_to_integer(left: uint64, right: uint64) {
+theorem uint64_to_integer_less_equal_implies_less_equal(left: uint64, right: uint64) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right;
 }
@@ -1389,10 +1336,10 @@ Native uint64 strict order implies strict order of the exact Integer observation
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_less_than_of_to_integer`
+### `uint64_to_integer_less_than_implies_less_than`
 
 ```click
-theorem uint64_less_than_of_to_integer(left: uint64, right: uint64) {
+theorem uint64_to_integer_less_than_implies_less_than(left: uint64, right: uint64) {
     requires to_integer(left) < to_integer(right);
     ensures left < right;
 }
@@ -1402,10 +1349,10 @@ Strict order of the exact Integer observations implies native uint64 strict orde
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_pack_u16_to_integer`
+### `uint32_pack_uint16_to_integer`
 
 ```click
-theorem uint32_pack_u16_to_integer(low: uint32, high: uint32) {
+theorem uint32_pack_uint16_to_integer(low: uint32, high: uint32) {
     requires low <= 65535u32;
     requires high <= 65535u32;
     ensures to_integer(low | (high << 16)) == to_integer(low) + 65536 * to_integer(high);
@@ -1416,10 +1363,10 @@ Two unsigned 16-bit fields have this exact packed Integer value when both native
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_pack_u16_high_first_to_integer`
+### `uint32_pack_uint16_high_first_to_integer`
 
 ```click
-theorem uint32_pack_u16_high_first_to_integer(low: uint32, high: uint32) {
+theorem uint32_pack_uint16_high_first_to_integer(low: uint32, high: uint32) {
     requires low <= 65535u32;
     requires high <= 65535u32;
     ensures to_integer((high << 16) | low) == to_integer(low) + 65536 * to_integer(high);
@@ -1430,10 +1377,10 @@ Two unsigned 16-bit fields have this exact packed Integer value with the shifted
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_pack_u16_to_integer`
+### `uint64_pack_uint16_to_integer`
 
 ```click
-theorem uint64_pack_u16_to_integer(low: uint64, high: uint64) {
+theorem uint64_pack_uint16_to_integer(low: uint64, high: uint64) {
     requires low <= 65535u64;
     requires high <= 65535u64;
     ensures to_integer(low | (high << 16)) == to_integer(low) + 65536 * to_integer(high);
@@ -1444,10 +1391,10 @@ Two unsigned 16-bit fields have this exact packed Integer value when both native
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_not_greater_equal_of_less_than`
+### `uint64_less_than_implies_not_greater_equal`
 
 ```click
-theorem uint64_not_greater_equal_of_less_than(left: uint64, right: uint64) {
+theorem uint64_less_than_implies_not_greater_equal(left: uint64, right: uint64) {
     requires left < right;
     ensures not (left >= right);
 }
@@ -1457,10 +1404,10 @@ A strict unsigned order excludes the opposite greater-or-equal branch.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_equal_of_to_integer`
+### `uint64_to_integer_equal_implies_equal`
 
 ```click
-theorem uint64_equal_of_to_integer(left: uint64, right: uint64) {
+theorem uint64_to_integer_equal_implies_equal(left: uint64, right: uint64) {
     requires to_integer(left) == to_integer(right);
     ensures left == right;
 }
@@ -1483,10 +1430,10 @@ Preserves native unsigned order in exact Integer observations, including values 
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_less_equal_of_to_integer`
+### `uint32_to_integer_less_equal_implies_less_equal`
 
 ```click
-theorem uint32_less_equal_of_to_integer(left: uint32, right: uint32) {
+theorem uint32_to_integer_less_equal_implies_less_equal(left: uint32, right: uint32) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right;
 }
@@ -1496,10 +1443,10 @@ Reflects exact Integer observation order into native unsigned order. The mathema
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_equal_of_to_integer`
+### `uint32_to_integer_equal_implies_equal`
 
 ```click
-theorem uint32_equal_of_to_integer(left: uint32, right: uint32) {
+theorem uint32_to_integer_equal_implies_equal(left: uint32, right: uint32) {
     requires to_integer(left) == to_integer(right);
     ensures left == right;
 }
@@ -1518,7 +1465,7 @@ theorem uint32_less_than_to_integer(left: uint32, right: uint32) {
     requires left < right;
     ensures to_integer(left) < to_integer(right) by {
         if to_integer(right) <= to_integer(left) {
-            apply(uint32_less_equal_of_to_integer(right, left));
+            apply(uint32_to_integer_less_equal_implies_less_equal(right, left));
             contradiction(left < right);
         } else {
             arithmetic() using { not (to_integer(right) <= to_integer(left)); }
@@ -1544,10 +1491,10 @@ The unsigned remainder is below its divisor for any dividend. The nonzero diviso
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_remainder_of_lt`
+### `uint32_less_than_divisor_implies_remainder_is_value`
 
 ```click
-theorem uint32_remainder_of_lt(value: uint32, divisor: uint32) {
+theorem uint32_less_than_divisor_implies_remainder_is_value(value: uint32, divisor: uint32) {
     requires value < divisor;
     ensures value % divisor == value;
 }
@@ -1640,10 +1587,10 @@ Bounds on the exact mathematical difference establish that signed 64-bit subtrac
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `int64_less_than_of_to_integer`
+### `int64_to_integer_less_than_implies_less_than`
 
 ```click
-theorem int64_less_than_of_to_integer(left: int64, right: int64) {
+theorem int64_to_integer_less_than_implies_less_than(left: int64, right: int64) {
     requires to_integer(left) < to_integer(right);
     ensures left < right;
 }
@@ -1697,10 +1644,10 @@ The definedness premise excludes overflow; the equality is not unconditional.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `int32_equal_of_to_integer`
+### `int32_to_integer_equal_implies_equal`
 
 ```click
-theorem int32_equal_of_to_integer(left: int32, right: int32) {
+theorem int32_to_integer_equal_implies_equal(left: int32, right: int32) {
     requires to_integer(left) == to_integer(right);
     ensures left == right;
 }
@@ -1738,7 +1685,7 @@ theorem int32_less_than_to_integer(left: int32, right: int32) {
     requires left < right;
     ensures to_integer(left) < to_integer(right) by {
         if to_integer(right) <= to_integer(left) {
-            apply(int32_less_equal_of_to_integer(right, left));
+            apply(int32_to_integer_less_equal_implies_less_equal(right, left));
             contradiction(left < right);
         } else {
             arithmetic() using { not (to_integer(right) <= to_integer(left)); }
@@ -1755,10 +1702,10 @@ rather than extending the trusted kernel. A non-strict premise is insufficient.
 **Verified use:** [`mdtests/integer_strict_order_observation.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_strict_order_observation.md),
 [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `int32_less_equal_of_to_integer`
+### `int32_to_integer_less_equal_implies_less_equal`
 
 ```click
-theorem int32_less_equal_of_to_integer(left: int32, right: int32) {
+theorem int32_to_integer_less_equal_implies_less_equal(left: int32, right: int32) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right;
 }
@@ -1807,10 +1754,10 @@ Preserves the exact source comparison in signed 64-bit Integer observations, inc
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `int64_less_equal_of_to_integer`
+### `int64_to_integer_less_equal_implies_less_equal`
 
 ```click
-theorem int64_less_equal_of_to_integer(left: int64, right: int64) {
+theorem int64_to_integer_less_equal_implies_less_equal(left: int64, right: int64) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right;
 }
@@ -1820,10 +1767,10 @@ A proved non-strict order between exact signed observations establishes the nati
 
 **Verified use:** [`mdtests/signed_integer_order_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
 
-### `int64_equal_of_to_integer`
+### `int64_to_integer_equal_implies_equal`
 
 ```click
-theorem int64_equal_of_to_integer(left: int64, right: int64) {
+theorem int64_to_integer_equal_implies_equal(left: int64, right: int64) {
     requires to_integer(left) == to_integer(right);
     ensures left == right;
 }
@@ -1963,10 +1910,10 @@ theorem uint32_increment_strictly_increases(value: uint32, upper: uint32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint32_lt_implies_positive_difference`
+### `uint32_less_than_implies_positive_difference`
 
 ```click
-theorem uint32_lt_implies_positive_difference(value: uint32, upper: uint32) {
+theorem uint32_less_than_implies_positive_difference(value: uint32, upper: uint32) {
     requires value < upper;
 
     ensures 0u32 < upper - value;
@@ -1995,10 +1942,10 @@ theorem uint32_difference_decreases_after_increment(value: uint32, bound: uint32
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint32_lt_le_transitive`
+### `uint32_less_than_less_equal_transitive`
 
 ```click
-theorem uint32_lt_le_transitive(first: uint32, middle: uint32, last: uint32) {
+theorem uint32_less_than_less_equal_transitive(first: uint32, middle: uint32, last: uint32) {
     requires first < middle;
     requires middle <= last;
 
@@ -2012,10 +1959,10 @@ theorem uint32_lt_le_transitive(first: uint32, middle: uint32, last: uint32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint32_le_lt_transitive`
+### `uint32_less_equal_less_than_transitive`
 
 ```click
-theorem uint32_le_lt_transitive(first: uint32, middle: uint32, last: uint32) {
+theorem uint32_less_equal_less_than_transitive(first: uint32, middle: uint32, last: uint32) {
     requires first <= middle;
     requires middle < last;
 
@@ -2029,10 +1976,10 @@ theorem uint32_le_lt_transitive(first: uint32, middle: uint32, last: uint32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint32_lt_transitive`
+### `uint32_less_than_transitive`
 
 ```click
-theorem uint32_lt_transitive(first: uint32, middle: uint32, last: uint32) {
+theorem uint32_less_than_transitive(first: uint32, middle: uint32, last: uint32) {
     requires first < middle;
     requires middle < last;
 
@@ -2046,10 +1993,10 @@ theorem uint32_lt_transitive(first: uint32, middle: uint32, last: uint32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint32_le_transitive`
+### `uint32_less_equal_transitive`
 
 ```click
-theorem uint32_le_transitive(first: uint32, middle: uint32, last: uint32) {
+theorem uint32_less_equal_transitive(first: uint32, middle: uint32, last: uint32) {
     requires first <= middle;
     requires middle <= last;
 
@@ -2063,10 +2010,10 @@ theorem uint32_le_transitive(first: uint32, middle: uint32, last: uint32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint64_lt_le_transitive`
+### `uint64_less_than_less_equal_transitive`
 
 ```click
-theorem uint64_lt_le_transitive(first: uint64, middle: uint64, last: uint64) {
+theorem uint64_less_than_less_equal_transitive(first: uint64, middle: uint64, last: uint64) {
     requires first < middle;
     requires middle <= last;
 
@@ -2078,10 +2025,10 @@ Transitivity of unsigned 64-bit order: `first < middle` and `middle <= last` giv
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_le_lt_transitive`
+### `uint64_less_equal_less_than_transitive`
 
 ```click
-theorem uint64_le_lt_transitive(first: uint64, middle: uint64, last: uint64) {
+theorem uint64_less_equal_less_than_transitive(first: uint64, middle: uint64, last: uint64) {
     requires first <= middle;
     requires middle < last;
 
@@ -2093,10 +2040,10 @@ Transitivity of unsigned 64-bit order: `first <= middle` and `middle < last` giv
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_lt_transitive`
+### `uint64_less_than_transitive`
 
 ```click
-theorem uint64_lt_transitive(first: uint64, middle: uint64, last: uint64) {
+theorem uint64_less_than_transitive(first: uint64, middle: uint64, last: uint64) {
     requires first < middle;
     requires middle < last;
 
@@ -2108,10 +2055,10 @@ Transitivity of unsigned 64-bit order: `first < middle` and `middle < last` give
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_le_transitive`
+### `uint64_less_equal_transitive`
 
 ```click
-theorem uint64_le_transitive(first: uint64, middle: uint64, last: uint64) {
+theorem uint64_less_equal_transitive(first: uint64, middle: uint64, last: uint64) {
     requires first <= middle;
     requires middle <= last;
 
@@ -2123,10 +2070,10 @@ Transitivity of unsigned 64-bit order: `first <= middle` and `middle <= last` gi
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_le_and_not_lt_implies_eq`
+### `uint64_less_equal_and_not_less_than_implies_equal`
 
 ```click
-theorem uint64_le_and_not_lt_implies_eq(left: uint64, right: uint64) {
+theorem uint64_less_equal_and_not_less_than_implies_equal(left: uint64, right: uint64) {
     requires left <= right;
     requires not left < right;
 
@@ -2138,10 +2085,10 @@ An unsigned 64-bit value at most another and not below it is equal to it. A loop
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `int64_lt_le_transitive`
+### `int64_less_than_less_equal_transitive`
 
 ```click
-theorem int64_lt_le_transitive(first: int64, middle: int64, last: int64) {
+theorem int64_less_than_less_equal_transitive(first: int64, middle: int64, last: int64) {
     requires first < middle;
     requires middle <= last;
 
@@ -2153,10 +2100,10 @@ Transitivity of signed 64-bit order: `first < middle` and `middle <= last` give 
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `int64_le_lt_transitive`
+### `int64_less_equal_less_than_transitive`
 
 ```click
-theorem int64_le_lt_transitive(first: int64, middle: int64, last: int64) {
+theorem int64_less_equal_less_than_transitive(first: int64, middle: int64, last: int64) {
     requires first <= middle;
     requires middle < last;
 
@@ -2168,10 +2115,10 @@ Transitivity of signed 64-bit order: `first <= middle` and `middle < last` give 
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `int64_lt_transitive`
+### `int64_less_than_transitive`
 
 ```click
-theorem int64_lt_transitive(first: int64, middle: int64, last: int64) {
+theorem int64_less_than_transitive(first: int64, middle: int64, last: int64) {
     requires first < middle;
     requires middle < last;
 
@@ -2183,10 +2130,10 @@ Transitivity of signed 64-bit order: `first < middle` and `middle < last` give `
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `int64_le_transitive`
+### `int64_less_equal_transitive`
 
 ```click
-theorem int64_le_transitive(first: int64, middle: int64, last: int64) {
+theorem int64_less_equal_transitive(first: int64, middle: int64, last: int64) {
     requires first <= middle;
     requires middle <= last;
 
@@ -2198,10 +2145,10 @@ Transitivity of signed 64-bit order: `first <= middle` and `middle <= last` give
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_gt_implies_reversed_lt`
+### `uint32_greater_than_implies_reversed_less_than`
 
 ```click
-theorem uint32_gt_implies_reversed_lt(greater: uint32, lower: uint32) {
+theorem uint32_greater_than_implies_reversed_less_than(greater: uint32, lower: uint32) {
     requires greater > lower;
 
     ensures lower < greater;
@@ -2214,10 +2161,10 @@ theorem uint32_gt_implies_reversed_lt(greater: uint32, lower: uint32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint32_lt_implies_reversed_gt`
+### `uint32_less_than_implies_reversed_greater_than`
 
 ```click
-theorem uint32_lt_implies_reversed_gt(lower: uint32, greater: uint32) {
+theorem uint32_less_than_implies_reversed_greater_than(lower: uint32, greater: uint32) {
     requires lower < greater;
 
     ensures greater > lower;
@@ -2230,10 +2177,10 @@ theorem uint32_lt_implies_reversed_gt(lower: uint32, greater: uint32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint32_ge_implies_reversed_le`
+### `uint32_greater_equal_implies_reversed_less_equal`
 
 ```click
-theorem uint32_ge_implies_reversed_le(greater: uint32, lower: uint32) {
+theorem uint32_greater_equal_implies_reversed_less_equal(greater: uint32, lower: uint32) {
     requires greater >= lower;
 
     ensures lower <= greater;
@@ -2246,10 +2193,10 @@ theorem uint32_ge_implies_reversed_le(greater: uint32, lower: uint32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint32_le_implies_reversed_ge`
+### `uint32_less_equal_implies_reversed_greater_equal`
 
 ```click
-theorem uint32_le_implies_reversed_ge(lower: uint32, greater: uint32) {
+theorem uint32_less_equal_implies_reversed_greater_equal(lower: uint32, greater: uint32) {
     requires lower <= greater;
 
     ensures greater >= lower;
@@ -2279,10 +2226,10 @@ theorem int32_nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_le_lt_transitive`
+### `int32_less_equal_less_than_transitive`
 
 ```click
-theorem int32_le_lt_transitive(first: int32, middle: int32, last: int32) {
+theorem int32_less_equal_less_than_transitive(first: int32, middle: int32, last: int32) {
     requires first <= middle;
     requires middle < last;
 
@@ -2296,10 +2243,10 @@ theorem int32_le_lt_transitive(first: int32, middle: int32, last: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_le_transitive`
+### `int32_less_equal_transitive`
 
 ```click
-theorem int32_le_transitive(first: int32, middle: int32, last: int32) {
+theorem int32_less_equal_transitive(first: int32, middle: int32, last: int32) {
     requires first <= middle;
     requires middle <= last;
 
@@ -2313,10 +2260,10 @@ theorem int32_le_transitive(first: int32, middle: int32, last: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_lt_transitive`
+### `int32_less_than_transitive`
 
 ```click
-theorem int32_lt_transitive(first: int32, middle: int32, last: int32) {
+theorem int32_less_than_transitive(first: int32, middle: int32, last: int32) {
     requires first < middle;
     requires middle < last;
 
@@ -2330,10 +2277,10 @@ theorem int32_lt_transitive(first: int32, middle: int32, last: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_lt_le_transitive`
+### `int32_less_than_less_equal_transitive`
 
 ```click
-theorem int32_lt_le_transitive(first: int32, middle: int32, last: int32) {
+theorem int32_less_than_less_equal_transitive(first: int32, middle: int32, last: int32) {
     requires first < middle;
     requires middle <= last;
 
@@ -2347,10 +2294,10 @@ theorem int32_lt_le_transitive(first: int32, middle: int32, last: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_ge_transitive`
+### `int32_greater_equal_transitive`
 
 ```click
-theorem int32_ge_transitive(last: int32, middle: int32, first: int32) {
+theorem int32_greater_equal_transitive(last: int32, middle: int32, first: int32) {
     requires last >= middle;
     requires middle >= first;
 
@@ -2364,10 +2311,10 @@ theorem int32_ge_transitive(last: int32, middle: int32, first: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_ge_implies_reversed_le`
+### `int32_greater_equal_implies_reversed_less_equal`
 
 ```click
-theorem int32_ge_implies_reversed_le(greater: int32, lower: int32) {
+theorem int32_greater_equal_implies_reversed_less_equal(greater: int32, lower: int32) {
     requires greater >= lower;
 
     ensures lower <= greater;
@@ -2380,10 +2327,10 @@ theorem int32_ge_implies_reversed_le(greater: int32, lower: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_le_implies_reversed_ge`
+### `int32_less_equal_implies_reversed_greater_equal`
 
 ```click
-theorem int32_le_implies_reversed_ge(lower: int32, greater: int32) {
+theorem int32_less_equal_implies_reversed_greater_equal(lower: int32, greater: int32) {
     requires lower <= greater;
 
     ensures greater >= lower;
@@ -2396,10 +2343,10 @@ theorem int32_le_implies_reversed_ge(lower: int32, greater: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_le_and_not_lt_implies_eq`
+### `int32_less_equal_and_not_less_than_implies_equal`
 
 ```click
-theorem int32_le_and_not_lt_implies_eq(left: int32, right: int32) {
+theorem int32_less_equal_and_not_less_than_implies_equal(left: int32, right: int32) {
     requires left <= right;
     requires not (left < right);
 
@@ -2413,10 +2360,10 @@ theorem int32_le_and_not_lt_implies_eq(left: int32, right: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_le_and_neq_implies_lt`
+### `int32_less_equal_and_not_equal_implies_less_than`
 
 ```click
-theorem int32_le_and_neq_implies_lt(left: int32, right: int32) {
+theorem int32_less_equal_and_not_equal_implies_less_than(left: int32, right: int32) {
     requires left <= right;
     requires left != right;
 
@@ -2430,10 +2377,10 @@ theorem int32_le_and_neq_implies_lt(left: int32, right: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_ge_and_not_gt_implies_eq`
+### `int32_greater_equal_and_not_greater_than_implies_equal`
 
 ```click
-theorem int32_ge_and_not_gt_implies_eq(left: int32, right: int32) {
+theorem int32_greater_equal_and_not_greater_than_implies_equal(left: int32, right: int32) {
     requires left >= right;
     requires not (left > right);
 
@@ -2531,10 +2478,10 @@ predicate bytes_equal_range(left: uint8[], right: uint8[], lo: uint64, hi: uint6
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_equal_range)` when a proof needs the predicate body.
 
-### `bytes_all_eq`
+### `bytes_all_equal`
 
 ```click
-predicate bytes_all_eq(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
+predicate bytes_all_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     (lo..hi).all(|k| {
         bytes[k] == value
     })
@@ -2545,7 +2492,7 @@ predicate bytes_all_eq(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_all_eq)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_all_equal)` when a proof needs the predicate body.
 
 ### `bytes_contains`
 
@@ -2563,10 +2510,10 @@ predicate bytes_contains(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_contains)` when a proof needs the predicate body.
 
-### `bytes_all_not_eq`
+### `bytes_all_not_equal`
 
 ```click
-predicate bytes_all_not_eq(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
+predicate bytes_all_not_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     (lo..hi).all(|k| {
         bytes[k] != value
     })
@@ -2577,7 +2524,7 @@ predicate bytes_all_not_eq(bytes: uint8[], lo: uint64, hi: uint64, value: uint8)
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_all_not_eq)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_all_not_equal)` when a proof needs the predicate body.
 
 ## C-string specifications
 
@@ -2692,7 +2639,7 @@ theorem cstr_readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
                         have left <= right by {
                             simp();
                         }
-                        apply(uint64_le_and_not_lt_implies_eq(left, right)) using {
+                        apply(uint64_less_equal_and_not_less_than_implies_equal(left, right)) using {
                             left <= right;
                             not (left < right);
                         }
@@ -3105,7 +3052,7 @@ theorem integer_nonpositive_dividend_remainder(n: Integer, d: Integer) {
 ```click
 theorem integer_multiply_add(a: Integer, b: Integer, c: Integer) {
     ensures (a + b) * c == a * c + b * c by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             integer_polynomial_identity bounds [] => (a + b) * c == a * c + b * c;
             conclusion 0;
         }
@@ -3208,7 +3155,7 @@ theorem integer_positive_divisor_quotient_lower(n: Integer, d: Integer, bound: I
     requires 1 <= d;
     requires bound * d <= n;
     ensures bound <= truncating_quotient(n, d) by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: bound * d <= n => bound * d <= n;
             premise 1: 1 <= d => 1 <= d;
             integer_quotient_bound bounds [0, 1] => bound <= truncating_quotient(n, d);
@@ -3227,7 +3174,7 @@ theorem integer_positive_divisor_quotient_upper(n: Integer, d: Integer, bound: I
     requires 1 <= d;
     requires n <= bound * d;
     ensures truncating_quotient(n, d) <= bound by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: n <= bound * d => n <= bound * d;
             premise 1: 1 <= d => 1 <= d;
             integer_quotient_bound bounds [0, 1] => truncating_quotient(n, d) <= bound;
@@ -3380,7 +3327,7 @@ theorem integer_multiply_order_nonnegative(a: Integer, b: Integer, factor: Integ
     requires a <= b;
     requires 0 <= factor;
     ensures a * factor <= b * factor by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: a <= b => a <= b;
             premise 1: 0 <= factor => 0 <= factor;
             integer_multiply_order bounds [0, 1] => a * factor <= b * factor;
@@ -3397,7 +3344,7 @@ theorem integer_multiply_order_nonpositive(a: Integer, b: Integer, factor: Integ
     requires a <= b;
     requires factor <= 0;
     ensures b * factor <= a * factor by {
-        arithmetic_certificate special {
+        arithmetic_certificate rules {
             premise 0: a <= b => a <= b;
             premise 1: factor <= 0 => factor <= 0;
             integer_multiply_order bounds [0, 1] => b * factor <= a * factor;
@@ -3420,7 +3367,7 @@ theorem integer_scaled_product_bounds(value: Integer, amount: Integer, size: Int
     ensures lower * size <= value * amount by {
         apply(integer_multiply_order_nonnegative(lower, value, amount));
         have lower * size <= lower * amount by {
-            arithmetic_certificate special {
+            arithmetic_certificate rules {
                 premise 0: amount <= size => amount <= size;
                 premise 1: lower <= 0 => lower <= 0;
                 integer_multiply_order bounds [0, 1] => lower * size <= lower * amount;
@@ -3432,7 +3379,7 @@ theorem integer_scaled_product_bounds(value: Integer, amount: Integer, size: Int
     ensures value * amount <= upper * size by {
         apply(integer_multiply_order_nonnegative(value, upper, amount));
         have upper * amount <= upper * size by {
-            arithmetic_certificate special {
+            arithmetic_certificate rules {
                 premise 0: amount <= size => amount <= size;
                 premise 1: 0 <= upper => 0 <= upper;
                 integer_multiply_order bounds [0, 1] => upper * amount <= upper * size;

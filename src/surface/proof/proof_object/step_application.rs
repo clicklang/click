@@ -1372,25 +1372,25 @@ impl<'a> Proof<'a> {
             let lowered = if has_integer_nodes {
                 self.lower_integer_surface_proposition(
                     premise,
-                    "special arithmetic certificate premise",
+                    "`rules` arithmetic certificate premise",
                 )?
             } else {
                 self.lower_surface_proposition_direct(
                     premise,
-                    "special arithmetic certificate premise",
+                    "`rules` arithmetic certificate premise",
                 )?
             };
             premises.push(lowered);
         }
         let lower_result = |result: &ClickProposition| {
-            self.lower_surface_proposition_direct(result, "special arithmetic certificate result")
+            self.lower_surface_proposition_direct(result, "`rules` arithmetic certificate result")
         };
         let premise_ref = |index: usize| {
             if index < premises.len() {
                 Ok(index)
             } else {
                 Err(self.step_error(format!(
-                    "special arithmetic premise {index} is out of range"
+                    "`rules` arithmetic premise {index} is out of range"
                 )))
             }
         };
@@ -1576,7 +1576,7 @@ impl<'a> Proof<'a> {
         }
         if certificate.conclusion >= nodes.len() {
             return Err(self.step_error(format!(
-                "special arithmetic conclusion {} is out of range",
+                "`rules` arithmetic conclusion {} is out of range",
                 certificate.conclusion
             )));
         }
@@ -1590,11 +1590,11 @@ impl<'a> Proof<'a> {
             )
             .map_err(|error| match error {
                 PropositionCloseError::NotProposition => {
-                    self.step_error("special arithmetic certificate requires a proposition goal")
+                    self.step_error("`rules` arithmetic certificate requires a proposition goal")
                 }
                 PropositionCloseError::SpecialArithmeticPremiseUnavailable(index) => self
                     .step_error(format!(
-                        "special arithmetic premise {index} is not exactly available: {}",
+                        "`rules` arithmetic premise {index} is not exactly available: {}",
                         crate::surface::proof_diagnostics::render::render_proposition(
                             &premises[index]
                         )
@@ -1628,10 +1628,10 @@ impl<'a> Proof<'a> {
                     ))
                 }
                 PropositionCloseError::SpecialArithmetic(error) => self.step_error(format!(
-                    "special arithmetic certificate rejected: {}",
+                    "`rules` arithmetic certificate rejected: {}",
                     describe_special_arithmetic_check_error(&error)
                 )),
-                _ => self.step_error("special arithmetic certificate could not be applied"),
+                _ => self.step_error("`rules` arithmetic certificate could not be applied"),
             })
     }
 
@@ -3352,7 +3352,7 @@ fn describe_signed_arithmetic_check_error(
     }
 }
 
-/// As [`describe_integer_arithmetic_check_error`], for `special`.
+/// As [`describe_integer_arithmetic_check_error`], for the `rules` family.
 fn describe_special_arithmetic_check_error(
     error: &crate::kernel::proof::arithmetic_special::SpecialArithmeticCheckError,
 ) -> String {

@@ -144,7 +144,7 @@ theorem pool_shrink_conservation(capacity: int32, used: int32, available: int32,
                 conclusion 8;
             }
         }
-        apply(int32_equal_of_to_integer(capacity - amount, used + (available - amount))) using {
+        apply(int32_to_integer_equal_implies_equal(capacity - amount, used + (available - amount))) using {
             to_integer(capacity - amount) == to_integer(used + (available - amount));
         }
         assumption();
@@ -278,7 +278,7 @@ theorem pool_grow_conservation(capacity: int32, used: int32, available: int32, a
                 conclusion 4;
             }
         }
-        apply(int32_equal_of_to_integer(capacity + amount, used + (available + amount))) using {
+        apply(int32_to_integer_equal_implies_equal(capacity + amount, used + (available + amount))) using {
             to_integer(capacity + amount) == to_integer(used + (available + amount));
         }
         assumption();

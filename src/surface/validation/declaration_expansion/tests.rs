@@ -237,7 +237,7 @@ fn verification_does_not_reprove_the_standard_library() {
         let result = verify_click_theorems(
             r#"
             theorem uses_library(value: int32) {
-                requires 1 <= value;
+                requires 0 < value;
                 ensures 0 <= value by {
                     apply(int32_positive_is_nonnegative(value));
                 }

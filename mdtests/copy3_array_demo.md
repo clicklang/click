@@ -63,7 +63,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                 intro();
                 if k < (i - 1) {
                     have k != (i - 1) by {
-                        apply(int32_lt_implies_neq(k, (i - 1))) using {
+                        apply(int32_less_than_implies_not_equal(k, (i - 1))) using {
                             k < (i - 1);
                         }
                     }
@@ -74,11 +74,11 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                 } else {
                     have k == (i - 1) by {
                         have k <= (i - 1) by {
-                            apply(int32_lt_successor_implies_le(k, (i - 1))) using {
+                            apply(int32_less_than_increment_implies_less_equal(k, (i - 1))) using {
                                 k < i;
                             }
                         }
-                        apply(int32_le_and_not_lt_implies_eq(k, (i - 1))) using {
+                        apply(int32_less_equal_and_not_less_than_implies_equal(k, (i - 1))) using {
                             k <= (i - 1);
                             not k < (i - 1);
                         }

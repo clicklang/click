@@ -56,7 +56,7 @@ int32 last_element(int32 arr[], int32 n, int32 cap) {
     step();
     have result == arr[n] by {
         have at(loop(0).exit, i) == at(loop(0).exit, n) by {
-            apply(int32_le_and_not_lt_implies_eq(at(loop(0).exit, i), at(loop(0).exit, n))) using {
+            apply(int32_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), at(loop(0).exit, n))) using {
                 at(loop(0).exit, i) <= at(loop(0).exit, n);
                 not at(loop(0).exit, i) < at(loop(0).exit, n);
             }

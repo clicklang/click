@@ -86,11 +86,11 @@ void claim(int32* data, int32 capacity, int32 start) {
         apply(int32_increment_strictly_increases(old(before.start), capacity)) using {
             old(before.start) < capacity;
         }
-        apply(int32_successor_le_implies_lt(old(before.start), k)) using {
+        apply(int32_increment_less_equal_implies_less_than(old(before.start), k)) using {
             old(before.start) < old(before.start) + 1;
             old(before.start) + 1 <= k;
         }
-        apply(int32_lt_implies_le(old(before.start), k)) using {
+        apply(int32_less_than_implies_less_equal(old(before.start), k)) using {
             old(before.start) < k;
         }
         instantiate(forall (k: int32) {

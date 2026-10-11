@@ -21,7 +21,7 @@ theorem adler_recombine_difference(a: uint32) {
             rewrite(to_integer(65521u32 - a) == 65521 - to_integer(a));
             arithmetic() using { 0 <= to_integer(a); }
         }
-        apply(uint32_less_equal_of_to_integer(65521u32 - a, 65521u32)) using { to_integer(65521u32 - a) <= 65521; }
+        apply(uint32_to_integer_less_equal_implies_less_equal(65521u32 - a, 65521u32)) using { to_integer(65521u32 - a) <= 65521; }
         assumption();
     }
 }
@@ -54,7 +54,7 @@ theorem adler_recombine_lane_2(a: uint32, b: uint32) {
         apply(adler_recombine_difference(a)) using { a < 65521u32; }
         have 65521u32 - a <= 4294967295u32 / 2u32 by arithmetic() using { 65521u32 - a <= 65521u32; };
         have 2u32 == 0u32 or 65521u32 - a <= 4294967295u32 / 2u32 by assumption();
-        apply(uint32_mul_to_integer(65521u32 - a, 2u32)) using { 2u32 == 0u32 or 65521u32 - a <= 4294967295u32 / 2u32; }
+        apply(uint32_multiply_to_integer(65521u32 - a, 2u32)) using { 2u32 == 0u32 or 65521u32 - a <= 4294967295u32 / 2u32; }
         have to_integer((65521u32 - a) * 2u32) == (65521 - to_integer(a)) * 2 by {
             rewrite(to_integer((65521u32 - a) * 2u32) == to_integer(65521u32 - a) * to_integer(2u32));
             rewrite(to_integer(65521u32 - a) == 65521 - to_integer(a)); simp() using {};
@@ -81,7 +81,7 @@ theorem adler_recombine_lane_3(a: uint32, b: uint32) {
         apply(adler_recombine_difference(a)) using { a < 65521u32; }
         have 65521u32 - a <= 4294967295u32 / 3u32 by arithmetic() using { 65521u32 - a <= 65521u32; };
         have 3u32 == 0u32 or 65521u32 - a <= 4294967295u32 / 3u32 by assumption();
-        apply(uint32_mul_to_integer(65521u32 - a, 3u32)) using { 3u32 == 0u32 or 65521u32 - a <= 4294967295u32 / 3u32; }
+        apply(uint32_multiply_to_integer(65521u32 - a, 3u32)) using { 3u32 == 0u32 or 65521u32 - a <= 4294967295u32 / 3u32; }
         have to_integer((65521u32 - a) * 3u32) == (65521 - to_integer(a)) * 3 by {
             rewrite(to_integer((65521u32 - a) * 3u32) == to_integer(65521u32 - a) * to_integer(3u32));
             rewrite(to_integer(65521u32 - a) == 65521 - to_integer(a)); simp() using {};

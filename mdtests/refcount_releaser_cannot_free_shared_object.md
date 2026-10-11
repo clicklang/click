@@ -61,7 +61,7 @@ void object_release(struct object *obj) {
         to_integer(refs) + to_integer(slack) == 3;
         to_integer(1) <= to_integer(refs);
     };
-    have slack <= 2 by apply(int32_less_equal_of_to_integer(slack, 2));
+    have slack <= 2 by apply(int32_to_integer_less_equal_implies_less_equal(slack, 2));
     have defined(refs - 1);
     have defined(slack + 1);
     have to_integer(refs - 1) == to_integer(refs) - to_integer(1) by {

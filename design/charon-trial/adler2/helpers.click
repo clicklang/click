@@ -6,7 +6,7 @@ theorem adler_helper_byte_observation(value: uint8) {
   have (value as i32) <= 255;
   apply(int32_less_equal_to_integer(0, (value as i32)));
   apply(int32_less_equal_to_integer((value as i32), 255));
-  arithmetic_certificate special {
+  arithmetic_certificate rules {
    premise 0: 0 <= to_integer((value as i32)) => 0 <= to_integer((value as i32));
    premise 1: to_integer((value as i32)) <= 255 => to_integer((value as i32)) <= 255;
    integer_cast_identity bounds [0, 1] => to_integer((value as u32)) == to_integer((value as i32));
@@ -175,25 +175,25 @@ impl RemAssign<u32> for adler2::algo::U32X4 {
         apply(uint32_less_than_to_integer(self.0[3], quotient));
         have old(self.0[0]) < quotient implies self.0[0] == old(self.0[0]) by {
             if old(self.0[0]) < quotient {
-                apply(uint32_remainder_of_lt(old(self.0[0]), quotient));
+                apply(uint32_less_than_divisor_implies_remainder_is_value(old(self.0[0]), quotient));
                 simp();
             } else { simp(); }
         }
         have old(self.0[1]) < quotient implies self.0[1] == old(self.0[1]) by {
             if old(self.0[1]) < quotient {
-                apply(uint32_remainder_of_lt(old(self.0[1]), quotient));
+                apply(uint32_less_than_divisor_implies_remainder_is_value(old(self.0[1]), quotient));
                 simp();
             } else { simp(); }
         }
         have old(self.0[2]) < quotient implies self.0[2] == old(self.0[2]) by {
             if old(self.0[2]) < quotient {
-                apply(uint32_remainder_of_lt(old(self.0[2]), quotient));
+                apply(uint32_less_than_divisor_implies_remainder_is_value(old(self.0[2]), quotient));
                 simp();
             } else { simp(); }
         }
         have old(self.0[3]) < quotient implies self.0[3] == old(self.0[3]) by {
             if old(self.0[3]) < quotient {
-                apply(uint32_remainder_of_lt(old(self.0[3]), quotient));
+                apply(uint32_less_than_divisor_implies_remainder_is_value(old(self.0[3]), quotient));
                 simp();
             } else { simp(); }
         }
@@ -226,13 +226,13 @@ impl MulAssign<u32> for adler2::algo::U32X4 {
         ensures to_integer(self.0[3]) <= 4294967295;
     } by {
         execute();
-        apply(uint32_mul_to_integer(old(self.0[0]), rhs));
+        apply(uint32_multiply_to_integer(old(self.0[0]), rhs));
         apply(uint32_to_integer_bounds(self.0[0]));
-        apply(uint32_mul_to_integer(old(self.0[1]), rhs));
+        apply(uint32_multiply_to_integer(old(self.0[1]), rhs));
         apply(uint32_to_integer_bounds(self.0[1]));
-        apply(uint32_mul_to_integer(old(self.0[2]), rhs));
+        apply(uint32_multiply_to_integer(old(self.0[2]), rhs));
         apply(uint32_to_integer_bounds(self.0[2]));
-        apply(uint32_mul_to_integer(old(self.0[3]), rhs));
+        apply(uint32_multiply_to_integer(old(self.0[3]), rhs));
         apply(uint32_to_integer_bounds(self.0[3]));
         simp();
     }

@@ -1683,7 +1683,7 @@ fn special_arithmetic_certificate_round_trips_and_rejects_bad_premises() {
     let source = r#"
         theorem special_certificate_forms(p: int32) {
             ensures aligned(p, 8) by {
-                arithmetic_certificate special {
+                arithmetic_certificate rules {
                     premise 0: aligned(p, 8) => aligned(p, 8);
                     pointer_alignment premise 0 => aligned(p, 8);
                     conclusion 0;
@@ -1691,7 +1691,7 @@ fn special_arithmetic_certificate_round_trips_and_rejects_bad_premises() {
             }
         }
     "#;
-    let file = parse(source).expect("special certificate should parse");
+    let file = parse(source).expect("rules certificate should parse");
     let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
         panic!("expected an explicit theorem proof");
     };
@@ -1703,14 +1703,14 @@ fn special_arithmetic_certificate_round_trips_and_rejects_bad_premises() {
     ));
     let printed = super::printing::format_partial_tactic_sequence(tactics);
     assert!(
-        printed.contains("arithmetic_certificate special {"),
+        printed.contains("arithmetic_certificate rules {"),
         "{printed}"
     );
     assert_eq!(
         parse(&format!(
             "theorem special_certificate_forms(p: int32) {{ ensures aligned(p, 8) by {{ {printed} }} }}"
         ))
-        .expect("printed special certificate should reparse")
+        .expect("printed rules certificate should reparse")
         .theorem_definitions()[0]
             .ensures()[0]
             .proof(),
@@ -1750,7 +1750,7 @@ fn special_certificate_accepts_deep_identity_and_rejects_late_mismatch() {
     let nested = format!("{}aligned(p, 8)", "aligned(p, 8) and ".repeat(260),);
     let source = format!(
         "theorem deep_special_certificate(p: int32) {{ ensures aligned(p, 8) by {{\
-            arithmetic_certificate special {{\
+            arithmetic_certificate rules {{\
                 premise 0: {nested} => {nested};\
                 pointer_alignment premise 0 => aligned(p, 8);\
                 conclusion 0;\
@@ -1775,7 +1775,7 @@ fn special_certificate_accepts_deep_identity_and_rejects_late_mismatch() {
     let call_mismatch = r#"
         theorem special_call_mismatch(p: int32) {
             ensures aligned(p, 8) by {
-                arithmetic_certificate special {
+                arithmetic_certificate rules {
                     premise 0: first(p) => second(p);
                     pointer_alignment premise 0 => aligned(p, 8);
                     conclusion 0;
@@ -1785,7 +1785,7 @@ fn special_certificate_accepts_deep_identity_and_rejects_late_mismatch() {
     "#;
     assert!(
         parse(call_mismatch).is_err(),
-        "special premise token comparison must reject differing call names"
+        "`rules` premise token comparison must reject differing call names"
     );
 }
 
@@ -1798,7 +1798,7 @@ fn integer_product_bounds_round_trip_reverify_and_reject_unavailable_or_altered_
             requires -4 <= y;
             requires y <= 5;
             ensures x * y <= 15 by {
-                arithmetic_certificate special {
+                arithmetic_certificate rules {
                     premise 0: -2 <= x => -2 <= x;
                     premise 1: x <= 3 => x <= 3;
                     premise 2: -4 <= y => -4 <= y;
@@ -1866,7 +1866,7 @@ fn float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks() {
         .expanded_proof_source()
         .expect("float reflexivity should expand");
     assert!(
-        expanded.contains("arithmetic_certificate special"),
+        expanded.contains("arithmetic_certificate rules"),
         "{expanded}"
     );
     assert_eq!(expanded.matches("premise ").count(), 1, "{expanded}");
@@ -2137,8 +2137,8 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
 fn pure_simp_exposes_an_explicit_theorem_certificate() {
     let source = r#"
         theorem positive_is_nonnegative(x: int32) {
-            requires x > 0;
-            ensures x >= 0 by simp;
+            requires 0 < x;
+            ensures 0 <= x by simp;
         }
     "#;
 
@@ -2146,7 +2146,7 @@ fn pure_simp_exposes_an_explicit_theorem_certificate() {
     assert!(matches!(
         verified[0].proof_tactics().as_deref(),
         Some([ProofTactic::ApplyTheoremUsing { application, premises }])
-            if application.name == "int32_strictly_positive_is_nonnegative"
+            if application.name == "int32_positive_is_nonnegative"
             && premises.len() == 1
     ));
 }
@@ -5118,7 +5118,7 @@ fn integer_cast_identity_round_trips_and_cannot_establish_an_unrelated_integer_e
             requires -5 <= x;
             requires x <= 5;
             ensures x == y by {
-                arithmetic_certificate special {
+                arithmetic_certificate rules {
                     premise 0: -5 <= x => -5 <= x;
                     premise 1: x <= 5 => x <= 5;
                     integer_cast_identity bounds [0, 1] => x == y;
