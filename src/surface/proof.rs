@@ -330,8 +330,10 @@ mod certificate_tests {
             &[],
             &[],
             &state,
-            &PredicateEnvironment::new(&[]),
-            &ClickFunctionEnvironment::new(&[]),
+            SpecDefinitions::new(
+                &PredicateEnvironment::new(&[]),
+                &ClickFunctionEnvironment::new(&[]),
+            ),
         )
         .expect_err("an unrecorded snapshot should have no surface form");
 
@@ -542,11 +544,12 @@ mod certificate_tests {
             .with_contracts(file.contract_definitions());
         let click_function_environment =
             ClickFunctionEnvironment::new(file.click_function_definitions());
+        let spec_definitions =
+            SpecDefinitions::new(&predicate_environment, &click_function_environment);
         let theorem_environment = TheoremEnvironment::new(&[]);
         let theorem = &file.theorem_definitions()[0];
         let context =
-            pure_theorem_context(theorem, &predicate_environment, &click_function_environment)
-                .expect("theorem context should lower");
+            pure_theorem_context(theorem, spec_definitions).expect("theorem context should lower");
         let Ensure::Proposition(surface_goal) = theorem.ensures()[0].ensure() else {
             panic!("expected proposition goal");
         };
@@ -556,8 +559,7 @@ mod certificate_tests {
             &context.values,
             &context.array_refs,
             &context.memory,
-            &predicate_environment,
-            &click_function_environment,
+            spec_definitions,
         )
         .expect("goal should lower");
         let root = Proof::for_pure_surface_goal(
@@ -566,8 +568,7 @@ mod certificate_tests {
             goal.clone(),
             surface_goal.clone(),
             &context,
-            &predicate_environment,
-            &click_function_environment,
+            spec_definitions,
             &theorem_environment,
         );
         let error = root
@@ -653,8 +654,7 @@ mod certificate_tests {
         let verified = verify_theorem_definitions(
             TheoremEnvironment::new(&[]),
             file.theorem_definitions(),
-            &predicate_environment,
-            &click_function_environment,
+            SpecDefinitions::new(&predicate_environment, &click_function_environment),
             None,
             &ResourceEnvironment::new(&[]),
             std::sync::Arc::new(FunctionSourceRegistry::default()),
@@ -1464,8 +1464,7 @@ pub(super) fn initial_claim_context(
     function_block: &FunctionBlock,
     parsed_function: &syntax::C0Function,
     resource_environment: &ResourceEnvironment,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
 ) -> Result<
     (
@@ -1480,8 +1479,7 @@ pub(super) fn initial_claim_context(
         function_block,
         parsed_function,
         resource_environment,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         claim_label,
         None,
     )?;
@@ -1508,8 +1506,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
     function_block: &FunctionBlock,
     parsed_function: &syntax::C0Function,
     resource_environment: &ResourceEnvironment,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
     caller_owner: Option<&CallerSourceOwnerId>,
 ) -> Result<InitialClaimContext, ClickError> {
@@ -1529,8 +1526,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
     } else {
         let authority_definitions = crate::surface::verification::composite_resource_definitions(
             resource_environment,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
         )?;
         initial_call_state(
             function_block.requires(),
@@ -1570,7 +1566,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         if !visited_predicates.insert(name.clone()) {
             continue;
         }
-        let Some(definition) = predicate_environment.get(&name) else {
+        let Some(definition) = spec_definitions.predicates.get(&name) else {
             continue;
         };
         collect_resource_count_families(definition.body(), &mut observed_population_families);
@@ -1592,8 +1588,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         parsed_function,
         &arguments,
         &entry_authority_state,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
     )?;
     state = materialize_folded_composite_resource_cells(
         resource_environment,
@@ -1601,8 +1596,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         &arguments,
         state,
         claim_label,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
     )?;
     let include_owned_composite_cores = Some(resources::OwnedCores::AttachedToOwner);
     let mut projection_state = state.clone();
@@ -1613,8 +1607,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
                 parsed_function.parameters(),
                 &arguments,
                 &projection_state,
-                predicate_environment,
-                click_function_environment,
+                spec_definitions,
             )
             .is_ok()
         {
@@ -1625,8 +1618,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
             parsed_function.parameters(),
             &arguments,
             &projection_state,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
         );
         let projected = project_initial_composite_resource_cores(
             resource_environment,
@@ -1636,8 +1628,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
             &available_pure_facts,
             claim_label,
             Some(resources::OwnedCores::Standing),
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
         )?;
         if projected == projection_state {
             break;
@@ -1651,8 +1642,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
             parsed_function.parameters(),
             &arguments,
             &state,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
             &PureFactContext::new(),
         )?;
     let mut requirement_pure_facts = Vec::with_capacity(lowered_requirement_facts.len());
@@ -1741,8 +1731,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
                 parsed_function.parameters(),
                 &arguments,
                 &state,
-                predicate_environment,
-                click_function_environment,
+                spec_definitions,
                 &requirement_context,
             )
         })
@@ -1774,8 +1763,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
             parsed_function.parameters(),
             &arguments,
             &state,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
             &requirement_context,
         )?;
         if let Some(kernel) = lowered.first() {
@@ -1783,8 +1771,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         }
     }
     let unfolded_requirement_facts = requirements_with_structural_unfolds(
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         function_block,
         &PureFactList::from(requirement_pure_facts),
     )
@@ -1801,8 +1788,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         &unfolded_requirement_facts,
         claim_label,
         include_owned_composite_cores,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
     )?;
     requirement_pure_facts = project_initial_resource_facts(
         resource_environment,
@@ -1810,8 +1796,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         &arguments,
         &state,
         &unfolded_requirement_facts,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         claim_label,
     )?;
     entry_fact_origins.resize(requirement_pure_facts.len(), EntryFactOrigin::Derived);
@@ -1823,8 +1808,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         &requirement_pure_facts,
         claim_label,
         Some(resources::OwnedCores::Standing),
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
     )?;
     // An explicit `defined(...)` requirement evaluates C loads, which need
     // the composite cores projected for that purpose. Lowered at the folded
@@ -1869,8 +1853,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
                 parsed_function.parameters(),
                 &arguments,
                 &definedness_state,
-                predicate_environment,
-                click_function_environment,
+                spec_definitions,
                 &definedness_context,
             )?;
         let Some(principal) = projected.iter().find(|fact| {
@@ -1913,8 +1896,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         parsed_function.parameters(),
         &arguments,
         &definedness_state,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
     )?;
     for (surface, kernel) in &definedness {
         surface_propositions.record_lowering(surface, kernel)?;
@@ -1961,8 +1943,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         function_block,
         parsed_function,
         resource_environment,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         state,
         &arguments,
         &entry_pure_facts,
@@ -2002,8 +1983,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
             &state,
             &requirement_pure_facts,
             &mut surface_propositions,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
             &mut BTreeSet::new(),
         )
         .map_err(|message| {
@@ -2022,8 +2002,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
     // feed the resource projection and the two would no longer agree.
     let composite_definitions = crate::surface::verification::composite_resource_definitions(
         resource_environment,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
     )?;
     let publication = crate::kernel::publish_instance_arms(
         state.resources(),
@@ -2213,8 +2192,7 @@ fn explicit_entry_loadability_facts(
     parsed_function: &syntax::C0Function,
     arguments: &[CExpression],
     state: &CState,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Vec<Proposition>, ClickError> {
     let mut facts = Vec::new();
     for requirement in function_block.requires() {
@@ -2225,8 +2203,7 @@ fn explicit_entry_loadability_facts(
                     parsed_function.parameters(),
                     arguments,
                     state,
-                    predicate_environment,
-                    click_function_environment,
+                    spec_definitions,
                     &PureFactContext::new(),
                 )?;
                 for fact in lowered {
@@ -2247,8 +2224,7 @@ fn explicit_entry_loadability_facts(
                             parsed_function.parameters(),
                             arguments,
                             state,
-                            predicate_environment,
-                            click_function_environment,
+                            spec_definitions,
                             &PureFactContext::new(),
                         )?;
                     for fact in lowered {
@@ -2277,8 +2253,7 @@ fn evaluate_entry_resource_context(
     function_block: &FunctionBlock,
     parsed_function: &syntax::C0Function,
     resource_environment: &ResourceEnvironment,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     state: CState,
     arguments: &[CExpression],
     pure_facts: &PureFactList,
@@ -2290,8 +2265,7 @@ fn evaluate_entry_resource_context(
     let (resource_specs, _) = crate::surface::verification::function_resource_summary(
         function_block,
         parsed_function,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         resource_environment,
     )?;
     if resource_specs.is_empty() {
@@ -2382,8 +2356,7 @@ fn evaluate_entry_resource_context(
     }
     let definitions = crate::surface::verification::composite_resource_definitions(
         resource_environment,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
     )?;
     let mut assumptions = assumptions;
     let mut budget = ExecutionBudget::for_new_execution();
@@ -2479,8 +2452,7 @@ fn evaluate_entry_resource_context(
         pure_facts,
         claim_label,
         include_owned_composite_cores,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
     )?;
     Ok((state, entry_partition_facts, entry_quantity_facts))
 }
@@ -2514,8 +2486,7 @@ fn available_initial_requirement_propositions(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
     state: &CState,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> Vec<Proposition> {
     let mut propositions = Vec::new();
     for requirement in requires {
@@ -2524,8 +2495,7 @@ fn available_initial_requirement_propositions(
             parameters,
             arguments,
             state,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
         ) else {
             continue;
         };
@@ -2592,8 +2562,7 @@ pub(super) fn prove_claim_by_auto(
     claim: &FunctionClaimRef<'_>,
     claim_label: &str,
     function_environment: &CExecutionEnvironment,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,
     function_source_registry: Arc<FunctionSourceRegistry>,
@@ -2608,8 +2577,7 @@ pub(super) fn prove_claim_by_auto(
         claim,
         claim_label,
         function_environment,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         resource_environment,
         theorem_environment,
         function_source_registry,
@@ -2636,8 +2604,7 @@ pub(super) fn prove_claim_by_simp(
     claim: &FunctionClaimRef<'_>,
     claim_label: &str,
     function_environment: &CExecutionEnvironment,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,
     function_source_registry: Arc<FunctionSourceRegistry>,
@@ -2657,8 +2624,7 @@ pub(super) fn prove_claim_by_simp(
         claim,
         claim_label,
         function_environment,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         resource_environment,
         theorem_environment,
         function_source_registry,
@@ -2682,8 +2648,7 @@ pub(super) fn prove_claim_by_script(
     claim: &FunctionClaimRef<'_>,
     claim_label: &str,
     function_environment: &CExecutionEnvironment,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,
     function_source_registry: Arc<FunctionSourceRegistry>,
@@ -2697,8 +2662,7 @@ pub(super) fn prove_claim_by_script(
         claim,
         claim_label,
         function_environment,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         resource_environment,
         theorem_environment,
         function_source_registry,

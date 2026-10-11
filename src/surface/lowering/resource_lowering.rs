@@ -1113,16 +1113,14 @@ pub(in crate::surface) fn requirement_propositions(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
     state: &CState,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Vec<Proposition>, ClickError> {
     requirement_propositions_with_assumptions(
         requires,
         parameters,
         arguments,
         state,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         &PureFactContext::new(),
     )
 }
@@ -1132,8 +1130,7 @@ pub(in crate::surface) fn requirement_propositions_with_assumptions(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
     state: &CState,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     initial_assumptions: &PureFactContext,
 ) -> Result<Vec<Proposition>, ClickError> {
     Ok(requirement_propositions_with_sources_and_assumptions(
@@ -1141,8 +1138,7 @@ pub(in crate::surface) fn requirement_propositions_with_assumptions(
         parameters,
         arguments,
         state,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         initial_assumptions,
     )?
     .into_iter()
@@ -1174,8 +1170,7 @@ pub(in crate::surface) fn requirement_propositions_with_sources_and_assumptions(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
     state: &CState,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     initial_assumptions: &PureFactContext,
 ) -> Result<Vec<LoweredRequirementFact>, ClickError> {
     // A proposition requirement may contain a memory read whose range is
@@ -1221,8 +1216,7 @@ pub(in crate::surface) fn requirement_propositions_with_sources_and_assumptions(
                         arguments,
                         state,
                         proposition,
-                        predicate_environment,
-                        click_function_environment,
+                        spec_definitions,
                         &assumptions,
                     )
                     .map(|(proposition, facts)| {
@@ -1394,19 +1388,12 @@ pub(in crate::surface) fn requirement_definedness_propositions(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
     state: &CState,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Vec<(ClickProposition, Proposition)>, ClickError> {
     let mut result = Vec::new();
     for surface in requirement_definedness_surfaces(requires) {
-        let kernel = requirement_proposition_prop(
-            parameters,
-            arguments,
-            state,
-            &surface,
-            predicate_environment,
-            click_function_environment,
-        )?;
+        let kernel =
+            requirement_proposition_prop(parameters, arguments, state, &surface, spec_definitions)?;
         if matches!(normalize_proposition(&kernel), SimpProposition::True)
             || result
                 .iter()
@@ -2227,8 +2214,10 @@ fn evaluate_resource_argument_with_snapshot(
             state,
             result,
             &RecordedSnapshots::new(),
-            &PredicateEnvironment::new(&[]),
-            &ClickFunctionEnvironment::new(&[]),
+            SpecDefinitions::new(
+                &PredicateEnvironment::new(&[]),
+                &ClickFunctionEnvironment::new(&[]),
+            ),
             &BTreeSet::new(),
         )?;
         if !matches!(&direct, CValue::Pointer(pointer) if pointer.is_null()) {
@@ -2276,8 +2265,10 @@ fn evaluate_resource_argument_with_snapshot(
                 state,
                 result,
                 &RecordedSnapshots::new(),
-                &PredicateEnvironment::new(&[]),
-                &ClickFunctionEnvironment::new(&[]),
+                SpecDefinitions::new(
+                    &PredicateEnvironment::new(&[]),
+                    &ClickFunctionEnvironment::new(&[]),
+                ),
                 &BTreeSet::new(),
             )?;
             if !recovered.contains(&value) {
@@ -3369,16 +3360,14 @@ pub(in crate::surface) fn requirement_proposition_prop(
     arguments: &[CExpression],
     state: &CState,
     proposition: &ClickProposition,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, ClickError> {
     requirement_proposition_prop_with_assumptions(
         parameters,
         arguments,
         state,
         proposition,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         &PureFactContext::new(),
     )
 }
@@ -3388,8 +3377,7 @@ pub(in crate::surface) fn requirement_proposition_prop_with_assumptions(
     arguments: &[CExpression],
     state: &CState,
     proposition: &ClickProposition,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     assumptions: &PureFactContext,
 ) -> Result<Proposition, ClickError> {
     requirement_proposition_and_facts_with_assumptions(
@@ -3397,8 +3385,7 @@ pub(in crate::surface) fn requirement_proposition_prop_with_assumptions(
         arguments,
         state,
         proposition,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         assumptions,
     )
     .map(|(proposition, _)| proposition)
@@ -3409,8 +3396,7 @@ fn requirement_proposition_and_facts_with_assumptions(
     arguments: &[CExpression],
     state: &CState,
     proposition: &ClickProposition,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     assumptions: &PureFactContext,
 ) -> Result<(Proposition, Vec<Proposition>), ClickError> {
     // The requirement is elaborated as the contract elaborates it and
@@ -3420,8 +3406,7 @@ fn requirement_proposition_and_facts_with_assumptions(
         parameters,
         state,
         proposition,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
     )
     .map_err(ClickError::new)?;
     let mut lowering_state = state.clone();

@@ -517,23 +517,21 @@ type FunctionContractSummary = (
 /// parameters alone. The classification above promises exactly that, so a
 /// refusal is reported as the declaration's error, in the kernel's words.
 pub(in crate::surface) fn register_kernel_pure_function_definitions(
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
 ) -> Result<(), ClickError> {
-    for definition in click_function_environment.definitions.values() {
+    for definition in spec_definitions.functions.definitions.values() {
         if !definition.type_parameters().is_empty()
-            || !click_function_environment.is_memory_independent(definition.name())
+            || !spec_definitions
+                .functions
+                .is_memory_independent(definition.name())
             || definition.return_type().c_type().is_none()
         {
             continue;
         }
-        if let Some(lowered) = lower_kernel_pure_function_definition(
-            definition,
-            predicate_environment,
-            click_function_environment,
-            struct_layouts,
-        ) {
+        if let Some(lowered) =
+            lower_kernel_pure_function_definition(definition, spec_definitions, struct_layouts)
+        {
             crate::kernel::register_pure_function_definition(lowered).map_err(|openness| {
                 ClickError::new(format!(
                     "pure function `{}` {openness}; a pure function body may read only its parameters",
@@ -557,11 +555,10 @@ pub(in crate::surface) fn register_kernel_pure_function_definitions(
 /// parameter that is not a C value, or a body this lowering refuses is simply
 /// not recorded, and framing then has nothing to say about that function.
 pub(in crate::surface) fn register_kernel_fold_read_definitions(
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
 ) {
-    for definition in click_function_environment.definitions.values() {
+    for definition in spec_definitions.functions.definitions.values() {
         if !definition.type_parameters().is_empty()
             || definition.return_type() != &ClickType::Integer
         {
@@ -587,8 +584,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
             implicit_contract_mutable_segments: &[],
             loop_resources: BTreeMap::new(),
             inherits_resource_derived_frame: false,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
             entry_state: &entry_state,
             result_type: CType::Int32,
             entry_values: BTreeMap::new(),
@@ -633,8 +629,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
 
 fn lower_kernel_pure_function_definition(
     definition: &ClickFunctionDefinition,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
 ) -> Option<crate::kernel::CPureFunctionDefinition> {
     let entry_state = CState::new().with_population_creation_tracking();
@@ -644,8 +639,7 @@ fn lower_kernel_pure_function_definition(
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         entry_state: &entry_state,
         result_type: CType::Int32,
         entry_values: BTreeMap::new(),
@@ -714,8 +708,7 @@ fn lower_kernel_pure_function_definition(
 
 pub(in crate::surface) fn lower_composite_resource_condition(
     definition: &ResourceDefinition,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
 ) -> Result<Option<SpecProposition>, ClickError> {
     let Some(condition) = definition
@@ -732,8 +725,7 @@ pub(in crate::surface) fn lower_composite_resource_condition(
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         entry_state: &entry_state,
         result_type: CType::Int32,
         entry_values: BTreeMap::new(),
@@ -763,13 +755,14 @@ pub(in crate::surface) fn lower_composite_resource_condition(
         branch_join_target: None,
         snapshots: None,
     };
-    let all_predicates = predicate_environment
+    let all_predicates = spec_definitions
+        .predicates
         .definitions
         .keys()
         .cloned()
         .collect::<Vec<_>>();
     let condition = unfold_click_predicates_in_proposition_with_active(
-        predicate_environment,
+        spec_definitions.predicates,
         &all_predicates,
         condition,
         &mut BTreeSet::new(),
@@ -783,14 +776,12 @@ pub(in crate::surface) fn lower_composite_resource_condition(
 
 pub(in crate::surface) fn lower_composite_resource_facts(
     definition: &ResourceDefinition,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
 ) -> Result<(Vec<SpecProposition>, Vec<usize>), ClickError> {
     lower_composite_resource_facts_with_bindings(
         definition,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         &[],
         &BTreeMap::new(),
         struct_layouts,
@@ -799,8 +790,7 @@ pub(in crate::surface) fn lower_composite_resource_facts(
 
 pub(in crate::surface) fn lower_composite_resource_facts_with_bindings(
     definition: &ResourceDefinition,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     bindings: &[(String, ClickType)],
     integer_binding_variables: &BTreeMap<String, crate::kernel::Variable>,
     struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
@@ -815,8 +805,7 @@ pub(in crate::surface) fn lower_composite_resource_facts_with_bindings(
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         entry_state: &entry_state,
         result_type: CType::Int32,
         entry_values: BTreeMap::new(),
@@ -846,7 +835,8 @@ pub(in crate::surface) fn lower_composite_resource_facts_with_bindings(
         branch_join_target: None,
         snapshots: None,
     };
-    let all_predicates = predicate_environment
+    let all_predicates = spec_definitions
+        .predicates
         .definitions
         .keys()
         .cloned()
@@ -865,7 +855,7 @@ pub(in crate::surface) fn lower_composite_resource_facts_with_bindings(
             lowerer.algebraic_variables.insert(
                 name.clone(),
                 SpecAlgebraicExpression {
-                    algebraic_type: algebraic_kernel_type(click_function_environment, application)
+                    algebraic_type: algebraic_kernel_type(spec_definitions.functions, application)
                         .map_err(ClickError::new)?,
                     node: SpecAlgebraicExpressionNode::Binding(name.clone()),
                 },
@@ -874,7 +864,7 @@ pub(in crate::surface) fn lower_composite_resource_facts_with_bindings(
     }
     for (source_index, fact) in body.facts().iter().enumerate() {
         let unfolded = unfold_click_predicates_in_proposition_with_active(
-            predicate_environment,
+            spec_definitions.predicates,
             &all_predicates,
             fact,
             &mut BTreeSet::new(),
@@ -908,8 +898,7 @@ pub(in crate::surface) fn annotated_function(
     parsed_function: &syntax::C0Function,
     entry_state: &CState,
     arguments: &[CExpression],
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
 ) -> Result<CFunction, ClickError> {
     annotated_function_with_assumptions(
@@ -917,8 +906,7 @@ pub(in crate::surface) fn annotated_function(
         parsed_function,
         entry_state,
         arguments,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         resource_environment,
         None,
     )
@@ -944,8 +932,7 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
     parsed_function: &syntax::C0Function,
     entry_state: &CState,
     arguments: &[CExpression],
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     frame_entry: Option<ResourceFrameEntry<'_>>,
 ) -> Result<CFunction, ClickError> {
@@ -956,8 +943,7 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
     let (resource_requires, resource_ensures) = function_resource_summary(
         function_block,
         parsed_function,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         resource_environment,
     )?;
     let resource_constructors = function_resource_constructors(function_block)?;
@@ -974,8 +960,7 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
     ) = function_contract_summary(
         function_block,
         parsed_function,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         resource_environment,
     )?;
     let resource_derived_mutable_frame = !function_block.is_tactic_procedure()
@@ -1000,8 +985,7 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
         implicit_contract_mutable_segments,
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: resource_derived_mutable_frame,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         // `old(...)` names the function entry. A frontier loop is annotated
         // from the proof's execution start, which a proof that unfolds a
         // resource before its first step has already moved past: the unfold
@@ -1179,8 +1163,7 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
         .with_resource_constructors(resource_constructors)
         .with_composite_resource_definitions(composite_resource_definitions(
             resource_environment,
-            predicate_environment,
-            click_function_environment,
+            spec_definitions,
         )?)
         .with_ordinary_abstract_families(ordinary_abstract_families(resource_environment))
         .with_predicate_unfoldings(predicate_unfoldings)
@@ -1268,8 +1251,7 @@ pub(in crate::surface) fn lower_branch_interface_fact(
     branch_join_target: &ProgramPointRef,
     snapshots: &RecordedSnapshots,
     arguments: &[CExpression],
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> Result<SpecProposition, ClickError> {
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
@@ -1277,8 +1259,7 @@ pub(in crate::surface) fn lower_branch_interface_fact(
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         entry_state,
         result_type: if parsed_function.return_struct_name().is_some() {
             CType::UInt8Pointer
@@ -1345,16 +1326,14 @@ fn fixed_state_elaboration<'a>(
     current_values: BTreeMap<String, CValue>,
     result: Option<&CValue>,
     snapshots: &'a RecordedSnapshots,
-    predicate_environment: &'a PredicateEnvironment,
-    click_function_environment: &'a ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'a>,
     _opaque_click_functions: BTreeSet<String>,
     parameter_pointer_element_widths: BTreeMap<String, u32>,
 ) -> (AnnotationLowerer<'a>, SpecElaborationContext) {
     let lowerer = AnnotationLowerer {
         capture_referenced_names: None,
         structural_clauses: &[],
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         entry_state,
         result_type: result.map(CValue::c_type).unwrap_or(CType::Int32),
         entry_values,
@@ -1417,8 +1396,7 @@ pub(in crate::surface) fn elaborate_fixed_state_proposition_with_algebraic_and_i
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     result: Option<&CValue>,
     snapshots: &RecordedSnapshots,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: BTreeSet<String>,
     pointer_element_widths: BTreeMap<String, u32>,
 ) -> Result<SpecProposition, String> {
@@ -1430,8 +1408,7 @@ pub(in crate::surface) fn elaborate_fixed_state_proposition_with_algebraic_and_i
         current_values,
         result,
         snapshots,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         opaque_click_functions,
         pointer_element_widths,
     );
@@ -1472,8 +1449,7 @@ pub(in crate::surface) fn elaborate_fixed_state_algebraic_expression(
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
     result: Option<&CValue>,
     snapshots: &RecordedSnapshots,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: BTreeSet<String>,
     pointer_element_widths: BTreeMap<String, u32>,
 ) -> Result<SpecAlgebraicExpression, String> {
@@ -1485,8 +1461,7 @@ pub(in crate::surface) fn elaborate_fixed_state_algebraic_expression(
         current_values,
         result,
         snapshots,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         opaque_click_functions,
         pointer_element_widths,
     );
@@ -1506,8 +1481,7 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression(
     current_values: BTreeMap<String, CValue>,
     result: Option<&CValue>,
     snapshots: &RecordedSnapshots,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: BTreeSet<String>,
 ) -> Result<crate::kernel::SpecIntegerExpression, String> {
     elaborate_fixed_state_integer_expression_with_integer_values(
@@ -1519,8 +1493,7 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression(
         &crate::persistent::PersistentMap::default(),
         result,
         snapshots,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         opaque_click_functions,
         BTreeMap::new(),
     )
@@ -1541,8 +1514,7 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression_with_integer_
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     result: Option<&CValue>,
     snapshots: &RecordedSnapshots,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: BTreeSet<String>,
     pointer_element_widths: BTreeMap<String, u32>,
 ) -> Result<crate::kernel::SpecIntegerExpression, String> {
@@ -1554,8 +1526,7 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression_with_integer_
         current_values,
         result,
         snapshots,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         opaque_click_functions,
         pointer_element_widths,
     );
@@ -1616,8 +1587,7 @@ pub(in crate::surface) fn elaborate_fixed_state_expression(
     current_values: BTreeMap<String, CValue>,
     result: Option<&CValue>,
     snapshots: &RecordedSnapshots,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: BTreeSet<String>,
     pointer_element_widths: BTreeMap<String, u32>,
 ) -> Result<SpecExpression, String> {
@@ -1630,8 +1600,7 @@ pub(in crate::surface) fn elaborate_fixed_state_expression(
         BTreeMap::new(),
         result,
         snapshots,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         opaque_click_functions,
         pointer_element_widths,
     )
@@ -1647,8 +1616,7 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_values
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
     result: Option<&CValue>,
     snapshots: &RecordedSnapshots,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: BTreeSet<String>,
     pointer_element_widths: BTreeMap<String, u32>,
 ) -> Result<SpecExpression, String> {
@@ -1660,8 +1628,7 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_values
         current_values,
         result,
         snapshots,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         opaque_click_functions,
         pointer_element_widths,
     );
@@ -1683,8 +1650,7 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
     parameters: &[syntax::C0Parameter],
     entry_state: &CState,
     proposition: &ClickProposition,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> Result<SpecProposition, String> {
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
@@ -1692,8 +1658,7 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         entry_state,
         result_type: CType::Int32,
         entry_values: BTreeMap::new(),
@@ -1749,8 +1714,7 @@ fn resolved_function_block(
 pub(in crate::surface) fn function_contract_summary(
     function_block: &FunctionBlock,
     parsed_function: &syntax::C0Function,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
     _resource_environment: &ResourceEnvironment,
 ) -> Result<FunctionContractSummary, ClickError> {
     let resolved_block = resolved_function_block(function_block)?;
@@ -1765,8 +1729,7 @@ pub(in crate::surface) fn function_contract_summary(
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
-        predicate_environment,
-        click_function_environment,
+        spec_definitions,
         entry_state: &entry_state,
         result_type: parsed_function.return_type().to_kernel_type(),
         entry_values: BTreeMap::new(),
@@ -1816,14 +1779,15 @@ pub(in crate::surface) fn function_contract_summary(
                 SpecExpression::CExpression(CExpression::Variable(name)),
             )
         }));
-    let all_predicates = predicate_environment
+    let all_predicates = spec_definitions
+        .predicates
         .definitions
         .keys()
         .cloned()
         .collect::<Vec<_>>();
     let unfold_contract_predicates = |proposition: &ClickProposition| {
         unfold_click_predicates_in_proposition_with_active(
-            predicate_environment,
+            spec_definitions.predicates,
             &all_predicates,
             proposition,
             &mut BTreeSet::new(),
@@ -1853,7 +1817,7 @@ pub(in crate::surface) fn function_contract_summary(
         let opaque_predicate = matches!(
             &proposition,
             ClickProposition::PredicateCall { name, .. }
-                if predicate_environment.get(name).is_some()
+                if spec_definitions.predicates.get(name).is_some()
         )
         .then(|| lowerer.click_proposition_to_spec_proposition(&proposition, &context))
         .transpose();
@@ -1901,7 +1865,7 @@ pub(in crate::surface) fn function_contract_summary(
         let opaque_predicate = matches!(
             proposition,
             ClickProposition::PredicateCall { name, .. }
-                if predicate_environment.get(name).is_some()
+                if spec_definitions.predicates.get(name).is_some()
         )
         .then(|| lowerer.click_proposition_to_spec_proposition(proposition, &ensures_context))
         .transpose();
@@ -2220,8 +2184,7 @@ struct AnnotationLowerer<'a> {
     /// loop in such a function inherits that footprint, so an empty one is an
     /// inherited empty footprint rather than the absence of one.
     inherits_resource_derived_frame: bool,
-    predicate_environment: &'a PredicateEnvironment,
-    click_function_environment: &'a ClickFunctionEnvironment,
+    spec_definitions: SpecDefinitions<'a>,
     entry_state: &'a CState,
     result_type: CType,
     entry_values: BTreeMap<String, CValue>,
@@ -3008,7 +2971,7 @@ impl AnnotationLowerer<'_> {
             .enumerate()
             .map(|(item_index, item)| {
                 let proposition = unfold_structural_invariant_proposition(
-                    self.predicate_environment,
+                    self.spec_definitions.predicates,
                     item.proposition(),
                     &unfolded_predicates,
                 )
@@ -3607,7 +3570,7 @@ impl AnnotationLowerer<'_> {
                         ],
                     });
                 }
-                if let Some(signature) = self.predicate_environment.contract_signature(name) {
+                if let Some(signature) = self.spec_definitions.predicates.contract_signature(name) {
                     let [function] = arguments.as_slice() else {
                         return Err(format!(
                             "contract `{name}` expects one function-pointer argument"
@@ -3629,7 +3592,8 @@ impl AnnotationLowerer<'_> {
                     });
                 }
                 let definition = self
-                    .predicate_environment
+                    .spec_definitions
+                    .predicates
                     .get(name)
                     .ok_or_else(|| format!("unknown predicate `{name}`"))?
                     .clone();
@@ -3723,7 +3687,8 @@ impl AnnotationLowerer<'_> {
                 }
                 Ok(SpecProposition::Predicate {
                     resource_state_dependent: self
-                        .predicate_environment
+                        .spec_definitions
+                        .predicates
                         .resource_state_dependent
                         .contains(name),
                     name: definition.name().to_string(),
@@ -3791,12 +3756,12 @@ impl AnnotationLowerer<'_> {
                 }
                 let has_algebraic = contract_expression_is_algebraic(
                     left,
-                    self.click_function_environment,
+                    self.spec_definitions.functions,
                     environment,
                     &mut Vec::new(),
                 ) || contract_expression_is_algebraic(
                     right,
-                    self.click_function_environment,
+                    self.spec_definitions.functions,
                     environment,
                     &mut Vec::new(),
                 );
@@ -4178,7 +4143,7 @@ impl AnnotationLowerer<'_> {
                     return None;
                 };
                 let Ok(algebraic_type) =
-                    algebraic_kernel_type(self.click_function_environment, &application)
+                    algebraic_kernel_type(self.spec_definitions.functions, &application)
                 else {
                     return None;
                 };
@@ -4243,7 +4208,8 @@ impl AnnotationLowerer<'_> {
                 Some(ClickType::Integer)
             }
             ContractExpression::Call { name, .. } => self
-                .click_function_environment
+                .spec_definitions
+                .functions
                 .get(name)
                 .map(|function| function.return_type().clone()),
             _ => None,
@@ -4429,7 +4395,8 @@ impl AnnotationLowerer<'_> {
             }
             ContractExpression::Call { name, arguments } if name != "to_integer" => {
                 let definition = self
-                    .click_function_environment
+                    .spec_definitions
+                    .functions
                     .get(name)
                     .ok_or_else(|| format!("unknown function `{name}`"))?
                     .clone();
@@ -4591,7 +4558,7 @@ impl AnnotationLowerer<'_> {
                             _ => false,
                         }
                     }
-                    is_integer(expression, environment, self.click_function_environment)
+                    is_integer(expression, environment, self.spec_definitions.functions)
                 };
                 let integer_index = integer_expression(start) || integer_expression(end);
                 let mut body_environment = environment.clone();
@@ -5367,7 +5334,7 @@ impl AnnotationLowerer<'_> {
             } => {
                 let value_is_algebraic = contract_expression_is_algebraic(
                     value,
-                    self.click_function_environment,
+                    self.spec_definitions.functions,
                     environment,
                     &mut Vec::new(),
                 );
@@ -5739,7 +5706,7 @@ impl AnnotationLowerer<'_> {
         if let Some(algebraic_type) = self.algebraic_types.get(&key) {
             return Ok(algebraic_type.clone());
         }
-        let algebraic_type = algebraic_kernel_type(self.click_function_environment, application)?;
+        let algebraic_type = algebraic_kernel_type(self.spec_definitions.functions, application)?;
         self.algebraic_types.insert(key, algebraic_type.clone());
         Ok(algebraic_type)
     }
@@ -5759,7 +5726,7 @@ impl AnnotationLowerer<'_> {
             return Ok(algebraic_type.clone());
         }
         let algebraic_type =
-            algebraic_kernel_type_from_parts(self.click_function_environment, name, arguments)?;
+            algebraic_kernel_type_from_parts(self.spec_definitions.functions, name, arguments)?;
         self.algebraic_types.insert(key, algebraic_type.clone());
         Ok(algebraic_type)
     }
@@ -5771,7 +5738,8 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Result<SpecAlgebraicExpression, String> {
         let definition = self
-            .click_function_environment
+            .spec_definitions
+            .functions
             .get(name)
             .ok_or_else(|| format!("unknown function `{name}`"))?
             .clone();
@@ -5810,7 +5778,8 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Result<Vec<crate::kernel::SpecPureFunctionArgument>, String> {
         let memory_independent = self
-            .click_function_environment
+            .spec_definitions
+            .functions
             .is_memory_independent(definition.name());
         definition
             .parameters()
@@ -6016,7 +5985,8 @@ impl AnnotationLowerer<'_> {
             }
             ContractExpression::Call { name, arguments } => {
                 let definition = self
-                    .click_function_environment
+                    .spec_definitions
+                    .functions
                     .get(name)
                     .ok_or_else(|| format!("unknown function `{name}`"))?
                     .clone();
@@ -6632,7 +6602,8 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
         let definition = self
-            .click_function_environment
+            .spec_definitions
+            .functions
             .get(name)
             .ok_or_else(|| format!("unknown function `{name}`"))?
             .clone();
@@ -7384,8 +7355,10 @@ mod integer_source_quantifier_tests {
                 &integer_values,
                 None,
                 &RecordedSnapshots::new(),
-                &PredicateEnvironment::new(&[]),
-                &ClickFunctionEnvironment::new(&[]),
+                SpecDefinitions::new(
+                    &PredicateEnvironment::new(&[]),
+                    &ClickFunctionEnvironment::new(&[]),
+                ),
                 BTreeSet::new(),
                 BTreeMap::new(),
             )

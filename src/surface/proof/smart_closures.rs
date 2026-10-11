@@ -3530,9 +3530,9 @@ impl<'a> Proof<'a> {
         // A goal stated as a predicate call binds through the predicate's
         // body; unfold it at the surface to name the binders.
         let predicate_environment = match self.context.as_ref() {
-            ProofContext::Pure(context) => context.predicate_environment,
-            ProofContext::FixedState(context) => context.predicate_environment,
-            ProofContext::Execution(context) => context.predicate_environment,
+            ProofContext::Pure(context) => context.spec_definitions.predicates,
+            ProofContext::FixedState(context) => context.spec_definitions.predicates,
+            ProofContext::Execution(context) => context.spec_definitions.predicates,
         };
         let all_predicates = predicate_environment
             .definitions
@@ -4210,14 +4210,14 @@ impl<'a> Proof<'a> {
                 }
             }
             let predicate_environment = match self.context.as_ref() {
-                ProofContext::Pure(context) => context.predicate_environment,
-                ProofContext::FixedState(context) => context.predicate_environment,
-                ProofContext::Execution(context) => context.predicate_environment,
+                ProofContext::Pure(context) => context.spec_definitions.predicates,
+                ProofContext::FixedState(context) => context.spec_definitions.predicates,
+                ProofContext::Execution(context) => context.spec_definitions.predicates,
             };
             let click_function_environment = match self.context.as_ref() {
-                ProofContext::Pure(context) => context.click_function_environment,
-                ProofContext::FixedState(context) => context.click_function_environment,
-                ProofContext::Execution(context) => context.click_function_environment,
+                ProofContext::Pure(context) => context.spec_definitions.functions,
+                ProofContext::FixedState(context) => context.spec_definitions.functions,
+                ProofContext::Execution(context) => context.spec_definitions.functions,
             };
             for name in self.focused_branch_unfolds().iter() {
                 for opaque in surface_facts.kernels_written_by_predicate(name) {
@@ -4238,8 +4238,7 @@ impl<'a> Proof<'a> {
                             continue;
                         };
                         let unfolds_to_selected = unfold_predicates_in_proposition(
-                            predicate_environment,
-                            click_function_environment,
+                            SpecDefinitions::new(predicate_environment, click_function_environment),
                             std::slice::from_ref(name),
                             opaque,
                             self.facts().assumptions(),
@@ -5609,9 +5608,9 @@ impl<'a> Proof<'a> {
                     .collect::<Vec<_>>(),
             };
             let predicate_environment = match self.context.as_ref() {
-                ProofContext::Pure(context) => context.predicate_environment,
-                ProofContext::FixedState(context) => context.predicate_environment,
-                ProofContext::Execution(context) => context.predicate_environment,
+                ProofContext::Pure(context) => context.spec_definitions.predicates,
+                ProofContext::FixedState(context) => context.spec_definitions.predicates,
+                ProofContext::Execution(context) => context.spec_definitions.predicates,
             };
             let mut surfaces = introduced_surface.into_iter().collect::<Vec<_>>();
             for recorded in recorded_surfaces {
@@ -5659,9 +5658,9 @@ impl<'a> Proof<'a> {
             // cannot express it (notably byte-indexed loads).
             if surfaces.is_empty() {
                 let click_function_environment = match self.context.as_ref() {
-                    ProofContext::Pure(context) => context.click_function_environment,
-                    ProofContext::FixedState(context) => context.click_function_environment,
-                    ProofContext::Execution(context) => context.click_function_environment,
+                    ProofContext::Pure(context) => context.spec_definitions.functions,
+                    ProofContext::FixedState(context) => context.spec_definitions.functions,
+                    ProofContext::Execution(context) => context.spec_definitions.functions,
                 };
                 for name in self.focused_branch_unfolds().iter() {
                     for opaque in self.facts().mentioning_predicate(name) {
@@ -5700,8 +5699,10 @@ impl<'a> Proof<'a> {
                                 continue;
                             };
                             if unfold_predicates_in_proposition(
-                                predicate_environment,
-                                click_function_environment,
+                                SpecDefinitions::new(
+                                    predicate_environment,
+                                    click_function_environment,
+                                ),
                                 std::slice::from_ref(name),
                                 opaque,
                                 self.facts().assumptions(),
@@ -7641,7 +7642,7 @@ impl<'a> Proof<'a> {
                             let mut unfolded = proof.active_unfolded_predicates();
                             unfolded.push(predicate_name.clone());
                             unfold_structural_invariant_proposition(
-                                context.predicate_environment,
+                                context.spec_definitions.predicates,
                                 &registry_surface.proposition,
                                 &unfolded,
                             )
@@ -7801,7 +7802,7 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         let unfolded = unfold_structural_invariant_proposition(
-            context.predicate_environment,
+            context.spec_definitions.predicates,
             &selection.source_proposition,
             &self.active_unfolded_predicates(),
         )
@@ -8485,7 +8486,8 @@ fn source_backed_call_requirement_surface(
     // closed without consulting ambient/project facts.
     let (source_parameter_names, source_proposition) = if use_named_interface {
         let definition = context
-            .predicate_environment
+            .spec_definitions
+            .predicates
             .contract_definition(source.interface.as_ref());
         let definition = definition?;
         let requirement = definition.function_block().requires().get(source_ordinal)?;
@@ -8828,8 +8830,7 @@ mod synthesized_literal_tests {
             &state,
             &snapshots,
             &surfaces,
-            &predicates,
-            &functions,
+            SpecDefinitions::new(&predicates, &functions),
             &theorems,
             &[],
             &[],
