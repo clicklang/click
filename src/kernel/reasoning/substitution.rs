@@ -7290,6 +7290,7 @@ fn substitute_pointer_variable_in_spec_algebraic_expression(
                         variant: arm.variant.clone(),
                         bindings: arm.bindings.clone(),
                         binding_types: arm.binding_types.clone(),
+                        binding_variables: arm.binding_variables.clone(),
                         body: Box::new(substitute_pointer_variable_in_spec_algebraic_expression(
                             &arm.body, from, to,
                         )),

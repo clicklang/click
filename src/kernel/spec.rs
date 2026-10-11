@@ -53,6 +53,7 @@ struct SpecAlgebraicPath {
 struct SpecEvaluation<'a> {
     budget: &'a mut ExecutionBudget,
     checked_reads: bool,
+    integer_bindings: BTreeMap<Variable, IntegerTerm>,
 }
 
 impl<'a> SpecEvaluation<'a> {
@@ -60,13 +61,98 @@ impl<'a> SpecEvaluation<'a> {
         Self {
             budget,
             checked_reads: false,
+            integer_bindings: BTreeMap::new(),
         }
     }
     fn checked(budget: &'a mut ExecutionBudget) -> Self {
         Self {
             budget,
             checked_reads: true,
+            integer_bindings: BTreeMap::new(),
         }
+    }
+    fn with_integer_bindings<T>(
+        &mut self,
+        variables: &[Option<Variable>],
+        fields: &[AlgebraicValue],
+        body: impl FnOnce(&mut Self) -> ExecutionResult<T>,
+    ) -> ExecutionResult<T> {
+        if variables.len() != fields.len()
+            || variables.iter().zip(fields).any(|(variable, field)| {
+                variable.is_some() && !matches!(field, AlgebraicValue::Integer(_))
+            })
+        {
+            return Err(ExecutionLimit::Paths);
+        }
+        let mut saved = Vec::new();
+        for (variable, field) in variables.iter().zip(fields) {
+            if let Some(variable) = variable {
+                let AlgebraicValue::Integer(field) = field else {
+                    return Err(ExecutionLimit::Paths);
+                };
+                crate::instrumentation::record_deterministic_work(1);
+                saved.push((
+                    *variable,
+                    self.integer_bindings.insert(*variable, field.clone()),
+                ));
+            }
+        }
+        let result = body(self);
+        for (variable, previous) in saved.into_iter().rev() {
+            match previous {
+                Some(previous) => {
+                    self.integer_bindings.insert(variable, previous);
+                }
+                None => {
+                    self.integer_bindings.remove(&variable);
+                }
+            }
+        }
+        result
+    }
+
+    fn bound_integer_term(&self, term: &IntegerTerm) -> ExecutionResult<IntegerTerm> {
+        if self.integer_bindings.is_empty() {
+            return Ok(term.clone());
+        }
+        match term {
+            IntegerTerm::Variable(variable) => {
+                crate::instrumentation::record_deterministic_work(1);
+                return Ok(self
+                    .integer_bindings
+                    .get(variable)
+                    .cloned()
+                    .unwrap_or_else(|| term.clone()));
+            }
+            IntegerTerm::Constant(_) => return Ok(term.clone()),
+            _ => {}
+        }
+        // Select replacements from this payload only. Never scan the ambient
+        // binder stack or rewrite entire descendant specification bodies.
+        let mut variables = BTreeSet::new();
+        crate::kernel::reasoning::variable_collection::collect_integer_variables(
+            term,
+            &mut variables,
+        );
+        let replacements = variables
+            .into_iter()
+            .filter_map(|variable| {
+                self.integer_bindings
+                    .get(&variable)
+                    .cloned()
+                    .map(|value| (variable, value))
+            })
+            .collect::<BTreeMap<_, _>>();
+        if replacements.is_empty() {
+            return Ok(term.clone());
+        }
+        rewrite_integer_match_typed_body(
+            term.clone(),
+            &BTreeMap::new(),
+            &replacements,
+            &BTreeMap::new(),
+        )
+        .ok_or(ExecutionLimit::Paths)
     }
 }
 
@@ -1803,11 +1889,12 @@ fn evaluate_spec_integer_expression_paths_in(
             }])
         }
         SpecIntegerExpression::Term(term) => {
-            if crate::instrumentation::numeric_operation_work_exceeded(integer_term_bits(term)) {
+            let term = budget.bound_integer_term(term)?;
+            if crate::instrumentation::numeric_operation_work_exceeded(integer_term_bits(&term)) {
                 return Err(ExecutionLimit::Deadline);
             }
             Ok(vec![SpecIntegerPath {
-                value: term.clone(),
+                value: term,
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
             }])
@@ -2012,13 +2099,26 @@ fn evaluate_spec_integer_expression_paths_in(
                         // vacuous.
                         let empty_body_assumptions =
                             body_assumptions.assume_proposition(body_guard.clone());
-                        let body_paths = evaluate_spec_integer_expression_paths_in(
-                            state,
-                            body,
-                            loop_entry_state,
-                            &empty_body_assumptions,
-                            algebraic_bindings,
-                            budget,
+                        let body_paths = budget.with_integer_bindings(
+                            &[
+                                Some(*accumulator),
+                                matches!(index, IntegerRangeFoldIndex::Integer { .. })
+                                    .then_some(*item),
+                            ],
+                            &[
+                                AlgebraicValue::Integer(IntegerTerm::var(*accumulator)),
+                                AlgebraicValue::Integer(IntegerTerm::var(*item)),
+                            ],
+                            |budget| {
+                                evaluate_spec_integer_expression_paths_in(
+                                    state,
+                                    body,
+                                    loop_entry_state,
+                                    &empty_body_assumptions,
+                                    algebraic_bindings,
+                                    budget,
+                                )
+                            },
                         )?;
                         let body_value = match body_paths.as_slice() {
                             [body_path]
@@ -2056,13 +2156,25 @@ fn evaluate_spec_integer_expression_paths_in(
                         continue;
                     }
                     let body_assumptions = body_assumptions.assume_proposition(body_guard);
-                    let body_paths = evaluate_spec_integer_expression_paths_in(
-                        state,
-                        body,
-                        loop_entry_state,
-                        &body_assumptions,
-                        algebraic_bindings,
-                        budget,
+                    let body_paths = budget.with_integer_bindings(
+                        &[
+                            Some(*accumulator),
+                            matches!(index, IntegerRangeFoldIndex::Integer { .. }).then_some(*item),
+                        ],
+                        &[
+                            AlgebraicValue::Integer(IntegerTerm::var(*accumulator)),
+                            AlgebraicValue::Integer(IntegerTerm::var(*item)),
+                        ],
+                        |budget| {
+                            evaluate_spec_integer_expression_paths_in(
+                                state,
+                                body,
+                                loop_entry_state,
+                                &body_assumptions,
+                                algebraic_bindings,
+                                budget,
+                            )
+                        },
                     )?;
                     // A fold body is one symbolic iteration under its two
                     // binders.  Case splits are not universally valid for
@@ -2835,14 +2947,17 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                 }
             }
             let body_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
-            let mut body_paths = evaluate_spec_integer_expression_paths_in(
-                &body_state,
-                &arm.body,
-                loop_entry_state,
-                &body_assumptions,
-                &body_algebraic_bindings,
-                budget,
-            )?;
+            let mut body_paths =
+                budget.with_integer_bindings(&arm.binding_variables, &bindings, |budget| {
+                    evaluate_spec_integer_expression_paths_in(
+                        &body_state,
+                        &arm.body,
+                        loop_entry_state,
+                        &body_assumptions,
+                        &body_algebraic_bindings,
+                        budget,
+                    )
+                })?;
             let Some(body_path) = body_paths.pop() else {
                 return Err(ExecutionLimit::Paths);
             };
@@ -3543,13 +3658,19 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                         }
                         let body_assumptions =
                             assumptions_with_path_context(assumptions, &facts, &obligations);
-                        let mut body_paths = evaluate_spec_algebraic_at_state_with_bindings_in(
-                            &body_state,
-                            &arm.body,
-                            loop_entry_state,
-                            &body_assumptions,
-                            &body_algebraic_bindings,
-                            budget,
+                        let mut body_paths = budget.with_integer_bindings(
+                            &arm.binding_variables,
+                            &bindings,
+                            |budget| {
+                                evaluate_spec_algebraic_at_state_with_bindings_in(
+                                    &body_state,
+                                    &arm.body,
+                                    loop_entry_state,
+                                    &body_assumptions,
+                                    &body_algebraic_bindings,
+                                    budget,
+                                )
+                            },
                         )?;
                         let Some(body_path) = body_paths.pop() else {
                             return Err(ExecutionLimit::Paths);
@@ -3626,13 +3747,19 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                     };
                     let body_assumptions =
                         assumptions_with_path_context(assumptions, &case_facts, &case_obligations);
-                    for body_path in evaluate_spec_algebraic_at_state_with_bindings_in(
-                        &body_state,
-                        &arm.body,
-                        loop_entry_state,
-                        &body_assumptions,
-                        &body_algebraic_bindings,
-                        budget,
+                    for body_path in budget.with_integer_bindings(
+                        &arm.binding_variables,
+                        &case.fields,
+                        |budget| {
+                            evaluate_spec_algebraic_at_state_with_bindings_in(
+                                &body_state,
+                                &arm.body,
+                                loop_entry_state,
+                                &body_assumptions,
+                                &body_algebraic_bindings,
+                                budget,
+                            )
+                        },
                     )? {
                         if let Some((facts, obligations)) =
                             merge_execution_pure_facts_and_obligations(
@@ -3939,8 +4066,7 @@ fn spec_algebraic_result_match_arms_are_well_formed(
                     .iter()
                     .find(|arm| arm.variant == variant.name)
                     .is_some_and(|arm| {
-                        arm.bindings.len() == variant.fields.len()
-                            && arm.binding_types == variant.fields
+                        arm.binding_types == variant.fields && arm.bindings_are_well_formed()
                     })
         })
 }
@@ -4507,6 +4633,234 @@ mod algebraic_term_tests {
         }
     }
 
+    #[test]
+    fn algebraic_integer_match_reconnects_symbolic_and_concrete_fields() {
+        let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
+            name: "Box".into(),
+            fields: vec![AlgebraicValueType::Integer],
+        }]
+        .into();
+        let ty = AlgebraicType {
+            rigid: false,
+            name: "Box".into(),
+            arguments: vec![],
+            variants: variants.clone(),
+            schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
+                AlgebraicValueType::Algebraic {
+                    name: "Box".into(),
+                    arguments: vec![],
+                },
+                variants,
+            )]))),
+        };
+        let payload = IntegerTerm::constant_i64(7);
+        let constructor = |field| SpecAlgebraicExpression {
+            algebraic_type: ty.clone(),
+            node: SpecAlgebraicExpressionNode::Constructor {
+                variant: "Box".into(),
+                fields: vec![SpecAlgebraicValue::Integer(SpecIntegerExpression::Term(
+                    field,
+                ))],
+            },
+        };
+        let arm = SpecAlgebraicResultMatchArm {
+            variant: "Box".into(),
+            bindings: vec!["n".into()],
+            binding_types: vec![AlgebraicValueType::Integer],
+            binding_variables: vec![Some(Variable(12345))],
+            body: Box::new(constructor(IntegerTerm::var(Variable(12345)))),
+        };
+        for scrutinee in [
+            SpecAlgebraicExpression {
+                algebraic_type: ty.clone(),
+                node: SpecAlgebraicExpressionNode::Variable(Variable(23456)),
+            },
+            constructor(payload.clone()),
+        ] {
+            let concrete = matches!(
+                scrutinee.node,
+                SpecAlgebraicExpressionNode::Constructor { .. }
+            );
+            let expression = SpecAlgebraicExpression {
+                algebraic_type: ty.clone(),
+                node: SpecAlgebraicExpressionNode::Match {
+                    scrutinee: Box::new(scrutinee),
+                    arms: vec![arm.clone()],
+                },
+            };
+            let paths = evaluate_spec_algebraic_at_state_in(
+                &CState::default(),
+                &expression,
+                None,
+                &PureFactContext::new(),
+                &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+            )
+            .unwrap();
+            assert_eq!(paths.len(), 1);
+            let (body, expected) = if concrete {
+                (&paths[0].value, AlgebraicValue::Integer(payload.clone()))
+            } else {
+                let AlgebraicTermNode::Match { arms, .. } = &paths[0].value.node else {
+                    panic!("symbolic match must remain a match");
+                };
+                (&arms[0].body, arms[0].bindings[0].clone())
+            };
+            let AlgebraicTermNode::Constructor { fields, .. } = &body.node else {
+                panic!("arm must return its constructor");
+            };
+            assert_eq!(fields, &vec![expected]);
+        }
+        // Missing IDs, mismatched carriers, and duplicate field names cannot
+        // authorize an ambiguous payload substitution.
+        assert!(spec_algebraic_result_match_arms_are_well_formed(
+            &ty,
+            std::slice::from_ref(&arm)
+        ));
+        for metadata in [
+            vec![],
+            vec![None],
+            vec![Some(Variable(1)), Some(Variable(1))],
+        ] {
+            let mut bad = arm.clone();
+            bad.binding_variables = metadata;
+            assert!(!spec_algebraic_result_match_arms_are_well_formed(
+                &ty,
+                &[bad]
+            ));
+        }
+        let mut pair_ty = ty.clone();
+        pair_ty.name = "Pair".into();
+        pair_ty.variants = vec![AlgebraicVariantType {
+            name: "Box".into(),
+            fields: vec![AlgebraicValueType::Integer; 2],
+        }]
+        .into();
+        pair_ty.schemas = std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
+            AlgebraicValueType::Algebraic {
+                name: "Pair".into(),
+                arguments: vec![],
+            },
+            pair_ty.variants.clone(),
+        )])));
+        let mut pair_arm = arm.clone();
+        pair_arm.bindings = vec!["a".into(), "b".into()];
+        pair_arm.binding_types = vec![AlgebraicValueType::Integer; 2];
+        pair_arm.binding_variables = vec![Some(Variable(1)), Some(Variable(2))];
+        assert!(spec_algebraic_result_match_arms_are_well_formed(
+            &pair_ty,
+            &[pair_arm.clone()]
+        ));
+        pair_arm.binding_variables = vec![Some(Variable(1)); 2];
+        assert!(!spec_algebraic_result_match_arms_are_well_formed(
+            &pair_ty,
+            &[pair_arm.clone()]
+        ));
+        pair_arm.binding_variables = vec![Some(Variable(1)), Some(Variable(2))];
+        pair_arm.bindings = vec!["a".into(), "a".into()];
+        assert!(!spec_algebraic_result_match_arms_are_well_formed(
+            &pair_ty,
+            &[pair_arm]
+        ));
+        let mut bad = arm;
+        bad.binding_types = vec![AlgebraicValueType::C(CType::Int32)];
+        assert!(!spec_algebraic_result_match_arms_are_well_formed(
+            &ty,
+            &[bad]
+        ));
+    }
+
+    #[test]
+    fn algebraic_integer_match_scales_with_nested_depth() {
+        let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
+            name: "Box".into(),
+            fields: vec![AlgebraicValueType::Integer],
+        }]
+        .into();
+        let ty = AlgebraicType {
+            rigid: false,
+            name: "Box".into(),
+            arguments: vec![],
+            variants: variants.clone(),
+            schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
+                AlgebraicValueType::Algebraic {
+                    name: "Box".into(),
+                    arguments: vec![],
+                },
+                variants,
+            )]))),
+        };
+        let mut previous = None;
+        for depth in [8, 16, 32, 64] {
+            let mut expression = SpecAlgebraicExpression {
+                algebraic_type: ty.clone(),
+                node: SpecAlgebraicExpressionNode::Constructor {
+                    variant: "Box".into(),
+                    fields: vec![SpecAlgebraicValue::Integer(SpecIntegerExpression::Term(
+                        IntegerTerm::var(Variable(100_000 + depth as u64 - 1)),
+                    ))],
+                },
+            };
+            for level in (0..depth).rev() {
+                expression = SpecAlgebraicExpression {
+                    algebraic_type: ty.clone(),
+                    node: SpecAlgebraicExpressionNode::Match {
+                        scrutinee: Box::new(SpecAlgebraicExpression {
+                            algebraic_type: ty.clone(),
+                            node: SpecAlgebraicExpressionNode::Variable(Variable(
+                                200_000 + level as u64,
+                            )),
+                        }),
+                        arms: vec![SpecAlgebraicResultMatchArm {
+                            variant: "Box".into(),
+                            bindings: vec![format!("n{level}")],
+                            binding_types: vec![AlgebraicValueType::Integer],
+                            binding_variables: vec![Some(Variable(100_000 + level as u64))],
+                            body: Box::new(expression),
+                        }],
+                    },
+                };
+            }
+            let mut execution = ExecutionBudget::new();
+            let mut budget = SpecEvaluation::logical(&mut execution);
+            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                evaluate_spec_algebraic_at_state_in(
+                    &CState::new(),
+                    &expression,
+                    None,
+                    &PureFactContext::new(),
+                    &mut budget,
+                )
+                .unwrap()
+            });
+            assert!(
+                budget.integer_bindings.is_empty(),
+                "arm scopes must be restored"
+            );
+            assert_eq!(paths.len(), 1);
+            let mut value = &paths[0].value;
+            let mut last_binding = None;
+            for _ in 0..depth {
+                let AlgebraicTermNode::Match { arms, .. } = &value.node else {
+                    panic!("expected nested match");
+                };
+                last_binding = Some(arms[0].bindings[0].clone());
+                value = &arms[0].body;
+            }
+            let AlgebraicTermNode::Constructor { fields, .. } = &value.node else {
+                panic!("expected payload constructor");
+            };
+            assert_eq!(fields, &vec![last_binding.unwrap()]);
+            assert!(work <= 256 * depth + 128, "depth {depth}: {work}");
+            if let Some(previous) = previous {
+                assert!(
+                    work <= previous * 5 / 2 + 64,
+                    "nested match work must remain linear: {previous} -> {work}"
+                );
+            }
+            previous = Some(work);
+        }
+    }
+
     fn value_or_match(scrutinee: SpecAlgebraicExpression) -> SpecExpression {
         SpecExpression::AlgebraicMatch {
             scrutinee: Box::new(scrutinee),
@@ -4760,12 +5114,14 @@ mod algebraic_term_tests {
                         variant: "None".into(),
                         bindings: vec![],
                         binding_types: vec![],
+                        binding_variables: vec![],
                         body: Box::new(body.clone()),
                     },
                     SpecAlgebraicResultMatchArm {
                         variant: "Some".into(),
                         bindings: vec!["unused".into()],
                         binding_types: vec![AlgebraicValueType::C(CType::Int32)],
+                        binding_variables: vec![None],
                         body: Box::new(body),
                     },
                 ],
@@ -4933,6 +5289,7 @@ mod algebraic_term_tests {
                         variant: "None".to_string(),
                         bindings: Vec::new(),
                         binding_types: Vec::new(),
+                        binding_variables: vec![],
                         body: Box::new(SpecAlgebraicExpression {
                             algebraic_type: algebraic_type.clone(),
                             node: SpecAlgebraicExpressionNode::Constructor {
@@ -4945,6 +5302,7 @@ mod algebraic_term_tests {
                         variant: "Some".to_string(),
                         bindings: vec!["value".to_string()],
                         binding_types: vec![AlgebraicValueType::C(CType::Int32)],
+                        binding_variables: vec![None],
                         body: Box::new(SpecAlgebraicExpression {
                             algebraic_type: algebraic_type.clone(),
                             node: SpecAlgebraicExpressionNode::Constructor {

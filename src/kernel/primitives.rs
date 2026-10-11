@@ -1722,7 +1722,31 @@ pub struct SpecAlgebraicResultMatchArm {
     pub variant: String,
     pub bindings: Vec<String>,
     pub binding_types: Vec<AlgebraicValueType>,
+    /// Kernel identities of Integer fields in the lowered arm body.
+    /// Other carriers are bound through their typed environments.
+    pub binding_variables: Vec<Option<Variable>>,
     pub body: Box<SpecAlgebraicExpression>,
+}
+
+impl SpecAlgebraicResultMatchArm {
+    pub(crate) fn bindings_are_well_formed(&self) -> bool {
+        let mut names = BTreeSet::new();
+        let mut variables = BTreeSet::new();
+        self.bindings.len() == self.binding_types.len()
+            && self.bindings.len() == self.binding_variables.len()
+            && self.bindings.iter().all(|name| names.insert(name))
+            && self
+                .binding_types
+                .iter()
+                .zip(&self.binding_variables)
+                .all(|(ty, variable)| {
+                    if ty == &AlgebraicValueType::Integer {
+                        variable.is_some_and(|variable| variables.insert(variable))
+                    } else {
+                        variable.is_none()
+                    }
+                })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

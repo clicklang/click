@@ -17197,3 +17197,28 @@ fn signed_bounded_subtraction_refuses_false_or_undefined_sums() {
     verify_c0_sources(&forged, &borrowed)
         .expect_err("a different generated child sum must be refused");
 }
+
+#[test]
+fn algebraic_integer_match_bindings_expand_and_recheck() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/algebraic_integer_match_bindings.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    verify_c0_sources(source, &[]).expect("Integer match fixture should verify");
+    for name in [
+        "preserves",
+        "concrete",
+        "nested_fields",
+        "shadows",
+        "captures",
+        "swaps",
+    ] {
+        let label = format!("{name}.ensures_0");
+        let expanded = expand_c0_claim_source_by_label(source, &[], &label)
+            .unwrap_or_else(|error| panic!("{label} should expand: {}", error.message()));
+        verify_c0_sources(&expanded, &[]).unwrap_or_else(|error| {
+            panic!("{label} expansion should recheck: {}", error.message())
+        });
+    }
+}
