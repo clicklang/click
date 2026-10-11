@@ -13,7 +13,10 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  ensures bytes[1] == old(bytes[1]);
  ensures bytes[2] == old(bytes[2]);
  ensures to_integer(self->b) == to_integer(((((393126u32 + (1u32 + old((uint32)bytes[0]))) + ((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1]))) + (((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1])) + old((uint32)bytes[2])))) % 65521u32);
+ ensures to_integer(self->a) == old(adler_spec_a(bytes, 3, 1));
+ ensures to_integer(self->b) == old(adler_spec_b(bytes, 3, 1, 0));
 } by {
+ apply(adler_serial_three_result_spec(bytes));
  have old(bytes_len) == 3u64 by { simp(); }
  # The empty chunk iterators execute no body. Prove the scalar reduction
  # from its checked transition before following lane recombination.
@@ -452,5 +455,21 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  have bytes[0] == old(bytes[0]) by { simp() using {} }
  have bytes[1] == old(bytes[1]) by { simp() using {} }
  have bytes[2] == old(bytes[2]) by { simp() using {} }
- simp() using { bytes[0] == old(bytes[0]); bytes[1] == old(bytes[1]); bytes[2] == old(bytes[2]); to_integer(self->a) == to_integer(at(reduced_a, __rust_mir_149)); at(reduced_a, __rust_mir_149) == ((((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1])) + old((uint32)bytes[2]))) % 65521u32; to_integer(self->b) == to_integer(at(reduced_b, __rust_mir_151)); at(reduced_b, __rust_mir_151) == ((((393126u32 + (1u32 + old((uint32)bytes[0]))) + ((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1]))) + (((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1])) + old((uint32)bytes[2])))) % 65521u32; }
+ have to_integer(self->a) == to_integer(((((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1])) + old((uint32)bytes[2]))) % 65521u32) by {
+  rewrite(to_integer(self->a) == to_integer(at(reduced_a, __rust_mir_149)));
+  rewrite(at(reduced_a, __rust_mir_149) == ((((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1])) + old((uint32)bytes[2]))) % 65521u32); normalize();
+ }
+ have to_integer(((((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1])) + old((uint32)bytes[2]))) % 65521u32) == old(adler_spec_a(bytes, 3, 1)) by { assumption(); }
+ have to_integer(self->a) == old(adler_spec_a(bytes, 3, 1)) by {
+  rewrite(to_integer(self->a) == to_integer(((((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1])) + old((uint32)bytes[2]))) % 65521u32)); assumption();
+ }
+ have to_integer(self->b) == to_integer(((((393126u32 + (1u32 + old((uint32)bytes[0]))) + ((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1]))) + (((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1])) + old((uint32)bytes[2])))) % 65521u32) by {
+  rewrite(to_integer(self->b) == to_integer(at(reduced_b, __rust_mir_151)));
+  rewrite(at(reduced_b, __rust_mir_151) == ((((393126u32 + (1u32 + old((uint32)bytes[0]))) + ((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1]))) + (((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1])) + old((uint32)bytes[2])))) % 65521u32); normalize();
+ }
+ have to_integer(((((393126u32 + (1u32 + old((uint32)bytes[0]))) + ((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1]))) + (((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1])) + old((uint32)bytes[2])))) % 65521u32) == old(adler_spec_b(bytes, 3, 1, 0)) by { assumption(); }
+ have to_integer(self->b) == old(adler_spec_b(bytes, 3, 1, 0)) by {
+  rewrite(to_integer(self->b) == to_integer(((((393126u32 + (1u32 + old((uint32)bytes[0]))) + ((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1]))) + (((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1])) + old((uint32)bytes[2])))) % 65521u32)); assumption();
+ }
+ simp() using { to_integer(self->a) == old(adler_spec_a(bytes, 3, 1)); to_integer(self->b) == old(adler_spec_b(bytes, 3, 1, 0)); bytes[0] == old(bytes[0]); bytes[1] == old(bytes[1]); bytes[2] == old(bytes[2]); to_integer(self->a) == to_integer(at(reduced_a, __rust_mir_149)); at(reduced_a, __rust_mir_149) == ((((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1])) + old((uint32)bytes[2]))) % 65521u32; to_integer(self->b) == to_integer(at(reduced_b, __rust_mir_151)); at(reduced_b, __rust_mir_151) == ((((393126u32 + (1u32 + old((uint32)bytes[0]))) + ((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1]))) + (((1u32 + old((uint32)bytes[0])) + old((uint32)bytes[1])) + old((uint32)bytes[2])))) % 65521u32; }
 }
