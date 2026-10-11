@@ -498,6 +498,25 @@ impl CellRun {
         )
     }
 
+    /// Whether constant shifts of this base have the canonical spelling of
+    /// their line. A zero shift preserves a noncanonical nested base, and
+    /// cancelling a trailing displacement can preserve a nested prefix too.
+    /// Arithmetic equality of two bases alone therefore cannot justify
+    /// treating their slots as the same logical names.
+    pub(crate) fn has_canonical_slot_base(&self) -> bool {
+        let (stem, constant) = offset_stem_and_constant(&self.base.offset);
+        match stem {
+            None => self.base.offset == PointerOffsetTerm::Constant(constant),
+            Some(stem) if constant == 0 => self.base.offset == *stem,
+            Some(stem) => matches!(
+                &self.base.offset,
+                PointerOffsetTerm::Add(left, right)
+                    if left.as_ref() == stem
+                        && right.as_ref() == &PointerOffsetTerm::Constant(constant)
+            ),
+        }
+    }
+
     /// The element whose slot is spelled exactly `pointer`, hole or not.
     pub(crate) fn slot_index(&self, pointer: &Pointer) -> Option<u32> {
         if pointer.block != self.base.block {

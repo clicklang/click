@@ -43,7 +43,8 @@ resolve lifetime, provenance, or language validity and is not the proposed work.
 
 These consolidate the accepted direction. The common typed/byte observation
 rule and the admission audit below are remaining implementation work, not
-newly delivered capabilities. No new Surface syntax is proposed here.
+newly delivered capabilities. No new Surface syntax is introduced here; the
+mapping from native contracts to object-validity obligations remains to be audited.
 
 ## The bounded target
 
@@ -503,6 +504,76 @@ invalid. A sound repair needs explicit object/extent/lifecycle evidence or a
 representation that separately protects padding and justifies the other input
 objects. The new designation work must establish that evidence; the audit does
 not authorize either shortcut.
+
+### Constructor-padding implementation sequence
+
+The `Restore` regression cannot be repaired just by passing more ownership
+facts to the raw-footprint query. Its input integer is separate from the two
+owned fields, but that partition says nothing about the four padding bytes.
+The current constructor binder checks the requested layout, alignment, live
+storage containment and field permissions. It does not authenticate the
+selected object's declaration, its parent/subobject relationship, or the
+input's typed designation. Contract certification repeats that binder; it does
+not supply an independent missing object-validity premise.
+
+Complete automatic aggregate declarations now retain their layout in the shared
+block declaration metadata. Ordinary aggregate declarations, raw destination
+allocations, by-value parameter copies and actual copy-result allocations issue
+that evidence. Synthetic symbolic result blocks and constructor proof-entry raw
+markers do not. The metadata participates in snapshot identity and joins;
+resource semantics version 66 invalidates older retained artifacts. This step
+preserves the existing scalar declaration behavior and grants no new access.
+The retained aggregate metadata is structural layout; it is not nominal C++
+class identity or a record of declared nested subobjects.
+
+The implementation sequence is:
+
+1. **Delivered prerequisite:** retain the declared layout of actual complete aggregate storage independently
+   of cells, values and initialization, just as automatic scalars retain their
+   declared type. Allocation/declaration and by-value object materialization
+   supply this metadata. Raw footprint markers, ownership, and selection of a
+   desired construction destination must not manufacture it. Stores and value
+   havoc preserve it; incompatible declarations cannot be combined at a join.
+2. Retain explicit declared subobject boundaries through lowering. The current
+   `CAggregateLayout` flattens nested records to scalar leaves; matching those
+   leaves or fitting inside a parent allocation is not evidence that a child
+   object of the requested type exists there. Constructor binding must select
+   the actual complete object or declared child, preserving its parent identity.
+3. Carry checked input designation through pointers and modular calls. A scalar
+   input cannot acquire a live integer object merely by pointing into padding.
+   This is the same domain boundary required by the sibling-pointer defect,
+   not a constructor-only exception to the memory-read rules.
+4. At symbolic body entry, represent the selected constructor object and valid
+   inputs with the same obligations checked at actual calls. Preserve the
+   unknown extent of a constructor's containing allocation: installing a block
+   whose size equals the selected child would wrongly assume complete-object
+   storage. Selection and initialization completion are separate transitions.
+5. Use those checked facts to decide the input read while retaining the full raw
+   footprint and unwritten padding. Re-run the original constructor and RAII
+   proofs and the hostile padding, sibling, alias and no-op cases before closing
+   the regression.
+
+Do not silently add full-extent separation as a stronger contract precondition
+or derive it from field ownership. It must follow from admitted object-domain
+rules with caller evidence. Exact result/frame claims remain the acceptance
+target. Complete declaration metadata alone is a prerequisite, not a fix for
+`Restore` or a claim that object validity is enforced.
+
+The recommended boundary keeps permission, object validity and initialization
+as separate shared facts. Native declarations, references and other admitted
+interfaces should supply exactly the validity facts their language semantics
+justify, with matching checks at actual calls. Explicit contract notation is
+needed where those native guarantees are insufficient, especially for raw
+storage. This is not a choice between requiring extra annotations everywhere
+and making byte ownership create a live typed object.
+
+The remaining audit must identify which current native contract forms justify
+which object-validity assumptions and how callers discharge them. Preserve
+ordinary sidecar syntax when its native meaning already supplies the necessary
+guarantee. If an interface genuinely needs a new validity precondition, report
+it and update the contract openly; do not describe a proof under a stronger
+precondition as the old theorem. Never infer initialization just from validity
+or permission.
 
 ## Stabilization work and exit criteria
 

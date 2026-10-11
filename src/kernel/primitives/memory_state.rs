@@ -1939,7 +1939,7 @@ impl CBlock {
         Self {
             size: Bitvector32Term::Constant(size),
             read_only: false,
-            declared_scalar_type: None,
+            declared_object: None,
         }
     }
 
@@ -1947,7 +1947,7 @@ impl CBlock {
         Self {
             size: Bitvector32Term::Constant(size),
             read_only: true,
-            declared_scalar_type: None,
+            declared_object: None,
         }
     }
 
@@ -1955,7 +1955,7 @@ impl CBlock {
         Self {
             size,
             read_only: false,
-            declared_scalar_type: None,
+            declared_object: None,
         }
     }
 
@@ -2540,7 +2540,7 @@ impl CMemory {
         crate::instrumentation::record_deterministic_work(1);
         self.blocks
             .get(&pointer.block)
-            .is_some_and(|block| block.declared_scalar_type.is_some())
+            .is_some_and(|block| matches!(block.declared_object, Some(CDeclaredObject::Scalar(_))))
     }
 
     /// Declares one complete automatic scalar, retaining its type while its
@@ -2553,8 +2553,24 @@ impl CMemory {
     ) -> Self {
         let base = intern_derivation_base(&mut self);
         let mut declaration = CBlock::new(size);
-        declaration.declared_scalar_type = Some(c_type);
+        declaration.declared_object = Some(CDeclaredObject::Scalar(c_type));
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
+        record_c_memory_derivation(&mut self, CMemoryDerivation::BlockDeclared { base, block });
+        self
+    }
+
+    /// Declares one complete automatic aggregate without creating field values,
+    /// initialized bytes or ownership. The layout survives value forgetting;
+    /// raw footprints and destination selection do not issue this declaration.
+    pub(in crate::kernel) fn with_declared_aggregate_block(
+        mut self,
+        block: PointerBlock,
+        layout: &CAggregateLayout,
+    ) -> Self {
+        let base = intern_derivation_base(&mut self);
+        let mut declaration = CBlock::new(layout.size_bytes());
+        declaration.declared_object = Some(CDeclaredObject::Aggregate(Arc::new(layout.clone())));
+        Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
         record_c_memory_derivation(&mut self, CMemoryDerivation::BlockDeclared { base, block });
         self
     }
@@ -2569,7 +2585,10 @@ impl CMemory {
             .get(block)
             .expect("freshly allocated scalar block")
             .clone();
-        assert!(declaration.declared_scalar_type.is_some());
+        assert!(matches!(
+            declaration.declared_object,
+            Some(CDeclaredObject::Scalar(_))
+        ));
         declaration.read_only = true;
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
         record_c_memory_derivation(
@@ -4266,8 +4285,25 @@ impl CMemory {
                 holes.insert(index);
             }
         }
+        if !probe.has_canonical_slot_base() {
+            // The range index spells canonical offsets. A noncanonical base
+            // can preserve exceptional spellings at zero or cancelling
+            // shifts, so check this selected span's exact concrete slots.
+            for index in first..count {
+                crate::instrumentation::record_deterministic_work(1);
+                if self
+                    .cells
+                    .concrete()
+                    .contains_key(&probe.slot_pointer(index))
+                {
+                    holes.insert(index);
+                }
+            }
+        }
         for run in self.cells.runs_in_slot_span_of(&selected) {
             if run.element_width() == element_width
+                && (run.base() == &base
+                    || (run.has_canonical_slot_base() && probe.has_canonical_slot_base()))
                 && let Some(delta) =
                     run.base()
                         .exact_element_delta_from_base(&base, element_width, None)
@@ -4282,6 +4318,9 @@ impl CMemory {
                     holes.insert_range(low, high);
                 }
             } else {
+                // Different spellings or strides require exact slot checks.
+                // Enumerate only the selected overlap, not the rest of the
+                // held run; this fallback costs the selected slots.
                 for index in run
                     .live_intervals_in_slot_span_of(&selected)
                     .flat_map(|(low, high)| low..high)

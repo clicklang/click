@@ -861,3 +861,132 @@ fn checked_entry_naming_ignores_run_holes_before_selected_start() {
     }
     assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
 }
+
+#[test]
+fn checked_entry_naming_preserves_distinct_nested_slot_spellings() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let input = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(7441)),
+    };
+    let output = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(7442)),
+    };
+    let canonical = input.offset_by_bytes(8);
+    let nested = Pointer {
+        block: input.block.clone(),
+        offset: PointerOffsetTerm::Add(
+            Box::new(input.offset_by_bytes(4).offset),
+            Box::new(PointerOffsetTerm::Constant(4)),
+        ),
+    };
+    let cancellation = Pointer {
+        block: input.block.clone(),
+        offset: PointerOffsetTerm::Add(
+            Box::new(PointerOffsetTerm::Add(
+                Box::new(input.offset_by_bytes(2).offset),
+                Box::new(PointerOffsetTerm::Constant(2)),
+            )),
+            Box::new(PointerOffsetTerm::Constant(-4)),
+        ),
+    };
+    for (old, selected) in [
+        (&nested, &canonical),
+        (&canonical, &nested),
+        (&cancellation, &input),
+    ] {
+        let memory = CMemory::new()
+            .with_named_cell_run(
+                old.clone(),
+                4,
+                CType::Int32,
+                0,
+                1_000_000,
+                crate::kernel::intern_c_memory(CMemory::new()),
+            )
+            .unwrap_or_else(|_| panic!("existing run"))
+            .with_uninitialized_object(output.clone(), 4);
+        assert!(memory.known_value(selected).is_none());
+        let old_first = memory.load(old);
+        let old_second = memory.load(&old.offset_by_bytes(4));
+        let next = memory.load(&selected.offset_by_bytes(4));
+        let facts = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                output.clone(),
+                0u32.into(),
+                1u32.into(),
+                4,
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                selected.clone(),
+                0u32.into(),
+                3u32.into(),
+                4,
+            ))),
+        });
+        let source = crate::kernel::intern_c_memory(memory.clone());
+        let (named, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            memory.with_proof_entry_cells_under(
+                selected.clone(),
+                4,
+                CType::Int32,
+                0,
+                3,
+                source,
+                &facts,
+            )
+        });
+        assert!(
+            named.known_value(selected).is_some(),
+            "the selected spelling needs its own name"
+        );
+        assert_eq!(named.load(old), old_first);
+        assert_eq!(named.load(&old.offset_by_bytes(4)), old_second);
+        if matches!(next, CExpressionOutcome::Value(_)) {
+            assert_eq!(named.load(&selected.offset_by_bytes(4)), next);
+        } else {
+            assert!(named.known_value(&selected.offset_by_bytes(4)).is_some());
+        }
+        assert!(!named.has_initialized_bytes_under(&output, 4, &facts));
+        assert!(cost < 100, "enumerated unrelated run slots: {cost}");
+    }
+    for (selected, index) in [(&nested, 0), (&cancellation, 1)] {
+        let point = selected.offset_by_bytes(index * 4);
+        let value = CValue::Int32(9u32.into());
+        let memory = CMemory::new()
+            .materialize_named_cell(point.clone(), value.clone())
+            .with_uninitialized_object(output.clone(), 4);
+        let facts = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                output.clone(),
+                0u32.into(),
+                1u32.into(),
+                4,
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                selected.clone(),
+                0u32.into(),
+                3u32.into(),
+                4,
+            ))),
+        });
+        let source = crate::kernel::intern_c_memory(memory.clone());
+        let named = memory.with_proof_entry_cells_under(
+            selected.clone(),
+            4,
+            CType::Int32,
+            0,
+            3,
+            source,
+            &facts,
+        );
+        assert_eq!(named.known_value(&point), Some(value));
+        assert_eq!(
+            named.cells.len(),
+            3,
+            "existing concrete slots must not be named again"
+        );
+        assert!(!named.has_initialized_bytes_under(&output, 4, &facts));
+    }
+}

@@ -16226,7 +16226,7 @@ fn set_contract_result(state: &mut CState, interface: &CFunctionContractInterfac
                     state
                         .memory
                         .clone()
-                        .with_block(pointer.block.clone(), layout.size_bytes())
+                        .with_declared_aggregate_block(pointer.block.clone(), layout)
                 },
             );
         }
@@ -16284,7 +16284,7 @@ fn complete_aggregate_return(
         state
             .memory
             .clone()
-            .with_block(destination.block.clone(), layout.size_bytes()),
+            .with_declared_aggregate_block(destination.block.clone(), layout),
     );
     state.set_memory(copy_aggregate_fields(
         state.memory.clone(),
@@ -17082,7 +17082,7 @@ pub(in crate::kernel) fn bind_c_function_arguments(
                 callee_state
                     .memory
                     .clone()
-                    .with_block(slot.block.clone(), layout.size_bytes()),
+                    .with_declared_aggregate_block(slot.block.clone(), layout),
             );
             callee_state.locals.set_aggregate_object_at(
                 parameter.name().to_string(),
@@ -17219,7 +17219,7 @@ fn bind_c_contract_arguments(
                 callee_state
                     .memory
                     .clone()
-                    .with_block(slot.block.clone(), layout.size_bytes()),
+                    .with_declared_aggregate_block(slot.block.clone(), layout),
             );
             callee_state.locals.set_aggregate_object_at(
                 parameter.name().to_string(),

@@ -31,14 +31,22 @@ A raw output footprint must remain unwritten, while other contract-justified
 initialized inputs remain readable. Permission must not initialize the output,
 and distinct symbolic pointer names must not imply separation.
 
-`with_proof_entry_cells` and `materialize_named_cell` now conservatively suppress
-naming when a range may alias a raw footprint. Their overlap queries do not
-receive the entry fact context. The execution overlap query accepts explicit
-byte-separation facts, but this example supplies separation through ownership
-composition. This is the identified boundary to investigate, not a claim that
-adding any one separation shortcut is a complete fix. Account for value-field
-footprints and padding; do not demand ownership of padding to recover a field
-input.
+Proof-entry naming now receives the checked entry fact context and the execution
+overlap query accepts explicit byte-separation facts. That repaired the separate
+returned-observer regression, but this example supplies separation only through
+ownership of value fields. Those fields do not cover padding.
+
+The constructor binder checks requested layout/alignment, raw storage containment
+and field authority. It does not authenticate a declared object/subobject domain
+or a scalar input designation. Contract certification uses the same binder, so
+it does not add that evidence. A field-separation shortcut would therefore lack
+justification at actual callers as well as at symbolic body entry.
+
+The [implementation sequence](../design/cpp-object-model.md#constructor-padding-implementation-sequence)
+starts with persistent declaration metadata, then retained subobject boundaries
+and checked pointer designation at calls. Installing a destination-sized block
+at symbolic entry would incorrectly assume the constructor targets a complete
+allocation; that entry must continue to support an object inside a larger parent.
 
 ## Acceptance
 

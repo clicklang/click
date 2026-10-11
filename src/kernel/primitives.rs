@@ -5183,13 +5183,18 @@ impl CHeapMemory {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(super) enum CDeclaredObject {
+    Scalar(CType),
+    Aggregate(Arc<CAggregateLayout>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CBlock {
     pub(super) size: Bitvector32Term,
     pub(super) read_only: bool,
-    /// A complete automatic scalar's declared type, independent of whether
-    /// its representation has been initialized. Untyped blocks and arrays
-    /// carry no scalar declaration.
-    pub(super) declared_scalar_type: Option<CType>,
+    /// A complete automatic object's declaration, independent of its values,
+    /// initialization and ownership. Untyped blocks and arrays carry none.
+    pub(super) declared_object: Option<CDeclaredObject>,
 }
 
 /// An interned, immutable memory snapshot for embedding inside terms.

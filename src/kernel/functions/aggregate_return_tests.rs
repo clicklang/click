@@ -51,6 +51,259 @@ fn allocate_destination(state: &CState, name: &str) -> CState {
     state.as_ref().clone()
 }
 
+fn assert_declared_aggregate(memory: &CMemory, pointer: &Pointer, expected: &CAggregateLayout) {
+    let block = memory.blocks.get(&pointer.block).expect("declared storage");
+    let Some(CDeclaredObject::Aggregate(layout)) = &block.declared_object else {
+        panic!("expected aggregate declaration: {block:?}");
+    };
+    assert_eq!(layout.as_ref(), expected);
+    assert_eq!(block.size.as_const(), Some(expected.size_bytes()));
+}
+
+#[test]
+fn aggregate_declaration_survives_value_changes_without_initializing_padding() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let layout = node_layout();
+    let initial = CState::new().with_population_creation_tracking();
+    let paths = execute_c_statement_paths(
+        &initial,
+        &c_declare_aggregate("node", layout.clone()),
+        &PureFactContext::new(),
+        &CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        &mut ExecutionBudget::default(),
+    )
+    .expect("complete aggregate declaration");
+    let [path] = paths.as_slice() else {
+        panic!("one declaration outcome");
+    };
+    let CStatementOutcome::Normal(declared) = &path.outcome else {
+        panic!("aggregate declaration failed: {:?}", path.outcome);
+    };
+    let at = declared.locals.slot("node").unwrap().clone();
+    assert_declared_aggregate(&declared.memory, &at, &layout);
+    assert_eq!(declared.resources, initial.resources);
+    assert!(declared.memory.known_value(&at).is_none());
+    assert!(!declared.memory.has_initialized_bytes_at(&at, 16));
+    assert!(!declared.memory.requires_explicit_scalar_ownership(&at));
+
+    let written = declared
+        .memory
+        .clone()
+        .store(
+            at.clone(),
+            CValue::typed_pointer(at.clone(), CType::Int32Pointer),
+        )
+        .store(at.offset_by_bytes(8), CValue::Int32(37u32.into()));
+    let range = CMemoryRange::new_with_element_width(at.clone(), 0u32.into(), 12u32.into(), 1);
+    let call_havoc = written.clone().with_call_memory_havoc(
+        Variable(874_001),
+        std::slice::from_ref(&range),
+        &PureFactContext::new(),
+        None,
+    );
+    assert!(call_havoc.matches_call_memory_havoc_result(
+        &written,
+        std::slice::from_ref(&range),
+        &PureFactContext::new(),
+        None,
+    ));
+    let loop_havoc = written.clone().with_loop_memory_havoc_preserving_loans(
+        Variable(874_002),
+        &BTreeSet::new(),
+        Some(std::slice::from_ref(&range)),
+        None,
+    );
+    let joined = call_havoc
+        .clone()
+        .with_interface_memory_havoc(
+            Variable(874_003),
+            &BTreeSet::new(),
+            &[&call_havoc, &loop_havoc],
+        )
+        .expect("same declared object across branches");
+    for memory in [&written, &call_havoc, &loop_havoc, &joined] {
+        assert_declared_aggregate(memory, &at, &layout);
+        assert!(memory.has_initialized_bytes_under(&at, 8, &PureFactContext::new()));
+        assert!(memory.has_initialized_bytes_under(
+            &at.offset_by_bytes(8),
+            4,
+            &PureFactContext::new(),
+        ));
+        assert!(!memory.has_initialized_bytes_under(
+            &at.offset_by_bytes(12),
+            4,
+            &PureFactContext::new(),
+        ));
+    }
+    assert!(joined.known_value(&at).is_none());
+
+    let incompatible = CAggregateLayout::new(
+        16,
+        8,
+        vec![
+            CAggregateField::new("self", 0, CType::Int32Pointer),
+            CAggregateField::new("value", 8, CType::UInt32),
+        ],
+    );
+    let other = declared
+        .memory
+        .clone()
+        .with_declared_aggregate_block(at.block.clone(), &incompatible);
+    assert_ne!(
+        declared.memory, other,
+        "same size does not erase the declaration"
+    );
+    assert!(
+        declared
+            .memory
+            .clone()
+            .with_interface_memory_havoc(
+                Variable(874_004),
+                &BTreeSet::new(),
+                &[&declared.memory, &other],
+            )
+            .is_err()
+    );
+    let raw = CMemory::new().with_uninitialized_block(at.block.clone(), 16);
+    assert!(
+        declared
+            .memory
+            .clone()
+            .with_interface_memory_havoc(
+                Variable(874_005),
+                &BTreeSet::new(),
+                &[&declared.memory, &raw],
+            )
+            .is_err()
+    );
+    let selected = CState::new()
+        .with_memory(raw.with_uninitialized_object(at.clone(), 16))
+        .with_aggregate_return_destination(at.clone(), layout);
+    assert!(
+        selected
+            .memory
+            .blocks
+            .get(&at.block)
+            .unwrap()
+            .declared_object
+            .is_none()
+    );
+}
+
+#[test]
+fn aggregate_copy_allocations_retain_their_complete_declarations() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let layout = node_layout();
+    let caller = allocate_destination(&CState::new().with_population_creation_tracking(), "node");
+    let at = caller.locals.slot("node").unwrap().clone();
+    assert_declared_aggregate(&caller.memory, &at, &layout);
+    let memory = caller
+        .memory
+        .clone()
+        .store(
+            at.clone(),
+            CValue::typed_pointer(at.clone(), CType::Int32Pointer),
+        )
+        .store(at.offset_by_bytes(8), CValue::Int32(37u32.into()));
+    let caller = caller.with_memory(memory);
+    let function = c_function(
+        CType::Void,
+        "consume_copy",
+        vec![c_parameter_with_aggregate_layout(
+            "copy",
+            CType::VoidPointer,
+            layout.clone(),
+        )],
+        c_return(c_void_value()),
+    );
+    let value = CValue::typed_pointer(at.clone(), CType::VoidPointer);
+    let body_entry = bind_c_function_arguments(&caller, &function, std::slice::from_ref(&value))
+        .expect("checked body argument allocation");
+    let summary_entry = bind_c_contract_arguments(
+        &caller,
+        function.contract_interface(),
+        std::slice::from_ref(&value),
+        None,
+    )
+    .expect("checked summary argument allocation");
+    for entry in [&body_entry, &summary_entry] {
+        let copy = entry.locals.aggregate_object_pointer("copy").unwrap();
+        assert_declared_aggregate(&entry.memory, copy, &layout);
+        assert!(
+            !entry
+                .memory
+                .has_initialized_bytes_at(&copy.offset_by_bytes(12), 4)
+        );
+    }
+    let mut result_state = caller.clone();
+    let result = complete_aggregate_return(&mut result_state, &copy_function(), value)
+        .expect("checked return allocation");
+    assert_declared_aggregate(&result_state.memory, &pointer(&result), &layout);
+    assert!(
+        !result_state
+            .memory
+            .has_initialized_bytes_at(&pointer(&result).offset_by_bytes(12), 4)
+    );
+    let summary_result =
+        symbolic_contract_result(copy_function().contract_interface(), Variable(874_006));
+    set_function_result(&mut result_state, &copy_function(), summary_result.clone());
+    assert_declared_aggregate(&result_state.memory, &pointer(&summary_result), &layout);
+
+    let synthetic = CValue::typed_pointer(Pointer::symbolic(Variable(874_007)), CType::VoidPointer);
+    set_function_result(&mut result_state, &copy_function(), synthetic.clone());
+    assert!(
+        result_state
+            .memory
+            .blocks
+            .get(&pointer(&synthetic).block)
+            .unwrap()
+            .declared_object
+            .is_none()
+    );
+}
+
+#[test]
+fn aggregate_declarations_do_not_expand_unrelated_snapshot_hashing() {
+    let mut costs = Vec::new();
+    for count in [16, 64, 256, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let at = CMemory::frame_local_pointer(23, "selected");
+        let mut memory =
+            CMemory::new().with_declared_aggregate_block(at.block.clone(), &node_layout());
+        let unrelated_layout = CAggregateLayout::new(
+            256,
+            4,
+            (0..64)
+                .map(|index| CAggregateField::new(format!("field{index}"), index * 4, CType::Int32))
+                .collect(),
+        );
+        for index in 0..count {
+            memory = memory.with_declared_aggregate_block(
+                CMemory::frame_local_pointer(23, &format!("unrelated{index}")).block,
+                &unrelated_layout,
+            );
+        }
+        let (after, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            let written = memory
+                .clone()
+                .store(at.offset_by_bytes(8), CValue::Int32(37u32.into()));
+            crate::kernel::intern_c_memory(written.clone());
+            written
+        });
+        assert!(
+            Arc::ptr_eq(&memory.blocks, &after.blocks),
+            "a store does not rehash declarations"
+        );
+        assert_declared_aggregate(&after, &at, &node_layout());
+        costs.push(cost);
+    }
+    assert!(
+        costs.iter().all(|cost| *cost <= costs[0].max(1) * 2),
+        "{costs:?}"
+    );
+}
+
 // Unlike legacy constructor declarations, allocation grants write authority
 // without manufacturing readable placeholders. The second allocation must
 // not reuse the first object's identity when the source name is repeated.

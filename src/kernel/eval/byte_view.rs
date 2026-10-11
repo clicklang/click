@@ -49,7 +49,7 @@ pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
     }
     crate::instrumentation::record_deterministic_work(1);
     let declaration = memory.blocks.get(&pointer.block)?;
-    if declaration.declared_scalar_type != Some(CType::UInt32)
+    if declaration.declared_object != Some(CDeclaredObject::Scalar(CType::UInt32))
         || declaration.size.as_const() != Some(4)
         || memory.is_ended_local_address(pointer)
     {

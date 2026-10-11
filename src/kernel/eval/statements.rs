@@ -4711,7 +4711,7 @@ pub(in crate::kernel) fn declare_aggregate_local(
         state
             .memory
             .clone()
-            .with_block(pointer.block.clone(), layout.size_bytes()),
+            .with_declared_aggregate_block(pointer.block.clone(), layout),
     );
     state
         .locals

@@ -27,6 +27,19 @@ remains a baseline blocker; field ownership does not establish separation from
 a raw destination's padding. The design does not count those failing RAII proofs
 as delivered validation.
 
+The [constructor-padding implementation sequence](../design/cpp-object-model.md#constructor-padding-implementation-sequence)
+requires declared storage layouts, preserved subobject boundaries and checked
+input designation at calls. Field ownership alone cannot repair this failure;
+adding a full-storage separation precondition would change the original contract.
+Complete automatic aggregate declarations now retain their layouts independently
+of values and initialization, including by-value copies and allocated return
+objects. This is the first prerequisite only: nested-object boundaries and
+input designation are not yet checked, and the original RAII blocker remains.
+Keep object-validity facts separate from permissions and initialization. Audit
+which native interfaces supply those facts and check them at calls; explicit
+raw-storage requirements are needed only where native guarantees are insufficient.
+No new precondition has been silently added to the existing constructor contracts.
+
 The subsequent audit also reproduced a shared C/C++ soundness defect:
 [one-past member pointers can read sibling fields](../bugs/pointer-arithmetic-crosses-scalar-subobject.md).
 Checked pointer designation is now mandatory stabilization work, not merely an
