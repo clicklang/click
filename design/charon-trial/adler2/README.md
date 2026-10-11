@@ -194,6 +194,25 @@ site or prove the complete four-byte checksum by themselves. The four-byte
 caller proof below supplies those premises; general initial states and
 preservation over larger nonempty vector batches remain open.
 
+## Native vector-prefix transitions
+
+[vector-prefix.click](vector-prefix.click) connects the joint optimized lane
+transition to both common prefix residues for arbitrary byte values and
+canonical A seeds. Its native bridge checks each `uint32` addition guard and
+uses the constructor's exact byte observations. The scalar B representative
+accounts for the deferred chunk contribution, retaining the original weighted
+lane recombination and modulus offset.
+
+The iterator adapter derives the prefix from `total - remaining` for a batch
+through 22208 bytes and advances it by consuming four bytes. It also proves
+that the remaining length stays within bounds. No processed-count local is
+introduced. Verification, profiling, focused audit, expansion and cold
+re-verification check these transitions; mutations reject wrong bytes, missing
+addition guards or residue premises, changed seeds and incorrect cursor steps.
+These are checked transition lemmas. Establishing and carrying their premises
+through the original nested loops, reductions, recombination and final tail
+remains necessary for general-length checksum correctness.
+
 ## Index derived from iterator state
 
 The [iterator bounds library](iterator-bounds.click) observes the existing
