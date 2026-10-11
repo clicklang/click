@@ -1276,8 +1276,12 @@ rotation-link, parent/color, and cursor mutation checks pass.
 directions after propagation. It admits nonempty focus, near, and far subtrees,
 including arbitrary children of the red far node. The two rotations retain the
 exact balanced root, consistent parent links, unchanged in-order contents, and
-strict context decrease on continuing iterations. Red-sibling cases 1/3/4 after
-propagation remain. Depends on 11.
+strict context decrease on continuing iterations.
+`rbtree_erase_color_flips_red_inner_right.click` extends this to cases 1/3/4
+after propagation when the deficit is the right child, including nonempty
+focus and rotation subtrees. Its 34 proofs retain exact result, red-black,
+parent-consistency, and in-order guarantees. The mirrored left-deficit
+propagated 1/3/4 case remains. Depends on 11.
 
 **Chunk 13. `____rb_erase_color`, right-sibling cases, and `rb_erase`.** The
 color-flip propagation proof already covers both orientations, including
