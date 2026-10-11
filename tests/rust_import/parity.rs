@@ -279,7 +279,11 @@ fn charon_legacy_parity_live_refresh_and_unchanged_contracts() {
         .unwrap();
         config["schema"] = serde_json::json!(3);
         config["backend"] = serde_json::json!("charon-trial");
-        config["exporter"] = serde_json::json!(root.join("target/charon/debug/charon"));
+        config["exporter"] = serde_json::json!(
+            std::env::var_os("CLICK_CHARON")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| root.join("target/charon/debug/charon"))
+        );
         config["artifact"] = serde_json::json!("parity.ullbc");
         fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
         let (outcome, diagnostic) = match refresh_import(&p.config()) {
