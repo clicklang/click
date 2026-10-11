@@ -8,6 +8,52 @@ pub(crate) mod compiler_process;
 pub mod cpp;
 pub mod rust;
 
+/// The language a program's sources are written in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SourceLanguage {
+    C,
+    Cpp,
+    Rust,
+}
+
+impl SourceLanguage {
+    /// The language of the source a `verifying` clause names, by its
+    /// extension.
+    pub fn of_source_path(path: &str) -> Self {
+        if path.ends_with(".rs") {
+            Self::Rust
+        } else if path.ends_with(".cpp") {
+            Self::Cpp
+        } else {
+            Self::C
+        }
+    }
+
+    /// The language of a file's `verifying` sources: Rust when any is a Rust
+    /// source, since that decides which signature syntax the sidecar admits.
+    pub fn of_sources<'p>(paths: impl IntoIterator<Item = &'p str>) -> Self {
+        paths
+            .into_iter()
+            .map(Self::of_source_path)
+            .max_by_key(|language| *language == Self::Rust)
+            .unwrap_or(Self::C)
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::C => "C",
+            Self::Cpp => "C++",
+            Self::Rust => "Rust",
+        }
+    }
+}
+
+impl std::fmt::Display for SourceLanguage {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum PreparedCompilerImport {
     C(Vec<c::compiler_import::PreparedCImport>),
@@ -85,10 +131,10 @@ impl PreparedProgram {
             Self::Rust(p) => p.identity(),
         }
     }
-    pub fn language(&self) -> &'static str {
+    pub fn language(&self) -> SourceLanguage {
         match self {
-            Self::Cpp(_) => "C++",
-            Self::Rust(_) => "Rust",
+            Self::Cpp(_) => SourceLanguage::Cpp,
+            Self::Rust(_) => SourceLanguage::Rust,
         }
     }
 }
