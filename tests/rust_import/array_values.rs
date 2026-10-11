@@ -113,10 +113,10 @@ fn charon_array_copy_preserves_symbolic_source_across_by_value_call() {
             "ensures result == value + 1u32;",
         ),
         (
-            "ensures target->_0[0] == old(other._0[0]);",
-            "ensures target->_0[0] == old(other._0[1]);",
+            "ensures target.0[0] == old(other.0[0]);",
+            "ensures target.0[0] == old(other.0[1]);",
         ),
-        ("owns words->_0[0..4];", "owns words->_0[1..4];"),
+        ("owns words.0[0..4];", "owns words.0[1..4];"),
     ] {
         let invalid = COPY_SOURCE_AFTER_CALL.replace(before, after);
         assert_ne!(invalid, COPY_SOURCE_AFTER_CALL);

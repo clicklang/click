@@ -38,7 +38,9 @@ fn charon_slice_into_iter_imports_unchanged_sum_and_tracks_the_remaining_proof_g
     let p = project("sum");
     let prepared = load_import(&p.config()).unwrap();
     let error = C0VerificationSession::new_program_prepared(
-        &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
+        &super::parity::frozen_proof_input(
+            &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
+        ),
         &prepared,
     )
     .err()
