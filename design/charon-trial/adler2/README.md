@@ -532,9 +532,23 @@ reductions, weighted recombination, both four-lane scalar sums, the zero-to-thre
 byte scalar tail, and final 16-bit stores. Both output fields remain below
 65,521. No generated processed count supplies the induction or ranking.
 
+The original vector loop also carries a functional A invariant:
+`(a + A0 + A1 + A2 + A3) % MOD` equals the shared A specification at
+`prefix_length - remaining`. The proof initializes this relation for the empty
+prefix from any canonical A seed, identifies each constructor lane with its
+original input byte, and combines the checked native additions with the
+four-byte specification recurrence. At loop exit it establishes the relation
+for the whole four-byte prefix. Loop closure explicitly checks the signed
+prefix subtraction's safety and every invariant and ranking obligation.
+This covers A through the vector loop; B, reduction/recombination transport,
+the scalar tail, and the final checksum postconditions remain pending.
+Nightly mutations reject a duplicated lane byte in the A transition and a
+changed seed in the completed-prefix relation.
+
 The fixture is assembled with the existing helper bodies, recombination
-lemmas, iterator bounds, [partition lemmas](partition.click), and
-[scalar-tail bounds](tail-bounds.click) by the Rust import tests. The partition
+lemmas, iterator bounds, the common specification and lane-state lemmas,
+[partition lemmas](partition.click), and [scalar-tail bounds](tail-bounds.click)
+by the Rust import tests. The partition
 lemmas relate full-width lengths, signed indices, rounded four-byte prefixes,
 and the original nested subtraction for the remainder. Tail lemmas justify
 both nonwrapping scalar updates and the actual iterator's progress.

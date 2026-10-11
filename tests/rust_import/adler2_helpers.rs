@@ -66,8 +66,15 @@ fn compute_proof(contract: &str) -> String {
     let common_spec = if contract.contains("adler_spec_one(")
         || contract.contains("adler_four_byte_result_spec(")
         || contract.contains("adler_serial_")
+        || contract.contains("adler_spec_a(")
+        || contract.contains("adler_spec_b(")
     {
         COMMON_ADLER_SPEC
+    } else {
+        ""
+    };
+    let lane_state = if contract.contains("adler_lane_a(") || contract.contains("adler_lane_b(") {
+        LANE_STATE
     } else {
         ""
     };
@@ -82,7 +89,7 @@ fn compute_proof(contract: &str) -> String {
         ""
     };
     format!(
-        "{}\n{common_spec}\n{four_byte_spec}\n{serial_tail_spec}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{count_bridge}\n{bounded_count}\n{contract}\n{getters}",
+        "{}\n{common_spec}\n{four_byte_spec}\n{serial_tail_spec}\n{lane_state}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{count_bridge}\n{bounded_count}\n{contract}\n{getters}",
         helper_library()
     )
 }
@@ -1441,6 +1448,36 @@ fn charon_adler2_small_batch_compute_rejects_wrong_constructor_input_positions()
         SMALL_BATCH_COMPUTE,
         "to_integer(at(vector_a, __rust_mir_68._0[3])) == to_integer((int32)bytes[(((int32)(uint32)(bytes_len - bytes_len % 4u64) - (int32)(uint32)__rust_mir_62_remaining) - 4) + 3]) by",
         "to_integer(at(vector_a, __rust_mir_68._0[3])) == to_integer((int32)bytes[(((int32)(uint32)(bytes_len - bytes_len % 4u64) - (int32)(uint32)__rust_mir_62_remaining) - 4) + 2]) by",
+    );
+}
+
+#[test]
+#[ignore = "nightly: original vector-prefix A recurrence and seed rejections"]
+fn charon_adler2_small_batch_compute_rejects_false_vector_prefix_a() {
+    let total = "(int32)(uint32)(bytes_len - bytes_len % 4u64)";
+    let remaining = "(int32)(uint32)__rust_mir_62_remaining";
+    let previous = format!("(({total} - {remaining}) - 4)");
+    let representative = "adler_lane_a(to_integer(a), to_integer(a_vec._0[0]), to_integer(a_vec._0[1]), to_integer(a_vec._0[2]), to_integer(a_vec._0[3]))";
+    let old_representative = "adler_lane_a(to_integer(a), to_integer(at(vector_a, a_vec._0[0])), to_integer(at(vector_a, a_vec._0[1])), to_integer(at(vector_a, a_vec._0[2])), to_integer(at(vector_a, a_vec._0[3])))";
+    let bytes = format!(
+        "to_integer((int32)bytes[{previous}]) + to_integer((int32)bytes[{previous} + 1]) + to_integer((int32)bytes[{previous} + 2]) + to_integer((int32)bytes[{previous} + 3])"
+    );
+    reject_compute(
+        SMALL_BATCH_COMPUTE,
+        &format!("have {representative} == {old_representative} + ({bytes}) by"),
+        &format!(
+            "have {representative} == {old_representative} + ({}) by",
+            bytes.replace(&format!("{previous} + 3"), &format!("{previous} + 2"))
+        ),
+    );
+    reject_compute(
+        SMALL_BATCH_COMPUTE,
+        &format!(
+            "have truncating_remainder({representative}, 65521) == adler_spec_a(bytes, {total}, to_integer(a)) by"
+        ),
+        &format!(
+            "have truncating_remainder({representative}, 65521) == adler_spec_a(bytes, {total}, to_integer(a) + 1) by"
+        ),
     );
 }
 
