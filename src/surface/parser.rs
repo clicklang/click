@@ -823,6 +823,60 @@ struct ParsedFunctionSignature {
     return_struct_name: Option<String>,
 }
 
+/// Give a concrete replacement for scalar and slice signatures. Record and
+/// method contracts need an `impl` and the imported type identity instead.
+fn rust_signature_hint(parsed: &ParsedFunctionSignature) -> Option<String> {
+    let signature = &parsed.signature;
+    if !parsed.struct_params.is_empty() || parsed.return_struct_name.is_some() {
+        return None;
+    }
+    let scalar_name = |c_type| {
+        [
+            "bool", "i8", "i16", "i32", "isize", "i128", "u8", "u16", "u32", "usize", "u128",
+            "f32", "f64",
+        ]
+        .into_iter()
+        .find(|name| rust_scalar_type(name) == Some(c_type))
+    };
+    let name = super::rust_names::rust_display_name(&signature.name)
+        .unwrap_or_else(|| signature.name.clone());
+    if name.starts_with("__rust_q") {
+        return None;
+    }
+    let mut parameters = Vec::new();
+    let mut index = 0;
+    while let Some(parameter) = signature.parameters.get(index) {
+        let spelling = if let Some(pointee) = parameter.c_type().pointee_type() {
+            let reference = if parameter.pointee_constant {
+                "&"
+            } else {
+                "&mut "
+            };
+            let base = scalar_name(pointee)?;
+            let slice = signature.parameters.get(index + 1).is_some_and(|length| {
+                length.name == format!("{}_len", parameter.name)
+                    && length.c_type() == C0Type::UInt64
+            });
+            if slice {
+                index += 1;
+                format!("{reference}[{base}]")
+            } else {
+                format!("{reference}{base}")
+            }
+        } else {
+            scalar_name(parameter.c_type())?.to_string()
+        };
+        parameters.push(format!("{}: {spelling}", parameter.name));
+        index += 1;
+    }
+    let return_type = if signature.return_type == C0Type::Void {
+        String::new()
+    } else {
+        format!(" -> {}", scalar_name(signature.return_type)?)
+    };
+    Some(format!("fn {name}({}){return_type}", parameters.join(", ")))
+}
+
 fn algebraic_parameter_types(
     parameters: &[FunctionParameter],
 ) -> BTreeMap<String, (AlgebraicTypeApplication, usize)> {
@@ -913,6 +967,12 @@ impl Parser {
     ) -> Result<Self, ClickError> {
         let (tokens, positions) = tokenize(source, container)?;
         let (tokens, positions) = rewrite_model_accessors(tokens, positions, &struct_layouts);
+        // Source clauses may follow declarations. Choose the spelling for the
+        // whole file so moving the clause cannot bypass a Rust syntax check.
+        let verifies_rust = tokens.windows(2).any(|pair| {
+            matches!(pair, [Token::Ident(keyword), Token::String(path)]
+                if keyword == "verifying" && path.ends_with(".rs"))
+        });
         let matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
         Ok(Self {
             source_aliases: BTreeMap::new(),
@@ -930,7 +990,7 @@ impl Parser {
             in_resource_definition: false,
             declared_resource_fields: BTreeMap::new(),
             hidden_child_fields: BTreeMap::new(),
-            verifies_rust: false,
+            verifies_rust,
             rust_slice_params: BTreeSet::new(),
             rust_impl_type: None,
             rust_impl_method_suffix: None,
@@ -3515,7 +3575,7 @@ impl Parser {
         let struct_array_params = parsed_parameters.struct_array_params;
         let reference_params = parsed_parameters.reference_params;
 
-        Ok(ParsedFunctionSignature {
+        let parsed = ParsedFunctionSignature {
             signature: FunctionSignature {
                 return_type,
                 return_pointee_constant: parsed_return_type.pointee_constant,
@@ -3531,13 +3591,23 @@ impl Parser {
             struct_array_params,
             reference_params,
             return_struct_name: parsed_return_type.struct_name,
-        })
+        };
+        if self.verifies_rust && !self.in_contract_definition {
+            let replacement = rust_signature_hint(&parsed)
+                .map(|signature| format!("write `{signature}`"))
+                .unwrap_or_else(|| {
+                    "write a `fn` signature, with methods in an `impl` block".into()
+                });
+            return Err(self.error(format!(
+                "a Rust source's function contract uses Rust syntax; {replacement}"
+            )));
+        }
+        Ok(parsed)
     }
 
     /// A Rust sidecar states its signature as Rust does:
-    /// `fn name(a: T, b: U) -> R`. It declares the same function the C-shaped
-    /// spelling `R name(T a, U b)` does. References, slices and methods are
-    /// not in this form yet (`design/rust-sidecar-signatures.md`).
+    /// `fn name(a: T, b: U) -> R`, with references, slices, and methods in
+    /// `impl` blocks. C-shaped function contracts are refused for Rust sources.
     #[inline(never)]
     fn parse_rust_function_signature(&mut self) -> Result<ParsedFunctionSignature, ClickError> {
         if !self.verifies_rust {
@@ -4682,6 +4752,14 @@ impl Parser {
     /// field's position, `self.0`, which names the field the importer calls
     /// `_0`.
     fn expect_field_name(&mut self) -> Result<String, ClickError> {
+        if self.verifies_rust
+            && self.position > 0
+            && self.tokens.get(self.position - 1) == Some(&Token::Arrow)
+        {
+            return Err(
+                self.error("a Rust reference field is written `p.f`; replace `p->f` with `p.f`")
+            );
+        }
         if self.verifies_rust
             && let Some(Token::Number(position)) = self.peek()
         {

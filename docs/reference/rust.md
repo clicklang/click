@@ -117,7 +117,7 @@ preserve it. Record copies require plain scalar or supported array fields
 and no destructor. These ownership events are checked at calls as well as
 local assignments. Array parameters by value remain unsupported.
 
-Contracts take owned parameters as `struct <record> input`. Use
+Contracts take owned parameters as `input: RecordType`. Use
 `old(input.field)` for entry values when the body modifies the parameter.
 Its private bytes have internal ownership and cannot be declared as contract
 input resources. Passing a pointer field still requires the pointee's own
@@ -155,7 +155,7 @@ crates remain outside the supported subset.
 
 ## Signatures in Rust syntax
 
-A sidecar for a Rust source may state a function's signature as Rust does,
+A sidecar for a Rust source states a function's signature as Rust does,
 with Rust type names, and cast with `as`:
 
 <!-- verified-example: tests/fixtures/rust-verification/fn_signatures.click -->
@@ -177,9 +177,9 @@ fn reduce(value: u32) -> u32 {
 } by { execute(); simp(); }
 ```
 
-New sidecars use this form. The older C-shaped spelling of the same
-declaration, `uint32 add_byte(uint32 sum, uint8 byte)`, is still accepted
-pending the parser refusal tracked in `issues/adler-syntax.md`. The
+A Rust source's function contracts require this form. A C-shaped signature
+is refused with a suggestion of the `fn` spelling. A field through a
+reference is `p.f`; `p->f` is refused. The
 parameter and return types are the integer and float types, `bool`, `()`,
 and a struct by name; `usize` and `isize` are 64 bits. `expr as T` takes a
 scalar type and binds as in Rust, tighter than a binary operator.
