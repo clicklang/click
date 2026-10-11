@@ -1280,8 +1280,10 @@ strict context decrease on continuing iterations.
 `rbtree_erase_color_flips_red_inner_right.click` extends this to cases 1/3/4
 after propagation when the deficit is the right child, including nonempty
 focus and rotation subtrees. Its 34 proofs retain exact result, red-black,
-parent-consistency, and in-order guarantees. The mirrored left-deficit
-propagated 1/3/4 case remains. Depends on 11.
+parent-consistency, and in-order guarantees.
+`rbtree_erase_color_flips_red_all.click` adds the mirrored left-deficit
+propagated 1/3/4 case with the same guarantees. The complete erase wrapper
+integration remains. Depends on 11.
 
 **Chunk 13. `____rb_erase_color`, right-sibling cases, and `rb_erase`.** The
 color-flip propagation proof already covers both orientations, including
@@ -1309,8 +1311,9 @@ repeated propagation; `rbtree_erase_color_flips_rotations.click` adds mirrored
 cases 3 and 4 with nonempty subtrees. `rbtree_erase_color_flips_red_exit.click`
 adds mirrored red-sibling cases 1/2 after propagation with nonempty subtrees.
 `rbtree_erase_color_flips_red_outer.click` adds mirrored cases 1/4 after
-propagation. Red-sibling cases 1/3/4 and the complete `rb_erase`
-wrapper remain. Depends on 12.
+propagation. `rbtree_erase_color_flips_red_all.click` completes both
+orientations of propagated red-sibling cases 1/3/4 with nonempty subtrees.
+The complete `rb_erase` wrapper remains. Depends on 12.
 
 ### Augmented
 
