@@ -112,3 +112,13 @@ theorem adler_count_zero(r: uint64) {
   apply(uint64_equal_of_to_integer(r, 0u64)) using { to_integer(r) == to_integer(0u64); }
  }
 }
+
+# Within the checked small-count range, the native cursor and the signed
+# specification index denote exactly the same byte address.
+theorem adler_count_byte_pointer(base: const uint8*, count: uint64) {
+ requires count <= 22208u64;
+ ensures base + count == base + (int32)(uint32)count by {
+  apply(adler_count_observation(count)) using { count <= 22208u64; }
+  normalize() using { to_integer((int32)(uint32)count) == to_integer(count); }
+ }
+}

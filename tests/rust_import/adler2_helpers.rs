@@ -2603,3 +2603,8 @@ fn adler_native_vector_prefix_rejects_false_transitions() {
         );
     }
 }
+
+#[test]
+fn adler_small_native_count_byte_pointer_verifies() {
+    click::surface::verify_c0_sources(COUNT_BRIDGE, &[]).unwrap();
+}
