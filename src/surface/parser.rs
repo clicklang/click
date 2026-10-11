@@ -1,5 +1,6 @@
 mod tokenizer;
 
+use crate::languages::SourceLanguage;
 use tokenizer::tokenize;
 
 use super::*;
@@ -556,9 +557,9 @@ struct Parser {
     /// In a resource that declares no fields and names a child: the hidden
     /// parent field that holds each `child.field`.
     hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
-    /// Whether a `verifying` source is Rust, which is what admits a Rust
+    /// The language of the `verifying` sources. Rust admits a Rust
     /// signature (`fn name(a: T) -> T`).
-    verifies_rust: bool,
+    language: SourceLanguage,
     /// The slice parameters of the Rust signature being parsed. Each is one
     /// name in the sidecar and a pointer with a `name_len` length underneath.
     rust_slice_params: BTreeSet<String>,
@@ -783,6 +784,12 @@ struct ParsedFunctionSignature {
 
 /// Give a concrete replacement for scalar and slice signatures. Record and
 /// method contracts need an `impl` and the imported type identity instead.
+impl Parser {
+    fn verifies_rust(&self) -> bool {
+        self.language == SourceLanguage::Rust
+    }
+}
+
 fn rust_signature_hint(parsed: &ParsedFunctionSignature) -> Option<String> {
     let signature = &parsed.signature;
     if !parsed.struct_params.is_empty() || parsed.return_struct_name.is_some() {
@@ -929,10 +936,13 @@ impl Parser {
         let (tokens, positions) = rewrite_model_accessors(tokens, positions, &struct_layouts);
         // Source clauses may follow declarations. Choose the spelling for the
         // whole file so moving the clause cannot bypass a Rust syntax check.
-        let verifies_rust = tokens.windows(2).any(|pair| {
-            matches!(pair, [Token::Ident(keyword), Token::String(path)]
-                if keyword == "verifying" && path.ends_with(".rs"))
-        });
+        let language =
+            SourceLanguage::of_sources(tokens.windows(2).filter_map(|pair| match pair {
+                [Token::Ident(keyword), Token::String(path)] if keyword == "verifying" => {
+                    Some(path.as_str())
+                }
+                _ => None,
+            }));
         let matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
         Ok(Self {
             source_aliases: BTreeMap::new(),
@@ -950,7 +960,7 @@ impl Parser {
             in_resource_definition: false,
             declared_resource_fields: BTreeMap::new(),
             hidden_child_fields: BTreeMap::new(),
-            verifies_rust,
+            language,
             rust_slice_params: BTreeSet::new(),
             rust_impl_type: None,
             rust_impl_method_suffix: None,
@@ -1163,7 +1173,7 @@ impl Parser {
                 resource_definitions.push(self.parse_resource_definition(false)?);
             } else if self.peek_ident() == Some("extern") {
                 function_blocks.push(self.parse_function_block(true)?);
-            } else if self.verifies_rust && self.peek_ident() == Some("impl") {
+            } else if self.verifies_rust() && self.peek_ident() == Some("impl") {
                 self.parse_rust_impl_block(&mut function_blocks)?;
             } else {
                 function_blocks.push(self.parse_function_block(false)?);
@@ -1559,8 +1569,8 @@ impl Parser {
             }
         }
         self.expect(Token::Semicolon)?;
-        if source_path.ends_with(".rs") {
-            self.verifies_rust = true;
+        if SourceLanguage::of_source_path(&source_path) == SourceLanguage::Rust {
+            self.language = SourceLanguage::Rust;
         }
         Ok(source_path)
     }
@@ -3583,7 +3593,7 @@ impl Parser {
             reference_params,
             return_struct_name: parsed_return_type.struct_name,
         };
-        if self.verifies_rust && !self.in_contract_definition {
+        if self.verifies_rust() && !self.in_contract_definition {
             let replacement = rust_signature_hint(&parsed)
                 .map(|signature| format!("write `{signature}`"))
                 .unwrap_or_else(|| {
@@ -3601,7 +3611,7 @@ impl Parser {
     /// `impl` blocks. C-shaped function contracts are refused for Rust sources.
     #[inline(never)]
     fn parse_rust_function_signature(&mut self) -> Result<ParsedFunctionSignature, ClickError> {
-        if !self.verifies_rust {
+        if !self.verifies_rust() {
             return Err(self.error(
                 "a `fn` signature is the Rust spelling; a C or C++ source's contract is written `type name(type parameter, ...)`",
             ));
@@ -4754,7 +4764,7 @@ impl Parser {
     /// field's position, `self.0`, which names the field the importer calls
     /// `_0`.
     fn expect_field_name(&mut self) -> Result<String, ClickError> {
-        if self.verifies_rust
+        if self.verifies_rust()
             && self.position > 0
             && self.tokens.get(self.position - 1) == Some(&Token::Arrow)
         {
@@ -4762,7 +4772,7 @@ impl Parser {
                 self.error("a Rust reference field is written `p.f`; replace `p->f` with `p.f`")
             );
         }
-        if self.verifies_rust
+        if self.verifies_rust()
             && let Some(Token::Number(position)) = self.peek()
         {
             let name = format!("_{position}");
@@ -10444,7 +10454,7 @@ impl Parser {
         &mut self,
         mut operand: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
-        while self.verifies_rust
+        while self.verifies_rust()
             && self.peek_ident() == Some("as")
             && matches!(
                 self.peek_next(),

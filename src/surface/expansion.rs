@@ -426,11 +426,7 @@ pub fn expand_project_claim_source_by_label(
     let sources = CSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     let compiler_imported = matches!(inputs, ProgramInputs::Program(_));
-    let claim_label = &*if compiler_imported {
-        resolve_rust_claim_label(&file, claim_label)
-    } else {
-        claim_label.into()
-    };
+    let claim_label = &*resolve_rust_claim_label(&file, claim_label);
     for theorem in file.theorem_definitions() {
         if !file.theorem_is_selected(theorem.name()) {
             continue;
@@ -4459,7 +4455,8 @@ fn resolve_rust_claim_label<'a>(
     file: &ClickFile,
     claim_label: &'a str,
 ) -> std::borrow::Cow<'a, str> {
-    if let Some((function, rest)) = claim_label.split_once('.')
+    if file.source_language() == crate::languages::SourceLanguage::Rust
+        && let Some((function, rest)) = claim_label.split_once('.')
         && function.contains("::")
         && let Some(block) = file.function_blocks().iter().find(|block| {
             crate::languages::rust::names::rust_display_name(block.signature().name()).as_deref()

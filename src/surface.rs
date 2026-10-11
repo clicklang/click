@@ -6766,6 +6766,13 @@ impl ClickFile {
         &self.verifying_sources
     }
 
+    /// The language of this file's `verifying` sources.
+    pub fn source_language(&self) -> crate::languages::SourceLanguage {
+        crate::languages::SourceLanguage::of_sources(
+            self.verifying_sources.iter().map(String::as_str),
+        )
+    }
+
     /// The declared C implementation target, if this file selects one.
     pub fn declared_c_target(&self) -> Option<crate::languages::c::target::CTarget> {
         self.c_target

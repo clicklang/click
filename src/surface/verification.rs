@@ -275,7 +275,7 @@ impl<'a> CSourceContext<'a> {
             super::diagnostics::ModelAccessorScope::enter(&program_execution.layouts);
         let input_digest = digest_framed_parts([
             b"click-typed-prepared-project-v1".as_slice(),
-            program.language().as_bytes(),
+            program.language().name().as_bytes(),
             program.logical_source().as_bytes(),
             program.identity().as_bytes(),
         ]);
