@@ -569,6 +569,226 @@ pub enum ConditionTerm {
     IntegerNotEqual(SharedIntegerTerm, SharedIntegerTerm),
 }
 
+/// Matches every two-operand 32-bit [`ConditionTerm`] (the comparisons and the
+/// overflow tests), binding the operands to `$left` and `$right`.
+macro_rules! binary_bitvector32_condition {
+    ($left:pat, $right:pat) => {
+        $crate::kernel::ConditionTerm::Bitvector32SignedLessThan($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32SignedLessEqual($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32SignedGreaterThan($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32SignedGreaterEqual($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32Equal($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32SignedAddOverflows($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32SignedSubtractOverflows($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32SignedMultiplyOverflows($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32SignedDivideOverflows($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector32SignedShiftLeftOverflows($left, $right)
+    };
+}
+pub(crate) use binary_bitvector32_condition;
+
+/// Matches every two-operand 64-bit [`ConditionTerm`], signed and unsigned,
+/// binding the operands to `$left` and `$right`.
+macro_rules! binary_bitvector64_condition {
+    ($left:pat, $right:pat) => {
+        $crate::kernel::ConditionTerm::Bitvector64SignedLessThan($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64SignedLessEqual($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64SignedGreaterThan($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64SignedGreaterEqual($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64UnsignedLessThan($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64UnsignedLessEqual($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64UnsignedGreaterThan($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64UnsignedGreaterEqual($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64Equal($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64SignedAddOverflows($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64SignedSubtractOverflows($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64SignedMultiplyOverflows($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64SignedDivideOverflows($left, $right)
+            | $crate::kernel::ConditionTerm::Bitvector64SignedShiftLeftOverflows($left, $right)
+    };
+}
+pub(crate) use binary_bitvector64_condition;
+
+/// Matches every two-operand bitvector [`ConditionTerm`] of either width.
+macro_rules! binary_bitvector_condition {
+    ($left:pat, $right:pat) => {
+        $crate::kernel::binary_bitvector32_condition!($left, $right)
+            | $crate::kernel::binary_bitvector64_condition!($left, $right)
+    };
+}
+pub(crate) use binary_bitvector_condition;
+
+/// Matches every two-operand 32-bit [`Bitvector32Term`] operation, binding the operands to `$left`
+/// and `$right`.
+macro_rules! binary_bitvector32_term {
+    ($left:pat, $right:pat) => {
+        $crate::kernel::Bitvector32Term::Add($left, $right)
+            | $crate::kernel::Bitvector32Term::Subtract($left, $right)
+            | $crate::kernel::Bitvector32Term::Multiply($left, $right)
+            | $crate::kernel::Bitvector32Term::Divide($left, $right)
+            | $crate::kernel::Bitvector32Term::UnsignedDivide($left, $right)
+            | $crate::kernel::Bitvector32Term::Remainder($left, $right)
+            | $crate::kernel::Bitvector32Term::UnsignedRemainder($left, $right)
+            | $crate::kernel::Bitvector32Term::BitwiseAnd($left, $right)
+            | $crate::kernel::Bitvector32Term::BitwiseOr($left, $right)
+            | $crate::kernel::Bitvector32Term::BitwiseXor($left, $right)
+            | $crate::kernel::Bitvector32Term::ShiftLeft($left, $right)
+            | $crate::kernel::Bitvector32Term::ArithmeticShiftRight($left, $right)
+            | $crate::kernel::Bitvector32Term::LogicalShiftRight($left, $right)
+    };
+}
+pub(crate) use binary_bitvector32_term;
+
+/// Matches every two-operand signed 64-bit [`Bitvector32Term`] operation, binding the operands to
+/// `$left` and `$right`.
+macro_rules! binary_int64_term {
+    ($left:pat, $right:pat) => {
+        $crate::kernel::Bitvector32Term::Int64Add($left, $right)
+            | $crate::kernel::Bitvector32Term::Int64Subtract($left, $right)
+            | $crate::kernel::Bitvector32Term::Int64Multiply($left, $right)
+            | $crate::kernel::Bitvector32Term::Int64Divide($left, $right)
+            | $crate::kernel::Bitvector32Term::Int64Remainder($left, $right)
+            | $crate::kernel::Bitvector32Term::Int64BitwiseAnd($left, $right)
+            | $crate::kernel::Bitvector32Term::Int64BitwiseOr($left, $right)
+            | $crate::kernel::Bitvector32Term::Int64BitwiseXor($left, $right)
+            | $crate::kernel::Bitvector32Term::Int64ShiftLeft($left, $right)
+            | $crate::kernel::Bitvector32Term::Int64ArithmeticShiftRight($left, $right)
+    };
+}
+pub(crate) use binary_int64_term;
+
+/// Matches every two-operand unsigned 64-bit [`Bitvector32Term`] operation, binding the operands to
+/// `$left` and `$right`.
+macro_rules! binary_uint64_term {
+    ($left:pat, $right:pat) => {
+        $crate::kernel::Bitvector32Term::UInt64Add($left, $right)
+            | $crate::kernel::Bitvector32Term::UInt64Subtract($left, $right)
+            | $crate::kernel::Bitvector32Term::UInt64Multiply($left, $right)
+            | $crate::kernel::Bitvector32Term::UInt64Divide($left, $right)
+            | $crate::kernel::Bitvector32Term::UInt64Remainder($left, $right)
+            | $crate::kernel::Bitvector32Term::UInt64BitwiseAnd($left, $right)
+            | $crate::kernel::Bitvector32Term::UInt64BitwiseOr($left, $right)
+            | $crate::kernel::Bitvector32Term::UInt64BitwiseXor($left, $right)
+            | $crate::kernel::Bitvector32Term::UInt64ShiftLeft($left, $right)
+            | $crate::kernel::Bitvector32Term::UInt64LogicalShiftRight($left, $right)
+    };
+}
+pub(crate) use binary_uint64_term;
+
+/// Matches every two-operand 64-bit [`Bitvector32Term`] operation, signed or unsigned, binding the
+/// operands to `$left` and `$right`.
+macro_rules! binary_wide_term {
+    ($left:pat, $right:pat) => {
+        $crate::kernel::binary_int64_term!($left, $right)
+            | $crate::kernel::binary_uint64_term!($left, $right)
+    };
+}
+pub(crate) use binary_wide_term;
+
+/// Matches every two-operand [`Bitvector32Term`] operation of any width, binding the operands to
+/// `$left` and `$right`.
+macro_rules! binary_machine_term {
+    ($left:pat, $right:pat) => {
+        $crate::kernel::binary_bitvector32_term!($left, $right)
+            | $crate::kernel::binary_wide_term!($left, $right)
+    };
+}
+pub(crate) use binary_machine_term;
+
+/// Matches every [`ConditionTerm`] comparison of two mathematical integers, binding the operands to
+/// `$left` and `$right`.
+macro_rules! integer_comparison_condition {
+    ($left:pat, $right:pat) => {
+        $crate::kernel::ConditionTerm::IntegerLessThan($left, $right)
+            | $crate::kernel::ConditionTerm::IntegerLessEqual($left, $right)
+            | $crate::kernel::ConditionTerm::IntegerGreaterThan($left, $right)
+            | $crate::kernel::ConditionTerm::IntegerGreaterEqual($left, $right)
+            | $crate::kernel::ConditionTerm::IntegerEqual($left, $right)
+            | $crate::kernel::ConditionTerm::IntegerNotEqual($left, $right)
+    };
+}
+pub(crate) use integer_comparison_condition;
+
+/// Matches every two-operand [`IntegerTerm`] operation, binding the operands to `$left` and
+/// `$right`.
+macro_rules! binary_integer_term {
+    ($left:pat, $right:pat) => {
+        $crate::kernel::IntegerTerm::Add($left, $right)
+            | $crate::kernel::IntegerTerm::Subtract($left, $right)
+            | $crate::kernel::IntegerTerm::Multiply($left, $right)
+            | $crate::kernel::IntegerTerm::TruncatingQuotient($left, $right)
+            | $crate::kernel::IntegerTerm::TruncatingRemainder($left, $right)
+    };
+}
+pub(crate) use binary_integer_term;
+
+/// Matches every binary operator [`CExpression`]: arithmetic, bitwise, comparison and logical,
+/// binding the operands to `$left` and `$right`.
+macro_rules! binary_c_operation {
+    ($left:pat, $right:pat) => {
+        $crate::kernel::CExpression::Add($left, $right)
+            | $crate::kernel::CExpression::Subtract($left, $right)
+            | $crate::kernel::CExpression::Multiply($left, $right)
+            | $crate::kernel::CExpression::Divide($left, $right)
+            | $crate::kernel::CExpression::Remainder($left, $right)
+            | $crate::kernel::CExpression::BitwiseAnd($left, $right)
+            | $crate::kernel::CExpression::BitwiseOr($left, $right)
+            | $crate::kernel::CExpression::BitwiseXor($left, $right)
+            | $crate::kernel::CExpression::ShiftLeft($left, $right)
+            | $crate::kernel::CExpression::ShiftRight($left, $right)
+            | $crate::kernel::CExpression::Equal($left, $right)
+            | $crate::kernel::CExpression::NotEqual($left, $right)
+            | $crate::kernel::CExpression::LessThan($left, $right)
+            | $crate::kernel::CExpression::LessEqual($left, $right)
+            | $crate::kernel::CExpression::GreaterThan($left, $right)
+            | $crate::kernel::CExpression::GreaterEqual($left, $right)
+            | $crate::kernel::CExpression::And($left, $right)
+            | $crate::kernel::CExpression::Or($left, $right)
+    };
+}
+pub(crate) use binary_c_operation;
+
+/// Matches every two-operand [`CExpression`]: the binary operators and indexing, binding the
+/// operands to `$left` and `$right`.
+macro_rules! binary_c_expression {
+    ($left:pat, $right:pat) => {
+        $crate::kernel::binary_c_operation!($left, $right)
+            | $crate::kernel::CExpression::Index($left, $right)
+    };
+}
+pub(crate) use binary_c_expression;
+
+/// Matches every arithmetic and bitwise binary [`SpecExpression`], binding the operands to `$left`
+/// and `$right`.
+macro_rules! binary_spec_expression {
+    ($left:pat, $right:pat) => {
+        $crate::kernel::SpecExpression::Add($left, $right)
+            | $crate::kernel::SpecExpression::Subtract($left, $right)
+            | $crate::kernel::SpecExpression::Multiply($left, $right)
+            | $crate::kernel::SpecExpression::Divide($left, $right)
+            | $crate::kernel::SpecExpression::Remainder($left, $right)
+            | $crate::kernel::SpecExpression::BitwiseAnd($left, $right)
+            | $crate::kernel::SpecExpression::BitwiseOr($left, $right)
+            | $crate::kernel::SpecExpression::BitwiseXor($left, $right)
+            | $crate::kernel::SpecExpression::ShiftLeft($left, $right)
+            | $crate::kernel::SpecExpression::ShiftRight($left, $right)
+    };
+}
+pub(crate) use binary_spec_expression;
+
+/// Matches every two-operand [`SpecIntegerExpression`], binding the operands to `$left` and
+/// `$right`.
+macro_rules! binary_spec_integer_expression {
+    ($left:pat, $right:pat) => {
+        $crate::kernel::SpecIntegerExpression::Add($left, $right)
+            | $crate::kernel::SpecIntegerExpression::Subtract($left, $right)
+            | $crate::kernel::SpecIntegerExpression::Multiply($left, $right)
+            | $crate::kernel::SpecIntegerExpression::TruncatingQuotient($left, $right)
+            | $crate::kernel::SpecIntegerExpression::TruncatingRemainder($left, $right)
+    };
+}
+pub(crate) use binary_spec_integer_expression;
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Pointer {
     pub block: PointerBlock,

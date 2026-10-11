@@ -2930,6 +2930,55 @@ pub enum C0Expression {
     },
 }
 
+/// Matches every binary operator [`C0Expression`]: arithmetic, bitwise, comparison and logical,
+/// binding the operands to `$left` and `$right`.
+macro_rules! binary_c0_operation {
+    ($left:pat, $right:pat) => {
+        $crate::languages::c::syntax::C0Expression::Add($left, $right)
+            | $crate::languages::c::syntax::C0Expression::Subtract($left, $right)
+            | $crate::languages::c::syntax::C0Expression::Multiply($left, $right)
+            | $crate::languages::c::syntax::C0Expression::Divide($left, $right)
+            | $crate::languages::c::syntax::C0Expression::Remainder($left, $right)
+            | $crate::languages::c::syntax::C0Expression::BitwiseAnd($left, $right)
+            | $crate::languages::c::syntax::C0Expression::BitwiseOr($left, $right)
+            | $crate::languages::c::syntax::C0Expression::BitwiseXor($left, $right)
+            | $crate::languages::c::syntax::C0Expression::ShiftLeft($left, $right)
+            | $crate::languages::c::syntax::C0Expression::ShiftRight($left, $right)
+            | $crate::languages::c::syntax::C0Expression::Equal($left, $right)
+            | $crate::languages::c::syntax::C0Expression::NotEqual($left, $right)
+            | $crate::languages::c::syntax::C0Expression::LessThan($left, $right)
+            | $crate::languages::c::syntax::C0Expression::LessEqual($left, $right)
+            | $crate::languages::c::syntax::C0Expression::GreaterThan($left, $right)
+            | $crate::languages::c::syntax::C0Expression::GreaterEqual($left, $right)
+            | $crate::languages::c::syntax::C0Expression::And($left, $right)
+            | $crate::languages::c::syntax::C0Expression::Or($left, $right)
+    };
+}
+pub(crate) use binary_c0_operation;
+
+/// Matches every two-operand [`C0Expression`]: the binary operators and indexing, binding the
+/// operands to `$left` and `$right`.
+macro_rules! binary_c0_expression {
+    ($left:pat, $right:pat) => {
+        $crate::languages::c::syntax::binary_c0_operation!($left, $right)
+            | $crate::languages::c::syntax::C0Expression::Index($left, $right)
+    };
+}
+pub(crate) use binary_c0_expression;
+
+/// Matches every [`C0Expression`] comparison, binding the operands to `$left` and `$right`.
+macro_rules! c0_comparison {
+    ($left:pat, $right:pat) => {
+        $crate::languages::c::syntax::C0Expression::Equal($left, $right)
+            | $crate::languages::c::syntax::C0Expression::NotEqual($left, $right)
+            | $crate::languages::c::syntax::C0Expression::LessThan($left, $right)
+            | $crate::languages::c::syntax::C0Expression::LessEqual($left, $right)
+            | $crate::languages::c::syntax::C0Expression::GreaterThan($left, $right)
+            | $crate::languages::c::syntax::C0Expression::GreaterEqual($left, $right)
+    };
+}
+pub(crate) use c0_comparison;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct C0SyntaxError {
     message: String,
@@ -6893,25 +6942,7 @@ fn contains_aggregate_value(expression: &C0Expression) -> bool {
         }
         C0Expression::StatementExpression { value, .. }
         | C0Expression::Assignment { value, .. } => contains_aggregate_value(value),
-        C0Expression::LessThan(left, right)
-        | C0Expression::LessEqual(left, right)
-        | C0Expression::GreaterThan(left, right)
-        | C0Expression::GreaterEqual(left, right)
-        | C0Expression::Equal(left, right)
-        | C0Expression::NotEqual(left, right)
-        | C0Expression::And(left, right)
-        | C0Expression::Or(left, right)
-        | C0Expression::Add(left, right)
-        | C0Expression::Subtract(left, right)
-        | C0Expression::Multiply(left, right)
-        | C0Expression::Divide(left, right)
-        | C0Expression::Remainder(left, right)
-        | C0Expression::ShiftLeft(left, right)
-        | C0Expression::ShiftRight(left, right)
-        | C0Expression::BitwiseAnd(left, right)
-        | C0Expression::BitwiseOr(left, right)
-        | C0Expression::BitwiseXor(left, right)
-        | C0Expression::Index(left, right) => {
+        crate::languages::c::syntax::binary_c0_expression!(left, right) => {
             contains_aggregate_value(left) || contains_aggregate_value(right)
         }
         C0Expression::Void
@@ -15897,12 +15928,7 @@ impl Parser {
             | C0Expression::FloatClassification { .. }
             | C0Expression::AddressOf(_)
             | C0Expression::PointerOffsetBytes { .. }
-            | C0Expression::LessThan(_, _)
-            | C0Expression::LessEqual(_, _)
-            | C0Expression::GreaterThan(_, _)
-            | C0Expression::GreaterEqual(_, _)
-            | C0Expression::Equal(_, _)
-            | C0Expression::NotEqual(_, _)
+            | crate::languages::c::syntax::c0_comparison!(_, _)
             | C0Expression::Not(_)
             | C0Expression::And(_, _)
             | C0Expression::Or(_, _)
@@ -15982,25 +16008,7 @@ impl Parser {
             C0Expression::CheckedArrayIndex { index, .. } => {
                 self.expression_contains_aggregate(index)
             }
-            C0Expression::LessThan(left, right)
-            | C0Expression::LessEqual(left, right)
-            | C0Expression::GreaterThan(left, right)
-            | C0Expression::GreaterEqual(left, right)
-            | C0Expression::Equal(left, right)
-            | C0Expression::NotEqual(left, right)
-            | C0Expression::And(left, right)
-            | C0Expression::Or(left, right)
-            | C0Expression::Add(left, right)
-            | C0Expression::Subtract(left, right)
-            | C0Expression::Multiply(left, right)
-            | C0Expression::Divide(left, right)
-            | C0Expression::Remainder(left, right)
-            | C0Expression::ShiftLeft(left, right)
-            | C0Expression::ShiftRight(left, right)
-            | C0Expression::BitwiseAnd(left, right)
-            | C0Expression::BitwiseOr(left, right)
-            | C0Expression::BitwiseXor(left, right)
-            | C0Expression::Index(left, right) => {
+            crate::languages::c::syntax::binary_c0_expression!(left, right) => {
                 self.expression_contains_aggregate(left)
                     || self.expression_contains_aggregate(right)
             }
@@ -16276,25 +16284,7 @@ impl Parser {
                     expressions.push(then_branch);
                     expressions.push(else_branch);
                 }
-                C0Expression::LessThan(left, right)
-                | C0Expression::LessEqual(left, right)
-                | C0Expression::GreaterThan(left, right)
-                | C0Expression::GreaterEqual(left, right)
-                | C0Expression::Equal(left, right)
-                | C0Expression::NotEqual(left, right)
-                | C0Expression::And(left, right)
-                | C0Expression::Or(left, right)
-                | C0Expression::Add(left, right)
-                | C0Expression::Subtract(left, right)
-                | C0Expression::Multiply(left, right)
-                | C0Expression::Divide(left, right)
-                | C0Expression::Remainder(left, right)
-                | C0Expression::ShiftLeft(left, right)
-                | C0Expression::ShiftRight(left, right)
-                | C0Expression::BitwiseAnd(left, right)
-                | C0Expression::BitwiseOr(left, right)
-                | C0Expression::BitwiseXor(left, right)
-                | C0Expression::Index(left, right) => {
+                crate::languages::c::syntax::binary_c0_expression!(left, right) => {
                     expressions.push(left);
                     expressions.push(right);
                 }
@@ -16351,25 +16341,7 @@ impl Parser {
                     expressions.push(then_branch);
                     expressions.push(else_branch);
                 }
-                C0Expression::LessThan(left, right)
-                | C0Expression::LessEqual(left, right)
-                | C0Expression::GreaterThan(left, right)
-                | C0Expression::GreaterEqual(left, right)
-                | C0Expression::Equal(left, right)
-                | C0Expression::NotEqual(left, right)
-                | C0Expression::And(left, right)
-                | C0Expression::Or(left, right)
-                | C0Expression::Add(left, right)
-                | C0Expression::Subtract(left, right)
-                | C0Expression::Multiply(left, right)
-                | C0Expression::Divide(left, right)
-                | C0Expression::Remainder(left, right)
-                | C0Expression::ShiftLeft(left, right)
-                | C0Expression::ShiftRight(left, right)
-                | C0Expression::BitwiseAnd(left, right)
-                | C0Expression::BitwiseOr(left, right)
-                | C0Expression::BitwiseXor(left, right)
-                | C0Expression::Index(left, right) => {
+                crate::languages::c::syntax::binary_c0_expression!(left, right) => {
                     expressions.push(left);
                     expressions.push(right);
                 }
@@ -16484,24 +16456,7 @@ impl Parser {
                     || self.expression_reads_potentially_changed_value(then_branch)
                     || self.expression_reads_potentially_changed_value(else_branch)
             }
-            C0Expression::LessThan(left, right)
-            | C0Expression::LessEqual(left, right)
-            | C0Expression::GreaterThan(left, right)
-            | C0Expression::GreaterEqual(left, right)
-            | C0Expression::Equal(left, right)
-            | C0Expression::NotEqual(left, right)
-            | C0Expression::And(left, right)
-            | C0Expression::Or(left, right)
-            | C0Expression::Add(left, right)
-            | C0Expression::Subtract(left, right)
-            | C0Expression::Multiply(left, right)
-            | C0Expression::Divide(left, right)
-            | C0Expression::Remainder(left, right)
-            | C0Expression::ShiftLeft(left, right)
-            | C0Expression::ShiftRight(left, right)
-            | C0Expression::BitwiseAnd(left, right)
-            | C0Expression::BitwiseOr(left, right)
-            | C0Expression::BitwiseXor(left, right) => {
+            crate::languages::c::syntax::binary_c0_operation!(left, right) => {
                 self.expression_reads_potentially_changed_value(left)
                     || self.expression_reads_potentially_changed_value(right)
             }
@@ -19438,12 +19393,7 @@ impl Parser {
             | C0Expression::SizeOfStruct { .. }
             | C0Expression::SizeOfUnion { .. }
             | C0Expression::SizeOfType { .. }
-            | C0Expression::LessThan(_, _)
-            | C0Expression::LessEqual(_, _)
-            | C0Expression::GreaterThan(_, _)
-            | C0Expression::GreaterEqual(_, _)
-            | C0Expression::Equal(_, _)
-            | C0Expression::NotEqual(_, _)
+            | crate::languages::c::syntax::c0_comparison!(_, _)
             | C0Expression::Not(_)
             | C0Expression::And(_, _)
             | C0Expression::Or(_, _)
@@ -19768,12 +19718,7 @@ impl Parser {
             }
             C0Expression::FloatNegate(value) => self.source_expression_type(value),
             C0Expression::FloatClassification { .. }
-            | C0Expression::LessThan(_, _)
-            | C0Expression::LessEqual(_, _)
-            | C0Expression::GreaterThan(_, _)
-            | C0Expression::GreaterEqual(_, _)
-            | C0Expression::Equal(_, _)
-            | C0Expression::NotEqual(_, _)
+            | crate::languages::c::syntax::c0_comparison!(_, _)
             | C0Expression::Not(_)
             | C0Expression::And(_, _)
             | C0Expression::Or(_, _) => Some(C0Type::Int32),
@@ -21500,25 +21445,7 @@ fn first_embedded_call_position(expression: &C0Expression) -> Option<SourcePosit
         } => first_embedded_call_position(condition)
             .or_else(|| first_embedded_call_position(then_branch))
             .or_else(|| first_embedded_call_position(else_branch)),
-        C0Expression::LessThan(left, right)
-        | C0Expression::LessEqual(left, right)
-        | C0Expression::GreaterThan(left, right)
-        | C0Expression::GreaterEqual(left, right)
-        | C0Expression::Equal(left, right)
-        | C0Expression::NotEqual(left, right)
-        | C0Expression::And(left, right)
-        | C0Expression::Or(left, right)
-        | C0Expression::Add(left, right)
-        | C0Expression::Subtract(left, right)
-        | C0Expression::Multiply(left, right)
-        | C0Expression::Divide(left, right)
-        | C0Expression::Remainder(left, right)
-        | C0Expression::ShiftLeft(left, right)
-        | C0Expression::ShiftRight(left, right)
-        | C0Expression::BitwiseAnd(left, right)
-        | C0Expression::BitwiseOr(left, right)
-        | C0Expression::BitwiseXor(left, right)
-        | C0Expression::Index(left, right) => {
+        crate::languages::c::syntax::binary_c0_expression!(left, right) => {
             first_embedded_call_position(left).or_else(|| first_embedded_call_position(right))
         }
         C0Expression::CheckedArrayIndex { index, .. } => first_embedded_call_position(index),
@@ -21610,25 +21537,7 @@ fn first_assignment_position(expression: &C0Expression) -> Option<SourcePosition
         } => first_assignment_position(condition)
             .or_else(|| first_assignment_position(then_branch))
             .or_else(|| first_assignment_position(else_branch)),
-        C0Expression::LessThan(left, right)
-        | C0Expression::LessEqual(left, right)
-        | C0Expression::GreaterThan(left, right)
-        | C0Expression::GreaterEqual(left, right)
-        | C0Expression::Equal(left, right)
-        | C0Expression::NotEqual(left, right)
-        | C0Expression::And(left, right)
-        | C0Expression::Or(left, right)
-        | C0Expression::Add(left, right)
-        | C0Expression::Subtract(left, right)
-        | C0Expression::Multiply(left, right)
-        | C0Expression::Divide(left, right)
-        | C0Expression::Remainder(left, right)
-        | C0Expression::ShiftLeft(left, right)
-        | C0Expression::ShiftRight(left, right)
-        | C0Expression::BitwiseAnd(left, right)
-        | C0Expression::BitwiseOr(left, right)
-        | C0Expression::BitwiseXor(left, right)
-        | C0Expression::Index(left, right) => {
+        crate::languages::c::syntax::binary_c0_expression!(left, right) => {
             first_assignment_position(left).or_else(|| first_assignment_position(right))
         }
         C0Expression::Void
@@ -21703,24 +21612,7 @@ fn expression_reads_runtime_value(expression: &C0Expression) -> bool {
                 || expression_reads_runtime_value(then_branch)
                 || expression_reads_runtime_value(else_branch)
         }
-        C0Expression::LessThan(left, right)
-        | C0Expression::LessEqual(left, right)
-        | C0Expression::GreaterThan(left, right)
-        | C0Expression::GreaterEqual(left, right)
-        | C0Expression::Equal(left, right)
-        | C0Expression::NotEqual(left, right)
-        | C0Expression::And(left, right)
-        | C0Expression::Or(left, right)
-        | C0Expression::Add(left, right)
-        | C0Expression::Subtract(left, right)
-        | C0Expression::Multiply(left, right)
-        | C0Expression::Divide(left, right)
-        | C0Expression::Remainder(left, right)
-        | C0Expression::ShiftLeft(left, right)
-        | C0Expression::ShiftRight(left, right)
-        | C0Expression::BitwiseAnd(left, right)
-        | C0Expression::BitwiseOr(left, right)
-        | C0Expression::BitwiseXor(left, right) => {
+        crate::languages::c::syntax::binary_c0_operation!(left, right) => {
             expression_reads_runtime_value(left) || expression_reads_runtime_value(right)
         }
     }

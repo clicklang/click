@@ -181,16 +181,7 @@ fn collect_body_reads(
         SpecExpression::CountedResourceCount { .. } => {
             Err(UninspectedForm("a counted-resource count"))
         }
-        SpecExpression::Add(left, right)
-        | SpecExpression::Subtract(left, right)
-        | SpecExpression::Multiply(left, right)
-        | SpecExpression::Divide(left, right)
-        | SpecExpression::Remainder(left, right)
-        | SpecExpression::ShiftLeft(left, right)
-        | SpecExpression::ShiftRight(left, right)
-        | SpecExpression::BitwiseAnd(left, right)
-        | SpecExpression::BitwiseOr(left, right)
-        | SpecExpression::BitwiseXor(left, right)
+        crate::kernel::binary_spec_expression!(left, right)
         | SpecExpression::PointerOffset {
             pointer: left,
             elements: right,
@@ -328,11 +319,7 @@ fn collect_integer_body_reads(
         }
         SpecIntegerExpression::FromMachine(value) => collect_body_reads(value, bound, reads),
         SpecIntegerExpression::Negate(inner) => collect_integer_body_reads(inner, bound, reads),
-        SpecIntegerExpression::Add(left, right)
-        | SpecIntegerExpression::Subtract(left, right)
-        | SpecIntegerExpression::Multiply(left, right)
-        | SpecIntegerExpression::TruncatingQuotient(left, right)
-        | SpecIntegerExpression::TruncatingRemainder(left, right) => {
+        crate::kernel::binary_spec_integer_expression!(left, right) => {
             collect_integer_body_reads(left, bound, reads)?;
             collect_integer_body_reads(right, bound, reads)
         }

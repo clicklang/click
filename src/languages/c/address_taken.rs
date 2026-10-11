@@ -333,25 +333,7 @@ fn child_expressions<'a>(
             expressions.push(target);
             expressions.push(value);
         }
-        C0Expression::LessThan(left, right)
-        | C0Expression::LessEqual(left, right)
-        | C0Expression::GreaterThan(left, right)
-        | C0Expression::GreaterEqual(left, right)
-        | C0Expression::Equal(left, right)
-        | C0Expression::NotEqual(left, right)
-        | C0Expression::And(left, right)
-        | C0Expression::Or(left, right)
-        | C0Expression::Add(left, right)
-        | C0Expression::Subtract(left, right)
-        | C0Expression::Multiply(left, right)
-        | C0Expression::Divide(left, right)
-        | C0Expression::Remainder(left, right)
-        | C0Expression::ShiftLeft(left, right)
-        | C0Expression::ShiftRight(left, right)
-        | C0Expression::BitwiseAnd(left, right)
-        | C0Expression::BitwiseOr(left, right)
-        | C0Expression::BitwiseXor(left, right)
-        | C0Expression::Index(left, right) => {
+        crate::languages::c::syntax::binary_c0_expression!(left, right) => {
             expressions.push(left);
             expressions.push(right);
         }

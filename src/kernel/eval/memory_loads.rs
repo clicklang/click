@@ -2857,12 +2857,7 @@ pub(crate) fn canonical_condition(condition: &ConditionTerm) -> ConditionTerm {
                 offset: canonical_offset_term(&right.offset),
             }),
         ),
-        ConditionTerm::IntegerLessThan(_, _)
-        | ConditionTerm::IntegerLessEqual(_, _)
-        | ConditionTerm::IntegerGreaterThan(_, _)
-        | ConditionTerm::IntegerGreaterEqual(_, _)
-        | ConditionTerm::IntegerEqual(_, _)
-        | ConditionTerm::IntegerNotEqual(_, _) => condition.clone(),
+        crate::kernel::integer_comparison_condition!(_, _) => condition.clone(),
     }
 }
 
@@ -3171,12 +3166,9 @@ fn substitute_load_variables(
             }
             Task::VisitCondition(condition) => match condition {
                 ConditionTerm::AlgebraicEqual(_, _) => condition_results.push(condition.clone()),
-                ConditionTerm::IntegerLessThan(_, _)
-                | ConditionTerm::IntegerLessEqual(_, _)
-                | ConditionTerm::IntegerGreaterThan(_, _)
-                | ConditionTerm::IntegerGreaterEqual(_, _)
-                | ConditionTerm::IntegerEqual(_, _)
-                | ConditionTerm::IntegerNotEqual(_, _) => condition_results.push(condition.clone()),
+                crate::kernel::integer_comparison_condition!(_, _) => {
+                    condition_results.push(condition.clone())
+                }
                 ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {
                     condition_results.push(condition.clone())
                 }
@@ -3612,19 +3604,7 @@ fn term_mentions_a_memory_load(term: &Bitvector32Term) -> bool {
             .scaled_values()
             .into_iter()
             .any(term_mentions_a_memory_load),
-        Bitvector32Term::Add(left, right)
-        | Bitvector32Term::Subtract(left, right)
-        | Bitvector32Term::Multiply(left, right)
-        | Bitvector32Term::Divide(left, right)
-        | Bitvector32Term::UnsignedDivide(left, right)
-        | Bitvector32Term::Remainder(left, right)
-        | Bitvector32Term::UnsignedRemainder(left, right)
-        | Bitvector32Term::ShiftLeft(left, right)
-        | Bitvector32Term::ArithmeticShiftRight(left, right)
-        | Bitvector32Term::LogicalShiftRight(left, right)
-        | Bitvector32Term::BitwiseAnd(left, right)
-        | Bitvector32Term::BitwiseOr(left, right)
-        | Bitvector32Term::BitwiseXor(left, right) => {
+        crate::kernel::binary_bitvector32_term!(left, right) => {
             term_mentions_a_memory_load(left) || term_mentions_a_memory_load(right)
         }
         Bitvector32Term::Float32Binary { left, right, .. }
@@ -3640,26 +3620,7 @@ fn term_mentions_a_memory_load(term: &Bitvector32Term) -> bool {
         | Bitvector32Term::UInt64FromInt64(value)
         | Bitvector32Term::Int64BitwiseNot(value)
         | Bitvector32Term::UInt64BitwiseNot(value) => term_mentions_a_memory_load(value),
-        Bitvector32Term::Int64Add(left, right)
-        | Bitvector32Term::Int64Subtract(left, right)
-        | Bitvector32Term::Int64Multiply(left, right)
-        | Bitvector32Term::Int64Divide(left, right)
-        | Bitvector32Term::Int64Remainder(left, right)
-        | Bitvector32Term::Int64ShiftLeft(left, right)
-        | Bitvector32Term::Int64ArithmeticShiftRight(left, right)
-        | Bitvector32Term::Int64BitwiseAnd(left, right)
-        | Bitvector32Term::Int64BitwiseOr(left, right)
-        | Bitvector32Term::Int64BitwiseXor(left, right)
-        | Bitvector32Term::UInt64Add(left, right)
-        | Bitvector32Term::UInt64Subtract(left, right)
-        | Bitvector32Term::UInt64Multiply(left, right)
-        | Bitvector32Term::UInt64Divide(left, right)
-        | Bitvector32Term::UInt64Remainder(left, right)
-        | Bitvector32Term::UInt64ShiftLeft(left, right)
-        | Bitvector32Term::UInt64LogicalShiftRight(left, right)
-        | Bitvector32Term::UInt64BitwiseAnd(left, right)
-        | Bitvector32Term::UInt64BitwiseOr(left, right)
-        | Bitvector32Term::UInt64BitwiseXor(left, right) => {
+        crate::kernel::binary_wide_term!(left, right) => {
             term_mentions_a_memory_load(left) || term_mentions_a_memory_load(right)
         }
         Bitvector32Term::BitwiseNot(value)
@@ -3695,30 +3656,7 @@ fn condition_mentions_a_memory_load(condition: &ConditionTerm) -> bool {
         // the memory-free fast path for this logical condition.
         ConditionTerm::AlgebraicEqual(_, _) => true,
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => false,
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right)
-        | ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
+        crate::kernel::binary_bitvector_condition!(left, right) => {
             term_mentions_a_memory_load(left) || term_mentions_a_memory_load(right)
         }
         ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
@@ -3735,12 +3673,7 @@ fn condition_mentions_a_memory_load(condition: &ConditionTerm) -> bool {
             offset_mentions_a_memory_load(&left.offset)
                 || offset_mentions_a_memory_load(&right.offset)
         }
-        ConditionTerm::IntegerLessThan(_, _)
-        | ConditionTerm::IntegerLessEqual(_, _)
-        | ConditionTerm::IntegerGreaterThan(_, _)
-        | ConditionTerm::IntegerGreaterEqual(_, _)
-        | ConditionTerm::IntegerEqual(_, _)
-        | ConditionTerm::IntegerNotEqual(_, _) => false,
+        crate::kernel::integer_comparison_condition!(_, _) => false,
     }
 }
 

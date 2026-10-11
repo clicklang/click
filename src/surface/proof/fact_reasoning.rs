@@ -501,25 +501,7 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut Vec<Stri
                 pending.push(then_branch);
                 pending.push(else_branch);
             }
-            CExpression::LessThan(left, right)
-            | CExpression::LessEqual(left, right)
-            | CExpression::GreaterThan(left, right)
-            | CExpression::GreaterEqual(left, right)
-            | CExpression::Equal(left, right)
-            | CExpression::NotEqual(left, right)
-            | CExpression::And(left, right)
-            | CExpression::Or(left, right)
-            | CExpression::Add(left, right)
-            | CExpression::Subtract(left, right)
-            | CExpression::Multiply(left, right)
-            | CExpression::Divide(left, right)
-            | CExpression::Remainder(left, right)
-            | CExpression::ShiftLeft(left, right)
-            | CExpression::ShiftRight(left, right)
-            | CExpression::BitwiseAnd(left, right)
-            | CExpression::BitwiseOr(left, right)
-            | CExpression::BitwiseXor(left, right)
-            | CExpression::Index(left, right) => {
+            crate::kernel::binary_c_expression!(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }

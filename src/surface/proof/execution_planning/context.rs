@@ -1037,35 +1037,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
                 work.push(Work::PointerOffset(&pointer.offset));
             }
             Work::Proposition(_, _) => return Ok(false),
-            Work::Condition(ConditionTerm::Bitvector32SignedAddOverflows(left, right)) => {
-                work.push(Work::Bitvector(right));
-                work.push(Work::Bitvector(left));
-            }
-            Work::Condition(
-                ConditionTerm::Bitvector32SignedLessThan(left, right)
-                | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-                | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-                | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-                | ConditionTerm::Bitvector32Equal(left, right)
-                | ConditionTerm::Bitvector64SignedLessThan(left, right)
-                | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-                | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-                | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-                | ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-                | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-                | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-                | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-                | ConditionTerm::Bitvector64Equal(left, right)
-                | ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-                | ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-                | ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-                | ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
-                | ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-                | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-                | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-                | ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-                | ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right),
-            ) => {
+            Work::Condition(crate::kernel::binary_bitvector_condition!(left, right)) => {
                 work.push(Work::Bitvector(right));
                 work.push(Work::Bitvector(left));
             }
@@ -1104,21 +1076,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
             {
                 saw_static_load = true;
             }
-            Work::Bitvector(
-                Bitvector32Term::Add(left, right)
-                | Bitvector32Term::Subtract(left, right)
-                | Bitvector32Term::Multiply(left, right)
-                | Bitvector32Term::Divide(left, right)
-                | Bitvector32Term::UnsignedDivide(left, right)
-                | Bitvector32Term::Remainder(left, right)
-                | Bitvector32Term::UnsignedRemainder(left, right)
-                | Bitvector32Term::ShiftLeft(left, right)
-                | Bitvector32Term::ArithmeticShiftRight(left, right)
-                | Bitvector32Term::LogicalShiftRight(left, right)
-                | Bitvector32Term::BitwiseAnd(left, right)
-                | Bitvector32Term::BitwiseOr(left, right)
-                | Bitvector32Term::BitwiseXor(left, right),
-            ) => {
+            Work::Bitvector(crate::kernel::binary_bitvector32_term!(left, right)) => {
                 work.push(Work::Bitvector(right));
                 work.push(Work::Bitvector(left));
             }

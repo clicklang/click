@@ -1,6 +1,1567 @@
 use super::*;
 use num_traits::ToPrimitive;
 
+/// One variable substitution, bitvector or pointer, as the structural walks
+/// below see it. The walks over statements, states, resources, propositions
+/// and their parts are shared; each method is a leaf where the two
+/// substitutions differ, and keeps that substitution's own rule.
+trait VariableSubstitution {
+    /// Whether condition-evaluation and resource-composition facts are
+    /// rewritten. Pointer substitution rewrites them; bitvector substitution
+    /// has always left them as they are.
+    const SUBSTITUTES_CONDITION_EVIDENCE: bool;
+
+    fn from(&self) -> Variable;
+    fn bitvector(&self, term: &Bitvector32Term) -> Bitvector32Term;
+    fn integer(&self, term: &IntegerTerm) -> IntegerTerm;
+    fn pointer(&self, pointer: &Pointer) -> Pointer;
+    /// The address of a local's storage slot.
+    fn local_slot(&self, pointer: &Pointer) -> Pointer;
+    fn term(&self, term: &Term) -> Term;
+    fn condition(&self, condition: &ConditionTerm) -> ConditionTerm;
+    fn c_value(&self, value: &CValue) -> CValue;
+    fn c_expression(&self, expression: &CExpression) -> CExpression;
+    fn memory(&self, memory: &CMemory) -> CMemory;
+    fn algebraic_term(&self, term: &AlgebraicTerm) -> AlgebraicTerm;
+    fn spec_expression(&self, expression: &SpecExpression) -> SpecExpression;
+    fn spec_integer(&self, expression: &SpecIntegerExpression) -> SpecIntegerExpression;
+    fn spec_proposition(&self, proposition: &SpecProposition) -> SpecProposition;
+    /// A quantifier's binder and body, renamed away from the replacement.
+    fn quantifier_body(
+        &self,
+        binder: Variable,
+        sort: &Sort,
+        body: &Proposition,
+    ) -> (Variable, Proposition);
+    /// Held across one whole proposition.
+    fn proposition_scope(&self) -> Option<SubstitutedMemoryScope>;
+}
+
+struct BitvectorSubstitution<'a> {
+    from: Variable,
+    to: &'a Bitvector32Term,
+}
+
+impl VariableSubstitution for BitvectorSubstitution<'_> {
+    const SUBSTITUTES_CONDITION_EVIDENCE: bool = false;
+
+    fn from(&self) -> Variable {
+        self.from
+    }
+    fn bitvector(&self, term: &Bitvector32Term) -> Bitvector32Term {
+        substitute_bitvector_variable(term, self.from, self.to)
+    }
+    fn integer(&self, term: &IntegerTerm) -> IntegerTerm {
+        substitute_bitvector_variable_in_integer(term, self.from, self.to)
+    }
+    fn pointer(&self, pointer: &Pointer) -> Pointer {
+        substitute_bitvector_variable_in_pointer(pointer, self.from, self.to)
+    }
+    fn local_slot(&self, pointer: &Pointer) -> Pointer {
+        pointer.clone()
+    }
+    fn term(&self, term: &Term) -> Term {
+        substitute_bitvector_variable_in_term(term, self.from, self.to)
+    }
+    fn condition(&self, condition: &ConditionTerm) -> ConditionTerm {
+        substitute_bitvector_variable_in_condition(condition, self.from, self.to)
+    }
+    fn c_value(&self, value: &CValue) -> CValue {
+        substitute_bitvector_variable_in_c_value(value, self.from, self.to)
+    }
+    fn c_expression(&self, expression: &CExpression) -> CExpression {
+        substitute_bitvector_variable_in_c_expression(expression, self.from, self.to)
+    }
+    fn memory(&self, memory: &CMemory) -> CMemory {
+        substitute_bitvector_variable_in_memory(memory, self.from, self.to)
+    }
+    fn algebraic_term(&self, term: &AlgebraicTerm) -> AlgebraicTerm {
+        substitute_bitvector_variable_in_algebraic_term(term, self.from, self.to)
+    }
+    fn spec_expression(&self, expression: &SpecExpression) -> SpecExpression {
+        substitute_bitvector_variable_in_spec_expression(expression, self.from, self.to)
+    }
+    fn spec_integer(&self, expression: &SpecIntegerExpression) -> SpecIntegerExpression {
+        substitute_bitvector_variable_in_spec_integer(expression, self.from, self.to)
+    }
+    fn spec_proposition(&self, proposition: &SpecProposition) -> SpecProposition {
+        substitute_bitvector_variable_in_spec_proposition(proposition, self.from, self.to)
+    }
+    fn quantifier_body(
+        &self,
+        binder: Variable,
+        _sort: &Sort,
+        body: &Proposition,
+    ) -> (Variable, Proposition) {
+        capture_avoiding_quantifier_body(binder, body, self.from, self.to)
+    }
+    fn proposition_scope(&self) -> Option<SubstitutedMemoryScope> {
+        // Hold the snapshot memo open across the whole proposition, so two
+        // sibling load terms over one snapshot rewrite it once between them.
+        Some(SubstitutedMemoryScope::enter(self.from, self.to))
+    }
+}
+
+struct PointerSubstitution<'a> {
+    from: Variable,
+    to: &'a Pointer,
+}
+
+impl VariableSubstitution for PointerSubstitution<'_> {
+    const SUBSTITUTES_CONDITION_EVIDENCE: bool = true;
+
+    fn from(&self) -> Variable {
+        self.from
+    }
+    fn bitvector(&self, term: &Bitvector32Term) -> Bitvector32Term {
+        term.clone()
+    }
+    fn integer(&self, term: &IntegerTerm) -> IntegerTerm {
+        term.clone()
+    }
+    fn pointer(&self, pointer: &Pointer) -> Pointer {
+        substitute_pointer_variable_in_pointer(pointer, self.from, self.to)
+    }
+    fn local_slot(&self, pointer: &Pointer) -> Pointer {
+        self.pointer(pointer)
+    }
+    fn term(&self, term: &Term) -> Term {
+        substitute_pointer_variable_in_term(term, self.from, self.to)
+    }
+    fn condition(&self, condition: &ConditionTerm) -> ConditionTerm {
+        substitute_pointer_variable_in_condition(condition, self.from, self.to)
+    }
+    fn c_value(&self, value: &CValue) -> CValue {
+        substitute_pointer_variable_in_c_value(value, self.from, self.to)
+    }
+    fn c_expression(&self, expression: &CExpression) -> CExpression {
+        substitute_pointer_variable_in_c_expression(expression, self.from, self.to)
+    }
+    fn memory(&self, memory: &CMemory) -> CMemory {
+        substitute_pointer_variable_in_memory(memory, self.from, self.to)
+    }
+    fn algebraic_term(&self, term: &AlgebraicTerm) -> AlgebraicTerm {
+        substitute_pointer_variable_in_algebraic_term(term, self.from, self.to)
+    }
+    fn spec_expression(&self, expression: &SpecExpression) -> SpecExpression {
+        substitute_pointer_variable_in_spec_expression(expression, self.from, self.to)
+    }
+    fn spec_integer(&self, expression: &SpecIntegerExpression) -> SpecIntegerExpression {
+        substitute_pointer_variable_in_spec_integer(expression, self.from, self.to)
+    }
+    fn spec_proposition(&self, proposition: &SpecProposition) -> SpecProposition {
+        substitute_pointer_variable_in_spec_proposition(proposition, self.from, self.to)
+    }
+    fn quantifier_body(
+        &self,
+        binder: Variable,
+        sort: &Sort,
+        body: &Proposition,
+    ) -> (Variable, Proposition) {
+        let (body, binder) =
+            pointer_capture_avoiding_quantifier_body(binder, sort, body, self.from, self.to);
+        (binder, body)
+    }
+    fn proposition_scope(&self) -> Option<SubstitutedMemoryScope> {
+        None
+    }
+}
+
+pub(crate) fn substitute_bitvector_variable_in_proposition(
+    proposition: &Proposition,
+    from: Variable,
+    to: &Bitvector32Term,
+) -> Proposition {
+    walk_proposition(proposition, &BitvectorSubstitution { from, to })
+}
+
+fn substitute_bitvector_variable_in_algebraic_value(
+    value: &AlgebraicValue,
+    from: Variable,
+    to: &Bitvector32Term,
+) -> AlgebraicValue {
+    walk_algebraic_value(value, &BitvectorSubstitution { from, to })
+}
+
+fn substitute_bitvector_variable_in_pure_function_argument(
+    argument: &PureFunctionArgument,
+    from: Variable,
+    to: &Bitvector32Term,
+) -> PureFunctionArgument {
+    walk_pure_function_argument(argument, &BitvectorSubstitution { from, to })
+}
+
+fn substitute_bitvector_variable_in_sequence(
+    sequence: &SequenceTerm,
+    from: Variable,
+    to: &Bitvector32Term,
+) -> SequenceTerm {
+    walk_sequence(sequence, &BitvectorSubstitution { from, to })
+}
+
+#[cfg(test)]
+pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
+    statement: &CStatement,
+    from: Variable,
+    to: &Bitvector32Term,
+) -> CStatement {
+    walk_c_statement(statement, &BitvectorSubstitution { from, to })
+}
+
+pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression_outcome(
+    outcome: &CExpressionOutcome,
+    from: Variable,
+    to: &Bitvector32Term,
+) -> CExpressionOutcome {
+    walk_c_expression_outcome(outcome, &BitvectorSubstitution { from, to })
+}
+
+pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement_outcome(
+    outcome: &CStatementOutcome,
+    from: Variable,
+    to: &Bitvector32Term,
+) -> CStatementOutcome {
+    walk_c_statement_outcome(outcome, &BitvectorSubstitution { from, to })
+}
+
+pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function_outcome(
+    outcome: &CFunctionOutcome,
+    from: Variable,
+    to: &Bitvector32Term,
+) -> CFunctionOutcome {
+    walk_c_function_outcome(outcome, &BitvectorSubstitution { from, to })
+}
+
+fn substitute_bitvector_variable_in_c_state(
+    state: &CState,
+    from: Variable,
+    to: &Bitvector32Term,
+) -> CState {
+    walk_c_state(state, &BitvectorSubstitution { from, to })
+}
+
+#[cfg(test)]
+pub(in crate::kernel) fn substitute_bitvector_variable_in_c_resource(
+    resource: &CResource,
+    from: Variable,
+    to: &Bitvector32Term,
+) -> CResource {
+    walk_c_resource(resource, &BitvectorSubstitution { from, to })
+}
+
+#[cfg(test)]
+pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function(
+    function: &CFunction,
+    from: Variable,
+    to: &Bitvector32Term,
+) -> CFunction {
+    walk_c_function(function, &BitvectorSubstitution { from, to })
+}
+
+#[cfg(test)]
+pub(in crate::kernel) fn substitute_bitvector_variable_in_resource_spec(
+    resource: &CResourceSpec,
+    from: Variable,
+    to: &Bitvector32Term,
+) -> CResourceSpec {
+    walk_resource_spec(resource, &BitvectorSubstitution { from, to })
+}
+
+pub(crate) fn substitute_pointer_variable_in_proposition(
+    proposition: &Proposition,
+    from: Variable,
+    to: &Pointer,
+) -> Proposition {
+    walk_proposition(proposition, &PointerSubstitution { from, to })
+}
+
+fn substitute_pointer_variable_in_algebraic_value(
+    value: &AlgebraicValue,
+    from: Variable,
+    to: &Pointer,
+) -> AlgebraicValue {
+    walk_algebraic_value(value, &PointerSubstitution { from, to })
+}
+
+fn substitute_pointer_variable_in_pure_function_argument(
+    argument: &PureFunctionArgument,
+    from: Variable,
+    to: &Pointer,
+) -> PureFunctionArgument {
+    walk_pure_function_argument(argument, &PointerSubstitution { from, to })
+}
+
+fn substitute_pointer_variable_in_sequence(
+    sequence: &SequenceTerm,
+    from: Variable,
+    to: &Pointer,
+) -> SequenceTerm {
+    walk_sequence(sequence, &PointerSubstitution { from, to })
+}
+
+#[cfg(test)]
+fn substitute_pointer_variable_in_c_statement(
+    statement: &CStatement,
+    from: Variable,
+    to: &Pointer,
+) -> CStatement {
+    walk_c_statement(statement, &PointerSubstitution { from, to })
+}
+
+fn substitute_pointer_variable_in_c_expression_outcome(
+    outcome: &CExpressionOutcome,
+    from: Variable,
+    to: &Pointer,
+) -> CExpressionOutcome {
+    walk_c_expression_outcome(outcome, &PointerSubstitution { from, to })
+}
+
+fn substitute_pointer_variable_in_c_statement_outcome(
+    outcome: &CStatementOutcome,
+    from: Variable,
+    to: &Pointer,
+) -> CStatementOutcome {
+    walk_c_statement_outcome(outcome, &PointerSubstitution { from, to })
+}
+
+fn substitute_pointer_variable_in_c_function_outcome(
+    outcome: &CFunctionOutcome,
+    from: Variable,
+    to: &Pointer,
+) -> CFunctionOutcome {
+    walk_c_function_outcome(outcome, &PointerSubstitution { from, to })
+}
+
+fn substitute_pointer_variable_in_c_state(state: &CState, from: Variable, to: &Pointer) -> CState {
+    walk_c_state(state, &PointerSubstitution { from, to })
+}
+
+#[cfg(test)]
+fn substitute_pointer_variable_in_c_resource(
+    resource: &CResource,
+    from: Variable,
+    to: &Pointer,
+) -> CResource {
+    walk_c_resource(resource, &PointerSubstitution { from, to })
+}
+
+#[cfg(test)]
+fn substitute_pointer_variable_in_c_function(
+    function: &CFunction,
+    from: Variable,
+    to: &Pointer,
+) -> CFunction {
+    walk_c_function(function, &PointerSubstitution { from, to })
+}
+
+fn walk_algebraic_value<S: VariableSubstitution + ?Sized>(
+    value: &AlgebraicValue,
+    s: &S,
+) -> AlgebraicValue {
+    match value {
+        AlgebraicValue::C(value) => AlgebraicValue::C(s.c_value(value)),
+        AlgebraicValue::Integer(value) => AlgebraicValue::Integer(s.integer(value)),
+        AlgebraicValue::Algebraic(value) => AlgebraicValue::Algebraic(s.algebraic_term(value)),
+    }
+}
+
+fn walk_c_expression_outcome<S: VariableSubstitution + ?Sized>(
+    outcome: &CExpressionOutcome,
+    s: &S,
+) -> CExpressionOutcome {
+    match outcome {
+        CExpressionOutcome::Value(value) => CExpressionOutcome::Value(s.c_value(value)),
+        CExpressionOutcome::UndefinedBehavior(kind) => {
+            CExpressionOutcome::UndefinedBehavior(kind.clone())
+        }
+        CExpressionOutcome::RuntimeError(kind) => CExpressionOutcome::RuntimeError(kind.clone()),
+    }
+}
+
+fn walk_c_function<S: VariableSubstitution + ?Sized>(function: &CFunction, s: &S) -> CFunction {
+    let mut interface = function.contract_interface().clone();
+    interface.resource_requires = function
+        .resource_requires()
+        .iter()
+        .map(|resource| walk_resource_spec(resource, s))
+        .collect();
+    interface.resource_ensures = function
+        .resource_ensures()
+        .iter()
+        .map(|resource| walk_resource_spec(resource, s))
+        .collect();
+    interface.resource_constructors = function
+        .resource_constructors()
+        .iter()
+        .map(|resource| walk_resource_spec(resource, s))
+        .collect();
+    interface.contract_requires = function
+        .contract_requires()
+        .iter()
+        .map(|proposition| s.spec_proposition(proposition))
+        .collect();
+    interface.contract_ensures = function
+        .contract_ensures()
+        .iter()
+        .map(|proposition| s.spec_proposition(proposition))
+        .collect();
+    interface.exceptional_ensures = function
+        .exceptional_ensures()
+        .iter()
+        .map(|proposition| s.spec_proposition(proposition))
+        .collect();
+    interface.contract_mutable = function
+        .contract_mutable()
+        .iter()
+        .map(|segment| walk_c_memory_segment(segment, s))
+        .collect();
+    // The declared measure is read at states like a `requires` is, so it is
+    // rewritten with them; leaving it behind would make a substituted
+    // interface rank the recursion by the pre-substitution names.
+    interface.recursion_measure = interface
+        .recursion_measure
+        .as_ref()
+        .map(|measure| walk_c_ranking_component(measure, s));
+    interface.composite_resource_definitions = function
+        .composite_resource_definitions()
+        .iter()
+        .map(|definition| CCompositeResourceDefinition {
+            resource_parameters: definition
+                .resource_parameters
+                .iter()
+                .map(|spec| walk_resource_spec(spec, s))
+                .collect(),
+            instance_schema: definition.instance_schema.clone(),
+            thread_confined: definition.thread_confined,
+            contains_mutex_authority: definition.contains_mutex_authority,
+            authorized: definition.authorized,
+            reaches_population: definition.reaches_population,
+            owned_footprint_unnamed: definition.owned_footprint_unnamed,
+            fact_source_indices: definition.fact_source_indices.clone(),
+            fact_source_spellings: definition.fact_source_spellings.clone(),
+            name: definition.name.clone(),
+            parameters: definition.parameters.clone(),
+            witnesses: definition.witnesses.clone(),
+            condition: definition
+                .condition
+                .as_ref()
+                .map(|condition| s.spec_proposition(condition)),
+            matched: definition.matched.as_ref().map(|body| CResourceMatchBody {
+                field_index: body.field_index,
+                algebraic_type: body.algebraic_type.clone(),
+                arms: body
+                    .arms
+                    .iter()
+                    .map(|arm| CResourceMatchArm {
+                        children: arm
+                            .children
+                            .iter()
+                            .map(|child| CResourceChildSpec {
+                                name: child.name.clone(),
+                                resource: child.resource.clone(),
+                                binding: child.binding,
+                                field_bindings: child.field_bindings.clone(),
+                                arguments: child
+                                    .arguments
+                                    .iter()
+                                    .map(|argument| s.c_expression(argument))
+                                    .collect(),
+                            })
+                            .collect(),
+                        variant: arm.variant.clone(),
+                        bindings: arm.bindings.clone(),
+                        binding_types: arm.binding_types.clone(),
+                        binding_variables: arm.binding_variables.clone(),
+                        contains: arm
+                            .contains
+                            .iter()
+                            .map(|resource| walk_resource_spec(resource, s))
+                            .collect(),
+                        facts: arm
+                            .facts
+                            .iter()
+                            .map(|fact| s.spec_proposition(fact))
+                            .collect(),
+                    })
+                    .collect(),
+            }),
+            recursive: definition.recursive,
+            matched_recursive: definition.matched_recursive,
+            facts_read_counts: definition.facts_read_counts,
+            facts_claim_liveness: definition.facts_claim_liveness,
+            contains: definition
+                .contains
+                .iter()
+                .map(|resource| walk_resource_spec(resource, s))
+                .collect(),
+            children: definition
+                .children
+                .iter()
+                .map(|child| CResourceChildSpec {
+                    arguments: child
+                        .arguments
+                        .iter()
+                        .map(|argument| s.c_expression(argument))
+                        .collect(),
+                    ..child.clone()
+                })
+                .collect(),
+            facts: definition
+                .facts
+                .iter()
+                .map(|fact| s.spec_proposition(fact))
+                .collect(),
+        })
+        .collect();
+    interface.predicate_unfoldings = function
+        .predicate_unfoldings()
+        .iter()
+        .map(|unfolding| CPredicateUnfolding {
+            predicate: s.spec_proposition(&unfolding.predicate),
+            body: s.spec_proposition(&unfolding.body),
+        })
+        .collect();
+    CFunction {
+        program_entry: function.program_entry,
+        name: function.name.clone(),
+        inline_body: function.inline_body,
+        body: walk_c_statement(function.body(), s),
+        source_body: walk_c_statement(function.source_body(), s),
+        control_targets: std::sync::Arc::new(
+            function
+                .control_targets
+                .iter()
+                .map(|(identity, target)| {
+                    (
+                        *identity,
+                        CControlTarget {
+                            statement_index: target.statement_index,
+                            remaining: std::sync::Arc::new(walk_c_statement(&target.remaining, s)),
+                        },
+                    )
+                })
+                .collect(),
+        ),
+        contract_interface: interface,
+        global_variables: function.global_variables.clone(),
+        global_arrays: function.global_arrays.clone(),
+        static_variables: function.static_variables.clone(),
+        static_storage: function.static_storage.clone(),
+        string_literals: function.string_literals.clone(),
+    }
+}
+
+fn walk_c_function_outcome<S: VariableSubstitution + ?Sized>(
+    outcome: &CFunctionOutcome,
+    s: &S,
+) -> CFunctionOutcome {
+    match outcome {
+        CFunctionOutcome::Return { value, state } => CFunctionOutcome::Return {
+            value: s.c_value(value),
+            state: Box::new(walk_c_state(state, s)),
+        },
+        CFunctionOutcome::Throw { value, state } => CFunctionOutcome::Throw {
+            value: s.c_value(value),
+            state: Box::new(walk_c_state(state, s)),
+        },
+        CFunctionOutcome::VerificationDiverges => CFunctionOutcome::VerificationDiverges,
+        CFunctionOutcome::UndefinedBehavior(kind) => {
+            CFunctionOutcome::UndefinedBehavior(kind.clone())
+        }
+        CFunctionOutcome::RuntimeError(kind) => CFunctionOutcome::RuntimeError(kind.clone()),
+    }
+}
+
+fn walk_c_function_specification<S: VariableSubstitution + ?Sized>(
+    specification: &CFunctionSpecification,
+    s: &S,
+) -> CFunctionSpecification {
+    CFunctionSpecification {
+        state: walk_c_state(specification.state(), s),
+        arguments: specification
+            .arguments()
+            .iter()
+            .map(|argument| s.c_expression(argument))
+            .collect(),
+        requires: specification
+            .requires()
+            .iter()
+            .map(|requirement| walk_proposition(requirement, s))
+            .collect(),
+        outcome: walk_c_function_outcome(specification.outcome(), s),
+    }
+}
+
+fn walk_c_memory_segment<S: VariableSubstitution + ?Sized>(
+    segment: &CMemorySegment,
+    s: &S,
+) -> CMemorySegment {
+    CMemorySegment {
+        base: s.c_expression(&segment.base),
+        start: s.c_expression(&segment.start),
+        end: s.c_expression(&segment.end),
+        element_width: segment.element_width,
+        guard: segment
+            .guard
+            .as_ref()
+            .map(|guard| s.spec_proposition(guard)),
+    }
+}
+
+fn walk_c_ranking_component<S: VariableSubstitution + ?Sized>(
+    measure: &CRankingComponent,
+    s: &S,
+) -> CRankingComponent {
+    match measure {
+        CRankingComponent::CExpression(expression) => {
+            CRankingComponent::CExpression(s.c_expression(expression))
+        }
+        CRankingComponent::Pure { source, expression } => CRankingComponent::Pure {
+            source: source.clone(),
+            expression: s.spec_expression(expression),
+        },
+        CRankingComponent::PureInteger { source, expression } => CRankingComponent::PureInteger {
+            source: source.clone(),
+            expression: s.spec_integer(expression),
+        },
+    }
+}
+
+fn walk_c_resource<S: VariableSubstitution + ?Sized>(resource: &CResource, s: &S) -> CResource {
+    match resource {
+        CResource::PopulationAuthority(description) => CResource::PopulationAuthority(
+            description.map_values(|value| walk_algebraic_value(value, s)),
+        ),
+        CResource::Publication(right) => CResource::Publication(PublicationRight {
+            side: right.side,
+            payload: right.payload.map_values(|v| walk_algebraic_value(v, s)),
+            flag: s.pointer(&right.flag),
+            observed: right.observed.as_ref().map(|value| s.c_value(value)),
+        }),
+        CResource::MutexUse(identity) => CResource::MutexUse(MutexUseIdentity {
+            protected: identity.protected.as_ref().map(|p| {
+                if identity.binding.is_none() {
+                    p.map_values(|v| walk_algebraic_value(v, s))
+                } else {
+                    p.clone()
+                }
+            }),
+            binding: identity.binding,
+            initialization: identity.initialization,
+            mutex: if identity.binding.is_none() {
+                s.pointer(&identity.mutex)
+            } else {
+                identity.mutex.clone()
+            },
+        }),
+        CResource::MutexGuard(identity) => CResource::MutexGuard(MutexIdentity {
+            epoch: identity.epoch,
+            mutex: if identity.epoch.is_none() {
+                s.pointer(&identity.mutex)
+            } else {
+                identity.mutex.clone()
+            },
+        }),
+        CResource::MutexLive(identity) => CResource::MutexLive(MutexIdentity {
+            epoch: identity.epoch,
+            mutex: if identity.epoch.is_none() {
+                s.pointer(&identity.mutex)
+            } else {
+                identity.mutex.clone()
+            },
+        }),
+        CResource::Instance(instance) => {
+            let mut result = instance.clone();
+            result.arguments = instance
+                .arguments
+                .iter()
+                .map(|value| walk_algebraic_value(value, s))
+                .collect();
+            result.fields = instance
+                .fields
+                .iter()
+                .map(|value| walk_algebraic_value(value, s))
+                .collect();
+            result.resource_arguments = crate::kernel::ResourceReference::map_captured_values(
+                instance.resource_arguments(),
+                |value| walk_algebraic_value(value, s),
+            );
+            CResource::Instance(result)
+        }
+        CResource::Memory(range) => CResource::Memory(walk_c_memory_range(range, s)),
+        CResource::Iterated(iterated) => CResource::iterated(
+            iterated.map_terms(|term| s.bitvector(term), |pointer| s.pointer(pointer)),
+        ),
+        CResource::Composite { name, arguments } => CResource::Composite {
+            name: name.clone(),
+            arguments: arguments
+                .iter()
+                .map(|argument| walk_algebraic_value(argument, s))
+                .collect(),
+        },
+        CResource::Token { name, arguments } => CResource::Token {
+            name: name.clone(),
+            arguments: arguments
+                .iter()
+                .map(|argument| walk_algebraic_value(argument, s))
+                .collect(),
+        },
+    }
+}
+
+fn walk_c_state<S: VariableSubstitution + ?Sized>(state: &CState, s: &S) -> CState {
+    let bindings = std::sync::Arc::new(
+        state
+            .locals
+            .bindings
+            .iter()
+            .map(|(name, binding)| {
+                let binding = match binding {
+                    CLocalBinding::Object {
+                        storage_declared,
+                        value,
+                        c_type,
+                        slot,
+                        volatile,
+                        pointee_volatile,
+                        constant,
+                        pointee_constant,
+                    } => CLocalBinding::Object {
+                        storage_declared: *storage_declared,
+                        value: s.c_value(value),
+                        c_type: *c_type,
+                        slot: s.local_slot(slot),
+                        volatile: *volatile,
+                        pointee_volatile: *pointee_volatile,
+                        constant: *constant,
+                        pointee_constant: *pointee_constant,
+                    },
+                    CLocalBinding::UninitializedObject {
+                        c_type,
+                        slot,
+                        volatile,
+                        pointee_volatile,
+                        constant,
+                        pointee_constant,
+                    } => CLocalBinding::UninitializedObject {
+                        c_type: *c_type,
+                        slot: s.local_slot(slot),
+                        volatile: *volatile,
+                        pointee_volatile: *pointee_volatile,
+                        constant: *constant,
+                        pointee_constant: *pointee_constant,
+                    },
+                    CLocalBinding::GlobalObject {
+                        c_type,
+                        slot,
+                        volatile,
+                        pointee_volatile,
+                        constant,
+                        pointee_constant,
+                    } => CLocalBinding::GlobalObject {
+                        c_type: *c_type,
+                        slot: s.local_slot(slot),
+                        volatile: *volatile,
+                        pointee_volatile: *pointee_volatile,
+                        constant: *constant,
+                        pointee_constant: *pointee_constant,
+                    },
+                    CLocalBinding::ArrayObject {
+                        element_type,
+                        length,
+                        slot,
+                        constant,
+                    } => CLocalBinding::ArrayObject {
+                        element_type: *element_type,
+                        length: *length,
+                        slot: s.local_slot(slot),
+                        constant: *constant,
+                    },
+                    CLocalBinding::AggregateObject {
+                        layout,
+                        slot,
+                        constant,
+                    } => CLocalBinding::AggregateObject {
+                        layout: layout.clone(),
+                        slot: s.local_slot(slot),
+                        constant: *constant,
+                    },
+                };
+                (name.clone(), binding)
+            })
+            .collect(),
+    );
+    let slots = std::sync::Arc::new(
+        state
+            .locals
+            .slots
+            .iter()
+            .map(|(pointer, name)| (s.local_slot(pointer), name.clone()))
+            .collect(),
+    );
+    CState {
+        locals: CLocalEnvironment { bindings, slots },
+        aggregate_destination: state.aggregate_destination.as_ref().map(|destination| {
+            std::sync::Arc::new(CAggregateDestination {
+                pointer: s.pointer(&destination.pointer),
+                layout: destination.layout.clone(),
+            })
+        }),
+        memory: s.memory(&state.memory),
+        resource_bindings: state.resource_bindings.clone(),
+        instance_field_scope: walk_resource_context(&state.instance_field_scope, s),
+        resources: walk_resource_context(&state.resources, s),
+        loan_ledger: state.loan_ledger.clone(),
+        loan_participant: state.loan_participant,
+        loan_view_bindings: state.loan_view_bindings.clone(),
+        thread_ledger: state.thread_ledger.clone(),
+        mutex_ledger: state.mutex_ledger.clone(),
+        mutex_input_reservations: state.mutex_input_reservations.clone(),
+        opaque_mutex_acquisitions: state.opaque_mutex_acquisitions.clone(),
+        named_mutex_authorities: state.named_mutex_authorities.clone(),
+        preserves_mutex_protocols: state.preserves_mutex_protocols,
+        population_access: state.population_access.clone(),
+        pending_thread_create: state.pending_thread_create.as_ref().map(|pending| {
+            pending.map_terms(
+                |status| s.bitvector(status),
+                |resources| walk_resource_context(resources, s),
+                |pointer| s.pointer(pointer),
+                |value| s.c_value(value),
+                |memory| s.memory(memory),
+            )
+        }),
+        next_local_frame: state.next_local_frame,
+        next_local_lifetime: state.next_local_lifetime,
+        enclosing_frame_holds_locals: state.enclosing_frame_holds_locals,
+        observed_population_families: state.observed_population_families.clone(),
+        population_effects: std::sync::Arc::new(crate::kernel::primitives::PopulationEffects {
+            creation: state.population_effects.creation.clone(),
+            predicate_count_permissions: state
+                .population_effects
+                .predicate_count_permissions
+                .clone(),
+        }),
+    }
+}
+
+fn walk_c_statement<S: VariableSubstitution + ?Sized>(statement: &CStatement, s: &S) -> CStatement {
+    match statement {
+        CStatement::Skip
+        | CStatement::EndAutomaticLifetimes { .. }
+        | CStatement::Break
+        | CStatement::Continue
+        | CStatement::Goto { .. }
+        | CStatement::Declare {
+            initializer: None, ..
+        }
+        | CStatement::DeclareAggregate { .. } => statement.clone(),
+        CStatement::ForStep {
+            step,
+            exited_locals,
+            continue_after,
+        } => CStatement::ForStep {
+            exited_locals: exited_locals.clone(),
+            continue_after: *continue_after,
+            step: Box::new(walk_c_statement(step, s)),
+        },
+        CStatement::Declare {
+            initializer: Some(expression),
+            ..
+        } => {
+            let mut statement = statement.clone();
+            if let CStatement::Declare { initializer, .. } = &mut statement {
+                *initializer = Some(s.c_expression(expression));
+            }
+            statement
+        }
+        CStatement::Assign { name, expression } => CStatement::Assign {
+            name: name.clone(),
+            expression: s.c_expression(expression),
+        },
+        CStatement::CallAssign {
+            target,
+            function_name,
+            arguments,
+        } => CStatement::CallAssign {
+            target: target.clone(),
+            function_name: function_name.clone(),
+            arguments: arguments
+                .iter()
+                .map(|argument| s.c_expression(argument))
+                .collect(),
+        },
+        CStatement::Call {
+            function_name,
+            arguments,
+        } => CStatement::Call {
+            function_name: function_name.clone(),
+            arguments: arguments
+                .iter()
+                .map(|argument| s.c_expression(argument))
+                .collect(),
+        },
+        CStatement::HeapAllocate {
+            target,
+            bytes,
+            zeroed,
+        } => CStatement::HeapAllocate {
+            target: target.clone(),
+            bytes: s.c_expression(bytes),
+            zeroed: *zeroed,
+        },
+        CStatement::HeapFree { pointer } => CStatement::HeapFree {
+            pointer: s.c_expression(pointer),
+        },
+        CStatement::Assert { condition, label } => CStatement::Assert {
+            condition: s.c_expression(condition),
+            label: label.clone(),
+        },
+        CStatement::Seq(first, second) => {
+            c_seq(walk_c_statement(first, s), walk_c_statement(second, s))
+        }
+        CStatement::Return(expression) => CStatement::Return(s.c_expression(expression)),
+        CStatement::Throw(expression) => CStatement::Throw(s.c_expression(expression)),
+        CStatement::TryCatchInt32 {
+            try_body,
+            binding,
+            handler,
+            cleanup_unwind,
+        } => CStatement::TryCatchInt32 {
+            try_body: Box::new(walk_c_statement(try_body, s)),
+            binding: binding.clone(),
+            handler: Box::new(walk_c_statement(handler, s)),
+            cleanup_unwind: *cleanup_unwind,
+        },
+        CStatement::Store { pointer, value } => CStatement::Store {
+            pointer: s.c_expression(pointer),
+            value: s.c_expression(value),
+        },
+        CStatement::TypedStore {
+            pointer,
+            value,
+            value_type,
+            volatile,
+            pointee_constant,
+        } => CStatement::TypedStore {
+            pointer: s.c_expression(pointer),
+            value: s.c_expression(value),
+            value_type: *value_type,
+            volatile: *volatile,
+            pointee_constant: *pointee_constant,
+        },
+        CStatement::CopyAggregate {
+            target,
+            source,
+            layout,
+        } => CStatement::CopyAggregate {
+            target: s.c_expression(target),
+            source: s.c_expression(source),
+            layout: layout.clone(),
+        },
+        CStatement::InitializeScalarArray {
+            target,
+            source,
+            element_type,
+            count,
+            copy,
+            fresh,
+        } => CStatement::InitializeScalarArray {
+            target: s.c_expression(target),
+            source: s.c_expression(source),
+            element_type: *element_type,
+            count: *count,
+            copy: *copy,
+            fresh: *fresh,
+        },
+        CStatement::Update {
+            target,
+            operator,
+            operand,
+        } => CStatement::Update {
+            target: s.c_expression(target),
+            operator: *operator,
+            operand: s.c_expression(operand),
+        },
+        CStatement::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => CStatement::If {
+            condition: s.c_expression(condition),
+            then_branch: Box::new(walk_c_statement(then_branch, s)),
+            else_branch: Box::new(walk_c_statement(else_branch, s)),
+        },
+        CStatement::While {
+            condition,
+            invariant,
+            invariant_checks,
+            effect_checks,
+            resource_specs,
+            ranking_measures,
+            structural_measure,
+            body,
+            do_while,
+            backedge_target,
+            natural_exit_target,
+        } => CStatement::While {
+            structural_measure: structural_measure.clone(),
+            condition: s.c_expression(condition),
+            ranking_measures: ranking_measures
+                .iter()
+                .map(|measure| walk_c_ranking_component(measure, s))
+                .collect(),
+            resource_specs: resource_specs
+                .iter()
+                .map(|resource| walk_resource_spec(resource, s))
+                .collect(),
+            invariant: invariant
+                .iter()
+                .map(|proposition| walk_proposition(proposition, s))
+                .collect(),
+            invariant_checks: invariant_checks
+                .iter()
+                .map(|check| CLoopInvariantCheck {
+                    proposition: s.spec_proposition(check.proposition()),
+                    entry_context: check.entry_context.clone(),
+                    preservation_context: check.preservation_context.clone(),
+                })
+                .collect(),
+            effect_checks: effect_checks
+                .iter()
+                .map(|check| CLoopEffectCheck {
+                    effect: walk_loop_effect(check.effect(), s),
+                    span: check.span,
+                    context: check.context.clone(),
+                    origin: check.origin,
+                    validated_ranges: check.validated_ranges.as_ref().map(|ranges| {
+                        ranges
+                            .iter()
+                            .map(|range| walk_c_memory_range(range, s))
+                            .collect()
+                    }),
+                })
+                .collect(),
+            do_while: *do_while,
+            backedge_target: *backedge_target,
+            natural_exit_target: *natural_exit_target,
+            body: Box::new(walk_c_statement(body, s)),
+        },
+        CStatement::Switch { expression, cases } => CStatement::Switch {
+            expression: s.c_expression(expression),
+            cases: cases
+                .iter()
+                .map(|case| CSwitchCase {
+                    value: case.value,
+                    body: Box::new(walk_c_statement(&case.body, s)),
+                })
+                .collect(),
+        },
+    }
+}
+
+fn walk_c_statement_outcome<S: VariableSubstitution + ?Sized>(
+    outcome: &CStatementOutcome,
+    s: &S,
+) -> CStatementOutcome {
+    match outcome {
+        CStatementOutcome::Normal(state) => {
+            CStatementOutcome::Normal(Box::new(walk_c_state(state, s)))
+        }
+        CStatementOutcome::Break(state) => {
+            CStatementOutcome::Break(Box::new(walk_c_state(state, s)))
+        }
+        CStatementOutcome::Continue(state) => {
+            CStatementOutcome::Continue(Box::new(walk_c_state(state, s)))
+        }
+        CStatementOutcome::Jump { target, state } => CStatementOutcome::Jump {
+            target: *target,
+            state: Box::new(walk_c_state(state, s)),
+        },
+        CStatementOutcome::Return { value, state } => CStatementOutcome::Return {
+            value: s.c_value(value),
+            state: Box::new(walk_c_state(state, s)),
+        },
+        CStatementOutcome::Throw { value, state } => CStatementOutcome::Throw {
+            value: s.c_value(value),
+            state: Box::new(walk_c_state(state, s)),
+        },
+        CStatementOutcome::VerificationDiverges => CStatementOutcome::VerificationDiverges,
+        CStatementOutcome::UndefinedBehavior(kind) => {
+            CStatementOutcome::UndefinedBehavior(kind.clone())
+        }
+        CStatementOutcome::RuntimeError(kind) => CStatementOutcome::RuntimeError(kind.clone()),
+    }
+}
+
+fn walk_loop_effect<S: VariableSubstitution + ?Sized>(effect: &CLoopEffect, s: &S) -> CLoopEffect {
+    match effect {
+        CLoopEffect::Immutable => CLoopEffect::Immutable,
+        CLoopEffect::Mutable(segments) => CLoopEffect::Mutable(
+            segments
+                .iter()
+                .map(|segment| CMemorySegment {
+                    base: s.c_expression(&segment.base),
+                    start: s.c_expression(&segment.start),
+                    end: s.c_expression(&segment.end),
+                    element_width: segment.element_width,
+                    guard: segment
+                        .guard
+                        .as_ref()
+                        .map(|guard| s.spec_proposition(guard)),
+                })
+                .collect(),
+        ),
+    }
+}
+
+fn walk_proposition<S: VariableSubstitution + ?Sized>(
+    proposition: &Proposition,
+    s: &S,
+) -> Proposition {
+    let _scope = s.proposition_scope();
+    match proposition {
+        Proposition::Equal(left, right) => Proposition::Equal(s.term(left), s.term(right)),
+        Proposition::ConditionIs(condition, value) => {
+            Proposition::ConditionIs(s.condition(condition), *value)
+        }
+        Proposition::Predicate { name, arguments } => Proposition::Predicate {
+            name: name.clone(),
+            arguments: arguments.iter().map(|argument| s.term(argument)).collect(),
+        },
+        Proposition::CExpressionEvaluates {
+            state,
+            expression,
+            outcome,
+        } => Proposition::CExpressionEvaluates {
+            state: Box::new(walk_c_state(state, s)),
+            expression: s.c_expression(expression),
+            outcome: walk_c_expression_outcome(outcome, s),
+        },
+        Proposition::CConditionEvaluates {
+            state,
+            condition,
+            outcome,
+        } if S::SUBSTITUTES_CONDITION_EVIDENCE => Proposition::CConditionEvaluates {
+            state: Box::new(walk_c_state(state, s)),
+            condition: s.c_expression(condition),
+            outcome: outcome.clone(),
+        },
+        Proposition::CStatementExecutes {
+            state,
+            statement,
+            outcome,
+        }
+        | Proposition::CStatementVerifies {
+            state,
+            statement,
+            outcome,
+        } => {
+            let state = walk_c_state(state, s);
+            let statement = walk_c_statement(statement, s);
+            let outcome = walk_c_statement_outcome(outcome, s);
+            match proposition {
+                Proposition::CStatementExecutes { .. } => Proposition::CStatementExecutes {
+                    state: Box::new(state),
+                    statement: Box::new(statement),
+                    outcome,
+                },
+                Proposition::CStatementVerifies { .. } => Proposition::CStatementVerifies {
+                    state: Box::new(state),
+                    statement: Box::new(statement),
+                    outcome,
+                },
+                _ => unreachable!("the combined statement proposition arm is exhaustive"),
+            }
+        }
+        Proposition::CFunctionExecutes {
+            state,
+            function,
+            arguments,
+            outcome,
+        }
+        | Proposition::CFunctionVerifies {
+            state,
+            function,
+            arguments,
+            outcome,
+        } => {
+            let state = walk_c_state(state, s);
+            let function = walk_c_function(function, s);
+            let arguments = arguments
+                .iter()
+                .map(|argument| s.c_expression(argument))
+                .collect();
+            let outcome = walk_c_function_outcome(outcome, s);
+            match proposition {
+                Proposition::CFunctionExecutes { .. } => Proposition::CFunctionExecutes {
+                    state: Box::new(state),
+                    function: Box::new(function),
+                    arguments,
+                    outcome,
+                },
+                Proposition::CFunctionVerifies { .. } => Proposition::CFunctionVerifies {
+                    state: Box::new(state),
+                    function: Box::new(function),
+                    arguments,
+                    outcome,
+                },
+                _ => unreachable!("the combined function proposition arm is exhaustive"),
+            }
+        }
+        Proposition::CFunctionSatisfiesSpecification {
+            function,
+            specification,
+        } => Proposition::CFunctionSatisfiesSpecification {
+            function: Box::new(walk_c_function(function, s)),
+            specification: Box::new(walk_c_function_specification(specification, s)),
+        },
+        Proposition::CFunctionPartiallySatisfiesSpecification {
+            function,
+            specification,
+        } => Proposition::CFunctionPartiallySatisfiesSpecification {
+            function: Box::new(walk_c_function(function, s)),
+            specification: Box::new(walk_c_function_specification(specification, s)),
+        },
+        Proposition::CMemoryLoads {
+            memory,
+            pointer,
+            outcome,
+        } => Proposition::CMemoryLoads {
+            memory: s.memory(memory),
+            pointer: s.pointer(pointer),
+            outcome: walk_c_expression_outcome(outcome, s),
+        },
+        Proposition::CMemoryReadDefined {
+            memory,
+            pointer,
+            value_type,
+        } => Proposition::CMemoryReadDefined {
+            memory: s.memory(memory),
+            pointer: s.pointer(pointer),
+            value_type: *value_type,
+        },
+        Proposition::CMemoryCanStore {
+            memory,
+            pointer,
+            byte_width,
+        } => Proposition::CMemoryCanStore {
+            memory: s.memory(memory),
+            pointer: s.pointer(pointer),
+            byte_width: *byte_width,
+        },
+        Proposition::CMemoryLoadable {
+            memory,
+            base,
+            bytes,
+            wide,
+        } => Proposition::CMemoryLoadable {
+            memory: s.memory(memory),
+            base: s.pointer(base),
+            bytes: s.bitvector(bytes),
+            wide: *wide,
+        },
+        Proposition::CResourceSeparate { left, right } => Proposition::CResourceSeparate {
+            left: Box::new(walk_c_resource(left, s)),
+            right: Box::new(walk_c_resource(right, s)),
+        },
+        Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
+            parent: Box::new(walk_c_resource(parent, s)),
+            child: Box::new(walk_c_resource(child, s)),
+        },
+        Proposition::CResourceComposition(resources) if S::SUBSTITUTES_CONDITION_EVIDENCE => {
+            Proposition::CResourceComposition(walk_resource_context(resources, s))
+        }
+        Proposition::CMemoryMutatesOnly {
+            before,
+            after,
+            writes,
+        } => Proposition::CMemoryMutatesOnly {
+            before: s.memory(before),
+            after: s.memory(after),
+            writes: writes
+                .iter()
+                .map(|(pointer, bytes)| (s.pointer(pointer), *bytes))
+                .collect(),
+        },
+        Proposition::CMemoryEffectSummary {
+            before,
+            after,
+            mutable_ranges,
+        } => Proposition::CMemoryEffectSummary {
+            before: s.memory(before),
+            after: s.memory(after),
+            mutable_ranges: mutable_ranges
+                .iter()
+                .map(|range| walk_c_memory_range(range, s))
+                .collect(),
+        },
+        Proposition::CHeapAllocationFreed {
+            before,
+            after,
+            allocation_base,
+            bytes,
+        } => Proposition::CHeapAllocationFreed {
+            before: s.memory(before),
+            after: s.memory(after),
+            allocation_base: s.pointer(allocation_base),
+            bytes: s.bitvector(bytes),
+        },
+        Proposition::And(left, right) => Proposition::And(
+            Box::new(walk_proposition(left, s)),
+            Box::new(walk_proposition(right, s)),
+        ),
+        Proposition::Or(left, right) => Proposition::Or(
+            Box::new(walk_proposition(left, s)),
+            Box::new(walk_proposition(right, s)),
+        ),
+        Proposition::Not(body) => Proposition::Not(Box::new(walk_proposition(body, s))),
+        Proposition::Implies(left, right) => Proposition::Implies(
+            Box::new(walk_proposition(left, s)),
+            Box::new(walk_proposition(right, s)),
+        ),
+        Proposition::ForAll { var, sort, body } if *var != s.from() => {
+            let (var, body) = s.quantifier_body(*var, sort, body);
+            Proposition::ForAll {
+                var,
+                sort: sort.clone(),
+                body: Box::new(walk_proposition(&body, s)),
+            }
+        }
+        Proposition::Exists {
+            name,
+            var,
+            sort,
+            body,
+        } if *var != s.from() => {
+            let (var, body) = s.quantifier_body(*var, sort, body);
+            Proposition::Exists {
+                name: name.clone(),
+                var,
+                sort: sort.clone(),
+                body: Box::new(walk_proposition(&body, s)),
+            }
+        }
+        proposition => proposition.clone(),
+    }
+}
+
+fn walk_pure_function_argument<S: VariableSubstitution + ?Sized>(
+    argument: &PureFunctionArgument,
+    s: &S,
+) -> PureFunctionArgument {
+    match argument {
+        PureFunctionArgument::Integer(value) => {
+            PureFunctionArgument::Integer(s.integer(value.as_ref()).into())
+        }
+        PureFunctionArgument::Value(value) => PureFunctionArgument::Value(s.c_value(value)),
+        PureFunctionArgument::Algebraic(value) => {
+            PureFunctionArgument::Algebraic(s.algebraic_term(value))
+        }
+        PureFunctionArgument::ArrayRef {
+            memory,
+            pointer,
+            element_type,
+        } => PureFunctionArgument::ArrayRef {
+            memory: s.memory(memory),
+            pointer: s.c_value(pointer),
+            element_type: *element_type,
+        },
+    }
+}
+
+fn walk_resource<S: VariableSubstitution + ?Sized>(
+    resource: &CResourceFact,
+    s: &S,
+) -> CResourceFact {
+    match resource {
+        CResourceFact::Own(resource, quantity) => CResourceFact::Own(
+            walk_c_resource(resource, s),
+            Box::new(s.bitvector(quantity)),
+        ),
+        CResourceFact::View(resource) => CResourceFact::View(walk_c_resource(resource, s)),
+    }
+}
+
+fn walk_resource_context<S: VariableSubstitution + ?Sized>(
+    resources: &ResourceContext,
+    s: &S,
+) -> ResourceContext {
+    // Structural theorem/state substitution has no current proof assumptions.
+    // Do not inherit the old graph: its equalities name the pre-substitution
+    // variables. A resulting live proof input is published at its admission
+    // boundary before execution; this helper performs no resource lookup.
+    ResourceContext::new().unchecked_with_facts(
+        resources
+            .facts()
+            .iter()
+            .map(|resource| walk_resource(resource, s)),
+    )
+}
+
+fn walk_resource_spec<S: VariableSubstitution + ?Sized>(
+    resource: &CResourceSpec,
+    s: &S,
+) -> CResourceSpec {
+    let substituted = CResourceSpec::new(
+        walk_resource_term(resource.term(), s),
+        resource.access(),
+        match resource.quantity() {
+            CResourceQuantity::One => CResourceQuantity::One,
+            CResourceQuantity::Count(quantity) => {
+                CResourceQuantity::Count(s.c_expression(quantity))
+            }
+        },
+        resource.role(),
+        resource.snapshot(),
+    )
+    .expect("pointer substitution preserves resource validity")
+    .with_resource_arguments(resource.resource_arguments().to_vec());
+    match resource.mutex_authority_binding() {
+        Some((identity, binder)) => substituted
+            .with_mutex_authority_binding(identity, binder.to_string())
+            .expect("pointer substitution preserves mutex authority binding"),
+        None => substituted,
+    }
+}
+
+fn walk_resource_term<S: VariableSubstitution + ?Sized>(
+    resource: &CResourceTerm,
+    s: &S,
+) -> CResourceTerm {
+    match resource {
+        CResourceTerm::Instance {
+            identity,
+            binder,
+            schema,
+            resource,
+        } => CResourceTerm::Instance {
+            identity: *identity,
+            binder: binder.clone(),
+            schema: schema.clone(),
+            resource: Box::new(walk_resource_term(resource, s)),
+        },
+        CResourceTerm::PopulationAuthority {
+            protected,
+            population_arity,
+            snapshot,
+        } => CResourceTerm::PopulationAuthority {
+            population_arity: *population_arity,
+            protected: Box::new(CResourceTypeSpec {
+                resource: Box::new(walk_resource_spec(&protected.resource, s)),
+                schema: protected.schema.clone(),
+            }),
+            snapshot: *snapshot,
+        },
+        CResourceTerm::MutexGuard { mutex, snapshot } => CResourceTerm::MutexGuard {
+            mutex: Box::new(s.c_expression(mutex)),
+            snapshot: *snapshot,
+        },
+        CResourceTerm::MutexLive { mutex, snapshot } => CResourceTerm::MutexLive {
+            mutex: Box::new(s.c_expression(mutex)),
+            snapshot: *snapshot,
+        },
+        CResourceTerm::Publication {
+            side,
+            payload,
+            flag,
+            snapshot,
+        } => CResourceTerm::Publication {
+            side: *side,
+            payload: Box::new(CResourceTypeSpec {
+                resource: Box::new(walk_resource_spec(&payload.resource, s)),
+                schema: payload.schema.clone(),
+            }),
+            flag: Box::new(s.c_expression(flag)),
+            snapshot: *snapshot,
+        },
+        CResourceTerm::MutexUse {
+            mutex,
+            snapshot,
+            protected,
+        } => CResourceTerm::MutexUse {
+            protected: protected.as_ref().map(|p| {
+                Box::new(CResourceTypeSpec {
+                    resource: Box::new(walk_resource_spec(&p.resource, s)),
+                    schema: p.schema.clone(),
+                })
+            }),
+            mutex: Box::new(s.c_expression(mutex)),
+            snapshot: *snapshot,
+        },
+        CResourceTerm::Iterated(spec) => CResourceTerm::Iterated(Box::new(
+            spec.map_expressions(|expression| s.c_expression(expression)),
+        )),
+        CResourceTerm::Memory(segment) => CResourceTerm::Memory(CMemorySegment {
+            base: s.c_expression(&segment.base),
+            start: s.c_expression(&segment.start),
+            end: s.c_expression(&segment.end),
+            element_width: segment.element_width,
+            guard: segment
+                .guard
+                .as_ref()
+                .map(|guard| s.spec_proposition(guard)),
+        }),
+        CResourceTerm::Composite {
+            name,
+            arguments,
+            argument_snapshots,
+            parameter_types,
+        } => CResourceTerm::Composite {
+            name: name.clone(),
+            arguments: arguments
+                .iter()
+                .map(|argument| s.c_expression(argument))
+                .collect(),
+            argument_snapshots: argument_snapshots.clone(),
+            parameter_types: parameter_types.clone(),
+        },
+        CResourceTerm::Token {
+            name,
+            arguments,
+            argument_snapshots,
+            parameter_types,
+        } => CResourceTerm::Token {
+            name: name.clone(),
+            arguments: arguments
+                .iter()
+                .map(|argument| s.c_expression(argument))
+                .collect(),
+            argument_snapshots: argument_snapshots.clone(),
+            parameter_types: parameter_types.clone(),
+        },
+    }
+}
+
+fn walk_sequence<S: VariableSubstitution + ?Sized>(sequence: &SequenceTerm, s: &S) -> SequenceTerm {
+    let node = match sequence.node.as_ref() {
+        SequenceTermNode::Literal(values) => SequenceTermNode::Literal(
+            values
+                .iter()
+                .map(|value| s.c_value(value))
+                .collect::<Vec<_>>()
+                .into(),
+        ),
+        SequenceTermNode::Concat(left, right) => {
+            SequenceTermNode::Concat(walk_sequence(left, s), walk_sequence(right, s))
+        }
+    };
+    SequenceTerm {
+        element_type: sequence.element_type,
+        node: std::sync::Arc::new(node),
+    }
+}
+
+fn walk_c_memory_range<S: VariableSubstitution + ?Sized>(
+    range: &CMemoryRange,
+    s: &S,
+) -> CMemoryRange {
+    range.with_bounds(
+        s.pointer(&range.base),
+        s.bitvector(range.bound_terms().0),
+        s.bitvector(range.bound_terms().1),
+    )
+}
+
 #[cfg(test)]
 mod resource_frame_substitution_tests {
     use super::*;
@@ -337,258 +1898,6 @@ pub fn resolve_minted_load_variables(
         resolved = substitute_bitvector_variable_in_proposition(&resolved, *variable, load);
     }
     resolved
-}
-
-pub(crate) fn substitute_bitvector_variable_in_proposition(
-    proposition: &Proposition,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> Proposition {
-    // Hold the snapshot memo open across the whole proposition, so two
-    // sibling load terms over one snapshot rewrite it once between them.
-    let _scope = SubstitutedMemoryScope::enter(from, to);
-    match proposition {
-        Proposition::Equal(left, right) => Proposition::Equal(
-            substitute_bitvector_variable_in_term(left, from, to),
-            substitute_bitvector_variable_in_term(right, from, to),
-        ),
-        Proposition::ConditionIs(condition, value) => Proposition::ConditionIs(
-            substitute_bitvector_variable_in_condition(condition, from, to),
-            *value,
-        ),
-        Proposition::Predicate { name, arguments } => Proposition::Predicate {
-            name: name.clone(),
-            arguments: arguments
-                .iter()
-                .map(|argument| substitute_bitvector_variable_in_term(argument, from, to))
-                .collect(),
-        },
-        Proposition::CExpressionEvaluates {
-            state,
-            expression,
-            outcome,
-        } => Proposition::CExpressionEvaluates {
-            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
-            expression: substitute_bitvector_variable_in_c_expression(expression, from, to),
-            outcome: substitute_bitvector_variable_in_c_expression_outcome(outcome, from, to),
-        },
-        Proposition::CStatementExecutes {
-            state,
-            statement,
-            outcome,
-        } => Proposition::CStatementExecutes {
-            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
-            statement: Box::new(substitute_bitvector_variable_in_c_statement(
-                statement, from, to,
-            )),
-            outcome: substitute_bitvector_variable_in_c_statement_outcome(outcome, from, to),
-        },
-        Proposition::CStatementVerifies {
-            state,
-            statement,
-            outcome,
-        } => Proposition::CStatementVerifies {
-            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
-            statement: Box::new(substitute_bitvector_variable_in_c_statement(
-                statement, from, to,
-            )),
-            outcome: substitute_bitvector_variable_in_c_statement_outcome(outcome, from, to),
-        },
-        Proposition::CFunctionExecutes {
-            state,
-            function,
-            arguments,
-            outcome,
-        } => Proposition::CFunctionExecutes {
-            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
-            function: Box::new(substitute_bitvector_variable_in_c_function(
-                function, from, to,
-            )),
-            arguments: arguments
-                .iter()
-                .map(|argument| substitute_bitvector_variable_in_c_expression(argument, from, to))
-                .collect(),
-            outcome: substitute_bitvector_variable_in_c_function_outcome(outcome, from, to),
-        },
-        Proposition::CFunctionVerifies {
-            state,
-            function,
-            arguments,
-            outcome,
-        } => Proposition::CFunctionVerifies {
-            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
-            function: Box::new(substitute_bitvector_variable_in_c_function(
-                function, from, to,
-            )),
-            arguments: arguments
-                .iter()
-                .map(|argument| substitute_bitvector_variable_in_c_expression(argument, from, to))
-                .collect(),
-            outcome: substitute_bitvector_variable_in_c_function_outcome(outcome, from, to),
-        },
-        Proposition::CFunctionSatisfiesSpecification {
-            function,
-            specification,
-        } => Proposition::CFunctionSatisfiesSpecification {
-            function: Box::new(substitute_bitvector_variable_in_c_function(
-                function, from, to,
-            )),
-            specification: Box::new(substitute_bitvector_variable_in_c_function_specification(
-                specification,
-                from,
-                to,
-            )),
-        },
-        Proposition::CFunctionPartiallySatisfiesSpecification {
-            function,
-            specification,
-        } => Proposition::CFunctionPartiallySatisfiesSpecification {
-            function: Box::new(substitute_bitvector_variable_in_c_function(
-                function, from, to,
-            )),
-            specification: Box::new(substitute_bitvector_variable_in_c_function_specification(
-                specification,
-                from,
-                to,
-            )),
-        },
-        Proposition::CMemoryLoads {
-            memory,
-            pointer,
-            outcome,
-        } => Proposition::CMemoryLoads {
-            memory: substitute_bitvector_variable_in_memory(memory, from, to),
-            pointer: substitute_bitvector_variable_in_pointer(pointer, from, to),
-            outcome: substitute_bitvector_variable_in_c_expression_outcome(outcome, from, to),
-        },
-        Proposition::CMemoryReadDefined {
-            memory,
-            pointer,
-            value_type,
-        } => Proposition::CMemoryReadDefined {
-            memory: substitute_bitvector_variable_in_memory(memory, from, to),
-            pointer: substitute_bitvector_variable_in_pointer(pointer, from, to),
-            value_type: *value_type,
-        },
-        Proposition::CMemoryCanStore {
-            memory,
-            pointer,
-            byte_width,
-        } => Proposition::CMemoryCanStore {
-            memory: substitute_bitvector_variable_in_memory(memory, from, to),
-            pointer: substitute_bitvector_variable_in_pointer(pointer, from, to),
-            byte_width: *byte_width,
-        },
-        Proposition::CMemoryLoadable {
-            memory,
-            base,
-            bytes,
-            wide,
-        } => Proposition::CMemoryLoadable {
-            memory: substitute_bitvector_variable_in_memory(memory, from, to),
-            base: substitute_bitvector_variable_in_pointer(base, from, to),
-            bytes: substitute_bitvector_variable(bytes, from, to),
-            wide: *wide,
-        },
-        Proposition::CResourceSeparate { left, right } => Proposition::CResourceSeparate {
-            left: Box::new(substitute_bitvector_variable_in_c_resource(left, from, to)),
-            right: Box::new(substitute_bitvector_variable_in_c_resource(right, from, to)),
-        },
-        Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
-            parent: Box::new(substitute_bitvector_variable_in_c_resource(
-                parent, from, to,
-            )),
-            child: Box::new(substitute_bitvector_variable_in_c_resource(child, from, to)),
-        },
-        Proposition::CMemoryMutatesOnly {
-            before,
-            after,
-            writes,
-        } => Proposition::CMemoryMutatesOnly {
-            before: substitute_bitvector_variable_in_memory(before, from, to),
-            after: substitute_bitvector_variable_in_memory(after, from, to),
-            writes: writes
-                .iter()
-                .map(|(pointer, bytes)| {
-                    (
-                        substitute_bitvector_variable_in_pointer(pointer, from, to),
-                        *bytes,
-                    )
-                })
-                .collect(),
-        },
-        Proposition::CMemoryEffectSummary {
-            before,
-            after,
-            mutable_ranges,
-        } => Proposition::CMemoryEffectSummary {
-            before: substitute_bitvector_variable_in_memory(before, from, to),
-            after: substitute_bitvector_variable_in_memory(after, from, to),
-            mutable_ranges: mutable_ranges
-                .iter()
-                .map(|range| substitute_bitvector_variable_in_c_memory_range(range, from, to))
-                .collect(),
-        },
-        Proposition::CHeapAllocationFreed {
-            before,
-            after,
-            allocation_base,
-            bytes,
-        } => Proposition::CHeapAllocationFreed {
-            before: substitute_bitvector_variable_in_memory(before, from, to),
-            after: substitute_bitvector_variable_in_memory(after, from, to),
-            allocation_base: substitute_bitvector_variable_in_pointer(allocation_base, from, to),
-            bytes: substitute_bitvector_variable(bytes, from, to),
-        },
-        Proposition::And(left, right) => Proposition::And(
-            Box::new(substitute_bitvector_variable_in_proposition(left, from, to)),
-            Box::new(substitute_bitvector_variable_in_proposition(
-                right, from, to,
-            )),
-        ),
-        Proposition::Or(left, right) => Proposition::Or(
-            Box::new(substitute_bitvector_variable_in_proposition(left, from, to)),
-            Box::new(substitute_bitvector_variable_in_proposition(
-                right, from, to,
-            )),
-        ),
-        Proposition::Not(body) => Proposition::Not(Box::new(
-            substitute_bitvector_variable_in_proposition(body, from, to),
-        )),
-        Proposition::Implies(left, right) => Proposition::Implies(
-            Box::new(substitute_bitvector_variable_in_proposition(left, from, to)),
-            Box::new(substitute_bitvector_variable_in_proposition(
-                right, from, to,
-            )),
-        ),
-        Proposition::ForAll { var, sort, body } if *var != from => {
-            let (var, body) = capture_avoiding_quantifier_body(*var, body, from, to);
-            Proposition::ForAll {
-                var,
-                sort: sort.clone(),
-                body: Box::new(substitute_bitvector_variable_in_proposition(
-                    &body, from, to,
-                )),
-            }
-        }
-        Proposition::Exists {
-            name,
-            var,
-            sort,
-            body,
-        } if *var != from => {
-            let (var, body) = capture_avoiding_quantifier_body(*var, body, from, to);
-            Proposition::Exists {
-                name: name.clone(),
-                var,
-                sort: sort.clone(),
-                body: Box::new(substitute_bitvector_variable_in_proposition(
-                    &body, from, to,
-                )),
-            }
-        }
-        proposition => proposition.clone(),
-    }
 }
 
 /// Capture-avoiding substitution for an algebraic quantifier variable.
@@ -1089,25 +2398,7 @@ fn collect_c_expression_bound_variables(
         | CExpression::TypedLoad { pointer, .. } => {
             collect_c_expression_bound_variables(pointer, variables)
         }
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::And(left, right)
-        | CExpression::Or(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right)
-        | CExpression::Index(left, right) => {
+        crate::kernel::binary_c_expression!(left, right) => {
             collect_c_expression_bound_variables(left, variables);
             collect_c_expression_bound_variables(right, variables);
         }
@@ -1591,19 +2882,7 @@ fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeS
 fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTreeSet<Variable>) {
     match term {
         Bitvector32Term::Constant(_) | Bitvector32Term::Variable(_) => {}
-        Bitvector32Term::Add(left, right)
-        | Bitvector32Term::Subtract(left, right)
-        | Bitvector32Term::Multiply(left, right)
-        | Bitvector32Term::Divide(left, right)
-        | Bitvector32Term::UnsignedDivide(left, right)
-        | Bitvector32Term::Remainder(left, right)
-        | Bitvector32Term::UnsignedRemainder(left, right)
-        | Bitvector32Term::ShiftLeft(left, right)
-        | Bitvector32Term::ArithmeticShiftRight(left, right)
-        | Bitvector32Term::LogicalShiftRight(left, right)
-        | Bitvector32Term::BitwiseAnd(left, right)
-        | Bitvector32Term::BitwiseOr(left, right)
-        | Bitvector32Term::BitwiseXor(left, right) => {
+        crate::kernel::binary_bitvector32_term!(left, right) => {
             collect_bitvector_bound_variables(left, variables);
             collect_bitvector_bound_variables(right, variables);
         }
@@ -1696,26 +2975,7 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
         | Bitvector32Term::UInt64BitwiseNot(value) => {
             collect_bitvector_bound_variables(value, variables)
         }
-        Bitvector32Term::Int64Add(left, right)
-        | Bitvector32Term::Int64Subtract(left, right)
-        | Bitvector32Term::Int64Multiply(left, right)
-        | Bitvector32Term::Int64Divide(left, right)
-        | Bitvector32Term::Int64Remainder(left, right)
-        | Bitvector32Term::Int64ShiftLeft(left, right)
-        | Bitvector32Term::Int64ArithmeticShiftRight(left, right)
-        | Bitvector32Term::Int64BitwiseAnd(left, right)
-        | Bitvector32Term::Int64BitwiseOr(left, right)
-        | Bitvector32Term::Int64BitwiseXor(left, right)
-        | Bitvector32Term::UInt64Add(left, right)
-        | Bitvector32Term::UInt64Subtract(left, right)
-        | Bitvector32Term::UInt64Multiply(left, right)
-        | Bitvector32Term::UInt64Divide(left, right)
-        | Bitvector32Term::UInt64Remainder(left, right)
-        | Bitvector32Term::UInt64ShiftLeft(left, right)
-        | Bitvector32Term::UInt64LogicalShiftRight(left, right)
-        | Bitvector32Term::UInt64BitwiseAnd(left, right)
-        | Bitvector32Term::UInt64BitwiseOr(left, right)
-        | Bitvector32Term::UInt64BitwiseXor(left, right)
+        crate::kernel::binary_wide_term!(left, right)
         | Bitvector32Term::Float32Binary { left, right, .. }
         | Bitvector32Term::Float64Binary { left, right, .. } => {
             collect_bitvector_bound_variables(left, variables);
@@ -1778,39 +3038,11 @@ fn collect_condition_bound_variables(
                 .for_each_bitvector_term(|term| collect_bitvector_bound_variables(term, variables));
         }
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right)
-        | ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
+        crate::kernel::binary_bitvector_condition!(left, right) => {
             collect_bitvector_bound_variables(left, variables);
             collect_bitvector_bound_variables(right, variables);
         }
-        ConditionTerm::IntegerLessThan(left, right)
-        | ConditionTerm::IntegerLessEqual(left, right)
-        | ConditionTerm::IntegerGreaterThan(left, right)
-        | ConditionTerm::IntegerGreaterEqual(left, right)
-        | ConditionTerm::IntegerEqual(left, right)
-        | ConditionTerm::IntegerNotEqual(left, right) => {
+        crate::kernel::integer_comparison_condition!(left, right) => {
             collect_integer_bound_variables(left, variables);
             collect_integer_bound_variables(right, variables);
         }
@@ -2021,11 +3253,7 @@ fn collect_integer_bound_variables_seen(
                 collect_integer_bound_variables_seen(value, variables, seen);
             }
         }
-        IntegerTerm::Add(left, right)
-        | IntegerTerm::Subtract(left, right)
-        | IntegerTerm::Multiply(left, right)
-        | IntegerTerm::TruncatingQuotient(left, right)
-        | IntegerTerm::TruncatingRemainder(left, right) => {
+        crate::kernel::binary_integer_term!(left, right) => {
             if seen.insert(left.id()) {
                 collect_integer_bound_variables_seen(left, variables, seen);
             }
@@ -2869,75 +4097,6 @@ fn substitute_bitvector_variable_in_algebraic_term(
     term
 }
 
-fn substitute_bitvector_variable_in_algebraic_value(
-    value: &AlgebraicValue,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> AlgebraicValue {
-    match value {
-        AlgebraicValue::C(value) => {
-            AlgebraicValue::C(substitute_bitvector_variable_in_c_value(value, from, to))
-        }
-        AlgebraicValue::Integer(value) => {
-            AlgebraicValue::Integer(substitute_bitvector_variable_in_integer(value, from, to))
-        }
-        AlgebraicValue::Algebraic(value) => AlgebraicValue::Algebraic(
-            substitute_bitvector_variable_in_algebraic_term(value, from, to),
-        ),
-    }
-}
-
-fn substitute_bitvector_variable_in_pure_function_argument(
-    argument: &PureFunctionArgument,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> PureFunctionArgument {
-    match argument {
-        PureFunctionArgument::Integer(value) => PureFunctionArgument::Integer(
-            substitute_bitvector_variable_in_integer(value.as_ref(), from, to).into(),
-        ),
-        PureFunctionArgument::Value(value) => {
-            PureFunctionArgument::Value(substitute_bitvector_variable_in_c_value(value, from, to))
-        }
-        PureFunctionArgument::Algebraic(term) => PureFunctionArgument::Algebraic(
-            substitute_bitvector_variable_in_algebraic_term(term, from, to),
-        ),
-        PureFunctionArgument::ArrayRef {
-            memory,
-            pointer,
-            element_type,
-        } => PureFunctionArgument::ArrayRef {
-            memory: substitute_bitvector_variable_in_memory(memory, from, to),
-            pointer: substitute_bitvector_variable_in_c_value(pointer, from, to),
-            element_type: *element_type,
-        },
-    }
-}
-
-fn substitute_bitvector_variable_in_sequence(
-    sequence: &SequenceTerm,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> SequenceTerm {
-    let node = match sequence.node.as_ref() {
-        SequenceTermNode::Literal(values) => SequenceTermNode::Literal(
-            values
-                .iter()
-                .map(|value| substitute_bitvector_variable_in_c_value(value, from, to))
-                .collect::<Vec<_>>()
-                .into(),
-        ),
-        SequenceTermNode::Concat(left, right) => SequenceTermNode::Concat(
-            substitute_bitvector_variable_in_sequence(left, from, to),
-            substitute_bitvector_variable_in_sequence(right, from, to),
-        ),
-    };
-    SequenceTerm {
-        element_type: sequence.element_type,
-        node: std::sync::Arc::new(node),
-    }
-}
-
 pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
     expression: &CExpression,
     from: Variable,
@@ -3187,268 +4346,6 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
                 right, from, to,
             )),
         ),
-    }
-}
-
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
-    statement: &CStatement,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> CStatement {
-    match statement {
-        CStatement::Skip => CStatement::Skip,
-        CStatement::Break => CStatement::Break,
-        CStatement::Continue => CStatement::Continue,
-        CStatement::Goto { target } => CStatement::Goto { target: *target },
-        CStatement::EndAutomaticLifetimes { names } => CStatement::EndAutomaticLifetimes {
-            names: names.clone(),
-        },
-        CStatement::ForStep {
-            step,
-            exited_locals,
-            continue_after,
-        } => CStatement::ForStep {
-            exited_locals: exited_locals.clone(),
-            continue_after: *continue_after,
-            step: Box::new(substitute_bitvector_variable_in_c_statement(step, from, to)),
-        },
-        CStatement::Declare {
-            name,
-            c_type,
-            volatile,
-            pointee_volatile,
-            constant,
-            pointee_constant,
-            initializer,
-            zero_fill,
-        } => CStatement::Declare {
-            name: name.clone(),
-            c_type: *c_type,
-            volatile: *volatile,
-            pointee_volatile: *pointee_volatile,
-            constant: *constant,
-            pointee_constant: *pointee_constant,
-            initializer: initializer.as_ref().map(|expression| {
-                substitute_bitvector_variable_in_c_expression(expression, from, to)
-            }),
-            zero_fill: zero_fill.clone(),
-        },
-        CStatement::DeclareAggregate { name, layout, kind } => CStatement::DeclareAggregate {
-            name: name.clone(),
-            layout: layout.clone(),
-            kind: *kind,
-        },
-        CStatement::Assign { name, expression } => CStatement::Assign {
-            name: name.clone(),
-            expression: substitute_bitvector_variable_in_c_expression(expression, from, to),
-        },
-        CStatement::CallAssign {
-            target,
-            function_name,
-            arguments,
-        } => CStatement::CallAssign {
-            target: target.clone(),
-            function_name: function_name.clone(),
-            arguments: arguments
-                .iter()
-                .map(|argument| substitute_bitvector_variable_in_c_expression(argument, from, to))
-                .collect(),
-        },
-        CStatement::Call {
-            function_name,
-            arguments,
-        } => CStatement::Call {
-            function_name: function_name.clone(),
-            arguments: arguments
-                .iter()
-                .map(|argument| substitute_bitvector_variable_in_c_expression(argument, from, to))
-                .collect(),
-        },
-        CStatement::HeapAllocate {
-            target,
-            bytes,
-            zeroed,
-        } => CStatement::HeapAllocate {
-            target: target.clone(),
-            bytes: substitute_bitvector_variable_in_c_expression(bytes, from, to),
-            zeroed: *zeroed,
-        },
-        CStatement::HeapFree { pointer } => CStatement::HeapFree {
-            pointer: substitute_bitvector_variable_in_c_expression(pointer, from, to),
-        },
-        CStatement::Assert { condition, label } => CStatement::Assert {
-            condition: substitute_bitvector_variable_in_c_expression(condition, from, to),
-            label: label.clone(),
-        },
-        CStatement::Seq(first, second) => c_seq(
-            substitute_bitvector_variable_in_c_statement(first, from, to),
-            substitute_bitvector_variable_in_c_statement(second, from, to),
-        ),
-        CStatement::Return(expression) => CStatement::Return(
-            substitute_bitvector_variable_in_c_expression(expression, from, to),
-        ),
-        CStatement::Throw(expression) => CStatement::Throw(
-            substitute_bitvector_variable_in_c_expression(expression, from, to),
-        ),
-        CStatement::TryCatchInt32 {
-            try_body,
-            binding,
-            handler,
-            cleanup_unwind,
-        } => CStatement::TryCatchInt32 {
-            try_body: Box::new(substitute_bitvector_variable_in_c_statement(
-                try_body, from, to,
-            )),
-            binding: binding.clone(),
-            handler: Box::new(substitute_bitvector_variable_in_c_statement(
-                handler, from, to,
-            )),
-            cleanup_unwind: *cleanup_unwind,
-        },
-        CStatement::Store { pointer, value } => CStatement::Store {
-            pointer: substitute_bitvector_variable_in_c_expression(pointer, from, to),
-            value: substitute_bitvector_variable_in_c_expression(value, from, to),
-        },
-        CStatement::TypedStore {
-            pointer,
-            value,
-            value_type,
-            volatile,
-            pointee_constant,
-        } => CStatement::TypedStore {
-            pointer: substitute_bitvector_variable_in_c_expression(pointer, from, to),
-            value: substitute_bitvector_variable_in_c_expression(value, from, to),
-            value_type: *value_type,
-            volatile: *volatile,
-            pointee_constant: *pointee_constant,
-        },
-        CStatement::CopyAggregate {
-            target,
-            source,
-            layout,
-        } => CStatement::CopyAggregate {
-            target: substitute_bitvector_variable_in_c_expression(target, from, to),
-            source: substitute_bitvector_variable_in_c_expression(source, from, to),
-            layout: layout.clone(),
-        },
-        CStatement::InitializeScalarArray {
-            target,
-            source,
-            element_type,
-            count,
-            copy,
-            fresh,
-        } => CStatement::InitializeScalarArray {
-            target: substitute_bitvector_variable_in_c_expression(target, from, to),
-            source: substitute_bitvector_variable_in_c_expression(source, from, to),
-            element_type: *element_type,
-            count: *count,
-            copy: *copy,
-            fresh: *fresh,
-        },
-        CStatement::Update {
-            target,
-            operator,
-            operand,
-        } => CStatement::Update {
-            target: substitute_bitvector_variable_in_c_expression(target, from, to),
-            operator: *operator,
-            operand: substitute_bitvector_variable_in_c_expression(operand, from, to),
-        },
-        CStatement::If {
-            condition,
-            then_branch,
-            else_branch,
-        } => CStatement::If {
-            condition: substitute_bitvector_variable_in_c_expression(condition, from, to),
-            then_branch: Box::new(substitute_bitvector_variable_in_c_statement(
-                then_branch,
-                from,
-                to,
-            )),
-            else_branch: Box::new(substitute_bitvector_variable_in_c_statement(
-                else_branch,
-                from,
-                to,
-            )),
-        },
-        CStatement::While {
-            condition,
-            invariant,
-            invariant_checks,
-            effect_checks,
-            resource_specs,
-            ranking_measures,
-            structural_measure,
-            body,
-            do_while,
-            backedge_target,
-            natural_exit_target,
-        } => CStatement::While {
-            structural_measure: structural_measure.clone(),
-            condition: substitute_bitvector_variable_in_c_expression(condition, from, to),
-            ranking_measures: ranking_measures
-                .iter()
-                .map(|measure| {
-                    substitute_bitvector_variable_in_c_ranking_component(measure, from, to)
-                })
-                .collect(),
-            resource_specs: resource_specs
-                .iter()
-                .map(|resource| substitute_bitvector_variable_in_resource_spec(resource, from, to))
-                .collect(),
-            invariant: invariant
-                .iter()
-                .map(|proposition| {
-                    substitute_bitvector_variable_in_proposition(proposition, from, to)
-                })
-                .collect(),
-            invariant_checks: invariant_checks
-                .iter()
-                .map(|check| CLoopInvariantCheck {
-                    proposition: substitute_bitvector_variable_in_spec_proposition(
-                        check.proposition(),
-                        from,
-                        to,
-                    ),
-                    entry_context: check.entry_context.clone(),
-                    preservation_context: check.preservation_context.clone(),
-                })
-                .collect(),
-            effect_checks: effect_checks
-                .iter()
-                .map(|check| CLoopEffectCheck {
-                    effect: substitute_bitvector_variable_in_loop_effect(check.effect(), from, to),
-                    span: check.span,
-                    context: check.context.clone(),
-                    origin: check.origin,
-                    validated_ranges: check.validated_ranges.as_ref().map(|ranges| {
-                        ranges
-                            .iter()
-                            .map(|range| {
-                                substitute_bitvector_variable_in_c_memory_range(range, from, to)
-                            })
-                            .collect()
-                    }),
-                })
-                .collect(),
-            do_while: *do_while,
-            backedge_target: *backedge_target,
-            natural_exit_target: *natural_exit_target,
-            body: Box::new(substitute_bitvector_variable_in_c_statement(body, from, to)),
-        },
-        CStatement::Switch { expression, cases } => CStatement::Switch {
-            expression: substitute_bitvector_variable_in_c_expression(expression, from, to),
-            cases: cases
-                .iter()
-                .map(|case| CSwitchCase {
-                    value: case.value,
-                    body: Box::new(substitute_bitvector_variable_in_c_statement(
-                        &case.body, from, to,
-                    )),
-                })
-                .collect(),
-        },
     }
 }
 
@@ -3743,805 +4640,6 @@ mod machine_integer_substitution_tests {
     }
 }
 
-pub(in crate::kernel) fn substitute_bitvector_variable_in_loop_effect(
-    effect: &CLoopEffect,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> CLoopEffect {
-    match effect {
-        CLoopEffect::Immutable => CLoopEffect::Immutable,
-        CLoopEffect::Mutable(segments) => CLoopEffect::Mutable(
-            segments
-                .iter()
-                .map(|segment| CMemorySegment {
-                    base: substitute_bitvector_variable_in_c_expression(&segment.base, from, to),
-                    start: substitute_bitvector_variable_in_c_expression(&segment.start, from, to),
-                    end: substitute_bitvector_variable_in_c_expression(&segment.end, from, to),
-                    element_width: segment.element_width,
-                    guard: segment.guard.as_ref().map(|guard| {
-                        substitute_bitvector_variable_in_spec_proposition(guard, from, to)
-                    }),
-                })
-                .collect(),
-        ),
-    }
-}
-
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression_outcome(
-    outcome: &CExpressionOutcome,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> CExpressionOutcome {
-    match outcome {
-        CExpressionOutcome::Value(value) => {
-            CExpressionOutcome::Value(substitute_bitvector_variable_in_c_value(value, from, to))
-        }
-        CExpressionOutcome::UndefinedBehavior(kind) => {
-            CExpressionOutcome::UndefinedBehavior(kind.clone())
-        }
-        CExpressionOutcome::RuntimeError(kind) => CExpressionOutcome::RuntimeError(kind.clone()),
-    }
-}
-
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement_outcome(
-    outcome: &CStatementOutcome,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> CStatementOutcome {
-    match outcome {
-        CStatementOutcome::Normal(state) => CStatementOutcome::Normal(Box::new(
-            substitute_bitvector_variable_in_c_state(state, from, to),
-        )),
-        CStatementOutcome::Break(state) => CStatementOutcome::Break(Box::new(
-            substitute_bitvector_variable_in_c_state(state, from, to),
-        )),
-        CStatementOutcome::Continue(state) => CStatementOutcome::Continue(Box::new(
-            substitute_bitvector_variable_in_c_state(state, from, to),
-        )),
-        CStatementOutcome::Jump { target, state } => CStatementOutcome::Jump {
-            target: *target,
-            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
-        },
-        CStatementOutcome::Return { value, state } => CStatementOutcome::Return {
-            value: substitute_bitvector_variable_in_c_value(value, from, to),
-            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
-        },
-        CStatementOutcome::Throw { value, state } => CStatementOutcome::Throw {
-            value: substitute_bitvector_variable_in_c_value(value, from, to),
-            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
-        },
-        CStatementOutcome::VerificationDiverges => CStatementOutcome::VerificationDiverges,
-        CStatementOutcome::UndefinedBehavior(kind) => {
-            CStatementOutcome::UndefinedBehavior(kind.clone())
-        }
-        CStatementOutcome::RuntimeError(kind) => CStatementOutcome::RuntimeError(kind.clone()),
-    }
-}
-
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function_outcome(
-    outcome: &CFunctionOutcome,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> CFunctionOutcome {
-    match outcome {
-        CFunctionOutcome::Return { value, state } => CFunctionOutcome::Return {
-            value: substitute_bitvector_variable_in_c_value(value, from, to),
-            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
-        },
-        CFunctionOutcome::Throw { value, state } => CFunctionOutcome::Throw {
-            value: substitute_bitvector_variable_in_c_value(value, from, to),
-            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
-        },
-        CFunctionOutcome::VerificationDiverges => CFunctionOutcome::VerificationDiverges,
-        CFunctionOutcome::UndefinedBehavior(kind) => {
-            CFunctionOutcome::UndefinedBehavior(kind.clone())
-        }
-        CFunctionOutcome::RuntimeError(kind) => CFunctionOutcome::RuntimeError(kind.clone()),
-    }
-}
-
-fn substitute_bitvector_variable_in_c_state(
-    state: &CState,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> CState {
-    let bindings = std::sync::Arc::new(
-        state
-            .locals
-            .bindings
-            .iter()
-            .map(|(name, binding)| {
-                let binding = match binding {
-                    CLocalBinding::Object {
-                        storage_declared,
-                        value,
-                        c_type,
-                        slot,
-                        volatile,
-                        pointee_volatile,
-                        constant,
-                        pointee_constant,
-                    } => CLocalBinding::Object {
-                        storage_declared: *storage_declared,
-                        value: substitute_bitvector_variable_in_c_value(value, from, to),
-                        c_type: *c_type,
-                        slot: slot.clone(),
-                        volatile: *volatile,
-                        pointee_volatile: *pointee_volatile,
-                        constant: *constant,
-                        pointee_constant: *pointee_constant,
-                    },
-                    CLocalBinding::UninitializedObject {
-                        c_type,
-                        slot,
-                        volatile,
-                        pointee_volatile,
-                        constant,
-                        pointee_constant,
-                    } => CLocalBinding::UninitializedObject {
-                        c_type: *c_type,
-                        slot: slot.clone(),
-                        volatile: *volatile,
-                        pointee_volatile: *pointee_volatile,
-                        constant: *constant,
-                        pointee_constant: *pointee_constant,
-                    },
-                    CLocalBinding::GlobalObject {
-                        c_type,
-                        slot,
-                        volatile,
-                        pointee_volatile,
-                        constant,
-                        pointee_constant,
-                    } => CLocalBinding::GlobalObject {
-                        c_type: *c_type,
-                        slot: slot.clone(),
-                        volatile: *volatile,
-                        pointee_volatile: *pointee_volatile,
-                        constant: *constant,
-                        pointee_constant: *pointee_constant,
-                    },
-                    CLocalBinding::ArrayObject {
-                        element_type,
-                        length,
-                        slot,
-                        constant,
-                    } => CLocalBinding::ArrayObject {
-                        element_type: *element_type,
-                        length: *length,
-                        slot: slot.clone(),
-                        constant: *constant,
-                    },
-                    CLocalBinding::AggregateObject {
-                        layout,
-                        slot,
-                        constant,
-                    } => CLocalBinding::AggregateObject {
-                        layout: layout.clone(),
-                        slot: slot.clone(),
-                        constant: *constant,
-                    },
-                };
-                (name.clone(), binding)
-            })
-            .collect(),
-    );
-    CState {
-        locals: CLocalEnvironment {
-            bindings,
-            slots: state.locals.slots.clone(),
-        },
-        aggregate_destination: state.aggregate_destination.as_ref().map(|destination| {
-            std::sync::Arc::new(CAggregateDestination {
-                pointer: substitute_bitvector_variable_in_pointer(&destination.pointer, from, to),
-                layout: destination.layout.clone(),
-            })
-        }),
-        memory: substitute_bitvector_variable_in_memory(&state.memory, from, to),
-        resource_bindings: state.resource_bindings.clone(),
-        instance_field_scope: substitute_bitvector_variable_in_resource_context(
-            &state.instance_field_scope,
-            from,
-            to,
-        ),
-        resources: substitute_bitvector_variable_in_resource_context(&state.resources, from, to),
-        loan_ledger: state.loan_ledger.clone(),
-        loan_participant: state.loan_participant,
-        loan_view_bindings: state.loan_view_bindings.clone(),
-        thread_ledger: state.thread_ledger.clone(),
-        mutex_ledger: state.mutex_ledger.clone(),
-        mutex_input_reservations: state.mutex_input_reservations.clone(),
-        opaque_mutex_acquisitions: state.opaque_mutex_acquisitions.clone(),
-        named_mutex_authorities: state.named_mutex_authorities.clone(),
-        preserves_mutex_protocols: state.preserves_mutex_protocols,
-        population_access: state.population_access.clone(),
-        pending_thread_create: state.pending_thread_create.as_ref().map(|pending| {
-            pending.map_terms(
-                |status| substitute_bitvector_variable(status, from, to),
-                |resources| substitute_bitvector_variable_in_resource_context(resources, from, to),
-                |pointer| substitute_bitvector_variable_in_pointer(pointer, from, to),
-                |value| substitute_bitvector_variable_in_c_value(value, from, to),
-                |memory| substitute_bitvector_variable_in_memory(memory, from, to),
-            )
-        }),
-        next_local_frame: state.next_local_frame,
-        next_local_lifetime: state.next_local_lifetime,
-        enclosing_frame_holds_locals: state.enclosing_frame_holds_locals,
-        observed_population_families: state.observed_population_families.clone(),
-        population_effects: std::sync::Arc::new(crate::kernel::primitives::PopulationEffects {
-            creation: state.population_effects.creation.clone(),
-            predicate_count_permissions: state
-                .population_effects
-                .predicate_count_permissions
-                .clone(),
-        }),
-    }
-}
-
-pub(in crate::kernel) fn substitute_bitvector_variable_in_resource_context(
-    resources: &ResourceContext,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> ResourceContext {
-    // Structural theorem/state substitution has no current proof assumptions.
-    // Do not inherit the old graph: its equalities name the pre-substitution
-    // variables. A resulting live proof input is published at its admission
-    // boundary before execution; this helper performs no resource lookup.
-    ResourceContext::new().unchecked_with_facts(
-        resources
-            .facts()
-            .iter()
-            .map(|resource| substitute_bitvector_variable_in_resource(resource, from, to)),
-    )
-}
-
-pub(in crate::kernel) fn substitute_bitvector_variable_in_resource(
-    resource: &CResourceFact,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> CResourceFact {
-    match resource {
-        CResourceFact::Own(resource, quantity) => CResourceFact::Own(
-            substitute_bitvector_variable_in_c_resource(resource, from, to),
-            Box::new(substitute_bitvector_variable(quantity, from, to)),
-        ),
-        CResourceFact::View(resource) => CResourceFact::View(
-            substitute_bitvector_variable_in_c_resource(resource, from, to),
-        ),
-    }
-}
-
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_resource(
-    resource: &CResource,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> CResource {
-    match resource {
-        CResource::PopulationAuthority(description) => {
-            CResource::PopulationAuthority(description.map_values(|value| {
-                substitute_bitvector_variable_in_algebraic_value(value, from, to)
-            }))
-        }
-        CResource::Publication(right) => CResource::Publication(PublicationRight {
-            side: right.side,
-            payload: right
-                .payload
-                .map_values(|v| substitute_bitvector_variable_in_algebraic_value(v, from, to)),
-            flag: substitute_bitvector_variable_in_pointer(&right.flag, from, to),
-            observed: right
-                .observed
-                .as_ref()
-                .map(|value| substitute_bitvector_variable_in_c_value(value, from, to)),
-        }),
-        CResource::MutexUse(identity) => CResource::MutexUse(MutexUseIdentity {
-            protected: identity.protected.as_ref().map(|p| {
-                if identity.binding.is_none() {
-                    p.map_values(|v| substitute_bitvector_variable_in_algebraic_value(v, from, to))
-                } else {
-                    p.clone()
-                }
-            }),
-            binding: identity.binding,
-            initialization: identity.initialization,
-            mutex: if identity.binding.is_none() {
-                substitute_bitvector_variable_in_pointer(&identity.mutex, from, to)
-            } else {
-                identity.mutex.clone()
-            },
-        }),
-        CResource::MutexGuard(identity) => CResource::MutexGuard(MutexIdentity {
-            epoch: identity.epoch,
-            mutex: if identity.epoch.is_none() {
-                substitute_bitvector_variable_in_pointer(&identity.mutex, from, to)
-            } else {
-                identity.mutex.clone()
-            },
-        }),
-        CResource::MutexLive(identity) => CResource::MutexLive(MutexIdentity {
-            epoch: identity.epoch,
-            mutex: if identity.epoch.is_none() {
-                substitute_bitvector_variable_in_pointer(&identity.mutex, from, to)
-            } else {
-                identity.mutex.clone()
-            },
-        }),
-        CResource::Instance(instance) => {
-            let mut result = instance.clone();
-            result.arguments = instance
-                .arguments
-                .iter()
-                .map(|value| substitute_bitvector_variable_in_algebraic_value(value, from, to))
-                .collect();
-            result.fields = instance
-                .fields
-                .iter()
-                .map(|value| substitute_bitvector_variable_in_algebraic_value(value, from, to))
-                .collect();
-            result.resource_arguments = crate::kernel::ResourceReference::map_captured_values(
-                instance.resource_arguments(),
-                |value| substitute_bitvector_variable_in_algebraic_value(value, from, to),
-            );
-            CResource::Instance(result)
-        }
-        CResource::Memory(range) => CResource::Memory(
-            substitute_bitvector_variable_in_c_memory_range(range, from, to),
-        ),
-        CResource::Iterated(iterated) => CResource::iterated(iterated.map_terms(
-            |term| substitute_bitvector_variable(term, from, to),
-            |pointer| substitute_bitvector_variable_in_pointer(pointer, from, to),
-        )),
-        CResource::Composite { name, arguments } => CResource::Composite {
-            name: name.clone(),
-            arguments: arguments
-                .iter()
-                .map(|argument| {
-                    substitute_bitvector_variable_in_algebraic_value(argument, from, to)
-                })
-                .collect(),
-        },
-        CResource::Token { name, arguments } => CResource::Token {
-            name: name.clone(),
-            arguments: arguments
-                .iter()
-                .map(|argument| {
-                    substitute_bitvector_variable_in_algebraic_value(argument, from, to)
-                })
-                .collect(),
-        },
-    }
-}
-
-/// One declared `decreases` component under a bitvector substitution.
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_ranking_component(
-    measure: &CRankingComponent,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> CRankingComponent {
-    match measure {
-        CRankingComponent::CExpression(expression) => CRankingComponent::CExpression(
-            substitute_bitvector_variable_in_c_expression(expression, from, to),
-        ),
-        CRankingComponent::Pure { source, expression } => CRankingComponent::Pure {
-            source: source.clone(),
-            expression: substitute_bitvector_variable_in_spec_expression(expression, from, to),
-        },
-        CRankingComponent::PureInteger { source, expression } => CRankingComponent::PureInteger {
-            source: source.clone(),
-            expression: substitute_bitvector_variable_in_spec_integer(expression, from, to),
-        },
-    }
-}
-
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function(
-    function: &CFunction,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> CFunction {
-    let mut interface = function.contract_interface().clone();
-    interface.resource_requires = function
-        .resource_requires()
-        .iter()
-        .map(|resource| substitute_bitvector_variable_in_resource_spec(resource, from, to))
-        .collect();
-    interface.resource_ensures = function
-        .resource_ensures()
-        .iter()
-        .map(|resource| substitute_bitvector_variable_in_resource_spec(resource, from, to))
-        .collect();
-    interface.resource_constructors = function
-        .resource_constructors()
-        .iter()
-        .map(|resource| substitute_bitvector_variable_in_resource_spec(resource, from, to))
-        .collect();
-    interface.contract_requires = function
-        .contract_requires()
-        .iter()
-        .map(|proposition| substitute_bitvector_variable_in_spec_proposition(proposition, from, to))
-        .collect();
-    interface.contract_ensures = function
-        .contract_ensures()
-        .iter()
-        .map(|proposition| substitute_bitvector_variable_in_spec_proposition(proposition, from, to))
-        .collect();
-    interface.exceptional_ensures = function
-        .exceptional_ensures()
-        .iter()
-        .map(|proposition| substitute_bitvector_variable_in_spec_proposition(proposition, from, to))
-        .collect();
-    interface.contract_mutable = function
-        .contract_mutable()
-        .iter()
-        .map(|segment| substitute_bitvector_variable_in_c_memory_segment(segment, from, to))
-        .collect();
-    // The declared measure is read at states like a `requires` is, so it is
-    // rewritten with them; leaving it behind would make a substituted
-    // interface rank the recursion by the pre-substitution names.
-    interface.recursion_measure = interface
-        .recursion_measure
-        .as_ref()
-        .map(|measure| substitute_bitvector_variable_in_c_ranking_component(measure, from, to));
-    interface.composite_resource_definitions = function
-        .composite_resource_definitions()
-        .iter()
-        .map(|definition| CCompositeResourceDefinition {
-            resource_parameters: definition
-                .resource_parameters
-                .iter()
-                .map(|spec| substitute_bitvector_variable_in_resource_spec(spec, from, to))
-                .collect(),
-            instance_schema: definition.instance_schema.clone(),
-            thread_confined: definition.thread_confined,
-            contains_mutex_authority: definition.contains_mutex_authority,
-            authorized: definition.authorized,
-            reaches_population: definition.reaches_population,
-            owned_footprint_unnamed: definition.owned_footprint_unnamed,
-            fact_source_indices: definition.fact_source_indices.clone(),
-            fact_source_spellings: definition.fact_source_spellings.clone(),
-            name: definition.name.clone(),
-            parameters: definition.parameters.clone(),
-            witnesses: definition.witnesses.clone(),
-            condition: definition.condition.as_ref().map(|condition| {
-                substitute_bitvector_variable_in_spec_proposition(condition, from, to)
-            }),
-            matched: definition.matched.as_ref().map(|body| CResourceMatchBody {
-                field_index: body.field_index,
-                algebraic_type: body.algebraic_type.clone(),
-                arms: body
-                    .arms
-                    .iter()
-                    .map(|arm| CResourceMatchArm {
-                        children: arm
-                            .children
-                            .iter()
-                            .map(|child| CResourceChildSpec {
-                                name: child.name.clone(),
-                                resource: child.resource.clone(),
-                                binding: child.binding,
-                                field_bindings: child.field_bindings.clone(),
-                                arguments: child
-                                    .arguments
-                                    .iter()
-                                    .map(|argument| {
-                                        substitute_bitvector_variable_in_c_expression(
-                                            argument, from, to,
-                                        )
-                                    })
-                                    .collect(),
-                            })
-                            .collect(),
-                        variant: arm.variant.clone(),
-                        bindings: arm.bindings.clone(),
-                        binding_types: arm.binding_types.clone(),
-                        binding_variables: arm.binding_variables.clone(),
-                        contains: arm
-                            .contains
-                            .iter()
-                            .map(|resource| {
-                                substitute_bitvector_variable_in_resource_spec(resource, from, to)
-                            })
-                            .collect(),
-                        facts: arm
-                            .facts
-                            .iter()
-                            .map(|fact| {
-                                substitute_bitvector_variable_in_spec_proposition(fact, from, to)
-                            })
-                            .collect(),
-                    })
-                    .collect(),
-            }),
-            recursive: definition.recursive,
-            matched_recursive: definition.matched_recursive,
-            facts_read_counts: definition.facts_read_counts,
-            facts_claim_liveness: definition.facts_claim_liveness,
-            contains: definition
-                .contains
-                .iter()
-                .map(|resource| substitute_bitvector_variable_in_resource_spec(resource, from, to))
-                .collect(),
-            children: definition
-                .children
-                .iter()
-                .map(|child| CResourceChildSpec {
-                    arguments: child
-                        .arguments
-                        .iter()
-                        .map(|argument| {
-                            substitute_bitvector_variable_in_c_expression(argument, from, to)
-                        })
-                        .collect(),
-                    ..child.clone()
-                })
-                .collect(),
-            facts: definition
-                .facts
-                .iter()
-                .map(|fact| substitute_bitvector_variable_in_spec_proposition(fact, from, to))
-                .collect(),
-        })
-        .collect();
-    interface.predicate_unfoldings = function
-        .predicate_unfoldings()
-        .iter()
-        .map(|unfolding| CPredicateUnfolding {
-            predicate: substitute_bitvector_variable_in_spec_proposition(
-                &unfolding.predicate,
-                from,
-                to,
-            ),
-            body: substitute_bitvector_variable_in_spec_proposition(&unfolding.body, from, to),
-        })
-        .collect();
-    CFunction {
-        program_entry: function.program_entry,
-        name: function.name.clone(),
-        inline_body: function.inline_body,
-        body: substitute_bitvector_variable_in_c_statement(function.body(), from, to),
-        source_body: substitute_bitvector_variable_in_c_statement(function.source_body(), from, to),
-        control_targets: std::sync::Arc::new(
-            function
-                .control_targets
-                .iter()
-                .map(|(identity, target)| {
-                    (
-                        *identity,
-                        CControlTarget {
-                            statement_index: target.statement_index,
-                            remaining: std::sync::Arc::new(
-                                substitute_bitvector_variable_in_c_statement(
-                                    &target.remaining,
-                                    from,
-                                    to,
-                                ),
-                            ),
-                        },
-                    )
-                })
-                .collect(),
-        ),
-        contract_interface: interface,
-        global_variables: function.global_variables.clone(),
-        global_arrays: function.global_arrays.clone(),
-        static_variables: function.static_variables.clone(),
-        static_storage: function.static_storage.clone(),
-        string_literals: function.string_literals.clone(),
-    }
-}
-
-pub(in crate::kernel) fn substitute_bitvector_variable_in_resource_spec(
-    resource: &CResourceSpec,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> CResourceSpec {
-    let substituted = CResourceSpec::new(
-        substitute_bitvector_variable_in_resource_term(resource.term(), from, to),
-        resource.access(),
-        match resource.quantity() {
-            CResourceQuantity::One => CResourceQuantity::One,
-            CResourceQuantity::Count(quantity) => CResourceQuantity::Count(
-                substitute_bitvector_variable_in_c_expression(quantity, from, to),
-            ),
-        },
-        resource.role(),
-        resource.snapshot(),
-    )
-    .expect("bitvector substitution preserves resource validity")
-    .with_resource_arguments(resource.resource_arguments().to_vec());
-    match resource.mutex_authority_binding() {
-        Some((identity, binder)) => substituted
-            .with_mutex_authority_binding(identity, binder.to_string())
-            .expect("bitvector substitution preserves mutex authority binding"),
-        None => substituted,
-    }
-}
-
-fn substitute_bitvector_variable_in_resource_term(
-    resource: &CResourceTerm,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> CResourceTerm {
-    match resource {
-        CResourceTerm::Instance {
-            identity,
-            binder,
-            schema,
-            resource,
-        } => CResourceTerm::Instance {
-            identity: *identity,
-            binder: binder.clone(),
-            schema: schema.clone(),
-            resource: Box::new(substitute_bitvector_variable_in_resource_term(
-                resource, from, to,
-            )),
-        },
-        CResourceTerm::PopulationAuthority {
-            protected,
-            population_arity,
-            snapshot,
-        } => CResourceTerm::PopulationAuthority {
-            population_arity: *population_arity,
-            protected: Box::new(CResourceTypeSpec {
-                resource: Box::new(substitute_bitvector_variable_in_resource_spec(
-                    &protected.resource,
-                    from,
-                    to,
-                )),
-                schema: protected.schema.clone(),
-            }),
-            snapshot: *snapshot,
-        },
-        CResourceTerm::MutexGuard { mutex, snapshot } => CResourceTerm::MutexGuard {
-            mutex: Box::new(substitute_bitvector_variable_in_c_expression(
-                mutex, from, to,
-            )),
-            snapshot: *snapshot,
-        },
-        CResourceTerm::MutexLive { mutex, snapshot } => CResourceTerm::MutexLive {
-            mutex: Box::new(substitute_bitvector_variable_in_c_expression(
-                mutex, from, to,
-            )),
-            snapshot: *snapshot,
-        },
-        CResourceTerm::Publication {
-            side,
-            payload,
-            flag,
-            snapshot,
-        } => CResourceTerm::Publication {
-            side: *side,
-            payload: Box::new(CResourceTypeSpec {
-                resource: Box::new(substitute_bitvector_variable_in_resource_spec(
-                    &payload.resource,
-                    from,
-                    to,
-                )),
-                schema: payload.schema.clone(),
-            }),
-            flag: Box::new(substitute_bitvector_variable_in_c_expression(
-                flag, from, to,
-            )),
-            snapshot: *snapshot,
-        },
-        CResourceTerm::MutexUse {
-            mutex,
-            snapshot,
-            protected,
-        } => CResourceTerm::MutexUse {
-            protected: protected.as_ref().map(|p| {
-                Box::new(CResourceTypeSpec {
-                    resource: Box::new(substitute_bitvector_variable_in_resource_spec(
-                        &p.resource,
-                        from,
-                        to,
-                    )),
-                    schema: p.schema.clone(),
-                })
-            }),
-            mutex: Box::new(substitute_bitvector_variable_in_c_expression(
-                mutex, from, to,
-            )),
-            snapshot: *snapshot,
-        },
-        CResourceTerm::Iterated(spec) => {
-            CResourceTerm::Iterated(Box::new(spec.map_expressions(|expression| {
-                substitute_bitvector_variable_in_c_expression(expression, from, to)
-            })))
-        }
-        CResourceTerm::Memory(segment) => CResourceTerm::Memory(CMemorySegment {
-            base: substitute_bitvector_variable_in_c_expression(&segment.base, from, to),
-            start: substitute_bitvector_variable_in_c_expression(&segment.start, from, to),
-            end: substitute_bitvector_variable_in_c_expression(&segment.end, from, to),
-            element_width: segment.element_width,
-            guard: segment
-                .guard
-                .as_ref()
-                .map(|guard| substitute_bitvector_variable_in_spec_proposition(guard, from, to)),
-        }),
-        CResourceTerm::Composite {
-            name,
-            arguments,
-            argument_snapshots,
-            parameter_types,
-        } => CResourceTerm::Composite {
-            name: name.clone(),
-            arguments: arguments
-                .iter()
-                .map(|argument| substitute_bitvector_variable_in_c_expression(argument, from, to))
-                .collect(),
-            argument_snapshots: argument_snapshots.clone(),
-            parameter_types: parameter_types.clone(),
-        },
-        CResourceTerm::Token {
-            name,
-            arguments,
-            argument_snapshots,
-            parameter_types,
-        } => CResourceTerm::Token {
-            name: name.clone(),
-            arguments: arguments
-                .iter()
-                .map(|argument| substitute_bitvector_variable_in_c_expression(argument, from, to))
-                .collect(),
-            argument_snapshots: argument_snapshots.clone(),
-            parameter_types: parameter_types.clone(),
-        },
-    }
-}
-
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function_specification(
-    specification: &CFunctionSpecification,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> CFunctionSpecification {
-    CFunctionSpecification {
-        state: substitute_bitvector_variable_in_c_state(specification.state(), from, to),
-        arguments: specification
-            .arguments()
-            .iter()
-            .map(|argument| substitute_bitvector_variable_in_c_expression(argument, from, to))
-            .collect(),
-        requires: specification
-            .requires()
-            .iter()
-            .map(|requirement| substitute_bitvector_variable_in_proposition(requirement, from, to))
-            .collect(),
-        outcome: substitute_bitvector_variable_in_c_function_outcome(
-            specification.outcome(),
-            from,
-            to,
-        ),
-    }
-}
-
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_memory_range(
-    range: &CMemoryRange,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> CMemoryRange {
-    range.with_bounds(
-        substitute_bitvector_variable_in_pointer(&range.base, from, to),
-        substitute_bitvector_variable(range.bound_terms().0, from, to),
-        substitute_bitvector_variable(range.bound_terms().1, from, to),
-    )
-}
-
-fn substitute_bitvector_variable_in_c_memory_segment(
-    segment: &CMemorySegment,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> CMemorySegment {
-    CMemorySegment {
-        base: substitute_bitvector_variable_in_c_expression(&segment.base, from, to),
-        start: substitute_bitvector_variable_in_c_expression(&segment.start, from, to),
-        end: substitute_bitvector_variable_in_c_expression(&segment.end, from, to),
-        element_width: segment.element_width,
-        guard: segment
-            .guard
-            .as_ref()
-            .map(|guard| substitute_bitvector_variable_in_spec_proposition(guard, from, to)),
-    }
-}
-
 pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
     condition: &ConditionTerm,
     from: Variable,
@@ -4692,12 +4790,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
                 substitute_bitvector_variable(right, from, to),
             )
         }
-        ConditionTerm::IntegerLessThan(left, right)
-        | ConditionTerm::IntegerLessEqual(left, right)
-        | ConditionTerm::IntegerGreaterThan(left, right)
-        | ConditionTerm::IntegerGreaterEqual(left, right)
-        | ConditionTerm::IntegerEqual(left, right)
-        | ConditionTerm::IntegerNotEqual(left, right) => {
+        crate::kernel::integer_comparison_condition!(left, right) => {
             let rewrite =
                 |term: &IntegerTerm| substitute_bitvector_variable_in_integer(term, from, to);
             match condition {
@@ -5690,270 +5783,6 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_value(
     }
 }
 
-/// Substitute a complete pointer value for a quantified pointer variable.
-///
-/// Pointer variables are represented by symbolic block identities rather
-/// than by integer addresses.  Substitution therefore replaces the symbolic
-/// block and composes the replacement's offset with any pointer arithmetic
-/// already present at the occurrence.  In particular, substituting `q` for
-/// `p` in `p + 4` must produce `q + 4`, not merely `q`.
-pub(crate) fn substitute_pointer_variable_in_proposition(
-    proposition: &Proposition,
-    from: Variable,
-    to: &Pointer,
-) -> Proposition {
-    match proposition {
-        Proposition::Equal(left, right) => Proposition::Equal(
-            substitute_pointer_variable_in_term(left, from, to),
-            substitute_pointer_variable_in_term(right, from, to),
-        ),
-        Proposition::ConditionIs(condition, value) => Proposition::ConditionIs(
-            substitute_pointer_variable_in_condition(condition, from, to),
-            *value,
-        ),
-        Proposition::Predicate { name, arguments } => Proposition::Predicate {
-            name: name.clone(),
-            arguments: arguments
-                .iter()
-                .map(|argument| substitute_pointer_variable_in_term(argument, from, to))
-                .collect(),
-        },
-        Proposition::CExpressionEvaluates {
-            state,
-            expression,
-            outcome,
-        } => Proposition::CExpressionEvaluates {
-            state: Box::new(substitute_pointer_variable_in_c_state(state, from, to)),
-            expression: substitute_pointer_variable_in_c_expression(expression, from, to),
-            outcome: substitute_pointer_variable_in_c_expression_outcome(outcome, from, to),
-        },
-        Proposition::CConditionEvaluates {
-            state,
-            condition,
-            outcome,
-        } => Proposition::CConditionEvaluates {
-            state: Box::new(substitute_pointer_variable_in_c_state(state, from, to)),
-            condition: substitute_pointer_variable_in_c_expression(condition, from, to),
-            outcome: outcome.clone(),
-        },
-        Proposition::CStatementExecutes {
-            state,
-            statement,
-            outcome,
-        }
-        | Proposition::CStatementVerifies {
-            state,
-            statement,
-            outcome,
-        } => {
-            let state = substitute_pointer_variable_in_c_state(state, from, to);
-            let statement = substitute_pointer_variable_in_c_statement(statement, from, to);
-            let outcome = substitute_pointer_variable_in_c_statement_outcome(outcome, from, to);
-            match proposition {
-                Proposition::CStatementExecutes { .. } => Proposition::CStatementExecutes {
-                    state: Box::new(state),
-                    statement: Box::new(statement),
-                    outcome,
-                },
-                Proposition::CStatementVerifies { .. } => Proposition::CStatementVerifies {
-                    state: Box::new(state),
-                    statement: Box::new(statement),
-                    outcome,
-                },
-                _ => unreachable!("the combined statement proposition arm is exhaustive"),
-            }
-        }
-        Proposition::CFunctionExecutes {
-            state,
-            function,
-            arguments,
-            outcome,
-        }
-        | Proposition::CFunctionVerifies {
-            state,
-            function,
-            arguments,
-            outcome,
-        } => {
-            let state = substitute_pointer_variable_in_c_state(state, from, to);
-            let function = substitute_pointer_variable_in_c_function(function, from, to);
-            let arguments = arguments
-                .iter()
-                .map(|argument| substitute_pointer_variable_in_c_expression(argument, from, to))
-                .collect();
-            let outcome = substitute_pointer_variable_in_c_function_outcome(outcome, from, to);
-            match proposition {
-                Proposition::CFunctionExecutes { .. } => Proposition::CFunctionExecutes {
-                    state: Box::new(state),
-                    function: Box::new(function),
-                    arguments,
-                    outcome,
-                },
-                Proposition::CFunctionVerifies { .. } => Proposition::CFunctionVerifies {
-                    state: Box::new(state),
-                    function: Box::new(function),
-                    arguments,
-                    outcome,
-                },
-                _ => unreachable!("the combined function proposition arm is exhaustive"),
-            }
-        }
-        Proposition::CFunctionSatisfiesSpecification {
-            function,
-            specification,
-        } => Proposition::CFunctionSatisfiesSpecification {
-            function: Box::new(substitute_pointer_variable_in_c_function(
-                function, from, to,
-            )),
-            specification: Box::new(substitute_pointer_variable_in_c_function_specification(
-                specification,
-                from,
-                to,
-            )),
-        },
-        Proposition::CFunctionPartiallySatisfiesSpecification {
-            function,
-            specification,
-        } => Proposition::CFunctionPartiallySatisfiesSpecification {
-            function: Box::new(substitute_pointer_variable_in_c_function(
-                function, from, to,
-            )),
-            specification: Box::new(substitute_pointer_variable_in_c_function_specification(
-                specification,
-                from,
-                to,
-            )),
-        },
-        Proposition::CMemoryLoads {
-            memory,
-            pointer,
-            outcome,
-        } => Proposition::CMemoryLoads {
-            memory: substitute_pointer_variable_in_memory(memory, from, to),
-            pointer: substitute_pointer_variable_in_pointer(pointer, from, to),
-            outcome: substitute_pointer_variable_in_c_expression_outcome(outcome, from, to),
-        },
-        Proposition::CMemoryReadDefined {
-            memory,
-            pointer,
-            value_type,
-        } => Proposition::CMemoryReadDefined {
-            memory: substitute_pointer_variable_in_memory(memory, from, to),
-            pointer: substitute_pointer_variable_in_pointer(pointer, from, to),
-            value_type: *value_type,
-        },
-        Proposition::CMemoryCanStore {
-            memory,
-            pointer,
-            byte_width,
-        } => Proposition::CMemoryCanStore {
-            memory: substitute_pointer_variable_in_memory(memory, from, to),
-            pointer: substitute_pointer_variable_in_pointer(pointer, from, to),
-            byte_width: *byte_width,
-        },
-        Proposition::CMemoryLoadable {
-            memory,
-            base,
-            bytes,
-            wide,
-        } => Proposition::CMemoryLoadable {
-            memory: substitute_pointer_variable_in_memory(memory, from, to),
-            base: substitute_pointer_variable_in_pointer(base, from, to),
-            bytes: bytes.clone(),
-            wide: *wide,
-        },
-        Proposition::CResourceSeparate { left, right } => Proposition::CResourceSeparate {
-            left: Box::new(substitute_pointer_variable_in_c_resource(left, from, to)),
-            right: Box::new(substitute_pointer_variable_in_c_resource(right, from, to)),
-        },
-        Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
-            parent: Box::new(substitute_pointer_variable_in_c_resource(parent, from, to)),
-            child: Box::new(substitute_pointer_variable_in_c_resource(child, from, to)),
-        },
-        Proposition::CResourceComposition(resources) => Proposition::CResourceComposition(
-            substitute_pointer_variable_in_resource_context(resources, from, to),
-        ),
-        Proposition::CMemoryMutatesOnly {
-            before,
-            after,
-            writes,
-        } => Proposition::CMemoryMutatesOnly {
-            before: substitute_pointer_variable_in_memory(before, from, to),
-            after: substitute_pointer_variable_in_memory(after, from, to),
-            writes: writes
-                .iter()
-                .map(|(pointer, bytes)| {
-                    (
-                        substitute_pointer_variable_in_pointer(pointer, from, to),
-                        *bytes,
-                    )
-                })
-                .collect(),
-        },
-        Proposition::CMemoryEffectSummary {
-            before,
-            after,
-            mutable_ranges,
-        } => Proposition::CMemoryEffectSummary {
-            before: substitute_pointer_variable_in_memory(before, from, to),
-            after: substitute_pointer_variable_in_memory(after, from, to),
-            mutable_ranges: mutable_ranges
-                .iter()
-                .map(|range| substitute_pointer_variable_in_c_memory_range(range, from, to))
-                .collect(),
-        },
-        Proposition::CHeapAllocationFreed {
-            before,
-            after,
-            allocation_base,
-            bytes,
-        } => Proposition::CHeapAllocationFreed {
-            before: substitute_pointer_variable_in_memory(before, from, to),
-            after: substitute_pointer_variable_in_memory(after, from, to),
-            allocation_base: substitute_pointer_variable_in_pointer(allocation_base, from, to),
-            bytes: bytes.clone(),
-        },
-        Proposition::And(left, right) => Proposition::And(
-            Box::new(substitute_pointer_variable_in_proposition(left, from, to)),
-            Box::new(substitute_pointer_variable_in_proposition(right, from, to)),
-        ),
-        Proposition::Or(left, right) => Proposition::Or(
-            Box::new(substitute_pointer_variable_in_proposition(left, from, to)),
-            Box::new(substitute_pointer_variable_in_proposition(right, from, to)),
-        ),
-        Proposition::Not(body) => Proposition::Not(Box::new(
-            substitute_pointer_variable_in_proposition(body, from, to),
-        )),
-        Proposition::Implies(left, right) => Proposition::Implies(
-            Box::new(substitute_pointer_variable_in_proposition(left, from, to)),
-            Box::new(substitute_pointer_variable_in_proposition(right, from, to)),
-        ),
-        Proposition::ForAll { var, sort, body } if *var != from => {
-            let (body, var) = pointer_capture_avoiding_quantifier_body(*var, sort, body, from, to);
-            Proposition::ForAll {
-                var,
-                sort: sort.clone(),
-                body: Box::new(substitute_pointer_variable_in_proposition(&body, from, to)),
-            }
-        }
-        Proposition::Exists {
-            name,
-            var,
-            sort,
-            body,
-        } if *var != from => {
-            let (body, var) = pointer_capture_avoiding_quantifier_body(*var, sort, body, from, to);
-            Proposition::Exists {
-                name: name.clone(),
-                var,
-                sort: sort.clone(),
-                body: Box::new(substitute_pointer_variable_in_proposition(&body, from, to)),
-            }
-        }
-        proposition => proposition.clone(),
-    }
-}
-
 fn pointer_capture_avoiding_quantifier_body(
     binder: Variable,
     sort: &Sort,
@@ -6075,71 +5904,6 @@ fn substitute_pointer_variable_in_algebraic_term(
     AlgebraicTerm {
         algebraic_type: term.algebraic_type.clone(),
         node: substitute_pointer_variable_in_algebraic_term_node(term, from, to),
-    }
-}
-
-fn substitute_pointer_variable_in_algebraic_value(
-    value: &AlgebraicValue,
-    from: Variable,
-    to: &Pointer,
-) -> AlgebraicValue {
-    match value {
-        AlgebraicValue::C(value) => {
-            AlgebraicValue::C(substitute_pointer_variable_in_c_value(value, from, to))
-        }
-        AlgebraicValue::Integer(value) => AlgebraicValue::Integer(value.clone()),
-        AlgebraicValue::Algebraic(value) => AlgebraicValue::Algebraic(
-            substitute_pointer_variable_in_algebraic_term(value, from, to),
-        ),
-    }
-}
-
-fn substitute_pointer_variable_in_pure_function_argument(
-    argument: &PureFunctionArgument,
-    from: Variable,
-    to: &Pointer,
-) -> PureFunctionArgument {
-    match argument {
-        PureFunctionArgument::Integer(value) => PureFunctionArgument::Integer(value.clone()),
-        PureFunctionArgument::Value(value) => {
-            PureFunctionArgument::Value(substitute_pointer_variable_in_c_value(value, from, to))
-        }
-        PureFunctionArgument::Algebraic(value) => PureFunctionArgument::Algebraic(
-            substitute_pointer_variable_in_algebraic_term(value, from, to),
-        ),
-        PureFunctionArgument::ArrayRef {
-            memory,
-            pointer,
-            element_type,
-        } => PureFunctionArgument::ArrayRef {
-            memory: substitute_pointer_variable_in_memory(memory, from, to),
-            pointer: substitute_pointer_variable_in_c_value(pointer, from, to),
-            element_type: *element_type,
-        },
-    }
-}
-
-fn substitute_pointer_variable_in_sequence(
-    sequence: &SequenceTerm,
-    from: Variable,
-    to: &Pointer,
-) -> SequenceTerm {
-    let node = match sequence.node.as_ref() {
-        SequenceTermNode::Literal(values) => SequenceTermNode::Literal(
-            values
-                .iter()
-                .map(|value| substitute_pointer_variable_in_c_value(value, from, to))
-                .collect::<Vec<_>>()
-                .into(),
-        ),
-        SequenceTermNode::Concat(left, right) => SequenceTermNode::Concat(
-            substitute_pointer_variable_in_sequence(left, from, to),
-            substitute_pointer_variable_in_sequence(right, from, to),
-        ),
-    };
-    SequenceTerm {
-        element_type: sequence.element_type,
-        node: std::sync::Arc::new(node),
     }
 }
 
@@ -6320,25 +6084,7 @@ fn substitute_pointer_variable_in_c_expression(
                 _ => unreachable!("the combined unary expression arm is exhaustive"),
             }
         }
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::And(left, right)
-        | CExpression::Or(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right)
-        | CExpression::Index(left, right) => {
+        crate::kernel::binary_c_expression!(left, right) => {
             let left = Box::new(substitute_pointer_variable_in_c_expression(left, from, to));
             let right = Box::new(substitute_pointer_variable_in_c_expression(right, from, to));
             match expression {
@@ -6364,656 +6110,6 @@ fn substitute_pointer_variable_in_c_expression(
                 _ => unreachable!("the combined binary expression arm is exhaustive"),
             }
         }
-    }
-}
-
-fn substitute_pointer_variable_in_c_statement(
-    statement: &CStatement,
-    from: Variable,
-    to: &Pointer,
-) -> CStatement {
-    match statement {
-        CStatement::Skip
-        | CStatement::EndAutomaticLifetimes { .. }
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare {
-            initializer: None, ..
-        }
-        | CStatement::DeclareAggregate { .. } => statement.clone(),
-        CStatement::ForStep {
-            step,
-            exited_locals,
-            continue_after,
-        } => CStatement::ForStep {
-            exited_locals: exited_locals.clone(),
-            continue_after: *continue_after,
-            step: Box::new(substitute_pointer_variable_in_c_statement(step, from, to)),
-        },
-        CStatement::Declare {
-            initializer: Some(expression),
-            ..
-        } => {
-            let mut statement = statement.clone();
-            if let CStatement::Declare { initializer, .. } = &mut statement {
-                *initializer = Some(substitute_pointer_variable_in_c_expression(
-                    expression, from, to,
-                ));
-            }
-            statement
-        }
-        CStatement::Assign { name, expression } => CStatement::Assign {
-            name: name.clone(),
-            expression: substitute_pointer_variable_in_c_expression(expression, from, to),
-        },
-        CStatement::CallAssign {
-            target,
-            function_name,
-            arguments,
-        } => CStatement::CallAssign {
-            target: target.clone(),
-            function_name: function_name.clone(),
-            arguments: arguments
-                .iter()
-                .map(|argument| substitute_pointer_variable_in_c_expression(argument, from, to))
-                .collect(),
-        },
-        CStatement::Call {
-            function_name,
-            arguments,
-        } => CStatement::Call {
-            function_name: function_name.clone(),
-            arguments: arguments
-                .iter()
-                .map(|argument| substitute_pointer_variable_in_c_expression(argument, from, to))
-                .collect(),
-        },
-        CStatement::HeapAllocate {
-            target,
-            bytes,
-            zeroed,
-        } => CStatement::HeapAllocate {
-            target: target.clone(),
-            bytes: substitute_pointer_variable_in_c_expression(bytes, from, to),
-            zeroed: *zeroed,
-        },
-        CStatement::HeapFree { pointer } => CStatement::HeapFree {
-            pointer: substitute_pointer_variable_in_c_expression(pointer, from, to),
-        },
-        CStatement::Assert { condition, label } => CStatement::Assert {
-            condition: substitute_pointer_variable_in_c_expression(condition, from, to),
-            label: label.clone(),
-        },
-        CStatement::Seq(first, second) => c_seq(
-            substitute_pointer_variable_in_c_statement(first, from, to),
-            substitute_pointer_variable_in_c_statement(second, from, to),
-        ),
-        CStatement::Return(expression) => CStatement::Return(
-            substitute_pointer_variable_in_c_expression(expression, from, to),
-        ),
-        CStatement::Throw(expression) => CStatement::Throw(
-            substitute_pointer_variable_in_c_expression(expression, from, to),
-        ),
-        CStatement::TryCatchInt32 {
-            try_body,
-            binding,
-            handler,
-            cleanup_unwind,
-        } => CStatement::TryCatchInt32 {
-            try_body: Box::new(substitute_pointer_variable_in_c_statement(
-                try_body, from, to,
-            )),
-            binding: binding.clone(),
-            handler: Box::new(substitute_pointer_variable_in_c_statement(
-                handler, from, to,
-            )),
-            cleanup_unwind: *cleanup_unwind,
-        },
-        CStatement::Store { pointer, value } => CStatement::Store {
-            pointer: substitute_pointer_variable_in_c_expression(pointer, from, to),
-            value: substitute_pointer_variable_in_c_expression(value, from, to),
-        },
-        CStatement::TypedStore {
-            pointer,
-            value,
-            value_type,
-            volatile,
-            pointee_constant,
-        } => CStatement::TypedStore {
-            pointer: substitute_pointer_variable_in_c_expression(pointer, from, to),
-            value: substitute_pointer_variable_in_c_expression(value, from, to),
-            value_type: *value_type,
-            volatile: *volatile,
-            pointee_constant: *pointee_constant,
-        },
-        CStatement::CopyAggregate {
-            target,
-            source,
-            layout,
-        } => CStatement::CopyAggregate {
-            target: substitute_pointer_variable_in_c_expression(target, from, to),
-            source: substitute_pointer_variable_in_c_expression(source, from, to),
-            layout: layout.clone(),
-        },
-        CStatement::InitializeScalarArray {
-            target,
-            source,
-            element_type,
-            count,
-            copy,
-            fresh,
-        } => CStatement::InitializeScalarArray {
-            target: substitute_pointer_variable_in_c_expression(target, from, to),
-            source: substitute_pointer_variable_in_c_expression(source, from, to),
-            element_type: *element_type,
-            count: *count,
-            copy: *copy,
-            fresh: *fresh,
-        },
-        CStatement::Update {
-            target,
-            operator,
-            operand,
-        } => CStatement::Update {
-            target: substitute_pointer_variable_in_c_expression(target, from, to),
-            operator: *operator,
-            operand: substitute_pointer_variable_in_c_expression(operand, from, to),
-        },
-        CStatement::If {
-            condition,
-            then_branch,
-            else_branch,
-        } => CStatement::If {
-            condition: substitute_pointer_variable_in_c_expression(condition, from, to),
-            then_branch: Box::new(substitute_pointer_variable_in_c_statement(
-                then_branch,
-                from,
-                to,
-            )),
-            else_branch: Box::new(substitute_pointer_variable_in_c_statement(
-                else_branch,
-                from,
-                to,
-            )),
-        },
-        CStatement::While {
-            condition,
-            invariant,
-            invariant_checks,
-            effect_checks,
-            resource_specs,
-            ranking_measures,
-            structural_measure,
-            body,
-            do_while,
-            backedge_target,
-            natural_exit_target,
-        } => CStatement::While {
-            structural_measure: structural_measure.clone(),
-            condition: substitute_pointer_variable_in_c_expression(condition, from, to),
-            ranking_measures: ranking_measures
-                .iter()
-                .map(|measure| {
-                    substitute_pointer_variable_in_c_ranking_component(measure, from, to)
-                })
-                .collect(),
-            resource_specs: resource_specs
-                .iter()
-                .map(|resource| substitute_pointer_variable_in_resource_spec(resource, from, to))
-                .collect(),
-            invariant: invariant
-                .iter()
-                .map(|proposition| {
-                    substitute_pointer_variable_in_proposition(proposition, from, to)
-                })
-                .collect(),
-            invariant_checks: invariant_checks
-                .iter()
-                .map(|check| CLoopInvariantCheck {
-                    proposition: substitute_pointer_variable_in_spec_proposition(
-                        check.proposition(),
-                        from,
-                        to,
-                    ),
-                    entry_context: check.entry_context.clone(),
-                    preservation_context: check.preservation_context.clone(),
-                })
-                .collect(),
-            effect_checks: effect_checks
-                .iter()
-                .map(|check| CLoopEffectCheck {
-                    effect: substitute_pointer_variable_in_loop_effect(check.effect(), from, to),
-                    span: check.span,
-                    context: check.context.clone(),
-                    origin: check.origin,
-                    validated_ranges: check.validated_ranges.as_ref().map(|ranges| {
-                        ranges
-                            .iter()
-                            .map(|range| {
-                                substitute_pointer_variable_in_c_memory_range(range, from, to)
-                            })
-                            .collect()
-                    }),
-                })
-                .collect(),
-            do_while: *do_while,
-            backedge_target: *backedge_target,
-            natural_exit_target: *natural_exit_target,
-            body: Box::new(substitute_pointer_variable_in_c_statement(body, from, to)),
-        },
-        CStatement::Switch { expression, cases } => CStatement::Switch {
-            expression: substitute_pointer_variable_in_c_expression(expression, from, to),
-            cases: cases
-                .iter()
-                .map(|case| CSwitchCase {
-                    value: case.value,
-                    body: Box::new(substitute_pointer_variable_in_c_statement(
-                        &case.body, from, to,
-                    )),
-                })
-                .collect(),
-        },
-    }
-}
-
-fn substitute_pointer_variable_in_loop_effect(
-    effect: &CLoopEffect,
-    from: Variable,
-    to: &Pointer,
-) -> CLoopEffect {
-    match effect {
-        CLoopEffect::Immutable => CLoopEffect::Immutable,
-        CLoopEffect::Mutable(segments) => CLoopEffect::Mutable(
-            segments
-                .iter()
-                .map(|segment| CMemorySegment {
-                    base: substitute_pointer_variable_in_c_expression(&segment.base, from, to),
-                    start: substitute_pointer_variable_in_c_expression(&segment.start, from, to),
-                    end: substitute_pointer_variable_in_c_expression(&segment.end, from, to),
-                    element_width: segment.element_width,
-                    guard: segment.guard.as_ref().map(|guard| {
-                        substitute_pointer_variable_in_spec_proposition(guard, from, to)
-                    }),
-                })
-                .collect(),
-        ),
-    }
-}
-
-fn substitute_pointer_variable_in_c_expression_outcome(
-    outcome: &CExpressionOutcome,
-    from: Variable,
-    to: &Pointer,
-) -> CExpressionOutcome {
-    match outcome {
-        CExpressionOutcome::Value(value) => {
-            CExpressionOutcome::Value(substitute_pointer_variable_in_c_value(value, from, to))
-        }
-        CExpressionOutcome::UndefinedBehavior(kind) => {
-            CExpressionOutcome::UndefinedBehavior(kind.clone())
-        }
-        CExpressionOutcome::RuntimeError(kind) => CExpressionOutcome::RuntimeError(kind.clone()),
-    }
-}
-
-fn substitute_pointer_variable_in_c_statement_outcome(
-    outcome: &CStatementOutcome,
-    from: Variable,
-    to: &Pointer,
-) -> CStatementOutcome {
-    match outcome {
-        CStatementOutcome::Normal(state) => CStatementOutcome::Normal(Box::new(
-            substitute_pointer_variable_in_c_state(state, from, to),
-        )),
-        CStatementOutcome::Break(state) => CStatementOutcome::Break(Box::new(
-            substitute_pointer_variable_in_c_state(state, from, to),
-        )),
-        CStatementOutcome::Continue(state) => CStatementOutcome::Continue(Box::new(
-            substitute_pointer_variable_in_c_state(state, from, to),
-        )),
-        CStatementOutcome::Jump { target, state } => CStatementOutcome::Jump {
-            target: *target,
-            state: Box::new(substitute_pointer_variable_in_c_state(state, from, to)),
-        },
-        CStatementOutcome::Return { value, state } => CStatementOutcome::Return {
-            value: substitute_pointer_variable_in_c_value(value, from, to),
-            state: Box::new(substitute_pointer_variable_in_c_state(state, from, to)),
-        },
-        CStatementOutcome::Throw { value, state } => CStatementOutcome::Throw {
-            value: substitute_pointer_variable_in_c_value(value, from, to),
-            state: Box::new(substitute_pointer_variable_in_c_state(state, from, to)),
-        },
-        CStatementOutcome::VerificationDiverges => CStatementOutcome::VerificationDiverges,
-        CStatementOutcome::UndefinedBehavior(kind) => {
-            CStatementOutcome::UndefinedBehavior(kind.clone())
-        }
-        CStatementOutcome::RuntimeError(kind) => CStatementOutcome::RuntimeError(kind.clone()),
-    }
-}
-
-fn substitute_pointer_variable_in_c_function_outcome(
-    outcome: &CFunctionOutcome,
-    from: Variable,
-    to: &Pointer,
-) -> CFunctionOutcome {
-    match outcome {
-        CFunctionOutcome::Return { value, state } => CFunctionOutcome::Return {
-            value: substitute_pointer_variable_in_c_value(value, from, to),
-            state: Box::new(substitute_pointer_variable_in_c_state(state, from, to)),
-        },
-        CFunctionOutcome::Throw { value, state } => CFunctionOutcome::Throw {
-            value: substitute_pointer_variable_in_c_value(value, from, to),
-            state: Box::new(substitute_pointer_variable_in_c_state(state, from, to)),
-        },
-        CFunctionOutcome::VerificationDiverges => CFunctionOutcome::VerificationDiverges,
-        CFunctionOutcome::UndefinedBehavior(kind) => {
-            CFunctionOutcome::UndefinedBehavior(kind.clone())
-        }
-        CFunctionOutcome::RuntimeError(kind) => CFunctionOutcome::RuntimeError(kind.clone()),
-    }
-}
-
-fn substitute_pointer_variable_in_c_state(state: &CState, from: Variable, to: &Pointer) -> CState {
-    let bindings = std::sync::Arc::new(
-        state
-            .locals
-            .bindings
-            .iter()
-            .map(|(name, binding)| {
-                let binding = match binding {
-                    CLocalBinding::Object {
-                        storage_declared,
-                        value,
-                        c_type,
-                        slot,
-                        volatile,
-                        pointee_volatile,
-                        constant,
-                        pointee_constant,
-                    } => CLocalBinding::Object {
-                        storage_declared: *storage_declared,
-                        value: substitute_pointer_variable_in_c_value(value, from, to),
-                        c_type: *c_type,
-                        slot: substitute_pointer_variable_in_pointer(slot, from, to),
-                        volatile: *volatile,
-                        pointee_volatile: *pointee_volatile,
-                        constant: *constant,
-                        pointee_constant: *pointee_constant,
-                    },
-                    CLocalBinding::UninitializedObject {
-                        c_type,
-                        slot,
-                        volatile,
-                        pointee_volatile,
-                        constant,
-                        pointee_constant,
-                    } => CLocalBinding::UninitializedObject {
-                        c_type: *c_type,
-                        slot: substitute_pointer_variable_in_pointer(slot, from, to),
-                        volatile: *volatile,
-                        pointee_volatile: *pointee_volatile,
-                        constant: *constant,
-                        pointee_constant: *pointee_constant,
-                    },
-                    CLocalBinding::GlobalObject {
-                        c_type,
-                        slot,
-                        volatile,
-                        pointee_volatile,
-                        constant,
-                        pointee_constant,
-                    } => CLocalBinding::GlobalObject {
-                        c_type: *c_type,
-                        slot: substitute_pointer_variable_in_pointer(slot, from, to),
-                        volatile: *volatile,
-                        pointee_volatile: *pointee_volatile,
-                        constant: *constant,
-                        pointee_constant: *pointee_constant,
-                    },
-                    CLocalBinding::ArrayObject {
-                        element_type,
-                        length,
-                        slot,
-                        constant,
-                    } => CLocalBinding::ArrayObject {
-                        element_type: *element_type,
-                        length: *length,
-                        slot: substitute_pointer_variable_in_pointer(slot, from, to),
-                        constant: *constant,
-                    },
-                    CLocalBinding::AggregateObject {
-                        layout,
-                        slot,
-                        constant,
-                    } => CLocalBinding::AggregateObject {
-                        layout: layout.clone(),
-                        slot: substitute_pointer_variable_in_pointer(slot, from, to),
-                        constant: *constant,
-                    },
-                };
-                (name.clone(), binding)
-            })
-            .collect(),
-    );
-    let slots = std::sync::Arc::new(
-        state
-            .locals
-            .slots
-            .iter()
-            .map(|(pointer, name)| {
-                (
-                    substitute_pointer_variable_in_pointer(pointer, from, to),
-                    name.clone(),
-                )
-            })
-            .collect(),
-    );
-    CState {
-        locals: CLocalEnvironment { bindings, slots },
-        aggregate_destination: state.aggregate_destination.as_ref().map(|destination| {
-            std::sync::Arc::new(CAggregateDestination {
-                pointer: substitute_pointer_variable_in_pointer(&destination.pointer, from, to),
-                layout: destination.layout.clone(),
-            })
-        }),
-        memory: substitute_pointer_variable_in_memory(&state.memory, from, to),
-        resource_bindings: state.resource_bindings.clone(),
-        instance_field_scope: substitute_pointer_variable_in_resource_context(
-            &state.instance_field_scope,
-            from,
-            to,
-        ),
-        resources: substitute_pointer_variable_in_resource_context(&state.resources, from, to),
-        loan_ledger: state.loan_ledger.clone(),
-        loan_participant: state.loan_participant,
-        loan_view_bindings: state.loan_view_bindings.clone(),
-        thread_ledger: state.thread_ledger.clone(),
-        mutex_ledger: state.mutex_ledger.clone(),
-        mutex_input_reservations: state.mutex_input_reservations.clone(),
-        opaque_mutex_acquisitions: state.opaque_mutex_acquisitions.clone(),
-        named_mutex_authorities: state.named_mutex_authorities.clone(),
-        preserves_mutex_protocols: state.preserves_mutex_protocols,
-        population_access: state.population_access.clone(),
-        pending_thread_create: state.pending_thread_create.as_ref().map(|pending| {
-            pending.map_terms(
-                Clone::clone,
-                |resources| substitute_pointer_variable_in_resource_context(resources, from, to),
-                |pointer| substitute_pointer_variable_in_pointer(pointer, from, to),
-                |value| substitute_pointer_variable_in_c_value(value, from, to),
-                |memory| substitute_pointer_variable_in_memory(memory, from, to),
-            )
-        }),
-        next_local_frame: state.next_local_frame,
-        next_local_lifetime: state.next_local_lifetime,
-        enclosing_frame_holds_locals: state.enclosing_frame_holds_locals,
-        observed_population_families: state.observed_population_families.clone(),
-        population_effects: std::sync::Arc::new(crate::kernel::primitives::PopulationEffects {
-            creation: state.population_effects.creation.clone(),
-            predicate_count_permissions: state
-                .population_effects
-                .predicate_count_permissions
-                .clone(),
-        }),
-    }
-}
-
-fn substitute_pointer_variable_in_resource_context(
-    resources: &ResourceContext,
-    from: Variable,
-    to: &Pointer,
-) -> ResourceContext {
-    // Structural theorem/state substitution has no current proof assumptions.
-    // Do not inherit the old graph: its equalities name the pre-substitution
-    // variables. A resulting live proof input is published at its admission
-    // boundary before execution; this helper performs no resource lookup.
-    ResourceContext::new().unchecked_with_facts(
-        resources
-            .facts()
-            .iter()
-            .map(|resource| substitute_pointer_variable_in_resource(resource, from, to)),
-    )
-}
-
-fn substitute_pointer_variable_in_resource(
-    resource: &CResourceFact,
-    from: Variable,
-    to: &Pointer,
-) -> CResourceFact {
-    match resource {
-        CResourceFact::Own(resource, quantity) => CResourceFact::Own(
-            substitute_pointer_variable_in_c_resource(resource, from, to),
-            quantity.clone(),
-        ),
-        CResourceFact::View(resource) => CResourceFact::View(
-            substitute_pointer_variable_in_c_resource(resource, from, to),
-        ),
-    }
-}
-
-fn substitute_pointer_variable_in_c_resource(
-    resource: &CResource,
-    from: Variable,
-    to: &Pointer,
-) -> CResource {
-    match resource {
-        CResource::PopulationAuthority(description) => {
-            CResource::PopulationAuthority(description.map_values(|value| {
-                substitute_pointer_variable_in_algebraic_value(value, from, to)
-            }))
-        }
-        CResource::Publication(right) => CResource::Publication(PublicationRight {
-            side: right.side,
-            payload: right
-                .payload
-                .map_values(|v| substitute_pointer_variable_in_algebraic_value(v, from, to)),
-            flag: substitute_pointer_variable_in_pointer(&right.flag, from, to),
-            observed: right
-                .observed
-                .as_ref()
-                .map(|value| substitute_pointer_variable_in_c_value(value, from, to)),
-        }),
-        CResource::MutexUse(identity) => CResource::MutexUse(MutexUseIdentity {
-            protected: identity.protected.as_ref().map(|p| {
-                if identity.binding.is_none() {
-                    p.map_values(|v| substitute_pointer_variable_in_algebraic_value(v, from, to))
-                } else {
-                    p.clone()
-                }
-            }),
-            binding: identity.binding,
-            initialization: identity.initialization,
-            mutex: if identity.binding.is_none() {
-                substitute_pointer_variable_in_pointer(&identity.mutex, from, to)
-            } else {
-                identity.mutex.clone()
-            },
-        }),
-        CResource::MutexGuard(identity) => CResource::MutexGuard(MutexIdentity {
-            epoch: identity.epoch,
-            mutex: if identity.epoch.is_none() {
-                substitute_pointer_variable_in_pointer(&identity.mutex, from, to)
-            } else {
-                identity.mutex.clone()
-            },
-        }),
-        CResource::MutexLive(identity) => CResource::MutexLive(MutexIdentity {
-            epoch: identity.epoch,
-            mutex: if identity.epoch.is_none() {
-                substitute_pointer_variable_in_pointer(&identity.mutex, from, to)
-            } else {
-                identity.mutex.clone()
-            },
-        }),
-        CResource::Instance(instance) => {
-            let mut result = instance.clone();
-            result.arguments = instance
-                .arguments
-                .iter()
-                .map(|value| substitute_pointer_variable_in_algebraic_value(value, from, to))
-                .collect();
-            result.fields = instance
-                .fields
-                .iter()
-                .map(|value| substitute_pointer_variable_in_algebraic_value(value, from, to))
-                .collect();
-            result.resource_arguments = crate::kernel::ResourceReference::map_captured_values(
-                instance.resource_arguments(),
-                |value| substitute_pointer_variable_in_algebraic_value(value, from, to),
-            );
-            CResource::Instance(result)
-        }
-        CResource::Memory(range) => CResource::Memory(
-            substitute_pointer_variable_in_c_memory_range(range, from, to),
-        ),
-        CResource::Iterated(iterated) => {
-            CResource::iterated(iterated.map_terms(Bitvector32Term::clone, |pointer| {
-                substitute_pointer_variable_in_pointer(pointer, from, to)
-            }))
-        }
-        CResource::Composite { name, arguments } => CResource::Composite {
-            name: name.clone(),
-            arguments: arguments
-                .iter()
-                .map(|argument| substitute_pointer_variable_in_algebraic_value(argument, from, to))
-                .collect(),
-        },
-        CResource::Token { name, arguments } => CResource::Token {
-            name: name.clone(),
-            arguments: arguments
-                .iter()
-                .map(|argument| substitute_pointer_variable_in_algebraic_value(argument, from, to))
-                .collect(),
-        },
-    }
-}
-
-fn substitute_pointer_variable_in_c_memory_range(
-    range: &CMemoryRange,
-    from: Variable,
-    to: &Pointer,
-) -> CMemoryRange {
-    range.with_bounds(
-        substitute_pointer_variable_in_pointer(&range.base, from, to),
-        range.bound_terms().0.clone(),
-        range.bound_terms().1.clone(),
-    )
-}
-
-fn substitute_pointer_variable_in_c_memory_segment(
-    segment: &CMemorySegment,
-    from: Variable,
-    to: &Pointer,
-) -> CMemorySegment {
-    CMemorySegment {
-        base: substitute_pointer_variable_in_c_expression(&segment.base, from, to),
-        start: substitute_pointer_variable_in_c_expression(&segment.start, from, to),
-        end: substitute_pointer_variable_in_c_expression(&segment.end, from, to),
-        element_width: segment.element_width,
-        guard: segment
-            .guard
-            .as_ref()
-            .map(|guard| substitute_pointer_variable_in_spec_proposition(guard, from, to)),
     }
 }
 
@@ -7361,16 +6457,7 @@ fn substitute_pointer_variable_in_spec_expression(
                     .collect(),
             }
         }
-        SpecExpression::Add(left, right)
-        | SpecExpression::Subtract(left, right)
-        | SpecExpression::Multiply(left, right)
-        | SpecExpression::Divide(left, right)
-        | SpecExpression::Remainder(left, right)
-        | SpecExpression::ShiftLeft(left, right)
-        | SpecExpression::ShiftRight(left, right)
-        | SpecExpression::BitwiseAnd(left, right)
-        | SpecExpression::BitwiseOr(left, right)
-        | SpecExpression::BitwiseXor(left, right) => {
+        crate::kernel::binary_spec_expression!(left, right) => {
             let left = Box::new(substitute_pointer_variable_in_spec_expression(
                 left, from, to,
             ));
@@ -7964,399 +7051,6 @@ fn substitute_pointer_variable_in_spec_resource(
                 .map(|argument| substitute_pointer_variable_in_spec_expression(argument, from, to))
                 .collect(),
         },
-    }
-}
-
-/// One declared `decreases` component under a pointer substitution.
-pub(in crate::kernel) fn substitute_pointer_variable_in_c_ranking_component(
-    measure: &CRankingComponent,
-    from: Variable,
-    to: &Pointer,
-) -> CRankingComponent {
-    match measure {
-        CRankingComponent::CExpression(expression) => CRankingComponent::CExpression(
-            substitute_pointer_variable_in_c_expression(expression, from, to),
-        ),
-        CRankingComponent::Pure { source, expression } => CRankingComponent::Pure {
-            source: source.clone(),
-            expression: substitute_pointer_variable_in_spec_expression(expression, from, to),
-        },
-        CRankingComponent::PureInteger { source, expression } => CRankingComponent::PureInteger {
-            source: source.clone(),
-            expression: substitute_pointer_variable_in_spec_integer(expression, from, to),
-        },
-    }
-}
-
-fn substitute_pointer_variable_in_c_function(
-    function: &CFunction,
-    from: Variable,
-    to: &Pointer,
-) -> CFunction {
-    let mut interface = function.contract_interface().clone();
-    interface.resource_requires = function
-        .resource_requires()
-        .iter()
-        .map(|resource| substitute_pointer_variable_in_resource_spec(resource, from, to))
-        .collect();
-    interface.resource_ensures = function
-        .resource_ensures()
-        .iter()
-        .map(|resource| substitute_pointer_variable_in_resource_spec(resource, from, to))
-        .collect();
-    interface.resource_constructors = function
-        .resource_constructors()
-        .iter()
-        .map(|resource| substitute_pointer_variable_in_resource_spec(resource, from, to))
-        .collect();
-    interface.contract_requires = function
-        .contract_requires()
-        .iter()
-        .map(|proposition| substitute_pointer_variable_in_spec_proposition(proposition, from, to))
-        .collect();
-    interface.contract_ensures = function
-        .contract_ensures()
-        .iter()
-        .map(|proposition| substitute_pointer_variable_in_spec_proposition(proposition, from, to))
-        .collect();
-    interface.exceptional_ensures = function
-        .exceptional_ensures()
-        .iter()
-        .map(|proposition| substitute_pointer_variable_in_spec_proposition(proposition, from, to))
-        .collect();
-    interface.contract_mutable = function
-        .contract_mutable()
-        .iter()
-        .map(|segment| substitute_pointer_variable_in_c_memory_segment(segment, from, to))
-        .collect();
-    // See `substitute_bitvector_variable_in_c_function`: the declared measure
-    // is rewritten with the clauses it is read beside.
-    interface.recursion_measure = interface
-        .recursion_measure
-        .as_ref()
-        .map(|measure| substitute_pointer_variable_in_c_ranking_component(measure, from, to));
-    interface.composite_resource_definitions = function
-        .composite_resource_definitions()
-        .iter()
-        .map(|definition| CCompositeResourceDefinition {
-            resource_parameters: definition
-                .resource_parameters
-                .iter()
-                .map(|spec| substitute_pointer_variable_in_resource_spec(spec, from, to))
-                .collect(),
-            instance_schema: definition.instance_schema.clone(),
-            thread_confined: definition.thread_confined,
-            contains_mutex_authority: definition.contains_mutex_authority,
-            authorized: definition.authorized,
-            reaches_population: definition.reaches_population,
-            owned_footprint_unnamed: definition.owned_footprint_unnamed,
-            fact_source_indices: definition.fact_source_indices.clone(),
-            fact_source_spellings: definition.fact_source_spellings.clone(),
-            name: definition.name.clone(),
-            parameters: definition.parameters.clone(),
-            witnesses: definition.witnesses.clone(),
-            condition: definition.condition.as_ref().map(|condition| {
-                substitute_pointer_variable_in_spec_proposition(condition, from, to)
-            }),
-            matched: definition.matched.as_ref().map(|body| CResourceMatchBody {
-                field_index: body.field_index,
-                algebraic_type: body.algebraic_type.clone(),
-                arms: body
-                    .arms
-                    .iter()
-                    .map(|arm| CResourceMatchArm {
-                        children: arm
-                            .children
-                            .iter()
-                            .map(|child| CResourceChildSpec {
-                                name: child.name.clone(),
-                                resource: child.resource.clone(),
-                                binding: child.binding,
-                                field_bindings: child.field_bindings.clone(),
-                                arguments: child
-                                    .arguments
-                                    .iter()
-                                    .map(|argument| {
-                                        substitute_pointer_variable_in_c_expression(
-                                            argument, from, to,
-                                        )
-                                    })
-                                    .collect(),
-                            })
-                            .collect(),
-                        variant: arm.variant.clone(),
-                        bindings: arm.bindings.clone(),
-                        binding_types: arm.binding_types.clone(),
-                        binding_variables: arm.binding_variables.clone(),
-                        contains: arm
-                            .contains
-                            .iter()
-                            .map(|resource| {
-                                substitute_pointer_variable_in_resource_spec(resource, from, to)
-                            })
-                            .collect(),
-                        facts: arm
-                            .facts
-                            .iter()
-                            .map(|fact| {
-                                substitute_pointer_variable_in_spec_proposition(fact, from, to)
-                            })
-                            .collect(),
-                    })
-                    .collect(),
-            }),
-            recursive: definition.recursive,
-            matched_recursive: definition.matched_recursive,
-            facts_read_counts: definition.facts_read_counts,
-            facts_claim_liveness: definition.facts_claim_liveness,
-            contains: definition
-                .contains
-                .iter()
-                .map(|resource| substitute_pointer_variable_in_resource_spec(resource, from, to))
-                .collect(),
-            children: definition
-                .children
-                .iter()
-                .map(|child| CResourceChildSpec {
-                    arguments: child
-                        .arguments
-                        .iter()
-                        .map(|argument| {
-                            substitute_pointer_variable_in_c_expression(argument, from, to)
-                        })
-                        .collect(),
-                    ..child.clone()
-                })
-                .collect(),
-            facts: definition
-                .facts
-                .iter()
-                .map(|fact| substitute_pointer_variable_in_spec_proposition(fact, from, to))
-                .collect(),
-        })
-        .collect();
-    interface.predicate_unfoldings = function
-        .predicate_unfoldings()
-        .iter()
-        .map(|unfolding| CPredicateUnfolding {
-            predicate: substitute_pointer_variable_in_spec_proposition(
-                &unfolding.predicate,
-                from,
-                to,
-            ),
-            body: substitute_pointer_variable_in_spec_proposition(&unfolding.body, from, to),
-        })
-        .collect();
-    CFunction {
-        program_entry: function.program_entry,
-        name: function.name.clone(),
-        inline_body: function.inline_body,
-        body: substitute_pointer_variable_in_c_statement(function.body(), from, to),
-        source_body: substitute_pointer_variable_in_c_statement(function.source_body(), from, to),
-        control_targets: std::sync::Arc::new(
-            function
-                .control_targets
-                .iter()
-                .map(|(identity, target)| {
-                    (
-                        *identity,
-                        CControlTarget {
-                            statement_index: target.statement_index,
-                            remaining: std::sync::Arc::new(
-                                substitute_pointer_variable_in_c_statement(
-                                    &target.remaining,
-                                    from,
-                                    to,
-                                ),
-                            ),
-                        },
-                    )
-                })
-                .collect(),
-        ),
-        contract_interface: interface,
-        global_variables: function.global_variables.clone(),
-        global_arrays: function.global_arrays.clone(),
-        static_variables: function.static_variables.clone(),
-        static_storage: function.static_storage.clone(),
-        string_literals: function.string_literals.clone(),
-    }
-}
-
-fn substitute_pointer_variable_in_resource_spec(
-    resource: &CResourceSpec,
-    from: Variable,
-    to: &Pointer,
-) -> CResourceSpec {
-    let substituted = CResourceSpec::new(
-        substitute_pointer_variable_in_resource_term(resource.term(), from, to),
-        resource.access(),
-        match resource.quantity() {
-            CResourceQuantity::One => CResourceQuantity::One,
-            CResourceQuantity::Count(quantity) => CResourceQuantity::Count(
-                substitute_pointer_variable_in_c_expression(quantity, from, to),
-            ),
-        },
-        resource.role(),
-        resource.snapshot(),
-    )
-    .expect("pointer substitution preserves resource validity")
-    .with_resource_arguments(resource.resource_arguments().to_vec());
-    match resource.mutex_authority_binding() {
-        Some((identity, binder)) => substituted
-            .with_mutex_authority_binding(identity, binder.to_string())
-            .expect("pointer substitution preserves mutex authority binding"),
-        None => substituted,
-    }
-}
-
-fn substitute_pointer_variable_in_resource_term(
-    resource: &CResourceTerm,
-    from: Variable,
-    to: &Pointer,
-) -> CResourceTerm {
-    match resource {
-        CResourceTerm::Instance {
-            identity,
-            binder,
-            schema,
-            resource,
-        } => CResourceTerm::Instance {
-            identity: *identity,
-            binder: binder.clone(),
-            schema: schema.clone(),
-            resource: Box::new(substitute_pointer_variable_in_resource_term(
-                resource, from, to,
-            )),
-        },
-        CResourceTerm::PopulationAuthority {
-            protected,
-            population_arity,
-            snapshot,
-        } => CResourceTerm::PopulationAuthority {
-            population_arity: *population_arity,
-            protected: Box::new(CResourceTypeSpec {
-                resource: Box::new(substitute_pointer_variable_in_resource_spec(
-                    &protected.resource,
-                    from,
-                    to,
-                )),
-                schema: protected.schema.clone(),
-            }),
-            snapshot: *snapshot,
-        },
-        CResourceTerm::MutexGuard { mutex, snapshot } => CResourceTerm::MutexGuard {
-            mutex: Box::new(substitute_pointer_variable_in_c_expression(mutex, from, to)),
-            snapshot: *snapshot,
-        },
-        CResourceTerm::MutexLive { mutex, snapshot } => CResourceTerm::MutexLive {
-            mutex: Box::new(substitute_pointer_variable_in_c_expression(mutex, from, to)),
-            snapshot: *snapshot,
-        },
-        CResourceTerm::Publication {
-            side,
-            payload,
-            flag,
-            snapshot,
-        } => CResourceTerm::Publication {
-            side: *side,
-            payload: Box::new(CResourceTypeSpec {
-                resource: Box::new(substitute_pointer_variable_in_resource_spec(
-                    &payload.resource,
-                    from,
-                    to,
-                )),
-                schema: payload.schema.clone(),
-            }),
-            flag: Box::new(substitute_pointer_variable_in_c_expression(flag, from, to)),
-            snapshot: *snapshot,
-        },
-        CResourceTerm::MutexUse {
-            mutex,
-            snapshot,
-            protected,
-        } => CResourceTerm::MutexUse {
-            protected: protected.as_ref().map(|p| {
-                Box::new(CResourceTypeSpec {
-                    resource: Box::new(substitute_pointer_variable_in_resource_spec(
-                        &p.resource,
-                        from,
-                        to,
-                    )),
-                    schema: p.schema.clone(),
-                })
-            }),
-            mutex: Box::new(substitute_pointer_variable_in_c_expression(mutex, from, to)),
-            snapshot: *snapshot,
-        },
-        CResourceTerm::Iterated(spec) => {
-            CResourceTerm::Iterated(Box::new(spec.map_expressions(|expression| {
-                substitute_pointer_variable_in_c_expression(expression, from, to)
-            })))
-        }
-        CResourceTerm::Memory(segment) => CResourceTerm::Memory(CMemorySegment {
-            base: substitute_pointer_variable_in_c_expression(&segment.base, from, to),
-            start: substitute_pointer_variable_in_c_expression(&segment.start, from, to),
-            end: substitute_pointer_variable_in_c_expression(&segment.end, from, to),
-            element_width: segment.element_width,
-            guard: segment
-                .guard
-                .as_ref()
-                .map(|guard| substitute_pointer_variable_in_spec_proposition(guard, from, to)),
-        }),
-        CResourceTerm::Composite {
-            name,
-            arguments,
-            argument_snapshots,
-            parameter_types,
-        } => CResourceTerm::Composite {
-            name: name.clone(),
-            arguments: arguments
-                .iter()
-                .map(|argument| substitute_pointer_variable_in_c_expression(argument, from, to))
-                .collect(),
-            argument_snapshots: argument_snapshots.clone(),
-            parameter_types: parameter_types.clone(),
-        },
-        CResourceTerm::Token {
-            name,
-            arguments,
-            argument_snapshots,
-            parameter_types,
-        } => CResourceTerm::Token {
-            name: name.clone(),
-            arguments: arguments
-                .iter()
-                .map(|argument| substitute_pointer_variable_in_c_expression(argument, from, to))
-                .collect(),
-            argument_snapshots: argument_snapshots.clone(),
-            parameter_types: parameter_types.clone(),
-        },
-    }
-}
-
-fn substitute_pointer_variable_in_c_function_specification(
-    specification: &CFunctionSpecification,
-    from: Variable,
-    to: &Pointer,
-) -> CFunctionSpecification {
-    CFunctionSpecification {
-        state: substitute_pointer_variable_in_c_state(specification.state(), from, to),
-        arguments: specification
-            .arguments()
-            .iter()
-            .map(|argument| substitute_pointer_variable_in_c_expression(argument, from, to))
-            .collect(),
-        requires: specification
-            .requires()
-            .iter()
-            .map(|requirement| substitute_pointer_variable_in_proposition(requirement, from, to))
-            .collect(),
-        outcome: substitute_pointer_variable_in_c_function_outcome(
-            specification.outcome(),
-            from,
-            to,
-        ),
     }
 }
 

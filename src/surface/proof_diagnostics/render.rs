@@ -982,12 +982,7 @@ impl Renderer<'_> {
                 let name = self.variable_name(*v, "condition");
                 self.push(&name);
             }
-            ConditionTerm::IntegerLessThan(a, b)
-            | ConditionTerm::IntegerLessEqual(a, b)
-            | ConditionTerm::IntegerGreaterThan(a, b)
-            | ConditionTerm::IntegerGreaterEqual(a, b)
-            | ConditionTerm::IntegerEqual(a, b)
-            | ConditionTerm::IntegerNotEqual(a, b) => {
+            crate::kernel::integer_comparison_condition!(a, b) => {
                 self.push("integer-condition(");
                 self.integer_shared(a);
                 self.push(match c {

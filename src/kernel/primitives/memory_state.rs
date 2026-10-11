@@ -700,12 +700,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                             *right,
                         )
                     }
-                    ConditionTerm::IntegerLessThan(_, _)
-                    | ConditionTerm::IntegerLessEqual(_, _)
-                    | ConditionTerm::IntegerGreaterThan(_, _)
-                    | ConditionTerm::IntegerGreaterEqual(_, _)
-                    | ConditionTerm::IntegerEqual(_, _)
-                    | ConditionTerm::IntegerNotEqual(_, _) => {
+                    crate::kernel::integer_comparison_condition!(_, _) => {
                         let _ = write!(identity, "icond{condition:?};");
                     }
                     ConditionTerm::Float32(condition) => {
