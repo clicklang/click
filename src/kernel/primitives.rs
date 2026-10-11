@@ -9240,6 +9240,12 @@ pub(crate) enum AtomicPropositionDerivationEvidence {
     Int32PinnedConstantEquality(Box<DirectBitvectorEqualityEvidence>),
     ForallInt32Instantiation(Box<ForallInt32InstantiationEvidence>),
     SignedOrderPath(Vec<SignedOrderDerivationStep>),
+    /// A chain of exact 64-bit order facts, `uint64` when `unsigned` and
+    /// `int64` otherwise, each step's premise in the context as written.
+    WideOrderPath {
+        unsigned: bool,
+        path: Vec<SignedOrderDerivationStep>,
+    },
     Int32IncrementUpperBound(Box<SignedOrderDerivationStep>),
     Int32IncrementConstantUpperBound(Box<SignedOrderDerivationStep>),
     Int32IncrementStrictlyIncreases(Box<SignedOrderDerivationStep>),

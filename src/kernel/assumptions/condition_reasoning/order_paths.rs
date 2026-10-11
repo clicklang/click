@@ -649,6 +649,62 @@ impl PureFactContext {
         None
     }
 
+    /// The exact 64-bit order facts that chain `left` up to `right`, of one
+    /// kind: unsigned `uint64` facts when `unsigned`, signed `int64` ones
+    /// otherwise. Each step keeps the proposition the context holds, as
+    /// [`Self::exact_signed_order_path_evidence`] does for `int32`. The chain
+    /// meets `right` at the same canonical term; a constant connection is
+    /// left to other rules, since `simp` writes no lemma for it.
+    pub(in crate::kernel) fn exact_wide_order_path_evidence(
+        &self,
+        left: &Bitvector32Term,
+        right: &Bitvector32Term,
+        require_strict: bool,
+        unsigned: bool,
+    ) -> Option<Vec<SignedOrderDerivationStep>> {
+        let canonical = crate::kernel::eval::canonical_term;
+        let order_facts = self
+            .condition_facts
+            .iter()
+            .filter_map(|(condition, value)| {
+                crate::instrumentation::record_deterministic_work(1);
+                wide_order_fact(condition, *value, unsigned).map(|(lower, upper, strict)| {
+                    SignedOrderDerivationStep {
+                        lower,
+                        upper,
+                        strict,
+                        premise: Proposition::ConditionIs(condition.clone(), *value),
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        let target = canonical(right);
+        let mut stack = vec![(canonical(left), false, Vec::new())];
+        let mut seen = BTreeSet::new();
+        while let Some((current, strict_so_far, path)) = stack.pop() {
+            if !seen.insert((current.clone(), strict_so_far)) {
+                continue;
+            }
+            if current == target && (!require_strict || strict_so_far) && !path.is_empty() {
+                return Some(path);
+            }
+            for edge in order_facts.iter().rev() {
+                crate::instrumentation::record_deterministic_work(1);
+                if canonical(&edge.lower) != current {
+                    continue;
+                }
+                let mut extended = path.clone();
+                extended.push(edge.clone());
+                stack.push((
+                    canonical(&edge.upper),
+                    strict_so_far || edge.strict,
+                    extended,
+                ));
+            }
+        }
+        None
+    }
+
     pub(in crate::kernel) fn has_exact_order_path(
         &self,
         left: &Bitvector32Term,
@@ -2168,6 +2224,20 @@ pub(in crate::kernel) fn condition_as_uint64_order_fact(
     } else {
         (upper, lower, !strict)
     })
+}
+
+/// A 64-bit order fact of one kind as `(lower, upper, strict)`: an unsigned
+/// `uint64` comparison when `unsigned`, a signed `int64` one otherwise.
+pub(in crate::kernel) fn wide_order_fact(
+    condition: &ConditionTerm,
+    value: bool,
+    unsigned: bool,
+) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
+    if unsigned {
+        condition_as_uint64_order_fact(condition, value)
+    } else {
+        crate::kernel::reasoning::order_reasoning::condition_as_int64_order_fact(condition, value)
+    }
 }
 
 impl PureFactContext {

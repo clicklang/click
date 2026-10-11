@@ -843,6 +843,20 @@ impl PureFactContext {
             }
             _ => None,
         };
+        let wide_order_evidence = match proposition {
+            Proposition::ConditionIs(condition, value) => {
+                [true, false].into_iter().find_map(|unsigned| {
+                    let (left, right, strict) =
+                        super::condition_reasoning::wide_order_fact(condition, *value, unsigned)?;
+                    self.exact_wide_order_path_evidence(&left, &right, strict, unsigned)
+                        .map(|path| AtomicPropositionDerivationEvidence::WideOrderPath {
+                            unsigned,
+                            path,
+                        })
+                })
+            }
+            _ => None,
+        };
         let equality_path_evidence = match proposition {
             Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => self
                 .exact_bitvector_equality_path_evidence(left, right)
@@ -1372,6 +1386,7 @@ impl PureFactContext {
             .or(negated_strict_successor_bound_evidence)
             .or(pinned_constant_equality_evidence)
             .or(signed_order_evidence)
+            .or(wide_order_evidence)
             .or(increment_upper_bound_evidence)
             .or(increment_constant_upper_bound_evidence)
             .or(one_plus_strictly_increases_evidence)
@@ -1589,6 +1604,36 @@ impl PureFactContext {
                 .and_then(|(current, right)| (current <= right).then_some(current < right));
             return (current == &right || constant_connection.is_some())
                 && (!require_strict || strict || constant_connection == Some(true));
+        }
+        if let AtomicPropositionDerivationEvidence::WideOrderPath { unsigned, path } = evidence {
+            let Proposition::ConditionIs(condition, value) = proposition else {
+                return false;
+            };
+            let Some((left, right, require_strict)) =
+                super::condition_reasoning::wide_order_fact(condition, *value, *unsigned)
+            else {
+                return false;
+            };
+            let canonical = crate::kernel::eval::canonical_term;
+            let mut current = canonical(&left);
+            let mut strict = false;
+            for step in path {
+                if current != canonical(&step.lower)
+                    || !matches!(
+                        &step.premise,
+                        Proposition::ConditionIs(condition, value)
+                            if self.exact_condition_value(condition) == Some(*value)
+                                && super::condition_reasoning::wide_order_fact(
+                                    condition, *value, *unsigned,
+                                ) == Some((step.lower.clone(), step.upper.clone(), step.strict))
+                    )
+                {
+                    return false;
+                }
+                current = canonical(&step.upper);
+                strict |= step.strict;
+            }
+            return !path.is_empty() && current == canonical(&right) && (!require_strict || strict);
         }
         if let AtomicPropositionDerivationEvidence::Int32IncrementUpperBound(step) = evidence {
             let Proposition::ConditionIs(

@@ -817,6 +817,93 @@ pub(super) fn recorded_signed_order_pairs(
     })
 }
 
+/// The kind (`true` for `uint64`) and the source premises of an atomic
+/// 64-bit order decision's recorded chain, in chain order.
+pub(super) fn recorded_wide_order_pairs(
+    derivation: &PropositionDerivation,
+    premise_pairs: &[(Proposition, ClickProposition)],
+) -> Option<(bool, Vec<(Proposition, ClickProposition)>)> {
+    let (unsigned, path) = derivation.wide_order_path()?;
+    let pairs = path
+        .iter()
+        .map(|step| {
+            premise_pairs
+                .iter()
+                .find(|(kernel, _)| kernel == step.premise())
+                .cloned()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some((unsigned, pairs))
+}
+
+/// A recorded 64-bit order chain written out as the standard library's
+/// transitivity lemmas, `uint64_lt_le_transitive` and its siblings, each
+/// link stated with `have` and the last closing the goal: the 64-bit
+/// counterpart of [`plan_recorded_signed_order_path_for_context`]. A link
+/// whose source premise is not written as `<`, `<=`, `>` or `>=` (a negated
+/// order, say) has no lemma here, and the chain is left to other routes.
+pub(super) fn plan_recorded_wide_order_path(
+    unsigned: bool,
+    path: &[(Proposition, ClickProposition)],
+    fixed_state_application_closes_goal: bool,
+) -> Option<Vec<ProofTactic>> {
+    if path.len() < 2 {
+        return None;
+    }
+    let parts = |surface: &ClickProposition| {
+        surface_strict_parts(surface)
+            .map(|(lower, upper)| (lower, upper, true))
+            .or_else(|| {
+                surface_nonstrict_parts(surface).map(|(lower, upper)| (lower, upper, false))
+            })
+    };
+    let carrier = if unsigned { "uint64" } else { "int64" };
+    let (lower, mut middle, mut strict) = parts(&path[0].1)?;
+    let mut current = path[0].1.clone();
+    let mut tactics = Vec::new();
+    for (position, next) in path.iter().enumerate().skip(1) {
+        let (_, upper, next_strict) = parts(&next.1)?;
+        let link = match (strict, next_strict) {
+            (true, true) => "lt_transitive",
+            (true, false) => "lt_le_transitive",
+            (false, true) => "le_lt_transitive",
+            (false, false) => "le_transitive",
+        };
+        let application = ProofTactic::ApplyTheoremUsing {
+            application: TheoremApplication {
+                name: format!("{carrier}_{link}"),
+                arguments: vec![lower.clone(), middle.clone(), upper.clone()],
+            },
+            premises: vec![current.clone(), next.1.clone()],
+        };
+        strict |= next_strict;
+        let target = ClickProposition::Comparison {
+            left: lower.clone(),
+            operator: if strict {
+                ComparisonOperator::LessThan
+            } else {
+                ComparisonOperator::LessEqual
+            },
+            right: upper.clone(),
+        };
+        let mut proof = vec![application];
+        if !fixed_state_application_closes_goal {
+            proof.push(ProofTactic::Assumption);
+        }
+        if position + 1 == path.len() {
+            tactics.extend(proof);
+        } else {
+            tactics.push(ProofTactic::Have(ProofHave {
+                proposition: target.clone(),
+                proof: SourceProof::Script(proof),
+            }));
+        }
+        current = target;
+        middle = upper;
+    }
+    Some(tactics)
+}
+
 pub(super) fn recorded_int32_increment_upper_bound_pairs(
     derivation: &PropositionDerivation,
     premise_pairs: &[(Proposition, ClickProposition)],
