@@ -9751,6 +9751,36 @@ pub(super) struct AtomicConnectionFacts {
     pub propositions: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
 }
 
+/// The representation and deferral choices a context reasons under, one bit
+/// each. The bits occupy the top byte of the context's content fingerprint.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub(super) struct ReasoningPolicy(u8);
+
+impl ReasoningPolicy {
+    pub(super) const DEFER_NON_EXACT_LOADABILITY_OBLIGATIONS: Self = Self(1 << 0);
+    pub(super) const DEFER_NON_EXACT_CONDITION_REASONING: Self = Self(1 << 1);
+    pub(super) const PREFER_SYMBOLIC_EXTERNAL_LOADS: Self = Self(1 << 2);
+    pub(super) const FORCE_SYMBOLIC_EXTERNAL_LOADS: Self = Self(1 << 3);
+    pub(super) const ALLOW_SYMBOLIC_CONTRACT_LOADS: Self = Self(1 << 4);
+    pub(super) const TRANSPORT_MEMORY_LOAD_CONDITION_FACTS: Self = Self(1 << 5);
+    /// Select alias normalization for loads captured by pure functions.
+    /// This affects representation only, never validity obligations.
+    pub(super) const KEEP_SPEC_LOADS_SYMBOLIC: Self = Self(1 << 6);
+    pub(super) const REQUIRE_OWNED_EXPRESSION_LOADS: Self = Self(1 << 7);
+
+    pub(super) fn contains(self, choice: Self) -> bool {
+        self.0 & choice.0 != 0
+    }
+
+    pub(super) fn fingerprint(self) -> u64 {
+        u64::from(self.0) << 56
+    }
+
+    pub(super) fn toggle(&mut self, choice: Self) {
+        self.0 ^= choice.0;
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct PureFactContext {
     /// Shared ordered projection used when checked paths publish this context.
@@ -10050,16 +10080,7 @@ pub struct PureFactContext {
     /// linearly; memory-memory facts live in the index above instead.
     pub(super) nonmemory_separation_facts: std::sync::Arc<Vec<Proposition>>,
     pub(super) content_fingerprint: u64,
-    pub(super) defer_non_exact_loadability_obligations: bool,
-    pub(super) defer_non_exact_condition_reasoning: bool,
-    pub(super) prefer_symbolic_external_loads: bool,
-    pub(super) force_symbolic_external_loads: bool,
-    pub(super) allow_symbolic_contract_loads: bool,
-    pub(super) require_owned_expression_loads: bool,
-    pub(super) transport_memory_load_condition_facts: bool,
-    /// Select alias normalization for loads captured by pure functions.
-    /// This affects representation only, never validity obligations.
-    pub(super) keep_spec_loads_symbolic: bool,
+    pub(super) reasoning_policy: ReasoningPolicy,
 }
 
 impl PartialEq for PureFactContext {
@@ -10069,15 +10090,7 @@ impl PartialEq for PureFactContext {
             && self.typed_pointer_read_definitions == other.typed_pointer_read_definitions
             && self.prop_facts == other.prop_facts
             && self.resource_compositions == other.resource_compositions
-            && self.defer_non_exact_loadability_obligations
-                == other.defer_non_exact_loadability_obligations
-            && self.defer_non_exact_condition_reasoning == other.defer_non_exact_condition_reasoning
-            && self.prefer_symbolic_external_loads == other.prefer_symbolic_external_loads
-            && self.force_symbolic_external_loads == other.force_symbolic_external_loads
-            && self.allow_symbolic_contract_loads == other.allow_symbolic_contract_loads
-            && self.transport_memory_load_condition_facts
-                == other.transport_memory_load_condition_facts
-            && self.keep_spec_loads_symbolic == other.keep_spec_loads_symbolic
+            && self.reasoning_policy == other.reasoning_policy
     }
 }
 
