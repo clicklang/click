@@ -7,6 +7,13 @@ and four-byte bounds proofs. The general proof covers every input length through
 counts, checked signed observations, and shared input views throughout all loops.
 **The general Adler-32 checksum postcondition remains unproved.**
 
+The 2,147,483,647-byte limit comes from the bound library
+([`bounded-count.click`](bounded-count.click) and the proofs built on it), which
+states counts over `int32` and reads each `usize` count through
+`(int32)(uint32)`. The kernel no longer needs it: a 64-bit count bounds a range
+and indexes memory directly (`design/typed-indices.md`), so restating the
+library over `uint64` would lift the limit.
+
 The two files in `src/` are byte-for-byte copies of adler2 2.0.1, revision
 `89a031a0f42eeff31c70dc598b398cbf31f1680f`. Their hashes match the
 [source manifest](../../rust-checksum-sources.json). The original 0BSD license

@@ -160,7 +160,10 @@ or suffix `bytes[i..length]` is split from an owned wide range and rejoins it
 when the call returns. A window is restated at its root base,
 `bytes[index..index + 4]`, both to split the owner and to meet its
 neighbours again, and fragments of a wide request are chained from its start
-address as an `Int32` request's are. What was learned along the way:
+address as an `Int32` request's are. Left: the Adler-32 trial's bound library still states counts over `int32`,
+which limits its proofs to inputs of 2,147,483,647 bytes; restating it over
+`uint64` would lift that (`design/charon-trial/adler2/README.md`). What was
+learned along the way:
 
 - A callee is given its ranges' guards on entry, `start <= end` among them,
   and the call did not prove that one: the planner places a range by its
