@@ -313,13 +313,13 @@ an accepted clause.
   count is not usable, as it was not when the cells were written by hand
   (`bugs/a-symbolic-struct-count-range-is-not-usable.md`).
 - Done: step 6 for C++ reference parameters, as designed under "Reference
-  parameters". Receivers, reference locals and Rust remain
-  (`issues/adler-syntax.md` for Rust).
+  parameters". Rust contracts use `fn` signatures and `impl` blocks,
+  with fields through references written `p.f`. C++ receivers and reference
+  locals remain.
 - `views *p` and `views p->inner` are accepted in a contract. They were
   refused outside a resource definition for no recorded reason.
 
 ## Open questions
 
-The review's rulings are in `design/proof-language-rulings.md`; its open
-work is in `issues/adler-syntax.md`.
+The review's rulings are in `design/proof-language-rulings.md`.
 

@@ -19,6 +19,67 @@ struct Entry {
 fn inventory() -> Vec<Entry> {
     serde_json::from_str(include_str!("../../design/charon-trial/parity.json")).unwrap()
 }
+
+/// Read the hash-pinned historical proofs through today's signature spelling.
+/// This is a fixture adapter, not a production compatibility mode. The files
+/// and their proof scripts stay unchanged, including their original proof gaps.
+pub(super) fn frozen_proof_input(source: &str) -> String {
+    let hash = format!("{:x}", Sha256::digest(source.as_bytes()));
+    assert!(
+        inventory()
+            .iter()
+            .any(|entry| entry.frozen_sha256.as_deref() == Some(hash.as_str())),
+        "only a hash-pinned historical fixture may use this adapter"
+    );
+    let mut input = source.to_string();
+    for (old, current) in [
+        (
+            "int32 sum(const uint8* bytes, uint64 bytes_len)",
+            "fn sum(bytes: &[u8]) -> i32",
+        ),
+        (
+            "uint64 cover(const uint8* bytes, uint64 bytes_len)",
+            "fn cover(bytes: &[u8]) -> usize",
+        ),
+        ("int32 count(int32 n)", "fn count(n: i32) -> i32"),
+        (
+            "int32 accumulate(int32 n, int32 value)",
+            "fn accumulate(n: i32, value: i32) -> i32",
+        ),
+        (
+            "uint64 walk(const uint8* bytes, uint64 bytes_len)",
+            "fn walk(bytes: &[u8]) -> usize",
+        ),
+    ] {
+        input = input.replace(old, current);
+    }
+    input.replace("bytes_len", "bytes.len()")
+}
+
+#[test]
+fn charon_frozen_proof_adapter_preserves_the_contracts_and_pinned_bytes() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for entry in inventory()
+        .iter()
+        .filter(|entry| entry.frozen_sidecar.is_some())
+    {
+        let source = fs::read_to_string(root.join(entry.frozen_sidecar.as_ref().unwrap())).unwrap();
+        let input = frozen_proof_input(&source);
+        // The original C spelling remains valid for C. Compare the parsed
+        // contracts to ensure the fixture adaptation changes only spelling.
+        let c_input = source.replace(".rs\"", ".c\"");
+        assert_eq!(
+            click::surface::parse(&input).unwrap().function_blocks(),
+            click::surface::parse(&c_input).unwrap().function_blocks(),
+            "{}",
+            entry.frozen_sidecar.as_ref().unwrap()
+        );
+        assert_eq!(
+            format!("{:x}", Sha256::digest(source.as_bytes())),
+            entry.frozen_sha256.as_deref().unwrap()
+        );
+    }
+}
 #[test]
 fn charon_parity_inventory_covers_every_rust_example() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -243,7 +304,7 @@ fn charon_legacy_parity_live_refresh_and_unchanged_contracts() {
                 // Preserve original frozen outcomes independently of canonical adoption.
                 let frozen_error = if let Some(frozen) = &entry.frozen_sidecar {
                     C0VerificationSession::new_program_prepared(
-                        &fs::read_to_string(root.join(frozen)).unwrap(),
+                        &frozen_proof_input(&fs::read_to_string(root.join(frozen)).unwrap()),
                         &prepared,
                     )
                     .err()

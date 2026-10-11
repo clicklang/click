@@ -19,8 +19,8 @@ The function contracts use Rust syntax (`docs/reference/rust.md`,
 `adler2::algo::U32X4`, `bytes.len()` and `p.f`. Proofs use `have P;` and
 `by T(args);` for single steps. The standalone theorem libraries keep Click's
 numeric types and casts because the same lemmas also check C proofs.
-Refusing the older C-shaped function spelling for Rust sources remains in
-`issues/adler-syntax.md`.
+Rust sources require this function spelling; C-shaped signatures and reference
+fields written with `->` are refused.
 
 The two files in `src/` are byte-for-byte copies of adler2 2.0.1, revision
 `89a031a0f42eeff31c70dc598b398cbf31f1680f`. Their hashes match the
