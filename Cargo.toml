@@ -10,6 +10,9 @@ readme = "README.md"
 keywords = ["formal-verification", "program-verification", "c"]
 categories = ["command-line-utilities", "development-tools"]
 default-run = "click"
+# The command sources in `src/bin/` are modules of the `click` binary, which
+# is the only one shipped; do not also build each as a standalone binary.
+autobins = false
 
 [lib]
 name = "click"
