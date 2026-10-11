@@ -4398,7 +4398,7 @@ impl<'a> TermRewrite<'a> {
                 Bitvector32Term::MemoryLoad(memory.clone(), Box::new(self.pointer(pointer)), *kind)
             }
             Bitvector32Term::PointerAddress(pointer) => {
-                Bitvector32Term::PointerAddress(Box::new(self.pointer(pointer)))
+                Bitvector32Term::pointer_address(self.pointer(pointer))
             }
             Bitvector32Term::IntegerToMachine { value, destination } => {
                 Bitvector32Term::IntegerToMachine {
