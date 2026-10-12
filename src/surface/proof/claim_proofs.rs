@@ -267,7 +267,7 @@ fn unsupported_proof_shape(
 }
 
 pub(in crate::surface) fn prove_claim_by_tactics(
-    mut expansion_capture: Option<&mut ExpansionCapture>,
+    expansion_capture: Option<&mut ExpansionCapture>,
     source_path: &str,
     function_block: &FunctionBlock,
     parsed_function: &syntax::C0Function,
@@ -291,9 +291,96 @@ pub(in crate::surface) fn prove_claim_by_tactics(
             "`{claim_label}` uses `sorry` outside a `have` body; `sorry` is only allowed as a complete contract proof body or a complete `have` body"
         )));
     }
+    prove_claims_by_checked_tactics(
+        expansion_capture,
+        source_path,
+        function_block,
+        parsed_function,
+        std::slice::from_ref(claim),
+        claim_label,
+        false,
+        function_environment,
+        spec_definitions,
+        resource_environment,
+        theorem_environment,
+        function_source_registry,
+        tactics,
+        tactic_source,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::surface) fn prove_claims_by_grouped_tactics(
+    expansion_capture: Option<&mut ExpansionCapture>,
+    source_path: &str,
+    function_block: &FunctionBlock,
+    parsed_function: &syntax::C0Function,
+    claims: &[FunctionClaimRef<'_>],
+    function_environment: &CExecutionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
+    resource_environment: &ResourceEnvironment,
+    theorem_environment: &TheoremEnvironment,
+    function_source_registry: Arc<FunctionSourceRegistry>,
+    tactics: &[ProofTactic],
+    tactic_source: ProofTacticSource,
+) -> Result<ClaimProofResult, ClickError> {
+    let proof_label = function_block.contract_claim_label();
+    if claims.is_empty() {
+        return Err(ClickError::new(format!(
+            "`{proof_label}` grouped proof has no contract claims"
+        )));
+    }
+    if tactics.is_empty() {
+        return Err(ClickError::new(format!(
+            "`{proof_label}` has an empty grouped explicit proof script"
+        )));
+    }
+    if crate::surface::sorry_outside_have_bodies(tactics) {
+        return Err(ClickError::new(format!(
+            "`{proof_label}` uses `sorry` outside a `have` body; `sorry` is only allowed as a complete contract proof body or a complete `have` body"
+        )));
+    }
+    prove_claims_by_checked_tactics(
+        expansion_capture,
+        source_path,
+        function_block,
+        parsed_function,
+        claims,
+        &proof_label,
+        true,
+        function_environment,
+        spec_definitions,
+        resource_environment,
+        theorem_environment,
+        function_source_registry,
+        tactics,
+        tactic_source,
+    )
+}
+
+/// The proof route shared by single-claim and grouped contract proofs: the
+/// claims the script must establish, the label its diagnostics use, and
+/// whether the script proves the contract as one group.
+#[allow(clippy::too_many_arguments)]
+fn prove_claims_by_checked_tactics(
+    mut expansion_capture: Option<&mut ExpansionCapture>,
+    source_path: &str,
+    function_block: &FunctionBlock,
+    parsed_function: &syntax::C0Function,
+    claims: &[FunctionClaimRef<'_>],
+    proof_label: &str,
+    grouped: bool,
+    function_environment: &CExecutionEnvironment,
+    spec_definitions: SpecDefinitions<'_>,
+    resource_environment: &ResourceEnvironment,
+    theorem_environment: &TheoremEnvironment,
+    function_source_registry: Arc<FunctionSourceRegistry>,
+    tactics: &[ProofTactic],
+    tactic_source: ProofTacticSource,
+) -> Result<ClaimProofResult, ClickError> {
     let _local_layouts =
         super::surface_synthesis::LocalStructLayoutScope::enter(parsed_function, function_block);
-    let program = build_internal_proof_with_source(tactics, claim_label, tactic_source)?;
+    let program = build_internal_proof_with_source(tactics, proof_label, tactic_source)?;
     let generated_by_source_index = match tactic_source {
         ProofTacticSource::SourceSyntax => None,
         ProofTacticSource::GeneratedBy { source_index } => Some(source_index),
@@ -314,7 +401,7 @@ pub(in crate::surface) fn prove_claim_by_tactics(
                 parsed_function,
                 resource_environment,
                 spec_definitions,
-                claim_label,
+                proof_label,
                 Some(&caller_source_owner),
             )
         })
@@ -359,18 +446,18 @@ pub(in crate::surface) fn prove_claim_by_tactics(
         &function,
         &arguments,
         &pure_facts,
-        claim_label,
+        proof_label,
     )?;
     let state = install_borrowed_contract_inputs(
         state,
         &function,
         &pure_facts,
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        claim_label,
+        proof_label,
     )?;
     let function_entry_state =
         c_function_entry_state(&state, &function, &arguments).ok_or_else(|| {
-            ClickError::new(format!("`{claim_label}` could not bind function arguments"))
+            ClickError::new(format!("`{proof_label}` could not bind function arguments"))
         })?;
     let (pure_facts, entry_fact_origins) = contract_entry_view(
         pure_facts,
@@ -392,10 +479,9 @@ pub(in crate::surface) fn prove_claim_by_tactics(
             &state,
             &arguments,
         )
-        .map_err(|message| ClickError::new(format!("`{claim_label}`: {message}")))?;
+        .map_err(|message| ClickError::new(format!("`{proof_label}`: {message}")))?;
     let function_environment = &anchored_function_environment;
-    let proof_claims = [*claim];
-    let proof_site = proof_site_for_claims(function_block, &proof_claims, false);
+    let proof_site = proof_site_for_claims(function_block, claims, grouped);
     let nested_tactic_capture = expansion_capture
         .as_deref()
         .and_then(|capture| capture.nested_for_site(proof_site.as_ref()));
@@ -409,7 +495,7 @@ pub(in crate::surface) fn prove_claim_by_tactics(
         function_entry_state: Some(function_entry_state),
         entry_context: Some(entry_context),
         function_source_registry,
-        grouped_contract: false,
+        grouped_contract: grouped,
         invariant_body_context: None,
         nested_tactic_capture,
     };
@@ -422,7 +508,7 @@ pub(in crate::surface) fn prove_claim_by_tactics(
         function_block,
         &function,
         &arguments,
-        claim_label,
+        proof_label,
         0,
         "proof entry",
     )?;
@@ -471,7 +557,7 @@ pub(in crate::surface) fn prove_claim_by_tactics(
         expansion_capture.as_deref_mut(),
         function_block,
         parsed_function,
-        claim_label,
+        proof_label,
         function_environment,
         spec_definitions,
         resource_environment,
@@ -491,273 +577,7 @@ pub(in crate::surface) fn prove_claim_by_tactics(
             expansion_capture.as_deref_mut(),
             function_block,
             parsed_function,
-            claim_label,
-            function_environment,
-            spec_definitions,
-            resource_environment,
-            theorem_environment,
-            &function,
-            &arguments,
-        )?
-    };
-    if let Some(proof) = direct_proof {
-        match finish_ordered_proof_units(
-            expansion_capture,
-            vec![proof],
-            source_path,
-            function_block,
-            parsed_function,
-            &proof_claims,
-            false,
-            spec_definitions,
-            resource_environment,
-            theorem_environment,
-            function_environment,
-            &function,
-            &arguments,
-            tactics,
-        ) {
-            Ok(theorems) => {
-                #[cfg(test)]
-                FLAT_PROOF_UNITS.with(|units| units.set(units.get() + 1));
-                return Ok(ClaimProofResult { theorems });
-            }
-            Err(error) => return Err(error),
-        }
-    }
-    let claim_labels = [diagnostic_claim_label(function_block, claim)];
-    Err(unsupported_proof_shape(
-        claim_label,
-        false,
-        &claim_labels,
-        tactics,
-    ))
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(in crate::surface) fn prove_claims_by_grouped_tactics(
-    mut expansion_capture: Option<&mut ExpansionCapture>,
-    source_path: &str,
-    function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
-    claims: &[FunctionClaimRef<'_>],
-    function_environment: &CExecutionEnvironment,
-    spec_definitions: SpecDefinitions<'_>,
-    resource_environment: &ResourceEnvironment,
-    theorem_environment: &TheoremEnvironment,
-    function_source_registry: Arc<FunctionSourceRegistry>,
-    tactics: &[ProofTactic],
-    tactic_source: ProofTacticSource,
-) -> Result<ClaimProofResult, ClickError> {
-    let proof_label = function_block.contract_claim_label();
-    let _local_layouts =
-        super::surface_synthesis::LocalStructLayoutScope::enter(parsed_function, function_block);
-    if claims.is_empty() {
-        return Err(ClickError::new(format!(
-            "`{proof_label}` grouped proof has no contract claims"
-        )));
-    }
-    if tactics.is_empty() {
-        return Err(ClickError::new(format!(
-            "`{proof_label}` has an empty grouped explicit proof script"
-        )));
-    }
-    if crate::surface::sorry_outside_have_bodies(tactics) {
-        return Err(ClickError::new(format!(
-            "`{proof_label}` uses `sorry` outside a `have` body; `sorry` is only allowed as a complete contract proof body or a complete `have` body"
-        )));
-    }
-    let program = build_internal_proof_with_source(tactics, &proof_label, tactic_source)?;
-    let generated_by_source_index = match tactic_source {
-        ProofTacticSource::SourceSyntax => None,
-        ProofTacticSource::GeneratedBy { source_index } => Some(source_index),
-    };
-    let caller_source_owner =
-        CallerSourceOwnerId::ordinary(source_path, function_block.signature().name());
-    let InitialClaimContext {
-        state,
-        arguments,
-        pure_facts,
-        entry_fact_origins,
-        surface_propositions,
-    } = function_source_registry
-        .claim_entries()
-        .get_or_build(source_path, function_block, || {
-            initial_claim_context_with_caller_owner(
-                function_block,
-                parsed_function,
-                resource_environment,
-                spec_definitions,
-                &proof_label,
-                Some(&caller_source_owner),
-            )
-        })
-        .map_err(|error| error.at_declaration(function_block.signature().name()))?;
-    // A shared context was built for an earlier claim; name this function's
-    // parameters for diagnostics as building it would have.
-    crate::surface::proof_diagnostics::render::enter_ambient_naming(ParameterBinding::new(
-        parsed_function.parameters(),
-        &arguments,
-    ));
-    let entry_context = Arc::new(ProofEntryContext {
-        state: state.clone(),
-        arguments: arguments.clone(),
-        pure_facts: pure_facts.clone(),
-    });
-    let caller_requirement_index = CallerRequirementIndex::from_entry_facts(
-        caller_source_owner.clone(),
-        function_block,
-        parsed_function.parameters(),
-        &pure_facts,
-        &entry_fact_origins,
-        crate::kernel::CMemorySnapshotIdentity::of(state.memory()),
-    );
-    let function = annotated_function_with_assumptions(
-        function_block,
-        parsed_function,
-        &state,
-        &arguments,
-        spec_definitions,
-        resource_environment,
-        Some(ResourceFrameEntry {
-            assumptions: &assumptions_from_propositions(&pure_facts),
-            checked_entry_state: None,
-        }),
-    )?;
-    let state = canonical_claim_caller_state(
-        state,
-        function_block
-            .structural_clauses()
-            .iter()
-            .any(|clause| matches!(clause.region(), CodeRegion::Loop(_))),
-        &function,
-        &arguments,
-        &pure_facts,
-        &proof_label,
-    )?;
-    let state = install_borrowed_contract_inputs(
-        state,
-        &function,
-        &pure_facts,
-        ParameterBinding::new(parsed_function.parameters(), &arguments),
-        &proof_label,
-    )?;
-    let function_entry_state =
-        c_function_entry_state(&state, &function, &arguments).ok_or_else(|| {
-            ClickError::new(format!("`{proof_label}` could not bind function arguments"))
-        })?;
-    let (pure_facts, entry_fact_origins) = contract_entry_view(
-        pure_facts,
-        entry_fact_origins,
-        &state,
-        &function,
-        &arguments,
-    );
-    // Same anchor as the single-claim route; see `prove_claim_by_tactics`.
-    let anchored_function_environment =
-        crate::kernel::c_execution_environment_with_recursion_anchor(
-            function_environment.clone(),
-            &function,
-            &state,
-            &arguments,
-        )
-        .map_err(|message| ClickError::new(format!("`{proof_label}`: {message}")))?;
-    let function_environment = &anchored_function_environment;
-    let proof_site = proof_site_for_claims(function_block, claims, true);
-    let nested_tactic_capture = expansion_capture
-        .as_deref()
-        .and_then(|capture| capture.nested_for_site(proof_site.as_ref()));
-    let constants = ExecutionProofConstants {
-        proof_site,
-        source_layout: SourceExecutionLayout::for_function(parsed_function)?,
-        execution_start_facts: Arc::new(pure_facts.clone()),
-        entry_fact_origins: Arc::new(entry_fact_origins),
-        caller_requirement_index: Arc::new(caller_requirement_index),
-        caller_source_owner: Some(caller_source_owner),
-        function_entry_state: Some(function_entry_state),
-        entry_context: Some(entry_context),
-        function_source_registry,
-        grouped_contract: true,
-        invariant_body_context: None,
-        nested_tactic_capture,
-    };
-    let frontier = ExecutionFrontier::default();
-    let mut recorded_snapshots = RecordedSnapshots::new();
-    record_current_statement_entry(
-        &frontier,
-        &mut recorded_snapshots,
-        &state,
-        function_block,
-        &function,
-        &arguments,
-        &proof_label,
-        0,
-        "proof entry",
-    )?;
-    let mut initial = ExecutionProofState::at_entry(
-        state,
-        frontier,
-        recorded_snapshots,
-        surface_propositions,
-        PersistentSequence::default(),
-    );
-    initial
-        .core
-        .record_checked_function_entry_with_facts(
-            &function,
-            &arguments,
-            constants
-                .function_entry_state
-                .as_ref()
-                .expect("a function proof has a checked entry state"),
-            &ProofFacts::from_source(&pure_facts),
-        )
-        .map_err(|error| {
-            ClickError::new(format!(
-                "could not check the function entry resources: {}",
-                crate::surface::diagnostics::describe_runtime_error(
-                    &error,
-                    ParameterBinding::new(parsed_function.parameters(), &arguments),
-                ),
-            ))
-        })?;
-    // Same order as the single-claim route: structural, then flat.
-    // A decline recorded by an earlier claim's attempt, which another driver
-    // then satisfied, must not colour this claim's diagnostic.
-    let _ = take_driver_declines();
-    let _ = take_region_depth_decline();
-    let _ = take_short_of_exit_decline();
-    let _ = take_declined_operation();
-    let structural = try_check_structural_function_proof(
-        &initial,
-        &pure_facts,
-        &constants,
-        &program,
-        generated_by_source_index,
-        expansion_capture.as_deref_mut(),
-        function_block,
-        parsed_function,
-        &proof_label,
-        function_environment,
-        spec_definitions,
-        resource_environment,
-        theorem_environment,
-        &function,
-        &arguments,
-    )?;
-    let direct_proof = if structural.is_some() {
-        structural
-    } else {
-        try_check_flat_function_proof(
-            &initial,
-            &pure_facts,
-            &constants,
-            &program,
-            generated_by_source_index,
-            expansion_capture.as_deref_mut(),
-            function_block,
-            parsed_function,
-            &proof_label,
+            proof_label,
             function_environment,
             spec_definitions,
             resource_environment,
@@ -774,7 +594,7 @@ pub(in crate::surface) fn prove_claims_by_grouped_tactics(
             function_block,
             parsed_function,
             claims,
-            true,
+            grouped,
             spec_definitions,
             resource_environment,
             theorem_environment,
@@ -796,8 +616,8 @@ pub(in crate::surface) fn prove_claims_by_grouped_tactics(
         .map(|claim| diagnostic_claim_label(function_block, claim))
         .collect::<Vec<_>>();
     Err(unsupported_proof_shape(
-        &proof_label,
-        true,
+        proof_label,
+        grouped,
         &claim_labels,
         tactics,
     ))
