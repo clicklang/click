@@ -908,17 +908,14 @@ impl<'a> ProofScope<'a> {
                     site: self.root.site.clone(),
                     context: self.root.context.clone(),
                     state,
-                    node: Arc::new(ProofNode {
-                        path_memo: Default::default(),
-                        parent: Some(self.root.node.clone()),
-                        step: Some(Arc::new(ProofStep::Have {
+                    node: ProofNode::step_child(
+                        &self.root.node,
+                        self.root.focused_branch_id(),
+                        Arc::new(ProofStep::Have {
                             proposition,
                             proof: Box::new(body),
-                        })),
-                        focused_branch: self.root.focused_branch_id(),
-                        depth: self.root.node.depth + 1,
-                        split_branches: Vec::new(),
-                    }),
+                        }),
+                    ),
                 };
                 if let Some((surface, kernel)) = &local_spelling {
                     successor = successor.with_local_surface_fact(surface, kernel)?;
@@ -1071,17 +1068,14 @@ impl<'a> ProofScope<'a> {
                     site: self.root.site.clone(),
                     context: self.root.context.clone(),
                     state,
-                    node: Arc::new(ProofNode {
-                        path_memo: Default::default(),
-                        parent: Some(self.root.node.clone()),
-                        step: Some(Arc::new(ProofStep::Open {
+                    node: ProofNode::step_child(
+                        &self.root.node,
+                        focused_branch,
+                        Arc::new(ProofStep::Open {
                             resource,
                             proof: Box::new(body),
-                        })),
-                        focused_branch,
-                        depth: self.root.node.depth + 1,
-                        split_branches: Vec::new(),
-                    }),
+                        }),
+                    ),
                 })
             }
         }
@@ -1145,17 +1139,14 @@ impl<'a> Proof<'a> {
             site: self.site.clone(),
             context: self.context.clone(),
             state,
-            node: Arc::new(ProofNode {
-                path_memo: Default::default(),
-                parent: Some(self.node.clone()),
-                step: Some(Arc::new(ProofStep::Have {
+            node: ProofNode::step_child(
+                &self.node,
+                self.focused_branch_id(),
+                Arc::new(ProofStep::Have {
                     proposition,
                     proof: Box::new(body.clone()),
-                })),
-                focused_branch: self.focused_branch_id(),
-                depth: self.node.depth + 1,
-                split_branches: Vec::new(),
-            }),
+                }),
+            ),
         };
 
         // The step reports its added facts in conclusion order, omitting any
@@ -1194,17 +1185,14 @@ impl<'a> Proof<'a> {
                 site: retained.site.clone(),
                 context: retained.context.clone(),
                 state,
-                node: Arc::new(ProofNode {
-                    path_memo: Default::default(),
-                    parent: Some(retained.node.clone()),
-                    step: Some(Arc::new(ProofStep::Have {
+                node: ProofNode::step_child(
+                    &retained.node,
+                    retained.focused_branch_id(),
+                    Arc::new(ProofStep::Have {
                         proposition: conclusion.clone(),
                         proof: Box::new(body.clone()),
-                    })),
-                    focused_branch: retained.focused_branch_id(),
-                    depth: retained.node.depth + 1,
-                    split_branches: Vec::new(),
-                }),
+                    }),
+                ),
             };
         }
         Ok(retained)

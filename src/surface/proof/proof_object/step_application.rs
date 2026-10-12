@@ -801,14 +801,11 @@ impl<'a> Proof<'a> {
                 site: self.site.clone(),
                 context: self.context.clone(),
                 state: current.state.clone(),
-                node: Arc::new(ProofNode {
-                    path_memo: Default::default(),
-                    parent: Some(self.node.clone()),
-                    step: Some(Arc::new(step)),
-                    focused_branch: current.focused_branch_id(),
-                    depth: self.node.depth + 1,
-                    split_branches: Vec::new(),
-                }),
+                node: ProofNode::step_child(
+                    &self.node,
+                    current.focused_branch_id(),
+                    Arc::new(step),
+                ),
             });
         }
         if let ProofStep::CloseInvariantsBy(body) = &step {
@@ -898,14 +895,11 @@ impl<'a> Proof<'a> {
                 site: self.site.clone(),
                 context: self.context.clone(),
                 state: successor,
-                node: Arc::new(ProofNode {
-                    path_memo: Default::default(),
-                    parent: Some(self.node.clone()),
-                    step: Some(Arc::new(provenance_step)),
-                    focused_branch: self.focused_branch_id(),
-                    depth: self.node.depth + 1,
-                    split_branches: Vec::new(),
-                }),
+                node: ProofNode::step_child(
+                    &self.node,
+                    self.focused_branch_id(),
+                    Arc::new(provenance_step),
+                ),
             });
         }
 
@@ -1001,14 +995,7 @@ impl<'a> Proof<'a> {
             site: self.site.clone(),
             context: self.context.clone(),
             state,
-            node: Arc::new(ProofNode {
-                path_memo: Default::default(),
-                parent: Some(self.node.clone()),
-                step: Some(Arc::new(step)),
-                focused_branch: self.focused_branch_id(),
-                depth: self.node.depth + 1,
-                split_branches: Vec::new(),
-            }),
+            node: ProofNode::step_child(&self.node, self.focused_branch_id(), Arc::new(step)),
         })
     }
 
