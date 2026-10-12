@@ -201,6 +201,25 @@ user-space C string, whose plain `char` is signed, be read as `uint8` bytes by
 Nothing wider than one byte, and no pointer, float, or `_Bool` cell, gains a
 view this way.
 
+Constant facts cross the conversion in both directions. Forward, a known
+byte `u == c` folds `int8(u)` to its two's-complement value wherever a term's
+constant is computed from its operands, including the constant classes a
+call's guarantee is normalized with. Backward, the conversion is a bijection
+from `0..255` onto `-128..127` and a `UInt8` load holds one zero-extended
+byte, so `int8(u) == k` with `k` in `-128..127` means `u == k mod 256`. Three
+places use that one rule: the constant classes (`constant_classes.rs`) settle
+the byte when its signed read's class is settled, a byte-read equality with a
+constant is decided from that class, and a checked `rewrite` by
+`int8(u) == k` substitutes `u` by `k mod 256`, which also rewrites every
+signed read of the byte because each contains `u`. Smart closure and its
+expansion therefore cite the same written premise
+(`mdtests/userspace_signed_char_fact_decides_the_unsigned_byte.md`,
+`mdtests/userspace_unsigned_byte_fact_crosses_a_signed_char_call.md`). A `k`
+outside `-128..127` is the conversion of no byte and is never turned into a
+byte equality. The inverse applies only to a byte load operand, and only to
+constants: an order fact on the signed read (`s[0] < 0`) does not yet bound
+the unsigned read.
+
 ## Reinterpretation stays refused
 
 A copy moves cells without converting them. A typed load accepts only a cell

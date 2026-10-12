@@ -466,6 +466,9 @@ impl PureFactContext {
                 if let Some(value) = self.decide_exact_signed_constant_order(condition) {
                     return Some(value);
                 }
+                if let Some(value) = self.decide_byte_equality_from_constant_class(condition) {
+                    return Some(value);
+                }
                 if let Some(value) = self.decide_reflexive_float_comparison(condition) {
                     return Some(value);
                 }
@@ -876,6 +879,37 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn decide_intrinsically(condition: &ConditionTerm) -> Option<bool> {
         Self::new().decide(condition)
+    }
+
+    /// A byte read compared with a constant, decided by the constant its
+    /// equality class carries (`ConstantClasses`). One byte has one name, so
+    /// its signed and unsigned reads share that class's evidence in both
+    /// directions: `int8(u) == 7` settles `u` to 7 and `u == 200` settles
+    /// `int8(u)` to -56 (see `constant_classes`). The queried side must be a
+    /// byte read, an unsigned byte load or the signed conversion of one, so
+    /// this answers only the byte questions the index was extended for; it
+    /// is one memoized class lookup, not a walk over the facts.
+    fn decide_byte_equality_from_constant_class(&self, condition: &ConditionTerm) -> Option<bool> {
+        let ConditionTerm::Bitvector32Equal(left, right) = condition else {
+            return None;
+        };
+        let (term, constant) = match (
+            signed_bitvector_constant(left),
+            signed_bitvector_constant(right),
+        ) {
+            (None, Some(constant)) => (left.as_ref(), constant),
+            (Some(constant), None) => (right.as_ref(), constant),
+            _ => return None,
+        };
+        let byte = term.signed_byte_operand().unwrap_or(term);
+        if !matches!(
+            crate::kernel::eval::viewed_as_memory_load(byte),
+            Some(Bitvector32Term::MemoryLoad(_, _, LoadKind::UInt8))
+        ) {
+            return None;
+        }
+        self.signed_constant_after_equality_normalization(term)
+            .map(|known| known == constant)
     }
 
     /// Integer strict and inclusive bounds differ by one. Keep the frozen

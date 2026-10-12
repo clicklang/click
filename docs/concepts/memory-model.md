@@ -124,6 +124,8 @@ value `v` is `(v >> 8k) & 0xFF`:
   eight bits: a byte has one name, its unsigned value, and a `signed char`
   read is its two's-complement reinterpretation. Plain `char` is one of the
   two, unsigned on the kernel target and signed on the user-space target.
+  A constant fact about either read decides the other: `u[0] == 200` gives
+  `s[0] == -56`, and `s[0] == 7` gives `u[0] == 7`.
 - A one-byte store updates the wider cell in place,
   `(v & ~(0xFF << 8k)) | (b << 8k)`, keeping its type and address. No
   separate one-byte cell is added, so the storage keeps a single description.

@@ -654,9 +654,10 @@ them: `s[i] == u[i]` through a `signed char*` and an `unsigned char*` view, and
 a contract, across a call and through `at(...)`. With one name per byte the
 signed read is now the conversion of the unsigned one, so `s[i] == u[i]` is
 still refused (the two differ for every byte of `0x80` or more) while
-`s[i] == -1` proves `u[i] == 255`
+`u[i] == 255` proves `s[i] == -1` and `s[i] == -1` proves `u[i] == 255`
 (`mdtests/a_signed_and_an_unsigned_byte_read_are_two_values.md` and its
-neighbours). The load variable is named by the term, so its identity, its
+neighbours; the backward rule is described in
+[byte representation](byte-representation.md#character-reads-of-one-byte-cells)). The load variable is named by the term, so its identity, its
 registry entry (`registered_load_kind_for_variable`) and its defining equation
 carry the kind too.
 

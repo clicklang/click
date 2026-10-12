@@ -717,7 +717,11 @@ carries the merge of its members' folded constants as `Known(c)`,
 different constants in one class are still ambiguous, and a class whose
 constant rises re-folds only the compound terms that use one of its members.
 A constant only rises, so each registered term is re-folded a bounded number
-of times along one path. A query no longer walks the facts connected to the
+of times along one path. A class also keeps its signed byte reads of byte
+loads, and a rise inverts each into its byte's class
+([byte representation](byte-representation.md#character-reads-of-one-byte-cells));
+that set is relabelled with the smaller class's members on a union, and its
+inversions are bounded by the same rises, so no class or fact is scanned. A query no longer walks the facts connected to the
 term: before, a counter advanced by `N` calls re-walked its whole chain at
 every call, deep-comparing every same-address load at another snapshot, so
 the `N`th call cost `O(N^2)`. Only an `Unknown` class does query-time work:
