@@ -387,8 +387,10 @@ uses ordinary Click contracts and tactics. Expansion can use the shared
 `unsigned_sum_bound` arithmetic-certificate step for widened word bounds.
 The [unchanged Adler2 computation](https://github.com/clicklang/click/blob/master/design/charon-trial/adler2/README.md)
 is verified separately against the common checksum specification for lengths
-zero through 2,147,483,647 bytes from canonical initial states. General public
-entry-point composition and implementation incremental processing remain pending.
+zero through 2,147,483,647 bytes from canonical initial states. The unchanged
+`write_slice` and `adler32_slice` wrappers compose checked bodies over the same
+range, preserve input bytes, and prove field and packed checksum correctness.
+Implementation incremental processing remains pending.
 
 ```sh
 cargo run --bin click -- import lock examples/rust-unsigned/arithmetic.click

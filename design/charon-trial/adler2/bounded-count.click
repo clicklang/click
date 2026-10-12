@@ -182,3 +182,34 @@ theorem adler_bounded_previous_byte_observation(bytes: uint8[], total: uint64, r
   rewrite((bytes + (total - remaining - 1u64))[0] == bytes[((int32)(uint32)total - (int32)(uint32)remaining) - 1]); normalize();
  }
 }
+
+# A guarded logical index denotes an actual byte in the native input range.
+theorem adler_bounded_signed_index(count: uint64, index: int32) {
+ requires count <= 2147483647u64;
+ requires 0 <= index;
+ requires index < (int32)(uint32)count;
+ ensures (uint64)index < count by {
+  apply(adler_bounded_count(count));
+  apply(int32_to_integer_bounds(index));
+  apply(int32_less_equal_to_integer(0, index));
+  apply(int32_less_than_to_integer(index, (int32)(uint32)count));
+  have 0 <= to_integer(index) by simp();
+  have to_integer((uint64)index) == to_integer(index) by {
+   arithmetic_certificate rules {
+    premise 0: 0 <= to_integer(index) => 0 <= to_integer(index);
+    premise 1: to_integer(index) <= 2147483647 => to_integer(index) <= 2147483647;
+    integer_cast_identity bounds [0, 1] => to_integer((uint64)index) == to_integer(index);
+    conclusion 0;
+   }
+  }
+  have to_integer((uint64)index) < to_integer(count) by {
+   arithmetic() using {
+    to_integer((uint64)index) == to_integer(index);
+    to_integer(index) < to_integer((int32)(uint32)count);
+    to_integer((int32)(uint32)count) == to_integer(count);
+   }
+  }
+  apply(uint64_to_integer_less_than_implies_less_than((uint64)index, count));
+  assumption();
+ }
+}

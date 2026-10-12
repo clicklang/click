@@ -58,9 +58,12 @@ canonical A seeds. Implementation-level incremental composition remains pending.
 Constructors, one- through four-byte computations, and the shared checksum
 getter verify. The getter proves exact packing for any two u16 fields and has a
 checked bridge from field specifications to the packed specification. The
-unchanged `adler32_slice` entry point composes these bodies and preserves input
-bytes for lengths zero through four; the empty call needs no byte authority.
-Extend that public composition to the general computation contract.
+unchanged `adler32_slice` entry point composes the checked constructor, general
+computation and getter for every length zero through 2,147,483,647, returns the
+common packed checksum, and preserves every input byte. `write_slice` accepts
+any canonical initial state and returns canonical fields satisfying the common
+A/B specification. Logical byte-index guards are bridged explicitly to native
+64-bit range membership. The specialized empty call needs no byte authority.
 
 The independently locked, unchanged zlib one-byte path proves its packed result
 equal the same specification and preserves its input byte; its empty path also
@@ -86,13 +89,12 @@ current roadmap: replace status when work lands rather than append checkpoints.
 
 ## Remaining work, in delivery order
 
-### 1. Compose Rust public correctness and incremental processing
+### 1. Compose Rust incremental processing
 
 Use the [shared Adler-32 specification](../design/adler32-spec.click), following
 [the checksum assessment](../design/rust-checksum-assessment.md). Compose the
-checked constructor, general computation contract, and checksum getter at the
-public entry point. Connect repeated computation calls to the checked
-mathematical incremental equality.
+general public update contract across repeated calls and connect it to the
+checked mathematical incremental equality.
 Prove arbitrary finite input correctness under the explicit supported memory
 range and API preconditions, including compatible initial states.
 
