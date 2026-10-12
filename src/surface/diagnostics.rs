@@ -2,7 +2,7 @@ use super::*;
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::SharedCMemory;
 use crate::kernel::resource_tracker;
-use crate::kernel::{CComparisonOperator, CFloatBinaryOperator, CFloatCondition, CUpdateOperator};
+use crate::kernel::{CComparisonOperator, CFloatCondition, CUpdateOperator};
 use crate::surface::validation::describe_click_type;
 
 mod cpp_model;
@@ -5846,45 +5846,6 @@ pub(super) fn describe_bitvector_with_context(
                 .expect("checked registered above")
         }
         Bitvector32Term::Variable(variable) => lowering_only_variable("v", variable.0),
-        Bitvector32Term::Add(left, right) => {
-            describe_binary_bitvector_with_context(left, "+", right, parameter_binding)
-        }
-        Bitvector32Term::Subtract(left, right) => {
-            describe_binary_bitvector_with_context(left, "-", right, parameter_binding)
-        }
-        Bitvector32Term::Multiply(left, right) => {
-            describe_binary_bitvector_with_context(left, "*", right, parameter_binding)
-        }
-        Bitvector32Term::Divide(left, right) => {
-            describe_binary_bitvector_with_context(left, "/", right, parameter_binding)
-        }
-        Bitvector32Term::UnsignedDivide(left, right) => {
-            describe_binary_bitvector_with_context(left, "/", right, parameter_binding)
-        }
-        Bitvector32Term::Remainder(left, right) => {
-            describe_binary_bitvector_with_context(left, "%", right, parameter_binding)
-        }
-        Bitvector32Term::UnsignedRemainder(left, right) => {
-            describe_binary_bitvector_with_context(left, "%", right, parameter_binding)
-        }
-        Bitvector32Term::ShiftLeft(left, right) => {
-            describe_binary_bitvector_with_context(left, "<<", right, parameter_binding)
-        }
-        Bitvector32Term::ArithmeticShiftRight(left, right) => {
-            describe_binary_bitvector_with_context(left, ">>", right, parameter_binding)
-        }
-        Bitvector32Term::LogicalShiftRight(left, right) => {
-            describe_binary_bitvector_with_context(left, ">>", right, parameter_binding)
-        }
-        Bitvector32Term::BitwiseAnd(left, right) => {
-            describe_binary_bitvector_with_context(left, "&", right, parameter_binding)
-        }
-        Bitvector32Term::BitwiseOr(left, right) => {
-            describe_binary_bitvector_with_context(left, "|", right, parameter_binding)
-        }
-        Bitvector32Term::BitwiseXor(left, right) => {
-            describe_binary_bitvector_with_context(left, "^", right, parameter_binding)
-        }
         Bitvector32Term::BitwiseNot(value) => {
             format!(
                 "~{}",
@@ -5896,24 +5857,6 @@ pub(super) fn describe_bitvector_with_context(
                 "-{}",
                 describe_bitvector_with_context(value, parameter_binding)
             )
-        }
-        Bitvector32Term::Float32Binary {
-            operator,
-            left,
-            right,
-        }
-        | Bitvector32Term::Float64Binary {
-            operator,
-            left,
-            right,
-        } => {
-            let symbol = match operator {
-                CFloatBinaryOperator::Add => "+",
-                CFloatBinaryOperator::Subtract => "-",
-                CFloatBinaryOperator::Multiply => "*",
-                CFloatBinaryOperator::Divide => "/",
-            };
-            describe_binary_bitvector_with_context(left, symbol, right, parameter_binding)
         }
         Bitvector32Term::Int64From32(value)
         | Bitvector32Term::UInt64From32(value)
@@ -5927,44 +5870,6 @@ pub(super) fn describe_bitvector_with_context(
             "truncate32({})",
             describe_bitvector_with_context(value, parameter_binding)
         ),
-        Bitvector32Term::Int64Add(left, right) | Bitvector32Term::UInt64Add(left, right) => {
-            describe_binary_bitvector_with_context(left, "+", right, parameter_binding)
-        }
-        Bitvector32Term::Int64Subtract(left, right)
-        | Bitvector32Term::UInt64Subtract(left, right) => {
-            describe_binary_bitvector_with_context(left, "-", right, parameter_binding)
-        }
-        Bitvector32Term::Int64Multiply(left, right)
-        | Bitvector32Term::UInt64Multiply(left, right) => {
-            describe_binary_bitvector_with_context(left, "*", right, parameter_binding)
-        }
-        Bitvector32Term::Int64Divide(left, right) | Bitvector32Term::UInt64Divide(left, right) => {
-            describe_binary_bitvector_with_context(left, "/", right, parameter_binding)
-        }
-        Bitvector32Term::Int64Remainder(left, right)
-        | Bitvector32Term::UInt64Remainder(left, right) => {
-            describe_binary_bitvector_with_context(left, "%", right, parameter_binding)
-        }
-        Bitvector32Term::Int64ShiftLeft(left, right)
-        | Bitvector32Term::UInt64ShiftLeft(left, right) => {
-            describe_binary_bitvector_with_context(left, "<<", right, parameter_binding)
-        }
-        Bitvector32Term::Int64ArithmeticShiftRight(left, right)
-        | Bitvector32Term::UInt64LogicalShiftRight(left, right) => {
-            describe_binary_bitvector_with_context(left, ">>", right, parameter_binding)
-        }
-        Bitvector32Term::Int64BitwiseAnd(left, right)
-        | Bitvector32Term::UInt64BitwiseAnd(left, right) => {
-            describe_binary_bitvector_with_context(left, "&", right, parameter_binding)
-        }
-        Bitvector32Term::Int64BitwiseOr(left, right)
-        | Bitvector32Term::UInt64BitwiseOr(left, right) => {
-            describe_binary_bitvector_with_context(left, "|", right, parameter_binding)
-        }
-        Bitvector32Term::Int64BitwiseXor(left, right)
-        | Bitvector32Term::UInt64BitwiseXor(left, right) => {
-            describe_binary_bitvector_with_context(left, "^", right, parameter_binding)
-        }
         Bitvector32Term::Int64BitwiseNot(value) | Bitvector32Term::UInt64BitwiseNot(value) => {
             format!(
                 "~{}",
@@ -6021,6 +5926,17 @@ pub(super) fn describe_bitvector_with_context(
             format!("address({})", describe_pointer(pointer, parameter_binding))
         }
         Bitvector32Term::IntegerToMachine { .. } => "integer-to-machine".to_string(),
+        term => {
+            let (operator, left, right) = term
+                .as_binary()
+                .expect("every other variant has its own arm");
+            describe_binary_bitvector_with_context(
+                left,
+                operator.c_symbol(),
+                right,
+                parameter_binding,
+            )
+        }
     }
 }
 
