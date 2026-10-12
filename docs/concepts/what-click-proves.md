@@ -53,6 +53,10 @@ marker; such a contract drops the third line above and keeps the rest, which
 is the partial-correctness guarantee. Loop invariants prove safety across
 every finite number of iterations and describe any exit that does occur.
 
+Every guarantee rests on a trusted base: Click's kernel, its translation of
+claims into kernel obligations, its C and target model, and the `extern`
+contracts you declare. [What Click trusts](trust.md) lists it.
+
 The guarantee covers the modeled C0 execution and resources, not the physical
 machine running the verifier or program. In particular, a verified function
 can still exhaust the process stack, address space, or available memory; those

@@ -133,7 +133,8 @@ repeat callee contracts (`examples/basic-cpp/with_restore_caller.click`).
 Proposed fix: [design/proof-reuse.md](../design/proof-reuse.md):
 
 - R1: retire superseded increments. Done.
-- R2: one general contract per function.
+- R2: one general contract per function, including one general `rb_erase`
+  contract with a theorem that its cases are exhaustive.
 - R3: automatic unfolding of recursive spec functions.
 - R4: automatic opening and closing of resources.
 - R5: one script for several arms.
@@ -327,20 +328,22 @@ Decision: open.
 
 ## M. Memory model, semantics and trust
 
-### M1. The trusted computing base is large and the README argues for it
+### M1. There is no independent proof checker
 
-Today: `src/kernel` is about 406K lines of Rust (with tests) and
-`src/surface` about 261K, part of which is trusted
-(`docs/internals/architecture.md`, `docs/internals/kernel.md`); there is no
-independent certificate checker; prelude axioms are applied without
-re-checking. The README's opening essay rejects the small-kernel principle.
-Nine kernel bugs were filed from one soundness review.
+The trusted base is now listed in `docs/concepts/trust.md`: kernel (about
+254,000 lines of Rust), obligation construction, the C front end and target
+model, importers, prelude theorems applied without re-checking, and `extern`
+contracts. Replacing the README's kernel-design essay is the maintainer's
+human-facing work.
 
-Proposed fix: serialize proof objects and write a small independent
-checker that re-checks them; until then publish a trusted-base inventory with line counts, and
-replace the README essay with it.
+Today: `click expand` and `click audit` re-check proofs with the same kernel
+and lowering, so a bug there is invisible to them; there is no serialized proof
+object and no independent checker.
 
-Decision: open.
+Proposed fix: serialize proof objects and write a small independent checker
+that re-checks them.
+
+Decision: inventory done; independent checker open.
 
 ### M2. No written semantics or soundness argument
 
@@ -350,23 +353,6 @@ Today: the resource algebra and loan ledger are described in prose
 
 Proposed fix: a paper-level operational semantics and a model of views and
 loans, with fold/unfold and loan recovery argued sound against it.
-
-Decision: open.
-
-### M3. The rbtree claim may be read as overstated
-
-Today: the launch claim is "Click verified the Linux kernel rbtree" over
-"an unchanged, pinned upstream `lib/rbtree.c`" (`issues/README.md`). The
-fixtures are extracted bodies over a hand-written header shim
-(`examples/rbtree-insert/rbtree.h` defines `NULL`, `likely`,
-`__always_inline` and `WRITE_ONCE`); importing the real headers is P2
-(`issues/linux-rbtree-inline-helpers.md`,
-`issues/kernel-scale-preprocessing.md`); erase is about 25 per-case
-sidecars.
-
-Proposed fix: state the claim exactly ("extracted bodies under a modeled
-header environment"), list the shim as trusted, and show one top-level
-`rb_erase` contract.
 
 Decision: open.
 
