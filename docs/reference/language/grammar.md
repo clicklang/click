@@ -174,7 +174,14 @@ From lowest to highest precedence:
 | 9 | indexing `[]`, field access `->` | Left, postfix |
 | 10 | literals, names, calls, constructors, matches, ranges, conditionals, folds | Not applicable |
 
-Comparisons form propositions rather than contract expressions. See
+Comparisons form propositions rather than contract expressions, so they bind
+looser than every operator in this table. C binds `==`, `!=`, `<`, `<=`, `>`
+and `>=` tighter than `&`, `^` and `|`, so a comparison operand whose
+outermost operator is `&`, `^` or `|` must be parenthesized: `x & 1 == 0` is
+refused and `(x & 1) == 0` is accepted
+(`mdtests/bitwise_comparison_operand_needs_parentheses.md`,
+`mdtests/parenthesized_bitwise_comparison_operand_is_accepted.md`). Shifts and
+arithmetic group the same way in C and Click and need no parentheses. See
 [Propositions](index.md#propositions) for their syntax and typing rules.
 
 ## Algebraic datatypes

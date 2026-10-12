@@ -257,15 +257,19 @@ Decision: open.
 
 ### L3. Two conversion families and C-fragment precedence
 
+The precedence half is fixed: a comparison operand whose outermost operator
+is `&`, `^` or `|` must be parenthesized, since C and Click group
+`x & 1 == 0` differently, and the `aligned(p, n)` sugar is documented as
+`(address(p) & (n - 1)) == 0`.
+
 Today: `(uint32)x` keeps the low bits, `to_uint32(x)` needs a range proof,
 and implicit return conversion follows a third rule
-(`docs/reference/language/index.md`). `aligned(p, n)` is documented as sugar
-for `address(p) & (n - 1) == 0`, which in C parses as `& ((n - 1) == 0)`.
+(`docs/reference/language/index.md`).
 
-Proposed fix: one checked conversion family plus an explicit wrapping one;
-C precedence wherever C syntax appears, or a precedence note.
+Proposed fix: one checked conversion family plus an explicit wrapping one.
 
-Decision: open.
+Decision: precedence ruled fix (reject unparenthesized mixing); conversions
+open.
 
 ### L4. Rust and C++ specs still read like C
 

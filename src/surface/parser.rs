@@ -5418,7 +5418,7 @@ impl Parser {
                     | Token::GreaterEqual,
                 ) => {
                     let operator = self.parse_comparison_operator("proposition")?;
-                    let right = self.parse_contract_expression()?;
+                    let right = self.parse_comparison_operand()?;
                     return Ok(ClickProposition::Comparison {
                         left: ContractExpression::Call { name, arguments },
                         operator,
@@ -5751,15 +5751,40 @@ impl Parser {
     }
 
     fn parse_proposition_comparison(&mut self) -> Result<ClickProposition, ClickError> {
-        let left = self.parse_contract_expression()?;
+        let left = self.parse_comparison_operand()?;
         let operator = self.parse_comparison_operator("proposition")?;
-        let right = self.parse_contract_expression()?;
+        let right = self.parse_comparison_operand()?;
 
         Ok(ClickProposition::Comparison {
             left,
             operator,
             right,
         })
+    }
+
+    /// A comparison operand whose outermost operator is `&`, `|` or `^` must
+    /// be parenthesized. C binds comparisons tighter than these operators and
+    /// Click binds them looser, so `x & 1 == 0` would read differently to a C
+    /// reader than it verifies.
+    fn parse_comparison_operand(&mut self) -> Result<ContractExpression, ClickError> {
+        let start = self.position;
+        let operand = self.parse_contract_expression()?;
+        let operator = match &operand {
+            ContractExpression::BitwiseAnd(..) => "&",
+            ContractExpression::BitwiseOr(..) => "|",
+            ContractExpression::BitwiseXor(..) => "^",
+            _ => return Ok(operand),
+        };
+        let parenthesized = self.tokens.get(start) == Some(&Token::LParen)
+            && self.matching_parentheses.get(start).copied().flatten() == Some(self.position - 1);
+        if parenthesized {
+            return Ok(operand);
+        }
+        Err(self.error(format!(
+            "parenthesize a `{operator}` operand of a comparison: C groups \
+             `a {operator} b == c` as `a {operator} (b == c)` and Click as \
+             `(a {operator} b) == c`, so write `(a {operator} b) == c`"
+        )))
     }
 
     fn parse_comparison_operator(
