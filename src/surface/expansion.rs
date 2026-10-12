@@ -5085,24 +5085,10 @@ fn parse_source_with_c_layouts_context(
     click_source: &str,
     sources: &CSourceContext<'_>,
 ) -> Result<ClickFile, ClickError> {
-    let (
-        struct_layouts,
-        union_layouts,
-        aggregate_objects,
-        aggregate_array_objects,
-        global_array_shapes,
-        qualified_objects,
-        local_struct_pointers,
-    ) = parse_c_layouts(click_source, sources)?;
+    let layouts = parse_c_layouts(click_source, sources)?;
     parser::parse_with_layouts_and_aggregate_objects(
         &sources.with_library_contracts(click_source),
-        struct_layouts,
-        union_layouts,
-        aggregate_objects,
-        aggregate_array_objects,
-        global_array_shapes,
-        qualified_objects,
-        local_struct_pointers,
+        layouts,
     )
 }
 

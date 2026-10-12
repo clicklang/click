@@ -700,25 +700,11 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
     click_source: &str,
     sources: &CSourceContext<'_>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
-    let (
-        struct_layouts,
-        union_layouts,
-        aggregate_objects,
-        aggregate_array_objects,
-        global_array_shapes,
-        qualified_objects,
-        local_struct_pointers,
-    ) = parse_c_layouts(click_source, sources)?;
-    let resource_struct_layouts = struct_layouts.clone();
+    let layouts = parse_c_layouts(click_source, sources)?;
+    let resource_struct_layouts = layouts.struct_layouts.clone();
     let file = parser::parse_with_layouts_and_aggregate_objects(
         &sources.with_library_contracts(click_source),
-        struct_layouts,
-        union_layouts,
-        aggregate_objects,
-        aggregate_array_objects,
-        global_array_shapes,
-        qualified_objects,
-        local_struct_pointers,
+        layouts,
     )?;
     let parsed_sources = parse_verified_sources_context(&file, sources)?;
     let predicate_definitions = combined_predicate_definitions(&file)?;
@@ -892,24 +878,10 @@ fn parse_c0_click_file_context(
             "modeled-pthread runtime requires target `x86_64-linux-userspace`",
         ));
     }
-    let (
-        struct_layouts,
-        union_layouts,
-        aggregate_objects,
-        aggregate_array_objects,
-        global_array_shapes,
-        qualified_objects,
-        local_struct_pointers,
-    ) = parse_c_layouts(click_source, sources)?;
+    let layouts = parse_c_layouts(click_source, sources)?;
     parser::parse_with_layouts_and_aggregate_objects(
         &sources.with_library_contracts(click_source),
-        struct_layouts,
-        union_layouts,
-        aggregate_objects,
-        aggregate_array_objects,
-        global_array_shapes,
-        qualified_objects,
-        local_struct_pointers,
+        layouts,
     )
 }
 
@@ -1080,31 +1052,13 @@ pub(in crate::surface) fn resolve_click_project_context(
     let click_source = project
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    let (
-        struct_layouts,
-        union_layouts,
-        aggregate_objects,
-        aggregate_array_objects,
-        global_array_shapes,
-        qualified_objects,
-        local_struct_pointers,
-    ) = parse_c_layouts_for_target(
+    let layouts = parse_c_layouts_for_target(
         click_source,
         sources,
         super::selected_project_c_target(project)?,
     )?;
     check_verification_deadline()?;
-    modules::resolve_click_project_with_layouts(
-        project,
-        sources.library_contracts(),
-        struct_layouts,
-        union_layouts,
-        aggregate_objects,
-        aggregate_array_objects,
-        global_array_shapes,
-        qualified_objects,
-        local_struct_pointers,
-    )
+    modules::resolve_click_project_with_layouts(project, sources.library_contracts(), layouts)
 }
 
 /// Verifies exactly the proofs owned by a loaded entry module. Imported
@@ -2118,15 +2072,7 @@ fn verify_c0_sources_in_context(
     let session_is_fresh = _session.as_ref().is_some_and(|session| session.is_fresh());
     let (file, parsed_sources, selected_functions, resource_struct_layouts) = {
         let _timing = VerificationTimingPhase::new("frontend");
-        let (
-            struct_layouts,
-            union_layouts,
-            aggregate_objects,
-            aggregate_array_objects,
-            global_array_shapes,
-            qualified_objects,
-            local_struct_pointers,
-        ) = parse_c_layouts_for_target(
+        let layouts = parse_c_layouts_for_target(
             click_source,
             c_sources,
             match &resolved_file {
@@ -2134,18 +2080,12 @@ fn verify_c0_sources_in_context(
                 None => super::selected_c_target(click_source)?,
             },
         )?;
-        let resource_struct_layouts = struct_layouts.clone();
+        let resource_struct_layouts = layouts.struct_layouts.clone();
         let file = match resolved_file {
             Some(file) => file,
             None => parser::parse_with_layouts_and_aggregate_objects(
                 &c_sources.with_library_contracts(click_source),
-                struct_layouts,
-                union_layouts,
-                aggregate_objects,
-                aggregate_array_objects,
-                global_array_shapes,
-                qualified_objects,
-                local_struct_pointers,
+                layouts,
             )?,
         };
         modules::reject_theorem_justification_cycles(&file)?;
@@ -4052,24 +3992,10 @@ fn c0_external_dependencies_context(
     click_source: &str,
     sources: &CSourceContext<'_>,
 ) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
-    let (
-        struct_layouts,
-        union_layouts,
-        aggregate_objects,
-        aggregate_array_objects,
-        global_array_shapes,
-        qualified_objects,
-        local_struct_pointers,
-    ) = parse_c_layouts(click_source, sources)?;
+    let layouts = parse_c_layouts(click_source, sources)?;
     let file = parser::parse_with_layouts_and_aggregate_objects(
         &sources.with_library_contracts(click_source),
-        struct_layouts,
-        union_layouts,
-        aggregate_objects,
-        aggregate_array_objects,
-        global_array_shapes,
-        qualified_objects,
-        local_struct_pointers,
+        layouts,
     )?;
     c0_external_dependencies_file(&file, sources)
 }
@@ -5268,18 +5194,7 @@ fn parsed_function_for_source_name<'a>(
 pub(in crate::surface) fn parse_c_layouts(
     click_source: &str,
     c_sources: &CSourceContext<'_>,
-) -> Result<
-    (
-        BTreeMap<String, syntax::C0StructLayout>,
-        BTreeMap<String, syntax::C0UnionLayout>,
-        BTreeMap<String, BTreeMap<String, String>>,
-        BTreeMap<String, BTreeSet<String>>,
-        BTreeMap<String, BTreeMap<String, parser::GlobalArrayShape>>,
-        BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>,
-        BTreeMap<String, parser::FunctionLocals>,
-    ),
-    ClickError,
-> {
+) -> Result<parser::ProgramLayouts, ClickError> {
     parse_c_layouts_for_target(
         click_source,
         c_sources,
@@ -5294,25 +5209,7 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
     click_source: &str,
     c_sources: &CSourceContext<'_>,
     target: CTarget,
-) -> Result<
-    (
-        BTreeMap<String, syntax::C0StructLayout>,
-        BTreeMap<String, syntax::C0UnionLayout>,
-        BTreeMap<String, BTreeMap<String, String>>,
-        BTreeMap<String, BTreeSet<String>>,
-        BTreeMap<String, BTreeMap<String, parser::GlobalArrayShape>>,
-        BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>,
-        BTreeMap<String, parser::FunctionLocals>,
-    ),
-    ClickError,
-> {
-    let mut layouts = BTreeMap::new();
-    let mut union_layouts = BTreeMap::new();
-    let mut aggregate_objects = BTreeMap::new();
-    let mut aggregate_array_objects = BTreeMap::new();
-    let mut global_array_shapes = BTreeMap::new();
-    let mut qualified_objects = BTreeMap::new();
-    let mut local_struct_pointers = BTreeMap::new();
+) -> Result<parser::ProgramLayouts, ClickError> {
     let verifying_paths = super::verifying_source_paths(click_source)?;
     if let ProgramSource::Program { import, execution } = &c_sources.source {
         if verifying_paths != vec![import.logical_source().to_string()] {
@@ -5321,30 +5218,7 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
                 import.language()
             )));
         }
-        layouts = execution.layouts.clone();
-        for function in &execution.functions {
-            aggregate_objects.insert(
-                function.source_name().to_string(),
-                function.local_struct_values().clone(),
-            );
-            local_struct_pointers.insert(
-                function.source_name().to_string(),
-                parser::FunctionLocals {
-                    execution_name: Some(function.name().to_string()),
-                    struct_pointers: function.local_struct_pointers().clone(),
-                    references: function.local_references().clone(),
-                },
-            );
-        }
-        return Ok((
-            layouts,
-            union_layouts,
-            aggregate_objects,
-            aggregate_array_objects,
-            global_array_shapes,
-            qualified_objects,
-            local_struct_pointers,
-        ));
+        return Ok(parser::ProgramLayouts::of_execution(execution));
     }
     if let ProgramSource::PreparedC {
         imports,
@@ -5370,21 +5244,172 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
             )));
         }
     }
+    let mut tables = parser::ProgramLayouts::default();
     for source_path in verifying_paths {
         let unit = parse_c_source_unit(&source_path, c_sources, target)?;
-        let mut objects = BTreeMap::new();
-        for (name, global) in &unit.globals {
-            if let Some(pointer_type) = global.c_type().pointer_type() {
-                let pointer = CMemory::global_pointer(global.kernel_name());
-                let value_type = global.c_type().to_kernel_type();
+        tables
+            .qualified_objects
+            .insert(source_path.clone(), unit_qualified_objects(&unit));
+        for (name, layout) in &unit.structs {
+            if let Some(previous) = tables.struct_layouts.insert(name.clone(), layout.clone())
+                && previous != *layout
+            {
+                return Err(ClickError::new(format!(
+                    "conflicting declarations for struct `{name}`"
+                )));
+            }
+        }
+        for (name, layout) in &unit.unions {
+            if let Some(previous) = tables.union_layouts.insert(name.clone(), layout.clone())
+                && previous != *layout
+            {
+                return Err(ClickError::new(format!(
+                    "conflicting declarations for union `{name}`"
+                )));
+            }
+        }
+        for function in unit.functions {
+            record_function_tables(&mut tables, function);
+        }
+    }
+    Ok(tables)
+}
+
+/// The globals and function statics of one translation unit a contract may
+/// name: `name`, or `function::name` for a static.
+fn unit_qualified_objects(
+    unit: &syntax::C0TranslationUnit,
+) -> BTreeMap<String, parser::QualifiedCObject> {
+    let mut objects = BTreeMap::new();
+    for (name, global) in &unit.globals {
+        if let Some(pointer_type) = global.c_type().pointer_type() {
+            let pointer = CMemory::global_pointer(global.kernel_name());
+            let value_type = global.c_type().to_kernel_type();
+            let mut value = if value_type.is_object_pointer() {
+                crate::kernel::stable_symbolic_pointer_cell_value(&pointer, value_type)
+            } else {
+                CValue::typed_pointer(pointer.clone(), pointer_type.to_kernel_type())
+            };
+            value = value
+                .with_pointer_pointee_constant(global.is_constant())
+                .with_pointer_pointee_volatile(global.pointee_is_volatile());
+            let expression = if value_type.is_object_pointer() {
+                CExpression::Value(value)
+            } else {
+                CExpression::TypedLoad {
+                    pointer: Box::new(CExpression::Value(value)),
+                    value_type,
+                    volatile: false,
+                    pointee_constant: false,
+                    source: Default::default(),
+                }
+            };
+            objects.insert(
+                name.clone(),
+                parser::QualifiedCObject {
+                    expression,
+                    address: Some(CExpression::Value(CValue::typed_pointer(
+                        CMemory::global_pointer(global.kernel_name()),
+                        pointer_type.to_kernel_type(),
+                    ))),
+                    struct_name: global.struct_name().map(str::to_owned),
+                    array_shape: None,
+                    ambiguous: false,
+                },
+            );
+        }
+    }
+    for (name, array) in &unit.global_arrays {
+        if let Some(pointer_type) = array.element_type().pointer_type() {
+            objects.insert(
+                name.clone(),
+                parser::QualifiedCObject {
+                    expression: CExpression::Value(CValue::typed_pointer_with_pointee_constant(
+                        CMemory::global_pointer(array.kernel_name()),
+                        pointer_type.to_kernel_type(),
+                        array.is_constant(),
+                    )),
+                    address: None,
+                    struct_name: None,
+                    array_shape: array.index_shape(),
+                    ambiguous: false,
+                },
+            );
+        }
+    }
+    for (name, aggregate) in &unit.global_aggregates {
+        objects.insert(
+            name.clone(),
+            parser::QualifiedCObject {
+                expression: CExpression::Value(CValue::typed_pointer_with_pointee_constant(
+                    CMemory::global_pointer(aggregate.kernel_name()),
+                    CType::Int32Pointer,
+                    aggregate.is_constant(),
+                )),
+                address: None,
+                struct_name: Some(aggregate.struct_name().to_owned()),
+                array_shape: None,
+                ambiguous: false,
+            },
+        );
+    }
+    for (name, aggregate_array) in &unit.global_aggregate_arrays {
+        if let Some(length) = aggregate_array.array_length() {
+            objects.insert(
+                name.clone(),
+                parser::QualifiedCObject {
+                    expression: CExpression::Value(CValue::typed_pointer_with_pointee_constant(
+                        CMemory::global_pointer(aggregate_array.kernel_name()),
+                        CType::Int32Pointer,
+                        aggregate_array.is_constant(),
+                    )),
+                    address: None,
+                    struct_name: Some(aggregate_array.struct_name().to_owned()),
+                    array_shape: Some(vec![length]),
+                    ambiguous: false,
+                },
+            );
+        }
+    }
+    for function in &unit.functions {
+        let mut names = BTreeMap::<&str, usize>::new();
+        for name in function
+            .static_locals()
+            .values()
+            .map(|object| object.name())
+            .chain(
+                function
+                    .static_arrays()
+                    .values()
+                    .map(|object| object.name()),
+            )
+            .chain(
+                function
+                    .static_aggregates()
+                    .values()
+                    .map(|object| object.name()),
+            )
+            .chain(
+                function
+                    .static_aggregate_arrays()
+                    .values()
+                    .map(|object| object.name()),
+            )
+        {
+            *names.entry(name).or_default() += 1;
+        }
+        for local in function.static_locals().values() {
+            if let Some(pointer_type) = local.c_type().pointer_type() {
+                let pointer = CMemory::static_pointer(function.name(), local.kernel_name());
+                let value_type = local.c_type().to_kernel_type();
                 let mut value = if value_type.is_object_pointer() {
                     crate::kernel::stable_symbolic_pointer_cell_value(&pointer, value_type)
                 } else {
                     CValue::typed_pointer(pointer.clone(), pointer_type.to_kernel_type())
                 };
                 value = value
-                    .with_pointer_pointee_constant(global.is_constant())
-                    .with_pointer_pointee_volatile(global.pointee_is_volatile());
+                    .with_pointer_pointee_constant(local.is_constant())
+                    .with_pointer_pointee_volatile(local.pointee_is_volatile());
                 let expression = if value_type.is_object_pointer() {
                     CExpression::Value(value)
                 } else {
@@ -5397,318 +5422,198 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
                     }
                 };
                 objects.insert(
-                    name.clone(),
+                    format!("{}::{}", function.name(), local.name()),
                     parser::QualifiedCObject {
                         expression,
                         address: Some(CExpression::Value(CValue::typed_pointer(
-                            CMemory::global_pointer(global.kernel_name()),
+                            CMemory::static_pointer(function.name(), local.kernel_name()),
                             pointer_type.to_kernel_type(),
                         ))),
-                        struct_name: global.struct_name().map(str::to_owned),
+                        struct_name: None,
                         array_shape: None,
-                        ambiguous: false,
+                        ambiguous: names[local.name()] > 1,
                     },
                 );
             }
         }
-        for (name, array) in &unit.global_arrays {
+        for array in function.static_arrays().values() {
             if let Some(pointer_type) = array.element_type().pointer_type() {
                 objects.insert(
-                    name.clone(),
+                    format!("{}::{}", function.name(), array.name()),
                     parser::QualifiedCObject {
                         expression: CExpression::Value(
                             CValue::typed_pointer_with_pointee_constant(
-                                CMemory::global_pointer(array.kernel_name()),
+                                CMemory::static_pointer(function.name(), array.kernel_name()),
                                 pointer_type.to_kernel_type(),
                                 array.is_constant(),
                             ),
                         ),
                         address: None,
                         struct_name: None,
-                        array_shape: array.index_shape(),
-                        ambiguous: false,
+                        array_shape: Some(array.shape().to_vec()),
+                        ambiguous: names[array.name()] > 1,
                     },
                 );
             }
         }
-        for (name, aggregate) in &unit.global_aggregates {
+        for aggregate in function.static_aggregates().values() {
             objects.insert(
-                name.clone(),
+                format!("{}::{}", function.name(), aggregate.name()),
                 parser::QualifiedCObject {
                     expression: CExpression::Value(CValue::typed_pointer_with_pointee_constant(
-                        CMemory::global_pointer(aggregate.kernel_name()),
+                        CMemory::static_pointer(function.name(), aggregate.kernel_name()),
                         CType::Int32Pointer,
                         aggregate.is_constant(),
                     )),
                     address: None,
                     struct_name: Some(aggregate.struct_name().to_owned()),
                     array_shape: None,
+                    ambiguous: names[aggregate.name()] > 1,
+                },
+            );
+        }
+        for aggregate_array in function.static_aggregate_arrays().values() {
+            objects.insert(
+                format!("{}::{}", function.name(), aggregate_array.name()),
+                parser::QualifiedCObject {
+                    expression: CExpression::Value(CValue::typed_pointer_with_pointee_constant(
+                        CMemory::static_pointer(function.name(), aggregate_array.kernel_name()),
+                        CType::Int32Pointer,
+                        aggregate_array.is_constant(),
+                    )),
+                    address: None,
+                    struct_name: Some(aggregate_array.struct_name().to_owned()),
+                    array_shape: Some(vec![aggregate_array.length()]),
                     ambiguous: false,
                 },
             );
         }
-        for (name, aggregate_array) in &unit.global_aggregate_arrays {
-            if let Some(length) = aggregate_array.array_length() {
-                objects.insert(
+    }
+    objects
+}
+
+/// Records the objects, array shapes and locals of one C function that its
+/// contract may name.
+fn record_function_tables(tables: &mut parser::ProgramLayouts, function: syntax::C0Function) {
+    let mut function_aggregate_objects = BTreeMap::new();
+    for aggregate in function.global_aggregates().values() {
+        function_aggregate_objects.insert(
+            aggregate.name().to_string(),
+            aggregate.struct_name().to_string(),
+        );
+    }
+    for aggregate in function.static_aggregates().values() {
+        function_aggregate_objects.insert(
+            aggregate.name().to_string(),
+            aggregate.struct_name().to_string(),
+        );
+    }
+    let mut function_aggregate_array_objects = BTreeSet::new();
+    for aggregate in function.global_aggregate_arrays().values() {
+        function_aggregate_objects.insert(
+            aggregate.name().to_string(),
+            aggregate.struct_name().to_string(),
+        );
+        function_aggregate_array_objects.insert(aggregate.name().to_string());
+    }
+    for aggregate in function.static_aggregate_arrays().values() {
+        function_aggregate_objects.insert(
+            aggregate.name().to_string(),
+            aggregate.struct_name().to_string(),
+        );
+        function_aggregate_array_objects.insert(aggregate.name().to_string());
+    }
+    // Automatic struct values are address-backed too. Their C
+    // spellings must carry a layout into sidecar field expressions;
+    // otherwise `.field` silently falls back to offset zero.
+    function_aggregate_objects.extend(function.local_struct_values().clone());
+    tables
+        .aggregate_objects
+        .insert(function.name().to_string(), function_aggregate_objects);
+    tables.aggregate_array_objects.insert(
+        function.name().to_string(),
+        function_aggregate_array_objects,
+    );
+    let function_global_array_shapes = function
+        .global_arrays()
+        .iter()
+        .filter_map(|(name, array)| {
+            array.index_shape().map(|shape| {
+                (
                     name.clone(),
-                    parser::QualifiedCObject {
-                        expression: CExpression::Value(
-                            CValue::typed_pointer_with_pointee_constant(
-                                CMemory::global_pointer(aggregate_array.kernel_name()),
-                                CType::Int32Pointer,
-                                aggregate_array.is_constant(),
-                            ),
-                        ),
-                        address: None,
-                        struct_name: Some(aggregate_array.struct_name().to_owned()),
-                        array_shape: Some(vec![length]),
-                        ambiguous: false,
+                    parser::GlobalArrayShape {
+                        shape,
+                        element_type: array.element_type().to_kernel_type(),
                     },
-                );
-            }
-        }
-        for function in &unit.functions {
-            let mut names = BTreeMap::<&str, usize>::new();
-            for name in function
-                .static_locals()
-                .values()
-                .map(|object| object.name())
-                .chain(
-                    function
-                        .static_arrays()
-                        .values()
-                        .map(|object| object.name()),
                 )
-                .chain(
-                    function
-                        .static_aggregates()
-                        .values()
-                        .map(|object| object.name()),
-                )
-                .chain(
-                    function
-                        .static_aggregate_arrays()
-                        .values()
-                        .map(|object| object.name()),
-                )
-            {
-                *names.entry(name).or_default() += 1;
-            }
-            for local in function.static_locals().values() {
-                if let Some(pointer_type) = local.c_type().pointer_type() {
-                    let pointer = CMemory::static_pointer(function.name(), local.kernel_name());
-                    let value_type = local.c_type().to_kernel_type();
-                    let mut value = if value_type.is_object_pointer() {
-                        crate::kernel::stable_symbolic_pointer_cell_value(&pointer, value_type)
-                    } else {
-                        CValue::typed_pointer(pointer.clone(), pointer_type.to_kernel_type())
-                    };
-                    value = value
-                        .with_pointer_pointee_constant(local.is_constant())
-                        .with_pointer_pointee_volatile(local.pointee_is_volatile());
-                    let expression = if value_type.is_object_pointer() {
-                        CExpression::Value(value)
-                    } else {
-                        CExpression::TypedLoad {
-                            pointer: Box::new(CExpression::Value(value)),
-                            value_type,
-                            volatile: false,
-                            pointee_constant: false,
-                            source: Default::default(),
-                        }
-                    };
-                    objects.insert(
-                        format!("{}::{}", function.name(), local.name()),
-                        parser::QualifiedCObject {
-                            expression,
-                            address: Some(CExpression::Value(CValue::typed_pointer(
-                                CMemory::static_pointer(function.name(), local.kernel_name()),
-                                pointer_type.to_kernel_type(),
-                            ))),
-                            struct_name: None,
-                            array_shape: None,
-                            ambiguous: names[local.name()] > 1,
-                        },
-                    );
-                }
-            }
-            for array in function.static_arrays().values() {
-                if let Some(pointer_type) = array.element_type().pointer_type() {
-                    objects.insert(
-                        format!("{}::{}", function.name(), array.name()),
-                        parser::QualifiedCObject {
-                            expression: CExpression::Value(
-                                CValue::typed_pointer_with_pointee_constant(
-                                    CMemory::static_pointer(function.name(), array.kernel_name()),
-                                    pointer_type.to_kernel_type(),
-                                    array.is_constant(),
-                                ),
-                            ),
-                            address: None,
-                            struct_name: None,
-                            array_shape: Some(array.shape().to_vec()),
-                            ambiguous: names[array.name()] > 1,
-                        },
-                    );
-                }
-            }
-            for aggregate in function.static_aggregates().values() {
-                objects.insert(
-                    format!("{}::{}", function.name(), aggregate.name()),
-                    parser::QualifiedCObject {
-                        expression: CExpression::Value(
-                            CValue::typed_pointer_with_pointee_constant(
-                                CMemory::static_pointer(function.name(), aggregate.kernel_name()),
-                                CType::Int32Pointer,
-                                aggregate.is_constant(),
-                            ),
-                        ),
-                        address: None,
-                        struct_name: Some(aggregate.struct_name().to_owned()),
-                        array_shape: None,
-                        ambiguous: names[aggregate.name()] > 1,
-                    },
-                );
-            }
-            for aggregate_array in function.static_aggregate_arrays().values() {
-                objects.insert(
-                    format!("{}::{}", function.name(), aggregate_array.name()),
-                    parser::QualifiedCObject {
-                        expression: CExpression::Value(
-                            CValue::typed_pointer_with_pointee_constant(
-                                CMemory::static_pointer(
-                                    function.name(),
-                                    aggregate_array.kernel_name(),
-                                ),
-                                CType::Int32Pointer,
-                                aggregate_array.is_constant(),
-                            ),
-                        ),
-                        address: None,
-                        struct_name: Some(aggregate_array.struct_name().to_owned()),
-                        array_shape: Some(vec![aggregate_array.length()]),
-                        ambiguous: false,
-                    },
-                );
-            }
+            })
+        })
+        .chain(function.static_arrays().values().map(|array| {
+            (
+                array.name().to_string(),
+                parser::GlobalArrayShape {
+                    shape: array.shape().to_vec(),
+                    element_type: array.element_type().to_kernel_type(),
+                },
+            )
+        }))
+        .collect();
+    tables
+        .global_array_shapes
+        .insert(function.name().to_string(), function_global_array_shapes);
+    // An automatic local of struct-pointer type is a memory base in
+    // this function's contract exactly as a parameter is; the C
+    // parser is the only place its struct name exists.
+    // A sidecar names a function by its source spelling, and an
+    // inline body's kernel name carries an `#inline:<source>` suffix,
+    // so keying this by the kernel name hid every inline function's
+    // locals and read an eight-byte member as a four-byte one. Two
+    // definitions sharing one source spelling leave no layouts rather
+    // than guessing between them.
+    let locals = parser::FunctionLocals {
+        execution_name: Some(function.name().to_string()),
+        struct_pointers: function.local_struct_pointers().clone(),
+        references: function.local_references().clone(),
+    };
+    match tables
+        .local_struct_pointers
+        .entry(function.source_name().to_string())
+    {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(locals);
         }
-        qualified_objects.insert(source_path.clone(), objects);
-        for (name, layout) in &unit.structs {
-            if let Some(previous) = layouts.insert(name.clone(), layout.clone())
-                && previous != *layout
-            {
-                return Err(ClickError::new(format!(
-                    "conflicting declarations for struct `{name}`"
-                )));
-            }
-        }
-        for (name, layout) in &unit.unions {
-            if let Some(previous) = union_layouts.insert(name.clone(), layout.clone())
-                && previous != *layout
-            {
-                return Err(ClickError::new(format!(
-                    "conflicting declarations for union `{name}`"
-                )));
-            }
-        }
-        for function in unit.functions {
-            let mut function_aggregate_objects = BTreeMap::new();
-            for aggregate in function.global_aggregates().values() {
-                function_aggregate_objects.insert(
-                    aggregate.name().to_string(),
-                    aggregate.struct_name().to_string(),
-                );
-            }
-            for aggregate in function.static_aggregates().values() {
-                function_aggregate_objects.insert(
-                    aggregate.name().to_string(),
-                    aggregate.struct_name().to_string(),
-                );
-            }
-            let mut function_aggregate_array_objects = BTreeSet::new();
-            for aggregate in function.global_aggregate_arrays().values() {
-                function_aggregate_objects.insert(
-                    aggregate.name().to_string(),
-                    aggregate.struct_name().to_string(),
-                );
-                function_aggregate_array_objects.insert(aggregate.name().to_string());
-            }
-            for aggregate in function.static_aggregate_arrays().values() {
-                function_aggregate_objects.insert(
-                    aggregate.name().to_string(),
-                    aggregate.struct_name().to_string(),
-                );
-                function_aggregate_array_objects.insert(aggregate.name().to_string());
-            }
-            // Automatic struct values are address-backed too. Their C
-            // spellings must carry a layout into sidecar field expressions;
-            // otherwise `.field` silently falls back to offset zero.
-            function_aggregate_objects.extend(function.local_struct_values().clone());
-            aggregate_objects.insert(function.name().to_string(), function_aggregate_objects);
-            aggregate_array_objects.insert(
-                function.name().to_string(),
-                function_aggregate_array_objects,
-            );
-            let function_global_array_shapes = function
-                .global_arrays()
-                .iter()
-                .filter_map(|(name, array)| {
-                    array.index_shape().map(|shape| {
-                        (
-                            name.clone(),
-                            parser::GlobalArrayShape {
-                                shape,
-                                element_type: array.element_type().to_kernel_type(),
-                            },
-                        )
-                    })
-                })
-                .chain(function.static_arrays().values().map(|array| {
-                    (
-                        array.name().to_string(),
-                        parser::GlobalArrayShape {
-                            shape: array.shape().to_vec(),
-                            element_type: array.element_type().to_kernel_type(),
-                        },
-                    )
-                }))
-                .collect();
-            global_array_shapes.insert(function.name().to_string(), function_global_array_shapes);
-            // An automatic local of struct-pointer type is a memory base in
-            // this function's contract exactly as a parameter is; the C
-            // parser is the only place its struct name exists.
-            // A sidecar names a function by its source spelling, and an
-            // inline body's kernel name carries an `#inline:<source>` suffix,
-            // so keying this by the kernel name hid every inline function's
-            // locals and read an eight-byte member as a four-byte one. Two
-            // definitions sharing one source spelling leave no layouts rather
-            // than guessing between them.
-            let locals = parser::FunctionLocals {
-                execution_name: Some(function.name().to_string()),
-                struct_pointers: function.local_struct_pointers().clone(),
-                references: function.local_references().clone(),
-            };
-            match local_struct_pointers.entry(function.source_name().to_string()) {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(locals);
-                }
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    if entry.get() != &locals {
-                        entry.insert(parser::FunctionLocals::default());
-                    }
-                }
+        std::collections::btree_map::Entry::Occupied(mut entry) => {
+            if entry.get() != &locals {
+                entry.insert(parser::FunctionLocals::default());
             }
         }
     }
-    Ok((
-        layouts,
-        union_layouts,
-        aggregate_objects,
-        aggregate_array_objects,
-        global_array_shapes,
-        qualified_objects,
-        local_struct_pointers,
-    ))
+}
+
+impl parser::ProgramLayouts {
+    /// The layouts and per-function locals of a prepared program's
+    /// execution. A prepared program exposes no globals or unions.
+    fn of_execution(execution: &crate::languages::PreparedExecution) -> Self {
+        let mut tables = parser::ProgramLayouts {
+            struct_layouts: execution.layouts.clone(),
+            ..Default::default()
+        };
+        for function in &execution.functions {
+            tables.aggregate_objects.insert(
+                function.source_name().to_string(),
+                function.local_struct_values().clone(),
+            );
+            tables.local_struct_pointers.insert(
+                function.source_name().to_string(),
+                parser::FunctionLocals {
+                    execution_name: Some(function.name().to_string()),
+                    struct_pointers: function.local_struct_pointers().clone(),
+                    references: function.local_references().clone(),
+                },
+            );
+        }
+        tables
+    }
 }
 
 #[cfg(test)]
@@ -8762,25 +8667,8 @@ int32 answer() {
         let context = CSourceContext::bundle(&sources);
         let file = super::selected_c_target(SIDECAR)
             .and_then(|target| {
-                let (
-                    struct_layouts,
-                    union_layouts,
-                    aggregate_objects,
-                    aggregate_array_objects,
-                    global_array_shapes,
-                    qualified_objects,
-                    local_struct_pointers,
-                ) = parse_c_layouts_for_target(SIDECAR, &context, target)?;
-                parser::parse_with_layouts_and_aggregate_objects(
-                    SIDECAR,
-                    struct_layouts,
-                    union_layouts,
-                    aggregate_objects,
-                    aggregate_array_objects,
-                    global_array_shapes,
-                    qualified_objects,
-                    local_struct_pointers,
-                )
+                let layouts = parse_c_layouts_for_target(SIDECAR, &context, target)?;
+                parser::parse_with_layouts_and_aggregate_objects(SIDECAR, layouts)
             })
             .expect("the fixture parses");
         let parsed = parse_verified_sources_context(&file, &context).expect("sources parse");

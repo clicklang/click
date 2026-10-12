@@ -4830,16 +4830,13 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     let parse_with_functions = |functions: &[&str]| {
         parser::parse_with_layouts_and_aggregate_objects(
             &source,
-            BTreeMap::new(),
-            BTreeMap::new(),
-            BTreeMap::new(),
-            BTreeMap::new(),
-            BTreeMap::new(),
-            BTreeMap::new(),
-            functions
-                .iter()
-                .map(|name| ((*name).to_string(), parser::FunctionLocals::default()))
-                .collect(),
+            parser::ProgramLayouts {
+                local_struct_pointers: functions
+                    .iter()
+                    .map(|name| ((*name).to_string(), parser::FunctionLocals::default()))
+                    .collect(),
+                ..Default::default()
+            },
         )
     };
     let named = |file: ClickFile| file.function_blocks()[0].signature().name().to_string();

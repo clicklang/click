@@ -16,43 +16,18 @@ pub fn resolve_click_project(
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
     let source_context = verification::CSourceContext::bundle(c_sources);
-    let (
-        struct_layouts,
-        union_layouts,
-        aggregate_objects,
-        aggregate_array_objects,
-        global_array_shapes,
-        qualified_objects,
-        local_struct_pointers,
-    ) = verification::parse_c_layouts_for_target(
+    let layouts = verification::parse_c_layouts_for_target(
         entry_source,
         &source_context,
         super::selected_project_c_target(project)?,
     )?;
-    resolve_click_project_with_layouts(
-        project,
-        "",
-        struct_layouts,
-        union_layouts,
-        aggregate_objects,
-        aggregate_array_objects,
-        global_array_shapes,
-        qualified_objects,
-        local_struct_pointers,
-    )
+    resolve_click_project_with_layouts(project, "", layouts)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn resolve_click_project_with_layouts(
     project: &ClickProject,
     library_contracts: &str,
-    struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
-    union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
-    aggregate_objects: BTreeMap<String, BTreeMap<String, String>>,
-    aggregate_array_objects: BTreeMap<String, BTreeSet<String>>,
-    global_array_shapes: BTreeMap<String, BTreeMap<String, parser::GlobalArrayShape>>,
-    qualified_objects: BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>,
-    local_struct_pointers: BTreeMap<String, parser::FunctionLocals>,
+    layouts: parser::ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
     let modules = project
         .modules()
@@ -111,13 +86,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             identity,
             module.line_offset(),
             &imported_algebraic_types,
-            struct_layouts.clone(),
-            union_layouts.clone(),
-            aggregate_objects.clone(),
-            aggregate_array_objects.clone(),
-            global_array_shapes.clone(),
-            qualified_objects.clone(),
-            local_struct_pointers.clone(),
+            layouts.clone(),
         )?;
         if local.imports().len() != module.imports().len() {
             return Err(ClickError::new(format!(
