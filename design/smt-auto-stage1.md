@@ -2,10 +2,9 @@
 
 Design for stage 1 of [smt-auto](../issues/smt-auto.md). Click gets its own
 SMT-style decision procedure for linear integer arithmetic, machine-integer
-bridging and equality with constructors. A proof calls it through `auto`
-and `arithmetic()`. Every success is turned into ordinary checked proof
-steps, which `click expand` prints. Code references are to master at
-`52a77c2d`.
+bridging and equality with constructors. A proof calls it through `auto`.
+Every success is turned into ordinary checked proof steps, which
+`click expand` prints. Code references are to master at `52a77c2d`.
 
 ## Goals
 
@@ -70,7 +69,7 @@ constructors.
 ## Architecture
 
 ```
-auto / arithmetic()
+auto
   └─ solver::prove(goal, frontier)             src/surface/solver/   (untrusted search)
        ├─ select premises                      indexed, connected to the goal
        ├─ purify into atoms                    Integer atoms, machine atoms, ADT terms
@@ -214,24 +213,31 @@ surface. No kernel change is needed for them.
 
 ## Integration
 
-**`auto`.** The closing step of `auto` (today `execute(); simp();`) tries
-the solver on each remaining obligation before the current `simp` ladder.
-The fallback keeps every existing proof working.
+**`auto` is the only entry point.** Decided 2026-10-12: `auto` closes the
+current goal by any means.
 
-**`arithmetic()`.** Today a bare `arithmetic()` reads no fact from the
-context. In stage 1 it calls the solver on its goal, with premises selected
-from the context. This is the non-executing entry point, used as
-`have P by arithmetic;`, because `auto` executes C and is refused inside a
-`have`. `arithmetic() using { ... }` keeps its meaning: only the listed
-premises.
+- **At a function proof's frontier**, the goal is to reach exit with every
+  obligation met. `auto` executes the remaining C, then tries the solver on
+  each remaining obligation before the current `simp` ladder. The fallback
+  keeps every existing proof working.
+- **On a proposition**, such as `have P by auto;` or a theorem body, there
+  is no C to execute, so `auto` is the solver alone. Today `auto` is refused
+  inside a `have`; that refusal goes away.
+- **In a loop's `preserve` body**, execution would stop at the back edge,
+  not at function exit. Milestone 5 checks this case.
 
-**Decision for sign-off.** Should the non-executing entry be bare
-`arithmetic()`, or a new tactic word? A new word costs one more tactic
-(design-review W2). Reusing `arithmetic()` changes a documented behaviour,
-but its current limit is exactly the complaint. The recommendation is to
-reuse `arithmetic()`.
+There is no separate `smt` tactic. Use `have P by auto;` to call the solver
+without executing C.
 
-**Expansion.** `auto` or `arithmetic` expands into the steps the solver
+`arithmetic()` is unchanged. Bare `arithmetic()` proves an arithmetic goal
+from its own terms, and `arithmetic() using { ... }` proves it from the
+listed premises.
+
+Whether `have P;` with no proof should mean `have P by auto;` instead of
+`have P by simp;` is part of the `simp` question. That question waits for the
+stage-1 measurements.
+
+**Expansion.** `auto` expands into the steps the solver
 emitted. For the `rust-byte-sum` bound the expansion would be:
 
 ```click
@@ -295,8 +301,8 @@ Each milestone is one PR, green and useful on its own.
    with surface syntax, mdtests (positive and negative) and reference
    documentation.
 2. **Simplex core.** Add the simplex with Farkas output and its certificate
-   builder. Bare `arithmetic()` uses it on listed and selected `Integer`
-   facts. Add unit tests and a scaling regression.
+   builder. `have P by auto;` uses it on selected `Integer` facts. Add unit
+   tests and a scaling regression.
 3. **Bridges.** Add the bridge theory and any missing `*_to_integer_bounds`
    theorems. Rewrite `rust-byte-sum` with the solver and record its size and
    time.

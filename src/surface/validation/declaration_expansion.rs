@@ -884,6 +884,20 @@ fn expand_declared_resource_certificate(
                                     result: proposition(result)?,
                                 }
                             }
+                            IntegerCertificateNode::NegatedGoal { result } => {
+                                IntegerCertificateNode::NegatedGoal {
+                                    result: proposition(result)?,
+                                }
+                            }
+                            IntegerCertificateNode::Divide {
+                                source,
+                                divisor,
+                                result,
+                            } => IntegerCertificateNode::Divide {
+                                source,
+                                divisor: expression(divisor)?,
+                                result: proposition(result)?,
+                            },
                         })
                     })
                     .collect::<Result<Vec<_>, ClickError>>()?,

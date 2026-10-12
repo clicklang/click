@@ -4,7 +4,7 @@ Priority: P1.
 
 Proof size, automation and proof workflow are the parts of the
 [launch design review](design-review.md) that matter most. Its items P1–P4,
-W4 and W5 depend on this issue. This issue makes `auto` and `arithmetic`
+W4 and W5 depend on this issue. This issue makes `auto`
 call an SMT-style decision procedure to find proofs, and makes Click turn each
 result into a certificate that the kernel checks. This is the "hammer" pattern
 used by Isabelle's Sledgehammer, SMTCoq and Lean's `omega`/`linarith`.
@@ -93,7 +93,7 @@ Do the stages in order. Each stage is useful on its own.
      already Farkas proofs, so the translation is direct.
    - For equality, congruence closure returns a path of rewrites, which Click
      emits as `rewrite` steps.
-   - The oracle sits behind `simp` and `arithmetic`.
+   - The oracle sits behind `auto`, which is the only entry point.
 2. **Premise selection from the unsat core.** The solver reports which
    premises it used. Click fills in `using { ... }` itself, so authors no
    longer restate propositions to cite them. This removes most of the need
@@ -151,7 +151,7 @@ includes a machine-integer bridge theory; see the design.
 
 ## Regression
 
-Prototype stage 1 behind `simp` and `arithmetic`, then measure the change in
+Prototype stage 1 behind `auto`, then measure the change in
 proof size and verification time on three cases:
 
 - `examples/rust-byte-sum`, the loop and arithmetic case;
@@ -162,15 +162,16 @@ proof size and verification time on three cases:
 Rewrite each case to rely on the oracle, while keeping the C unchanged. Add
 mdtests for:
 
-- a linear-arithmetic goal proved by `simp` with no hand-written certificate;
+- a linear-arithmetic goal proved by `have P by auto;` with no hand-written
+  certificate;
 - a congruence goal proved the same way;
 - a goal the solver cannot prove, which fails promptly and boundedly with an
   actionable diagnostic.
 
 ## Acceptance criteria
 
-- `simp` and `arithmetic` prove linear integer arithmetic and congruence goals
-  through the solver. Every accepted step is justified by a kernel-checked
+- `auto` proves linear integer arithmetic and congruence goals through the
+  solver. Every accepted step is justified by a kernel-checked
   certificate, which `click expand` prints.
 - Verification with a warm certificate cache does not call the solver, and its
   verdict is deterministic.

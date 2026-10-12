@@ -260,6 +260,8 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "entry",
     "equal_from_bounds",
     "less_equal_from_equal",
+    "negated_goal",
+    "divide",
     "enum",
     "enumerate",
     "execute",
@@ -5816,6 +5818,18 @@ pub enum IntegerCertificateNode {
         result: ClickProposition,
     },
     Trivial {
+        result: ClickProposition,
+    },
+    /// The integer negation of a non-strict or strict goal, assumed for a
+    /// refutation; the certificate then concludes with a contradiction.
+    NegatedGoal {
+        result: ClickProposition,
+    },
+    /// Divide a non-strict bound by a positive common factor of its
+    /// coefficients, rounding the constant.
+    Divide {
+        source: usize,
+        divisor: ContractExpression,
         result: ClickProposition,
     },
 }
