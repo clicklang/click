@@ -7617,3 +7617,71 @@ resource callbacks0(cb: const struct callbacks*) {
         );
     }
 }
+
+/// Repeated checked increments must not rederive ranges through the entire
+/// earlier expression chain. Measure the executed operations, not timings.
+#[test]
+fn signed_increment_overflow_checks_stay_flat_per_assignment() {
+    let mut peaks = Vec::new();
+    let mut totals = Vec::new();
+    for size in [16, 32, 64, 128] {
+        let mut c = String::from("int32 increment(int32 x0) {\n");
+        for i in 1..=size {
+            c.push_str(&format!("int32 x{i};\n"));
+        }
+        for i in 1..=size {
+            c.push_str(&format!("x{i} = x{} + 1;\n", i - 1));
+        }
+        c.push_str(&format!("return x{size};\n}}"));
+        let mut source = format!(
+            "verifying \"increment.c\"; int32 increment(int32 x0) {{ requires x0 >= 0; requires x0 <= 1000000; ensures result == x0 + {size}; }} by {{\n"
+        );
+        source.push_str(&"step();\n".repeat(size * 2 + 1));
+        source.push_str("simp();\n}");
+        let ((verified, work), events) = crate::instrumentation::collect(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                verify_c0_sources(&source, &[("increment.c", c.as_str())])
+            })
+        });
+        verified.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
+        let steps = events
+            .iter()
+            .filter_map(|event| match event {
+                crate::instrumentation::VerificationEvent::TacticFinished {
+                    tactic, work, ..
+                } if tactic.tactic_name == "step"
+                    && tactic.source_index >= size
+                    && tactic.source_index < size * 2 =>
+                {
+                    Some(*work)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(steps.len() >= size);
+        peaks.push(steps.iter().copied().max().unwrap());
+        eprintln!(
+            "increment size {size}: assignment peak {}, total work {work}",
+            peaks.last().unwrap()
+        );
+        totals.push(ScalingSample {
+            size,
+            work,
+            named_work: BTreeMap::new(),
+        });
+    }
+    assert!(
+        peaks.iter().all(|work| *work <= peaks[0] * 3),
+        "increment step work must stay flat: {peaks:?}"
+    );
+    assert_near_linear_scaling("checked increment chains", &totals);
+    let invalid = "verifying \"unbounded.c\"; int32 f(int32 x) { ensures result == x + 1; } by { step(); simp(); }";
+    assert!(
+        verify_c0_sources(
+            invalid,
+            &[("unbounded.c", "int32 f(int32 x) { return x + 1; }")]
+        )
+        .is_err(),
+        "an unbounded increment still has an overflow path"
+    );
+}

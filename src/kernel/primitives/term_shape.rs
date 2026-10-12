@@ -623,6 +623,85 @@ impl ConditionTerm {
 }
 
 impl BitvectorComparisonOp {
+    /// The C spelling of the comparison, or of the operation an overflow test
+    /// guards. Signed and unsigned forms share a spelling.
+    pub(crate) fn c_symbol(self) -> &'static str {
+        match self {
+            Self::Bitvector32SignedLessThan
+            | Self::Bitvector64SignedLessThan
+            | Self::Bitvector64UnsignedLessThan => "<",
+            Self::Bitvector32SignedLessEqual
+            | Self::Bitvector64SignedLessEqual
+            | Self::Bitvector64UnsignedLessEqual => "<=",
+            Self::Bitvector32SignedGreaterThan
+            | Self::Bitvector64SignedGreaterThan
+            | Self::Bitvector64UnsignedGreaterThan => ">",
+            Self::Bitvector32SignedGreaterEqual
+            | Self::Bitvector64SignedGreaterEqual
+            | Self::Bitvector64UnsignedGreaterEqual => ">=",
+            Self::Bitvector32Equal | Self::Bitvector64Equal => "==",
+            Self::Bitvector32SignedAddOverflows | Self::Bitvector64SignedAddOverflows => "+",
+            Self::Bitvector32SignedSubtractOverflows | Self::Bitvector64SignedSubtractOverflows => {
+                "-"
+            }
+            Self::Bitvector32SignedMultiplyOverflows | Self::Bitvector64SignedMultiplyOverflows => {
+                "*"
+            }
+            Self::Bitvector32SignedDivideOverflows | Self::Bitvector64SignedDivideOverflows => "/",
+            Self::Bitvector32SignedShiftLeftOverflows
+            | Self::Bitvector64SignedShiftLeftOverflows => "<<",
+        }
+    }
+
+    /// Whether the condition is an overflow test of the operation
+    /// [`Self::c_symbol`] spells, rather than a comparison.
+    pub(crate) fn is_overflow(self) -> bool {
+        matches!(
+            self,
+            Self::Bitvector32SignedAddOverflows
+                | Self::Bitvector32SignedSubtractOverflows
+                | Self::Bitvector32SignedMultiplyOverflows
+                | Self::Bitvector32SignedDivideOverflows
+                | Self::Bitvector32SignedShiftLeftOverflows
+                | Self::Bitvector64SignedAddOverflows
+                | Self::Bitvector64SignedSubtractOverflows
+                | Self::Bitvector64SignedMultiplyOverflows
+                | Self::Bitvector64SignedDivideOverflows
+                | Self::Bitvector64SignedShiftLeftOverflows
+        )
+    }
+
+    /// The machine type the operands are read as. 64-bit equality ignores
+    /// signedness, so it reads its operands as bare 64-bit words.
+    pub(crate) fn operand_type(self) -> &'static str {
+        match self {
+            Self::Bitvector32SignedLessThan
+            | Self::Bitvector32SignedLessEqual
+            | Self::Bitvector32SignedGreaterThan
+            | Self::Bitvector32SignedGreaterEqual
+            | Self::Bitvector32Equal
+            | Self::Bitvector32SignedAddOverflows
+            | Self::Bitvector32SignedSubtractOverflows
+            | Self::Bitvector32SignedMultiplyOverflows
+            | Self::Bitvector32SignedDivideOverflows
+            | Self::Bitvector32SignedShiftLeftOverflows => "int32",
+            Self::Bitvector64SignedLessThan
+            | Self::Bitvector64SignedLessEqual
+            | Self::Bitvector64SignedGreaterThan
+            | Self::Bitvector64SignedGreaterEqual
+            | Self::Bitvector64SignedAddOverflows
+            | Self::Bitvector64SignedSubtractOverflows
+            | Self::Bitvector64SignedMultiplyOverflows
+            | Self::Bitvector64SignedDivideOverflows
+            | Self::Bitvector64SignedShiftLeftOverflows => "int64",
+            Self::Bitvector64UnsignedLessThan
+            | Self::Bitvector64UnsignedLessEqual
+            | Self::Bitvector64UnsignedGreaterThan
+            | Self::Bitvector64UnsignedGreaterEqual => "uint64",
+            Self::Bitvector64Equal => "bits64",
+        }
+    }
+
     /// Applies the comparison through its smart constructor.
     pub(crate) fn build(self, left: Bitvector32Term, right: Bitvector32Term) -> ConditionTerm {
         match self {

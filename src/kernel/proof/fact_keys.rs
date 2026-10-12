@@ -11,8 +11,9 @@ use crate::kernel::{
     Term,
 };
 use crate::kernel::{
-    Bitvector32Term, BitvectorBinaryOp, CComparisonOperator, CFloatClassification, CFloatCondition,
-    CMemoryRange, ConditionTerm, Pointer, PointerBlock, PointerOffsetTerm, Proposition, Variable,
+    Bitvector32Term, BitvectorBinaryOp, BitvectorComparisonOp, BitvectorUnaryOp,
+    CComparisonOperator, CFloatClassification, CFloatCondition, CMemoryRange, ConditionTerm,
+    Pointer, PointerBlock, PointerOffsetTerm, Proposition, Variable,
 };
 use num_bigint::BigInt;
 use std::collections::BTreeMap;
@@ -67,16 +68,11 @@ pub(crate) enum SnapshotBlindConditionKey {
     AlgebraicEqual(Box<AlgebraicTerm>, Box<AlgebraicTerm>),
     Constant(bool),
     Variable(Variable),
-    SignedLessThan(SnapshotBlindBitvectorKey, SnapshotBlindBitvectorKey),
-    SignedLessEqual(SnapshotBlindBitvectorKey, SnapshotBlindBitvectorKey),
-    SignedGreaterThan(SnapshotBlindBitvectorKey, SnapshotBlindBitvectorKey),
-    SignedGreaterEqual(SnapshotBlindBitvectorKey, SnapshotBlindBitvectorKey),
-    Equal(SnapshotBlindBitvectorKey, SnapshotBlindBitvectorKey),
-    AddOverflows(SnapshotBlindBitvectorKey, SnapshotBlindBitvectorKey),
-    SubtractOverflows(SnapshotBlindBitvectorKey, SnapshotBlindBitvectorKey),
-    MultiplyOverflows(SnapshotBlindBitvectorKey, SnapshotBlindBitvectorKey),
-    DivideOverflows(SnapshotBlindBitvectorKey, SnapshotBlindBitvectorKey),
-    ShiftLeftOverflows(SnapshotBlindBitvectorKey, SnapshotBlindBitvectorKey),
+    Comparison(
+        BitvectorComparisonOp,
+        SnapshotBlindBitvectorKey,
+        SnapshotBlindBitvectorKey,
+    ),
     Float32(SnapshotBlindFloatConditionKey),
     Float64(SnapshotBlindFloatConditionKey),
     PointerOffsetEqual(SnapshotBlindPointerOffsetKey, SnapshotBlindPointerOffsetKey),
@@ -99,9 +95,9 @@ pub(crate) enum SnapshotBlindFloatConditionKey {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) enum SnapshotBlindBitvectorKey {
     Load(Box<SnapshotBlindPointerKey>, LoadKind),
-    Add(Box<Self>, Box<Self>),
-    Subtract(Box<Self>, Box<Self>),
-    Multiply(Box<Self>, Box<Self>),
+    Binary(BitvectorBinaryOp, Box<Self>, Box<Self>),
+    Unary(BitvectorUnaryOp, Box<Self>),
+    If(Box<SnapshotBlindConditionKey>, Box<Self>, Box<Self>),
     Exact(Bitvector32Term),
 }
 
@@ -157,16 +153,7 @@ impl SnapshotBlindConditionKey {
     fn forgets_a_snapshot(&self) -> bool {
         match self {
             Self::AlgebraicEqual(_, _) => false,
-            Self::SignedLessThan(left, right)
-            | Self::SignedLessEqual(left, right)
-            | Self::SignedGreaterThan(left, right)
-            | Self::SignedGreaterEqual(left, right)
-            | Self::Equal(left, right)
-            | Self::AddOverflows(left, right)
-            | Self::SubtractOverflows(left, right)
-            | Self::MultiplyOverflows(left, right)
-            | Self::DivideOverflows(left, right)
-            | Self::ShiftLeftOverflows(left, right) => {
+            Self::Comparison(_, left, right) => {
                 left.forgets_a_snapshot() || right.forgets_a_snapshot()
             }
             Self::Float32(condition) | Self::Float64(condition) => condition.forgets_a_snapshot(),
@@ -196,8 +183,12 @@ impl SnapshotBlindBitvectorKey {
     fn forgets_a_snapshot(&self) -> bool {
         match self {
             Self::Load(_, _) => true,
-            Self::Add(left, right) | Self::Subtract(left, right) | Self::Multiply(left, right) => {
-                left.forgets_a_snapshot() || right.forgets_a_snapshot()
+            Self::Binary(_, left, right) => left.forgets_a_snapshot() || right.forgets_a_snapshot(),
+            Self::Unary(_, value) => value.forgets_a_snapshot(),
+            Self::If(condition, then_key, else_key) => {
+                condition.forgets_a_snapshot()
+                    || then_key.forgets_a_snapshot()
+                    || else_key.forgets_a_snapshot()
             }
             Self::Exact(_) => false,
         }
@@ -352,102 +343,19 @@ fn snapshot_blind_memory_range_key(range: &CMemoryRange) -> Box<SnapshotBlindMem
 }
 
 fn snapshot_blind_condition_key(condition: &ConditionTerm) -> SnapshotBlindConditionKey {
-    let terms = |left: &Bitvector32Term, right: &Bitvector32Term| {
-        (
+    if let Some((operator, left, right)) = condition.as_bitvector_comparison() {
+        return SnapshotBlindConditionKey::Comparison(
+            operator,
             snapshot_blind_bitvector_key(left),
             snapshot_blind_bitvector_key(right),
-        )
-    };
+        );
+    }
     match condition {
         ConditionTerm::Constant(value) => SnapshotBlindConditionKey::Constant(*value),
         ConditionTerm::AlgebraicEqual(left, right) => {
             SnapshotBlindConditionKey::AlgebraicEqual(left.clone(), right.clone())
         }
         ConditionTerm::Variable(variable) => SnapshotBlindConditionKey::Variable(*variable),
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::SignedLessThan(left, right)
-        }
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::SignedLessEqual(left, right)
-        }
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::SignedGreaterThan(left, right)
-        }
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::SignedGreaterEqual(left, right)
-        }
-        ConditionTerm::Bitvector32Equal(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::Equal(left, right)
-        }
-        ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::AddOverflows(left, right)
-        }
-        ConditionTerm::Bitvector32SignedSubtractOverflows(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::SubtractOverflows(left, right)
-        }
-        ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::MultiplyOverflows(left, right)
-        }
-        ConditionTerm::Bitvector32SignedDivideOverflows(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::DivideOverflows(left, right)
-        }
-        ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::ShiftLeftOverflows(left, right)
-        }
-        ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::SignedLessThan(left, right)
-        }
-        ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::SignedLessEqual(left, right)
-        }
-        ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::SignedGreaterThan(left, right)
-        }
-        ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::SignedGreaterEqual(left, right)
-        }
-        ConditionTerm::Bitvector64Equal(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::Equal(left, right)
-        }
-        ConditionTerm::Bitvector64SignedAddOverflows(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::AddOverflows(left, right)
-        }
-        ConditionTerm::Bitvector64SignedSubtractOverflows(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::SubtractOverflows(left, right)
-        }
-        ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::MultiplyOverflows(left, right)
-        }
-        ConditionTerm::Bitvector64SignedDivideOverflows(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::DivideOverflows(left, right)
-        }
-        ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
-            let (left, right) = terms(left, right);
-            SnapshotBlindConditionKey::ShiftLeftOverflows(left, right)
-        }
         ConditionTerm::Float32(float_condition) => {
             SnapshotBlindConditionKey::Float32(snapshot_blind_float_condition_key(float_condition))
         }
@@ -464,6 +372,9 @@ fn snapshot_blind_condition_key(condition: &ConditionTerm) -> SnapshotBlindCondi
             snapshot_blind_pointer_key(left),
             snapshot_blind_pointer_key(right),
         ),
+        crate::kernel::binary_bitvector_condition!(_, _) => {
+            unreachable!("bitvector comparisons are keyed above")
+        }
         crate::kernel::integer_comparison_condition!(_, _) => {
             unreachable!("integer conditions use the exact proposition index")
         }
@@ -510,19 +421,39 @@ fn snapshot_blind_bitvector_key(term: &Bitvector32Term) -> SnapshotBlindBitvecto
                 _ => SnapshotBlindBitvectorKey::Exact(term.clone()),
             }
         }
-        Bitvector32Term::Add(left, right) => SnapshotBlindBitvectorKey::Add(
-            Box::new(snapshot_blind_bitvector_key(left)),
-            Box::new(snapshot_blind_bitvector_key(right)),
-        ),
-        Bitvector32Term::Subtract(left, right) => SnapshotBlindBitvectorKey::Subtract(
-            Box::new(snapshot_blind_bitvector_key(left)),
-            Box::new(snapshot_blind_bitvector_key(right)),
-        ),
-        Bitvector32Term::Multiply(left, right) => SnapshotBlindBitvectorKey::Multiply(
-            Box::new(snapshot_blind_bitvector_key(left)),
-            Box::new(snapshot_blind_bitvector_key(right)),
-        ),
-        term => SnapshotBlindBitvectorKey::Exact(term.clone()),
+        // An integer comparison has no snapshot-blind key: the condition
+        // index files it exactly.
+        Bitvector32Term::If {
+            condition,
+            then_term,
+            else_term,
+        } if !matches!(
+            condition.as_ref(),
+            crate::kernel::integer_comparison_condition!(_, _)
+        ) =>
+        {
+            SnapshotBlindBitvectorKey::If(
+                Box::new(snapshot_blind_condition_key(condition)),
+                Box::new(snapshot_blind_bitvector_key(then_term)),
+                Box::new(snapshot_blind_bitvector_key(else_term)),
+            )
+        }
+        term => {
+            if let Some((operator, left, right)) = term.as_binary() {
+                SnapshotBlindBitvectorKey::Binary(
+                    operator,
+                    Box::new(snapshot_blind_bitvector_key(left)),
+                    Box::new(snapshot_blind_bitvector_key(right)),
+                )
+            } else if let Some((operator, value)) = term.as_unary() {
+                SnapshotBlindBitvectorKey::Unary(
+                    operator,
+                    Box::new(snapshot_blind_bitvector_key(value)),
+                )
+            } else {
+                SnapshotBlindBitvectorKey::Exact(term.clone())
+            }
+        }
     }
 }
 
@@ -1113,39 +1044,11 @@ fn intern_alpha_registered_load(
     Some(AlphaRegisteredLoadId(record))
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-enum AlphaConditionBinaryOp {
-    SignedLessThan,
-    SignedLessEqual,
-    SignedGreaterThan,
-    SignedGreaterEqual,
-    Equal,
-    AddOverflows,
-    SubtractOverflows,
-    MultiplyOverflows,
-    DivideOverflows,
-    ShiftLeftOverflows,
-    Int64SignedLessThan,
-    Int64SignedLessEqual,
-    Int64SignedGreaterThan,
-    Int64SignedGreaterEqual,
-    Int64UnsignedLessThan,
-    Int64UnsignedLessEqual,
-    Int64UnsignedGreaterThan,
-    Int64UnsignedGreaterEqual,
-    Int64Equal,
-    Int64SignedAddOverflows,
-    Int64SignedSubtractOverflows,
-    Int64SignedMultiplyOverflows,
-    Int64SignedDivideOverflows,
-    Int64SignedShiftLeftOverflows,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaConditionKey {
     Constant(bool),
     Variable(AlphaVariableKey),
-    Binary(AlphaConditionBinaryOp, AlphaBitvectorKey, AlphaBitvectorKey),
+    Binary(BitvectorComparisonOp, AlphaBitvectorKey, AlphaBitvectorKey),
     PointerOffsetEqual(AlphaPointerOffsetKey, AlphaPointerOffsetKey),
     PointerEqual(AlphaPointerKey, AlphaPointerKey),
     IntegerComparison(IntegerComparisonOperator, AlphaIntegerKey, AlphaIntegerKey),
@@ -2272,14 +2175,13 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
     next_binder: &mut usize,
 ) -> Option<AlphaConditionKey> {
     alpha_work_checkpoint(bindings, 1)?;
-    let mut binary =
-        |operator, left: &Bitvector32Term, right: &Bitvector32Term| -> Option<AlphaConditionKey> {
-            Some(AlphaConditionKey::Binary(
-                operator,
-                alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
-                alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
-            ))
-        };
+    if let Some((operator, left, right)) = condition.as_bitvector_comparison() {
+        return Some(AlphaConditionKey::Binary(
+            operator,
+            alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
+            alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
+        ));
+    }
     Some(match condition {
         ConditionTerm::Constant(value) => AlphaConditionKey::Constant(*value),
         ConditionTerm::Variable(variable) => {
@@ -2289,90 +2191,6 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
                 &bindings.bitvector,
             )?)
         }
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => {
-            binary(AlphaConditionBinaryOp::SignedLessThan, left, right)?
-        }
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
-            binary(AlphaConditionBinaryOp::SignedLessEqual, left, right)?
-        }
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
-            binary(AlphaConditionBinaryOp::SignedGreaterThan, left, right)?
-        }
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-            binary(AlphaConditionBinaryOp::SignedGreaterEqual, left, right)?
-        }
-        ConditionTerm::Bitvector32Equal(left, right) => {
-            binary(AlphaConditionBinaryOp::Equal, left, right)?
-        }
-        ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
-            binary(AlphaConditionBinaryOp::AddOverflows, left, right)?
-        }
-        ConditionTerm::Bitvector32SignedSubtractOverflows(left, right) => {
-            binary(AlphaConditionBinaryOp::SubtractOverflows, left, right)?
-        }
-        ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right) => {
-            binary(AlphaConditionBinaryOp::MultiplyOverflows, left, right)?
-        }
-        ConditionTerm::Bitvector32SignedDivideOverflows(left, right) => {
-            binary(AlphaConditionBinaryOp::DivideOverflows, left, right)?
-        }
-        ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right) => {
-            binary(AlphaConditionBinaryOp::ShiftLeftOverflows, left, right)?
-        }
-        ConditionTerm::Bitvector64SignedLessThan(left, right) => {
-            binary(AlphaConditionBinaryOp::Int64SignedLessThan, left, right)?
-        }
-        ConditionTerm::Bitvector64SignedLessEqual(left, right) => {
-            binary(AlphaConditionBinaryOp::Int64SignedLessEqual, left, right)?
-        }
-        ConditionTerm::Bitvector64SignedGreaterThan(left, right) => {
-            binary(AlphaConditionBinaryOp::Int64SignedGreaterThan, left, right)?
-        }
-        ConditionTerm::Bitvector64SignedGreaterEqual(left, right) => {
-            binary(AlphaConditionBinaryOp::Int64SignedGreaterEqual, left, right)?
-        }
-        ConditionTerm::Bitvector64UnsignedLessThan(left, right) => {
-            binary(AlphaConditionBinaryOp::Int64UnsignedLessThan, left, right)?
-        }
-        ConditionTerm::Bitvector64UnsignedLessEqual(left, right) => {
-            binary(AlphaConditionBinaryOp::Int64UnsignedLessEqual, left, right)?
-        }
-        ConditionTerm::Bitvector64UnsignedGreaterThan(left, right) => binary(
-            AlphaConditionBinaryOp::Int64UnsignedGreaterThan,
-            left,
-            right,
-        )?,
-        ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right) => binary(
-            AlphaConditionBinaryOp::Int64UnsignedGreaterEqual,
-            left,
-            right,
-        )?,
-        ConditionTerm::Bitvector64Equal(left, right) => {
-            binary(AlphaConditionBinaryOp::Int64Equal, left, right)?
-        }
-        ConditionTerm::Bitvector64SignedAddOverflows(left, right) => {
-            binary(AlphaConditionBinaryOp::Int64SignedAddOverflows, left, right)?
-        }
-        ConditionTerm::Bitvector64SignedSubtractOverflows(left, right) => binary(
-            AlphaConditionBinaryOp::Int64SignedSubtractOverflows,
-            left,
-            right,
-        )?,
-        ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right) => binary(
-            AlphaConditionBinaryOp::Int64SignedMultiplyOverflows,
-            left,
-            right,
-        )?,
-        ConditionTerm::Bitvector64SignedDivideOverflows(left, right) => binary(
-            AlphaConditionBinaryOp::Int64SignedDivideOverflows,
-            left,
-            right,
-        )?,
-        ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => binary(
-            AlphaConditionBinaryOp::Int64SignedShiftLeftOverflows,
-            left,
-            right,
-        )?,
         ConditionTerm::PointerOffsetEqual(left, right) => AlphaConditionKey::PointerOffsetEqual(
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,

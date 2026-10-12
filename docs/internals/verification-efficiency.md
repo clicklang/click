@@ -1042,3 +1042,16 @@ conditions about other cells in the supplied snapshot. Cold canonicalization
 may still charge the explicit snapshot input. Expanded proof bodies remain
 the same size as unrelated requirements grow; whole-source work scales with
 the input that must be parsed and checked.
+
+### Checked integer increment chains
+
+After checking each original `int32` addition's overflow guard, execution
+combines a trailing constant offset with the next constant when their sum
+fits `int32`. This keeps a chain of increment values shallow, so later
+overflow decisions do not walk every earlier increment. The source expression
+and intermediate guards remain intact. The multi-size
+`signed_increment_overflow_checks_stay_flat_per_assignment` regression checks
+assignment work and total verification work, and an unbounded increment is
+still rejected. `increment_chain_keeps_intermediate_overflow_guard.md` rejects
+a program whose final arithmetic value would match its input but whose
+intermediate addition overflows.

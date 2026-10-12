@@ -126,13 +126,38 @@ fn terms_equal_with_load_atoms(
                 _ => false,
             }
         }
-        (Bitvector32Term::Add(ll, lr), Bitvector32Term::Add(rl, rr))
-        | (Bitvector32Term::Subtract(ll, lr), Bitvector32Term::Subtract(rl, rr))
-        | (Bitvector32Term::Multiply(ll, lr), Bitvector32Term::Multiply(rl, rr)) => {
-            terms_equal_with_load_atoms(ll, rl, loads_match)
-                && terms_equal_with_load_atoms(lr, rr, loads_match)
+        (
+            Bitvector32Term::If {
+                condition: left_condition,
+                then_term: left_then,
+                else_term: left_else,
+            },
+            Bitvector32Term::If {
+                condition: right_condition,
+                then_term: right_then,
+                else_term: right_else,
+            },
+        ) => {
+            conditions_equal_with_load_atoms(left_condition, right_condition, loads_match)
+                && terms_equal_with_load_atoms(left_then, right_then, loads_match)
+                && terms_equal_with_load_atoms(left_else, right_else, loads_match)
         }
-        _ => left == right,
+        _ => {
+            if let (Some((left_operator, ll, lr)), Some((right_operator, rl, rr))) =
+                (left.as_binary(), right.as_binary())
+            {
+                left_operator == right_operator
+                    && terms_equal_with_load_atoms(ll, rl, loads_match)
+                    && terms_equal_with_load_atoms(lr, rr, loads_match)
+            } else if let (Some((left_operator, left_value)), Some((right_operator, right_value))) =
+                (left.as_unary(), right.as_unary())
+            {
+                left_operator == right_operator
+                    && terms_equal_with_load_atoms(left_value, right_value, loads_match)
+            } else {
+                left == right
+            }
+        }
     }
 }
 
@@ -152,45 +177,13 @@ pub(in crate::kernel) fn conditions_equal_with_load_atoms(
         terms_equal_with_load_atoms(ll, rl, loads_match)
             && terms_equal_with_load_atoms(lr, rr, loads_match)
     };
+    if let (Some((left_operator, ll, lr)), Some((right_operator, rl, rr))) = (
+        left.as_bitvector_comparison(),
+        right.as_bitvector_comparison(),
+    ) {
+        return left_operator == right_operator && terms(ll, rl, lr, rr);
+    }
     match (left, right) {
-        (
-            ConditionTerm::Bitvector32SignedLessThan(ll, lr),
-            ConditionTerm::Bitvector32SignedLessThan(rl, rr),
-        )
-        | (
-            ConditionTerm::Bitvector32SignedLessEqual(ll, lr),
-            ConditionTerm::Bitvector32SignedLessEqual(rl, rr),
-        )
-        | (
-            ConditionTerm::Bitvector32SignedGreaterThan(ll, lr),
-            ConditionTerm::Bitvector32SignedGreaterThan(rl, rr),
-        )
-        | (
-            ConditionTerm::Bitvector32SignedGreaterEqual(ll, lr),
-            ConditionTerm::Bitvector32SignedGreaterEqual(rl, rr),
-        )
-        | (ConditionTerm::Bitvector32Equal(ll, lr), ConditionTerm::Bitvector32Equal(rl, rr))
-        | (ConditionTerm::Bitvector64Equal(ll, lr), ConditionTerm::Bitvector64Equal(rl, rr))
-        | (
-            ConditionTerm::Bitvector32SignedAddOverflows(ll, lr),
-            ConditionTerm::Bitvector32SignedAddOverflows(rl, rr),
-        )
-        | (
-            ConditionTerm::Bitvector32SignedSubtractOverflows(ll, lr),
-            ConditionTerm::Bitvector32SignedSubtractOverflows(rl, rr),
-        )
-        | (
-            ConditionTerm::Bitvector32SignedMultiplyOverflows(ll, lr),
-            ConditionTerm::Bitvector32SignedMultiplyOverflows(rl, rr),
-        )
-        | (
-            ConditionTerm::Bitvector32SignedDivideOverflows(ll, lr),
-            ConditionTerm::Bitvector32SignedDivideOverflows(rl, rr),
-        )
-        | (
-            ConditionTerm::Bitvector32SignedShiftLeftOverflows(ll, lr),
-            ConditionTerm::Bitvector32SignedShiftLeftOverflows(rl, rr),
-        ) => terms(ll, rl, lr, rr),
         (ConditionTerm::PointerOffsetEqual(ll, lr), ConditionTerm::PointerOffsetEqual(rl, rr)) => {
             offsets_equal_with_load_atoms(ll, rl, loads_match)
                 && offsets_equal_with_load_atoms(lr, rr, loads_match)

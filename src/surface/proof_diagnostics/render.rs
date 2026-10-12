@@ -1019,6 +1019,19 @@ impl Renderer<'_> {
         self.depth -= 1;
     }
     fn condition(&mut self, c: &ConditionTerm) {
+        // Definedness of a partial machine operation is the condition a
+        // capture or evaluation refusal most often names, so print the
+        // operation instead of a placeholder.
+        if let Some((operator, a, b)) = c.as_bitvector_comparison() {
+            let symbol = operator.c_symbol();
+            if operator.is_overflow() {
+                self.overflow_condition_bv(a, b, operator.operand_type(), symbol);
+            } else {
+                let symbol = if symbol == "==" { "=" } else { symbol };
+                self.binary_condition_bv(a, b, &format!("{} {symbol}", operator.operand_type()));
+            }
+            return;
+        }
         match c {
             ConditionTerm::Constant(v) => self.push(if *v { "true" } else { "false" }),
             ConditionTerm::Variable(v) => {
@@ -1039,44 +1052,6 @@ impl Renderer<'_> {
                 self.integer_shared(b);
                 self.push(")");
             }
-            ConditionTerm::Bitvector32SignedLessThan(a, b) => {
-                self.binary_condition_bv(a, b, "int32 <")
-            }
-            ConditionTerm::Bitvector32SignedLessEqual(a, b) => {
-                self.binary_condition_bv(a, b, "int32 <=")
-            }
-            ConditionTerm::Bitvector32SignedGreaterThan(a, b) => {
-                self.binary_condition_bv(a, b, "int32 >")
-            }
-            ConditionTerm::Bitvector32SignedGreaterEqual(a, b) => {
-                self.binary_condition_bv(a, b, "int32 >=")
-            }
-            ConditionTerm::Bitvector32Equal(a, b) => self.binary_condition_bv(a, b, "int32 ="),
-            ConditionTerm::Bitvector64Equal(a, b) => self.binary_condition_bv(a, b, "bits64 ="),
-            ConditionTerm::Bitvector64SignedLessThan(a, b) => {
-                self.binary_condition_bv(a, b, "int64 <")
-            }
-            ConditionTerm::Bitvector64SignedLessEqual(a, b) => {
-                self.binary_condition_bv(a, b, "int64 <=")
-            }
-            ConditionTerm::Bitvector64SignedGreaterThan(a, b) => {
-                self.binary_condition_bv(a, b, "int64 >")
-            }
-            ConditionTerm::Bitvector64SignedGreaterEqual(a, b) => {
-                self.binary_condition_bv(a, b, "int64 >=")
-            }
-            ConditionTerm::Bitvector64UnsignedLessThan(a, b) => {
-                self.binary_condition_bv(a, b, "uint64 <")
-            }
-            ConditionTerm::Bitvector64UnsignedLessEqual(a, b) => {
-                self.binary_condition_bv(a, b, "uint64 <=")
-            }
-            ConditionTerm::Bitvector64UnsignedGreaterThan(a, b) => {
-                self.binary_condition_bv(a, b, "uint64 >")
-            }
-            ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b) => {
-                self.binary_condition_bv(a, b, "uint64 >=")
-            }
             ConditionTerm::AlgebraicEqual(a, b) => {
                 self.algebraic(a);
                 self.push(" = ");
@@ -1091,39 +1066,6 @@ impl Renderer<'_> {
                 self.pointer(a);
                 self.push(" = ");
                 self.pointer(b);
-            }
-            // Definedness of a partial machine operation is the condition a
-            // capture or evaluation refusal most often names, so print the
-            // operation instead of a placeholder.
-            ConditionTerm::Bitvector32SignedAddOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int32", "+")
-            }
-            ConditionTerm::Bitvector32SignedSubtractOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int32", "-")
-            }
-            ConditionTerm::Bitvector32SignedMultiplyOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int32", "*")
-            }
-            ConditionTerm::Bitvector32SignedDivideOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int32", "/")
-            }
-            ConditionTerm::Bitvector32SignedShiftLeftOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int32", "<<")
-            }
-            ConditionTerm::Bitvector64SignedAddOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int64", "+")
-            }
-            ConditionTerm::Bitvector64SignedSubtractOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int64", "-")
-            }
-            ConditionTerm::Bitvector64SignedMultiplyOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int64", "*")
-            }
-            ConditionTerm::Bitvector64SignedDivideOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int64", "/")
-            }
-            ConditionTerm::Bitvector64SignedShiftLeftOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int64", "<<")
             }
             _ => self.push("condition(<bounded operation>)"),
         }
