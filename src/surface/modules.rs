@@ -794,6 +794,46 @@ void user() { ensures 0 == 1; } by { impossible(0); execute(); assumption(); }
     }
 
     #[test]
+    fn explicit_function_selection_respects_imported_proof_ownership() {
+        let library = ClickModuleSource::new(
+            "library.click",
+            r#"
+verifying "test.c";
+int32 helper(int32 x) { ensures result == x by { execute(); simp(); } }
+tactic keep(x: int32) { ensures x == x; } by { have x == x by normalize(); }
+"#,
+            [],
+        );
+        let project = ClickProject::new(
+            "entry.click",
+            [
+                library.clone(),
+                ClickModuleSource::new(
+                    "entry.click",
+                    "import \"library.click\"; verifying \"test.c\";",
+                    ["library.click".to_string()],
+                ),
+            ],
+        );
+        let inputs = ProgramInputs::Bundle(vec![("test.c", "int helper(int x) { return x; }")]);
+        for name in ["helper", "keep"] {
+            let error = verify_project_functions(&project, &inputs, [name.to_string()])
+                .expect_err("an importer must not select a library's proof body");
+            assert!(
+                error.message().contains("imported from `library.click`"),
+                "{error:?}"
+            );
+        }
+        let library = ClickProject::new("library.click", [library]);
+        verify_project_functions(
+            &library,
+            &inputs,
+            ["helper".to_string(), "keep".to_string()],
+        )
+        .expect("the declaring module owns both proofs");
+    }
+
+    #[test]
     fn imported_c_contract_must_match_implementation_signature() {
         let project = ClickProject::new(
             "entry.click",
