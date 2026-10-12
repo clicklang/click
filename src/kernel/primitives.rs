@@ -8962,13 +8962,180 @@ impl Hash for Proposition {
                 }
                 atomic => {
                     // Atomic proposition variants contain no Proposition
-                    // children. Their derived debug form gives this
-                    // traversal a stable payload while keeping the deep
-                    // connective topology iterative.
+                    // children, so their fields hash directly while the deep
+                    // connective topology above stays iterative.
                     6u8.hash(state);
-                    format!("{atomic:?}").hash(state);
+                    hash_atomic_proposition(atomic, state);
                 }
             }
+        }
+    }
+}
+
+/// Hashes one atomic proposition by its fields, consistently with the derived
+/// equality. Every field hashes structurally; a memory snapshot hashes by its
+/// cached content hash in O(1). Hashing an atom's debug text instead printed
+/// every snapshot it names, so inserting or looking up a call's effect summary
+/// cost the size of the whole memory, and each later call in a long function
+/// paid more than the last.
+fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
+    std::mem::discriminant(atomic).hash(state);
+    match atomic {
+        Proposition::Equal(left, right) => {
+            left.hash(state);
+            right.hash(state);
+        }
+        Proposition::ConditionIs(condition, value) => {
+            condition.hash(state);
+            value.hash(state);
+        }
+        Proposition::Predicate { name, arguments } => {
+            name.hash(state);
+            arguments.hash(state);
+        }
+        Proposition::CExpressionEvaluates {
+            state: c_state,
+            expression,
+            outcome,
+        } => {
+            c_state.hash(state);
+            expression.hash(state);
+            outcome.hash(state);
+        }
+        Proposition::CConditionEvaluates {
+            state: c_state,
+            condition,
+            outcome,
+        } => {
+            c_state.hash(state);
+            condition.hash(state);
+            outcome.hash(state);
+        }
+        Proposition::CStatementExecutes {
+            state: c_state,
+            statement,
+            outcome,
+        }
+        | Proposition::CStatementVerifies {
+            state: c_state,
+            statement,
+            outcome,
+        } => {
+            c_state.hash(state);
+            statement.hash(state);
+            outcome.hash(state);
+        }
+        Proposition::CFunctionExecutes {
+            state: c_state,
+            function,
+            arguments,
+            outcome,
+        }
+        | Proposition::CFunctionVerifies {
+            state: c_state,
+            function,
+            arguments,
+            outcome,
+        } => {
+            c_state.hash(state);
+            function.hash(state);
+            arguments.hash(state);
+            outcome.hash(state);
+        }
+        Proposition::CFunctionSatisfiesSpecification {
+            function,
+            specification,
+        }
+        | Proposition::CFunctionPartiallySatisfiesSpecification {
+            function,
+            specification,
+        } => {
+            function.hash(state);
+            specification.hash(state);
+        }
+        Proposition::CMemoryLoads {
+            memory,
+            pointer,
+            outcome,
+        } => {
+            memory.hash(state);
+            pointer.hash(state);
+            outcome.hash(state);
+        }
+        Proposition::CMemoryCanStore {
+            memory,
+            pointer,
+            byte_width,
+        } => {
+            memory.hash(state);
+            pointer.hash(state);
+            byte_width.hash(state);
+        }
+        Proposition::CMemoryLoadable {
+            memory,
+            base,
+            bytes,
+            wide,
+        } => {
+            memory.hash(state);
+            base.hash(state);
+            bytes.hash(state);
+            wide.hash(state);
+        }
+        Proposition::CMemoryReadDefined {
+            memory,
+            pointer,
+            value_type,
+        } => {
+            memory.hash(state);
+            pointer.hash(state);
+            value_type.hash(state);
+        }
+        Proposition::CResourceSeparate { left, right } => {
+            left.hash(state);
+            right.hash(state);
+        }
+        Proposition::CResourceComposition(resources) => resources.hash(state),
+        Proposition::CResourceContains { parent, child } => {
+            parent.hash(state);
+            child.hash(state);
+        }
+        Proposition::CMemoryMutatesOnly {
+            before,
+            after,
+            writes,
+        } => {
+            before.hash(state);
+            after.hash(state);
+            writes.hash(state);
+        }
+        Proposition::CMemoryEffectSummary {
+            before,
+            after,
+            mutable_ranges,
+        } => {
+            before.hash(state);
+            after.hash(state);
+            mutable_ranges.hash(state);
+        }
+        Proposition::CHeapAllocationFreed {
+            before,
+            after,
+            allocation_base,
+            bytes,
+        } => {
+            before.hash(state);
+            after.hash(state);
+            allocation_base.hash(state);
+            bytes.hash(state);
+        }
+        Proposition::And(..)
+        | Proposition::Or(..)
+        | Proposition::Not(..)
+        | Proposition::Implies(..)
+        | Proposition::ForAll { .. }
+        | Proposition::Exists { .. } => {
+            unreachable!("connectives are hashed iteratively by `Hash for Proposition`")
         }
     }
 }
