@@ -4927,6 +4927,108 @@ pub(super) fn describe_pointee_place(base: &str) -> String {
     }
 }
 
+/// A snapshot of `expression`. `result` exists only once the function
+/// returns, so a snapshot before the return cannot spell it; it has one
+/// value along a path, though, so the snapshot is written around the parts
+/// of a C fragment that do not mention it and `result` stays outside, as in
+/// `((uint64)result) + at(function.entry, node->word & 1)`.
+fn describe_snapshot_expression(
+    selector: Option<&SnapshotSelector>,
+    expression: &ContractExpression,
+) -> String {
+    let wrap = |text: String| match selector {
+        None => format!("old({text})"),
+        Some(selector) => format!("at({}, {text})", describe_snapshot_selector(selector)),
+    };
+    if crate::surface::snapshot_can_name_result(selector) {
+        return wrap(describe_contract_expression(expression));
+    }
+    describe_contract_snapshot(expression, &wrap)
+}
+
+fn describe_contract_snapshot(
+    expression: &ContractExpression,
+    wrap: &dyn Fn(String) -> String,
+) -> String {
+    let mut names = BTreeSet::new();
+    crate::surface::collect_current_contract_expression_variables(expression, &mut names);
+    if !names.contains("result") {
+        return wrap(describe_contract_expression(expression));
+    }
+    // A constant operand split off from `result` reads no state either.
+    let operand = |operand: &ContractExpression| match operand {
+        ContractExpression::IntegerLiteral(_)
+        | ContractExpression::CFragment(CExpression::Value(_)) => {
+            describe_contract_expression(operand)
+        }
+        operand => describe_contract_snapshot(operand, wrap),
+    };
+    let binary =
+        |left, operator, right| format!("({} {operator} {})", operand(left), operand(right));
+    match expression {
+        ContractExpression::CFragment(expression) => describe_c_snapshot(expression, wrap),
+        // `result` and a scalar cast of it read no state.
+        ContractExpression::Binding(_) => describe_contract_expression(expression),
+        ContractExpression::CUnary { operand, lowered }
+            if matches!(operand.as_ref(), ContractExpression::Binding(_))
+                && matches!(
+                    lowered,
+                    CExpression::Cast {
+                        pointee_struct: None,
+                        ..
+                    }
+                ) =>
+        {
+            describe_contract_expression(expression)
+        }
+        ContractExpression::Add(left, right) => binary(left, "+", right),
+        ContractExpression::Subtract(left, right) => binary(left, "-", right),
+        ContractExpression::Multiply(left, right) => binary(left, "*", right),
+        ContractExpression::BitwiseAnd(left, right) => binary(left, "&", right),
+        ContractExpression::BitwiseOr(left, right) => binary(left, "|", right),
+        ContractExpression::BitwiseXor(left, right) => binary(left, "^", right),
+        // Any other shape keeps its snapshot whole; the parser then names
+        // the snapshot that cannot hold `result`.
+        expression => wrap(describe_contract_expression(expression)),
+    }
+}
+
+fn describe_c_snapshot(expression: &CExpression, wrap: &dyn Fn(String) -> String) -> String {
+    let mut names = BTreeSet::new();
+    crate::surface::collect_c_expression_variables(expression, &mut names);
+    if !names.contains("result") {
+        return wrap(describe_c_expression(expression));
+    }
+    let operand = |operand: &CExpression| match operand {
+        CExpression::Value(_) => describe_c_expression(operand),
+        operand => describe_c_snapshot(operand, wrap),
+    };
+    let binary =
+        |left, operator, right| format!("({} {operator} {})", operand(left), operand(right));
+    match expression {
+        // `result` and a scalar cast of it read no state.
+        CExpression::Variable(_) => describe_c_expression(expression),
+        CExpression::Cast {
+            expression: inner,
+            pointee_struct: None,
+            ..
+        } if matches!(inner.as_ref(), CExpression::Variable(_)) => {
+            describe_c_expression(expression)
+        }
+        CExpression::Add(left, right) => binary(left, "+", right),
+        CExpression::Subtract(left, right) => binary(left, "-", right),
+        CExpression::Multiply(left, right) => binary(left, "*", right),
+        CExpression::BitwiseAnd(left, right) => binary(left, "&", right),
+        CExpression::BitwiseOr(left, right) => binary(left, "|", right),
+        CExpression::BitwiseXor(left, right) => binary(left, "^", right),
+        CExpression::Equal(left, right) => binary(left, "==", right),
+        CExpression::NotEqual(left, right) => binary(left, "!=", right),
+        // Any other shape keeps its snapshot whole; the parser then names
+        // the snapshot that cannot hold `result`.
+        expression => wrap(describe_c_expression(expression)),
+    }
+}
+
 pub(super) fn describe_binary_c_expression(
     left: &CExpression,
     operator: &str,
@@ -5291,17 +5393,11 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 _ => format!("count({})", describe_resource_clause(resource)),
             }
         }
-        ContractExpression::Old(expression) => {
-            format!("old({})", describe_contract_expression(expression))
-        }
+        ContractExpression::Old(expression) => describe_snapshot_expression(None, expression),
         ContractExpression::At {
             selector,
             expression,
-        } => format!(
-            "at({}, {})",
-            describe_snapshot_selector(selector),
-            describe_contract_expression(expression)
-        ),
+        } => describe_snapshot_expression(Some(selector), expression),
         ContractExpression::Negate(expression) => {
             format!("-{}", describe_contract_expression(expression))
         }

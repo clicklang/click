@@ -2080,7 +2080,10 @@ impl ClickProposition {
     }
 }
 
-fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet<String>) {
+pub(crate) fn collect_c_expression_variables(
+    expression: &CExpression,
+    names: &mut BTreeSet<String>,
+) {
     match expression {
         CExpression::Value(_) | CExpression::FunctionAddress(_) => {}
         CExpression::Variable(name) => {
@@ -2193,7 +2196,7 @@ fn collect_current_resource_subject_variables(
     }
 }
 
-fn collect_current_contract_expression_variables(
+pub(crate) fn collect_current_contract_expression_variables(
     expression: &ContractExpression,
     names: &mut BTreeSet<String>,
 ) {
