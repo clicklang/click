@@ -17465,3 +17465,31 @@ fn an_omitted_loop_phase_expands_to_an_explicit_phase_proof() {
         error.message()
     );
 }
+
+/// A loop phase is expanded by its label over compiler-prepared C exactly as
+/// over a source bundle, through the prepared entry point and through the
+/// input-generic one `click expand --claim` uses, and the rewrite checks
+/// over the same prepared import.
+#[test]
+fn a_loop_phase_expands_by_label_over_a_prepared_c_import() {
+    use crate::languages::c::compiler_import::PreparedCImport;
+
+    let sources = [("omitted.c", OMITTED_PHASE_C)];
+    let imports = [PreparedCImport::for_test("omitted.c", OMITTED_PHASE_C)];
+    let inputs = ProgramInputs::Prepared(&imports);
+    for phase in ["initialize", "preserve"] {
+        let label = format!("f.loop(0).{phase}");
+        let bundled = expand_c0_claim_source_by_label(OMITTED_PHASE_CLICK, &sources, &label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+        let prepared =
+            expand_c0_prepared_claim_source_by_label(OMITTED_PHASE_CLICK, &imports, &label)
+                .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+        assert_eq!(prepared, bundled, "{label}");
+        let generic = expand_claim_by_label(None, OMITTED_PHASE_CLICK, &inputs, &label, None)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+        assert_eq!(generic.source, bundled, "{label}");
+        assert_eq!(generic.proof_unit, "f.contract", "{label}");
+        verify_c0_prepared_sources(&prepared, &imports)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+    }
+}
