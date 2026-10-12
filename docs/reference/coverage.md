@@ -60,7 +60,10 @@ verification then runs offline.
 > **Note:** Plain `char` follows the selected C target: signed under
 > `x86_64-linux-userspace`, as GCC and Clang build x86-64 user space by
 > default, and unsigned under `x86_64-linux-kernel`, matching the kernel's
-> `-funsigned-char`.
+> `-funsigned-char`. As in GCC and Clang, where it is only a `-Wpointer-sign`
+> warning, an uncast conversion between `char *`, `signed char *`, and
+> `unsigned char *` is accepted and reads the bytes as the explicit cast
+> would; `mdtests/a_uint8_pointer_passed_as_a_char_pointer_reads_signed_bytes.md`.
 
 ## Scalar types
 
