@@ -259,6 +259,19 @@ fn signed_add_surface_shape(
             return true;
         }
         if let crate::kernel::Bitvector32Term::Add(target_first, target_second) = target {
+            // Lowering may combine two trailing, signed-representable
+            // constants. Recognize that encoding of this same child sum;
+            // the emitted kernel node still uses the children's exact
+            // mathematical claim, not the lowered machine-value claim.
+            if let crate::kernel::Bitvector32Term::Add(base, trailing) = first
+                && let crate::kernel::Bitvector32Term::Constant(trailing) = trailing.as_ref()
+                && let crate::kernel::Bitvector32Term::Constant(second) = second
+                && let Some(offset) = (*trailing as i32).checked_add(*second as i32)
+                && matches!(target_second.as_ref(), crate::kernel::Bitvector32Term::Constant(value) if *value == offset as u32)
+                && signed_atom_matches(target_first, base)
+            {
+                return true;
+            }
             return signed_atom_matches(target_first, first)
                 && (signed_atom_matches(target_second, second)
                     || matches!(
