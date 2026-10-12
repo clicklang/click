@@ -604,7 +604,15 @@ impl<'a> ProofScope<'a> {
             next.body = body;
             return Ok(Some(next));
         }
-        self.try_simp_closure()
+        if let Some(closed) = self.try_simp_closure()? {
+            return Ok(Some(closed));
+        }
+        let Some(body) = self.body.try_auto_equality_chain_closure()? else {
+            return Ok(None);
+        };
+        let mut next = self.clone();
+        next.body = body;
+        Ok(Some(next))
     }
 
     pub(in crate::surface::proof) fn try_solver_closure(&self) -> Result<Option<Self>, ClickError> {

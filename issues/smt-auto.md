@@ -159,6 +159,18 @@ includes a machine-integer bridge theory; see the design.
 |---|---|---|---|
 | `examples/bounded-pool/bounded_pool.click` | 845 lines, 2.1 s | 455 lines, about 2 s | resource folds and authority steps; every arithmetic lemma is `by auto` |
 | `examples/rust-byte-sum/sum.click` (milestone 3, with operation bridging) | 184 lines, 0.29 s | 68 lines, about 1.4 s | memory transport for the read, fold laws (`peel`), loop control, and one conjunct of the invariant restated so it can be cited |
+| `examples/rbtree-erase/rbtree_erase_color_flips_red_all.click` (milestone 4, the `Context::Right` red-inner-child arm, lines 2020–2180) | 18 of its 23 one-line rewrite `have`s explicit; 24,926 bytes; about 21–23 s for the file | each of the 18 is `by auto`; 22,980 bytes (5,612 → 4,945 tokens); about 23.5 s | three-rewrite chains the attempt budget misses, `unfold` after a rewrite once the `simp` closures are spent, and `plug` equalities over whole contexts |
+
+Milestone 4 adds equality reasoning as a bounded search for a chain of `rewrite`
+steps, not the congruence closure the design describes. It already covers most
+one-line rewrite proofs. On two random samples of 20 of the file's 470 one-line
+`have P by { rewrite(..); assumption(); }` or `..; normalize(); }` proofs,
+`by auto` closes 18 and 13; `simp` alone closes 13 and 9. The remaining misses
+are mostly facts with no source spelling where the proof stands (an earlier
+`have` or a proof `if` condition in a pure theorem, and in the largest arms most
+of a 200-equality component), and chains that need `unfold` or injectivity.
+Congruence closure does not lift the spelling limit: its certificate is also
+written as `rewrite` steps.
 
 The longer run time is solver search, all within the smart budget.
 `click audit` expands all 19 sites into simple steps that verify without the

@@ -116,7 +116,7 @@ impl ProofFacts {
     }
 }
 
-fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
+pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
     let reversed = match equality {
         Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
             return Some(Proposition::Equal(
@@ -188,6 +188,14 @@ pub(crate) fn rewrite_proposition_by_exact_equality(
         return Err("`rewrite` requires its equality to be an exact available fact".to_string());
     }
     rewrite_with_admitted_equality(goal, equality)
+}
+
+/// Whether `equality` replaces some occurrence in `goal`. Smart planning
+/// uses it to skip a rewrite that cannot apply; it has no proof authority,
+/// and the checked `rewrite` step decides.
+pub(crate) fn equality_rewrite_applies(goal: &Proposition, equality: &Proposition) -> bool {
+    !equality_is_vacuous(equality)
+        && rewrite_with_admitted_equality(goal, equality).is_ok_and(|rewritten| rewritten != *goal)
 }
 
 fn rewrite_with_admitted_equality(
