@@ -2571,6 +2571,133 @@ fn charon_adler2_public_checksum_tools_recheck_original_contracts() {
     assert_cli(&p, &["verify"]);
 }
 
+const PUBLIC_GENERAL: &str = include_str!("../../design/charon-trial/adler2/public-general.click");
+
+fn public_general_proof() -> String {
+    format!(
+        "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{PUBLIC_GENERAL}",
+        compute_proof(GENERAL_COMPUTE)
+    )
+}
+
+#[test]
+#[ignore = "nightly: general public API composition with the full computation specification"]
+fn charon_adler2_general_public_checksum_matches_common_spec() {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    let source = public_general_proof();
+    for name in ["adler2::Adler32::write_slice", "adler2::adler32_slice"] {
+        verify_public_checksum_unit(&source, &prepared, name).unwrap();
+    }
+}
+
+#[test]
+#[ignore = "nightly: general public API false checksums, seeds, authority and preservation"]
+fn charon_adler2_general_public_checksum_rejects_false_claims() {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    for (name, before, after) in [
+        (
+            "adler2::adler32_slice",
+            "ensures to_integer(result) == old(adler_spec_checksum(data, ((data.len() as u32) as i32), 1, 0));",
+            "ensures to_integer(result) == old(adler_spec_checksum(data, ((data.len() as u32) as i32), 1, 0)) + 1;",
+        ),
+        (
+            "adler2::adler32_slice",
+            "ensures to_integer(result) == old(adler_spec_checksum(data, ((data.len() as u32) as i32), 1, 0));",
+            "ensures to_integer(result) == old(adler_spec_checksum(data, ((data.len() as u32) as i32), 0, 1));",
+        ),
+        ("adler2::adler32_slice", "views *data;", ""),
+        (
+            "adler2::adler32_slice",
+            "implies data[k] == old(data[k])",
+            "implies data[k] == old(data[k]) + 1",
+        ),
+        (
+            "adler2::Adler32::write_slice",
+            "requires (self.a as u32) <= 65520u32;",
+            "requires (self.a as u32) <= 65521u32;",
+        ),
+        (
+            "adler2::Adler32::write_slice",
+            "requires (self.b as u32) <= 65520u32;",
+            "requires (self.b as u32) <= 65521u32;",
+        ),
+        (
+            "adler2::Adler32::write_slice",
+            "requires bytes.len() <= 2147483647u64;",
+            "requires bytes.len() <= 2147483648u64;",
+        ),
+    ] {
+        let contract = PUBLIC_GENERAL.replacen(before, after, 1);
+        assert_ne!(contract, PUBLIC_GENERAL, "{before}");
+        let source = public_general_proof().replacen(PUBLIC_GENERAL, &contract, 1);
+        let error = verify_public_checksum_unit(&source, &prepared, name)
+            .expect_err("false public claims or insufficient call preconditions must be refused");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: general public API original callees and contract expansion"]
+fn charon_adler2_general_public_checksum_tools_check_all_original_bodies() {
+    let p = adler2_helpers_project();
+    fs::write(p.root.join("borrow.click"), public_general_proof()).unwrap();
+    assert_cli(&p, &["profile"]);
+    for name in ["adler2::Adler32::write_slice", "adler2::adler32_slice"] {
+        assert_cli(
+            &p,
+            &[
+                "expand",
+                "--claim",
+                &format!("{name}.contract"),
+                "--in-place",
+            ],
+        );
+        let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+        verify_public_checksum_unit(&expanded, &load_import(&p.config()).unwrap(), name).unwrap();
+    }
+}
+
+#[test]
+#[ignore = "nightly: signed logical index native bridge expansion and false extent"]
+fn adler_bounded_signed_index_expands_and_rejects_past_end() {
+    let p = Project::isolated("");
+    fs::write(p.root.join("borrow.click"), BOUNDED_COUNT).unwrap();
+    assert_cli(&p, &["verify"]);
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "adler_bounded_signed_index.ensures_0",
+            "--in-place",
+        ],
+    );
+    assert_cli(&p, &["verify"]);
+    click::surface::verify_c0_sources(BOUNDED_COUNT, &[]).unwrap();
+    // Empty ranges have no guarded index; replacing the strict guard admits
+    // the one-past endpoint for every nonempty input.
+    let invalid = BOUNDED_COUNT.replacen(
+        "requires index < (int32)(uint32)count;",
+        "requires index <= (int32)(uint32)count;",
+        1,
+    );
+    assert_ne!(invalid, BOUNDED_COUNT);
+    let error = click::surface::verify_c0_sources(&invalid, &[]).unwrap_err();
+    assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+    assert!(
+        !error.message().contains("budget exhausted"),
+        "{}",
+        error.message()
+    );
+}
+
 fn public_boundary_proof(length: usize) -> String {
     match length {
         0 => format!(

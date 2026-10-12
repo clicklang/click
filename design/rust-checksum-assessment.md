@@ -5,8 +5,9 @@ and common mathematical specification selected by
 [the Rust roadmap](../issues/rust-support.md). Native Charon imports the Rust
 selection, and the [Adler trial](charon-trial/adler2/README.md) records its current
 checked computation correctness over the explicit signed observation range.
-General public-entry-point composition, implementation incremental processing,
-C correctness and C/Rust result equality remain unproved.
+The unchanged public entry point composes the checked constructor, general
+computation and checksum getter over that range. Implementation incremental
+processing, C correctness and C/Rust result equality remain unproved.
 
 The checked [common specification](adler32-spec.click) defines the unweighted
 byte sum, the byte-order-sensitive weighted sum, both canonical residues, and
@@ -173,8 +174,8 @@ both residues at each actual byte position. Checked iterator exhaustion, byte
 extensionality, native reductions and 16-bit stores prove both final fields
 equal the specification on the entry input snapshot for all supported lengths.
 
-Follow the [current roadmap](../issues/rust-support.md) for public
-composition, implementation incremental processing, the unchanged C proof, and architecture
+Follow the [current roadmap](../issues/rust-support.md) for implementation
+incremental processing, the unchanged C proof, and architecture
 requirements. Deliver coherent green proof and engine increments through pull
 requests. Repair checker and expansion defects before extending the examples;
 retain explicit bounds on intermediate evidence and meaningful negative tests.

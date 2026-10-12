@@ -7,8 +7,9 @@ initial state, `Adler32::compute` terminates, preserves input bytes, and stores
 both fields equal to the shared checksum specification on the entry snapshot.
 The proof follows actual native remaining counts, checked signed observations,
 and shared input views through all original loops, reductions and final stores.
-General public-entry-point composition and implementation incremental processing
-remain pending.
+The unchanged `adler32_slice` entry point composes the checked constructor,
+general update and getter and returns the specified packed checksum over the
+same length range. Implementation incremental processing remains pending.
 
 The 2,147,483,647-byte limit comes from the bound library
 ([`bounded-count.click`](bounded-count.click) and the proofs built on it), which
@@ -408,8 +409,7 @@ changes, and the Integer observation of its returned word is exactly
 original `(B << 16) | A` order. Both 16-bit bounds are retained in the kernel
 packing law. Its conditional bridge connects fields satisfying the common A/B
 specification to the common packed checksum. The zero- through four-byte
-public entry points are checked below; general-length implementation correctness
-remains pending.
+public entry points and general-length composition are checked below.
 
 The fixture harness combines these contract fragments with the shared
 mathematical specification and the existing locked crate import. The positive
@@ -421,7 +421,27 @@ cargo nextest run --test rust_import --run-ignored all \
   -E 'test(charon_adler2_checksum)'
 ```
 
-## Original public entry-point boundaries
+## Original public entry points
+
+[public-general.click](public-general.click) composes the unchanged
+`Adler32::write_slice` and `adler32_slice` bodies with the general computation
+contract, constructor and shared checksum getter. Every length zero through
+2,147,483,647 returns the common packed checksum on the entry input snapshot
+from A = 1, B = 0. `write_slice` also proves both field specifications from
+any canonical initial state and returns fields below 65,521. Both contracts
+explicitly preserve every input byte. The checked `adler_bounded_signed_index`
+lemma bridges each guarded logical index to native 64-bit range membership;
+constructor seed observations are frozen and substituted explicitly into the
+computation result. The full original computation and all helper bodies remain
+in the assembled verification unit; no assumed checksum summary supplies a result.
+
+General composition, false checksums/seeds/extent/authority/preservation, all
+original callee bodies, and public-contract expansion/reverification run nightly:
+
+```sh
+cargo nextest run --profile nightly --test rust_import --run-ignored only \
+  -E 'test(charon_adler2_general_public_checksum) | test(adler_bounded_signed_index)'
+```
 
 [public-constructors.click](public-constructors.click) checks the unchanged
 `Default::default` and `Adler32::new` bodies in a shared fragment for the public API fixtures.
@@ -504,10 +524,7 @@ cargo nextest run --test rust_import --run-ignored only \
 
 ## Remaining proof work
 
-Compose the checked constructor, general computation contract and shared getter
-at the public entry point for all supported lengths. The computation already
-proves both final field specifications, and the getter proves exact packing.
-Then connect repeated computation calls to the shared mathematical incremental
+Connect repeated computation calls to the shared mathematical incremental
 equality, prove the unchanged C implementation, and derive C/Rust equality
 under matched input and seed conditions. See the
 [checksum assessment](../../rust-checksum-assessment.md).
