@@ -19,6 +19,12 @@ is empty.
 Every item starts as **Decision: open**. Record the maintainer's ruling in
 place before work starts.
 
+Documentation has two audiences. The repository and `docs/` are written for
+AI readers: an agent asked to evaluate or use Click reads them, so they must be
+precise, complete and honest about limits. Human-facing material (the top of
+the README and a public website) is written by the maintainer. Items below
+that concern human onboarding apply to the human-facing material.
+
 ## Violated invariant
 
 A reader of Click's launch material can verify a small function in their own
@@ -122,24 +128,20 @@ Decision: open.
 
 ### P5. Copy-paste across case files and sidecars
 
-Today: the 22 color-repair increments that
-`rbtree_erase_color_flips_red_all.click` subsumes (29,160 of 39,582 lines,
-including the 24 inline copies of the `__rb_change_child` proof) are retired,
-and their mutations run against the general proof (R1). `rb_erase` has 11
-per-case contracts and no general one. The general repair proof's left and
-right arms (about 1,380 lines each) are mirror images. C++ caller sidecars
-repeat callee contracts (`examples/basic-cpp/with_restore_caller.click`).
+Today: `rb_erase` has 11 per-case contracts and no general one. The general
+erase-color repair proof's left and right arms (about 1,380 lines each) are
+mirror images. C++ caller sidecars repeat callee contracts
+(`examples/basic-cpp/with_restore_caller.click`).
 
 Proposed fix: [design/proof-reuse.md](../design/proof-reuse.md):
 
-- R1: retire superseded increments. Done.
 - R2: one general contract per function, including one general `rb_erase`
   contract with a theorem that its cases are exhaustive.
 - R3: automatic unfolding of recursive spec functions.
 - R4: automatic opening and closing of resources.
 - R5: one script for several arms.
 
-Decision: R1 ruled fix and done; R2–R5 open.
+Decision: open.
 
 ### P6. Loop proofs restate facts
 
@@ -254,12 +256,7 @@ Proposed fix: a specification `bool`.
 
 Decision: open.
 
-### L3. Two conversion families and C-fragment precedence
-
-The precedence half is fixed: a comparison operand whose outermost operator
-is `&`, `^` or `|` must be parenthesized, since C and Click group
-`x & 1 == 0` differently, and the `aligned(p, n)` sugar is documented as
-`(address(p) & (n - 1)) == 0`.
+### L3. Two conversion families
 
 Today: `(uint32)x` keeps the low bits, `to_uint32(x)` needs a range proof,
 and implicit return conversion follows a third rule
@@ -267,8 +264,7 @@ and implicit return conversion follows a third rule
 
 Proposed fix: one checked conversion family plus an explicit wrapping one.
 
-Decision: precedence ruled fix (reject unparenthesized mixing); conversions
-open.
+Decision: open.
 
 ### L4. Rust and C++ specs still read like C
 
@@ -356,7 +352,7 @@ loans, with fold/unfold and loan recovery argued sound against it.
 
 Decision: open.
 
-### M4. Several read-permission notions and no fractions
+### M3. Several read-permission notions and no fractions
 
 Today: `views` (call-scoped loans), `viewable` (bounds only), reads granted
 by a folded composite, and reads from match-arm selection. The trusted
@@ -370,7 +366,7 @@ them; reconcile `memcpy`.
 
 Decision: open.
 
-### M5. Field-less resources hide a record
+### M4. Field-less resources hide a record
 
 Today: a field-less `pair(p)` keeps its child's fields "in a record the
 author does not write" (`docs/reference/language/index.md`); the alternative
@@ -382,7 +378,7 @@ expansion. This revisits a recorded ruling.
 
 Decision: open.
 
-### M6. Aliasing and place syntax are inconsistent
+### M5. Aliasing and place syntax are inconsistent
 
 Today: `docs/reference/language/limitations.md` says to add `separate(...)`
 for possibly aliasing pointers; `docs/internals/separation-logic.md` says
@@ -394,7 +390,7 @@ Proposed fix: state that `separate` is needed only for views and
 
 Decision: open.
 
-### M7. C semantics are narrow and the summary is stale
+### M6. C semantics are narrow and the summary is stale
 
 Today: one target (x86-64 LP64 little-endian), fork/join and mutex
 concurrency only, read-only unions; `docs/concepts/what-click-proves.md`
@@ -406,7 +402,7 @@ concurrency, target), kept in sync mechanically.
 
 Decision: open.
 
-### M8. Soundness triage is inconsistent
+### M7. Soundness triage is inconsistent
 
 Today: "An unsound rule is P1" (`issues/README.md`), yet "Give private
 static storage sound ownership" is P2
@@ -421,23 +417,18 @@ Decision: open.
 
 ## N. Newcomer experience
 
-### N1. The README does not show Click working
+### N1. Maintainer launch actions
 
-The part of the README that agents may edit now opens with a ten-line C file,
-its sidecar, and a `click verify` transcript (`examples/clamp/`, checked by
-`readme_quick_start_is_the_clamp_example` in `tests/examples.rs`), followed by
-install, documentation, and a short contributing section; the merge-queue
-instructions for agents stay in `docs/internals/contributing.md`.
+Today: the human-only top of the README calls Click "a new programming
+language" and opens with the kernel-design essay, and no release has been
+tagged, so the installers fail.
 
-Remaining: the human-only top of the README still calls Click "a new
-programming language" and opens with the kernel-design essay.
+Proposed fix: the maintainer writes the README top (a one-line pitch; the
+essay moves to a design document or the website) and tags the first release.
 
-Proposed fix: a maintainer replaces line 3 with a one-line pitch and moves
-the essay to a design document.
+Decision: fix (maintainer).
 
-Decision: fix.
-
-### N3. No guide for verifying a function in your own project
+### N2. No guide for verifying a function in your own project
 
 Today: the only unchanged third-party C example proves `json_c_version()`
 returns a constant (`examples/jsonc-existing-source`); compiler import is a
@@ -448,31 +439,19 @@ flags, contracts for libc calls, and what to do when C0 refuses a construct.
 
 Decision: open.
 
-### N4. The default C target is the Linux kernel's
+### N3. The default C target is the Linux kernel's
 
 Today: the default is `x86_64-linux-kernel` with unsigned plain `char`
 (`docs/reference/language/c0.md`); userspace code needs an explicit
-`target`.
+`target`. The userspace target also models plain `char` as unsigned, unlike
+the x86-64 System V ABI.
 
-Proposed fix: default to userspace, or print the target on every run.
-
-Decision: open.
-
-### N5. Docs contradict themselves and are stale
-
-The contradictions are fixed: `docs/reference/language/c0.md` no longer claims
-`click verify` prints the default target, the README installs from source
-and states that no release or crates.io package exists, and
-`tests/documentation.rs` checks that every version the README names is the
-`Cargo.toml` version.
-
-Remaining: no release has been tagged, so the installers fail.
-
-Proposed fix: tag the first release before launch (a maintainer action).
+Proposed fix: model signed plain `char` for the userspace target, then make
+it the default and have kernel examples name their target.
 
 Decision: fix.
 
-### N6. Jargon load, and internal documents in the user book
+### N4. Jargon load, and internal documents in the user book
 
 Today: "smart", "kernel", "frontier", "certificate" and "proof unit" appear
 throughout user docs; the glossary is about 1,200 lines;
@@ -485,7 +464,7 @@ the first-proof page.
 
 Decision: open.
 
-### N7. C++ and Rust look like research demos
+### N5. C++ and Rust look like research demos
 
 Today: both need a repository checkout and custom importer builds
 (`examples/basic-cpp/README.md`, `examples/basic-rust/README.md`); the C++
@@ -497,7 +476,7 @@ the installer; keep migration history out of user docs.
 
 Decision: open.
 
-### N8. No positioning against other tools
+### N6. No positioning against other tools
 
 Today: `docs/concepts/proof-landscape.md` maps features to Frama-C,
 VeriFast, CBMC and Dafny but does not say when to choose Click; Kani, Verus,
@@ -507,7 +486,7 @@ Proposed fix: a "Click and other verifiers" page, honest about weaknesses.
 
 Decision: open.
 
-### N9. The repository root mixes product and process
+### N7. The repository root mixes product and process
 
 Today: `design/`, `issues/`, `bugs/`, `AGENTS.md` and `CLAUDE.md` sit at the
 root; `docs/index.md` says the docs are AI-written and a human-written guide
