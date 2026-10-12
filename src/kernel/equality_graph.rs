@@ -611,6 +611,14 @@ impl EqualityGraph {
             NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// Whether this graph reads the thread's current logical-read table: a
+    /// session restore or clear installs a fresh table, which a graph built
+    /// before it does not see.
+    pub(in crate::kernel) fn reads_current_logical_reads(&self) -> bool {
+        LOGICAL_POINTER_READS
+            .with(|reads| std::sync::Arc::ptr_eq(&reads.borrow(), &self.logical_reads))
+    }
+
     pub(in crate::kernel) fn logical_read_generation(&self) -> u64 {
         let definitions = self
             .logical_reads
