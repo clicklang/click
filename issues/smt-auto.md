@@ -4,10 +4,42 @@ Priority: P1.
 
 Proof size, automation and proof workflow are the parts of the
 [launch design review](design-review.md) that matter most. Its items P1–P4,
-W4 and W5 depend on this issue. This issue makes `simp`, `arithmetic` and
-`auto` call an SMT solver to find proofs, and makes Click turn each solver
+W4 and W5 depend on this issue. This issue makes `auto` and `arithmetic`
+call an SMT-style decision procedure to find proofs, and makes Click turn each
 result into a certificate that the kernel checks. This is the "hammer" pattern
 used by Isabelle's Sledgehammer, SMTCoq and Lean's `omega`/`linarith`.
+Changes to `simp` itself wait until stage 1 is measured.
+
+## Decision: an in-house solver
+
+Decided 2026-10-12. Click builds its own decision procedures instead of
+calling Z3 or cvc5. They sit behind an interface narrow enough that an external
+solver can be plugged in later, for fragments that justify one.
+
+The main reason is expansion. A procedure Click owns emits Click's own
+certificate steps, so `auto` always expands into checked simple steps. An
+expanded proof never calls the solver again: it checks quickly and gets the
+same verdict on every machine. External solvers emit large, version-specific
+proofs that Click would have to reconstruct. The in-house route also avoids
+shipping a C++ solver, and the solver's search stays under Click's
+deterministic work budgets.
+
+The stage-1 design is [design/smt-auto-stage1.md](../design/smt-auto-stage1.md).
+
+## Comparison class
+
+Dafny and Verus are the usual reference for proof size, but neither uses
+separation logic for heap reasoning:
+
+- **Dafny** frames the heap with `reads`/`modifies` sets.
+- **Verus** gets separation from Rust ownership, and needs explicit tracked
+  permissions only for raw pointers.
+
+The fair comparison for C is separation-logic tools that use SMT for their
+pure reasoning: VeriFast, Viper, CN and RefinedC. All of them pay a resource
+bookkeeping cost. This issue targets the pure-reasoning gap, which accounts
+for most of Click's proof size. In one rbtree repair arm, about 600 of 1,377
+lines are pure reasoning, against about 100 lines of resource fold/unfold.
 
 ## Violated invariant
 
@@ -88,9 +120,9 @@ Do the stages in order. Each stage is useful on its own.
 
 - **Reconstruction is the main engineering cost.** Stage 1 limits it to
   Farkas and congruence certificates.
-- **Click would ship a solver binary** (Z3 or cvc5) and pin its version.
-  Solver output must not affect a verdict except through a checked
-  certificate.
+- **Solver output must not affect a verdict** except through a checked
+  certificate. With an in-house solver this holds by construction, and it
+  must still hold for any external solver plugged in later.
 - **Search must stay bounded.** A solver call runs under a deterministic work
   or time budget, and the call fails locally and promptly when the budget is
   exhausted. A slow solver run is a tooling failure under `CLAUDE.md`, not a
@@ -98,6 +130,24 @@ Do the stages in order. Each stage is useful on its own.
 - **Scaling.** Each query must be built from the explicit premises and the
   affected proof state, never from project-wide or path-wide state
   (`docs/internals/verification-efficiency.md`).
+
+## Baseline
+
+Measured 2026-10-12 at `52a77c2d`, release build, `click verify` on one
+sidecar. The fourth column is the share of each file that stage 1 targets:
+linear arithmetic, `to_integer` bridging, congruence and constructor
+equalities.
+
+| Case | Lines | Time | Stage-1 target |
+|---|---|---|---|
+| `examples/rust-byte-sum/sum.click` | 184 | 0.29 s | about 120 lines of the loop body: bridges, `arithmetic() using` and transitivity |
+| `examples/bounded-pool/bounded_pool.click` | 845 | 2.1 s | five hand-written `arithmetic_certificate` blocks plus their bridge `apply`s |
+| `examples/rbtree-erase/rbtree_erase_color_flips_red_all.click` | 4,236 | 22.9 s | the 222 one-line rewrite equalities in each arm |
+
+In the first two cases, most of the arithmetic is bridging between machine
+integers and `Integer`, through theorems such as `int32_less_equal_to_integer`
+and `int32_add_to_integer`, not linear reasoning itself. Stage 1 therefore
+includes a machine-integer bridge theory; see the design.
 
 ## Regression
 
