@@ -4656,140 +4656,10 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
             )),
         ),
         ConditionTerm::Variable(variable) => ConditionTerm::Variable(*variable),
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => ConditionTerm::signed_less_than(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => ConditionTerm::signed_less_equal(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
-            ConditionTerm::signed_greater_than(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-            ConditionTerm::signed_greater_equal(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        ConditionTerm::Bitvector32Equal(left, right) => ConditionTerm::equal(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
-            ConditionTerm::signed_add_overflows(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        ConditionTerm::Bitvector32SignedSubtractOverflows(left, right) => {
-            ConditionTerm::signed_subtract_overflows(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right) => {
-            ConditionTerm::signed_multiply_overflows(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        ConditionTerm::Bitvector32SignedDivideOverflows(left, right) => {
-            ConditionTerm::signed_divide_overflows(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right) => {
-            ConditionTerm::signed_shift_left_overflows(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        ConditionTerm::Bitvector64SignedLessThan(left, right) => {
-            ConditionTerm::int64_signed_less_than(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        ConditionTerm::Bitvector64SignedLessEqual(left, right) => {
-            ConditionTerm::int64_signed_less_equal(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        ConditionTerm::Bitvector64SignedGreaterThan(left, right) => {
-            ConditionTerm::int64_signed_greater_than(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        ConditionTerm::Bitvector64SignedGreaterEqual(left, right) => {
-            ConditionTerm::int64_signed_greater_equal(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        ConditionTerm::Bitvector64UnsignedLessThan(left, right) => ConditionTerm::uint64_less_than(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        ConditionTerm::Bitvector64UnsignedLessEqual(left, right) => {
-            ConditionTerm::uint64_less_equal(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        ConditionTerm::Bitvector64UnsignedGreaterThan(left, right) => {
-            ConditionTerm::uint64_greater_than(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right) => {
-            ConditionTerm::uint64_greater_equal(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
         ConditionTerm::Bitvector64Equal(left, right) => ConditionTerm::Bitvector64Equal(
             Box::new(substitute_bitvector_variable(left, from, to)),
             Box::new(substitute_bitvector_variable(right, from, to)),
         ),
-        ConditionTerm::Bitvector64SignedAddOverflows(left, right) => {
-            ConditionTerm::int64_signed_add_overflows(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        ConditionTerm::Bitvector64SignedSubtractOverflows(left, right) => {
-            ConditionTerm::int64_signed_subtract_overflows(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right) => {
-            ConditionTerm::int64_signed_multiply_overflows(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        ConditionTerm::Bitvector64SignedDivideOverflows(left, right) => {
-            ConditionTerm::int64_signed_divide_overflows(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
-            ConditionTerm::int64_signed_shift_left_overflows(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
         crate::kernel::integer_comparison_condition!(left, right) => {
             let rewrite =
                 |term: &IntegerTerm| substitute_bitvector_variable_in_integer(term, from, to);
@@ -4855,6 +4725,15 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
             substitute_bitvector_variable_in_pointer(left, from, to),
             substitute_bitvector_variable_in_pointer(right, from, to),
         ),
+        condition => {
+            let (op, left, right) = condition
+                .as_bitvector_comparison()
+                .expect("every other condition has its own arm");
+            op.build(
+                substitute_bitvector_variable(left, from, to),
+                substitute_bitvector_variable(right, from, to),
+            )
+        }
     }
 }
 

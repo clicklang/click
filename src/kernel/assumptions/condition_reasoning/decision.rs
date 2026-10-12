@@ -1666,146 +1666,6 @@ impl PureFactContext {
                 .unwrap_or_else(|| condition.clone()),
             ConditionTerm::Constant(value) => ConditionTerm::Constant(*value),
             ConditionTerm::Variable(variable) => ConditionTerm::Variable(*variable),
-            ConditionTerm::Bitvector32SignedLessThan(left, right) => {
-                ConditionTerm::signed_less_than(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
-                ConditionTerm::signed_less_equal(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
-                ConditionTerm::signed_greater_than(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-                ConditionTerm::signed_greater_equal(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector32Equal(left, right) => ConditionTerm::equal(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
-                ConditionTerm::signed_add_overflows(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector32SignedSubtractOverflows(left, right) => {
-                ConditionTerm::signed_subtract_overflows(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right) => {
-                ConditionTerm::signed_multiply_overflows(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector32SignedDivideOverflows(left, right) => {
-                ConditionTerm::signed_divide_overflows(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right) => {
-                ConditionTerm::signed_shift_left_overflows(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector64SignedLessThan(left, right) => {
-                ConditionTerm::int64_signed_less_than(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector64SignedLessEqual(left, right) => {
-                ConditionTerm::int64_signed_less_equal(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector64SignedGreaterThan(left, right) => {
-                ConditionTerm::int64_signed_greater_than(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector64SignedGreaterEqual(left, right) => {
-                ConditionTerm::int64_signed_greater_equal(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector64UnsignedLessThan(left, right) => {
-                ConditionTerm::uint64_less_than(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector64UnsignedLessEqual(left, right) => {
-                ConditionTerm::uint64_less_equal(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector64UnsignedGreaterThan(left, right) => {
-                ConditionTerm::uint64_greater_than(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right) => {
-                ConditionTerm::uint64_greater_equal(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector64Equal(left, right) => ConditionTerm::int64_equal(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            ConditionTerm::Bitvector64SignedAddOverflows(left, right) => {
-                ConditionTerm::int64_signed_add_overflows(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector64SignedSubtractOverflows(left, right) => {
-                ConditionTerm::int64_signed_subtract_overflows(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right) => {
-                ConditionTerm::int64_signed_multiply_overflows(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector64SignedDivideOverflows(left, right) => {
-                ConditionTerm::int64_signed_divide_overflows(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
-                ConditionTerm::int64_signed_shift_left_overflows(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
             ConditionTerm::Float32(CFloatCondition::Comparison {
                 operator,
                 left,
@@ -1864,6 +1724,15 @@ impl PureFactContext {
             }
             ConditionTerm::IntegerNotEqual(left, right) => {
                 ConditionTerm::integer_not_equal(left.as_ref().clone(), right.as_ref().clone())
+            }
+            condition => {
+                let (op, left, right) = condition
+                    .as_bitvector_comparison()
+                    .expect("every other condition has its own arm");
+                op.build(
+                    self.simplify_bitvector_under_assumptions(left),
+                    self.simplify_bitvector_under_assumptions(right),
+                )
             }
         }
     }

@@ -85,7 +85,7 @@ pub(in crate::kernel) use term_operations::{
     int64_add_interval_fits, int64_subtract_interval_fits,
 };
 pub(crate) use term_operations::{listed_premise_holds, proposition_holds_without_facts};
-pub(crate) use term_shape::{BitvectorBinaryOp, BitvectorUnaryOp};
+pub(crate) use term_shape::{BitvectorBinaryOp, BitvectorComparisonOp, BitvectorUnaryOp};
 
 pub(super) const C_POINTER_BYTE_WIDTH: u32 = 8;
 
