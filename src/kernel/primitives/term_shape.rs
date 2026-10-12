@@ -228,6 +228,11 @@ impl Bitvector32Term {
 }
 
 impl BitvectorBinaryOp {
+    /// Whether the operator is a float operation.
+    pub(crate) fn is_float(self) -> bool {
+        matches!(self, Self::Float32(_) | Self::Float64(_))
+    }
+
     /// Whether the operator is one of the original 32-bit word operators.
     /// Some traversals rebuild exactly these as bare nodes.
     pub(crate) fn is_bitvector32(self) -> bool {
@@ -353,6 +358,11 @@ impl BitvectorBinaryOp {
 }
 
 impl BitvectorUnaryOp {
+    /// Whether the operator is a float negation.
+    pub(crate) fn is_float(self) -> bool {
+        matches!(self, Self::Float32Negate | Self::Float64Negate)
+    }
+
     /// Whether the operator is the original 32-bit word complement. Some
     /// traversals rebuild exactly the 32-bit word operators as bare nodes.
     pub(crate) fn is_bitvector32(self) -> bool {
