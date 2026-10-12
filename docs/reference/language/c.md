@@ -10,11 +10,12 @@ Click, this documentation calls that syntax a **C fragment**.
 
 ## C implementation target
 
-The default concrete target is `x86_64-linux-kernel`: the existing LP64 data
-layout with eight-bit, unsigned plain `char`. This follows the Linux kernel's
-explicit `-funsigned-char` build setting. The `x86_64-linux-userspace` target
-follows the x86-64 System V ABI, as GCC and Clang build it by default, where
-plain `char` is signed. The settings are centralized in `CTarget`; LP64 alone
+The default concrete target is `x86_64-linux-userspace`: the LP64 data layout
+of the x86-64 System V ABI, as GCC and Clang build it by default, with
+eight-bit, signed plain `char`. The `x86_64-linux-kernel` target has the same
+layout with unsigned plain `char`, following the Linux kernel's explicit
+`-funsigned-char` build setting; select it with `target "x86_64-linux-kernel";`
+or a `click.project.json` for kernel code. The settings are centralized in `CTarget`; LP64 alone
 does not imply char signedness. Under either target `char` remains a distinct
 C type from both `signed char` and `unsigned char`; only its values and its
 one-byte representation are those of `unsigned char` (kernel) or `signed
@@ -84,8 +85,7 @@ The accepted names are `x86_64-linux-kernel` and `x86_64-linux-userspace`; any
 other name is a parse error. A file declares at most one `target`, and every
 module of one project must agree on it, since a project is preprocessed once.
 Place the directive in the module that declares `verifying`. Without a
-directive the default target is selected, which is the unchanged behavior of
-every existing sidecar.
+directive the default target, `x86_64-linux-userspace`, is selected.
 
 The selected target and project configuration participate in the proof-artifact identity, so the same C
 and Click sources verified under different targets are different artifacts:

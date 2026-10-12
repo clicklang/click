@@ -4,8 +4,7 @@ Priority: P1.
 
 Soundness: soundness-adjacent. This file is a tracker. Items M1 (no
 independent checker), M2 (no written semantics) and M3 (`memcpy` reading under
-`viewable`) are trust questions without a known false acceptance. N3 tracks the `unsound` userspace-`char` bug, which carries its
-own label. Each item that becomes a reproduced false acceptance is filed in
+`viewable`) are trust questions without a known false acceptance. Each item that becomes a reproduced false acceptance is filed in
 `bugs/` with its own label.
 
 Depends on [smt-auto.md](smt-auto.md). Items P1–P4, W4 and W5 are expected to
@@ -419,18 +418,6 @@ Proposed fix: "verify one function in your project": include paths, `-D`
 flags, contracts for libc calls, and what to do when Click refuses a construct.
 
 Decision: open.
-
-### N3. The default C target is the Linux kernel's
-
-Today: the default is `x86_64-linux-kernel` with unsigned plain `char`
-(`docs/reference/language/c.md`); userspace code needs an explicit
-`target`. The userspace target also models plain `char` as unsigned, unlike
-the x86-64 System V ABI.
-
-Proposed fix: model signed plain `char` for the userspace target, then make
-it the default and have kernel examples name their target.
-
-Decision: fix.
 
 ### N4. Jargon load, and internal documents in the user book
 

@@ -647,7 +647,7 @@ fn c0_wide_static_initializers_use_checked_wide_values() {
 #[test]
 fn c0_plain_char_retains_source_types_and_unsigned_byte_lowering() {
     use syntax::C0Type;
-    let functions = syntax::parse_functions(
+    let functions = syntax::parse_functions_for_target(
         r#"
         typedef char byte;
         struct packet { byte tag; byte data[2]; byte *next; };
@@ -661,6 +661,7 @@ fn c0_plain_char_retains_source_types_and_unsigned_byte_lowering() {
         int fields(struct packet *p) { return p->data[0] + p->tag; }
         char *literal() { return "ok"; }
     "#,
+        crate::languages::c::target::CTarget::X86_64LinuxKernel,
     )
     .expect("plain char declarations and expressions should parse");
     let function = &functions[0];
@@ -774,9 +775,11 @@ fn c0_plain_char_inline_call_assignments_preserve_source_compatibility() {
 #[test]
 fn c0_plain_char_qualified_pointee_casts_preserve_read_only_views() {
     use syntax::{C0Expression, C0Statement, C0Type};
-    let functions =
-        syntax::parse_functions("const char *view(char *p) { return (const char *)p; }")
-            .expect("a const-qualified pointee cast should parse");
+    let functions = syntax::parse_functions_for_target(
+        "const char *view(char *p) { return (const char *)p; }",
+        crate::languages::c::target::CTarget::X86_64LinuxKernel,
+    )
+    .expect("a const-qualified pointee cast should parse");
     assert!(matches!(
         functions[0].body(),
         C0Statement::Return(
@@ -791,6 +794,7 @@ fn c0_plain_char_qualified_pointee_casts_preserve_read_only_views() {
 
     crate::surface::verify_c0_sources(
         r#"
+        target "x86_64-linux-kernel";
         verifying "cast.c";
         const char *view(char *p) { ensures result == p; }
         int read(char *p) {
@@ -855,6 +859,7 @@ fn c0_function_declarations_reject_conflicting_pointee_const_parameters() {
 fn c0_plain_char_unsigned_promotion_verifies() {
     crate::surface::verify_c0_sources(
         r#"
+        target "x86_64-linux-kernel";
         verifying "char.c";
         int promote() { ensures result == 256 by auto; }
         int compare() { ensures result == 1 by auto; }
@@ -866,8 +871,9 @@ fn c0_plain_char_unsigned_promotion_verifies() {
 #[test]
 fn c0_plain_char_explicit_byte_pointer_casts_preserve_source_identity() {
     use syntax::{C0Expression, C0Statement, C0Type};
-    let functions = syntax::parse_functions(
+    let functions = syntax::parse_functions_for_target(
         "char *to_char(unsigned char *q) { return (char *)q; } unsigned char *to_byte(char *p) { return (unsigned char *)p; }",
+        crate::languages::c::target::CTarget::X86_64LinuxKernel,
     ).expect("explicit casts between one-level byte pointers are valid C");
     for (function, expected) in functions.iter().zip([
         C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned),
@@ -879,6 +885,7 @@ fn c0_plain_char_explicit_byte_pointer_casts_preserve_source_identity() {
     }
     crate::surface::verify_c0_sources(
         r#"
+        target "x86_64-linux-kernel";
         verifying "cast.c";
         int to_char() { ensures result == 255 by auto; }
         int to_byte() { ensures result == 255 by auto; }

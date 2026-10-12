@@ -5424,6 +5424,18 @@ pub(crate) fn parse_functions_for_source(
         .parse_functions()
 }
 
+/// [`parse_functions`] under `target`, whose plain `char` signedness its
+/// types take.
+#[cfg(test)]
+pub(crate) fn parse_functions_for_target(
+    source: &str,
+    target: super::target::CTarget,
+) -> Result<Vec<C0Function>, C0SyntaxError> {
+    Parser::new(source, target.abi())?
+        .with_plain_char(target.plain_char())
+        .parse_functions()
+}
+
 pub fn parse_functions_for_abi(source: &str, abi: CAbi) -> Result<Vec<C0Function>, C0SyntaxError> {
     Parser::new(source, abi)?.parse_functions()
 }
