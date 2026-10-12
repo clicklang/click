@@ -14,6 +14,12 @@ the gate refreshes the import and verifies it.
 Most fixtures should stay small. Keep everything directly under `examples/`
 unless there is a concrete reason to add hierarchy.
 
+An example keeps its general proof and that proof's regressions. Per-case
+increments are useful while a proof is developed, but once a general proof
+subsumes an increment, delete the increment and point its mutation checks at
+the general proof
+([design/proof-reuse.md](../design/proof-reuse.md#r1-retire-superseded-increments-process)).
+
 ## Source provenance
 
 Examples have three distinct provenance classes:
