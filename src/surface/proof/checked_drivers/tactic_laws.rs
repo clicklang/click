@@ -331,8 +331,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         let lowered_exit_condition = lower_fixed_state_proposition(
             &exit_surface,
             available_pure_facts,
-            parsed_function.parameters(),
-            arguments,
+            ParameterBinding::new(parsed_function.parameters(), arguments),
             &initial_state,
             state,
             None,

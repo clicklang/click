@@ -750,8 +750,7 @@ fn advance_execution_proof_statement(
                         let lowered_exit_condition = lower_fixed_state_proposition(
                             &exit_condition,
                             &transition.pure_facts,
-                            environment.parsed_function.parameters(),
-                            environment.arguments,
+                            ParameterBinding::new(environment.parsed_function.parameters(), environment.arguments),
                             environment.initial_state,
                             exit_state,
                             None,
@@ -814,7 +813,7 @@ fn advance_execution_proof_statement(
                     return Err(ClickError::new(format!(
                         "execution proof traversal for {} statement({statement_index}) could not verify C operation: {}{}\nresource facts in context: {}",
                         environment.function_block.signature().name(),
-                        describe_runtime_error(&error, &[], &[]),
+                        describe_runtime_error(&error, ParameterBinding::default()),
                         crate::surface::diagnostics::describe_c_statement_site(),
                         context.state.resources().facts().len()
                     ))

@@ -403,8 +403,7 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
                         crate::surface::diagnostics::describe_click_proposition(requirement),
                         crate::surface::diagnostics::describe_pure_fact_spelled(
                             &guard,
-                            &parameters,
-                            &arguments,
+                            ParameterBinding::new(&parameters, &arguments),
                         ),
                     )
                 },
@@ -620,7 +619,7 @@ fn instantiate_integer_range_fold_theorem_application(
         {
             return Err(error(format!(
                 "required exact fold guard is unavailable: {}",
-                describe_pure_fact(premise, &[], &[])
+                describe_pure_fact(premise, ParameterBinding::default())
             )));
         }
     }
@@ -640,7 +639,6 @@ fn collect_conjunctive_guard_facts<'a>(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn resolve_generic_theorem_application(
     definition: &TheoremDefinition,
     application: &TheoremApplication,
@@ -683,7 +681,6 @@ fn resolve_generic_theorem_application(
     Ok(concrete)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definition(
     definition: &TheoremDefinition,
     application: &TheoremApplication,
@@ -717,7 +714,6 @@ pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definit
     generics::instantiate_theorem(definition, &substitution)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn theorem_application_argument_type(
     argument: &ContractExpression,
     assumptions: &PureFactContext,
@@ -989,8 +985,7 @@ pub(super) fn theorem_application_bindings(
                     describe_c0_type(parameter_type),
                     crate::surface::diagnostics::describe_c_value(
                         &value,
-                        &naming_parameters,
-                        &naming_arguments
+                        ParameterBinding::new(&naming_parameters, &naming_arguments)
                     ),
                     crate::kernel::c_type_spelling(value.c_type())
                 ));

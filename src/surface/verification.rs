@@ -2999,8 +2999,10 @@ fn verify_c0_sources_in_context(
                             function_block.signature.name(),
                             crate::surface::diagnostics::describe_runtime_error(
                                 &error,
-                                parsed_function.parameters(),
-                                &certification_arguments
+                                ParameterBinding::new(
+                                    parsed_function.parameters(),
+                                    &certification_arguments
+                                )
                             )
                         )));
                     }
@@ -3079,8 +3081,7 @@ fn verify_c0_sources_in_context(
                                 function_block.signature.name(),
                                 crate::surface::diagnostics::describe_storage_writes_outside_footprint(
                                     &outside,
-                                    parsed_function.parameters(),
-                                    &certification_arguments,
+                                    ParameterBinding::new(parsed_function.parameters(), &certification_arguments),
                                 )
                             )));
                         }
@@ -3152,8 +3153,10 @@ fn verify_c0_sources_in_context(
                         path_index,
                         path.effect_facts(),
                         &available_pure_facts,
-                        parsed_function.parameters(),
-                        &certification_arguments,
+                        ParameterBinding::new(
+                            parsed_function.parameters(),
+                            &certification_arguments,
+                        ),
                         &certification_state,
                         outcome,
                     )?;
@@ -3217,8 +3220,7 @@ fn verify_c0_sources_in_context(
                     contract_execution.reuse_unauthorized_premise(),
                     contract_execution.reuse_entry_resources(),
                     contract_execution.reuse_context_facts(),
-                    parsed_function.parameters(),
-                    &certification_arguments,
+                    ParameterBinding::new(parsed_function.parameters(), &certification_arguments),
                     &certification_state,
                 );
                 return Err(ClickError::new(
@@ -4524,8 +4526,7 @@ fn describe_unauthorized_entry_premise(
     premise: Option<&Proposition>,
     entry_resources: &[CResourceFact],
     context_facts: &[Proposition],
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
 ) -> String {
     use crate::surface::diagnostics::{
@@ -4534,19 +4535,18 @@ fn describe_unauthorized_entry_premise(
     let Some(premise) = premise else {
         return String::new();
     };
-    let described = crate::surface::proof::synthesize_surface_proposition(
-        premise, parameters, arguments, state,
-    )
-    .map_or_else(
-        || describe_pure_fact_spelled(premise, parameters, arguments),
-        |surface| describe_click_proposition(&surface),
-    );
+    let described =
+        crate::surface::proof::synthesize_surface_proposition(premise, parameter_binding, state)
+            .map_or_else(
+                || describe_pure_fact_spelled(premise, parameter_binding),
+                |surface| describe_click_proposition(&surface),
+            );
     // A loadability premise is a claim about the entry's memory resources;
     // name them, so the reader sees what the refused range was compared to.
     let held = if matches!(premise, Proposition::CMemoryLoadable { .. }) {
         format!(
             "; the contract entry holds {}",
-            describe_resource_facts(entry_resources, parameters, arguments)
+            describe_resource_facts(entry_resources, parameter_binding)
         )
     } else {
         String::new()
@@ -4557,12 +4557,7 @@ fn describe_unauthorized_entry_premise(
     let mut shown = context_facts
         .iter()
         .filter(|fact| !crate::kernel::is_load_variable_defining_fact(fact))
-        .map(|fact| {
-            format!(
-                "`{}`",
-                describe_pure_fact_spelled(fact, parameters, arguments)
-            )
-        })
+        .map(|fact| format!("`{}`", describe_pure_fact_spelled(fact, parameter_binding)))
         .collect::<Vec<_>>();
     let hidden = shown.len().saturating_sub(SHOWN_CONTEXT_FACTS);
     shown.truncate(SHOWN_CONTEXT_FACTS);

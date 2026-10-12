@@ -1418,8 +1418,7 @@ impl<'a> Proof<'a> {
         let checked = open_composite_resource_for_proof(
             context.resource_environment,
             &resource,
-            context.parsed_function.parameters(),
-            context.arguments,
+            context.parameter_binding(),
             (*execution.core.state).clone(),
             self.facts().clone(),
             &mut execution.presentation.surface_propositions,

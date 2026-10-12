@@ -14042,7 +14042,6 @@ impl Parser {
     /// elements it lists, and, when `zero_omitted`, the zero stores of every
     /// element it leaves out. A caller whose declaration zero-fills the array
     /// passes `false`, so an omitted element costs nothing.
-    #[allow(clippy::too_many_arguments)]
     fn parse_embedded_struct_array_initializer_level(
         &mut self,
         target_pointer: C0Expression,

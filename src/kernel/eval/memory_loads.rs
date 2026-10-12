@@ -136,7 +136,6 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
 /// splitting into the cases a C execution would have to choose between. The
 /// one-term spec load rule already governs the non-symbolic spec path in
 /// `crate::kernel::spec`; this is the same rule on the symbolic one.
-#[allow(clippy::too_many_arguments)]
 pub(in crate::kernel) fn evaluate_spec_memory_load_paths(
     memory: &CMemory,
     pointer: Pointer,
@@ -1320,7 +1319,6 @@ fn evaluate_c_memory_load_case(
 /// path's value; nothing is named by it. Only a program read asks: a
 /// specification read denotes the named snapshot's value, and a volatile one
 /// may observe a write no recorded step made.
-#[allow(clippy::too_many_arguments)]
 fn cell_value_recorded_on_path(
     memory: &CMemory,
     pointer: &Pointer,

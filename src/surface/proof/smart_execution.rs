@@ -226,8 +226,7 @@ impl<'a> Proof<'a> {
             &target_kernel,
             &self.facts().to_vec(),
             &transition_facts,
-            context.parsed_function.parameters(),
-            context.arguments,
+            context.parameter_binding(),
             execution.view(context),
             &execution.core.state,
             context.spec_definitions,
@@ -374,8 +373,7 @@ impl<'a> Proof<'a> {
         };
         self.select_theorem_application_step_in_fixed_state(
             application,
-            context.parameters,
-            context.arguments,
+            context.parameter_binding,
             context.pre_state,
             context.state,
             context.result,
@@ -406,8 +404,7 @@ impl<'a> Proof<'a> {
             context.old_reference_state(&execution.core.frontier, &execution.core.state);
         self.select_theorem_application_step_in_fixed_state(
             application,
-            context.parsed_function.parameters(),
-            context.arguments,
+            context.parameter_binding(),
             pre_state,
             &execution.core.state,
             None,
@@ -495,8 +492,7 @@ impl<'a> Proof<'a> {
                 let (parameters, arguments) = self.diagnostic_naming_tables();
                 let instantiation = crate::surface::diagnostics::describe_stated_fact(
                     requirement,
-                    &parameters,
-                    &arguments,
+                    ParameterBinding::new(&parameters, &arguments),
                 );
                 crate::surface::proof::theorem_application::describe_unavailable_theorem_requirement_spelled(
                     &application.name,
@@ -598,8 +594,7 @@ impl<'a> Proof<'a> {
                     .expect("a focused outcome judgment resolves its fixed-state view");
                 self.select_theorem_application_step_in_fixed_state(
                     application,
-                    view.parameters,
-                    view.arguments,
+                    view.parameter_binding,
                     view.pre_state,
                     view.state,
                     view.result,
@@ -636,8 +631,7 @@ impl<'a> Proof<'a> {
     pub(super) fn select_theorem_application_step_in_fixed_state(
         &self,
         application: &TheoremApplication,
-        parameters: &[syntax::C0Parameter],
-        arguments: &[CExpression],
+        parameter_binding: ParameterBinding<'_>,
         pre_state: &CState,
         state: &CState,
         result: Option<&CValue>,
@@ -651,13 +645,14 @@ impl<'a> Proof<'a> {
         // once its source binding has been replaced with a kernel value.
         let written_application = application;
         let application = &self.resolve_theorem_application(application)?;
-        let values = parameter_values(parameters, arguments).map_err(|error| {
+        let values = parameter_values(parameter_binding).map_err(|error| {
             self.step_error(format!(
                 "could not bind theorem arguments: {}",
                 error.message
             ))
         })?;
-        let array_refs = array_refs_for_parameters(parameters, &values, state.memory());
+        let array_refs =
+            array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
         let (values, array_refs) = contract_environment_at_state(&values, &array_refs, state);
         let integer_values = crate::persistent::PersistentMap::default();
         let algebraic_values = application
@@ -682,7 +677,7 @@ impl<'a> Proof<'a> {
             result,
             recorded_snapshots,
             integer_values: &integer_values,
-            pointer_element_widths: parameter_pointer_element_widths(parameters),
+            pointer_element_widths: parameter_pointer_element_widths(parameter_binding.parameters),
         };
         let unfolded_predicates = self.active_unfolded_predicates();
         let mut lowering_assumptions = self.facts().assumptions().clone();
@@ -795,8 +790,7 @@ impl<'a> Proof<'a> {
                     SurfaceFactMatch::CanonicalExact,
                     self.facts(),
                     &lowering_assumptions,
-                    parameters,
-                    arguments,
+                    parameter_binding,
                     state,
                     spec_definitions,
                 ) {
@@ -816,13 +810,13 @@ impl<'a> Proof<'a> {
                 .cloned()
                 .collect::<Vec<_>>();
             if let Some(candidate) =
-                synthesize_surface_proposition(&matched, parameters, arguments, state)
+                synthesize_surface_proposition(&matched, parameter_binding, state)
                 && !candidates.contains(&candidate)
             {
                 candidates.push(candidate);
             }
             if let Some(candidate) =
-                synthesize_surface_proposition(&requirement, parameters, arguments, state)
+                synthesize_surface_proposition(&requirement, parameter_binding, state)
                 && !candidates.contains(&candidate)
             {
                 candidates.push(candidate);
@@ -852,8 +846,7 @@ impl<'a> Proof<'a> {
                     let direct = lower_fixed_state_proposition_with_assumptions(
                         candidate,
                         &lowering_assumptions,
-                        parameters,
-                        arguments,
+                        parameter_binding,
                         pre_state,
                         state,
                         result,

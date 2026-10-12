@@ -281,8 +281,7 @@ impl<'a> Proof<'a> {
                 lower_fixed_state_proposition_with_algebraic_values(
                     &surface,
                     self.facts().assumptions(),
-                    context.parameters,
-                    context.arguments,
+                    context.parameter_binding,
                     context.pre_state,
                     context.state,
                     context.result,
@@ -336,8 +335,7 @@ impl<'a> Proof<'a> {
                 lower_fixed_state_proposition_with_algebraic_values(
                     &surface,
                     self.facts().assumptions(),
-                    view.parameters,
-                    view.arguments,
+                    view.parameter_binding,
                     view.pre_state,
                     view.state,
                     view.result,
@@ -365,8 +363,7 @@ impl<'a> Proof<'a> {
                 lower_fixed_state_proposition_with_algebraic_values(
                     &surface,
                     self.facts().assumptions(),
-                    context.parsed_function.parameters(),
-                    context.arguments,
+                    context.parameter_binding(),
                     pre_state,
                     &execution.core.state,
                     None,
@@ -457,8 +454,7 @@ impl<'a> Proof<'a> {
                 lower_fixed_state_proposition_with_algebraic_values(
                     &surface,
                     self.facts().assumptions(),
-                    context.parameters,
-                    context.arguments,
+                    context.parameter_binding,
                     context.pre_state,
                     context.state,
                     context.result,
@@ -484,8 +480,7 @@ impl<'a> Proof<'a> {
                 lower_fixed_state_proposition_with_algebraic_values(
                     &surface,
                     self.facts().assumptions(),
-                    view.parameters,
-                    view.arguments,
+                    view.parameter_binding,
                     view.pre_state,
                     view.state,
                     view.result,
@@ -513,8 +508,7 @@ impl<'a> Proof<'a> {
                 lower_fixed_state_proposition_with_algebraic_values(
                     &surface,
                     self.facts().assumptions(),
-                    context.parsed_function.parameters(),
-                    context.arguments,
+                    context.parameter_binding(),
                     pre_state,
                     &execution.core.state,
                     None,
@@ -635,8 +629,7 @@ impl<'a> Proof<'a> {
                 lower_fixed_state_proposition_with_assumptions_recording_introductions(
                     &surface,
                     self.facts().assumptions(),
-                    context.parameters,
-                    context.arguments,
+                    context.parameter_binding,
                     context.pre_state,
                     context.state,
                     context.result,
@@ -660,8 +653,7 @@ impl<'a> Proof<'a> {
                 lower_fixed_state_proposition_with_assumptions_recording_introductions(
                     &surface,
                     self.facts().assumptions(),
-                    view.parameters,
-                    view.arguments,
+                    view.parameter_binding,
                     view.pre_state,
                     view.state,
                     view.result,

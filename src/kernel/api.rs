@@ -5008,7 +5008,6 @@ pub fn prove_symbolic_c_function_contract_verification_paths_with_environment(
 
 /// Executes one whole-function judgment and retains its exact authority inputs
 /// together with the resulting frontier for later contract certification.
-#[allow(clippy::too_many_arguments)]
 pub fn prove_checked_c_function_execution_with_environment(
     state: CState,
     function: CFunction,
@@ -6325,7 +6324,6 @@ pub(crate) fn population_observations_equal(left: &CState, right: &CState) -> bo
 /// intend to package reusable function rules must supply an entry representing
 /// the declared input domain, as Surface's `initial_call_state` does. See
 /// `docs/internals/kernel.md`, "Source obligations and checked evidence".
-#[allow(clippy::too_many_arguments)]
 pub fn prove_c_function_contract_execution_paths_with_checked_artifacts(
     state: CState,
     function: CFunction,

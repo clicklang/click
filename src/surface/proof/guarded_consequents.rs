@@ -390,8 +390,7 @@ impl GuardedTermSpeller<'_, '_> {
         if !self.bound.is_empty()
             && let Some(whole) = synthesize_surface_proposition_with_bound_variable_names(
                 proposition,
-                self.view.parameters,
-                self.view.arguments,
+                self.view.parameter_binding,
                 self.view.state,
                 &self.bound,
             )
@@ -518,8 +517,7 @@ impl GuardedTermSpeller<'_, '_> {
             .or_else(|| {
                 synthesize_surface_machine_expression(
                     term,
-                    self.view.parameters,
-                    self.view.arguments,
+                    self.view.parameter_binding,
                     self.view.state,
                 )
             })
@@ -529,8 +527,7 @@ impl GuardedTermSpeller<'_, '_> {
                 self.preferred_snapshots().find_map(|(selector, state)| {
                     let expression = synthesize_surface_machine_expression(
                         term,
-                        self.view.parameters,
-                        self.view.arguments,
+                        self.view.parameter_binding,
                         state,
                     )?;
                     Some(ContractExpression::At {

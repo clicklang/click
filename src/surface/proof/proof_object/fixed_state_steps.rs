@@ -518,8 +518,7 @@ impl<'a> Proof<'a> {
             view.claim_label,
             view.tactic_index,
             self.facts(),
-            view.parameters,
-            view.arguments,
+            view.parameter_binding,
             view.pre_state,
             view.state,
             view.result,
@@ -576,8 +575,7 @@ impl<'a> Proof<'a> {
             context.claim_label,
             context.tactic_index,
             self.facts(),
-            context.parsed_function.parameters(),
-            context.arguments,
+            context.parameter_binding(),
             &pre_state,
             &execution.core.state,
             None,
@@ -832,6 +830,7 @@ impl<'a> Proof<'a> {
                     ProofContext::FixedState(context) => {
                         context.state.locals().contains_name(name)
                             || context
+                                .parameter_binding
                                 .parameters
                                 .iter()
                                 .any(|parameter| parameter.name() == name)
@@ -1016,8 +1015,7 @@ impl<'a> Proof<'a> {
                 leaf => {
                     let Some(surface) = crate::surface::proof::surface_synthesis::synthesize_source_projection_proposition_with_bound_variable_names(
                         &leaf,
-                        view.parameters,
-                        view.arguments,
+                        view.parameter_binding,
                         entry_state,
                         &bound_names,
                     ) else {
@@ -1035,8 +1033,7 @@ impl<'a> Proof<'a> {
                     let lowered = lower_fixed_state_proposition_with_assumptions(
                         &validation_surface,
                         self.facts().assumptions(),
-                        view.parameters,
-                        view.arguments,
+                        view.parameter_binding,
                         view.pre_state,
                         view.pre_state,
                         None,
@@ -1232,8 +1229,7 @@ impl<'a> Proof<'a> {
                     let Some(surface) =
                         crate::surface::proof::surface_synthesis::synthesize_source_projection_proposition_with_bound_variable_names(
                             &leaf,
-                            view.parameters,
-                            view.arguments,
+                            view.parameter_binding,
                             entry_state,
                             &bound_names,
                         )
@@ -1260,8 +1256,7 @@ impl<'a> Proof<'a> {
                     let lowered = lower_fixed_state_proposition_with_assumptions(
                         &validation_surface,
                         self.facts().assumptions(),
-                        view.parameters,
-                        view.arguments,
+                        view.parameter_binding,
                         view.pre_state,
                         view.pre_state,
                         None,
@@ -1509,9 +1504,13 @@ impl<'a> Proof<'a> {
             self.facts().assumptions(),
         )
         .map_err(|message| self.step_error(format!("could not unfold witness goal: {message}")))?;
-        let values = parameter_values(view.parameters, view.arguments)
+        let values = parameter_values(view.parameter_binding)
             .map_err(|error| self.step_error(error.message))?;
-        let array_refs = array_refs_for_parameters(view.parameters, &values, view.state.memory());
+        let array_refs = array_refs_for_parameters(
+            view.parameter_binding.parameters,
+            &values,
+            view.state.memory(),
+        );
         let (values, array_refs) = contract_environment_at_state(&values, &array_refs, view.state);
         let checked_witness = ProofWitness::single(
             witness.name().to_string(),
@@ -2186,10 +2185,13 @@ impl<'a> Proof<'a> {
                     );
                 }
             };
-            let parameter_values = parameter_values(view.parameters, view.arguments)
+            let parameter_values = parameter_values(view.parameter_binding)
                 .map_err(|error| self.step_error(error.message))?;
-            let array_refs =
-                array_refs_for_parameters(view.parameters, &parameter_values, view.state.memory());
+            let array_refs = array_refs_for_parameters(
+                view.parameter_binding.parameters,
+                &parameter_values,
+                view.state.memory(),
+            );
             let (values, array_refs) =
                 contract_environment_at_state(&parameter_values, &array_refs, view.state);
             let algebraic_values = contract_expression_referenced_names(&argument)
@@ -2294,13 +2296,14 @@ impl<'a> Proof<'a> {
                     self.step_error(format!(
                         "`instantiate` without `using` needs each instantiated guard as an exact fact, and `{}` is not one; prove it first with `have`, or list the facts it follows from with `using {{ ... }}`",
                         crate::surface::diagnostics::describe_pure_fact_spelled(
-                            &missing, &names, &values
+                            &missing,
+                            ParameterBinding::new(&names, &values),
                         ),
                     ))
                 }
                 PropositionCloseError::InstantiateInvalid(message) => self.step_error(format!(
                     "`instantiate` failed: {}",
-                    format_forall_int32_instantiation_error(message, &[], &[])
+                    format_forall_int32_instantiation_error(message, ParameterBinding::default())
                 )),
                 _ => unreachable!("kernel returned an unrelated instantiate error"),
             })
@@ -2374,9 +2377,11 @@ impl<'a> Proof<'a> {
             ProofContext::Pure(context) => {
                 crate::surface::diagnostics::value_naming_tables(&context.theorem_context.values)
             }
-            ProofContext::FixedState(context) => {
-                with_locals(context.state, context.parameters, context.arguments)
-            }
+            ProofContext::FixedState(context) => with_locals(
+                context.state,
+                context.parameter_binding.parameters,
+                context.parameter_binding.arguments,
+            ),
             ProofContext::Execution(context) => match self.execution() {
                 Some(execution) => with_locals(
                     &execution.core.state,
@@ -2433,8 +2438,7 @@ impl<'a> Proof<'a> {
                 lower_fixed_state_proposition_with_assumptions(
                     &self.substitute_fixed_state_locals_in_proposition(surface_equality)?,
                     self.facts().assumptions(),
-                    view.parameters,
-                    view.arguments,
+                    view.parameter_binding,
                     view.pre_state,
                     view.state,
                     view.result,
@@ -2465,8 +2469,8 @@ impl<'a> Proof<'a> {
         self.finish_rewrite(goal, equality, surface_equality, || {
             let (mut parameters, mut arguments) =
                 crate::surface::diagnostics::local_naming_tables(view.state);
-            parameters.extend(view.parameters.iter().cloned());
-            arguments.extend(view.arguments.iter().cloned());
+            parameters.extend(view.parameter_binding.parameters.iter().cloned());
+            arguments.extend(view.parameter_binding.arguments.iter().cloned());
             (parameters, arguments)
         })
     }
@@ -2498,8 +2502,7 @@ impl<'a> Proof<'a> {
                         &goal,
                         &[equality.as_ref()],
                         "the equality was stated",
-                        &parameters,
-                        &arguments,
+                        ParameterBinding::new(&parameters, &arguments),
                     )
                 {
                     reason.push_str(&format!("\n  {mismatch}"));
@@ -2547,7 +2550,7 @@ impl<'a> Proof<'a> {
         self.state.apply_extract(proposition).map_err(|error| match error {
             PropositionCloseError::ExtractUnavailable(proposition) => self.step_error(format!(
                 "`extract` proposition is not a proper conjunct, a discharged implication consequent, or a field equality of an exact same-constructor equality: {}",
-                describe_pure_fact(&proposition, &[], &[])
+                describe_pure_fact(&proposition, ParameterBinding::default())
             )),
             PropositionCloseError::Unavailable => {
                 self.step_error("`extract` requires an open proof branch")
@@ -2751,8 +2754,7 @@ impl<'a> Proof<'a> {
             claim_label: context.claim_label,
             tactic_index: context.tactic_index,
             effect_facts: &execution.core.effect_facts,
-            parameters: context.parsed_function.parameters(),
-            arguments: context.arguments,
+            parameter_binding: context.parameter_binding(),
             pre_state: context.old_reference_state(&execution.core.frontier, &execution.core.state),
             state: &execution.core.state,
             result: None,
@@ -2990,8 +2992,10 @@ impl<'a> Proof<'a> {
                             query.with_kernel_checked_fact(fact.clone())
                         });
                         lower_outcome_proposition_with_recorded_snapshots(
-                            context.parsed_function.parameters(),
-                            context.arguments,
+                            ParameterBinding::new(
+                                context.parsed_function.parameters(),
+                                context.arguments,
+                            ),
                             &pre_state,
                             state,
                             value,
@@ -3002,8 +3006,10 @@ impl<'a> Proof<'a> {
                         )
                     } else {
                         lower_outcome_proposition_with_recorded_snapshots(
-                            context.parsed_function.parameters(),
-                            context.arguments,
+                            ParameterBinding::new(
+                                context.parsed_function.parameters(),
+                                context.arguments,
+                            ),
                             &pre_state,
                             state,
                             value,
@@ -3129,8 +3135,7 @@ impl<'a> Proof<'a> {
                 OutcomeEffectContext::Path => data.core.effect_facts.as_ref(),
                 OutcomeEffectContext::Frontier => &execution.core.effect_facts,
             },
-            parameters: context.parsed_function.parameters(),
-            arguments: context.arguments,
+            parameter_binding: context.parameter_binding(),
             pre_state: context.old_reference_state(&execution.core.frontier, &execution.core.state),
             state: &data.core.state,
             result: Some(data.core.result.as_ref()),
@@ -3589,8 +3594,7 @@ impl<'a> Proof<'a> {
             held_any = true;
             let described = crate::surface::diagnostics::describe_memory_range(
                 range,
-                context.parameters,
-                context.arguments,
+                context.parameter_binding,
             );
             // A range over another parameter renders against this one's base
             // as a pointer difference, which is both wrong for the reader and
@@ -3745,8 +3749,7 @@ impl<'a> Proof<'a> {
             view.tactic_index,
             self.facts(),
             view.effect_facts,
-            view.parameters,
-            view.arguments,
+            view.parameter_binding,
             view.pre_state,
             view.state,
             view.result,
@@ -3827,8 +3830,7 @@ impl<'a> Proof<'a> {
             context.tactic_index,
             self.facts(),
             &execution.core.effect_facts,
-            context.parsed_function.parameters(),
-            context.arguments,
+            context.parameter_binding(),
             &pre_state,
             &execution.core.state,
             None,

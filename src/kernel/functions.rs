@@ -12139,7 +12139,6 @@ fn compatible_resource_and_effect_interfaces(
 /// implementation requirement and its entry/recovery evidence was checked.
 /// `Some(false)` is an explicit view-to-own refusal.  `None` means the two
 /// interfaces have no access-mode variance that this adapter handles.
-#[allow(clippy::too_many_arguments)]
 fn checked_access_mode_refinement_adapter(
     contract: &CFunctionContractInterface,
     function: &CFunctionContractInterface,
@@ -30916,7 +30915,6 @@ pub(crate) fn unreturned_allocation_at_function_exit(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn function_outcome_from_body_changing_quantities(
     caller_state: &CState,
     function: &CFunction,

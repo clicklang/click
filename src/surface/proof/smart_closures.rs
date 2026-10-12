@@ -4075,12 +4075,8 @@ impl<'a> Proof<'a> {
                 return Some(anchored);
             }
             if let Some(view) = self.premise_fixed_state_view()
-                && let Some(surface) = synthesize_surface_proposition(
-                    kernel,
-                    view.parameters,
-                    view.arguments,
-                    view.pre_state,
-                )
+                && let Some(surface) =
+                    synthesize_surface_proposition(kernel, view.parameter_binding, view.pre_state)
                 && let Ok(anchored) = surface_at_snapshot(&surface, &function_entry)
                 && matches_kernel(&anchored).is_some()
             {
@@ -4102,13 +4098,17 @@ impl<'a> Proof<'a> {
             && let Some((parameters, arguments, recorded_snapshots)) = match self.context.as_ref() {
                 ProofContext::Pure(_) => None,
                 ProofContext::FixedState(context) => Some((
-                    context.parameters,
-                    context.arguments,
+                    context.parameter_binding.parameters,
+                    context.parameter_binding.arguments,
                     context.recorded_snapshots,
                 )),
-                ProofContext::Execution(_) => self
-                    .premise_fixed_state_view()
-                    .map(|view| (view.parameters, view.arguments, view.recorded_snapshots)),
+                ProofContext::Execution(_) => self.premise_fixed_state_view().map(|view| {
+                    (
+                        view.parameter_binding.parameters,
+                        view.parameter_binding.arguments,
+                        view.recorded_snapshots,
+                    )
+                }),
             }
             && let Some(anchored) = crate::instrumentation::measure_operation(
                 "surface",
@@ -4117,8 +4117,7 @@ impl<'a> Proof<'a> {
                 || {
                     synthesize_surface_at_recorded_snapshots(
                         kernel,
-                        parameters,
-                        arguments,
+                        ParameterBinding::new(parameters, arguments),
                         recorded_snapshots,
                         anchor,
                     )
@@ -4140,18 +4139,25 @@ impl<'a> Proof<'a> {
             let synthesis_context = match self.context.as_ref() {
                 ProofContext::Pure(_) => None,
                 ProofContext::FixedState(context) => Some((
-                    context.parameters,
-                    context.arguments,
+                    context.parameter_binding.parameters,
+                    context.parameter_binding.arguments,
                     context.recorded_snapshots,
                 )),
-                ProofContext::Execution(_) => self
-                    .premise_fixed_state_view()
-                    .map(|view| (view.parameters, view.arguments, view.recorded_snapshots)),
+                ProofContext::Execution(_) => self.premise_fixed_state_view().map(|view| {
+                    (
+                        view.parameter_binding.parameters,
+                        view.parameter_binding.arguments,
+                        view.recorded_snapshots,
+                    )
+                }),
             };
             if let Some((parameters, arguments, recorded_snapshots)) = synthesis_context
                 && let Some(state) = recorded_snapshots.get(anchor)
-                && let Some(surface) =
-                    synthesize_surface_proposition(kernel, parameters, arguments, state)
+                && let Some(surface) = synthesize_surface_proposition(
+                    kernel,
+                    ParameterBinding::new(parameters, arguments),
+                    state,
+                )
                 && let Ok(anchored) = surface_at_snapshot(&surface, anchor)
                 && matches_kernel(&anchored).is_some()
             {
@@ -4308,8 +4314,7 @@ impl<'a> Proof<'a> {
             let state = CState::new().with_memory(context.theorem_context.memory.clone());
             if let Some(surface) = synthesize_surface_proposition_with_bound_variable_names(
                 kernel,
-                &[],
-                &[],
+                ParameterBinding::default(),
                 &state,
                 &bindings,
             ) && matches_kernel(&surface).is_some()
@@ -4326,15 +4331,15 @@ impl<'a> Proof<'a> {
         let synthesis_context = match self.context.as_ref() {
             ProofContext::Pure(_) => None,
             ProofContext::FixedState(context) => Some((
-                context.parameters,
-                context.arguments,
+                context.parameter_binding.parameters,
+                context.parameter_binding.arguments,
                 context.state,
                 context.recorded_snapshots,
             )),
             ProofContext::Execution(_) => self.premise_fixed_state_view().map(|view| {
                 (
-                    view.parameters,
-                    view.arguments,
+                    view.parameter_binding.parameters,
+                    view.parameter_binding.arguments,
                     view.state,
                     view.recorded_snapshots,
                 )
@@ -4354,8 +4359,7 @@ impl<'a> Proof<'a> {
             .collect::<BTreeMap<_, _>>();
         if let Some(surface) = synthesize_surface_proposition_with_bound_variable_names(
             kernel,
-            parameters,
-            arguments,
+            ParameterBinding::new(parameters, arguments),
             state,
             &bound_variable_names,
         ) && matches_kernel(&surface).is_some()
@@ -4376,8 +4380,7 @@ impl<'a> Proof<'a> {
             || {
                 synthesize_surface_at_recorded_snapshots(
                     kernel,
-                    parameters,
-                    arguments,
+                    ParameterBinding::new(parameters, arguments),
                     recorded_snapshots,
                     premise_anchor,
                 )
@@ -5540,8 +5543,7 @@ impl<'a> Proof<'a> {
                 ProofContext::FixedState(context) => {
                     synthesize_surface_proposition_with_bound_variable_names(
                         fact,
-                        context.parameters,
-                        context.arguments,
+                        context.parameter_binding,
                         context.state,
                         &bound_variable_names,
                     )
@@ -5550,8 +5552,7 @@ impl<'a> Proof<'a> {
                     let view = execution_view.as_ref()?;
                     synthesize_surface_proposition_with_bound_variable_names(
                         fact,
-                        view.parameters,
-                        view.arguments,
+                        view.parameter_binding,
                         view.state,
                         &bound_variable_names,
                     )
@@ -5635,18 +5636,12 @@ impl<'a> Proof<'a> {
                 ProofContext::Pure(_) => None,
                 ProofContext::FixedState(context) => synthesize_surface_proposition(
                     &quantified,
-                    context.parameters,
-                    context.arguments,
+                    context.parameter_binding,
                     context.state,
                 ),
                 ProofContext::Execution(_) => {
                     let view = execution_view?;
-                    synthesize_surface_proposition(
-                        &quantified,
-                        view.parameters,
-                        view.arguments,
-                        view.state,
-                    )
+                    synthesize_surface_proposition(&quantified, view.parameter_binding, view.state)
                 }
             };
             if let Some(synthesized) = synthesized
@@ -6040,12 +6035,9 @@ impl<'a> Proof<'a> {
         let anchor_state = view.recorded_snapshots.get(anchor)?;
         let mut anchored_candidates = Vec::new();
         for (kernel, _) in premise_pairs.iter().chain(&source_pairs) {
-            let Some(surface) = synthesize_surface_proposition(
-                kernel,
-                view.parameters,
-                view.arguments,
-                anchor_state,
-            ) else {
+            let Some(surface) =
+                synthesize_surface_proposition(kernel, view.parameter_binding, anchor_state)
+            else {
                 continue;
             };
             let Ok(surface) = surface_at_snapshot(&surface, anchor) else {
@@ -6945,7 +6937,10 @@ impl<'a> Proof<'a> {
                         "the negation of an internal {} goal with no Click spelling",
                         condition_kind(condition)
                     ),
-                    _ => format!("the goal {}", describe_pure_fact(goal, &[], &[])),
+                    _ => format!(
+                        "the goal {}",
+                        describe_pure_fact(goal, ParameterBinding::default())
+                    ),
                 })
             })
             .unwrap_or_else(|| "a goal that is not a proposition".into());
@@ -6986,7 +6981,12 @@ impl<'a> Proof<'a> {
             .or_else(|| self.execution_fixed_state_view());
         let (parameters, arguments) = names
             .as_ref()
-            .map(|view| (view.parameters, view.arguments))
+            .map(|view| {
+                (
+                    view.parameter_binding.parameters,
+                    view.parameter_binding.arguments,
+                )
+            })
             .unwrap_or((&[], &[]));
         if !crate::kernel::resource_tracker::reads_any_resource(goal) {
             return None;
@@ -6996,8 +6996,7 @@ impl<'a> Proof<'a> {
             goal,
             &premises,
             "the available fact was stated",
-            parameters,
-            arguments,
+            ParameterBinding::new(parameters, arguments),
         )
     }
 
@@ -7628,8 +7627,10 @@ impl<'a> Proof<'a> {
                     let synthesize_candidate = || {
                         synthesize_surface_proposition(
                             &requirement.proposition,
-                            context.parsed_function.parameters(),
-                            context.arguments,
+                            ParameterBinding::new(
+                                context.parsed_function.parameters(),
+                                context.arguments,
+                            ),
                             &execution.core.state,
                         )
                     };
@@ -8732,8 +8733,7 @@ fn requirement_uses_planning_compatibility(
 /// The cross-snapshot equality fallback sees only the already visited points.
 pub(super) fn synthesize_surface_at_recorded_snapshots<'a>(
     kernel: &'a Proposition,
-    parameters: &'a [syntax::C0Parameter],
-    arguments: &'a [CExpression],
+    parameter_binding: ParameterBinding<'a>,
     recorded_snapshots: &'a RecordedSnapshots,
     anchor: &ProgramPointRef,
 ) -> impl Iterator<Item = ClickProposition> + 'a {
@@ -8762,8 +8762,7 @@ pub(super) fn synthesize_surface_at_recorded_snapshots<'a>(
                 return None;
             }
             points.push((point.clone(), state));
-            if let Some(surface) =
-                synthesize_surface_proposition(kernel, parameters, arguments, state)
+            if let Some(surface) = synthesize_surface_proposition(kernel, parameter_binding, state)
                 && let Ok(surface) = surface_at_snapshot(&surface, point)
             {
                 return Some(surface);
@@ -8773,7 +8772,7 @@ pub(super) fn synthesize_surface_at_recorded_snapshots<'a>(
         if crate::instrumentation::deadline_exceeded() {
             return None;
         }
-        synthesize_surface_equality_across_points(kernel, parameters, arguments, &points)
+        synthesize_surface_equality_across_points(kernel, parameter_binding, &points)
     })
 }
 
@@ -8841,8 +8840,7 @@ mod synthesized_literal_tests {
                 ),
                 true,
             ),
-            function.parameters(),
-            &[],
+            ParameterBinding::new(function.parameters(), &[]),
             &state,
             &state,
             &snapshots,

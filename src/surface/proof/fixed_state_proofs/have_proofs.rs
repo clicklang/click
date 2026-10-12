@@ -52,8 +52,7 @@ fn drop_spec_proposition_iteratively(proposition: SpecProposition) {
 pub(in crate::surface::proof) fn lower_fixed_state_proposition(
     proposition: &ClickProposition,
     available: &[Proposition],
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     pre_state: &CState,
     state: &CState,
     result: Option<&CValue>,
@@ -64,8 +63,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition(
     lower_fixed_state_proposition_with_assumptions(
         proposition,
         &assumptions,
-        parameters,
-        arguments,
+        parameter_binding,
         pre_state,
         state,
         result,
@@ -83,8 +81,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition(
 pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions(
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     pre_state: &CState,
     state: &CState,
     result: Option<&CValue>,
@@ -94,8 +91,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions(
     lower_fixed_state_proposition_with_assumptions_recording_introductions(
         proposition,
         assumptions,
-        parameters,
-        arguments,
+        parameter_binding,
         pre_state,
         state,
         result,
@@ -113,8 +109,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions(
 pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_values(
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     pre_state: &CState,
     state: &CState,
     result: Option<&CValue>,
@@ -123,8 +118,9 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_va
     recorded_snapshots: &RecordedSnapshots,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
-    let values = parameter_values(parameters, arguments).map_err(|error| error.message)?;
-    let array_refs = array_refs_for_parameters(parameters, &values, state.memory());
+    let values = parameter_values(parameter_binding).map_err(|error| error.message)?;
+    let array_refs =
+        array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
     let (values, array_refs) = contract_environment_at_state(&values, &array_refs, state);
     lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_algebraic_values(
         proposition,
@@ -139,7 +135,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_va
         recorded_snapshots,
         spec_definitions,
         &BTreeSet::new(),
-        parameter_pointer_element_widths(parameters),
+        parameter_pointer_element_widths(parameter_binding.parameters),
     )
 }
 
@@ -151,8 +147,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_va
 pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_integer_values(
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     pre_state: &CState,
     state: &CState,
     result: Option<&CValue>,
@@ -160,8 +155,9 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_integer_valu
     recorded_snapshots: &RecordedSnapshots,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
-    let values = parameter_values(parameters, arguments).map_err(|error| error.message)?;
-    let array_refs = array_refs_for_parameters(parameters, &values, state.memory());
+    let values = parameter_values(parameter_binding).map_err(|error| error.message)?;
+    let array_refs =
+        array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
     let (values, array_refs) = contract_environment_at_state(&values, &array_refs, state);
     lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_integer_values(
         proposition,
@@ -175,7 +171,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_integer_valu
         recorded_snapshots,
         spec_definitions,
         &BTreeSet::new(),
-        parameter_pointer_element_widths(parameters),
+        parameter_pointer_element_widths(parameter_binding.parameters),
     )
 }
 
@@ -185,16 +181,16 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_integer_valu
 pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions_recording_introductions(
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     pre_state: &CState,
     state: &CState,
     result: Option<&CValue>,
     recorded_snapshots: &RecordedSnapshots,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
-    let values = parameter_values(parameters, arguments).map_err(|error| error.message)?;
-    let array_refs = array_refs_for_parameters(parameters, &values, state.memory());
+    let values = parameter_values(parameter_binding).map_err(|error| error.message)?;
+    let array_refs =
+        array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
     let (values, array_refs) = contract_environment_at_state(&values, &array_refs, state);
     lower_fixed_state_proposition_through_kernel_recording_introductions(
         proposition,
@@ -210,7 +206,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions_
         recorded_snapshots,
         spec_definitions,
         &std::collections::BTreeSet::new(),
-        parameter_pointer_element_widths(parameters),
+        parameter_pointer_element_widths(parameter_binding.parameters),
     )
 }
 
@@ -767,8 +763,9 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
     )
     .map_err(|refusal| {
         let (names, arguments) = crate::surface::diagnostics::value_naming_tables(values);
-        let mut labels =
-            crate::surface::proof_diagnostics::render::SnapshotLabels::naming(&names, &arguments);
+        let mut labels = crate::surface::proof_diagnostics::render::SnapshotLabels::naming(
+            ParameterBinding::new(&names, &arguments),
+        );
         crate::surface::proof_diagnostics::render::describe_spec_capture_refusal_labeled(
             &refusal,
             &mut labels,
@@ -1010,7 +1007,6 @@ pub(in crate::surface) fn evaluate_resource_fragment_through_kernel(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn evaluate_resource_argument_through_kernel(
     original: &ContractExpression,
     lowered: &CExpression,
@@ -1115,8 +1111,7 @@ fn evaluate_c_fragment_with_binding_policy(
             obligation,
             &[],
             &[],
-            &[],
-            &[],
+            ParameterBinding::default(),
             &[],
         ));
     }
@@ -1162,7 +1157,7 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     let CValue::Pointer(pointer) = value else {
         return Err(format!(
             "array reference expression did not evaluate to a pointer: `{}`",
-            crate::surface::diagnostics::describe_c_value(&value, &[], &[])
+            crate::surface::diagnostics::describe_c_value(&value, ParameterBinding::default())
         ));
     };
     let memory = match expression {
@@ -1199,7 +1194,10 @@ fn refuse_impossible_loads(
         // width, which is what the reader has to fix.
         return Err(format!(
             "the proposition reads memory that is not viewable here: {}",
-            crate::surface::diagnostics::describe_pure_fact(obligation, &[], &[])
+            crate::surface::diagnostics::describe_pure_fact(
+                obligation,
+                ParameterBinding::default()
+            )
         ));
     }
     Ok(())
@@ -1323,7 +1321,6 @@ impl FixedStateLowering {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn reverse_surface_equality(
     proposition: &ClickProposition,
 ) -> Option<ClickProposition> {
