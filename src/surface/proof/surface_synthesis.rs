@@ -978,8 +978,7 @@ fn synthesized_surface_matches_proposition(
     let lowered = crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_pointer_widths(
         candidate,
         &PureFactContext::new(),
-        &values,
-        &array_refs,
+        ContractEnvironment::new(&values, &array_refs),
         FixedStateFrame::new(state, state, None, &RecordedSnapshots::default()),
         SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(&[])),
         &std::collections::BTreeSet::new(),

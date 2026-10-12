@@ -3701,8 +3701,7 @@ pub(super) fn lower_surface_candidate_in_state_with_assumptions(
     lower_fixed_state_proposition_through_kernel(
         candidate,
         &assumptions,
-        &values,
-        &array_refs,
+        ContractEnvironment::new(&values, &array_refs),
         FixedStateFrame::new(
             view.old_reference_state(state),
             state,

@@ -1264,8 +1264,7 @@ fn close_claim_directly_from_outcome<'a>(
                 evaluate_fixed_state_expression_through_kernel(
                     expression,
                     root.facts().assumptions(),
-                    &values,
-                    &array_refs,
+                    ContractEnvironment::new(&values, &array_refs),
                     FixedStateFrame::new(pre_state, state, Some(value), &RecordedSnapshots::new()),
                     spec_definitions,
                     &BTreeSet::new(),

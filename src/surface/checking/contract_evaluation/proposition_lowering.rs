@@ -39,8 +39,7 @@ pub(in crate::surface) fn lower_outcome_proposition_with_auxiliary_facts(
         proposition,
         assumptions,
         assumptions,
-        &values,
-        &array_refs,
+        ContractEnvironment::new(&values, &array_refs),
         &BTreeMap::new(),
         &crate::persistent::PersistentMap::default(),
         &BTreeMap::new(),
@@ -76,8 +75,7 @@ pub(in crate::surface) fn lower_outcome_proposition_with_assumptions(
     crate::surface::proof::lower_fixed_state_proposition_through_kernel(
         proposition,
         assumptions,
-        &values,
-        &array_refs,
+        ContractEnvironment::new(&values, &array_refs),
         FixedStateFrame::new(
             pre_state,
             post_state,
@@ -106,8 +104,7 @@ pub(in crate::surface) fn lower_outcome_proposition_with_recorded_snapshots(
     crate::surface::proof::lower_fixed_state_proposition_through_kernel(
         proposition,
         &assumptions,
-        &values,
-        &array_refs,
+        ContractEnvironment::new(&values, &array_refs),
         FixedStateFrame::new(pre_state, post_state, Some(result), recorded_snapshots),
         spec_definitions,
     )
