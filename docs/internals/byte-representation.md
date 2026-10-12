@@ -49,7 +49,9 @@ things stay separate:
   cell is initialized. Fresh `malloc` bytes and padding have no cell.
 - **Typed load validity.** A load of type `T` reads a cell only when the cell
   holds a `T` value of the load's width, or, for a one-byte load, through the
-  byte view below. Anything else is refused as a load that does not fit the
+  byte view below, or when `T` is a character type and the cell is a
+  one-byte cell of the other character type (see
+  [Character reads](#character-reads-of-one-byte-cells)). Anything else is refused as a load that does not fit the
   cell's value.
 - **Access permission.** `owns` or `views` authority over the range, the
   object resource a successful `malloc` produces, or a function's implicit
@@ -181,6 +183,23 @@ and then records one cell. A representation copy plants cells only inside a
 destination range the external contract has just havocked. No path leaves a
 typed cell and a byte cell describing the same storage with different
 values, and no byte write can leave an old scalar value provable.
+
+## Character reads of one-byte cells
+
+C11 6.5p7 lets any character type read an object's bytes. A byte has one
+name, its unsigned read (`Bitvector32Term::memory_read`): an `unsigned char`
+load of a `signed char` cell holding `t` reads `t mod 256`, a `signed char`
+load of an `unsigned char` cell holding `u` reads the two's-complement value
+of `u`'s eight bits, and a symbolic `signed char` read is the conversion of
+the byte's unsigned read rather than an unknown of its own. This is
+`CType::read_cell` and `LoadKind::read_cell`, used by every execution and
+specification route that answers a load from a cell. It is what lets a
+user-space C string, whose plain `char` is signed, be read as `uint8` bytes by
+`strlen` and the C-string predicates
+(`mdtests/c_builtin_string_header_declares_strlen.md`,
+`mdtests/a_signed_read_of_a_byte_follows_from_its_unsigned_read.md`).
+Nothing wider than one byte, and no pointer, float, or `_Bool` cell, gains a
+view this way.
 
 ## Reinterpretation stays refused
 

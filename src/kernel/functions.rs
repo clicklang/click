@@ -16943,8 +16943,22 @@ fn coerce_c_contract_arguments(
         if parameter.aggregate_layout().is_some() {
             coerced.push(value.clone());
         } else {
+            // A contract stated over one character type's bytes accepts a
+            // pointer to the other's: C11 6.5p7 lets either read the object,
+            // and loads read a one-byte cell of either signedness through
+            // either type (`CType::read_cell`). This is how a byte contract
+            // such as `strlen`'s serves a signed plain `char *`.
+            let value = match value {
+                CValue::Pointer(pointer)
+                    if parameter.c_type().is_character_pointer()
+                        && pointer.c_type().is_character_pointer() =>
+                {
+                    CValue::Pointer(pointer.clone().with_type(parameter.c_type()))
+                }
+                value => value.clone(),
+            };
             coerced.push(coerce_c_value_with_pointee_constant(
-                value.clone(),
+                value,
                 parameter.c_type(),
                 parameter.pointee_is_constant(),
                 &mut obligations,
@@ -17214,13 +17228,13 @@ fn initialize_c_function_globals_owned(
                         block: slot.block.clone(),
                         offset: PointerOffsetTerm::Constant(offset as i64),
                     },
-                    uint8(u32::from(byte)),
+                    literal.element_value(byte),
                 ));
             }
         }
         state.locals.set_array_object_at(
             literal.name().to_string(),
-            CType::UInt8,
+            literal.element_type(),
             literal.bytes().len() as u32,
             slot.clone(),
         );
@@ -18048,16 +18062,21 @@ fn aggregate_zero_fields(layout: &CAggregateLayout) -> Vec<(u32, u32, u32, CValu
             | CType::UInt128PointerPointer
             | CType::Int32Pointer
             | CType::UInt8Pointer
+            // A signed plain `char` pointer field is an `int8*` cell.
+            | CType::Int8Pointer
             | CType::Float32Pointer
             | CType::Float64Pointer
             | CType::Int32PointerPointer
             | CType::UInt8PointerPointer
+            | CType::Int8PointerPointer
             | CType::Float32PointerPointer
             | CType::Float64PointerPointer
             // Static storage zero-initializes a callback field to a null
             // function pointer, just like a data-pointer field.
             | CType::FunctionPointer(_) => (field.c_type(), 1),
             CType::Int32Array(length) => (CType::Int32, length),
+            // A signed plain `char` array field holds `int8` cells.
+            CType::Int8Array(length) => (CType::Int8, length),
             CType::Int64Array(length) => (CType::Int64, length),
             CType::Int128Array(length) => (CType::Int128, length),
             CType::UInt64Array(length) => (CType::UInt64, length),
@@ -18104,10 +18123,12 @@ fn aggregate_zero_fields(layout: &CAggregateLayout) -> Vec<(u32, u32, u32, CValu
                 | CType::UInt128PointerPointer
                 | CType::Int32Pointer
                 | CType::UInt8Pointer
+                | CType::Int8Pointer
                 | CType::Float32Pointer
                 | CType::Float64Pointer
                 | CType::Int32PointerPointer
                 | CType::UInt8PointerPointer
+                | CType::Int8PointerPointer
                 | CType::Float32PointerPointer
                 | CType::Float64PointerPointer
                 | CType::FunctionPointer(_) => CValue::typed_pointer(Pointer::null(), element_type),
@@ -18131,7 +18152,6 @@ fn aggregate_zero_fields(layout: &CAggregateLayout) -> Vec<(u32, u32, u32, CValu
                 | CType::VoidPointerPointer => {
                     continue;
                 }
-                CType::Int8Pointer | CType::Int8PointerPointer => continue,
                 CType::Int16Pointer
                 | CType::UInt16Pointer
                 | CType::UInt32Pointer

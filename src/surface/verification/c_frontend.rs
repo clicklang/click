@@ -704,7 +704,10 @@ pub(super) fn c_layouts(
             )));
         }
     }
-    let mut tables = parser::ProgramLayouts::default();
+    let mut tables = parser::ProgramLayouts {
+        plain_char: Some(target.plain_char()),
+        ..Default::default()
+    };
     for source_path in verifying_paths {
         let unit = parse_c_source_unit(&source_path, c_sources, target)?;
         tables
@@ -774,15 +777,17 @@ pub(super) fn parse_c_source_unit(
             let header_line_map = header
                 .line_map()
                 .in_containers(&c_sources.c_source_containers);
-            syntax::validate_header(header.source(), &header_line_map).map_err(|error| {
-                ClickError::new(format!("failed to parse C header `{header_path}`: {error}"))
-                    .with_kind(ClickErrorKind::Syntax)
-            })?;
+            syntax::validate_header_for_target(header.source(), &header_line_map, target).map_err(
+                |error| {
+                    ClickError::new(format!("failed to parse C header `{header_path}`: {error}"))
+                        .with_kind(ClickErrorKind::Syntax)
+                },
+            )?;
         }
         let line_map = expanded
             .line_map()
             .in_containers(&c_sources.c_source_containers);
-        syntax::parse_translation_unit_for_source(expanded.source(), source_path, &line_map)
+        syntax::parse_translation_unit_for_target(expanded.source(), source_path, &line_map, target)
             .map_err(|error| {
                 ClickError::new(format!("failed to parse C source `{source_path}`: {error}"))
                     .with_kind(ClickErrorKind::Syntax)
@@ -797,11 +802,12 @@ pub(super) fn parse_c_source_unit(
                     "import configuration has no prepared translation unit for verifying source `{source_path}`"
                 ))
             })?;
-        syntax::parse_translation_unit_for_import(
+        syntax::parse_translation_unit_for_import_target(
             import.source(),
             import.logical_source(),
             import.source_map(),
             import.promise_attributes(),
+            target,
         )
         .map_err(|error| {
             ClickError::new(format!(
@@ -1151,10 +1157,11 @@ pub(super) fn validate_modeled_pthread_binding(
         ClickError::new(format!("invalid built-in pthread model: {error}"))
             .with_kind(ClickErrorKind::Internal)
     })?;
-    let reference = syntax::parse_translation_unit_for_source(
+    let reference = syntax::parse_translation_unit_for_target(
         reference.source(),
         "__click_modeled_pthread_reference.c",
         reference.line_map(),
+        CTarget::X86_64LinuxUserspace,
     )
     .map_err(|error| {
         ClickError::new(format!("invalid built-in pthread model: {error}"))

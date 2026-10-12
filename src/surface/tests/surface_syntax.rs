@@ -258,13 +258,64 @@ fn parser_deep_const_preserves_supported_pointer_qualifier_levels() {
 }
 
 #[test]
+fn plain_char_needs_a_c_target_and_takes_its_signedness() {
+    use crate::languages::c::syntax::PlainChar;
+    let source = "int is_negative(char c) { ensures result == 0; }";
+    let error = match parser::parse_with_layouts_and_aggregate_objects(
+        source,
+        parser::ProgramLayouts::default(),
+    ) {
+        Ok(_) => panic!("plain char without a C target must be refused"),
+        Err(error) => error,
+    };
+    assert!(
+        error.message().contains("no C target is selected"),
+        "{}",
+        error.message()
+    );
+    for (target, plain) in [
+        (
+            crate::languages::c::target::CTarget::X86_64LinuxKernel,
+            PlainChar::Unsigned,
+        ),
+        (
+            crate::languages::c::target::CTarget::X86_64LinuxUserspace,
+            PlainChar::Signed,
+        ),
+    ] {
+        let file = parser::parse_with_layouts_and_aggregate_objects(
+            source,
+            parser::ProgramLayouts {
+                plain_char: Some(target.plain_char()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            file.function_blocks()[0].signature().parameters()[0].c_type(),
+            C0Type::Char(plain)
+        );
+    }
+    // A character constant at 0x80 or above is the target's plain `char`
+    // value, and is refused where no target fixes it.
+    let high = "int f() { ensures result == '\\xc8'; }";
+    assert!(
+        parser::parse_with_layouts_and_aggregate_objects(high, parser::ProgramLayouts::default())
+            .is_err()
+    );
+}
+
+#[test]
 fn parser_plain_char_sidecars_preserve_source_compatibility() {
     use crate::surface::validation::click_types_compatible;
     let file = parser::parse_file_items(
         "char *identity(char *p, unsigned char *q, char bytes[], char **pp) { ensures result == p; }",
     ).expect("plain char sidecar types should parse");
     let signature = file.function_blocks()[0].signature();
-    assert_eq!(signature.return_type(), C0Type::CharPointer);
+    assert_eq!(
+        signature.return_type(),
+        C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned)
+    );
     assert_eq!(
         signature
             .parameters()
@@ -272,23 +323,23 @@ fn parser_plain_char_sidecars_preserve_source_compatibility() {
             .map(FunctionParameter::c_type)
             .collect::<Vec<_>>(),
         vec![
-            C0Type::CharPointer,
+            C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned),
             C0Type::UInt8Pointer,
-            C0Type::CharPointer,
-            C0Type::CharPointerPointer
+            C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned),
+            C0Type::CharPointerPointer(crate::languages::c::syntax::PlainChar::Unsigned)
         ]
     );
     assert!(!click_types_compatible(
-        C0Type::CharPointer,
+        C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned),
         C0Type::UInt8Pointer
     ));
     assert!(!click_types_compatible(
-        C0Type::CharPointerPointer,
+        C0Type::CharPointerPointer(crate::languages::c::syntax::PlainChar::Unsigned),
         C0Type::UInt8PointerPointer
     ));
     assert!(click_types_compatible(
-        C0Type::CharArray(2),
-        C0Type::CharPointer
+        C0Type::CharArray(crate::languages::c::syntax::PlainChar::Unsigned, 2),
+        C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned)
     ));
 }
 

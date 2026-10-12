@@ -1440,6 +1440,16 @@ impl Renderer<'_> {
                 self.pointer(pointer);
                 self.push(")");
             }
+            Bitvector32Term::MachineIntegerCast {
+                value, destination, ..
+            } => {
+                // A signed byte read renders as the conversion of the byte's
+                // unsigned read, which is what it is.
+                self.push(&format!("{destination:?}").to_ascii_lowercase());
+                self.push("(");
+                self.bitvector(value);
+                self.push(")");
+            }
             _ => self.push("bitvector(<bounded opaque operation>)"),
         }
         self.depth -= 1;

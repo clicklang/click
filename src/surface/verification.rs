@@ -622,8 +622,12 @@ fn selected_theorem_definitions(
         .collect()
 }
 
+/// Parses a sidecar under the C target it selects, or the default target.
 pub fn parse(source: &str) -> Result<ClickFile, ClickError> {
-    parser::parse(source)
+    parser::parse_for_target(
+        source,
+        crate::surface::expansion::selected_c_target(source)?,
+    )
 }
 
 pub fn verify_click_theorems(click_source: &str) -> Result<Vec<VerifiedPureTheorem>, ClickError> {

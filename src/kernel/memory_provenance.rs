@@ -3744,9 +3744,9 @@ pub(crate) fn rewrite_condition_through_certified_stores(
         };
         equations.push((
             canonicalize_atomic_loads(&value_term),
-            Bitvector32Term::MemoryLoad(
+            Bitvector32Term::memory_read(
                 crate::kernel::intern_c_memory(store.after.clone()),
-                Box::new(store.pointer.clone()),
+                store.pointer.clone(),
                 kind,
             ),
         ));
@@ -4048,9 +4048,9 @@ fn cell_integer_for_read(
     let CExpressionOutcome::Value(cell) = memory.load(pointer) else {
         return None;
     };
-    if !kind.reads_value(&cell) {
-        return None;
-    }
+    // A character read of a one-byte cell of the other signedness reads
+    // the same bits (`LoadKind::read_cell`).
+    let cell = kind.read_cell(&cell)?;
     match cell {
         crate::kernel::integer64_c_value!(value) if &value != load => Some(value),
         _ => None,
@@ -5227,9 +5227,9 @@ pub(crate) fn certified_store_equations(
             let kind = LoadKind::of_value(&store.value)?;
             Some(Proposition::ConditionIs(
                 ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::MemoryLoad(
+                    Box::new(Bitvector32Term::memory_read(
                         crate::kernel::intern_c_memory(store.after.clone()),
-                        Box::new(store.pointer.clone()),
+                        store.pointer.clone(),
                         kind,
                     )),
                     Box::new(value),

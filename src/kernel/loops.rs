@@ -8391,14 +8391,14 @@ pub(super) fn collect_loop_effect_check_obligations(
             };
             !has_disjoint_effect_summary
                 || !explicit_atomic_equality_from_memory_derivations(
-                    &Bitvector32Term::MemoryLoad(
+                    &Bitvector32Term::memory_read(
                         before_state.memory().clone().into(),
-                        Box::new(pointer.clone()),
+                        pointer.clone(),
                         kind,
                     ),
-                    &Bitvector32Term::MemoryLoad(
+                    &Bitvector32Term::memory_read(
                         after_state.memory().clone().into(),
-                        Box::new(pointer.clone()),
+                        pointer.clone(),
                         kind,
                     ),
                     &effective_assumptions,

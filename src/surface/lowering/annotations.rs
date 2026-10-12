@@ -1154,12 +1154,7 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
             parsed_function
                 .string_literals()
                 .iter()
-                .map(|literal| {
-                    crate::kernel::CStringLiteral::new(
-                        literal.name().to_string(),
-                        literal.bytes().to_vec(),
-                    )
-                })
+                .map(syntax::C0StringLiteral::to_kernel)
                 .collect(),
         )
         .with_resource_summary(resource_requires, resource_ensures)
@@ -3678,7 +3673,10 @@ impl AnnotationLowerer<'_> {
                                 )
                             })?;
                         let array_ref = self.lower_array_ref_to_spec(argument, environment)?;
-                        if array_ref.element_type != expected_element_type {
+                        if !crate::surface::validation::array_ref_elements_compatible(
+                            array_ref.element_type,
+                            expected_element_type,
+                        ) {
                             return Err(format!(
                                 "predicate `{}` parameter `{}` expects {:?} array elements, got {:?}",
                                 definition.name(),
@@ -3687,9 +3685,27 @@ impl AnnotationLowerer<'_> {
                                 array_ref.element_type
                             ));
                         }
+                        // A character array of the other signedness is
+                        // passed as the predicate's own element pointer, so
+                        // the instance is the one its callers and callees
+                        // name; the bytes read the same either way.
+                        let pointer = if array_ref.element_type == expected_element_type {
+                            array_ref.pointer
+                        } else {
+                            SpecExpression::Cast(
+                                Box::new(array_ref.pointer),
+                                expected_element_type.pointer_to().ok_or_else(|| {
+                                    format!(
+                                        "predicate `{}` parameter `{}` has no element pointer type",
+                                        definition.name(),
+                                        parameter.name()
+                                    )
+                                })?,
+                            )
+                        };
                         lowered_arguments.push(SpecPredicateArgument::ArrayRef {
                             memory: array_ref.memory,
-                            pointer: array_ref.pointer,
+                            pointer,
                         });
                     } else {
                         lowered_arguments.push(SpecPredicateArgument::Value(

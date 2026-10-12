@@ -6238,10 +6238,12 @@ impl CMemory {
         ))
     }
 
+    /// A signed byte read: the two's-complement conversion of the byte's
+    /// one unsigned read ([`Bitvector32Term::memory_read`]).
     pub(in crate::kernel) fn symbolic_int8_load(&self, pointer: &Pointer) -> CValue {
-        int8(Bitvector32Term::MemoryLoad(
+        int8(Bitvector32Term::memory_read(
             crate::kernel::intern_c_memory(self.clone()),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::Int8,
         ))
     }

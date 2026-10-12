@@ -1301,10 +1301,10 @@ target. Prepared imports retain their target through verification and expansion.
 | Target | Fixed compiler profile |
 | --- | --- |
 | `x86_64-linux-kernel` | GCC, `-x c`, `-std=gnu11`, `-m64`, `-funsigned-char`, `-nostdinc`. |
-| `x86_64-linux-userspace` | GCC, `-x c`, `-std=c11`, `-m64`, `-funsigned-char`, `-nostdinc`, `-pthread`, `-D_POSIX_C_SOURCE=200809L`. |
+| `x86_64-linux-userspace` | GCC, `-x c`, `-std=c11`, `-m64`, `-fsigned-char`, `-nostdinc`, `-pthread`, `-D_POSIX_C_SOURCE=200809L`. |
 
 The user-space profile checks C11, POSIX and pthread feature macros as well as
-the LP64, eight-bit-byte, unsigned-char ABI. It does not define `__KERNEL__`.
+the LP64, eight-bit-byte, signed-char ABI: the probe requires that `__CHAR_UNSIGNED__` is not defined. It does not define `__KERNEL__`.
 Configuration cannot override its fixed standard or profile macros. Target and
 invocation identities distinguish locks even when the emitted C is identical.
 Selecting this profile grants no pthread contract or concurrency semantics.
@@ -1383,7 +1383,7 @@ in the imported source.
 | `-D<macro>` (5) | Base | Macro definition; its effect is in the artifact. |
 | `-nostdinc` | Fixed | The target's own argument. |
 | `-std=gnu11` | Fixed | The target's own argument; Click's kernel C is GNU C11. |
-| `-funsigned-char` | Fixed | The target's own argument; Click's plain `char` is unsigned. |
+| `-funsigned-char` | Fixed | The kernel target's own argument; its plain `char` is unsigned. |
 | `-m64` | Fixed | The target's own argument; Click's ABI is LP64. |
 | `-fmacro-prefix-map=./=` | Accepted | Rewrites the paths `__FILE__` expands to, in the artifact; Click refuses `__builtin_FILE`. |
 | `-Wall` | Accepted | Diagnostics only. |
