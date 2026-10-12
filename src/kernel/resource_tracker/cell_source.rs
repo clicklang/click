@@ -786,6 +786,15 @@ thread_local! {
     static CELL_LOOKUPS_IN_PROGRESS: std::cell::RefCell<
         std::collections::BTreeSet<((u32, u32), Pointer)>,
     > = const { std::cell::RefCell::new(std::collections::BTreeSet::new()) };
+    static CELL_LOOKUP_REFUSALS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// How many cell lookups have been refused because the same lookup was in
+/// progress. The set of lookups in progress changes an answer only through
+/// such a refusal, so an answer computed while this count stayed put is the
+/// one any set of lookups in progress would allow, or stronger.
+pub(in crate::kernel) fn memory_dag_cell_lookup_refusals() -> u64 {
+    CELL_LOOKUP_REFUSALS.with(std::cell::Cell::get)
 }
 
 pub(in crate::kernel) struct CellLookupGuard {
@@ -797,9 +806,12 @@ impl CellLookupGuard {
         let key = (memory.arena_id(), pointer.clone());
         // `then`, not `then_some`: a guard built eagerly and discarded on
         // the cycle path would run `drop` and unregister the outer lookup.
-        CELL_LOOKUPS_IN_PROGRESS
-            .with(|lookups| lookups.borrow_mut().insert(key.clone()))
-            .then(|| Self { key })
+        let entered =
+            CELL_LOOKUPS_IN_PROGRESS.with(|lookups| lookups.borrow_mut().insert(key.clone()));
+        if !entered {
+            CELL_LOOKUP_REFUSALS.with(|refusals| refusals.set(refusals.get() + 1));
+        }
+        entered.then(|| Self { key })
     }
 }
 

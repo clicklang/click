@@ -6115,9 +6115,16 @@ pub(super) fn start_fresh_c_memory_arena() {
     });
 }
 
-/// Bumped every time a derivation slot is filled. Memo tables over DAG walks
-/// key on this so an edge recorded later invalidates earlier "no path"
-/// answers instead of leaving them stale.
+/// Bumped every time a derivation slot is filled on a snapshot that was
+/// interned before the edge was recorded. Memo tables over DAG walks key on
+/// this so an edge recorded later invalidates earlier "no path" answers
+/// instead of leaving them stale.
+///
+/// A recording that interns the snapshot it derives does not bump it: no
+/// earlier question could name that snapshot, and an existing snapshot's
+/// history never changes, so no earlier answer can. Bumping on those too
+/// emptied every negative memo at every program step, and a call step re-ran
+/// each failed alias question its walks had already answered.
 pub(super) fn c_memory_derivation_generation() -> u64 {
     C_MEMORY_DERIVATION_GENERATION.with(std::cell::Cell::get)
 }
@@ -6182,7 +6189,11 @@ pub(crate) fn record_c_memory_derivation(result: &mut CMemory, derivation: CMemo
         }
         _ => None,
     };
+    // A snapshot this call interns is one no query has seen yet, so filling
+    // its derivation cannot change an earlier answer.
+    let next_id = C_MEMORY_ARENA.with(|arena| arena.borrow().1.identities.len());
     let derived = intern_c_memory_ref_with_read_identity(result, read_identity);
+    let interned_here = derived.id as usize >= next_id;
     if !result.same_storage_roots(derived.memory()) {
         *result = derived.memory().clone();
     }
@@ -6220,7 +6231,9 @@ pub(crate) fn record_c_memory_derivation(result: &mut CMemory, derivation: CMemo
             .entry((base_id, derived.content_hash))
             .or_default()
             .push(derived.id);
-        C_MEMORY_DERIVATION_GENERATION.with(|generation| generation.set(generation.get() + 1));
+        if !interned_here {
+            C_MEMORY_DERIVATION_GENERATION.with(|generation| generation.set(generation.get() + 1));
+        }
     });
 }
 
