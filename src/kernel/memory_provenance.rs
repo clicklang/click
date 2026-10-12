@@ -5707,23 +5707,7 @@ fn transport_framed_atomic_bitvector(
     if crate::kernel::assumptions::reasoning_interrupted() {
         return None;
     }
-    let binary = |left: &Bitvector32Term, right: &Bitvector32Term| {
-        Some((
-            transport_framed_atomic_bitvector(left, after, assumptions)?,
-            transport_framed_atomic_bitvector(right, after, assumptions)?,
-        ))
-    };
     Some(match term {
-        Bitvector32Term::MachineIntegerCast {
-            value,
-            source,
-            destination,
-        } => Bitvector32Term::machine_integer_cast(
-            *source,
-            *destination,
-            transport_framed_atomic_bitvector(value, after, assumptions)?,
-        ),
-
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
@@ -5802,241 +5786,6 @@ fn transport_framed_atomic_bitvector(
                 term.clone()
             }
         }
-        Bitvector32Term::Int64From32(value) => Bitvector32Term::int64_from_32(
-            transport_framed_atomic_bitvector(value, after, assumptions)?,
-        ),
-        Bitvector32Term::UInt64From32(value) => Bitvector32Term::uint64_from_32(
-            transport_framed_atomic_bitvector(value, after, assumptions)?,
-        ),
-        Bitvector32Term::UInt32From64(value) => Bitvector32Term::uint32_from_64(
-            transport_framed_atomic_bitvector(value, after, assumptions)?,
-        ),
-        Bitvector32Term::Int64FromUInt32(value) => Bitvector32Term::int64_from_uint32(
-            transport_framed_atomic_bitvector(value, after, assumptions)?,
-        ),
-        Bitvector32Term::UInt64FromInt32(value) => Bitvector32Term::uint64_from_int32(
-            transport_framed_atomic_bitvector(value, after, assumptions)?,
-        ),
-        Bitvector32Term::UInt64FromInt64(value) => Bitvector32Term::uint64_from_int64(
-            transport_framed_atomic_bitvector(value, after, assumptions)?,
-        ),
-        Bitvector32Term::Int64Add(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::int64_add(left, right)
-        }
-        Bitvector32Term::Int64Subtract(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::int64_subtract(left, right)
-        }
-        Bitvector32Term::Int64Multiply(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::int64_multiply(left, right)
-        }
-        Bitvector32Term::Int64Divide(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::int64_divide(left, right)
-        }
-        Bitvector32Term::Int64Remainder(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::int64_remainder(left, right)
-        }
-        Bitvector32Term::Int64ShiftLeft(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::int64_shift_left(left, right)
-        }
-        Bitvector32Term::Int64ArithmeticShiftRight(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::int64_arithmetic_shift_right(left, right)
-        }
-        Bitvector32Term::Int64BitwiseAnd(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::int64_bitwise_and(left, right)
-        }
-        Bitvector32Term::Int64BitwiseOr(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::int64_bitwise_or(left, right)
-        }
-        Bitvector32Term::Int64BitwiseXor(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::int64_bitwise_xor(left, right)
-        }
-        Bitvector32Term::Int64BitwiseNot(value) => Bitvector32Term::int64_bitwise_not(
-            transport_framed_atomic_bitvector(value, after, assumptions)?,
-        ),
-        Bitvector32Term::UInt64Add(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::uint64_add(left, right)
-        }
-        Bitvector32Term::UInt64Subtract(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::uint64_subtract(left, right)
-        }
-        Bitvector32Term::UInt64Multiply(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::uint64_multiply(left, right)
-        }
-        Bitvector32Term::UInt64Divide(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::uint64_divide(left, right)
-        }
-        Bitvector32Term::UInt64Remainder(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::uint64_remainder(left, right)
-        }
-        Bitvector32Term::UInt64ShiftLeft(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::uint64_shift_left(left, right)
-        }
-        Bitvector32Term::UInt64LogicalShiftRight(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::uint64_logical_shift_right(left, right)
-        }
-        Bitvector32Term::UInt64BitwiseAnd(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::uint64_bitwise_and(left, right)
-        }
-        Bitvector32Term::UInt64BitwiseOr(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::uint64_bitwise_or(left, right)
-        }
-        Bitvector32Term::UInt64BitwiseXor(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::uint64_bitwise_xor(left, right)
-        }
-        Bitvector32Term::UInt64BitwiseNot(value) => Bitvector32Term::uint64_bitwise_not(
-            transport_framed_atomic_bitvector(value, after, assumptions)?,
-        ),
-        Bitvector32Term::Float32Negate(value) => Bitvector32Term::float32_negate(
-            transport_framed_atomic_bitvector(value, after, assumptions)?,
-        ),
-        Bitvector32Term::Float32Binary {
-            operator,
-            left,
-            right,
-        } => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::float32_binary(left, right, *operator)
-        }
-        Bitvector32Term::Float64Negate(value) => Bitvector32Term::float64_negate(
-            transport_framed_atomic_bitvector(value, after, assumptions)?,
-        ),
-        Bitvector32Term::Float64Binary {
-            operator,
-            left,
-            right,
-        } => {
-            let (left, right) = binary(left, right)?;
-            Bitvector32Term::float64_binary(left, right, *operator)
-        }
-        Bitvector32Term::Add(left, right) => Bitvector32Term::Add(
-            Box::new(transport_framed_atomic_bitvector(left, after, assumptions)?),
-            Box::new(transport_framed_atomic_bitvector(
-                right,
-                after,
-                assumptions,
-            )?),
-        ),
-        Bitvector32Term::Subtract(left, right) => Bitvector32Term::Subtract(
-            Box::new(transport_framed_atomic_bitvector(left, after, assumptions)?),
-            Box::new(transport_framed_atomic_bitvector(
-                right,
-                after,
-                assumptions,
-            )?),
-        ),
-        Bitvector32Term::Multiply(left, right) => Bitvector32Term::Multiply(
-            Box::new(transport_framed_atomic_bitvector(left, after, assumptions)?),
-            Box::new(transport_framed_atomic_bitvector(
-                right,
-                after,
-                assumptions,
-            )?),
-        ),
-        Bitvector32Term::Divide(left, right) => Bitvector32Term::Divide(
-            Box::new(transport_framed_atomic_bitvector(left, after, assumptions)?),
-            Box::new(transport_framed_atomic_bitvector(
-                right,
-                after,
-                assumptions,
-            )?),
-        ),
-        Bitvector32Term::UnsignedDivide(left, right) => Bitvector32Term::UnsignedDivide(
-            Box::new(transport_framed_atomic_bitvector(left, after, assumptions)?),
-            Box::new(transport_framed_atomic_bitvector(
-                right,
-                after,
-                assumptions,
-            )?),
-        ),
-        Bitvector32Term::Remainder(left, right) => Bitvector32Term::Remainder(
-            Box::new(transport_framed_atomic_bitvector(left, after, assumptions)?),
-            Box::new(transport_framed_atomic_bitvector(
-                right,
-                after,
-                assumptions,
-            )?),
-        ),
-        Bitvector32Term::UnsignedRemainder(left, right) => Bitvector32Term::UnsignedRemainder(
-            Box::new(transport_framed_atomic_bitvector(left, after, assumptions)?),
-            Box::new(transport_framed_atomic_bitvector(
-                right,
-                after,
-                assumptions,
-            )?),
-        ),
-        Bitvector32Term::ShiftLeft(left, right) => Bitvector32Term::ShiftLeft(
-            Box::new(transport_framed_atomic_bitvector(left, after, assumptions)?),
-            Box::new(transport_framed_atomic_bitvector(
-                right,
-                after,
-                assumptions,
-            )?),
-        ),
-        Bitvector32Term::ArithmeticShiftRight(left, right) => {
-            Bitvector32Term::ArithmeticShiftRight(
-                Box::new(transport_framed_atomic_bitvector(left, after, assumptions)?),
-                Box::new(transport_framed_atomic_bitvector(
-                    right,
-                    after,
-                    assumptions,
-                )?),
-            )
-        }
-        Bitvector32Term::LogicalShiftRight(left, right) => Bitvector32Term::LogicalShiftRight(
-            Box::new(transport_framed_atomic_bitvector(left, after, assumptions)?),
-            Box::new(transport_framed_atomic_bitvector(
-                right,
-                after,
-                assumptions,
-            )?),
-        ),
-        Bitvector32Term::BitwiseAnd(left, right) => Bitvector32Term::BitwiseAnd(
-            Box::new(transport_framed_atomic_bitvector(left, after, assumptions)?),
-            Box::new(transport_framed_atomic_bitvector(
-                right,
-                after,
-                assumptions,
-            )?),
-        ),
-        Bitvector32Term::BitwiseOr(left, right) => Bitvector32Term::BitwiseOr(
-            Box::new(transport_framed_atomic_bitvector(left, after, assumptions)?),
-            Box::new(transport_framed_atomic_bitvector(
-                right,
-                after,
-                assumptions,
-            )?),
-        ),
-        Bitvector32Term::BitwiseXor(left, right) => Bitvector32Term::BitwiseXor(
-            Box::new(transport_framed_atomic_bitvector(left, after, assumptions)?),
-            Box::new(transport_framed_atomic_bitvector(
-                right,
-                after,
-                assumptions,
-            )?),
-        ),
-        Bitvector32Term::BitwiseNot(term) => Bitvector32Term::BitwiseNot(Box::new(
-            transport_framed_atomic_bitvector(term, after, assumptions)?,
-        )),
         Bitvector32Term::If {
             condition,
             then_term,
@@ -6093,6 +5842,27 @@ fn transport_framed_atomic_bitvector(
         Bitvector32Term::ClickFunctionApplication { .. }
         | Bitvector32Term::AlgebraicMatch { .. }
         | Bitvector32Term::IntegerToMachine { .. } => term.clone(),
+        term => match (term.as_binary(), term.as_unary()) {
+            // The 32-bit word operators are rebuilt as bare nodes, the rest
+            // through their smart constructors.
+            (Some((op, left, right)), _) if op.is_bitvector32() => op.build_raw(
+                transport_framed_atomic_bitvector(left, after, assumptions)?,
+                transport_framed_atomic_bitvector(right, after, assumptions)?,
+            ),
+            (Some((op, left, right)), _) => op.build(
+                transport_framed_atomic_bitvector(left, after, assumptions)?,
+                transport_framed_atomic_bitvector(right, after, assumptions)?,
+            ),
+            (_, Some((op, value))) if op.is_bitvector32() => op.build_raw(
+                transport_framed_atomic_bitvector(value, after, assumptions)?,
+            ),
+            (_, Some((op, value))) => op.build(transport_framed_atomic_bitvector(
+                value,
+                after,
+                assumptions,
+            )?),
+            _ => unreachable!("every other variant has its own arm"),
+        },
     })
 }
 

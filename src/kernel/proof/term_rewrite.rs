@@ -4101,117 +4101,6 @@ impl<'a> TermRewrite<'a> {
             | Bitvector32Term::UInt64Constant(_)
             | Bitvector32Term::MachineIntegerConstant(_)
             | Bitvector32Term::Variable(_) => v.clone(),
-            Bitvector32Term::Add(a, b) => {
-                Bitvector32Term::Add(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::Subtract(a, b) => {
-                Bitvector32Term::Subtract(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::Multiply(a, b) => {
-                Bitvector32Term::Multiply(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::Divide(a, b) => {
-                Bitvector32Term::Divide(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::UnsignedDivide(a, b) => {
-                Bitvector32Term::UnsignedDivide(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::Remainder(a, b) => {
-                Bitvector32Term::Remainder(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::UnsignedRemainder(a, b) => {
-                Bitvector32Term::UnsignedRemainder(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::ShiftLeft(a, b) => {
-                Bitvector32Term::ShiftLeft(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::ArithmeticShiftRight(a, b) => Bitvector32Term::ArithmeticShiftRight(
-                Box::new(self.bits(a)),
-                Box::new(self.bits(b)),
-            ),
-            Bitvector32Term::LogicalShiftRight(a, b) => {
-                Bitvector32Term::LogicalShiftRight(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::BitwiseAnd(a, b) => {
-                Bitvector32Term::BitwiseAnd(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::BitwiseOr(a, b) => {
-                Bitvector32Term::BitwiseOr(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::BitwiseXor(a, b) => {
-                Bitvector32Term::BitwiseXor(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::Int64Add(a, b) => {
-                Bitvector32Term::Int64Add(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::Int64Subtract(a, b) => {
-                Bitvector32Term::Int64Subtract(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::Int64Multiply(a, b) => {
-                Bitvector32Term::Int64Multiply(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::Int64Divide(a, b) => {
-                Bitvector32Term::Int64Divide(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::Int64Remainder(a, b) => {
-                Bitvector32Term::Int64Remainder(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::Int64ShiftLeft(a, b) => {
-                Bitvector32Term::Int64ShiftLeft(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::Int64ArithmeticShiftRight(a, b) => {
-                Bitvector32Term::Int64ArithmeticShiftRight(
-                    Box::new(self.bits(a)),
-                    Box::new(self.bits(b)),
-                )
-            }
-            Bitvector32Term::Int64BitwiseAnd(a, b) => {
-                Bitvector32Term::Int64BitwiseAnd(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::Int64BitwiseOr(a, b) => {
-                Bitvector32Term::Int64BitwiseOr(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::Int64BitwiseXor(a, b) => {
-                Bitvector32Term::Int64BitwiseXor(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::UInt64Add(a, b) => {
-                Bitvector32Term::UInt64Add(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::UInt64Subtract(a, b) => {
-                Bitvector32Term::UInt64Subtract(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::UInt64Multiply(a, b) => {
-                Bitvector32Term::UInt64Multiply(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::UInt64Divide(a, b) => {
-                Bitvector32Term::UInt64Divide(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::UInt64Remainder(a, b) => {
-                Bitvector32Term::UInt64Remainder(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::UInt64ShiftLeft(a, b) => {
-                Bitvector32Term::UInt64ShiftLeft(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::UInt64LogicalShiftRight(a, b) => {
-                Bitvector32Term::UInt64LogicalShiftRight(
-                    Box::new(self.bits(a)),
-                    Box::new(self.bits(b)),
-                )
-            }
-            Bitvector32Term::UInt64BitwiseAnd(a, b) => {
-                Bitvector32Term::UInt64BitwiseAnd(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::UInt64BitwiseOr(a, b) => {
-                Bitvector32Term::UInt64BitwiseOr(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::UInt64BitwiseXor(a, b) => {
-                Bitvector32Term::UInt64BitwiseXor(Box::new(self.bits(a)), Box::new(self.bits(b)))
-            }
-            Bitvector32Term::BitwiseNot(v) => Bitvector32Term::BitwiseNot(Box::new(self.bits(v))),
-            Bitvector32Term::Int64From32(v) => Bitvector32Term::Int64From32(Box::new(self.bits(v))),
-            Bitvector32Term::UInt64From32(v) => {
-                Bitvector32Term::UInt64From32(Box::new(self.bits(v)))
-            }
             Bitvector32Term::UInt32From64(v) => {
                 let value = self.bits(v);
                 if self.integer_exact.is_some() {
@@ -4219,27 +4108,6 @@ impl<'a> TermRewrite<'a> {
                 } else {
                     Bitvector32Term::uint32_from_64(value)
                 }
-            }
-            Bitvector32Term::Int64FromUInt32(v) => {
-                Bitvector32Term::Int64FromUInt32(Box::new(self.bits(v)))
-            }
-            Bitvector32Term::UInt64FromInt32(v) => {
-                Bitvector32Term::UInt64FromInt32(Box::new(self.bits(v)))
-            }
-            Bitvector32Term::UInt64FromInt64(v) => {
-                Bitvector32Term::UInt64FromInt64(Box::new(self.bits(v)))
-            }
-            Bitvector32Term::Int64BitwiseNot(v) => {
-                Bitvector32Term::Int64BitwiseNot(Box::new(self.bits(v)))
-            }
-            Bitvector32Term::UInt64BitwiseNot(v) => {
-                Bitvector32Term::UInt64BitwiseNot(Box::new(self.bits(v)))
-            }
-            Bitvector32Term::Float32Negate(v) => {
-                Bitvector32Term::Float32Negate(Box::new(self.bits(v)))
-            }
-            Bitvector32Term::Float64Negate(v) => {
-                Bitvector32Term::Float64Negate(Box::new(self.bits(v)))
             }
             Bitvector32Term::If {
                 condition,
@@ -4406,23 +4274,10 @@ impl<'a> TermRewrite<'a> {
                     destination: *destination,
                 }
             }
-            Bitvector32Term::Float32Binary {
-                operator,
-                left,
-                right,
-            } => Bitvector32Term::Float32Binary {
-                operator: *operator,
-                left: Box::new(self.bits(left)),
-                right: Box::new(self.bits(right)),
-            },
-            Bitvector32Term::Float64Binary {
-                operator,
-                left,
-                right,
-            } => Bitvector32Term::Float64Binary {
-                operator: *operator,
-                left: Box::new(self.bits(left)),
-                right: Box::new(self.bits(right)),
+            term => match (term.as_binary(), term.as_unary()) {
+                (Some((op, left, right)), _) => op.build_raw(self.bits(left), self.bits(right)),
+                (_, Some((op, value))) => op.build_raw(self.bits(value)),
+                _ => unreachable!("every other variant has its own arm"),
             },
         };
         if let Some((guards, replacement)) = result.guarded_remainder_rewrite() {

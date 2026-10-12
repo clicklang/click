@@ -8412,77 +8412,6 @@ fn rewrite_int32_term_by_exact_equality(
             let (left, right) = binary(left, right);
             Bitvector32Term::subtract(left, right)
         }
-        Bitvector32Term::Multiply(left, right) => {
-            let (left, right) = binary(left, right);
-            Bitvector32Term::Multiply(Box::new(left), Box::new(right))
-        }
-        Bitvector32Term::Divide(left, right) => {
-            let (left, right) = binary(left, right);
-            Bitvector32Term::Divide(Box::new(left), Box::new(right))
-        }
-        Bitvector32Term::UnsignedDivide(left, right) => {
-            let (left, right) = binary(left, right);
-            Bitvector32Term::UnsignedDivide(Box::new(left), Box::new(right))
-        }
-        Bitvector32Term::Remainder(left, right) => {
-            let (left, right) = binary(left, right);
-            Bitvector32Term::Remainder(Box::new(left), Box::new(right))
-        }
-        Bitvector32Term::UnsignedRemainder(left, right) => {
-            let (left, right) = binary(left, right);
-            Bitvector32Term::UnsignedRemainder(Box::new(left), Box::new(right))
-        }
-        Bitvector32Term::ShiftLeft(left, right) => {
-            let (left, right) = binary(left, right);
-            Bitvector32Term::ShiftLeft(Box::new(left), Box::new(right))
-        }
-        Bitvector32Term::ArithmeticShiftRight(left, right) => {
-            let (left, right) = binary(left, right);
-            Bitvector32Term::ArithmeticShiftRight(Box::new(left), Box::new(right))
-        }
-        Bitvector32Term::LogicalShiftRight(left, right) => {
-            let (left, right) = binary(left, right);
-            Bitvector32Term::LogicalShiftRight(Box::new(left), Box::new(right))
-        }
-        Bitvector32Term::BitwiseAnd(left, right) => {
-            let (left, right) = binary(left, right);
-            Bitvector32Term::BitwiseAnd(Box::new(left), Box::new(right))
-        }
-        Bitvector32Term::BitwiseOr(left, right) => {
-            let (left, right) = binary(left, right);
-            Bitvector32Term::BitwiseOr(Box::new(left), Box::new(right))
-        }
-        Bitvector32Term::BitwiseXor(left, right) => {
-            let (left, right) = binary(left, right);
-            Bitvector32Term::BitwiseXor(Box::new(left), Box::new(right))
-        }
-        Bitvector32Term::BitwiseNot(value) => Bitvector32Term::BitwiseNot(Box::new(
-            rewrite_int32_term_by_exact_equality(value, from, to),
-        )),
-        Bitvector32Term::Float32Negate(value) => Bitvector32Term::Float32Negate(Box::new(
-            rewrite_int32_term_by_exact_equality(value, from, to),
-        )),
-        Bitvector32Term::Float32Binary {
-            operator,
-            left,
-            right,
-        } => Bitvector32Term::Float32Binary {
-            operator: *operator,
-            left: Box::new(rewrite_int32_term_by_exact_equality(left, from, to)),
-            right: Box::new(rewrite_int32_term_by_exact_equality(right, from, to)),
-        },
-        Bitvector32Term::Float64Negate(value) => Bitvector32Term::Float64Negate(Box::new(
-            rewrite_int32_term_by_exact_equality(value, from, to),
-        )),
-        Bitvector32Term::Float64Binary {
-            operator,
-            left,
-            right,
-        } => Bitvector32Term::Float64Binary {
-            operator: *operator,
-            left: Box::new(rewrite_int32_term_by_exact_equality(left, from, to)),
-            right: Box::new(rewrite_int32_term_by_exact_equality(right, from, to)),
-        },
         Bitvector32Term::If {
             condition,
             then_term,
@@ -8522,6 +8451,16 @@ fn rewrite_int32_term_by_exact_equality(
         | Bitvector32Term::UInt64BitwiseNot(_)
         | Bitvector32Term::RangeFold { .. }
         | Bitvector32Term::IntegerToMachine { .. } => term.clone(),
+        term => match (term.as_binary(), term.as_unary()) {
+            (Some((op, left, right)), _) => op.build_raw(
+                rewrite_int32_term_by_exact_equality(left, from, to),
+                rewrite_int32_term_by_exact_equality(right, from, to),
+            ),
+            (_, Some((op, value))) => {
+                op.build_raw(rewrite_int32_term_by_exact_equality(value, from, to))
+            }
+            _ => unreachable!("every other variant has its own arm"),
+        },
     }
 }
 
