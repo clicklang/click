@@ -1151,14 +1151,7 @@ impl<'a> Proof<'a> {
             site: self.site.clone(),
             context: self.context.clone(),
             state,
-            node: Arc::new(ProofNode {
-                path_memo: Default::default(),
-                parent: Some(self.node.clone()),
-                step: Some(Arc::new(step)),
-                focused_branch: self.focused_branch_id(),
-                depth: self.node.depth + 1,
-                split_branches: Vec::new(),
-            }),
+            node: ProofNode::step_child(&self.node, self.focused_branch_id(), Arc::new(step)),
         })
     }
 
@@ -1314,14 +1307,7 @@ impl<'a> Proof<'a> {
             site: self.site.clone(),
             context: self.context.clone(),
             state,
-            node: Arc::new(ProofNode {
-                path_memo: Default::default(),
-                parent: Some(self.node.clone()),
-                step: Some(Arc::new(step)),
-                focused_branch: self.focused_branch_id(),
-                depth: self.node.depth + 1,
-                split_branches: Vec::new(),
-            }),
+            node: ProofNode::step_child(&self.node, self.focused_branch_id(), Arc::new(step)),
         })
     }
 
@@ -1628,16 +1614,11 @@ impl<'a> Proof<'a> {
             site: self.site.clone(),
             context: self.context.clone(),
             state,
-            node: Arc::new(ProofNode {
-                path_memo: Default::default(),
-                parent: Some(self.node.clone()),
-                step: Some(Arc::new(ProofStep::CloseInvariantsBy(Box::new(
-                    certificate,
-                )))),
-                focused_branch: self.focused_branch_id(),
-                depth: self.node.depth + 1,
-                split_branches: Vec::new(),
-            }),
+            node: ProofNode::step_child(
+                &self.node,
+                self.focused_branch_id(),
+                Arc::new(ProofStep::CloseInvariantsBy(Box::new(certificate))),
+            ),
         })
     }
 
@@ -1990,14 +1971,7 @@ impl<'a> Proof<'a> {
                     site: self.site.clone(),
                     context: self.context.clone(),
                     state,
-                    node: Arc::new(ProofNode {
-                        path_memo: Default::default(),
-                        parent: Some(self.node.clone()),
-                        step: None,
-                        focused_branch: self.focused_branch_id(),
-                        depth: self.node.depth,
-                        split_branches: ids.to_vec(),
-                    }),
+                    node: ProofNode::marker(&self.node, self.focused_branch_id(), ids.to_vec()),
                 };
                 Ok((successor, [Some(ids[0]), Some(ids[1])]))
             }
