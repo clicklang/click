@@ -15,9 +15,10 @@ use crate::kernel::proof::{
 };
 use crate::kernel::{CFloatClassification, CFloatCondition};
 use crate::surface::checking::plan_signed_arithmetic_certificate;
+use crate::surface::checking::{IntegerRefutation, plan_integer_refutation};
 use crate::surface::planning::proposition_search::PropositionSearch;
 use num_bigint::BigInt;
-use num_traits::{Signed, ToPrimitive, Zero};
+use num_traits::{One, Signed, ToPrimitive, Zero};
 use proof_object::{collect_surface_conjunct_leaves, frontier_premise_anchor};
 
 const MAX_DIRECT_CALLER_BINDING_NAMES: usize = 4096;
@@ -357,7 +358,7 @@ pub(super) fn integer_plan_to_surface_certificate(
                 ..
             } => {
                 let source_surface = node_surfaces.get(*source)?;
-                let surface = integer_surface_scale(source_surface, coefficient)?;
+                let surface = integer_certificate_surface_scale(source_surface, coefficient)?;
                 let certificate = IntegerCertificateNode::Scale {
                     source: *source,
                     coefficient: surface_signed_integer_literal(coefficient),
@@ -368,7 +369,7 @@ pub(super) fn integer_plan_to_surface_certificate(
             IntegerArithmeticNode::Add { left, right, .. } => {
                 let left_surface = node_surfaces.get(*left)?;
                 let right_surface = node_surfaces.get(*right)?;
-                let surface = integer_surface_add(left_surface, right_surface)?;
+                let surface = integer_certificate_surface_add(left_surface, right_surface)?;
                 let certificate = IntegerCertificateNode::Add {
                     left: *left,
                     right: *right,
@@ -470,6 +471,79 @@ fn integer_surface_ordered_parts(
     }
 }
 
+/// Over the integers `l < r` is `l + 1 <= r`, and the kernel's affine claim
+/// for a strict bound already carries that `+ 1`. Spelling a scaled or
+/// summed strict bound in that non-strict form keeps the written result
+/// equal to the claim the kernel derives: `c * (l + 1) <= c * r`, not the
+/// weaker `c * l < c * r`.
+fn integer_surface_non_strict_parts(
+    proposition: &ClickProposition,
+) -> Option<(ContractExpression, ComparisonOperator, ContractExpression)> {
+    let (left, operator, right) = integer_surface_ordered_parts(proposition)?;
+    Some(if operator == ComparisonOperator::LessThan {
+        (
+            ContractExpression::Add(
+                Box::new(left),
+                Box::new(ContractExpression::IntegerLiteral("1".into())),
+            ),
+            ComparisonOperator::LessEqual,
+            right,
+        )
+    } else {
+        (left, operator, right)
+    })
+}
+
+/// The `Integer` certificate's spelling of a scaled bound. `c * l < c * r`
+/// is the kernel's scaled claim only for `c == 1`; otherwise the strict
+/// bound is scaled in its non-strict form. The `signed_int32` family keeps
+/// [`integer_surface_scale`], whose checker reads the `c * l < c * r` shape.
+fn integer_certificate_surface_scale(
+    proposition: &ClickProposition,
+    coefficient: &BigInt,
+) -> Option<ClickProposition> {
+    if coefficient.is_one() {
+        return integer_surface_scale(proposition, coefficient);
+    }
+    let (left, operator, right) = integer_surface_non_strict_parts(proposition)?;
+    integer_surface_scale(
+        &ClickProposition::Comparison {
+            left,
+            operator,
+            right,
+        },
+        coefficient,
+    )
+}
+
+/// The `Integer` certificate's spelling of a sum. One strict addend carries
+/// the claim's `+ 1`, so `l1 + l2 < r1 + r2` spells the sum; two strict
+/// addends carry `+ 2`, which a single `<` cannot, so both are added in
+/// their non-strict form.
+fn integer_certificate_surface_add(
+    left: &ClickProposition,
+    right: &ClickProposition,
+) -> Option<ClickProposition> {
+    let strict = |proposition| {
+        matches!(
+            integer_surface_ordered_parts(proposition),
+            Some((_, ComparisonOperator::LessThan, _))
+        )
+    };
+    if !(strict(left) && strict(right)) {
+        return integer_surface_add(left, right);
+    }
+    let non_strict = |proposition| {
+        let (left, operator, right) = integer_surface_non_strict_parts(proposition)?;
+        Some(ClickProposition::Comparison {
+            left,
+            operator,
+            right,
+        })
+    };
+    integer_surface_add(&non_strict(left)?, &non_strict(right)?)
+}
+
 fn integer_surface_scale(
     proposition: &ClickProposition,
     coefficient: &BigInt,
@@ -507,6 +581,9 @@ fn integer_surface_add(
     left: &ClickProposition,
     right: &ClickProposition,
 ) -> Option<ClickProposition> {
+    // One strict addend carries the claim's `+ 1`, so `l1 + l2 < r1 + r2`
+    // spells the sum. Two strict addends carry `+ 2`, which a single `<`
+    // cannot spell; write both in their non-strict form instead.
     let (left_left, operator, left_right) = integer_surface_ordered_parts(left)?;
     let (right_left, right_operator, right_right) = integer_surface_ordered_parts(right)?;
     let operator = match (operator, right_operator) {
@@ -1765,6 +1842,52 @@ impl<'a> Proof<'a> {
         // its strategies and candidates; one closure attempt answers each
         // exact failed question once (`with_closure_failure_memo`).
         crate::kernel::with_closure_failure_memo(|| self.try_simp_closure_strategies())
+    }
+
+    /// Close a mathematical `Integer` bound goal with the solver behind
+    /// `auto`: refute the goal's negation from the facts connected to it and
+    /// apply the resulting certificate as one ordinary checked step. Any
+    /// miss leaves the proof unchanged.
+    pub(in crate::surface::proof) fn try_solver_closure(&self) -> Result<Option<Self>, ClickError> {
+        let (Some(goal), Some(surface_goal)) = (self.goal(), self.surface_goal()) else {
+            return Ok(None);
+        };
+        if crate::kernel::proof::integer_arithmetic::integer_affine_claim(goal).is_none() {
+            return Ok(None);
+        }
+        let Some(candidates) =
+            crate::surface::planning::proposition_search::solver_connected_premises(
+                self.facts().assumptions(),
+                goal,
+            )
+        else {
+            return Ok(None);
+        };
+        let IntegerRefutation::Proved {
+            certificate,
+            premises,
+        } = crate::instrumentation::measure_operation(
+            "surface",
+            "auto solver",
+            "auto solver: integer refutation",
+            || plan_integer_refutation(goal, &candidates),
+        )
+        else {
+            return Ok(None);
+        };
+        let Some(pairs) = self.resolve_simp_premises(&premises, &[]) else {
+            return Ok(None);
+        };
+        if pairs.len() != premises.len() {
+            return Ok(None);
+        }
+        let Some(surface) = integer_plan_to_surface_certificate(&certificate, &pairs, surface_goal)
+        else {
+            return Ok(None);
+        };
+        attempt::candidate_outcome(self.apply_step(ProofStep::ArithmeticCertificate(
+            ArithmeticCertificate::integer(surface),
+        )))
     }
 
     fn try_flat_simp_conjunction(
@@ -7346,8 +7469,8 @@ impl<'a> Proof<'a> {
                     let scope = proof.begin_have(have.proposition.clone())?;
                     let source_proof = have.checking_proof();
                     let selected = match source_proof.as_ref() {
-                        SourceProof::Default
-                        | SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Simp) => {
+                        SourceProof::Tactic(SmartTactic::Auto) => scope.try_auto_fact_closure()?,
+                        SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
                             scope.try_simp_closure()?
                         }
                         SourceProof::Script(body) => scope.try_authoritative_linear_script(body)?,

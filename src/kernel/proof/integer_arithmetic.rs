@@ -336,7 +336,10 @@ fn charge_integer_product(left: &BigInt, right: &BigInt) -> bool {
     true
 }
 
-fn scale_claim(claim: &IntegerAffineClaim, coefficient: &BigInt) -> Option<IntegerAffineClaim> {
+pub(crate) fn scale_claim(
+    claim: &IntegerAffineClaim,
+    coefficient: &BigInt,
+) -> Option<IntegerAffineClaim> {
     let mut terms = Vec::with_capacity(claim.terms.len());
     for (term, value) in &claim.terms {
         if !charge_integer_product(value, coefficient) {
@@ -357,7 +360,10 @@ fn scale_claim(claim: &IntegerAffineClaim, coefficient: &BigInt) -> Option<Integ
     })
 }
 
-fn add_claim(left: &IntegerAffineClaim, right: &IntegerAffineClaim) -> IntegerAffineClaim {
+pub(crate) fn add_claim(
+    left: &IntegerAffineClaim,
+    right: &IntegerAffineClaim,
+) -> IntegerAffineClaim {
     let mut terms = left.terms.clone();
     for (term, coefficient) in &right.terms {
         let value = terms.get(term).cloned().unwrap_or_else(BigInt::zero) + coefficient;
@@ -374,7 +380,10 @@ fn add_claim(left: &IntegerAffineClaim, right: &IntegerAffineClaim) -> IntegerAf
     }
 }
 
-fn negate_claim(claim: &IntegerAffineClaim, relation: IntegerAffineRelation) -> IntegerAffineClaim {
+pub(crate) fn negate_claim(
+    claim: &IntegerAffineClaim,
+    relation: IntegerAffineRelation,
+) -> IntegerAffineClaim {
     let terms = claim
         .terms
         .iter()

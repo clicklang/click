@@ -578,6 +578,26 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
+    /// `auto` on a stated fact: it executes no C, so it is the solver, then
+    /// the `simp` closure when the solver misses.
+    pub(in crate::surface::proof) fn try_auto_fact_closure(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        match self.try_solver_closure()? {
+            Some(closed) => Ok(Some(closed)),
+            None => self.try_simp_closure(),
+        }
+    }
+
+    pub(in crate::surface::proof) fn try_solver_closure(&self) -> Result<Option<Self>, ClickError> {
+        let Some(body) = self.body.try_solver_closure()? else {
+            return Ok(None);
+        };
+        let mut next = self.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     pub(in crate::surface::proof) fn try_restricted_simp_closure(
         &self,
         surfaces: &[ClickProposition],

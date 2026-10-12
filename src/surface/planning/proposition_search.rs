@@ -1878,6 +1878,22 @@ type AtomicPremiseSelection = (
 /// Walk syntax adjacency, never rebuilding an index of the ambient context.
 /// A wider smart fallback follows recent havoc bounds and general facts;
 /// its result still has to pass the restricted kernel query.
+/// The condition facts connected to `goal` through shared atoms, the same
+/// component `simp` selects. The solver behind `auto` reads its premises
+/// from this component; it never scans facts unconnected to the goal.
+pub(crate) fn solver_connected_premises(
+    context: &PureFactContext,
+    goal: &Proposition,
+) -> Option<Vec<Proposition>> {
+    let (conditions, _, _, _) = connected_atomic_premises(context, goal, &[], false, true, true)?;
+    Some(
+        conditions
+            .into_iter()
+            .map(|(condition, value)| Proposition::ConditionIs(condition, value))
+            .collect(),
+    )
+}
+
 fn connected_atomic_premises(
     context: &PureFactContext,
     goal: &Proposition,
