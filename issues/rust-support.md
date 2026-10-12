@@ -98,8 +98,15 @@ current roadmap: replace status when work lands rather than append checkpoints.
 
 Use the [shared Adler-32 specification](../design/adler32-spec.click), following
 [the checksum assessment](../design/rust-checksum-assessment.md). Compose the
-checked `from_checksum` constructor with the general update contract and getter,
+checked [word-extraction constructor](../design/charon-trial/adler2/restoration.click)
+with the general update contract and getter,
 showing that a saved packed checksum restores the same canonical A/B state.
+The constructor now proves the exact low/high masked words for every `u32`
+input. The next bridge is the bounded packing/unpacking round trip: with each
+word at most 65535, masking `(high << 16) | low` recovers `low`, and shifting
+then masking recovers `high`. Existing packing theorems establish the Integer
+value but do not expose these word identities. Arbitrary saved values need
+not have canonical Adler seeds; saved states produced by a checked update do.
 Connect the resumed update to the checked mathematical incremental equality.
 Prove arbitrary finite input correctness under the explicit supported memory
 range and API preconditions, including compatible initial states.

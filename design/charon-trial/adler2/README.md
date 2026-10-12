@@ -455,8 +455,42 @@ cargo nextest run --profile nightly --test rust_import --run-ignored only \
   -E 'test(charon_adler2_incremental_client) | test(adler_incremental_bridges)'
 ```
 
-Saved-checksum restoration through `Adler32::from_checksum` remains separate
-proof work. This client continues in the same receiver.
+This client continues in the same receiver. Saved-checksum restoration and
+resumed updates still need the word round-trip bridge described below.
+
+## Saved-checksum constructor
+
+[restoration.click](restoration.click) checks the unchanged
+`Adler32::from_checksum` body for every `u32` checksum, without a canonical-seed
+precondition. Its exact observations are:
+
+```text
+(result.a as u32) == old(sum & 65535u32)
+(result.b as u32) == old((sum >> 16) & 65535u32)
+```
+
+The contract describes the Rust program's truncating casts with masked words.
+Proof-expression narrowing casts instead require representability; using
+`sum as u16` in the specification would impose a different condition. The
+native Charon artifact locks both original module files and the qualified
+constructor root. Tests verify its body, reject lost masks, swapped words and
+an incorrect shift, expand and recheck its proof, and refresh the live import.
+
+```sh
+cargo nextest run --test rust_import -E 'test(charon_adler2_restoration)'
+cargo nextest run --profile nightly --test rust_import --run-ignored only \
+  -E 'test(charon_adler2_restoration)'
+```
+
+To compose this constructor with a saved checksum, the remaining identities
+are `(((high << 16) | low) & 65535u32) == low` and
+`((((high << 16) | low) >> 16) & 65535u32) == high`, with both words at most
+65535. A focused trace of the first identity shows that normalization retains
+the symbolic mask/shift expression and `simp` finds no applicable checked
+rule. The existing packing theorem proves the Integer value of the packed
+word, but there is currently no unpacking theorem. The constructor proof alone
+does not establish resumed-update correctness or canonical seeds for arbitrary
+saved values.
 
 ## Original public entry points
 
