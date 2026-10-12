@@ -123,10 +123,10 @@ work, and normal diagnostics must remain bounded.
 
 ## Verification
 
-Run the full test suite with:
+Run the full green-tree gate, the same script CI runs, with:
 
 ```sh
-cargo test
+scripts/check.sh
 ```
 
 Run only the markdown integration examples with:
@@ -137,7 +137,16 @@ cargo test --test mdtests
 
 ## Install Click
 
-On macOS or Linux, install the latest release with:
+No Click release has been published yet, so build the command from a checkout
+of this repository:
+
+```sh
+cargo install --path . --bin click
+```
+
+The installers below fetch published GitHub releases. Until the first release
+is tagged they report that no release exists. On macOS or Linux, install the
+latest release with:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/clicklang/click/master/install.sh | sh
@@ -146,7 +155,7 @@ curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/clicklan
 Set `CLICK_VERSION` to install a specific release instead:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/clicklang/click/master/install.sh | CLICK_VERSION=0.8.2 sh
+curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/clicklang/click/master/install.sh | CLICK_VERSION=0.1.0 sh
 ```
 
 On Windows, run the matching PowerShell installer. It installs the latest
@@ -157,19 +166,15 @@ irm https://raw.githubusercontent.com/clicklang/click/master/install.ps1 | iex
 ```
 
 ```powershell
-$env:CLICK_VERSION = '0.8.2'; irm https://raw.githubusercontent.com/clicklang/click/master/install.ps1 | iex
+$env:CLICK_VERSION = '0.1.0'; irm https://raw.githubusercontent.com/clicklang/click/master/install.ps1 | iex
 ```
 
-Once `clicklang` is published to crates.io, install just the main command with:
-
-```sh
-cargo install clicklang --bin click
-```
+The `clicklang` crate is not published to crates.io.
 
 Click keeps its launcher and installed versions under `~/.click`. The launcher
 uses the nearest `.click-version` file for a project, then the global default.
-Use `click install 0.8.2` to add a version, `click use 0.8.2` to pin the
-current directory for the project, and `click default 0.9.0` to change the
+Use `click install 0.1.0` to add a version, `click use 0.1.0` to pin the
+current directory for the project, and `click default 0.1.0` to change the
 global fallback. Without either, Click runs the launcher version. `click versions`
 lists installed versions. A project can commit `.click-version` to share its
 pin with collaborators.
