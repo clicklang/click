@@ -2333,6 +2333,92 @@ fn adler_bounded_native_count_observations_verify() {
 const PACKING: &str = include_str!("../../design/charon-trial/adler2/packing.click");
 const CHECKSUM: &str = include_str!("../../design/charon-trial/adler2/checksum.click");
 
+const RESTORATION: &str = include_str!("../../design/charon-trial/adler2/restoration.click");
+
+fn restoration_project() -> Project {
+    let p = adler2_helpers_project();
+    for (name, bytes) in [
+        (
+            "borrow.click.import.json",
+            include_bytes!("../../design/charon-trial/adler2/restoration.click.import.json")
+                .as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!("../../design/charon-trial/adler2/restoration.click.import.json.lock")
+                .as_slice(),
+        ),
+        (
+            "restoration.ullbc",
+            include_bytes!("../../design/charon-trial/adler2/restoration.ullbc").as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    fs::write(p.root.join("borrow.click"), RESTORATION).unwrap();
+    p
+}
+
+#[test]
+fn charon_adler2_restoration_extracts_original_checksum_words() {
+    let p = restoration_project();
+    C0VerificationSession::new_program_prepared(RESTORATION, load_import(&p.config()).unwrap())
+        .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: saved checksum word mutations and constructor expansion"]
+fn charon_adler2_restoration_rejects_false_words_and_expands() {
+    let p = restoration_project();
+    let prepared = load_import(&p.config()).unwrap();
+    for (before, after) in [
+        ("old(sum & 65535u32)", "old(sum)"),
+        ("old(sum & 65535u32)", "old((sum >> 16) & 65535u32)"),
+        ("old((sum >> 16) & 65535u32)", "old((sum >> 15) & 65535u32)"),
+        ("old(sum & 65535u32)", "old(sum & 32767u32)"),
+    ] {
+        let changed = RESTORATION.replacen(before, after, 1);
+        assert_ne!(changed, RESTORATION);
+        let error = C0VerificationSession::new_program_prepared(&changed, &prepared)
+            .err()
+            .expect("incorrect saved word observation must be refused");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+    assert_cli(&p, &["profile"]);
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "adler2::Adler32::from_checksum.contract",
+            "--in-place",
+        ],
+    );
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+#[ignore = "nightly: live Charon extraction of the unchanged restoration constructor"]
+fn charon_adler2_restoration_live_refresh_checks_original_body() {
+    let p = restoration_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    assert_eq!(
+        config["crate"]["roots"],
+        serde_json::json!(["adler2::Adler32::from_checksum"])
+    );
+    config["exporter"] = std::env::var("CLICK_CHARON").unwrap().into();
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(RESTORATION, load_import(&p.config()).unwrap())
+        .unwrap();
+}
+
 #[test]
 fn charon_adler2_checksum_packs_original_shared_fields() {
     let p = adler2_helpers_project();
