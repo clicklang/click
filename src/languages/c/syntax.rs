@@ -95,6 +95,7 @@ pub const C0_PUBLIC_FORMS: &[&str] = &[
     "expression.conditional",
     "expression.statement-expression",
     "expression.builtin-expect",
+    "expression.builtin-types-compatible",
     "expression.sizeof-struct",
     "expression.sizeof-type",
     "expression.call",
@@ -1934,8 +1935,18 @@ impl C0FunctionPointerSignature {
     }
 }
 
+// The execution type erases C integer rank and some typeof metadata. Keep
+// enough source identity for compile-time compatibility, or refuse the query.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CompatibilityIdentity {
+    Direct { long_rank: u8 },
+    TypeofStruct,
+    Unavailable,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ParsedType {
+    compatibility_identity: CompatibilityIdentity,
     c_type: C0Type,
     /// A distinct x86-64 extended-precision object. The current kernel
     /// transports its 16-byte storage as opaque bytes; it is never a binary64.
@@ -10600,6 +10611,7 @@ impl Parser {
             if parsed_type.struct_name.is_some() || parsed_type.union_name.is_some() {
                 return Err(self.error_here("aggregate typedef arrays are not supported yet"));
             }
+            parsed_type.compatibility_identity = CompatibilityIdentity::Unavailable;
             parsed_type.c_type = array_type_for_element(parsed_type.c_type, length)
                 .ok_or_else(|| self.error_here("typedef array element type is unsupported"))?;
         }
@@ -10630,6 +10642,7 @@ impl Parser {
                             "GNU word mode requires an ordinary integer typedef",
                         ));
                     }
+                    parsed_type.compatibility_identity = CompatibilityIdentity::Unavailable;
                     // Both supported x86-64 targets have a 64-bit machine word.
                     // This changes width, not signedness or object qualifiers.
                     parsed_type.c_type = match parsed_type.c_type {
@@ -11557,6 +11570,7 @@ impl Parser {
                 self.parse_typeof_type()?
             }
             Some(Token::Ident(name)) if name == "struct" => ParsedType {
+                compatibility_identity: CompatibilityIdentity::Direct { long_rank: 0 },
                 // C0 has no struct-value representation. Keep the tag on the
                 // parsed type while using the scalar slot as an internal
                 // placeholder so `typedef struct S S_t;` can later become
@@ -11596,6 +11610,7 @@ impl Parser {
                 pointer_depth: 0,
             },
             Some(Token::Ident(name)) if name == "union" => ParsedType {
+                compatibility_identity: CompatibilityIdentity::Direct { long_rank: 0 },
                 // A union has no runtime aggregate value in C0. Keep its tag
                 // on the parsed type while using an int32 placeholder for
                 // the address-backed member-selection path.
@@ -11636,6 +11651,7 @@ impl Parser {
                 pointer_depth: 0,
             },
             Some(Token::Ident(name)) if name == "enum" => ParsedType {
+                compatibility_identity: CompatibilityIdentity::Direct { long_rank: 0 },
                 c_type: C0Type::Int32,
                 long_double: false,
                 aligned_typedef: false,
@@ -11839,6 +11855,14 @@ impl Parser {
             );
         }
         Ok(ParsedType {
+            compatibility_identity: if saw_pointer
+                && (parsed.compatibility_identity == CompatibilityIdentity::TypeofStruct
+                    || parsed.pointee_constant)
+            {
+                CompatibilityIdentity::Unavailable
+            } else {
+                parsed.compatibility_identity
+            },
             c_type,
             long_double: parsed.long_double,
             aligned_typedef: false,
@@ -11881,6 +11905,44 @@ impl Parser {
         Ok(())
     }
 
+    fn typeof_has_exact_struct_identity(&self, expression: &C0Expression) -> bool {
+        // Layout provenance can survive a pointer cast, but GNU type
+        // compatibility asks for the C type of the expression itself.
+        match expression {
+            C0Expression::Variable(name) => self.variable_struct_values.contains_key(name),
+            C0Expression::Field {
+                field_type: C0Type::Int32,
+                field_struct_name: Some(_),
+                ..
+            } => true,
+            C0Expression::Load(pointer) | C0Expression::AggregateAddress { pointer, .. } => {
+                match pointer.as_ref() {
+                    C0Expression::Variable(name) => {
+                        self.variable_types.get(name) == Some(&C0Type::Int32Pointer)
+                            && self.variable_structs.contains_key(name)
+                    }
+                    C0Expression::Cast {
+                        c_type: C0Type::Int32Pointer,
+                        struct_name: Some(_),
+                        ..
+                    }
+                    | C0Expression::ScalarUpdate {
+                        c_type: C0Type::Int32Pointer,
+                        struct_name: Some(_),
+                        ..
+                    }
+                    | C0Expression::Field {
+                        field_type: C0Type::Int32Pointer,
+                        field_struct_name: Some(_),
+                        ..
+                    } => true,
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    }
+
     /// GNU `typeof` accepts either a type-name or an expression. The
     /// expression form is inspected only for its already-modeled type; it is
     /// never emitted as an executable read, which matches the extension's
@@ -11907,6 +11969,14 @@ impl Parser {
             ));
         };
         Ok(ParsedType {
+            compatibility_identity: if c_type == C0Type::Int32
+                && struct_name.is_some()
+                && self.typeof_has_exact_struct_identity(&expression)
+            {
+                CompatibilityIdentity::TypeofStruct
+            } else {
+                CompatibilityIdentity::Unavailable
+            },
             c_type,
             long_double: false,
             aligned_typedef: false,
@@ -12070,6 +12140,7 @@ impl Parser {
         if name == "long" && self.peek_ident() == Some("double") {
             self.position += 1;
             return Ok(ParsedType {
+                compatibility_identity: CompatibilityIdentity::Direct { long_rank: 0 },
                 // The byte-array slot is a layout placeholder only. The
                 // `long_double` marker prevents array or binary64 operations.
                 c_type: C0Type::UInt8Array(16),
@@ -12087,6 +12158,7 @@ impl Parser {
                 pointer_depth: 0,
             });
         }
+        let type_start = self.position - 1;
         let integer = crate::languages::c::integer_specifiers::parse(
             std::iter::once(name.as_str()).chain(self.tokens[self.position..].iter().map_while(
                 |token| match token {
@@ -12132,7 +12204,22 @@ impl Parser {
                 }
             }
         };
+        let long_rank = if let Some((_, count)) = integer {
+            self.tokens[type_start..type_start + count]
+                .iter()
+                .filter(|token| matches!(token, Token::Ident(word) if word == "long"))
+                .count() as u8
+        } else {
+            0
+        };
         Ok(ParsedType {
+            compatibility_identity: if integer.is_none()
+                && matches!(c_type, C0Type::Int64 | C0Type::UInt64)
+            {
+                CompatibilityIdentity::Unavailable
+            } else {
+                CompatibilityIdentity::Direct { long_rank }
+            },
             c_type,
             long_double: false,
             aligned_typedef: false,
@@ -12703,6 +12790,11 @@ impl Parser {
             Some(Token::LBrace) => self.parse_block_statement(),
             Some(Token::Semicolon) => {
                 self.position += 1;
+                Ok(C0Statement::Skip)
+            }
+            Some(Token::Ident(name)) if name == "__builtin_types_compatible_p" => {
+                self.parse_types_compatible()?;
+                self.expect(Token::Semicolon)?;
                 Ok(C0Statement::Skip)
             }
             Some(Token::Ident(name)) if name == "extern" || name == "__attribute__" => {
@@ -14395,6 +14487,7 @@ impl Parser {
                             self.parse_struct_value_initializer(&name, &struct_name)?;
                         C0Statement::Seq(Box::new(declaration), Box::new(initializer))
                     } else if matches!(self.peek(), Some(Token::Ident(_)))
+                        && self.peek_ident() != Some("__builtin_types_compatible_p")
                         && self.peek_next() == Some(&Token::LParen)
                     {
                         let source_name = self.expect_ident("function name")?;
@@ -14585,6 +14678,7 @@ impl Parser {
                     C0Statement::Seq(Box::new(declaration), Box::new(initializer))
                 } else if !object_constant
                     && matches!(self.peek(), Some(Token::Ident(_)))
+                    && self.peek_ident() != Some("__builtin_types_compatible_p")
                     && self.peek_next() == Some(&Token::LParen)
                 {
                     let call_start = self.position;
@@ -15276,6 +15370,7 @@ impl Parser {
                 )));
             }
             if matches!(self.peek(), Some(Token::Ident(_)))
+                && self.peek_ident() != Some("__builtin_types_compatible_p")
                 && self.peek_next() == Some(&Token::LParen)
             {
                 let source_name = self.expect_ident("function name")?;
@@ -15292,6 +15387,7 @@ impl Parser {
         let expression = match operator {
             Token::Equal => {
                 if matches!(self.peek(), Some(Token::Ident(_)))
+                    && self.peek_ident() != Some("__builtin_types_compatible_p")
                     && self.peek_next() == Some(&Token::LParen)
                 {
                     let call_start = self.position;
@@ -20177,7 +20273,46 @@ impl Parser {
         }
     }
 
+    fn parse_types_compatible_operand(&mut self) -> Result<ParsedType, C0SyntaxError> {
+        let ty = self.parse_type()?;
+        if ty.compatibility_identity == CompatibilityIdentity::Unavailable
+            || ty.enum_name.is_some()
+            || ty.function_pointer_signature.is_some()
+            || ty.long_double
+            || ty.opaque_builtin
+        {
+            return Err(self.error_here("`__builtin_types_compatible_p` requires retained C type identity; expression typeof supports struct values only, and enum/function types are not supported"));
+        }
+        Ok(ty)
+    }
+
+    fn parse_types_compatible(&mut self) -> Result<C0Expression, C0SyntaxError> {
+        self.position += 1;
+        self.expect(Token::LParen)?;
+        let left = self.parse_types_compatible_operand()?;
+        self.expect(Token::Comma)?;
+        let right = self.parse_types_compatible_operand()?;
+        self.expect(Token::RParen)?;
+        let rank = |ty: &ParsedType| match ty.compatibility_identity {
+            CompatibilityIdentity::Direct { long_rank } => long_rank,
+            CompatibilityIdentity::TypeofStruct => 0,
+            CompatibilityIdentity::Unavailable => unreachable!("checked operand"),
+        };
+        // GNU compatibility ignores only the outermost const/volatile
+        // qualifiers, not the qualifications of pointed-to types.
+        let compatible = left.c_type == right.c_type
+            && left.struct_name == right.struct_name
+            && left.union_name == right.union_name
+            && rank(&left) == rank(&right)
+            && left.pointee_constant == right.pointee_constant
+            && (left.volatile_levels >> 1) == (right.volatile_levels >> 1);
+        Ok(C0Expression::Int32Literal(u32::from(compatible)))
+    }
+
     fn parse_primary(&mut self) -> Result<C0Expression, C0SyntaxError> {
+        if self.peek_ident() == Some("__builtin_types_compatible_p") {
+            return self.parse_types_compatible();
+        }
         if self.peek() == Some(&Token::LParen) && self.peek_next() == Some(&Token::LBrace) {
             return self.parse_statement_expression();
         }

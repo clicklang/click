@@ -342,6 +342,10 @@ id = "c0.expression.statement-expression"
 path = "reference/language/c0.md#supported-expressions-and-statements"
 
 [[item]]
+id = "c0.expression.builtin-types-compatible"
+path = "reference/language/c0.md#supported-expressions-and-statements"
+
+[[item]]
 id = "c0.expression.builtin-expect"
 path = "reference/language/c0.md#supported-expressions-and-statements"
 
