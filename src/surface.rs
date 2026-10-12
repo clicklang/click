@@ -5901,6 +5901,27 @@ impl From<ProgramPointRef> for SnapshotSelector {
     }
 }
 
+/// Whether a snapshot can name the contract `result`. `result` is the return
+/// value, which exists only once the function returns, so `old(...)` (`None`)
+/// and every program point but `function.exit` precede it. A proof mark is
+/// placed by the proof itself and may follow the return.
+pub(crate) fn snapshot_can_name_result(selector: Option<&SnapshotSelector>) -> bool {
+    match selector {
+        None => false,
+        Some(SnapshotSelector::Mark(_)) => true,
+        Some(SnapshotSelector::ProgramPoint(point)) => {
+            point.region == CodeRegionRef::Function && point.kind == ProgramPointKind::Exit
+        }
+    }
+}
+
+/// Whether `result` occurs in a proposition outside any nested snapshot.
+pub(crate) fn proposition_names_result(proposition: &ClickProposition) -> bool {
+    let mut names = BTreeSet::new();
+    collect_current_proposition_variables(proposition, &mut names);
+    names.contains("result")
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct ProgramPointRef {
     region: CodeRegionRef,

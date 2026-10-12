@@ -17493,3 +17493,21 @@ fn a_loop_phase_expands_by_label_over_a_prepared_c_import() {
             .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
     }
 }
+
+#[test]
+fn early_return_arms_close_without_an_entry_transport_of_result() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/byte_representation_roundtrip.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source(source, &sources, "f", CProofClaim::Grouped).unwrap();
+    // `result` does not exist at function entry, so a transport from there
+    // could only restate the goal; each failure arm closes it directly.
+    assert!(!expanded.contains("at(function.entry"), "{expanded}");
+    verify_c0_sources(&expanded, &sources).unwrap();
+}

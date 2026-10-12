@@ -3349,9 +3349,14 @@ impl<'a> Proof<'a> {
                 .into_iter()
                 .map(|(selector, _)| selector.clone()),
         );
+        // A goal about `result` cannot be stated at a point before the
+        // return, so such a source would only be a no-op transport.
+        let names_result = crate::surface::proposition_names_result(surface_goal);
         let mut tried = BTreeSet::new();
         for selector in selectors {
-            if !tried.insert(selector.clone()) {
+            if (names_result && !crate::surface::snapshot_can_name_result(Some(&selector)))
+                || !tried.insert(selector.clone())
+            {
                 continue;
             }
             let source = ClickProposition::At {

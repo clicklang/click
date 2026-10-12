@@ -2731,6 +2731,13 @@ together. This matters for propositions such as `viewable(...)`: both the
 address expression and the memory in which it is viewable come from the
 selected state.
 
+The contract `result` exists only once the function returns, so `old(...)` and
+`at(...)` at any program point but `function.exit` cannot name it; both are
+refused where they are written (`mdtests/old_of_result_is_refused.md`,
+`mdtests/an_entry_snapshot_of_result_is_refused.md`). A proof mark can name it,
+since a proof may place the mark after the return. A C binding named `result`
+is still written `c(result)` inside a snapshot.
+
 The selected snapshot is a complete recorded C state, not only a memory
 snapshot. Inside `at(...)`, reassigned parameters and declared scalar, pointer,
 and array locals resolve to their values in that snapshot. Outside `at(...)`,

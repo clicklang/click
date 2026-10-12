@@ -5351,6 +5351,15 @@ impl Parser {
                     )
                 )
             {
+                // Refuse only once the proposition reading is chosen, so the
+                // refusal is not mistaken for a reason to reparse.
+                if let Ok(ClickProposition::At {
+                    selector,
+                    proposition,
+                }) = &proposition_at_snapshot
+                {
+                    self.refuse_result_in_snapshot_proposition(selector, proposition)?;
+                }
                 return proposition_at_snapshot;
             }
             self.position = start;
@@ -10791,6 +10800,7 @@ impl Parser {
             self.position += 2;
             let expression = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
+            self.refuse_result_in_snapshot_expression(None, &expression)?;
             return Ok(ContractExpression::Old(Box::new(expression)));
         }
 
@@ -10800,6 +10810,7 @@ impl Parser {
             self.expect(Token::Comma)?;
             let expression = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
+            self.refuse_result_in_snapshot_expression(Some(&selector), &expression)?;
             return Ok(ContractExpression::At {
                 selector,
                 expression: Box::new(expression),
@@ -11198,6 +11209,51 @@ impl Parser {
             name,
             arguments,
         })
+    }
+
+    /// Refuses `result` in a snapshot that precedes the return; see
+    /// [`snapshot_can_name_result`]. Kept out of the recursive parser frame,
+    /// like the other helpers here.
+    #[inline(never)]
+    fn refuse_result_in_snapshot_expression(
+        &self,
+        selector: Option<&SnapshotSelector>,
+        expression: &ContractExpression,
+    ) -> Result<(), ClickError> {
+        let mut names = BTreeSet::new();
+        collect_current_contract_expression_variables(expression, &mut names);
+        self.refuse_result_in_snapshot(selector, names.contains("result"))
+    }
+
+    #[inline(never)]
+    fn refuse_result_in_snapshot_proposition(
+        &self,
+        selector: &SnapshotSelector,
+        proposition: &ClickProposition,
+    ) -> Result<(), ClickError> {
+        self.refuse_result_in_snapshot(Some(selector), proposition_names_result(proposition))
+    }
+
+    fn refuse_result_in_snapshot(
+        &self,
+        selector: Option<&SnapshotSelector>,
+        names_result: bool,
+    ) -> Result<(), ClickError> {
+        if !names_result || snapshot_can_name_result(selector) {
+            return Ok(());
+        }
+        let snapshot = match selector {
+            None => "old(...)".to_string(),
+            Some(selector) => format!(
+                "at({}, ...)",
+                diagnostics::describe_snapshot_selector(selector)
+            ),
+        };
+        Err(self.error(format!(
+            "`result` cannot be named inside `{snapshot}`: that snapshot precedes the \
+             return, where `result` does not exist yet; state the claim about `result` \
+             outside the snapshot, or at `function.exit`"
+        )))
     }
 
     fn parse_snapshot_selector(&mut self) -> Result<SnapshotSelector, ClickError> {
