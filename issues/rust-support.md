@@ -106,8 +106,14 @@ and proves both final fields equal the common specification on the entry input
 snapshot, for every length zero through 22,207 and any canonical initial state.
 Explicit byte-equality invariants and checked sum extensionality preserve the
 specification through the original reductions and final field stores. False
-final A and B checksum claims are rejected. The arbitrary-length computation’s
-nested-loop checksum proof remains pending. Full original-computation smart audits
+final A and B checksum claims are rejected. For arbitrary supported lengths,
+the nested full-batch loops carry A against the common specification through
+native additions and lane reductions. Their B proof checks the exact deferred
+batch-local seed contribution, preserves a nonnegative representative through
+every native vector step, and connects the original scalar seed addition and
+all reductions to its combined residue. B still needs specification induction
+at the global prefix; the general aligned remainder and scalar tail also remain
+pending. Full original-computation smart audits
 currently exhaust the standard ten-minute run bound before completing a site,
 while ordinary verification succeeds. This is an audit-tool limitation, not a
 reported proof failure; continue checksum proof work with ordinary verification

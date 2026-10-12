@@ -158,8 +158,12 @@ arbitrary-length computation has checked bounds and termination. Each full-batch
 vector step connects all four constructor lanes to exact absolute input-byte
 observations using actual iterator state. The full-batch loops preserve the A
 residue against the common specification through their native additions and
-lane reductions. General B induction, vector and scalar remainders, and the
-full checksum identity remain unproved.
+lane reductions. The original inner loop also carries a nonnegative B
+representative with the deferred batch-local position times A contribution.
+Its exact native transition and the original scalar seed addition and reductions
+preserve the combined B residue. Connecting B to the common specification at the
+global prefix, vector and scalar remainders, and the full checksum identity
+remain unproved.
 
 Follow the [current roadmap](../issues/rust-support.md) for the remaining outer
 batches, short tails, common specification, unchanged C proof, and architecture
