@@ -121,7 +121,7 @@ mod verification;
 pub use crate::source::SourceContainer;
 use checking::*;
 pub use expansion::{
-    CProofClaim, ClaimLocationError, ClickImportSite, SelectedTacticExpansion,
+    CProofClaim, ClaimLocationError, ClickImportSite, ProofSourceIndex, SelectedTacticExpansion,
     SmartTacticCandidate, SmartTacticSelectionError, SmartTacticSourceSite, SourceClaim,
     SourcePosition, c0_select_smart_tactic, c0_smart_tactic_source_sites,
     c0_tactic_source_position, claim_at, click_declaration_source_position, click_import_sites,
