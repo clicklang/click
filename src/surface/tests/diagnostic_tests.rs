@@ -2228,7 +2228,7 @@ fn fold_over_a_hidden_record_names_the_failed_fact() {
     let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
     let report = error.concise_report();
     assert!(
-        report.contains("required body fact: int32 =(4294967295,"),
+        report.contains("required body fact: int32 =(-1,"),
         "{report}"
     );
     assert!(!report.contains("first.v == first.v"), "{report}");
