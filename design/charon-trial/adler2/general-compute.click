@@ -75,6 +75,8 @@ impl adler2::Adler32 {
      owns self.a; owns self.b; views *bytes;
      ensures self.a < 65521;
      ensures self.b < 65521;
+     ensures to_integer(self.a) <= 65520;
+     ensures to_integer(self.b) <= 65520;
      ensures to_integer(self.a) == old(adler_spec_a(bytes, ((bytes.len() as u32) as i32), old(to_integer((self.a as u32)))));
      ensures to_integer(self.b) == old(adler_spec_b(bytes, ((bytes.len() as u32) as i32), old(to_integer((self.a as u32))), old(to_integer((self.b as u32)))));
     } by {
@@ -2519,6 +2521,8 @@ impl adler2::Adler32 {
      apply(int32_to_integer_less_equal_implies_less_equal((self.b as i32), 65520)) using { to_integer((self.b as i32)) <= to_integer(65520); }
      apply(adler_i32_below_mod((self.b as i32))) using { (self.b as i32) <= 65520; }
      have self.b < 65521 by assumption();
-     simp() using { self.a < 65521; self.b < 65521; to_integer(self.a) == old(adler_spec_a(bytes, ((bytes.len() as u32) as i32), old(to_integer((self.a as u32))))); to_integer(self.b) == old(adler_spec_b(bytes, ((bytes.len() as u32) as i32), old(to_integer((self.a as u32))), old(to_integer((self.b as u32))))); }
+     have to_integer(self.a) <= 65520 by arithmetic() using { to_integer(self.a) < 65521; };
+     have to_integer(self.b) <= 65520 by arithmetic() using { to_integer(self.b) < 65521; };
+     simp() using { self.a < 65521; self.b < 65521; to_integer(self.a) <= 65520; to_integer(self.b) <= 65520; to_integer(self.a) == old(adler_spec_a(bytes, ((bytes.len() as u32) as i32), old(to_integer((self.a as u32))))); to_integer(self.b) == old(adler_spec_b(bytes, ((bytes.len() as u32) as i32), old(to_integer((self.a as u32))), old(to_integer((self.b as u32))))); }
     }
 }

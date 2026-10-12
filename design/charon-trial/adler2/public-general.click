@@ -11,10 +11,14 @@ impl adler2::Adler32 {
      ensures to_integer(self.b) == old(adler_spec_b(bytes, ((bytes.len() as u32) as i32), old(to_integer((self.a as u32))), old(to_integer((self.b as u32)))));
      ensures self.a < 65521;
      ensures self.b < 65521;
+     ensures (self.a as u32) <= 65520u32;
+     ensures (self.b as u32) <= 65520u32;
      ensures forall (k: int32) { 0 <= k and k < ((bytes.len() as u32) as i32) implies bytes[k] == old(bytes[k]) };
     } by {
      apply(adler_bounded_count(bytes.len())) using { bytes.len() <= 2147483647u64; }
      execute();
+     apply(adler_canonical_observation(self.a));
+     apply(adler_canonical_observation(self.b));
      have forall (k: int32) { 0 <= k and k < ((bytes.len() as u32) as i32) implies bytes[k] == old(bytes[k]) } by {
       intro(); intro();
       extract(0 <= k); extract(k < ((bytes.len() as u32) as i32));

@@ -2483,3 +2483,87 @@ fn call_resource_diagnostic_read_shows_snapshot_and_access() {
         "{rendered}"
     );
 }
+
+/// A budget refusal is still a failure at a checked source frontier. The
+/// failed search must not discard the preceding accepted store or nested fact.
+#[test]
+fn smart_have_budget_refusal_retains_checked_trace_prefix() {
+    for nested in [false, true] {
+        let body = if nested {
+            "have value == value by { normalize(); } simp();"
+        } else {
+            "simp();"
+        };
+        let source = format!(
+            "verifying \"f.c\"; void f(int32 *cell, int32 value) {{ owns cell[0..1]; requires value < 100; ensures cell[0] == value; }} by {{ step(); have cell[0] == value + 1 by {{ {body} }} execute(); simp(); }}"
+        );
+        with_proof_trace("f", || {
+            let error = crate::instrumentation::with_tactic_work_limits(
+                crate::instrumentation::TacticWorkLimits {
+                    simple: 1_000_000,
+                    smart: 128,
+                    control: if nested { 128 } else { 1_000_000 },
+                },
+                || {
+                    verify_c0_sources(
+                        &source,
+                        &[("f.c", "void f(int32 *cell, int32 value) { *cell = value; }")],
+                    )
+                },
+            )
+            .expect_err("the bounded false comparison must fail");
+            assert!(
+                error.message().contains("budget exhausted"),
+                "{}",
+                error.message()
+            );
+            let trace = error
+                .trace_context_report()
+                .expect("the accepted prefix must survive exhaustion");
+            assert!(trace.contains("steps through:"), "{trace}");
+            assert!(trace.contains("*cell = value"), "{trace}");
+            if nested {
+                assert!(trace.contains("have value == value"), "{trace}");
+            }
+            assert!(!trace.contains("adds: cell[0] == value + 1"), "{trace}");
+        });
+    }
+}
+
+#[test]
+fn loop_have_budget_refusal_retains_checked_store_trace() {
+    let source = r#"verifying "f.c";
+        void f(int32 *cell, int32 value) {
+            owns cell[0..1]; requires value < 100; ensures cell[0] == value;
+        } by {
+            step(); step();
+            loop {
+                invariant i >= 0;
+                initialize by { normalize(); }
+                preserve by {
+                    step();
+                    have cell[0] == value + 1 by { simp(); }
+                }
+            }
+            execute(); simp();
+        }
+    "#;
+    with_proof_trace("f", || {
+        let error = crate::instrumentation::with_tactic_work_limits(
+            crate::instrumentation::TacticWorkLimits {
+                simple: 1_000_000, smart: 128, control: 1_000_000,
+            },
+            || verify_c0_sources(source, &[("f.c", "void f(int32 *cell, int32 value) { int32 i = 1; while (i > 0) { *cell = value; i = i - 1; } }")]),
+        ).expect_err("the loop's bounded false comparison must fail");
+        assert!(
+            error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+        let trace = error
+            .trace_context_report()
+            .expect("the loop's checked prefix must survive");
+        assert!(trace.contains("steps through: *cell = value"), "{trace}");
+        assert!(!trace.contains("adds: cell[0] == value + 1"), "{trace}");
+    });
+}
