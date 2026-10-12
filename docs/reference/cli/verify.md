@@ -75,6 +75,10 @@ rather than checking their proofs.
 | `-h`, `--help` | Print command help and exit successfully. |
 | `--` | Stop option parsing; the remaining argument is the target path. |
 
+A `simp` work-budget failure retains its already-checked prefix, including
+accepted steps inside nested `have` blocks and loop bodies. An unfinished
+claim contributes no accepted fact to that trace.
+
 `--explain` without `--changed-since` is an error. A missing or invalid
 baseline marker forces a full rebuild rather than trusting an unattested
 result. A marker records the C target, the verifier binary, the commit, the sidecar, and

@@ -390,7 +390,9 @@ is verified separately against the common checksum specification for lengths
 zero through 2,147,483,647 bytes from canonical initial states. The unchanged
 `write_slice` and `adler32_slice` wrappers compose checked bodies over the same
 range, preserve input bytes, and prove field and packed checksum correctness.
-Implementation incremental processing remains pending.
+A locked client also proves that two actual updates equal the full-input
+checksum for every valid split over that range. Saved-checksum restoration
+and resumed updates remain pending.
 
 ```sh
 cargo run --bin click -- import lock examples/rust-unsigned/arithmetic.click

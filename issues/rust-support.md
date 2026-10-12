@@ -53,7 +53,12 @@ ordered recombination to the shared mathematical specification. Full-range
 native-count and byte-position bridges preserve exact values and addresses.
 The specification independently proves concatenation and incremental equality
 for A, B and the packed checksum under explicit signed-range split bounds and
-canonical A seeds. Implementation-level incremental composition remains pending.
+canonical A seeds. A locked real Rust client now performs two unchanged
+`write_slice` calls at every split of every supported input, including empty
+prefixes and suffixes, proves the full-input packed specification, and preserves
+all bytes. Its proof connects actual updated fields and suffix byte addresses
+to the checked concatenation theorem. Saved-checksum restoration and resumed
+updates remain pending.
 
 Constructors, one- through four-byte computations, and the shared checksum
 getter verify. The getter proves exact packing for any two u16 fields and has a
@@ -89,12 +94,13 @@ current roadmap: replace status when work lands rather than append checkpoints.
 
 ## Remaining work, in delivery order
 
-### 1. Compose Rust incremental processing
+### 1. Verify saved-checksum restoration and resumed updates
 
 Use the [shared Adler-32 specification](../design/adler32-spec.click), following
 [the checksum assessment](../design/rust-checksum-assessment.md). Compose the
-general public update contract across repeated calls and connect it to the
-checked mathematical incremental equality.
+checked `from_checksum` constructor with the general update contract and getter,
+showing that a saved packed checksum restores the same canonical A/B state.
+Connect the resumed update to the checked mathematical incremental equality.
 Prove arbitrary finite input correctness under the explicit supported memory
 range and API preconditions, including compatible initial states.
 
@@ -102,8 +108,8 @@ Acceptance:
 
 - The unchanged Rust public entry point composes checked bodies, terminates,
   preserves input bytes, cannot panic, and returns the specified packed checksum.
-- Incremental processing equals processing concatenated input, including
-  empty and chunk/remainder boundaries.
+- Restoring a saved checksum and continuing an update equals processing
+  concatenated input, including empty and chunk/remainder boundaries.
 - A false checksum postcondition fails. No assumed library summary supplies
   the checksum computation's postcondition.
 

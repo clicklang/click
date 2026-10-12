@@ -9,7 +9,9 @@ The proof follows actual native remaining counts, checked signed observations,
 and shared input views through all original loops, reductions and final stores.
 The unchanged `adler32_slice` entry point composes the checked constructor,
 general update and getter and returns the specified packed checksum over the
-same length range. Implementation incremental processing remains pending.
+same length range. A locked real Rust client proves two consecutive updates
+equal the full-input checksum for every valid split over that range, preserving
+all bytes. Restoring a saved packed checksum before continuing remains pending.
 
 The 2,147,483,647-byte limit comes from the bound library
 ([`bounded-count.click`](bounded-count.click) and the proofs built on it), which
@@ -421,6 +423,41 @@ cargo nextest run --test rust_import --run-ignored all \
   -E 'test(charon_adler2_checksum)'
 ```
 
+## Real incremental client
+
+[incremental.rs](incremental.rs) is a new client of the unchanged pinned library.
+It splits one input slice, constructs an `Adler32`, performs the original
+`write_slice` on each half, then calls the original checksum getter. The two
+library files remain byte-for-byte pinned; the client re-exports `Adler32` so
+the original `algo.rs` crate-root import resolves without editing the library.
+
+[incremental.click](incremental.click) proves the common full-input packed
+checksum and byte preservation for every length zero through 2,147,483,647
+and every split from zero through that length. This includes empty inputs,
+empty prefixes/suffixes, exact batches and scalar tails without fixing concrete
+lengths in the proof. The lock includes the client and both original module
+files, with the sole root `adler_incremental::incremental`.
+
+The harness reuses the existing computation, constructors, public update and
+getter fragments under their new qualified module paths and checks their bodies
+in the same unit. [incremental-split.click](incremental-split.click) connects
+native split lengths to signed concatenation observations. The update contract
+exports native canonical seed bounds so its result meets the next call's
+preconditions. A pointwise suffix-address proof and extensionality connect the
+actual shared subslice to the logical concatenation suffix; frozen field
+observations connect the second call's seeds to the first call's results.
+
+Focused caller verification, false checksum/authority/split/preservation checks,
+complete original callees and client-contract expansion/reverification run nightly:
+
+```sh
+cargo nextest run --profile nightly --test rust_import --run-ignored only \
+  -E 'test(charon_adler2_incremental_client) | test(adler_incremental_bridges)'
+```
+
+Saved-checksum restoration through `Adler32::from_checksum` remains separate
+proof work. This client continues in the same receiver.
+
 ## Original public entry points
 
 [public-general.click](public-general.click) composes the unchanged
@@ -524,8 +561,9 @@ cargo nextest run --test rust_import --run-ignored only \
 
 ## Remaining proof work
 
-Connect repeated computation calls to the shared mathematical incremental
-equality, prove the unchanged C implementation, and derive C/Rust equality
+Prove that restoring a saved checksum with `from_checksum` and continuing
+preserves the state and incremental result. Then prove the unchanged C
+implementation and derive C/Rust equality
 under matched input and seed conditions. See the
 [checksum assessment](../../rust-checksum-assessment.md).
 
