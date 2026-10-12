@@ -4088,6 +4088,18 @@ impl ResourceContext {
         // for every cell a call havoc examines. A member outside them is
         // not found, which only leaves the pair unproven, as before.
         let containing = |child: &CMemoryRange| {
+            // Prefer the written root. A successful containment proof already
+            // selects a member; spelling that address many other ways adds
+            // no information needed for this query.
+            if let Some(entry) = self
+                .storage
+                .index
+                .owned_memory_by_root
+                .get(&memory_base_root(child.base()))
+                .and_then(|entries| entries.iter().copied().find(|entry| holds(child, *entry)))
+            {
+                return Some(entry);
+            }
             let mut roots = related_memory_base_roots(child.base(), assumptions);
             for alias in assumptions.exact_pointer_aliases(child.base()) {
                 crate::instrumentation::record_deterministic_work(1);
@@ -4890,6 +4902,21 @@ impl ResourceContext {
         let index = &self.storage.index;
         let base = range.base();
         let mut candidates = BTreeSet::new();
+        // Same-block aliases can nominate only members of this block. When
+        // there are fewer owned members than aliases, checking the complete
+        // block is cheaper than expanding the aliases' equality classes.
+        // Cross-block aliases retain the indexed path below.
+        if Some(&base.block) != skip_block
+            && assumptions.exact_pointer_aliases(base).next().is_none()
+            && let Some(entries) = index.owned_memory_by_block.get(&base.block)
+            && entries.len() <= assumptions.exact_pointer_offset_alias_count(base)
+        {
+            for entry in entries.iter() {
+                crate::instrumentation::record_deterministic_work(1);
+                candidates.insert(*entry);
+            }
+            return candidates;
+        }
         let add_owned_at_base = |candidates: &mut BTreeSet<ResourceEntryId>, at: &Pointer| {
             if Some(&at.block) == skip_block {
                 return;

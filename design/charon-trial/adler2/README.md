@@ -11,7 +11,8 @@ The unchanged `adler32_slice` entry point composes the checked constructor,
 general update and getter and returns the specified packed checksum over the
 same length range. A locked real Rust client proves two consecutive updates
 equal the full-input checksum for every valid split over that range, preserving
-all bytes. Restoring a saved packed checksum before continuing remains pending.
+all bytes. A second client proves the same result after saving the prefix
+checksum and restoring a fresh receiver before continuing.
 
 The 2,147,483,647-byte limit comes from the bound library
 ([`bounded-count.click`](bounded-count.click) and the proofs built on it), which
@@ -455,8 +456,8 @@ cargo nextest run --profile nightly --test rust_import --run-ignored only \
   -E 'test(charon_adler2_incremental_client) | test(adler_incremental_bridges)'
 ```
 
-This client continues in the same receiver. Saved-checksum restoration and
-resumed updates still need the word round-trip bridge described below.
+This client continues in the same receiver. The saved-checksum client below
+checks restoration into a fresh receiver before the second update.
 
 ## Saved-checksum constructor
 
@@ -482,15 +483,40 @@ cargo nextest run --profile nightly --test rust_import --run-ignored only \
   -E 'test(charon_adler2_restoration)'
 ```
 
-To compose this constructor with a saved checksum, the remaining identities
-are `(((high << 16) | low) & 65535u32) == low` and
-`((((high << 16) | low) >> 16) & 65535u32) == high`, with both words at most
-65535. A focused trace of the first identity shows that normalization retains
-the symbolic mask/shift expression and `simp` finds no applicable checked
-rule. The existing packing theorem proves the Integer value of the packed
-word, but there is currently no unpacking theorem. The constructor proof alone
-does not establish resumed-update correctness or canonical seeds for arbitrary
-saved values.
+## Saved-checksum resumed client
+
+[resumed.rs](resumed.rs) splits the input, computes and saves the prefix checksum,
+restores a fresh receiver through the unchanged `from_checksum`, then calls the
+original update and checksum methods on the suffix. Its two source-level
+`state` bindings retain their distinct native MIR identities in the proof.
+
+[resumed.click](resumed.click) proves the packed full-input specification and
+preserves every byte for all lengths zero through 2,147,483,647 and all valid
+splits. It explicitly proves the restored A/B words equal the frozen prefix
+fields and satisfy the next update's canonical-seed preconditions. Empty input,
+empty prefixes/suffixes, exact batches and short tails are included by these
+quantified bounds. Arbitrary saved `u32` values can have noncanonical seeds;
+the resumed client restores a checksum produced by a checked update.
+
+The getter exports both its Integer result and the exact native packed word.
+Two standard kernel-supported theorems, `uint32_unpack_uint16_low` and
+`uint32_unpack_uint16_high`, recover the masked words of `(high << 16) | low`
+when both fields are at most 65535. The high-word rule uses a logical right
+shift, including when the packed word's top bit is set. Explicit Integer
+order bridges carry the canonical 65520 bounds to these 65535 preconditions.
+The remainder of the client reuses the checked split, byte extensionality and
+concatenation reasoning. No library body or checksum summary is assumed.
+
+The lock covers the new client and both unchanged pinned library modules, with
+sole root `adler_resumed::resumed`. Nightly checks verify all assembled original
+callees and the client, expand and recheck the client, reject false result,
+split and byte-preservation claims and missing view authority, and refresh the
+live Charon import before rejecting a changed client input.
+
+```sh
+cargo nextest run --profile nightly --test rust_import --run-ignored only \
+  -E 'test(charon_adler2_resumed_client)'
+```
 
 ## Original public entry points
 
@@ -549,8 +575,8 @@ weights, and removes the native `6 * MOD` offset under remainder. Checked
 two- and three-byte specification lemmas unfold the byte and weighted sums.
 The computation contracts retain their native results and byte preservation
 while also proving the common A/B results. These helpers have expansion and
-wrong-weight/offset regressions. General-length implementation correctness
-remains pending.
+wrong-weight/offset regressions. General-length implementation correctness is checked by the computation and
+public-client proofs above.
 
 ## Reproduce
 
@@ -595,9 +621,7 @@ cargo nextest run --test rust_import --run-ignored only \
 
 ## Remaining proof work
 
-Prove that restoring a saved checksum with `from_checksum` and continuing
-preserves the state and incremental result. Then prove the unchanged C
-implementation and derive C/Rust equality
+Prove the unchanged C implementation and derive C/Rust equality
 under matched input and seed conditions. See the
 [checksum assessment](../../rust-checksum-assessment.md).
 

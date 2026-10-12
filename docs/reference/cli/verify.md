@@ -154,7 +154,10 @@ errors and traces. `goal:` shows the checked proposition after rewrites;
 `adds:` uses that same format for each admitted fact. Readable expressions are
 used only when they preserve checked identities. Typed memory operands include
 their read width, snapshot, and address, with shared labels and a construction
-legend. A source spelling is not printed in place of a snapshot-dependent fact.
+legend. Constants in `int32` comparisons use signed decimal values. The
+checked return type distinguishes signed and unsigned 32-bit equality facts
+even when the returned value has no source name.
+A source spelling is not printed in place of a snapshot-dependent fact.
 An `assumption()` failure on an existential goal suggests the
 `witness { name: value }` tactic. A trace reports facts introduced into the
 focused proof context and changes to exact resource representations, using

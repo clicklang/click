@@ -376,8 +376,20 @@ fn describe_context_pure_and_execution_facts(
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
+    describe_context_facts_with_result(pure_facts, execution_pure_facts, parameter_binding, None)
+}
+
+fn describe_context_facts_with_result(
+    pure_facts: &[Proposition],
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
+    parameter_binding: ParameterBinding<'_>,
+    result: Option<&CValue>,
+) -> String {
     let mut labels =
         crate::surface::proof_diagnostics::render::SnapshotLabels::naming(parameter_binding);
+    if let Some(result) = result {
+        labels.source_value_type(result);
+    }
     let text = describe_context_facts_labeled(pure_facts, execution_pure_facts, &mut labels);
     format!("{text}{}", labels.trace_legend())
 }
@@ -862,6 +874,7 @@ pub(super) fn describe_goal_proof_context(
     case_facts: &[Proposition],
     resource_facts: &[CResourceFact],
     parameter_binding: ParameterBinding<'_>,
+    result: Option<&CValue>,
 ) -> String {
     let mut relevant = match goal {
         Some(goal) => pure_facts_relevant_to(goal, pure_facts),
@@ -876,12 +889,12 @@ pub(super) fn describe_goal_proof_context(
     } else {
         format!(
             "\n  case: {}",
-            describe_context_pure_and_execution_facts(case_facts, &[], parameter_binding)
+            describe_context_facts_with_result(case_facts, &[], parameter_binding, result)
         )
     };
     format!(
         "{GOAL_PROOF_CONTEXT_HEADER}{case}\n  pure facts: {}\n  resource facts: {}",
-        describe_context_pure_and_execution_facts(&relevant, &[], parameter_binding),
+        describe_context_facts_with_result(&relevant, &[], parameter_binding, result),
         describe_resource_facts(resource_facts, parameter_binding)
     )
 }

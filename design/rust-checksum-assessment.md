@@ -7,8 +7,10 @@ selection, and the [Adler trial](charon-trial/adler2/README.md) records its curr
 checked computation correctness over the explicit signed observation range.
 The unchanged public entry point composes the checked constructor, general
 computation and checksum getter over that range. A real client connects two
-actual updates at every valid split to the full-input specification. Saved
-checksum restoration, C correctness and C/Rust result equality remain unproved.
+actual updates at every valid split to the full-input specification. A second
+client saves the prefix checksum, restores the same canonical state through
+`from_checksum`, then proves the full-input result after updating the suffix.
+C correctness and C/Rust result equality remain unproved.
 
 The checked [common specification](adler32-spec.click) defines the unweighted
 byte sum, the byte-order-sensitive weighted sum, both canonical residues, and

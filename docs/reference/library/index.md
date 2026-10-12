@@ -1377,6 +1377,34 @@ Two unsigned 16-bit fields have this exact packed Integer value with the shifted
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint32_unpack_uint16_low`
+
+```click
+theorem uint32_unpack_uint16_low(low: uint32, high: uint32) {
+    requires low <= 65535u32;
+    requires high <= 65535u32;
+    ensures (((high << 16) | low) & 65535u32) == low;
+}
+```
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint32_unpack_uint16_high`
+
+```click
+theorem uint32_unpack_uint16_high(low: uint32, high: uint32) {
+    requires low <= 65535u32;
+    requires high <= 65535u32;
+    ensures ((((high << 16) | low) >> 16) & 65535u32) == high;
+}
+```
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+These exact word identities require both fields to fit in 16 bits. The high
+word uses a logical right shift, so the identity also holds when the packed
+word's top bit is set. Their bounds are checked premises of the kernel rules.
+
 ### `uint64_pack_uint16_to_integer`
 
 ```click

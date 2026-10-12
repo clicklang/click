@@ -2697,6 +2697,123 @@ fn incremental_project() -> Project {
     p
 }
 
+const RESUMED_CLIENT: &str = include_str!("../../design/charon-trial/adler2/resumed.click");
+
+fn resumed_proof() -> String {
+    let public = public_general_proof();
+    let source = public.split_once("fn adler2::adler32_slice(").unwrap().0;
+    let restoration = RESTORATION.replace("verifying \"src/lib.rs\";", "");
+    format!("{source}\n{restoration}\n{INCREMENTAL_SPLIT}\n{RESUMED_CLIENT}")
+        .replace("verifying \"src/lib.rs\";", "verifying \"resumed.rs\";")
+        .replace("adler2::", "adler_resumed::adler2::")
+}
+
+fn resumed_project() -> Project {
+    let p = adler2_helpers_project();
+    for (name, bytes) in [
+        (
+            "resumed.rs",
+            include_bytes!("../../design/charon-trial/adler2/resumed.rs").as_slice(),
+        ),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../../design/charon-trial/adler2/resumed.click.import.json").as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!("../../design/charon-trial/adler2/resumed.click.import.json.lock")
+                .as_slice(),
+        ),
+        (
+            "resumed.ullbc",
+            include_bytes!("../../design/charon-trial/adler2/resumed.ullbc").as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    fs::write(p.root.join("borrow.click"), resumed_proof()).unwrap();
+    p
+}
+
+#[test]
+#[ignore = "nightly: restored Rust state and suffix updates at every supported split"]
+fn charon_adler2_resumed_client_matches_concatenated_input_and_rejects_false_claims() {
+    let p = resumed_project();
+    let prepared = load_import(&p.config()).unwrap();
+    verify_public_checksum_unit(&resumed_proof(), &prepared, "adler_resumed::resumed").unwrap();
+    for (before, after) in [
+        (
+            "ensures to_integer(result) == old(adler_spec_checksum(bytes, ((bytes.len() as u32) as i32), 1, 0));",
+            "ensures to_integer(result) == old(adler_spec_checksum(bytes, ((bytes.len() as u32) as i32), 1, 0)) + 1;",
+        ),
+        ("requires split <= bytes.len();", ""),
+        ("views *bytes;", ""),
+        (
+            "implies bytes[k] == old(bytes[k])",
+            "implies bytes[k] == old(bytes[k]) + 1",
+        ),
+    ] {
+        let changed = RESUMED_CLIENT.replacen(before, after, 1);
+        assert_ne!(changed, RESUMED_CLIENT);
+        let source = resumed_proof().replacen(RESUMED_CLIENT, &changed, 1);
+        let error = verify_public_checksum_unit(&source, &prepared, "adler_resumed::resumed")
+            .expect_err("false resumed-update claims must be refused");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: unchanged restoration/update/getter bodies and client expansion"]
+fn charon_adler2_resumed_client_tools_check_all_original_bodies() {
+    let p = resumed_project();
+    assert_cli(&p, &["profile"]);
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "adler_resumed::resumed.contract",
+            "--in-place",
+        ],
+    );
+    let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+    verify_public_checksum_unit(
+        &expanded,
+        &load_import(&p.config()).unwrap(),
+        "adler_resumed::resumed",
+    )
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: live Charon extraction and resumed client input closure"]
+fn charon_adler2_resumed_client_live_refresh_checks_the_input_closure() {
+    let p = resumed_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    assert_eq!(
+        config["crate"]["files"],
+        serde_json::json!(["resumed.rs", "src/lib.rs", "src/algo.rs"])
+    );
+    config["exporter"] = std::env::var("CLICK_CHARON").unwrap().into();
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    verify_public_checksum_unit(
+        &resumed_proof(),
+        &load_import(&p.config()).unwrap(),
+        "adler_resumed::resumed",
+    )
+    .unwrap();
+    fs::write(p.root.join("resumed.rs"), "pub fn different() {}\n").unwrap();
+    let error = load_import(&p.config()).unwrap_err();
+    assert!(error.contains("lock differs from its inputs"), "{error}");
+}
+
 #[test]
 #[ignore = "nightly: two actual Rust updates at every supported split"]
 fn charon_adler2_incremental_client_matches_concatenated_input() {
