@@ -166,7 +166,9 @@ Rust updates the working scalar B between batches. Actual outer exhaustion
 establishes both common checksum residues for the completed full-batch prefix.
 The aligned-remainder lane loop also preserves both residues through actual
 iterator exhaustion, including the deferred local-position times A contribution
-and the fixed entry B seed. Its general recombination, the scalar tail and the
+and the fixed entry B seed. The original remainder seed product and scalar
+addition, reductions, weighted B corrections and scalar recombination preserve
+both residues for the complete aligned prefix. The general scalar tail and
 full checksum identity remain unproved.
 
 Follow the [current roadmap](../issues/rust-support.md) for the remaining outer
