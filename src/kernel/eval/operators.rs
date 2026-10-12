@@ -3106,6 +3106,24 @@ fn owed_guard_paths(
     Some(refused)
 }
 
+/// Keep checked C addition values shallow when adjoining constant offsets.
+/// This runs only after the operation's original overflow guard is checked;
+/// it does not reassociate the C expression or discard intermediate guards.
+/// Keep the combined offset signed-representable for interval reconstruction.
+fn c_int32_add_value(left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
+    if let (Bitvector32Term::Add(base, trailing), Bitvector32Term::Constant(right)) =
+        (&left, &right)
+        && let Bitvector32Term::Constant(trailing) = trailing.as_ref()
+        && let Some(offset) = (*trailing as i32).checked_add(*right as i32)
+    {
+        return Bitvector32Term::add(
+            base.as_ref().clone(),
+            Bitvector32Term::Constant(offset as u32),
+        );
+    }
+    Bitvector32Term::add(left, right)
+}
+
 pub(in crate::kernel) fn apply_c_int32_add(
     left: Bitvector32Term,
     right: Bitvector32Term,
@@ -3130,7 +3148,7 @@ pub(in crate::kernel) fn apply_c_int32_add(
             obligations,
         }],
         Some(false) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(int32(Bitvector32Term::add(left, right))),
+            outcome: CExpressionOutcome::Value(int32(c_int32_add_value(left, right))),
             facts,
             obligations,
         }],
@@ -3145,7 +3163,7 @@ pub(in crate::kernel) fn apply_c_int32_add(
 
             vec![
                 CExpressionPath {
-                    outcome: CExpressionOutcome::Value(int32(Bitvector32Term::add(left, right))),
+                    outcome: CExpressionOutcome::Value(int32(c_int32_add_value(left, right))),
                     facts: normal_facts,
                     obligations: obligations.clone(),
                 },
