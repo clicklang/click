@@ -149,6 +149,17 @@ integers and `Integer`, through theorems such as `int32_less_equal_to_integer`
 and `int32_add_to_integer`, not linear reasoning itself. Stage 1 therefore
 includes a machine-integer bridge theory; see the design.
 
+## Results so far
+
+| Case | Before | After | What remains explicit |
+|---|---|---|---|
+| `examples/rust-byte-sum/sum.click` (milestone 3, with operation bridging) | 184 lines, 0.29 s | 68 lines, about 1.4 s | memory transport for the read, fold laws (`peel`), loop control, and one conjunct of the invariant restated so it can be cited |
+
+The longer run time is solver search, all within the smart budget.
+`click audit` expands all 19 sites into simple steps that verify without the
+solver. The certificate cache
+(stage 3) is what removes this search from ordinary verification.
+
 ## Regression
 
 Prototype stage 1 behind `auto`, then measure the change in

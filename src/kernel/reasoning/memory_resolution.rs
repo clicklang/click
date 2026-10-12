@@ -172,11 +172,12 @@ pub(crate) fn clear_memory_resolution_memos() {
 
 /// One kept-range base-equality question: the unsalted content id of the
 /// fact set, the cell lookups in progress, the memory-DAG generation, the DAG
-/// scope modes, and the two bases.
+/// scope modes, and the two bases. `lookups` is `None` for a negative answer
+/// that no in-progress lookup cut, which holds under any lookups.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct KeptRangeBaseEqualityKey {
     assumptions: u64,
-    lookups: u64,
+    lookups: Option<u64>,
     generation: u64,
     bridging: bool,
     explicit: bool,
@@ -209,20 +210,39 @@ pub(in crate::kernel) fn kept_range_bases_proven_equal(
 ) -> bool {
     let key = KeptRangeBaseEqualityKey {
         assumptions: crate::kernel::assumptions::unsalted_assumptions_memo_id(assumptions),
-        lookups: crate::kernel::resource_tracker::cell_source::memory_dag_cell_lookups_fingerprint(
-        ),
+        lookups: None,
         generation: crate::kernel::primitives::c_memory_derivation_generation(),
         bridging: crate::kernel::api::extended_dag_bridging_active(),
         explicit: crate::kernel::api::explicit_dag_check_active(),
         access_base: access_base.clone(),
         range_base: range_base.clone(),
     };
+    // A lookup in progress changes an answer only by refusing a nested
+    // lookup of itself, and a refusal can only take an answer away. So a
+    // negative answer computed with no refusal is the answer under any
+    // lookups in progress, and is kept under the key without them: each walk
+    // runs inside lookups of its own, and keying every answer by them asked
+    // the same failing question afresh at every walk.
+    let mut key = key;
+    if KEPT_RANGE_BASE_EQUALITIES.with(|memo| memo.borrow().get(&key).copied()) == Some(false) {
+        return false;
+    }
+    key.lookups =
+        Some(crate::kernel::resource_tracker::cell_source::memory_dag_cell_lookups_fingerprint());
     if let Some(known) = KEPT_RANGE_BASE_EQUALITIES.with(|memo| memo.borrow().get(&key).copied()) {
         return known;
     }
     let epoch_before = crate::kernel::assumptions::incomplete_reasoning_epoch();
+    let refusals_before =
+        crate::kernel::resource_tracker::cell_source::memory_dag_cell_lookup_refusals();
     let equal = pointers_proven_equal_for_memory_resolution(access_base, range_base, assumptions);
     if equal || crate::kernel::assumptions::incomplete_reasoning_epoch() == epoch_before {
+        if !equal
+            && crate::kernel::resource_tracker::cell_source::memory_dag_cell_lookup_refusals()
+                == refusals_before
+        {
+            key.lookups = None;
+        }
         KEPT_RANGE_BASE_EQUALITIES.with(|memo| {
             let mut memo = memo.borrow_mut();
             if memo.len() >= RESOLUTION_QUERY_MEMO_LIMIT {

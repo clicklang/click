@@ -381,10 +381,12 @@ impl<'a> Proof<'a> {
                 &surface_path_fact,
                 transition.pure_facts.assumptions(),
                 context.parameter_binding(),
-                pre_state,
-                &arm_execution.core.state,
-                None,
-                &arm_execution.presentation.recorded_snapshots,
+                FixedStateFrame::new(
+                    pre_state,
+                    &arm_execution.core.state,
+                    None,
+                    &arm_execution.presentation.recorded_snapshots,
+                ),
                 context.spec_definitions,
             )
             .map_err(|message| {

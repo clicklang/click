@@ -122,25 +122,23 @@ Decision: open.
 
 ### P5. Copy-paste across case files and sidecars
 
-Today: 74% of `examples/rbtree-erase` (29,160 of 39,582 lines) is 22
-color-repair increments that the general proof
-`rbtree_erase_color_flips_red_all.click` already subsumes. They are kept
-because 82 mutation-test references point at them. The 24 inline copies of
-the `__rb_change_child` proof are in those increments, which predate contract
-import. `rb_erase` has 11 per-case contracts and no general one. The general
-repair proof's left and right arms (about 1,380 lines each) are mirror
-images. C++ caller sidecars repeat callee contracts
-(`examples/basic-cpp/with_restore_caller.click`).
+Today: the 22 color-repair increments that
+`rbtree_erase_color_flips_red_all.click` subsumes (29,160 of 39,582 lines,
+including the 24 inline copies of the `__rb_change_child` proof) are retired,
+and their mutations run against the general proof (R1). `rb_erase` has 11
+per-case contracts and no general one. The general repair proof's left and
+right arms (about 1,380 lines each) are mirror images. C++ caller sidecars
+repeat callee contracts (`examples/basic-cpp/with_restore_caller.click`).
 
 Proposed fix: [design/proof-reuse.md](../design/proof-reuse.md):
 
-- R1: retire superseded increments.
+- R1: retire superseded increments. Done.
 - R2: one general contract per function.
 - R3: automatic unfolding of recursive spec functions.
 - R4: automatic opening and closing of resources.
 - R5: one script for several arms.
 
-Decision: open.
+Decision: R1 ruled fix and done; R2–R5 open.
 
 ### P6. Loop proofs restate facts
 
@@ -439,27 +437,19 @@ Decision: open.
 
 ### N1. The README does not show Click working
 
-Today: README line 3 calls Click "a new programming language"; the docs call
-it "a verifier for existing C programs" (`docs/index.md`). The README never
-shows a sidecar or a `click verify` run, opens with a kernel-design essay,
-and carries merge-queue instructions for an agent signed in as `lacker`.
+The part of the README that agents may edit now opens with a ten-line C file,
+its sidecar, and a `click verify` transcript (`examples/clamp/`, checked by
+`readme_quick_start_is_the_clamp_example` in `tests/examples.rs`), followed by
+install, documentation, and a short contributing section; the merge-queue
+instructions for agents stay in `docs/internals/contributing.md`.
 
-Proposed fix: a one-line pitch, a ten-line C file with its sidecar and a
-`click verify` transcript, and install; move the essay and contributor and
-agent rules out.
+Remaining: the human-only top of the README still calls Click "a new
+programming language" and opens with the kernel-design essay.
 
-Decision: open.
+Proposed fix: a maintainer replaces line 3 with a one-line pitch and moves
+the essay to a design document.
 
-### N2. The first proof does not look like C and does not say how to run it
-
-Today: `docs/concepts/first-proof.md` writes `int32 zero()` in a `.c` file
-and shows no command or output; the `int` to `int32` mapping is in
-`docs/reference/language/c0.md`.
-
-Proposed fix: plain `int`/`int32_t` in the tutorial, the exact command, and
-its success and failure output.
-
-Decision: open.
+Decision: fix.
 
 ### N3. No guide for verifying a function in your own project
 

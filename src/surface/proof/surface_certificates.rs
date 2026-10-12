@@ -3703,10 +3703,12 @@ pub(super) fn lower_surface_candidate_in_state_with_assumptions(
         &assumptions,
         &values,
         &array_refs,
-        view.old_reference_state(state),
-        state,
-        None,
-        view.recorded_snapshots,
+        FixedStateFrame::new(
+            view.old_reference_state(state),
+            state,
+            None,
+            view.recorded_snapshots,
+        ),
         spec_definitions,
     )
     .map_err(ClickError::new)

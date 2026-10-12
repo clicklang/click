@@ -411,10 +411,12 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
             environment.parsed_function.parameters(),
             environment.arguments,
         ),
-        environment.initial_state,
-        &context.state,
-        None,
-        &recorded_snapshots,
+        FixedStateFrame::new(
+            environment.initial_state,
+            &context.state,
+            None,
+            &recorded_snapshots,
+        ),
         &context.surface_propositions,
         environment.spec_definitions,
         environment.theorem_environment,
@@ -584,7 +586,8 @@ fn check_initialization_body<'a>(
     sites: Option<&[ProofStepSite]>,
 ) -> Result<proof_object::ProofScope<'a>, ClickError> {
     let checked = match source {
-        SourceProof::Default | SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Simp) => {
+        SourceProof::Tactic(SmartTactic::Auto) => scope.try_auto_fact_closure()?,
+        SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
             scope.try_simp_closure()?
         }
         SourceProof::Script(tactics) => match sites {
@@ -1106,10 +1109,12 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 environment.parsed_function.parameters(),
                 environment.arguments,
             ),
-            environment.initial_state,
-            preservation.state(),
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(
+                environment.initial_state,
+                preservation.state(),
+                None,
+                &recorded_snapshots,
+            ),
             environment.spec_definitions,
         )
     {

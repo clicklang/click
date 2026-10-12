@@ -6427,14 +6427,9 @@ impl Parser {
                 proof: have_proof_as_written_in_full(SourceProof::Tactic(SmartTactic::Simp)),
             }));
         }
-        let auto_position = self.position;
+        // `have P by auto;` proves the fact where it is stated: with no C
+        // to run toward the fact, `auto` is the solver.
         let proof = self.parse_by_clause()?;
-        if proof == SourceProof::Tactic(SmartTactic::Auto) {
-            self.position = auto_position;
-            return Err(self.error(
-                "`auto` executes C to function exit, so it cannot prove a `have`; write `have P;` or `have P by simp;` to prove the fact where it is stated",
-            ));
-        }
         self.skip_redundant_semicolon();
         // `have P;`, `have P by simp;` and `have P by { simp(); }` are
         // one proof step. They are one syntax tree too, so every

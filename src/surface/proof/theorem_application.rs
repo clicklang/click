@@ -300,10 +300,7 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
             &algebraic_values,
             &integer_values,
             &bound_array_memories,
-            &pre_state,
-            &post_state,
-            None,
-            context.recorded_snapshots,
+            FixedStateFrame::new(&pre_state, &post_state, None, context.recorded_snapshots),
             spec_definitions,
             &BTreeSet::new(),
             pointer_element_widths.clone(),
@@ -554,10 +551,12 @@ fn instantiate_integer_range_fold_theorem_application(
         assumptions,
         context.values,
         context.array_refs,
-        context.pre_state,
-        context.post_state,
-        context.result,
-        context.recorded_snapshots,
+        FixedStateFrame::new(
+            context.pre_state,
+            context.post_state,
+            context.result,
+            context.recorded_snapshots,
+        ),
         spec_definitions,
     )
     .map_err(|message| {
@@ -745,10 +744,12 @@ fn theorem_application_argument_type(
         argument,
         context.values,
         context.array_refs,
-        context.pre_state,
-        context.post_state,
-        context.result,
-        context.recorded_snapshots,
+        FixedStateFrame::new(
+            context.pre_state,
+            context.post_state,
+            context.result,
+            context.recorded_snapshots,
+        ),
         spec_definitions,
     ) {
         return Ok(Some(generics::click_type_from_algebraic_value_type(
@@ -810,10 +811,12 @@ pub(super) fn theorem_application_bindings(
                         assumptions,
                         context.values,
                         context.array_refs,
-                        context.pre_state,
-                        context.post_state,
-                        context.result,
-                        context.recorded_snapshots,
+                        FixedStateFrame::new(
+                            context.pre_state,
+                            context.post_state,
+                            context.result,
+                            context.recorded_snapshots,
+                        ),
                         spec_definitions,
                     )?,
                 ),
@@ -845,10 +848,12 @@ pub(super) fn theorem_application_bindings(
                 context.values,
                 context.array_refs,
                 algebraic_bindings,
-                context.pre_state,
-                context.post_state,
-                context.result,
-                context.recorded_snapshots,
+                FixedStateFrame::new(
+                    context.pre_state,
+                    context.post_state,
+                    context.result,
+                    context.recorded_snapshots,
+                ),
                 spec_definitions,
             )?;
             fn click_type_matches_algebraic_value_type(
@@ -931,10 +936,12 @@ pub(super) fn theorem_application_bindings(
                 assumptions,
                 context.values,
                 context.array_refs,
-                context.pre_state,
-                context.post_state,
-                context.result,
-                context.recorded_snapshots,
+                FixedStateFrame::new(
+                    context.pre_state,
+                    context.post_state,
+                    context.result,
+                    context.recorded_snapshots,
+                ),
                 spec_definitions,
             )?;
             let expected_element_type =

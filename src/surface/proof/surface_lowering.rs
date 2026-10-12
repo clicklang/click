@@ -282,12 +282,9 @@ impl<'a> Proof<'a> {
                     &surface,
                     self.facts().assumptions(),
                     context.parameter_binding,
-                    context.pre_state,
-                    context.state,
-                    context.result,
+                    context.fixed_state,
                     &algebraic_values,
                     self.local_integer_values(),
-                    context.recorded_snapshots,
                     context.spec_definitions,
                 )
                 .map_err(|message| {
@@ -336,12 +333,9 @@ impl<'a> Proof<'a> {
                     &surface,
                     self.facts().assumptions(),
                     view.parameter_binding,
-                    view.pre_state,
-                    view.state,
-                    view.result,
+                    view.fixed_state,
                     &algebraic_values,
                     self.local_integer_values(),
-                    view.recorded_snapshots,
                     view.spec_definitions,
                 )
                 .map_err(|message| {
@@ -364,12 +358,14 @@ impl<'a> Proof<'a> {
                     &surface,
                     self.facts().assumptions(),
                     context.parameter_binding(),
-                    pre_state,
-                    &execution.core.state,
-                    None,
+                    FixedStateFrame::new(
+                        pre_state,
+                        &execution.core.state,
+                        None,
+                        &execution.presentation.recorded_snapshots,
+                    ),
                     &algebraic_values,
                     self.local_integer_values(),
-                    &execution.presentation.recorded_snapshots,
                     context.spec_definitions,
                 )
                 .map_err(|message| {
@@ -455,12 +451,9 @@ impl<'a> Proof<'a> {
                     &surface,
                     self.facts().assumptions(),
                     context.parameter_binding,
-                    context.pre_state,
-                    context.state,
-                    context.result,
+                    context.fixed_state,
                     &algebraic_values,
                     self.local_integer_values(),
-                    context.recorded_snapshots,
                     context.spec_definitions,
                 )
                 .map_err(|message| {
@@ -481,12 +474,9 @@ impl<'a> Proof<'a> {
                     &surface,
                     self.facts().assumptions(),
                     view.parameter_binding,
-                    view.pre_state,
-                    view.state,
-                    view.result,
+                    view.fixed_state,
                     &algebraic_values,
                     self.local_integer_values(),
-                    view.recorded_snapshots,
                     view.spec_definitions,
                 )
                 .map_err(|message| {
@@ -509,12 +499,14 @@ impl<'a> Proof<'a> {
                     &surface,
                     self.facts().assumptions(),
                     context.parameter_binding(),
-                    pre_state,
-                    &execution.core.state,
-                    None,
+                    FixedStateFrame::new(
+                        pre_state,
+                        &execution.core.state,
+                        None,
+                        &execution.presentation.recorded_snapshots,
+                    ),
                     &algebraic_values,
                     self.local_integer_values(),
-                    &execution.presentation.recorded_snapshots,
                     context.spec_definitions,
                 )
                 .map_err(|message| {
@@ -630,10 +622,7 @@ impl<'a> Proof<'a> {
                     &surface,
                     self.facts().assumptions(),
                     context.parameter_binding,
-                    context.pre_state,
-                    context.state,
-                    context.result,
-                    context.recorded_snapshots,
+                    context.fixed_state,
                     context.spec_definitions,
                 )
                 .map(|(proposition, introductions)| (proposition, Some(introductions)))
@@ -654,10 +643,7 @@ impl<'a> Proof<'a> {
                     &surface,
                     self.facts().assumptions(),
                     view.parameter_binding,
-                    view.pre_state,
-                    view.state,
-                    view.result,
-                    view.recorded_snapshots,
+                    view.fixed_state,
                     view.spec_definitions,
                 )
                 .map(|(proposition, introductions)| (proposition, Some(introductions)))
@@ -922,7 +908,7 @@ impl<'a> Proof<'a> {
             }
             Ok(())
         }
-        resolve(&mut resource, view.state).map_err(|message| {
+        resolve(&mut resource, view.fixed_state.state).map_err(|message| {
             self.step_error(format!(
                 "could not resolve current resource arguments: {message}"
             ))

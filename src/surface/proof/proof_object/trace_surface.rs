@@ -39,7 +39,10 @@ impl Proof<'_> {
             Some(ClickProposition::Comparison { left, right, .. }) => vec![left, right],
             _ => vec![],
         };
-        let recent = view.recorded_snapshots.recent(MAX_TRACE_SNAPSHOTS);
+        let recent = view
+            .fixed_state
+            .recorded_snapshots
+            .recent(MAX_TRACE_SNAPSHOTS);
         let function = match self.context.as_ref() {
             ProofContext::Execution(context) => Some(context.parsed_function),
             _ => None,

@@ -104,18 +104,16 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
     tactic_index: usize,
     available: &ProofFacts,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: &CState,
-    result: Option<&CValue>,
+    fixed_state: FixedStateFrame<'_>,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-    recorded_snapshots: &RecordedSnapshots,
     surface_propositions: &SurfacePropositionMap,
     unfolded_predicates: &[String],
     effect_facts: &(impl ExecutionFactSource + ?Sized),
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<CheckedFixedStateTheoremApplication, ClickError> {
-    let resource_facts = state
+    let resource_facts = fixed_state
+        .state
         .resources()
         .observable_facts_assuming_valid(available.assumptions());
     let mut lowering_assumptions = available.assumptions().clone();
@@ -129,11 +127,8 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
             surface_premise,
             &lowering_assumptions,
             parameter_binding,
-            pre_state,
-            state,
-            result,
+            fixed_state,
             integer_values,
-            recorded_snapshots,
             spec_definitions,
         );
         // Prefer the current-state lowering when it is checkable. A retained
@@ -178,7 +173,7 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
                 describe_missing_pure_fact(
                     &premise,
                     &available_facts,
-                    state.resources().facts(),
+                    fixed_state.state.resources().facts(),
                     parameter_binding,
                     effect_facts,
                 )
@@ -203,17 +198,21 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
             error.message
         ))
     })?;
-    let array_refs =
-        array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
-    let (values, array_refs) = contract_environment_at_state(&values, &array_refs, state);
+    let array_refs = array_refs_for_parameters(
+        parameter_binding.parameters,
+        &values,
+        fixed_state.state.memory(),
+    );
+    let (values, array_refs) =
+        contract_environment_at_state(&values, &array_refs, fixed_state.state);
     let application_context = TheoremApplicationContext {
         values: &values,
         array_refs: &array_refs,
         algebraic_values,
-        pre_state,
-        post_state: state,
-        result,
-        recorded_snapshots,
+        pre_state: fixed_state.pre_state,
+        post_state: fixed_state.state,
+        result: fixed_state.result,
+        recorded_snapshots: fixed_state.recorded_snapshots,
         integer_values,
         pointer_element_widths: parameter_pointer_element_widths(parameter_binding.parameters),
     };
@@ -302,10 +301,7 @@ pub(in crate::surface::proof) fn lower_theorem_application_requirements_with_ass
                 &algebraic_values,
                 &integer_values,
                 &bound_array_memories,
-                &pre_state,
-                &post_state,
-                None,
-                context.recorded_snapshots,
+                FixedStateFrame::new(&pre_state, &post_state, None, context.recorded_snapshots),
                 spec_definitions,
                 &BTreeSet::new(),
                 super::super::theorem_application::theorem_application_pointer_element_widths(

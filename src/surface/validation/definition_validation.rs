@@ -1619,10 +1619,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
                     &PureFactContext::new(),
                     values,
                     array_refs,
-                    &state,
-                    &state,
-                    None,
-                    &RecordedSnapshots::new(),
+                    FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
                     spec_definitions,
                 )
             {
@@ -2773,10 +2770,7 @@ fn symbolic_segment_covers_range(
             &PureFactContext::new(),
             values,
             array_refs,
-            &state,
-            &state,
-            None,
-            &RecordedSnapshots::new(),
+            FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
             spec_definitions,
             &BTreeSet::new(),
         )
@@ -2825,10 +2819,7 @@ fn symbolic_segment_covers_index(
             &PureFactContext::new(),
             values,
             array_refs,
-            &state,
-            &state,
-            None,
-            &RecordedSnapshots::new(),
+            FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
             spec_definitions,
             &BTreeSet::new(),
         )

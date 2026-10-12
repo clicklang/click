@@ -751,10 +751,7 @@ fn advance_execution_proof_statement(
                             &exit_condition,
                             &transition.pure_facts,
                             ParameterBinding::new(environment.parsed_function.parameters(), environment.arguments),
-                            environment.initial_state,
-                            exit_state,
-                            None,
-                            &recorded_snapshots,
+                            FixedStateFrame::new(environment.initial_state, exit_state, None, &recorded_snapshots),
                             environment.spec_definitions,
                         )
                         .map_err(|message| {
