@@ -4296,163 +4296,36 @@ pub(in crate::kernel) fn evaluate_c_equal_paths(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CExpressionPath>> {
-    evaluate_c_value_binary_paths(
+    evaluate_c_equality_paths(
         state,
+        CComparisonOperator::Equal,
         left,
         right,
         assumptions,
         budget,
-        |left, right, facts, obligations| {
-            apply_c_equal(state, left, right, facts, obligations, assumptions)
-        },
     )
-}
-
-pub(in crate::kernel) fn apply_c_equal(
-    state: &CState,
-    left: CValue,
-    right: CValue,
-    facts: ExecutionFacts,
-    obligations: Vec<ProofObligation>,
-    assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
-    if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
-        || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
-    {
-        return apply_c_int128_comparison(
-            CComparisonOperator::Equal,
-            left,
-            right,
-            facts,
-            obligations,
-            assumptions,
-        );
-    }
-
-    if let Some((left, right, target_type, obligations)) =
-        coerce_c_float_operands(&left, &right, &obligations, assumptions)
-    {
-        return apply_c_float_comparison(
-            left,
-            right,
-            target_type,
-            CComparisonOperator::Equal,
-            facts,
-            obligations,
-            assumptions,
-        );
-    }
-    let (left, right) = promote_c_bool_scalar_operands(left, right);
-    if let Some(width @ (ScalarWidth::Int64 | ScalarWidth::UInt64)) = scalar_width(&left, &right) {
-        let facts = facts;
-        let Some((left, right, _)) = apply_c_scalar_terms(left, right) else {
-            return Vec::new();
-        };
-        let condition = if matches!(width, ScalarWidth::Int64) {
-            ConditionTerm::int64_equal(left, right)
-        } else {
-            ConditionTerm::uint64_equal(left, right)
-        };
-        return condition_as_c_int32_paths(condition, facts, obligations, assumptions);
-    }
-    match (left, right) {
-        (CValue::Pointer(left), CValue::Pointer(right)) => {
-            if !pointer_types_compatible(&left, &right) {
-                vec![c_type_mismatch_expression_path(facts, obligations)]
-            } else {
-                let (left, right) = (left.into_pointer(), right.into_pointer());
-                let mut facts = facts;
-                if let Some(holders) =
-                    compared_pointer_holders_composition(state, &left, &right, assumptions)
-                {
-                    facts.push(ExecutionPureFact::new(Proposition::CResourceComposition(
-                        holders,
-                    )));
-                }
-                let (compared_left, compared_right) = (left.clone(), right.clone());
-                apply_pointer_adjacency_guard(
-                    state,
-                    &compared_left,
-                    &compared_right,
-                    facts,
-                    obligations,
-                    assumptions,
-                    move |facts, obligations| {
-                        condition_as_c_int32_paths(
-                            pointer_equality_condition(left, right),
-                            facts,
-                            obligations,
-                            assumptions,
-                        )
-                    },
-                )
-            }
-        }
-        (CValue::Pointer(pointer), CValue::Int32(bits))
-        | (CValue::Int32(bits), CValue::Pointer(pointer))
-            if bits.as_const() == Some(0) =>
-        {
-            condition_as_c_int32_paths(
-                pointer_is_null_condition(pointer.into_pointer()),
-                facts,
-                obligations,
-                assumptions,
-            )
-        }
-        (
-            left @ (crate::kernel::integer32_c_value!(_)),
-            right @ (crate::kernel::integer32_c_value!(_)),
-        ) if scalar_uses_uint32(&left, &right) => {
-            let facts = facts;
-            let Some(left) = promote_c_uint32_path_value(left) else {
-                return Vec::new();
-            };
-            let Some(right) = promote_c_uint32_path_value(right) else {
-                return Vec::new();
-            };
-            condition_as_c_int32_paths(
-                ConditionTerm::equal(left, right),
-                facts,
-                obligations,
-                assumptions,
-            )
-        }
-        (
-            left @ (crate::kernel::int_promoted_c_value!(_)),
-            right @ (crate::kernel::int_promoted_c_value!(_)),
-        ) => {
-            let facts = facts;
-            let Some(left) = promote_c_int32_path_value(left) else {
-                return Vec::new();
-            };
-            let Some(right) = promote_c_int32_path_value(right) else {
-                return Vec::new();
-            };
-            condition_as_c_int32_paths(
-                ConditionTerm::equal(left, right),
-                facts,
-                obligations,
-                assumptions,
-            )
-        }
-        (CValue::Float32(left), CValue::Float32(right)) => condition_as_c_int32_paths(
-            ConditionTerm::float32_compare(left, right, CComparisonOperator::Equal),
-            facts,
-            obligations,
-            assumptions,
-        ),
-        (CValue::Float64(left), CValue::Float64(right)) => condition_as_c_int32_paths(
-            ConditionTerm::float64_compare(left, right, CComparisonOperator::Equal),
-            facts,
-            obligations,
-            assumptions,
-        ),
-        _ => vec![c_type_mismatch_expression_path(facts, obligations)],
-    }
 }
 
 pub(in crate::kernel) fn evaluate_c_not_equal_paths(
     state: &CState,
+    left: &CExpression,
+    right: &CExpression,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<CExpressionPath>> {
+    evaluate_c_equality_paths(
+        state,
+        CComparisonOperator::NotEqual,
+        left,
+        right,
+        assumptions,
+        budget,
+    )
+}
+
+fn evaluate_c_equality_paths(
+    state: &CState,
+    operator: CComparisonOperator,
     left: &CExpression,
     right: &CExpression,
     assumptions: &PureFactContext,
@@ -4465,30 +4338,34 @@ pub(in crate::kernel) fn evaluate_c_not_equal_paths(
         assumptions,
         budget,
         |left, right, facts, obligations| {
-            apply_c_not_equal(state, left, right, facts, obligations, assumptions)
+            apply_c_equality(
+                state,
+                operator,
+                left,
+                right,
+                facts,
+                obligations,
+                assumptions,
+            )
         },
     )
 }
 
-pub(in crate::kernel) fn apply_c_not_equal(
+/// `==` or `!=` (`operator` is one of the two) over two C values.
+fn apply_c_equality(
     state: &CState,
+    operator: CComparisonOperator,
     left: CValue,
     right: CValue,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
+    let negated = operator == CComparisonOperator::NotEqual;
     if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
         || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
     {
-        return apply_c_int128_comparison(
-            CComparisonOperator::NotEqual,
-            left,
-            right,
-            facts,
-            obligations,
-            assumptions,
-        );
+        return apply_c_int128_comparison(operator, left, right, facts, obligations, assumptions);
     }
 
     if let Some((left, right, target_type, obligations)) =
@@ -4498,7 +4375,7 @@ pub(in crate::kernel) fn apply_c_not_equal(
             left,
             right,
             target_type,
-            CComparisonOperator::NotEqual,
+            operator,
             facts,
             obligations,
             assumptions,
@@ -4515,7 +4392,13 @@ pub(in crate::kernel) fn apply_c_not_equal(
         } else {
             ConditionTerm::uint64_equal(left, right)
         };
-        return condition_as_c_int32_not_paths(condition, facts, obligations, assumptions);
+        return condition_as_c_int32_paths_valued(
+            condition,
+            facts,
+            obligations,
+            assumptions,
+            negated,
+        );
     }
     match (left, right) {
         (CValue::Pointer(left), CValue::Pointer(right)) => {
@@ -4540,11 +4423,12 @@ pub(in crate::kernel) fn apply_c_not_equal(
                     obligations,
                     assumptions,
                     move |facts, obligations| {
-                        condition_as_c_int32_not_paths(
+                        condition_as_c_int32_paths_valued(
                             pointer_equality_condition(left, right),
                             facts,
                             obligations,
                             assumptions,
+                            negated,
                         )
                     },
                 )
@@ -4554,11 +4438,12 @@ pub(in crate::kernel) fn apply_c_not_equal(
         | (CValue::Int32(bits), CValue::Pointer(pointer))
             if bits.as_const() == Some(0) =>
         {
-            condition_as_c_int32_not_paths(
+            condition_as_c_int32_paths_valued(
                 pointer_is_null_condition(pointer.into_pointer()),
                 facts,
                 obligations,
                 assumptions,
+                negated,
             )
         }
         (
@@ -4572,11 +4457,12 @@ pub(in crate::kernel) fn apply_c_not_equal(
             let Some(right) = promote_c_uint32_path_value(right) else {
                 return Vec::new();
             };
-            condition_as_c_int32_not_paths(
+            condition_as_c_int32_paths_valued(
                 ConditionTerm::equal(left, right),
                 facts,
                 obligations,
                 assumptions,
+                negated,
             )
         }
         (
@@ -4590,24 +4476,27 @@ pub(in crate::kernel) fn apply_c_not_equal(
             let Some(right) = promote_c_int32_path_value(right) else {
                 return Vec::new();
             };
-            condition_as_c_int32_not_paths(
+            condition_as_c_int32_paths_valued(
                 ConditionTerm::equal(left, right),
                 facts,
                 obligations,
                 assumptions,
+                negated,
             )
         }
-        (CValue::Float32(left), CValue::Float32(right)) => condition_as_c_int32_paths(
-            ConditionTerm::float32_compare(left, right, CComparisonOperator::NotEqual),
+        (CValue::Float32(left), CValue::Float32(right)) => condition_as_c_int32_paths_valued(
+            ConditionTerm::float32_compare(left, right, operator),
             facts,
             obligations,
             assumptions,
+            negated,
         ),
-        (CValue::Float64(left), CValue::Float64(right)) => condition_as_c_int32_paths(
-            ConditionTerm::float64_compare(left, right, CComparisonOperator::NotEqual),
+        (CValue::Float64(left), CValue::Float64(right)) => condition_as_c_int32_paths_valued(
+            ConditionTerm::float64_compare(left, right, operator),
             facts,
             obligations,
             assumptions,
+            negated,
         ),
         _ => vec![c_type_mismatch_expression_path(facts, obligations)],
     }

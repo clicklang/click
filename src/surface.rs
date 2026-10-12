@@ -514,13 +514,6 @@ impl ClickModuleSource {
         }
     }
 
-    /// Places `source` after `line_offset` lines of its file, as a fenced
-    /// block of a larger container.
-    pub fn with_line_offset(mut self, line_offset: usize) -> Self {
-        self.line_offset = line_offset;
-        self
-    }
-
     pub fn identity(&self) -> &str {
         &self.identity
     }
@@ -8537,11 +8530,6 @@ impl ClickError {
             .origin
             .source_tactic_path
             .as_deref()
-    }
-
-    pub fn proof_step_location(&self) -> Option<&str> {
-        let origin = &self.diagnostic.as_ref()?.origin;
-        (origin.stage != "contract certification").then_some(origin.location.as_str())
     }
 
     pub fn kind(&self) -> ClickErrorKind {

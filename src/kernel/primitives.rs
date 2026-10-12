@@ -81,6 +81,7 @@ pub(super) use derivations::*;
 pub(crate) use memory_state::resource_context_has_symbolic_range_read;
 pub use memory_state::value_independent_click_memory;
 pub(super) use resource_algebra::*;
+pub(in crate::kernel) use term_operations::round_right_to_even;
 pub(in crate::kernel) use term_operations::{
     int64_add_interval_fits, int64_subtract_interval_fits,
 };

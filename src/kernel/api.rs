@@ -2157,14 +2157,6 @@ pub(crate) fn c_qualified_typed_load_with_source(
     }
 }
 
-/// Construct one checked sequential access to the typed cell reached by
-/// `pointer`.  This is the kernel projection used by `READ_ONCE` and the
-/// lvalue side of `WRITE_ONCE`/`rcu_assign_pointer`; it is deliberately an
-/// observable sequential access, not an atomic or release/acquire operation.
-pub fn c_volatile_typed_load(pointer: CExpression, value_type: CType) -> CExpression {
-    c_qualified_volatile_typed_load(pointer, value_type, false)
-}
-
 pub(crate) fn c_qualified_volatile_typed_load(
     pointer: CExpression,
     value_type: CType,
@@ -2473,24 +2465,6 @@ pub(crate) fn c_qualified_typed_store(
     }
 }
 
-/// Construct the checked sequential store used by the kernel pointer
-/// publication primitives.  It has ordinary C memory effects plus one
-/// ordered access fact; it does not provide a concurrent-reader or
-/// release/acquire theorem.
-pub fn c_volatile_typed_store(
-    pointer: CExpression,
-    value: CExpression,
-    value_type: CType,
-) -> CStatement {
-    CStatement::TypedStore {
-        pointer,
-        value,
-        value_type,
-        volatile: true,
-        pointee_constant: false,
-    }
-}
-
 pub fn c_update(
     target: CExpression,
     operator: CUpdateOperator,
@@ -2687,14 +2661,6 @@ pub fn c_do_while_with_invariant_and_effect_checks(
         backedge_target: None,
         natural_exit_target: None,
         body: Box::new(body),
-    }
-}
-
-pub fn c_continue_with_step(step: CStatement) -> CStatement {
-    CStatement::ForStep {
-        step: Box::new(step),
-        exited_locals: Vec::new(),
-        continue_after: true,
     }
 }
 
@@ -3963,42 +3929,6 @@ pub fn proposition_and_all(mut propositions: Vec<Proposition>) -> Proposition {
     propositions.pop().expect("nonempty conjunction level")
 }
 
-/// Expands C expression definedness into the exact pure proposition under
-/// which evaluation reaches a value rather than undefined behavior.
-pub fn c_expression_definedness_proposition(
-    state: &CState,
-    expression: &CExpression,
-) -> Result<Proposition, ExecutionLimit> {
-    let mut budget = ExecutionBudget::for_new_execution().with_c_expression_cost(expression);
-    let paths =
-        evaluate_c_expression_paths(state, expression, &PureFactContext::new(), &mut budget)?;
-    let mut normal_paths = paths.into_iter().filter_map(|path| {
-        if !matches!(path.outcome, CExpressionOutcome::Value(_)) {
-            return None;
-        }
-        Some(proposition_and_all(
-            path.facts
-                .into_iter()
-                .map(|fact| fact.proposition().clone())
-                .chain(
-                    path.obligations
-                        .into_iter()
-                        .map(|obligation| obligation.proposition().clone()),
-                )
-                .collect(),
-        ))
-    });
-    let Some(first) = normal_paths.next() else {
-        return Ok(Proposition::ConditionIs(
-            ConditionTerm::Constant(false),
-            true,
-        ));
-    };
-    Ok(normal_paths.fold(first, |left, right| {
-        Proposition::Or(Box::new(left), Box::new(right))
-    }))
-}
-
 pub fn substitute_int32_variable_in_proposition(
     proposition: &Proposition,
     variable: Variable,
@@ -4102,10 +4032,6 @@ pub fn c_max_function() -> CFunction {
     )
 }
 
-pub fn c_max_environment(a: CValue, b: CValue) -> CLocalEnvironment {
-    CLocalEnvironment::new().with("a", a).with("b", b)
-}
-
 pub fn c_max_state(a: CValue, b: CValue) -> CState {
     CState::new().with_local("a", a).with_local("b", b)
 }
@@ -4196,14 +4122,6 @@ pub fn prove_symbolic_c_condition_evaluation(
 
 pub fn prove_c_statement_execution(state: CState, statement: CStatement) -> Option<Theorem> {
     prove_symbolic_c_execution(state, statement, PureFactContext::new())
-}
-
-pub fn prove_c_statement_execution_under_assumptions(
-    state: CState,
-    statement: CStatement,
-    assumptions: PureFactContext,
-) -> Option<Theorem> {
-    prove_symbolic_c_execution(state, statement, assumptions)
 }
 
 pub fn prove_symbolic_c_execution(
@@ -4963,42 +4881,6 @@ pub fn prove_symbolic_c_function_verification_paths_with_environment_and_budget(
         budget,
         false,
         false,
-    )
-}
-
-/// Verifies an exact function body from its declared contract-entry resources.
-///
-/// Unlike ordinary proof execution, this canonicalizes composite requirements
-/// before body execution. It is the independent execution used to certify
-/// opaque contract claims.
-pub fn prove_symbolic_c_function_contract_verification_paths_with_environment(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
-    assumptions: PureFactContext,
-    environment: CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
-) -> SymbolicCExecution {
-    let environment = if environment.has_conditional_resource_effects()
-        || function_has_conditional_resource_effect(&function)
-    {
-        environment.with_conditional_resource_cases()
-    } else {
-        environment
-    };
-    let defer_conditional_resource_effect = function_has_conditional_resource_effect(&function);
-    let budget = ExecutionBudget::for_new_execution()
-        .with_c_function_verification_cost(&function, &arguments);
-    prove_symbolic_c_function_verification_paths(
-        state,
-        function,
-        arguments,
-        assumptions,
-        environment,
-        execution_semantics,
-        budget,
-        true,
-        defer_conditional_resource_effect,
     )
 }
 
@@ -8097,13 +7979,6 @@ pub fn c_function_contract_refinement_arguments(
     context: &CFunctionContractRefinementContext,
 ) -> &[CValue] {
     &context.argument_values
-}
-
-/// Returns the symbolic entry state used to lower explicit proof conditions.
-pub fn c_function_contract_refinement_entry_state(
-    context: &CFunctionContractRefinementContext,
-) -> CState {
-    function_contract_refinement_entry_state(context)
 }
 
 pub fn c_function_contract_refinement_obligations(

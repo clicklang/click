@@ -7506,10 +7506,6 @@ impl ProofObligation {
         Self::new(Proposition::ConditionIs(condition, value))
     }
 
-    pub fn memory_loadable(memory: CMemory, pointer: Pointer) -> Self {
-        Self::memory_loadable_bytes(memory, pointer, 4)
-    }
-
     pub fn memory_loadable_bytes(memory: CMemory, pointer: Pointer, byte_width: u32) -> Self {
         Self::new(Proposition::CMemoryLoadable {
             memory,
@@ -7517,10 +7513,6 @@ impl ProofObligation {
             bytes: Bitvector32Term::Constant(byte_width),
             wide: false,
         })
-    }
-
-    pub fn memory_can_store(memory: CMemory, pointer: Pointer) -> Self {
-        Self::memory_can_store_bytes(memory, pointer, 4)
     }
 
     pub fn memory_can_store_bytes(memory: CMemory, pointer: Pointer, byte_width: u32) -> Self {

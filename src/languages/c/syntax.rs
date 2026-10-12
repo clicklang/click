@@ -4782,10 +4782,6 @@ impl C0Statement {
         }
     }
 
-    pub fn to_kernel_statement(&self) -> crate::kernel::CStatement {
-        self.to_kernel_statement_with_control_targets(&BTreeMap::new())
-    }
-
     pub(crate) fn to_kernel_statement_with_control_targets(
         &self,
         targets: &BTreeMap<String, (crate::kernel::CControlTargetId, usize)>,
