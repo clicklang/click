@@ -401,7 +401,8 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording
     let symbolic_load_assumptions =
         (!click_function_calls.is_empty()).then(|| assumptions.clone().keep_spec_loads_symbolic());
     let assumptions = symbolic_load_assumptions.as_ref().unwrap_or(assumptions);
-    let states = FixedStateLowering::new(
+    let states = FixedStateLowering::for_proposition(
+        proposition,
         values,
         array_refs,
         fixed_state.pre_state,
@@ -1132,8 +1133,8 @@ pub(in crate::surface::proof) struct FixedStateLowering {
 }
 
 impl FixedStateLowering {
-    // Integer arguments capture only the names in this expression. State handles
-    // retain the complete memory/resources, while indexed local queries avoid
+    // Capture only names referenced by the expression or proposition. State
+    // handles retain complete memory/resources, while indexed local queries avoid
     // work proportional to unrelated caller bindings.
     fn for_expression(
         expression: &ContractExpression,
@@ -1143,18 +1144,61 @@ impl FixedStateLowering {
         state: &CState,
         result: Option<&CValue>,
     ) -> Self {
-        let names = crate::surface::lowering::contract_expression_referenced_names(expression);
+        Self::for_names(
+            crate::surface::lowering::contract_expression_referenced_names(expression),
+            values,
+            array_refs,
+            pre_state,
+            state,
+            result,
+            true,
+        )
+    }
+
+    fn for_proposition(
+        proposition: &ClickProposition,
+        values: &BTreeMap<String, CValue>,
+        array_refs: &ClickArrayRefs,
+        pre_state: &CState,
+        state: &CState,
+        result: Option<&CValue>,
+    ) -> Self {
+        let mut names = BTreeSet::new();
+        crate::surface::lowering::collect_click_proposition_referenced_names(
+            proposition,
+            &mut names,
+        );
+        // The full proposition path installs supplied argument values even
+        // over array/aggregate places. Integer capture preserves those places;
+        // sharing the name selection must not change either binding policy.
+        Self::for_names(names, values, array_refs, pre_state, state, result, false)
+    }
+
+    fn for_names(
+        names: BTreeSet<String>,
+        values: &BTreeMap<String, CValue>,
+        array_refs: &ClickArrayRefs,
+        pre_state: &CState,
+        state: &CState,
+        result: Option<&CValue>,
+        preserve_place_bindings: bool,
+    ) -> Self {
         let mut entry_state = pre_state.clone();
         let mut lowering_state = state.clone();
         let mut element_types = BTreeMap::new();
         let mut entry_values = BTreeMap::new();
         let mut current_values = BTreeMap::new();
         for name in names {
+            crate::instrumentation::record_deterministic_work(1);
             if let Some(value) = values.get(&name) {
-                if !entry_state.locals().contains_name(&name) {
+                if entry_state.locals().get(&name).is_none()
+                    && (!preserve_place_bindings || !entry_state.locals().contains_name(&name))
+                {
                     entry_state = entry_state.with_local(name.clone(), value.clone());
                 }
-                if !lowering_state.locals().contains_name(&name) {
+                if lowering_state.locals().get(&name).is_none()
+                    && (!preserve_place_bindings || !lowering_state.locals().contains_name(&name))
+                {
                     lowering_state = lowering_state.with_local(name.clone(), value.clone());
                 }
             }
@@ -1544,6 +1588,45 @@ mod integer_capture_scaling_tests {
             assert!(
                 work <= 64,
                 "{size} unrelated locals caused {work} persistent operations"
+            );
+        }
+    }
+
+    #[test]
+    fn proposition_state_selection_scales_with_referenced_names() {
+        let proposition = ClickProposition::Comparison {
+            left: ContractExpression::At {
+                selector: SnapshotSelector::Mark("before".into()),
+                expression: Box::new(ContractExpression::Binding("used".into())),
+            },
+            operator: ComparisonOperator::Equal,
+            right: ContractExpression::Old(Box::new(ContractExpression::Binding("used".into()))),
+        };
+        for size in [16, 64, 256, 1024] {
+            let mut state = CState::new().with_local("used", crate::kernel::int32(7));
+            let mut values = BTreeMap::new();
+            for index in 0..size {
+                let name = format!("unrelated_{index}");
+                let value = crate::kernel::int32(index);
+                values.insert(name.clone(), value.clone());
+                state = state.with_local(name, value);
+            }
+            let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+                FixedStateLowering::for_proposition(
+                    &proposition,
+                    &values,
+                    &ClickArrayRefs::new(),
+                    &state,
+                    &state,
+                    None,
+                )
+            });
+            assert_eq!(selected.entry_values.len(), 1);
+            assert_eq!(selected.current_values.len(), 1);
+            assert_eq!(selected.current_values["used"], crate::kernel::int32(7));
+            assert!(
+                work <= 8,
+                "{size} unrelated locals caused {work} selection units"
             );
         }
     }

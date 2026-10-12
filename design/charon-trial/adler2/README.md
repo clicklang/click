@@ -5,7 +5,10 @@ proves the four-lane helper bodies and the native-count general, small-batch,
 and four-byte bounds proofs. The general proof covers every input length through
 2,147,483,647 bytes from canonical initial states, using actual native remaining
 counts, checked signed observations, and shared input views throughout all loops.
-**The general Adler-32 checksum postcondition remains unproved.**
+The small-batch proof also establishes both final fields equal the shared
+checksum specification on the entry input snapshot for every length through
+22,207 bytes, from any canonical initial state. **General-length checksum
+correctness remains unproved.**
 
 The 2,147,483,647-byte limit comes from the bound library
 ([`bounded-count.click`](bounded-count.click) and the proofs built on it), which
@@ -572,7 +575,13 @@ iterator state. Each returned byte is checked against its actual post-`Next`
 position; the signed prefix advances by one, the native A addition preserves
 its residue, and B includes the newly updated A value. Definedness bounds,
 byte casts and native assignment observations are explicit checked steps.
-The loop-exit bridge and final checksum postconditions remain pending. Nightly mutations reject a duplicated lane
+The scalar-loop exit establishes the full-input residues. Explicit byte-equality
+invariants preserve the entry input through both loops, and checked sum
+extensionality connects the current specification to the entry snapshot before
+either receiver field is stored. Native remainder equations and bounded
+16-bit cast certificates establish both final field postconditions against
+that fixed snapshot. No checksum result is assumed. Nightly mutations reject
+false final A and B checksum claims, a duplicated lane
 byte in the A transition, a changed completed-prefix A seed, an incorrect B
 byte weight, an omitted B seed contribution, a duplicated A lane during scalar
 recombination, changed recombined-prefix seeds, and an incorrect native B lane
@@ -603,8 +612,7 @@ by this contract.
 
 ## General whole-body induction
 
-The [general computation contract](general-compute.click), pending the native-count
-repair noted above, previously verified the original
+The [general computation contract](general-compute.click) verifies the original
 body for every length in `0..2147483647`, with canonical seeds `a,b < 65521`.
 The signed observation limit is explicit; full-width metadata is not truncated
 to admit larger inputs. The proof includes arbitrary numbers of full
@@ -614,16 +622,59 @@ arithmetic guard, and ranks all loops by their actual stored remaining state.
 Both final fields remain below 65,521. No assumed checksum summary or generated
 processed counter supplies these guarantees.
 
+Each full-batch vector step also proves that all four constructor lanes equal
+exact mathematical byte observations at absolute positions in the original
+input. The positions come from the stored outer and inner remaining counts.
+The [partition lemmas](general-partition.click) check signed addition before
+regrouping byte pointers. The proof first establishes machine-byte equality
+across the constructor's local return storage, then rewrites the Integer
+observation using that equality. These observations supply the input values
+needed for the outer checksum recurrence.
+
+The full-batch loops carry both residues against `adler_spec_a` and
+`adler_spec_b` at every actual remaining count. Each native four-byte addition
+advances the global prefix; each original reduction preserves its residue.
+The B seed remains the entry receiver value as Rust updates the working scalar
+B between batches. At outer-loop exhaustion the retained scalars and four-lane
+state represent the specified A and B for the complete full-batch prefix.
+Both loops retain equality of the input bytes with the entry snapshot. The
+independent A transition lemmas in [vector-prefix.click](vector-prefix.click)
+are reused by the joint A/B lemmas.
+The B proof observes the batch-local position from the stored inner remainder
+and includes the deferred position times scalar A contribution in its lane
+representative. The checked native vector step adds four times the old A
+representative and the actual byte weights `4,3,2,1`; its nonnegativity invariant
+passes through every original inner iteration. At batch exit, the original
+`22208 * a` multiplication and scalar B addition supply the exact deferred
+contribution. Frozen observations connect the actual A-lane, B-lane and scalar
+remainders to the source-proved B reduction, preserving the combined B residue.
+[batch-prefix.click](batch-prefix.click) proves the native transition, positivity,
+checked iterator endpoints and coupling of the deferred state to the global
+checksum prefix. Its zero-lane residue lemma initializes B from any canonical
+entry value. The original inner back edge, scalar seed addition, reductions and
+outer back edge retain the common B specification. It introduces no processed
+counter. The aligned remainder and final scalar tail still need their general
+checksum invariants.
+
 The harness assembles the contract with the checked helper/getter bodies,
 iterator and recombination libraries, general partition lemmas, and tail
 bounds. Normal tests check the bounded metadata and native stored-guard
 regression. Nightly tests check the complete body, missing authority and seeds,
-false final bounds, and CLI verify/profile/audit/expanded-proof agreement.
+false final bounds, absolute lane values, a duplicated A-transition byte, and
+a false lane-reduction residue, an incorrect deferred B seed product and a false
+B reduction residue, a changed entry B seed and a full-input claim at the
+completed-batch boundary, plus CLI verify/profile/audit/expanded-proof agreement.
+The deferred B lemmas independently verify, profile, audit, expand and reverify;
+mutations reject incorrect native positions, byte weights, missing overflow
+bounds, invalid reduction floors, wrong global-prefix advances and changed seeds. The absolute-position lemmas also
+expand and reverify independently; mutations reject undefined pointer sums and
+false byte observations.
 
 ```sh
 cargo nextest run --profile nightly --test rust_import \
   -E 'test(charon_adler2_general_compute)'
 ```
 
-This is a bounds and termination proof. The functional checksum and incremental
-processing postconditions remain separate roadmap work.
+The whole-body bounds and termination proof includes both A and B correctness
+for the full-batch prefix. Complete checksum and incremental processing postconditions
+remain separate roadmap work.

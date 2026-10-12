@@ -47,7 +47,10 @@ locations together and reuse that result for every step, including missing
 indices. Computing their line and character columns uses one source walk;
 reparsing the project or rescanning a long line for each location is not
 acceptable. The CLI cache and batch-position regressions cover 16, 64, and
-256 locations.
+256 locations. Rendering also shares one lexical source index for nested paths,
+line ambiguity, and target containment. Matching delimiters skip nested bodies,
+and direct tactic ranges are cached by body rather than rebuilt per child.
+Regressions cover siblings, long lines, deep nesting, and unrelated source text.
 
 ## Proof size and speed targets
 
@@ -107,6 +110,25 @@ a cell it cannot prove untouched stays at its pre-step snapshot; an explicit
 `transport` pays for anything more. Term comparison performs no
 frame reasoning. The user-facing statement of this rule is
 [What a step carries](../concepts/proof-state.md#what-a-step-carries).
+
+Observable resource compositions retain a persistent filtered storage root.
+After its first projection, resource producers advance only inserted or removed
+entries and affected support metadata. Private-local deltas reuse the exact
+observable root. Queries use maintained ownership counts rather than enumerate
+retained owners. The cache checks both the source storage identity and the
+addressability registry revision; a classification change or a whole-input
+rewrite rebuilds the projection. Returned compositions use current loan
+bindings, and cached storage never supplies a proof decision. Four-size
+regressions cover unchanged queries, private insertion/removal sequences,
+addressable deltas, and retained owners, with compatibility checks for supports,
+expansions, loans, forks, and registry changes.
+
+Fixed-state propositions select their referenced local bindings before
+elaboration. Recorded snapshots look up those names individually instead of
+rebuilding bindings for every local. The state and memory handles remain
+shared. Regressions vary unrelated bindings at four sizes and compare historical
+reads against full-context lowering, including entry values and names that keep
+their current value when absent from the recorded state.
 
 Logical reads through opaque pointers select an admitted footprint's address
 coordinates through the composition's existing class and interval indexes.
