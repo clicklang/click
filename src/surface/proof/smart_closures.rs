@@ -253,77 +253,32 @@ fn signed_surface_terms_equal(
                 crate::kernel::Bitvector32Term::Variable(right),
             ) if left == right => {}
             (
-                crate::kernel::Bitvector32Term::Add(left, right),
-                crate::kernel::Bitvector32Term::Add(other_left, other_right),
-            )
-            | (
-                crate::kernel::Bitvector32Term::Subtract(left, right),
-                crate::kernel::Bitvector32Term::Subtract(other_left, other_right),
-            )
-            | (
-                crate::kernel::Bitvector32Term::Multiply(left, right),
-                crate::kernel::Bitvector32Term::Multiply(other_left, other_right),
-            )
-            | (
-                crate::kernel::Bitvector32Term::Divide(left, right),
-                crate::kernel::Bitvector32Term::Divide(other_left, other_right),
-            )
-            | (
-                crate::kernel::Bitvector32Term::Remainder(left, right),
-                crate::kernel::Bitvector32Term::Remainder(other_left, other_right),
-            )
-            | (
-                crate::kernel::Bitvector32Term::ShiftLeft(left, right),
-                crate::kernel::Bitvector32Term::ShiftLeft(other_left, other_right),
-            )
-            | (
-                crate::kernel::Bitvector32Term::ArithmeticShiftRight(left, right),
-                crate::kernel::Bitvector32Term::ArithmeticShiftRight(other_left, other_right),
-            )
-            | (
-                crate::kernel::Bitvector32Term::LogicalShiftRight(left, right),
-                crate::kernel::Bitvector32Term::LogicalShiftRight(other_left, other_right),
-            )
-            | (
-                crate::kernel::Bitvector32Term::BitwiseAnd(left, right),
-                crate::kernel::Bitvector32Term::BitwiseAnd(other_left, other_right),
-            )
-            | (
-                crate::kernel::Bitvector32Term::BitwiseOr(left, right),
-                crate::kernel::Bitvector32Term::BitwiseOr(other_left, other_right),
-            )
-            | (
-                crate::kernel::Bitvector32Term::BitwiseXor(left, right),
-                crate::kernel::Bitvector32Term::BitwiseXor(other_left, other_right),
-            )
-            | (
-                crate::kernel::Bitvector32Term::UInt64Add(left, right),
-                crate::kernel::Bitvector32Term::UInt64Add(other_left, other_right),
-            )
-            | (
-                crate::kernel::Bitvector32Term::UInt64Subtract(left, right),
-                crate::kernel::Bitvector32Term::UInt64Subtract(other_left, other_right),
-            )
-            | (
-                crate::kernel::Bitvector32Term::UInt64Multiply(left, right),
-                crate::kernel::Bitvector32Term::UInt64Multiply(other_left, other_right),
-            )
-            | (
-                crate::kernel::Bitvector32Term::UInt64Divide(left, right),
-                crate::kernel::Bitvector32Term::UInt64Divide(other_left, other_right),
-            )
-            | (
-                crate::kernel::Bitvector32Term::UInt64Remainder(left, right),
-                crate::kernel::Bitvector32Term::UInt64Remainder(other_left, other_right),
-            ) => {
-                pending.push((left, other_left));
-                pending.push((right, other_right));
-            }
-            (
                 crate::kernel::Bitvector32Term::UInt32From64(left),
                 crate::kernel::Bitvector32Term::UInt32From64(right),
             ) => pending.push((left, right)),
-            _ => return false,
+            _ => {
+                use crate::kernel::BitvectorBinaryOp as Op;
+                let (Some((operator, left, right)), Some((other, other_left, other_right))) =
+                    (left.as_binary(), right.as_binary())
+                else {
+                    return false;
+                };
+                let signed_or_native = (operator.is_bitvector32()
+                    && !matches!(operator, Op::UnsignedDivide | Op::UnsignedRemainder))
+                    || matches!(
+                        operator,
+                        Op::UInt64Add
+                            | Op::UInt64Subtract
+                            | Op::UInt64Multiply
+                            | Op::UInt64Divide
+                            | Op::UInt64Remainder
+                    );
+                if operator != other || !signed_or_native {
+                    return false;
+                }
+                pending.push((left, other_left));
+                pending.push((right, other_right));
+            }
         }
     }
     true

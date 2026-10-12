@@ -1639,17 +1639,7 @@ fn collect_pointer_offset_memory_load_keys(
     offset: &PointerOffsetTerm,
     keys: &mut BTreeSet<(PointerBlock, u64)>,
 ) {
-    match offset {
-        PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
-        PointerOffsetTerm::Add(left, right) => {
-            collect_pointer_offset_memory_load_keys(left, keys);
-            collect_pointer_offset_memory_load_keys(right, keys);
-        }
-        PointerOffsetTerm::Int32Scaled { value, .. }
-        | PointerOffsetTerm::Int64Scaled { value, .. } => {
-            collect_bitvector_memory_load_keys(value, keys)
-        }
-    }
+    offset.for_each_scaled_value(|value| collect_bitvector_memory_load_keys(value, keys));
 }
 
 fn collect_bitvector_memory_load_keys(
@@ -1672,33 +1662,6 @@ fn collect_bitvector_memory_load_keys(
         Bitvector32Term::PointerAddress(pointer) => {
             collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
         }
-        crate::kernel::binary_bitvector32_term!(left, right) => {
-            collect_bitvector_memory_load_keys(left, keys);
-            collect_bitvector_memory_load_keys(right, keys);
-        }
-        Bitvector32Term::Int64From32(value)
-        | Bitvector32Term::MachineIntegerCast { value, .. }
-        | Bitvector32Term::Int64FromUInt32(value)
-        | Bitvector32Term::UInt64From32(value)
-        | Bitvector32Term::UInt32From64(value)
-        | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value)
-        | Bitvector32Term::Int64BitwiseNot(value)
-        | Bitvector32Term::UInt64BitwiseNot(value) => {
-            collect_bitvector_memory_load_keys(value, keys)
-        }
-        crate::kernel::binary_wide_term!(left, right) => {
-            collect_bitvector_memory_load_keys(left, keys);
-            collect_bitvector_memory_load_keys(right, keys);
-        }
-        Bitvector32Term::Float32Binary { left, right, .. }
-        | Bitvector32Term::Float64Binary { left, right, .. } => {
-            collect_bitvector_memory_load_keys(left, keys);
-            collect_bitvector_memory_load_keys(right, keys);
-        }
-        Bitvector32Term::BitwiseNot(value)
-        | Bitvector32Term::Float32Negate(value)
-        | Bitvector32Term::Float64Negate(value) => collect_bitvector_memory_load_keys(value, keys),
         Bitvector32Term::If {
             condition,
             then_term,
@@ -1728,6 +1691,17 @@ fn collect_bitvector_memory_load_keys(
         Bitvector32Term::ClickFunctionApplication { .. }
         | Bitvector32Term::AlgebraicMatch { .. } => {}
         Bitvector32Term::IntegerToMachine { .. } => {}
+        term => {
+            if let Some((_, left, right)) = term.as_binary() {
+                collect_bitvector_memory_load_keys(left, keys);
+                collect_bitvector_memory_load_keys(right, keys);
+            } else {
+                let (_, value) = term
+                    .as_unary()
+                    .expect("every other term is binary or unary");
+                collect_bitvector_memory_load_keys(value, keys);
+            }
+        }
     }
 }
 

@@ -3065,17 +3065,7 @@ fn collect_pointer_offset_bound_variables(
     offset: &PointerOffsetTerm,
     variables: &mut BTreeSet<Variable>,
 ) {
-    match offset {
-        PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
-        PointerOffsetTerm::Add(left, right) => {
-            collect_pointer_offset_bound_variables(left, variables);
-            collect_pointer_offset_bound_variables(right, variables);
-        }
-        PointerOffsetTerm::Int32Scaled { value, .. }
-        | PointerOffsetTerm::Int64Scaled { value, .. } => {
-            collect_bitvector_bound_variables(value, variables);
-        }
-    }
+    offset.for_each_scaled_value(|value| collect_bitvector_bound_variables(value, variables));
 }
 
 pub(in crate::kernel) fn substitute_bitvector_variable_in_term(

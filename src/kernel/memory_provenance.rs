@@ -4904,28 +4904,6 @@ pub(crate) fn c_condition_fact_has_memory(fact: &Proposition) -> bool {
         match term {
             Bitvector32Term::MemoryLoad(_, _, _) => true,
             Bitvector32Term::PointerAddress(pointer) => offset_has_memory(&pointer.offset),
-            crate::kernel::binary_bitvector32_term!(left, right) => {
-                bitvector_has_memory(left) || bitvector_has_memory(right)
-            }
-            Bitvector32Term::Float32Binary { left, right, .. }
-            | Bitvector32Term::Float64Binary { left, right, .. } => {
-                bitvector_has_memory(left) || bitvector_has_memory(right)
-            }
-            Bitvector32Term::BitwiseNot(term)
-            | Bitvector32Term::Int64BitwiseNot(term)
-            | Bitvector32Term::UInt64BitwiseNot(term)
-            | Bitvector32Term::Float32Negate(term)
-            | Bitvector32Term::Float64Negate(term) => bitvector_has_memory(term),
-            Bitvector32Term::Int64From32(term)
-            | Bitvector32Term::MachineIntegerCast { value: term, .. }
-            | Bitvector32Term::UInt64From32(term)
-            | Bitvector32Term::UInt32From64(term)
-            | Bitvector32Term::Int64FromUInt32(term)
-            | Bitvector32Term::UInt64FromInt32(term)
-            | Bitvector32Term::UInt64FromInt64(term) => bitvector_has_memory(term),
-            crate::kernel::binary_wide_term!(left, right) => {
-                bitvector_has_memory(left) || bitvector_has_memory(right)
-            }
             Bitvector32Term::If {
                 then_term,
                 else_term,
@@ -4956,17 +4934,20 @@ pub(crate) fn c_condition_fact_has_memory(fact: &Proposition) -> bool {
             | Bitvector32Term::MachineIntegerConstant(_)
             | Bitvector32Term::Variable(_) => false,
             Bitvector32Term::IntegerToMachine { .. } => true,
+            term => {
+                if let Some((_, left, right)) = term.as_binary() {
+                    bitvector_has_memory(left) || bitvector_has_memory(right)
+                } else {
+                    let (_, value) = term
+                        .as_unary()
+                        .expect("every other term is binary or unary");
+                    bitvector_has_memory(value)
+                }
+            }
         }
     }
     fn offset_has_memory(offset: &PointerOffsetTerm) -> bool {
-        match offset {
-            PointerOffsetTerm::Add(left, right) => {
-                offset_has_memory(left) || offset_has_memory(right)
-            }
-            PointerOffsetTerm::Int32Scaled { value, .. }
-            | PointerOffsetTerm::Int64Scaled { value, .. } => bitvector_has_memory(value),
-            PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => false,
-        }
+        offset.any_scaled_value(bitvector_has_memory)
     }
     let Proposition::ConditionIs(condition, _) = fact else {
         return false;
@@ -5036,17 +5017,7 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
 }
 
 fn collect_pointer_offset_memories(offset: &PointerOffsetTerm, memories: &mut Vec<SharedCMemory>) {
-    match offset {
-        PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
-        PointerOffsetTerm::Add(left, right) => {
-            collect_pointer_offset_memories(left, memories);
-            collect_pointer_offset_memories(right, memories);
-        }
-        PointerOffsetTerm::Int32Scaled { value, .. }
-        | PointerOffsetTerm::Int64Scaled { value, .. } => {
-            collect_bitvector_memories(value, memories)
-        }
-    }
+    offset.for_each_scaled_value(|value| collect_bitvector_memories(value, memories));
 }
 
 fn collect_bitvector_memories(term: &Bitvector32Term, memories: &mut Vec<SharedCMemory>) {
@@ -5062,28 +5033,6 @@ fn collect_bitvector_memories(term: &Bitvector32Term, memories: &mut Vec<SharedC
                 memories.push(memory.clone());
             }
         }
-        crate::kernel::binary_machine_term!(left, right) => {
-            collect_bitvector_memories(left, memories);
-            collect_bitvector_memories(right, memories);
-        }
-        Bitvector32Term::Float32Binary { left, right, .. }
-        | Bitvector32Term::Float64Binary { left, right, .. } => {
-            collect_bitvector_memories(left, memories);
-            collect_bitvector_memories(right, memories);
-        }
-        Bitvector32Term::Float32Negate(value) | Bitvector32Term::Float64Negate(value) => {
-            collect_bitvector_memories(value, memories)
-        }
-        Bitvector32Term::BitwiseNot(term)
-        | Bitvector32Term::Int64BitwiseNot(term)
-        | Bitvector32Term::UInt64BitwiseNot(term)
-        | Bitvector32Term::Int64From32(term)
-        | Bitvector32Term::MachineIntegerCast { value: term, .. }
-        | Bitvector32Term::UInt64From32(term)
-        | Bitvector32Term::UInt32From64(term)
-        | Bitvector32Term::Int64FromUInt32(term)
-        | Bitvector32Term::UInt64FromInt32(term)
-        | Bitvector32Term::UInt64FromInt64(term) => collect_bitvector_memories(term, memories),
         Bitvector32Term::If {
             condition,
             then_term,
@@ -5115,6 +5064,17 @@ fn collect_bitvector_memories(term: &Bitvector32Term, memories: &mut Vec<SharedC
         Bitvector32Term::AlgebraicMatch { arms, .. } => {
             for arm in arms {
                 collect_bitvector_memories(&arm.body, memories);
+            }
+        }
+        term => {
+            if let Some((_, left, right)) = term.as_binary() {
+                collect_bitvector_memories(left, memories);
+                collect_bitvector_memories(right, memories);
+            } else {
+                let (_, value) = term
+                    .as_unary()
+                    .expect("every other term is binary or unary");
+                collect_bitvector_memories(value, memories);
             }
         }
     }

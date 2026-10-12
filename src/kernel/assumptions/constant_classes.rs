@@ -119,67 +119,23 @@ pub(super) fn fold_arithmetic(
     term: &Bitvector32Term,
     mut operand: impl FnMut(&Bitvector32Term) -> SignedConstantResolution,
 ) -> SignedConstantResolution {
-    let binary =
-        |left: &Bitvector32Term,
-         right: &Bitvector32Term,
-         operand: &mut dyn FnMut(&Bitvector32Term) -> SignedConstantResolution,
-         operation: fn(Bitvector32Term, Bitvector32Term) -> Bitvector32Term| {
-            let left = operand(left);
-            let right = operand(right);
-            match (left, right) {
-                (SignedConstantResolution::Ambiguous, _)
-                | (_, SignedConstantResolution::Ambiguous) => SignedConstantResolution::Ambiguous,
-                (SignedConstantResolution::Known(left), SignedConstantResolution::Known(right)) => {
-                    SignedConstantResolution::from_term(operation(
-                        Bitvector32Term::Constant(left as i32 as u32),
-                        Bitvector32Term::Constant(right as i32 as u32),
-                    ))
-                }
-                _ => SignedConstantResolution::Unknown,
+    if let Some((operator, left, right)) = term.as_binary()
+        && operator.is_bitvector32()
+    {
+        return match (operand(left), operand(right)) {
+            (SignedConstantResolution::Ambiguous, _) | (_, SignedConstantResolution::Ambiguous) => {
+                SignedConstantResolution::Ambiguous
             }
+            (SignedConstantResolution::Known(left), SignedConstantResolution::Known(right)) => {
+                SignedConstantResolution::from_term(operator.build(
+                    Bitvector32Term::Constant(left as i32 as u32),
+                    Bitvector32Term::Constant(right as i32 as u32),
+                ))
+            }
+            _ => SignedConstantResolution::Unknown,
         };
-    let operand: &mut dyn FnMut(&Bitvector32Term) -> SignedConstantResolution = &mut operand;
+    }
     match term {
-        Bitvector32Term::Add(left, right) => binary(left, right, operand, Bitvector32Term::add),
-        Bitvector32Term::Subtract(left, right) => {
-            binary(left, right, operand, Bitvector32Term::subtract)
-        }
-        Bitvector32Term::Multiply(left, right) => {
-            binary(left, right, operand, Bitvector32Term::multiply)
-        }
-        Bitvector32Term::Divide(left, right) => {
-            binary(left, right, operand, Bitvector32Term::divide)
-        }
-        Bitvector32Term::UnsignedDivide(left, right) => {
-            binary(left, right, operand, Bitvector32Term::unsigned_divide)
-        }
-        Bitvector32Term::Remainder(left, right) => {
-            binary(left, right, operand, Bitvector32Term::remainder)
-        }
-        Bitvector32Term::UnsignedRemainder(left, right) => {
-            binary(left, right, operand, Bitvector32Term::unsigned_remainder)
-        }
-        Bitvector32Term::ShiftLeft(left, right) => {
-            binary(left, right, operand, Bitvector32Term::shift_left)
-        }
-        Bitvector32Term::ArithmeticShiftRight(left, right) => binary(
-            left,
-            right,
-            operand,
-            Bitvector32Term::arithmetic_shift_right,
-        ),
-        Bitvector32Term::LogicalShiftRight(left, right) => {
-            binary(left, right, operand, Bitvector32Term::logical_shift_right)
-        }
-        Bitvector32Term::BitwiseAnd(left, right) => {
-            binary(left, right, operand, Bitvector32Term::bitwise_and)
-        }
-        Bitvector32Term::BitwiseOr(left, right) => {
-            binary(left, right, operand, Bitvector32Term::bitwise_or)
-        }
-        Bitvector32Term::BitwiseXor(left, right) => {
-            binary(left, right, operand, Bitvector32Term::bitwise_xor)
-        }
         Bitvector32Term::BitwiseNot(value) => operand(value).map(|value| {
             Bitvector32Term::bitwise_not(Bitvector32Term::Constant(value as i32 as u32))
         }),

@@ -1632,210 +1632,77 @@ fn rewrite_atomic_proposition_by_exact_equality(
     };
     let rewritten = match goal {
         Proposition::ConditionIs(condition, expected) => {
-            let rewritten_condition = match condition {
-                ConditionTerm::Bitvector32SignedLessThan(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector32SignedLessThan(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector32SignedLessEqual(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector32SignedLessEqual(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector32SignedGreaterThan(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector32SignedGreaterThan(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector32SignedGreaterEqual(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector32SignedGreaterEqual(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector32Equal(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector64SignedLessThan(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector64SignedLessThan(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector64SignedLessEqual(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector64SignedLessEqual(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector64SignedGreaterThan(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector64SignedGreaterThan(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector64SignedGreaterEqual(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector64SignedGreaterEqual(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector64UnsignedLessThan(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector64UnsignedLessThan(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector64UnsignedLessEqual(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector64UnsignedLessEqual(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector64UnsignedGreaterThan(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector64UnsignedGreaterThan(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector64UnsignedGreaterEqual(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector64UnsignedGreaterEqual(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector64Equal(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector64Equal(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector32SignedAddOverflows(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector32SignedAddOverflows(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector32SignedSubtractOverflows(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector32SignedSubtractOverflows(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector32SignedMultiplyOverflows(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector32SignedMultiplyOverflows(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector32SignedDivideOverflows(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector32SignedDivideOverflows(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector32SignedShiftLeftOverflows(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector32SignedShiftLeftOverflows(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector64SignedAddOverflows(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector64SignedAddOverflows(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector64SignedSubtractOverflows(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector64SignedSubtractOverflows(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector64SignedMultiplyOverflows(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector64SignedMultiplyOverflows(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector64SignedDivideOverflows(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector64SignedDivideOverflows(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::Bitvector64SignedShiftLeftOverflows(goal_left, goal_right) => {
-                    ConditionTerm::Bitvector64SignedShiftLeftOverflows(
-                        Box::new(rewrite_term(goal_left, left, right)),
-                        Box::new(rewrite_term(goal_right, left, right)),
-                    )
-                }
-                // `to_integer(machine)` is represented as an Integer machine
-                // observation.  Rewrite its selected machine payload through
-                // the already checked C equality, then let the normal
-                // Integer constructor fold a constant observation.
-                ConditionTerm::IntegerEqual(goal_left, goal_right) => ConditionTerm::IntegerEqual(
-                    rewrite_integer_observation(goal_left, left, right),
-                    rewrite_integer_observation(goal_right, left, right),
-                ),
-                ConditionTerm::IntegerLessThan(goal_left, goal_right) => {
-                    ConditionTerm::IntegerLessThan(
-                        rewrite_integer_observation(goal_left, left, right),
-                        rewrite_integer_observation(goal_right, left, right),
-                    )
-                }
-                ConditionTerm::IntegerLessEqual(goal_left, goal_right) => {
-                    ConditionTerm::IntegerLessEqual(
-                        rewrite_integer_observation(goal_left, left, right),
-                        rewrite_integer_observation(goal_right, left, right),
-                    )
-                }
-                ConditionTerm::IntegerGreaterThan(goal_left, goal_right) => {
-                    ConditionTerm::IntegerGreaterThan(
-                        rewrite_integer_observation(goal_left, left, right),
-                        rewrite_integer_observation(goal_right, left, right),
-                    )
-                }
-                ConditionTerm::IntegerGreaterEqual(goal_left, goal_right) => {
-                    ConditionTerm::IntegerGreaterEqual(
-                        rewrite_integer_observation(goal_left, left, right),
-                        rewrite_integer_observation(goal_right, left, right),
-                    )
-                }
-                ConditionTerm::IntegerNotEqual(goal_left, goal_right) => {
-                    ConditionTerm::IntegerNotEqual(
-                        rewrite_integer_observation(goal_left, left, right),
-                        rewrite_integer_observation(goal_right, left, right),
-                    )
-                }
-                // Pointer goals contain the same int32 terms inside their
-                // offsets; substituting the proven equality there is the same
-                // exact term congruence, with work bounded by the goal.
-                ConditionTerm::PointerOffsetEqual(goal_left, goal_right) => {
-                    ConditionTerm::PointerOffsetEqual(
-                        Box::new(rewrite_offset_term(goal_left, left, right)),
-                        Box::new(rewrite_offset_term(goal_right, left, right)),
-                    )
-                }
-                ConditionTerm::PointerEqual(goal_left, goal_right) => {
-                    let rewrite_pointer = |pointer: &Pointer| Pointer {
-                        block: pointer.block.clone(),
-                        offset: rewrite_offset_term(&pointer.offset, left, right),
-                    };
-                    ConditionTerm::pointer_equal(
-                        rewrite_pointer(goal_left),
-                        rewrite_pointer(goal_right),
-                    )
-                }
-                _ => {
-                    return Err("`rewrite` cannot substitute this native equality in the selected condition".to_string());
+            let rewritten_condition = if let Some((operator, goal_left, goal_right)) =
+                condition.as_bitvector_comparison()
+            {
+                operator.build_raw(
+                    rewrite_term(goal_left, left, right),
+                    rewrite_term(goal_right, left, right),
+                )
+            } else {
+                match condition {
+                    // `to_integer(machine)` is represented as an Integer machine
+                    // observation.  Rewrite its selected machine payload through
+                    // the already checked C equality, then let the normal
+                    // Integer constructor fold a constant observation.
+                    ConditionTerm::IntegerEqual(goal_left, goal_right) => {
+                        ConditionTerm::IntegerEqual(
+                            rewrite_integer_observation(goal_left, left, right),
+                            rewrite_integer_observation(goal_right, left, right),
+                        )
+                    }
+                    ConditionTerm::IntegerLessThan(goal_left, goal_right) => {
+                        ConditionTerm::IntegerLessThan(
+                            rewrite_integer_observation(goal_left, left, right),
+                            rewrite_integer_observation(goal_right, left, right),
+                        )
+                    }
+                    ConditionTerm::IntegerLessEqual(goal_left, goal_right) => {
+                        ConditionTerm::IntegerLessEqual(
+                            rewrite_integer_observation(goal_left, left, right),
+                            rewrite_integer_observation(goal_right, left, right),
+                        )
+                    }
+                    ConditionTerm::IntegerGreaterThan(goal_left, goal_right) => {
+                        ConditionTerm::IntegerGreaterThan(
+                            rewrite_integer_observation(goal_left, left, right),
+                            rewrite_integer_observation(goal_right, left, right),
+                        )
+                    }
+                    ConditionTerm::IntegerGreaterEqual(goal_left, goal_right) => {
+                        ConditionTerm::IntegerGreaterEqual(
+                            rewrite_integer_observation(goal_left, left, right),
+                            rewrite_integer_observation(goal_right, left, right),
+                        )
+                    }
+                    ConditionTerm::IntegerNotEqual(goal_left, goal_right) => {
+                        ConditionTerm::IntegerNotEqual(
+                            rewrite_integer_observation(goal_left, left, right),
+                            rewrite_integer_observation(goal_right, left, right),
+                        )
+                    }
+                    // Pointer goals contain the same int32 terms inside their
+                    // offsets; substituting the proven equality there is the same
+                    // exact term congruence, with work bounded by the goal.
+                    ConditionTerm::PointerOffsetEqual(goal_left, goal_right) => {
+                        ConditionTerm::PointerOffsetEqual(
+                            Box::new(rewrite_offset_term(goal_left, left, right)),
+                            Box::new(rewrite_offset_term(goal_right, left, right)),
+                        )
+                    }
+                    ConditionTerm::PointerEqual(goal_left, goal_right) => {
+                        let rewrite_pointer = |pointer: &Pointer| Pointer {
+                            block: pointer.block.clone(),
+                            offset: rewrite_offset_term(&pointer.offset, left, right),
+                        };
+                        ConditionTerm::pointer_equal(
+                            rewrite_pointer(goal_left),
+                            rewrite_pointer(goal_right),
+                        )
+                    }
+                    _ => {
+                        return Err("`rewrite` cannot substitute this native equality in the selected condition".to_string());
+                    }
                 }
             };
             Proposition::ConditionIs(rewritten_condition, *expected)

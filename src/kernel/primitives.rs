@@ -543,6 +543,31 @@ impl PointerOffsetTerm {
         }
         values
     }
+
+    /// Visits each scaled index of this offset, left to right.
+    pub(crate) fn for_each_scaled_value(&self, mut visit: impl FnMut(&Bitvector32Term)) {
+        self.any_scaled_value(|value| {
+            visit(value);
+            false
+        });
+    }
+
+    /// Whether some scaled index of this offset satisfies `test`, asked left to
+    /// right and stopping at the first that does.
+    pub(crate) fn any_scaled_value(&self, mut test: impl FnMut(&Bitvector32Term) -> bool) -> bool {
+        fn walk(
+            offset: &PointerOffsetTerm,
+            test: &mut impl FnMut(&Bitvector32Term) -> bool,
+        ) -> bool {
+            match offset {
+                PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => false,
+                PointerOffsetTerm::Add(left, right) => walk(left, test) || walk(right, test),
+                PointerOffsetTerm::Int32Scaled { value, .. }
+                | PointerOffsetTerm::Int64Scaled { value, .. } => test(value),
+            }
+        }
+        walk(self, &mut test)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

@@ -3146,33 +3146,9 @@ fn term_mentions_a_memory_load(term: &Bitvector32Term) -> bool {
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::MachineIntegerConstant(_) => false,
         Bitvector32Term::MemoryLoad(_, _, _) => true,
-        Bitvector32Term::PointerAddress(pointer) => pointer
-            .offset
-            .scaled_values()
-            .into_iter()
-            .any(term_mentions_a_memory_load),
-        crate::kernel::binary_bitvector32_term!(left, right) => {
-            term_mentions_a_memory_load(left) || term_mentions_a_memory_load(right)
+        Bitvector32Term::PointerAddress(pointer) => {
+            pointer.offset.any_scaled_value(term_mentions_a_memory_load)
         }
-        Bitvector32Term::Float32Binary { left, right, .. }
-        | Bitvector32Term::Float64Binary { left, right, .. } => {
-            term_mentions_a_memory_load(left) || term_mentions_a_memory_load(right)
-        }
-        Bitvector32Term::Int64From32(value)
-        | Bitvector32Term::MachineIntegerCast { value, .. }
-        | Bitvector32Term::Int64FromUInt32(value)
-        | Bitvector32Term::UInt64From32(value)
-        | Bitvector32Term::UInt32From64(value)
-        | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value)
-        | Bitvector32Term::Int64BitwiseNot(value)
-        | Bitvector32Term::UInt64BitwiseNot(value) => term_mentions_a_memory_load(value),
-        crate::kernel::binary_wide_term!(left, right) => {
-            term_mentions_a_memory_load(left) || term_mentions_a_memory_load(right)
-        }
-        Bitvector32Term::BitwiseNot(value)
-        | Bitvector32Term::Float32Negate(value)
-        | Bitvector32Term::Float64Negate(value) => term_mentions_a_memory_load(value),
         Bitvector32Term::If {
             condition,
             then_term,
@@ -3194,6 +3170,16 @@ fn term_mentions_a_memory_load(term: &Bitvector32Term) -> bool {
             .iter()
             .any(|arm| term_mentions_a_memory_load(&arm.body)),
         Bitvector32Term::IntegerToMachine { .. } => true,
+        term => {
+            if let Some((_, left, right)) = term.as_binary() {
+                term_mentions_a_memory_load(left) || term_mentions_a_memory_load(right)
+            } else {
+                let (_, value) = term
+                    .as_unary()
+                    .expect("every other term is binary or unary");
+                term_mentions_a_memory_load(value)
+            }
+        }
     }
 }
 
@@ -3225,14 +3211,7 @@ fn condition_mentions_a_memory_load(condition: &ConditionTerm) -> bool {
 }
 
 fn offset_mentions_a_memory_load(offset: &PointerOffsetTerm) -> bool {
-    match offset {
-        PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => false,
-        PointerOffsetTerm::Add(left, right) => {
-            offset_mentions_a_memory_load(left) || offset_mentions_a_memory_load(right)
-        }
-        PointerOffsetTerm::Int32Scaled { value, .. }
-        | PointerOffsetTerm::Int64Scaled { value, .. } => term_mentions_a_memory_load(value),
-    }
+    offset.any_scaled_value(term_mentions_a_memory_load)
 }
 
 /// The load variable representing one load identity: the pair of a memory
