@@ -52,8 +52,7 @@ mod pointee_const_return_tests {
             &state,
             &c_assign("q", c_variable("p")),
             &PureFactContext::new(),
-            &environment,
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment),
             &mut ExecutionBudget::default(),
         )
         .unwrap();
@@ -71,8 +70,7 @@ mod pointee_const_return_tests {
             state,
             &c_store(c_variable("q"), c_int32_literal(1)),
             &PureFactContext::new(),
-            &environment,
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment),
             &mut ExecutionBudget::default(),
         )
         .unwrap();
@@ -101,8 +99,7 @@ mod pointee_const_return_tests {
             "view",
             &[c_variable("p")],
             &PureFactContext::new(),
-            &environment,
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            CExecutionContext::apply_verified_rules(&environment),
             &mut ExecutionBudget::default(),
         )
         .unwrap();
@@ -134,8 +131,7 @@ mod pointee_const_return_tests {
             "text",
             &[],
             &PureFactContext::new(),
-            &environment,
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment),
             &mut ExecutionBudget::default(),
         )
         .unwrap();
@@ -157,8 +153,7 @@ mod pointee_const_return_tests {
             "callback",
             &[],
             &PureFactContext::new(),
-            &environment,
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment),
             &mut ExecutionBudget::default(),
         )
         .unwrap();
@@ -175,8 +170,7 @@ mod pointee_const_return_tests {
             "callback",
             &[],
             &PureFactContext::new(),
-            &environment,
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment),
             &mut ExecutionBudget::default(),
         )
         .unwrap();
@@ -203,8 +197,7 @@ mod pointee_const_return_tests {
             "callback",
             &[],
             &PureFactContext::new(),
-            &environment,
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment),
             &mut ExecutionBudget::default(),
         )
         .unwrap();
@@ -339,8 +332,7 @@ mod pointee_const_return_tests {
                 "callback",
                 &[],
                 &assumptions,
-                &environment,
-                CExecutionSemantics::EXECUTE_BODIES,
+                CExecutionContext::execute_bodies(&environment),
                 &mut ExecutionBudget::default(),
             )
             .unwrap();
@@ -478,24 +470,26 @@ pub(super) fn execute_c_call_assign_paths(
     function_name: &str,
     arguments: &[CExpression],
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    if !is_modeled_pthread_call(function_name, environment)
+    if !is_modeled_pthread_call(function_name, execution_context.environment)
         && !matches!(
             state.locals.object_type(function_name),
             Some(CType::FunctionPointer(_))
         )
-        && environment
+        && execution_context
+            .environment
             .get_verified_function_rule(function_name)
             .is_none()
-        && environment
+        && execution_context
+            .environment
             .get_external_function_rule(function_name)
             .is_some_and(|rule| {
                 super::functions::contract_reaches_population(rule.function.contract_interface())
             })
-        && !environment
+        && !execution_context
+            .environment
             .get_external_function_rule(function_name)
             .is_some_and(|rule| {
                 rule.is_scoped_unselected()
@@ -506,7 +500,8 @@ pub(super) fn execute_c_call_assign_paths(
     {
         return Ok(vec![authority_call_refusal_path()]);
     }
-    if environment
+    if execution_context
+        .environment
         .modeled_pthread_binding
         .as_ref()
         .is_some_and(|binding| function_name == binding.create_name)
@@ -516,11 +511,12 @@ pub(super) fn execute_c_call_assign_paths(
             Some(target),
             arguments,
             assumptions,
-            environment,
+            execution_context.environment,
             budget,
         );
     }
-    if environment
+    if execution_context
+        .environment
         .modeled_pthread_binding
         .as_ref()
         .is_some_and(|binding| function_name == binding.join_name)
@@ -530,11 +526,14 @@ pub(super) fn execute_c_call_assign_paths(
             Some(target),
             arguments,
             assumptions,
-            environment,
+            execution_context.environment,
             budget,
         );
     }
-    if let Some(binding) = environment.modeled_pthread_binding.as_ref()
+    if let Some(binding) = execution_context
+        .environment
+        .modeled_pthread_binding
+        .as_ref()
         && [
             binding.mutex_init_name,
             binding.mutex_lock_name,
@@ -549,11 +548,14 @@ pub(super) fn execute_c_call_assign_paths(
             function_name,
             arguments,
             assumptions,
-            environment,
+            execution_context.environment,
             budget,
         );
     }
-    if environment.modeled_pthread_binding.is_some()
+    if execution_context
+        .environment
+        .modeled_pthread_binding
+        .is_some()
         && super::publication::is_publication_operation(function_name)
     {
         return super::publication::execute_publication_paths(
@@ -562,15 +564,19 @@ pub(super) fn execute_c_call_assign_paths(
             function_name,
             arguments,
             assumptions,
-            environment,
+            execution_context.environment,
             budget,
         );
     }
-    if let Some(path) = unbound_modeled_pthread_call(function_name, environment) {
+    if let Some(path) = unbound_modeled_pthread_call(function_name, execution_context.environment) {
         return Ok(vec![path]);
     }
     if function_name == "realloc" {
-        if environment.selected_call_contract.is_some() {
+        if execution_context
+            .environment
+            .selected_call_contract
+            .is_some()
+        {
             return Ok(vec![CStatementExecutionPath::new(
                 CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
                     "step(Contract) requires a function-pointer call".to_string(),
@@ -590,13 +596,12 @@ pub(super) fn execute_c_call_assign_paths(
             CType::FunctionPointer(signature),
             arguments,
             assumptions,
-            environment,
-            execution_semantics,
+            execution_context,
             budget,
         );
     }
 
-    let Some(function) = environment.get_function(function_name) else {
+    let Some(function) = execution_context.environment.get_function(function_name) else {
         return Ok(vec![CStatementExecutionPath::new(
             CStatementOutcome::RuntimeError(CRuntimeError::UnknownFunction(
                 function_name.to_string(),
@@ -643,8 +648,7 @@ pub(super) fn execute_c_call_assign_paths(
         function,
         arguments,
         assumptions,
-        environment,
-        execution_semantics,
+        execution_context,
         budget,
     )?
     .into_iter()
@@ -836,24 +840,26 @@ pub(super) fn execute_c_call_paths(
     function_name: &str,
     arguments: &[CExpression],
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    if !is_modeled_pthread_call(function_name, environment)
+    if !is_modeled_pthread_call(function_name, execution_context.environment)
         && !matches!(
             state.locals.object_type(function_name),
             Some(CType::FunctionPointer(_))
         )
-        && environment
+        && execution_context
+            .environment
             .get_verified_function_rule(function_name)
             .is_none()
-        && environment
+        && execution_context
+            .environment
             .get_external_function_rule(function_name)
             .is_some_and(|rule| {
                 super::functions::contract_reaches_population(rule.function.contract_interface())
             })
-        && !environment
+        && !execution_context
+            .environment
             .get_external_function_rule(function_name)
             .is_some_and(|rule| {
                 rule.is_scoped_unselected()
@@ -864,7 +870,8 @@ pub(super) fn execute_c_call_paths(
     {
         return Ok(vec![authority_call_refusal_path()]);
     }
-    if environment
+    if execution_context
+        .environment
         .modeled_pthread_binding
         .as_ref()
         .is_some_and(|binding| function_name == binding.create_name)
@@ -874,11 +881,12 @@ pub(super) fn execute_c_call_paths(
             None,
             arguments,
             assumptions,
-            environment,
+            execution_context.environment,
             budget,
         );
     }
-    if environment
+    if execution_context
+        .environment
         .modeled_pthread_binding
         .as_ref()
         .is_some_and(|binding| function_name == binding.join_name)
@@ -888,11 +896,14 @@ pub(super) fn execute_c_call_paths(
             None,
             arguments,
             assumptions,
-            environment,
+            execution_context.environment,
             budget,
         );
     }
-    if let Some(binding) = environment.modeled_pthread_binding.as_ref()
+    if let Some(binding) = execution_context
+        .environment
+        .modeled_pthread_binding
+        .as_ref()
         && [
             binding.mutex_init_name,
             binding.mutex_lock_name,
@@ -907,11 +918,14 @@ pub(super) fn execute_c_call_paths(
             function_name,
             arguments,
             assumptions,
-            environment,
+            execution_context.environment,
             budget,
         );
     }
-    if environment.modeled_pthread_binding.is_some()
+    if execution_context
+        .environment
+        .modeled_pthread_binding
+        .is_some()
         && super::publication::is_publication_operation(function_name)
     {
         return super::publication::execute_publication_paths(
@@ -920,11 +934,11 @@ pub(super) fn execute_c_call_paths(
             function_name,
             arguments,
             assumptions,
-            environment,
+            execution_context.environment,
             budget,
         );
     }
-    if let Some(path) = unbound_modeled_pthread_call(function_name, environment) {
+    if let Some(path) = unbound_modeled_pthread_call(function_name, execution_context.environment) {
         return Ok(vec![path]);
     }
     if let Some(CType::FunctionPointer(signature)) = state.locals.object_type(function_name) {
@@ -934,8 +948,7 @@ pub(super) fn execute_c_call_paths(
             CType::FunctionPointer(signature),
             arguments,
             assumptions,
-            environment,
-            execution_semantics,
+            execution_context,
             budget,
         )?
         .into_iter()
@@ -961,7 +974,7 @@ pub(super) fn execute_c_call_paths(
         return Ok(paths);
     }
 
-    let Some(function) = environment.get_function(function_name) else {
+    let Some(function) = execution_context.environment.get_function(function_name) else {
         return Ok(vec![CStatementExecutionPath::new(
             CStatementOutcome::RuntimeError(CRuntimeError::UnknownFunction(
                 function_name.to_string(),
@@ -976,8 +989,7 @@ pub(super) fn execute_c_call_paths(
         function,
         arguments,
         assumptions,
-        environment,
-        execution_semantics,
+        execution_context,
         budget,
     )?
     .into_iter()
@@ -1500,8 +1512,7 @@ fn modeled_pthread_handle_store(
         state,
         &statement,
         assumptions,
-        environment,
-        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        CExecutionContext::apply_verified_rules(environment),
         budget,
     )?;
     let [path] = paths.as_slice() else {
@@ -1865,8 +1876,7 @@ fn execute_c_indirect_call_assign_paths(
     function_type: CType,
     arguments: &[CExpression],
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     let paths = execute_c_indirect_call_paths(
@@ -1875,8 +1885,7 @@ fn execute_c_indirect_call_assign_paths(
         function_type,
         arguments,
         assumptions,
-        environment,
-        execution_semantics,
+        execution_context,
         budget,
     )?;
     Ok(paths
@@ -1925,11 +1934,10 @@ fn execute_c_indirect_call_paths(
     function_type: CType,
     arguments: &[CExpression],
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CFunctionPath>> {
-    budget.install_c_byte_order(environment.byte_order());
+    budget.install_c_byte_order(execution_context.environment.byte_order());
     if function_type == CType::FunctionPointer(CallbackSignature::UNSPECIFIED) {
         return Ok(vec![CFunctionPath::new(
             CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
@@ -1957,7 +1965,10 @@ fn execute_c_indirect_call_paths(
             {
                 match &pointer.block {
                     PointerBlock::Function(name)
-                        if environment.selected_call_contract.is_none() =>
+                        if execution_context
+                            .environment
+                            .selected_call_contract
+                            .is_none() =>
                     {
                         vec![Ok(name.clone())]
                     }
@@ -1966,10 +1977,13 @@ fn execute_c_indirect_call_paths(
                             assumptions_with_path_context(assumptions, &facts, &obligations);
                         let contracts = target_assumptions
                             .function_contract_facts_for(pointer.pointer())
-                            .filter_map(|(name, _)| environment.get_function_contract(name))
+                            .filter_map(|(name, _)| {
+                                execution_context.environment.get_function_contract(name)
+                            })
                             .filter(|contract| contract.function_pointer_type() == function_type)
                             .collect::<Vec<_>>();
-                        if let Some(selected) = &environment.selected_call_contract
+                        if let Some(selected) =
+                            &execution_context.environment.selected_call_contract
                             && !contracts
                                 .iter()
                                 .any(|contract| contract.name() == selected.as_ref())
@@ -1995,7 +2009,7 @@ fn execute_c_indirect_call_paths(
                             &contracts,
                             arguments,
                             &target_assumptions,
-                            environment,
+                            execution_context.environment,
                             budget,
                         )? {
                             let mut merged_facts = facts.clone();
@@ -2039,7 +2053,7 @@ fn execute_c_indirect_call_paths(
                 ));
                 continue;
             };
-            let Some(function) = environment.get_function(&target_name) else {
+            let Some(function) = execution_context.environment.get_function(&target_name) else {
                 paths.push(CFunctionPath::new(
                     CFunctionOutcome::RuntimeError(CRuntimeError::UnknownFunction(target_name)),
                     facts.clone(),
@@ -2065,8 +2079,7 @@ fn execute_c_indirect_call_paths(
                 function,
                 arguments,
                 &target_assumptions,
-                environment,
-                execution_semantics,
+                execution_context,
                 budget,
             )? {
                 let mut merged_facts = facts.clone();
@@ -2092,8 +2105,7 @@ pub(super) fn execute_c_statement_paths_with_prefix(
     state: &CState,
     statement: &CStatement,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
     prefix_loan_evidence: &CheckedLoanCallEvidenceSequence,
@@ -2105,8 +2117,7 @@ pub(super) fn execute_c_statement_paths_with_prefix(
         state,
         statement,
         &effective_assumptions,
-        environment,
-        execution_semantics,
+        execution_context,
         budget,
     )?
     .into_iter()
@@ -2135,8 +2146,7 @@ fn execute_statement_suffix_with_loan_evidence(
     state: &CState,
     statement: &CStatement,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
     prefix_loan_evidence: &CheckedLoanCallEvidenceSequence,
@@ -2147,8 +2157,7 @@ fn execute_statement_suffix_with_loan_evidence(
         state,
         statement,
         assumptions,
-        environment,
-        execution_semantics,
+        execution_context,
         prefix_facts,
         prefix_obligations,
         budget,
@@ -2168,23 +2177,25 @@ pub(super) fn execute_c_statement_verification_paths(
     state: &CState,
     statement: &CStatement,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    budget.install_c_byte_order(environment.byte_order());
+    budget.install_c_byte_order(execution_context.environment.byte_order());
     // `Seq` only groups source statements; it is not another statement step.
     if !matches!(statement, CStatement::Seq(_, _)) {
         budget.consume_statement_step()?;
     }
-    if execution_semantics.loops == CLoopSemantics::ApplyVerifiedRules
+    if execution_context.semantics.loops == CLoopSemantics::ApplyVerifiedRules
         && matches!(statement, CStatement::While { .. })
     {
         // A checked rule may have no invariant, effect, or measure checks.
         // Its authority is the rule itself, not a nonempty annotation bundle.
-        if let Some(rule) = environment.applicable_verified_loop_rule(state, statement, assumptions)
-        {
+        if let Some(rule) = execution_context.environment.applicable_verified_loop_rule(
+            state,
+            statement,
+            assumptions,
+        ) {
             let paths = rule
                 .paths
                 .iter()
@@ -2224,8 +2235,7 @@ pub(super) fn execute_c_statement_verification_paths(
                 state,
                 first,
                 assumptions,
-                environment,
-                execution_semantics,
+                execution_context,
                 budget,
                 variables,
             )? {
@@ -2243,8 +2253,7 @@ pub(super) fn execute_c_statement_verification_paths(
                                 &state,
                                 second,
                                 assumptions,
-                                environment,
-                                execution_semantics,
+                                execution_context,
                                 &facts,
                                 &obligations,
                                 budget,
@@ -2255,8 +2264,7 @@ pub(super) fn execute_c_statement_verification_paths(
                                 &state,
                                 second,
                                 assumptions,
-                                environment,
-                                execution_semantics,
+                                execution_context,
                                 &facts,
                                 &obligations,
                                 &loan_evidence,
@@ -2325,8 +2333,7 @@ pub(super) fn execute_c_statement_verification_paths(
                                     &branch_state,
                                     branch,
                                     assumptions,
-                                    environment,
-                                    execution_semantics,
+                                    execution_context,
                                     &truthiness_path.facts,
                                     &truthiness_path.obligations,
                                     budget,
@@ -2382,8 +2389,7 @@ pub(super) fn execute_c_statement_verification_paths(
                 structural_measure.as_deref(),
                 body,
                 assumptions,
-                environment,
-                execution_semantics,
+                execution_context,
                 budget,
                 variables,
                 *do_while,
@@ -2435,8 +2441,7 @@ pub(super) fn execute_c_statement_verification_paths(
                         state,
                         statement,
                         assumptions,
-                        environment,
-                        execution_semantics,
+                        execution_context,
                         budget,
                     )
                 },
@@ -2452,8 +2457,7 @@ pub(super) fn execute_c_statement_verification_paths_with_prefix(
     state: &CState,
     statement: &CStatement,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
     budget: &mut ExecutionBudget,
@@ -2465,8 +2469,7 @@ pub(super) fn execute_c_statement_verification_paths_with_prefix(
         state,
         statement,
         &effective_assumptions,
-        environment,
-        execution_semantics,
+        execution_context,
         budget,
         variables,
     )?
@@ -2503,8 +2506,7 @@ pub(super) fn execute_c_while_verification_paths(
     structural_measure: Option<&str>,
     body: &CStatement,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
     do_while: bool,
@@ -2522,12 +2524,12 @@ pub(super) fn execute_c_while_verification_paths(
         structural_measure,
         body,
         assumptions,
-        environment,
-        Some(environment),
+        execution_context.environment,
+        Some(execution_context.environment),
         &[],
         &[],
         &[],
-        execution_semantics,
+        execution_context.semantics,
         false,
         do_while,
         backedge_target,
@@ -2847,8 +2849,7 @@ pub(super) fn execute_c_while_exit_paths_with_proven_phases(
     structural_measure: Option<&str>,
     body: &CStatement,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     initialization_proven: bool,
     preservation_proven: bool,
     final_exit_candidates: &[CLoopFinalExitCandidate],
@@ -2871,12 +2872,12 @@ pub(super) fn execute_c_while_exit_paths_with_proven_phases(
         structural_measure,
         body,
         assumptions,
-        environment,
-        (!preservation_proven).then_some(environment),
+        execution_context.environment,
+        (!preservation_proven).then_some(execution_context.environment),
         final_exit_candidates,
         break_exits,
         return_exits,
-        execution_semantics,
+        execution_context.semantics,
         initialization_proven,
         do_while,
         backedge_target,
@@ -5427,8 +5428,7 @@ fn execute_c_while_exit_paths(
                 &whole_loop_effect_summaries,
                 body,
                 assumptions,
-                environment,
-                execution_semantics,
+                CExecutionContext::new(environment, execution_semantics),
                 do_while,
                 backedge_target,
                 natural_exit_target,
@@ -6259,8 +6259,7 @@ pub(super) fn collect_loop_preservation_summary(
     whole_loop_effect_summaries: &[Proposition],
     body: &CStatement,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     do_while: bool,
     backedge_target: Option<CControlTargetId>,
     natural_exit_target: Option<CControlTargetId>,
@@ -6330,8 +6329,7 @@ pub(super) fn collect_loop_preservation_summary(
                     top_state,
                     body,
                     assumptions,
-                    environment,
-                    execution_semantics,
+                    execution_context,
                     &condition_facts,
                     &condition_obligations,
                     budget,

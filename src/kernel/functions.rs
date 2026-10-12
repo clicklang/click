@@ -19,16 +19,14 @@ fn execute_c_function_body_paths(
     state: &CState,
     function: &CFunction,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     let initial = execute_c_statement_paths(
         state,
         function.body(),
         assumptions,
-        environment,
-        execution_semantics,
+        execution_context,
         budget,
     )?;
     if function.control_target_count() == 0 {
@@ -63,8 +61,7 @@ fn execute_c_function_body_paths(
             jump_state,
             &target.remaining,
             assumptions,
-            environment,
-            execution_semantics,
+            execution_context,
             &path.facts,
             &path.obligations,
             &path.loan_evidence,
@@ -84,8 +81,7 @@ fn execute_c_function_body_verification_paths(
     state: &CState,
     function: &CFunction,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
@@ -93,8 +89,7 @@ fn execute_c_function_body_verification_paths(
         state,
         function.body(),
         assumptions,
-        environment,
-        execution_semantics,
+        execution_context,
         budget,
         variables,
     )?;
@@ -130,8 +125,7 @@ fn execute_c_function_body_verification_paths(
             jump_state,
             &target.remaining,
             assumptions,
-            environment,
-            execution_semantics,
+            execution_context,
             &path.facts,
             &path.obligations,
             budget,
@@ -1631,8 +1625,7 @@ pub(super) fn execute_c_function_paths(
     function: &CFunction,
     arguments: &[CExpression],
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CFunctionPath>> {
     execute_c_function_paths_with_contract_resources(
@@ -1640,8 +1633,7 @@ pub(super) fn execute_c_function_paths(
         function,
         arguments,
         assumptions,
-        environment,
-        execution_semantics,
+        execution_context,
         budget,
         false,
         false,
@@ -1661,8 +1653,7 @@ pub(super) fn execute_c_function_paths_with_contract_resources(
     function: &CFunction,
     arguments: &[CExpression],
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     prepare_contract_resources: bool,
     defer_conditional_resource_effect: bool,
@@ -1680,9 +1671,13 @@ pub(super) fn execute_c_function_paths_with_contract_resources(
     }
 
     let mut paths = Vec::new();
-    for arguments_path in
-        evaluate_c_arguments_paths(state, arguments, assumptions, budget, Some(environment))?
-    {
+    for arguments_path in evaluate_c_arguments_paths(
+        state,
+        arguments,
+        assumptions,
+        budget,
+        Some(execution_context.environment),
+    )? {
         if let Some(outcome) = arguments_path.outcome {
             paths.push(CFunctionPath::new(
                 outcome,
@@ -1779,8 +1774,7 @@ pub(super) fn execute_c_function_paths_with_contract_resources(
             &callee_state,
             function,
             &body_assumptions,
-            environment,
-            execution_semantics,
+            execution_context,
             budget,
         )? {
             let Some((mut facts, obligations)) = merge_execution_pure_facts_and_obligations(
@@ -1915,8 +1909,7 @@ pub(super) fn execute_c_function_verification_paths(
     function: &CFunction,
     arguments: &[CExpression],
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
     prepare_contract_resources: bool,
@@ -1939,7 +1932,15 @@ pub(super) fn execute_c_function_verification_paths(
         function.name(),
         "independent kernel execution",
         "verification argument evaluation",
-        || evaluate_c_arguments_paths(state, arguments, assumptions, budget, Some(environment)),
+        || {
+            evaluate_c_arguments_paths(
+                state,
+                arguments,
+                assumptions,
+                budget,
+                Some(execution_context.environment),
+            )
+        },
     )? {
         if let Some(outcome) = arguments_path.outcome {
             paths.push(CFunctionPath::new(
@@ -2044,10 +2045,13 @@ pub(super) fn execute_c_function_verification_paths(
             &body_assumptions,
             budget,
         ) {
-            Ok(Some(anchor)) => {
-                std::borrow::Cow::Owned(environment.clone().with_recursion_anchor(anchor))
-            }
-            Ok(None) => std::borrow::Cow::Borrowed(environment),
+            Ok(Some(anchor)) => std::borrow::Cow::Owned(
+                execution_context
+                    .environment
+                    .clone()
+                    .with_recursion_anchor(anchor),
+            ),
+            Ok(None) => std::borrow::Cow::Borrowed(execution_context.environment),
             Err(message) => {
                 paths.push(CFunctionPath::new(
                     CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
@@ -2066,8 +2070,7 @@ pub(super) fn execute_c_function_verification_paths(
                     &callee_state,
                     function,
                     &body_assumptions,
-                    &anchored_environment,
-                    execution_semantics,
+                    CExecutionContext::new(&anchored_environment, execution_context.semantics),
                     budget,
                     variables,
                 )
@@ -4546,15 +4549,16 @@ pub(super) fn execute_c_function_call_paths(
     function: &CFunction,
     arguments: &[CExpression],
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CFunctionPath>> {
     if contract_reaches_population(function.contract_interface())
-        && environment
+        && execution_context
+            .environment
             .get_verified_function_rule(function.name())
             .is_none()
-        && !environment
+        && !execution_context
+            .environment
             .get_external_function_rule(function.name())
             .is_some_and(|rule| {
                 rule.is_scoped_unselected()
@@ -4570,7 +4574,11 @@ pub(super) fn execute_c_function_call_paths(
             Vec::new(),
         )]);
     }
-    if environment.selected_call_contract.is_some() {
+    if execution_context
+        .environment
+        .selected_call_contract
+        .is_some()
+    {
         return Ok(vec![CFunctionPath::new(
             CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                 "step(Contract) requires a function-pointer call".to_string(),
@@ -4579,7 +4587,10 @@ pub(super) fn execute_c_function_call_paths(
             Vec::new(),
         )]);
     }
-    if let Some(rule) = environment.get_external_function_rule(function.name()) {
+    if let Some(rule) = execution_context
+        .environment
+        .get_external_function_rule(function.name())
+    {
         // External summaries use the same body-independent application
         // interface as verified rules, but remain an assumption: do not
         // repackage one as `CVerifiedFunctionRule`, whose type carries body
@@ -4589,7 +4600,7 @@ pub(super) fn execute_c_function_call_paths(
             rule.function.name(),
             rule.function.contract_interface(),
             caller_state,
-            environment,
+            execution_context.environment,
         ) {
             Ok(application) => application,
             Err(message) => return Ok(vec![resource_call_failure(message)]),
@@ -4610,7 +4621,7 @@ pub(super) fn execute_c_function_call_paths(
                 .map(|application| (0, application)),
             arguments,
             assumptions,
-            environment,
+            execution_context.environment,
             budget,
         );
     }
@@ -4620,7 +4631,8 @@ pub(super) fn execute_c_function_call_paths(
     // its checked C body at the call site, on the caller's own resources,
     // including while the surrounding function is being contract-certified.
     let executes_inline_body = function.has_inline_body()
-        && environment
+        && execution_context
+            .environment
             .get_verified_function_rule(function.name())
             .is_none();
     // A binder map selects a contract boundary, and an inline body run in
@@ -4628,7 +4640,8 @@ pub(super) fn execute_c_function_call_paths(
     // would bind nothing and silently mean something other than what the
     // proof wrote.
     if executes_inline_body
-        && environment
+        && execution_context
+            .environment
             .selected_call_binders
             .as_ref()
             .is_some_and(|transport| transport.names_call_to(function.name()))
@@ -4638,10 +4651,13 @@ pub(super) fn execute_c_function_call_paths(
         )]);
     }
     if !executes_inline_body {
-        match execution_semantics.calls {
+        match execution_context.semantics.calls {
             CCallSemantics::ExecuteBodies => {}
             CCallSemantics::ApplyVerifiedRules => {
-                let Some(rule) = environment.get_verified_function_rule(function.name()) else {
+                let Some(rule) = execution_context
+                    .environment
+                    .get_verified_function_rule(function.name())
+                else {
                     let error = if function.verified_direct_contract_supported() {
                         CRuntimeError::MissingVerifiedFunctionRule(function.name().to_string())
                     } else {
@@ -4660,7 +4676,7 @@ pub(super) fn execute_c_function_call_paths(
                     rule,
                     arguments,
                     assumptions,
-                    environment,
+                    execution_context.environment,
                     budget,
                 );
                 return result;
@@ -4685,7 +4701,7 @@ pub(super) fn execute_c_function_call_paths(
         arguments,
         assumptions,
         budget,
-        Some(environment),
+        Some(execution_context.environment),
     )? {
         if let Some(outcome) = arguments_path.outcome {
             paths.push(CFunctionPath::new(
@@ -4774,8 +4790,7 @@ pub(super) fn execute_c_function_call_paths(
                 &callee_state,
                 function,
                 &body_assumptions,
-                environment,
-                execution_semantics,
+                execution_context,
                 budget,
             );
             budget.inline_call_name = previous_inline_call;
@@ -4839,8 +4854,7 @@ pub(super) fn execute_c_function_call_paths(
             &callee_state,
             function,
             &body_assumptions,
-            environment,
-            execution_semantics,
+            execution_context,
             budget,
         )? {
             let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
@@ -4969,8 +4983,7 @@ pub(crate) fn apply_verified_tactic_rule(
         function,
         &expressions,
         facts.assumptions(),
-        environment,
-        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        CExecutionContext::apply_verified_rules(environment),
         &mut budget,
     )
     .map_err(|limit| {
@@ -32368,8 +32381,7 @@ mod population_creation_frame_tests {
                 helper,
                 &[],
                 &PureFactContext::new(),
-                &CExecutionEnvironment::new(),
-                CExecutionSemantics::APPLY_VERIFIED_RULES,
+                CExecutionContext::apply_verified_rules(&CExecutionEnvironment::new()),
                 &mut ExecutionBudget::new(),
             )
             .unwrap()
@@ -32643,8 +32655,7 @@ mod verified_call_initialization_tests {
             &function,
             &[c_pointer_value(pointer.clone())],
             &PureFactContext::new(),
-            &environment,
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            CExecutionContext::apply_verified_rules(&environment),
             &mut ExecutionBudget::new(),
         )
         .expect("verified call should execute")
@@ -32953,8 +32964,7 @@ mod stable_view_call_tests {
             &function,
             &[c_pointer_value(pointer)],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment(&function)),
             &mut budget,
             &mut variables,
             true,
@@ -33536,8 +33546,7 @@ mod stable_view_call_tests {
             &function,
             &[c_pointer_value(pointer)],
             &PureFactContext::new(),
-            &environment,
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            CExecutionContext::apply_verified_rules(&environment),
             &mut ExecutionBudget::new(),
         )
         .expect("the call should execute");
@@ -33576,8 +33585,7 @@ mod stable_view_call_tests {
             &function,
             &[CExpression::Value(CValue::pointer(pointer.clone()))],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("first composite call should execute");
@@ -33599,8 +33607,7 @@ mod stable_view_call_tests {
             &function,
             &[CExpression::Value(CValue::pointer(pointer.clone()))],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("second composite call should execute");
@@ -33630,8 +33637,7 @@ mod stable_view_call_tests {
             &function,
             &[CExpression::Value(CValue::pointer(pointer.clone()))],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            CExecutionContext::apply_verified_rules(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("candidate call should execute");
@@ -33673,8 +33679,7 @@ mod stable_view_call_tests {
             &function,
             &[CExpression::Value(CValue::pointer(pointer.clone()))],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("candidate direct call should execute");
@@ -33710,8 +33715,7 @@ mod stable_view_call_tests {
             &function,
             &[CExpression::Value(CValue::pointer(pointer))],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            CExecutionContext::apply_verified_rules(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("candidate call should execute");
@@ -33773,8 +33777,7 @@ mod stable_view_call_tests {
             &outer,
             &[CExpression::Value(CValue::pointer(pointer))],
             &PureFactContext::new(),
-            &environment,
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment),
             &mut ExecutionBudget::new(),
         )
         .expect("nested candidate call should execute");
@@ -33804,8 +33807,7 @@ mod stable_view_call_tests {
             &function,
             &[CExpression::Value(CValue::pointer(pointer))],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("candidate local view call should execute");
@@ -33842,8 +33844,7 @@ mod stable_view_call_tests {
             &function,
             &[CExpression::Value(CValue::pointer(pointer))],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("candidate out-of-bounds local view should execute to a diagnostic");
@@ -33873,8 +33874,7 @@ mod stable_view_call_tests {
             &function,
             &[c_pointer_value(Pointer::null())],
             &PureFactContext::new(),
-            &environment,
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment),
             &mut ExecutionBudget::new(),
         )
         .expect("a false composite guard should execute");
@@ -33905,8 +33905,7 @@ mod stable_view_call_tests {
             &function,
             &[c_pointer_value(symbolic)],
             &PureFactContext::new(),
-            &environment,
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment),
             &mut ExecutionBudget::new(),
         )
         .expect("an undecided composite guard should execute to a diagnostic");
@@ -33963,8 +33962,7 @@ mod stable_view_call_tests {
             &function,
             &[CExpression::Value(token.clone()), CExpression::Value(token)],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("a doubled token requirement should execute to a diagnostic");
@@ -33991,8 +33989,7 @@ mod stable_view_call_tests {
             &function,
             &[CExpression::Value(CValue::pointer(pointer))],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("candidate inline call should execute");
@@ -34306,8 +34303,7 @@ mod stable_view_call_tests {
             &outer,
             &[CExpression::Value(CValue::pointer(pointer.clone()))],
             &PureFactContext::new(),
-            &environment,
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment),
             &mut ExecutionBudget::new(),
         )
         .expect("nested candidate reader should execute through the real body call");
@@ -34400,8 +34396,7 @@ mod stable_view_call_tests {
             &function,
             &[CExpression::Value(CValue::pointer(pointer))],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            CExecutionContext::apply_verified_rules(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("candidate output call should execute to a diagnostic path");
@@ -34753,8 +34748,7 @@ mod stable_view_call_tests {
             &function,
             &[CExpression::Value(CValue::pointer(pointer))],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            CExecutionContext::apply_verified_rules(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("candidate mutable call should execute")
@@ -34790,8 +34784,7 @@ mod stable_view_call_tests {
             &function,
             &[CExpression::Value(CValue::pointer(pointer))],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            CExecutionContext::apply_verified_rules(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("candidate symbolic overlap should execute to a diagnostic path");
@@ -34848,8 +34841,7 @@ mod stable_view_call_tests {
                 CExpression::Value(CValue::pointer(mutated)),
             ],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            CExecutionContext::apply_verified_rules(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("candidate unknown separation should execute to a diagnostic path");
@@ -34934,8 +34926,7 @@ mod stable_view_call_tests {
                 CExpression::Value(CValue::pointer(mutated)),
             ],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            CExecutionContext::apply_verified_rules(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("candidate separate-occurrence effect call should execute");
@@ -34978,8 +34969,7 @@ mod stable_view_call_tests {
             &function,
             &[CExpression::Value(CValue::pointer(pointer))],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            CExecutionContext::apply_verified_rules(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("candidate same-occurrence overlap should execute to a diagnostic path");
@@ -35075,8 +35065,7 @@ mod stable_view_call_tests {
             &function,
             &[CExpression::Value(CValue::pointer(pointer))],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            CExecutionContext::apply_verified_rules(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("candidate composite mutable call should execute")
@@ -35130,8 +35119,7 @@ mod stable_view_call_tests {
             &function,
             &[CExpression::Value(CValue::pointer(pointer))],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            CExecutionContext::apply_verified_rules(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("candidate intrinsic view effect call should execute");
@@ -35196,8 +35184,7 @@ mod stable_view_call_tests {
             &function,
             &[CExpression::Value(CValue::pointer(pointer.clone()))],
             &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .expect("candidate early return should execute");
@@ -35543,8 +35530,10 @@ mod inline_loop_boundary_tests {
             &function,
             &[CExpression::Value(value)],
             &PureFactContext::new(),
-            &CExecutionEnvironment::new().with_function(function.clone()),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            CExecutionContext::new(
+                &CExecutionEnvironment::new().with_function(function.clone()),
+                CExecutionSemantics::APPLY_VERIFIED_RULES,
+            ),
             budget,
         )
     }

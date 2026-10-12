@@ -3979,6 +3979,37 @@ impl CExecutionSemantics {
     };
 }
 
+/// The environment a C execution runs in and the semantics it runs under,
+/// which kernel execution threads through every statement and call
+/// together.
+#[derive(Clone, Copy)]
+pub(crate) struct CExecutionContext<'a> {
+    pub(crate) environment: &'a CExecutionEnvironment,
+    pub(crate) semantics: CExecutionSemantics,
+}
+
+impl<'a> CExecutionContext<'a> {
+    pub(crate) fn new(
+        environment: &'a CExecutionEnvironment,
+        semantics: CExecutionSemantics,
+    ) -> Self {
+        Self {
+            environment,
+            semantics,
+        }
+    }
+
+    /// Runs callee bodies and verifies loops.
+    pub(crate) fn execute_bodies(environment: &'a CExecutionEnvironment) -> Self {
+        Self::new(environment, CExecutionSemantics::EXECUTE_BODIES)
+    }
+
+    /// Applies verified call and loop rules.
+    pub(crate) fn apply_verified_rules(environment: &'a CExecutionEnvironment) -> Self {
+        Self::new(environment, CExecutionSemantics::APPLY_VERIFIED_RULES)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CVerifiedFunctionRule {
     pub(super) function: CFunction,

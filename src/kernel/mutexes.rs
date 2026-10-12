@@ -3418,8 +3418,7 @@ mod tests {
                     continue_after,
                 },
                 &PureFactContext::new(),
-                &CExecutionEnvironment::new(),
-                CExecutionSemantics::EXECUTE_BODIES,
+                CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
                 &mut ExecutionBudget::new(),
             )
             .unwrap();
@@ -3640,8 +3639,7 @@ mod tests {
                 &state,
                 &statement,
                 &assumptions,
-                &environment,
-                CExecutionSemantics::EXECUTE_BODIES,
+                CExecutionContext::execute_bodies(&environment),
                 &mut ExecutionBudget::new(),
             )
             .unwrap();
@@ -4000,8 +3998,7 @@ mod tests {
             &state,
             &statement,
             &PureFactContext::new(),
-            &environment,
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment),
             &mut ExecutionBudget::new(),
         )
         .unwrap();
@@ -4081,8 +4078,7 @@ mod tests {
                     arguments: vec![CExpression::Value(CValue::pointer(pointer.clone()))],
                 },
                 &assumptions,
-                &environment,
-                CExecutionSemantics::EXECUTE_BODIES,
+                CExecutionContext::execute_bodies(&environment),
                 &mut ExecutionBudget::new(),
             )
             .unwrap();
@@ -4351,8 +4347,7 @@ mod tests {
                     &state,
                     &declaration,
                     &PureFactContext::new(),
-                    &CExecutionEnvironment::new(),
-                    CExecutionSemantics::EXECUTE_BODIES,
+                    CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
                     &mut ExecutionBudget::new(),
                 )
                 .unwrap();
@@ -4365,8 +4360,7 @@ mod tests {
                 destroyed.state(),
                 &declaration,
                 &PureFactContext::new(),
-                &CExecutionEnvironment::new(),
-                CExecutionSemantics::EXECUTE_BODIES,
+                CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
                 &mut ExecutionBudget::new(),
             )
             .unwrap();
@@ -4888,8 +4882,7 @@ mod tests {
             state,
             &statement,
             &PureFactContext::new(),
-            &environment,
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&environment),
             &mut ExecutionBudget::new(),
         )
         .unwrap();
