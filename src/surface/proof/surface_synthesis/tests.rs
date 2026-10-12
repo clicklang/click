@@ -20,8 +20,7 @@ fn relower_written_proposition_with_snapshots(
     crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_through_kernel_with_opaque_calls(
         surface,
         &PureFactContext::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
+        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
         FixedStateFrame::new(pre_state, state, None, recorded_snapshots),
         SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(&[])),
         &std::collections::BTreeSet::new(),

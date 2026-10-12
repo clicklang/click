@@ -296,8 +296,7 @@ pub(in crate::surface::proof) fn lower_theorem_application_requirements_with_ass
             let lowered = lower_fixed_state_proposition_through_kernel_with_bound_array_memories(
                 requirement,
                 assumptions,
-                &values,
-                &array_refs,
+                ContractEnvironment::new(&values, &array_refs),
                 &algebraic_values,
                 &integer_values,
                 &bound_array_memories,

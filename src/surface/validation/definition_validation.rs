@@ -1546,8 +1546,7 @@ fn validate_resource_fact_memory_read_authority(
         collect_resource_fact_scalar_assumptions_from_proposition(
             body_fact,
             predicate_definitions,
-            &values,
-            &array_refs,
+            ContractEnvironment::new(&values, &array_refs),
             &memory,
             spec_definitions,
             &mut Vec::new(),
@@ -1560,8 +1559,7 @@ fn validate_resource_fact_memory_read_authority(
     collect_resource_fact_scalar_assumptions_from_proposition(
         fact,
         predicate_definitions,
-        &values,
-        &empty_array_refs,
+        ContractEnvironment::new(&values, &empty_array_refs),
         &empty_memory,
         spec_definitions,
         &mut Vec::new(),
@@ -1578,8 +1576,7 @@ fn validate_resource_fact_memory_read_authority(
             &read,
             composite_body.contains(),
             &assumptions,
-            &values,
-            &array_refs,
+            ContractEnvironment::new(&values, &array_refs),
             &memory,
             spec_definitions,
         );
@@ -1598,8 +1595,7 @@ fn validate_resource_fact_memory_read_authority(
 fn collect_resource_fact_scalar_assumptions_from_proposition(
     proposition: &ClickProposition,
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     memory: &CMemory,
     spec_definitions: SpecDefinitions<'_>,
     visited_predicates: &mut Vec<String>,
@@ -1617,8 +1613,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
                 crate::surface::proof::lower_fixed_state_proposition_through_kernel(
                     proposition,
                     &PureFactContext::new(),
-                    values,
-                    array_refs,
+                    contract_environment,
                     FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
                     spec_definitions,
                 )
@@ -1634,8 +1629,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
             collect_resource_fact_scalar_assumptions_from_proposition(
                 proposition,
                 predicate_definitions,
-                values,
-                array_refs,
+                contract_environment,
                 memory,
                 spec_definitions,
                 visited_predicates,
@@ -1648,8 +1642,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
             collect_resource_fact_scalar_assumptions_from_proposition(
                 left,
                 predicate_definitions,
-                values,
-                array_refs,
+                contract_environment,
                 memory,
                 spec_definitions,
                 visited_predicates,
@@ -1659,8 +1652,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
             collect_resource_fact_scalar_assumptions_from_proposition(
                 right,
                 predicate_definitions,
-                values,
-                array_refs,
+                contract_environment,
                 memory,
                 spec_definitions,
                 visited_predicates,
@@ -1688,8 +1680,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
             let result = collect_resource_fact_scalar_assumptions_from_proposition(
                 &body,
                 predicate_definitions,
-                values,
-                array_refs,
+                contract_environment,
                 memory,
                 spec_definitions,
                 visited_predicates,
@@ -2574,8 +2565,7 @@ fn analyze_resource_fact_read_authority(
     read: &ResourceFactRead,
     contained: &[ResourceClause],
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     memory: &CMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> ResourceFactReadAuthorityAnalysis {
@@ -2615,8 +2605,7 @@ fn analyze_resource_fact_read_authority(
                     start,
                     end,
                     assumptions,
-                    values,
-                    array_refs,
+                    contract_environment,
                     memory,
                     spec_definitions,
                 )
@@ -2631,8 +2620,7 @@ fn analyze_resource_fact_read_authority(
                 &segment.end,
                 &read.index,
                 assumptions,
-                values,
-                array_refs,
+                contract_environment,
                 memory,
                 spec_definitions,
             ) {
@@ -2653,8 +2641,7 @@ fn analyze_resource_fact_read_authority(
             segment,
             read,
             assumptions,
-            values,
-            array_refs,
+            contract_environment,
             memory,
         ) {
             return ResourceFactReadAuthorityAnalysis {
@@ -2711,8 +2698,7 @@ fn evaluated_segment_covers_resource_fact_read(
     segment: &ContractSegment,
     read: &ResourceFactRead,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     memory: &CMemory,
 ) -> bool {
     let state = CState::new().with_memory(memory.clone());
@@ -2720,8 +2706,7 @@ fn evaluated_segment_covers_resource_fact_read(
         crate::surface::proof::evaluate_c_fragment_through_kernel(
             expression,
             assumptions,
-            values,
-            array_refs,
+            contract_environment,
             &state,
             None,
         )
@@ -2758,8 +2743,7 @@ fn symbolic_segment_covers_range(
     required_start: &CExpression,
     required_end: &CExpression,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     memory: &CMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> bool {
@@ -2768,8 +2752,7 @@ fn symbolic_segment_covers_range(
         crate::surface::proof::evaluate_fixed_state_expression_through_kernel(
             &ContractExpression::CFragment(expression.clone()),
             &PureFactContext::new(),
-            values,
-            array_refs,
+            contract_environment,
             FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
             spec_definitions,
             &BTreeSet::new(),
@@ -2807,8 +2790,7 @@ fn symbolic_segment_covers_index(
     end: &CExpression,
     index: &CExpression,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     memory: &CMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> bool {
@@ -2817,8 +2799,7 @@ fn symbolic_segment_covers_index(
         crate::surface::proof::evaluate_fixed_state_expression_through_kernel(
             &ContractExpression::CFragment(expression.clone()),
             &PureFactContext::new(),
-            values,
-            array_refs,
+            contract_environment,
             FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
             spec_definitions,
             &BTreeSet::new(),
@@ -3029,8 +3010,7 @@ mod read_authority_tests {
             read,
             contained,
             assumptions,
-            values,
-            &BTreeMap::new(),
+            ContractEnvironment::new(values, &BTreeMap::new()),
             &CMemory::new(),
             SpecDefinitions::new(
                 &PredicateEnvironment::new(&[]),

@@ -2401,8 +2401,7 @@ fn records_checked_surface_forms_for_lowered_propositions() {
     let kernel = crate::surface::proof::lower_fixed_state_proposition_through_kernel(
         &surface,
         &PureFactContext::new(),
-        &values,
-        &BTreeMap::new(),
+        ContractEnvironment::new(&values, &BTreeMap::new()),
         FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         SpecDefinitions::new(&predicates, &functions),
     )
