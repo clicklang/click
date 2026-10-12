@@ -8275,6 +8275,25 @@ impl Parser {
                     self.expect(Token::Semicolon)?;
                     nodes.push(IntegerCertificateNode::Trivial { result });
                 }
+                "negated_goal" => {
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(IntegerCertificateNode::NegatedGoal { result });
+                }
+                "divide" => {
+                    let source = self.expect_index("divide source")?;
+                    self.expect_ident_spelling("by")?;
+                    let divisor = self.parse_contract_expression()?;
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(IntegerCertificateNode::Divide {
+                        source,
+                        divisor,
+                        result,
+                    });
+                }
                 "conclusion" => {
                     if conclusion.is_some() {
                         return Err(self

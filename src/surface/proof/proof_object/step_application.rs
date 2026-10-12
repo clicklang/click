@@ -2386,6 +2386,24 @@ impl<'a> Proof<'a> {
                                 }),
                     )?,
                 },
+                IntegerCertificateNode::NegatedGoal { result } => {
+                    IntegerArithmeticNode::NegatedGoal {
+                        result: claim(self, result, "integer certificate negated goal", false)?,
+                    }
+                }
+                IntegerCertificateNode::Divide {
+                    source,
+                    divisor,
+                    result,
+                } => IntegerArithmeticNode::Divide {
+                    source: *source,
+                    divisor: integer_constant_expression(divisor).ok_or_else(|| {
+                        self.step_error(
+                            "integer certificate divisor must be a constant Integer expression",
+                        )
+                    })?,
+                    result: claim(self, result, "integer certificate division result", false)?,
+                },
             };
             if nodes.len() != node_index {
                 return Err(self.step_error("integer certificate node indexing is not contiguous"));
@@ -3308,8 +3326,16 @@ fn describe_integer_arithmetic_check_error(
         Error::InvalidRelation(index) => {
             format!("node {index} combines relations its rule does not accept")
         }
+        Error::InvalidDivisor(index) => format!(
+            "node {index} divides by a value that is not positive or does not divide every coefficient"
+        ),
+        Error::NegatedGoalUnsupported(index) => {
+            format!("node {index} negates an equality goal; prove each direction as its own bound")
+        }
         Error::WorkLimitExceeded => "checking exceeded the work limit".to_string(),
-        Error::DoesNotFollow => "the conclusion node does not establish the goal".to_string(),
+        Error::DoesNotFollow => {
+            "the conclusion node neither establishes the goal nor is a contradiction".to_string()
+        }
     }
 }
 
