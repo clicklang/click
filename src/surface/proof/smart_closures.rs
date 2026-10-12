@@ -3991,6 +3991,11 @@ impl<'a> Proof<'a> {
             if let Some(surface) = self.available_surface_fact(surface_facts, anchor, premise) {
                 return Some((premise.clone(), surface));
             }
+            if let Some(surface) =
+                self.available_surface_fact(self.local_surface_facts(), anchor, premise)
+            {
+                return Some((premise.clone(), surface));
+            }
             if crate::instrumentation::deadline_exceeded() {
                 return None;
             }

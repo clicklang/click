@@ -166,11 +166,14 @@ steps, not the congruence closure the design describes. It already covers most
 one-line rewrite proofs. On two random samples of 20 of the file's 470 one-line
 `have P by { rewrite(..); assumption(); }` or `..; normalize(); }` proofs,
 `by auto` closes 18 and 13; `simp` alone closes 13 and 9. The remaining misses
-are mostly facts with no source spelling where the proof stands (an earlier
-`have` or a proof `if` condition in a pure theorem, and in the largest arms most
-of a 200-equality component), and chains that need `unfold` or injectivity.
-Congruence closure does not lift the spelling limit: its certificate is also
-written as `rewrite` steps.
+are mostly facts with no source spelling where the proof stands (in the
+largest arms, most of a 200-equality component: facts over values the proof
+named with `let`, `fold` or match bindings, and C values read before a later
+write), and chains that need `unfold` or injectivity. Congruence closure does
+not lift the spelling limit: its certificate is also written as `rewrite`
+steps. In a theorem with no C, a `have`, an `intro` antecedent and an `obtain`
+body are spelled as written, as a proof `if` case already was, so `auto` can
+rewrite by them.
 
 The longer run time is solver search, all within the smart budget.
 `click audit` expands all 19 sites into simple steps that verify without the

@@ -797,6 +797,9 @@ impl<'a> ProofScope<'a> {
                     self.root.focused_obligation().cloned().ok_or_else(|| {
                         self.root.step_error("`have` scope goal is no longer open")
                     })?;
+                // A pure proof has no frontier or outcome to spell the fact
+                // on; its proof locals carry the spelling instead.
+                let mut local_spelling = None;
                 let execution = match (self.root.context.as_ref(), &obligation) {
                     // A `have` at an execution frontier publishes what the
                     // shared mid-execution law publishes: the proposition's
@@ -881,6 +884,8 @@ impl<'a> ProofScope<'a> {
                                 .surface_propositions
                                 .record_lowering(&proposition, &kernel)?;
                             execution = Some(Arc::new(updated));
+                        } else {
+                            local_spelling = Some((proposition.clone(), kernel.clone()));
                         }
                     }
                     Obligation::Frontier(_) => {}
@@ -899,7 +904,7 @@ impl<'a> ProofScope<'a> {
                 let trace_source =
                     crate::surface::proof_trace::enabled_for(self.root.claim_label())
                         .then(|| crate::surface::printing::source_click_proposition(&proposition));
-                let successor = Proof {
+                let mut successor = Proof {
                     site: self.root.site.clone(),
                     context: self.root.context.clone(),
                     state,
@@ -915,6 +920,9 @@ impl<'a> ProofScope<'a> {
                         split_branches: Vec::new(),
                     }),
                 };
+                if let Some((surface, kernel)) = &local_spelling {
+                    successor = successor.with_local_surface_fact(surface, kernel)?;
+                }
                 if let Some(source) = trace_source {
                     let location = self
                         .root
