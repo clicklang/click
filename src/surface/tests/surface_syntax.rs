@@ -312,10 +312,9 @@ fn parser_plain_char_sidecars_preserve_source_compatibility() {
         "char *identity(char *p, unsigned char *q, char bytes[], char **pp) { ensures result == p; }",
     ).expect("plain char sidecar types should parse");
     let signature = file.function_blocks()[0].signature();
-    assert_eq!(
-        signature.return_type(),
-        C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned)
-    );
+    // A sidecar's plain `char` takes the default target's signedness.
+    let plain = crate::languages::c::target::CTarget::SUPPORTED.plain_char();
+    assert_eq!(signature.return_type(), C0Type::CharPointer(plain));
     assert_eq!(
         signature
             .parameters()
@@ -323,23 +322,23 @@ fn parser_plain_char_sidecars_preserve_source_compatibility() {
             .map(FunctionParameter::c_type)
             .collect::<Vec<_>>(),
         vec![
-            C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned),
+            C0Type::CharPointer(plain),
             C0Type::UInt8Pointer,
-            C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned),
-            C0Type::CharPointerPointer(crate::languages::c::syntax::PlainChar::Unsigned)
+            C0Type::CharPointer(plain),
+            C0Type::CharPointerPointer(plain)
         ]
     );
     assert!(!click_types_compatible(
-        C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned),
+        C0Type::CharPointer(plain),
         C0Type::UInt8Pointer
     ));
     assert!(!click_types_compatible(
-        C0Type::CharPointerPointer(crate::languages::c::syntax::PlainChar::Unsigned),
+        C0Type::CharPointerPointer(plain),
         C0Type::UInt8PointerPointer
     ));
     assert!(click_types_compatible(
-        C0Type::CharArray(crate::languages::c::syntax::PlainChar::Unsigned, 2),
-        C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned)
+        C0Type::CharArray(plain, 2),
+        C0Type::CharPointer(plain)
     ));
 }
 

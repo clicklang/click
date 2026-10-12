@@ -1,6 +1,6 @@
 # Kernel plain `char` is unsigned
 
-The Linux kernel builds with `-funsigned-char`, so under the default kernel
+The Linux kernel builds with `-funsigned-char`, so under the kernel
 target the `char` holding the byte 0xC8 is 200 and `c < 0` is false.
 `userspace_plain_char_is_signed.md` is the same program under the
 user-space target.
@@ -13,6 +13,7 @@ int negative_byte(void) {
 ```
 
 ```click
+target "x86_64-linux-kernel";
 verifying "kernel_plain_char.c";
 
 int32 negative_byte() {

@@ -66,7 +66,7 @@ pub enum CTarget {
 }
 
 impl CTarget {
-    pub const SUPPORTED: Self = Self::X86_64LinuxKernel;
+    pub const SUPPORTED: Self = Self::X86_64LinuxUserspace;
 
     /// Every selectable target, in the order a diagnostic lists them.
     pub const ALL: &'static [Self] = &[Self::X86_64LinuxKernel, Self::X86_64LinuxUserspace];
@@ -191,12 +191,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn supported_target_matches_kernel_char_and_data_model() {
+    fn default_target_is_userspace_with_signed_char() {
         let target = CTarget::SUPPORTED;
-        assert_eq!(target.name(), "x86_64-linux-kernel");
+        assert_eq!(target.name(), "x86_64-linux-userspace");
         assert_eq!(target.abi(), CAbi::SUPPORTED);
         assert_eq!(target.char_bits(), 8);
-        assert!(!target.plain_char_is_signed());
+        assert!(target.plain_char_is_signed());
+        assert!(!CTarget::X86_64LinuxKernel.plain_char_is_signed());
     }
 
     #[test]

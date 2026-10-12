@@ -1855,7 +1855,7 @@ mod tests {
             fs::write(root.join("main.i"), artifact).unwrap();
             fs::write(
                 root.join("main.click"),
-                "verifying \"main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }",
+                "target \"x86_64-linux-kernel\"; verifying \"main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }",
             )
             .unwrap();
             let config = serde_json::json!({
@@ -2118,7 +2118,7 @@ mod tests {
                 "-include".into(),
                 "config.h".into(),
             ],
-            CTarget::SUPPORTED,
+            CTarget::X86_64LinuxKernel,
             None,
         )
         .unwrap();
