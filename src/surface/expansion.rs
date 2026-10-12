@@ -1,3 +1,6 @@
+mod source_index;
+pub use source_index::ProofSourceIndex;
+
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -1881,6 +1884,7 @@ struct FunctionSource {
 }
 
 fn scan_source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
+    source_index::record_tokenization_work(source.len());
     let mut tokens = Vec::new();
     let mut index = 0;
     while index < source.len() {
@@ -4979,13 +4983,22 @@ fn c0_tactic_source_positions_file(
     click_source: &str,
     claim_label: &str,
 ) -> Result<Vec<SourcePosition>, ClickError> {
-    let claim_label = &*resolve_rust_claim_label(file, claim_label);
     let tokens = scan_source_tokens(click_source)?;
+    c0_tactic_source_positions_with_tokens(file, click_source, claim_label, &tokens)
+}
+
+fn c0_tactic_source_positions_with_tokens(
+    file: &ClickFile,
+    click_source: &str,
+    claim_label: &str,
+    tokens: &[SourceToken],
+) -> Result<Vec<SourcePosition>, ClickError> {
+    let claim_label = &*resolve_rust_claim_label(file, claim_label);
     for theorem in file.theorem_definitions() {
         if !file.theorem_is_selected(theorem.name()) {
             continue;
         }
-        let source = find_theorem(&tokens, theorem.name())?;
+        let source = find_theorem(tokens, theorem.name())?;
         for (ensure_index, ensure) in theorem.ensures().iter().enumerate() {
             let execution_claim = theorem.executes.is_some()
                 && ensure_index == 0
@@ -4994,10 +5007,10 @@ fn c0_tactic_source_positions_file(
                 continue;
             }
             let edit =
-                find_ensure_proof_edit(&tokens, source.body_open, source.body_close, ensure_index)?;
+                find_ensure_proof_edit(tokens, source.body_open, source.body_close, ensure_index)?;
             return proof_source_positions(
                 click_source,
-                &tokens,
+                tokens,
                 match &edit {
                     ProofSourceEdit::Explicit(span) => Some(span),
                     ProofSourceEdit::DefaultTerminator { .. }
@@ -5013,11 +5026,11 @@ fn c0_tactic_source_positions_file(
         if claim_label != tactic.function_block().contract_claim_label() {
             continue;
         }
-        let function = find_tactic(&tokens, tactic.name())?;
+        let function = find_tactic(tokens, tactic.name())?;
         return proof_source_positions(
             click_source,
-            &tokens,
-            Some(&find_grouped_proof_span(&tokens, &function)?),
+            tokens,
+            Some(&find_grouped_proof_span(tokens, &function)?),
             tactic.function_block().grouped_proof(),
             tokens[function.body_close].span.start,
             claim_label,
@@ -5025,10 +5038,10 @@ fn c0_tactic_source_positions_file(
     }
     for function_block in proof_function_blocks(file) {
         let function_name = function_block.signature().name();
-        let function = find_function(&tokens, function_name)?;
+        let function = find_function(tokens, function_name)?;
         for clause in function_block.structural_clauses() {
-            let block = find_structural_clause_block(&tokens, &function, *clause.region())?;
-            let edits = structural_item_proof_edits(&tokens, &block)?;
+            let block = find_structural_clause_block(tokens, &function, *clause.region())?;
+            let edits = structural_item_proof_edits(tokens, &block)?;
             if edits.len() != clause.items().len() {
                 return Err(ClickError::new(format!(
                     "structural source mapping for `{function_name}` {:?} found {} items, expected {}",
@@ -5051,10 +5064,10 @@ fn c0_tactic_source_positions_file(
                 clause.preserve_proof()
             };
             let (fallback, proof_span, _) =
-                find_loop_phase_proof_span(&tokens, &function, loop_index, phase)?;
+                find_loop_phase_proof_span(tokens, &function, loop_index, phase)?;
             return proof_source_positions(
                 click_source,
-                &tokens,
+                tokens,
                 proof_span.as_ref(),
                 proof,
                 fallback,
@@ -5080,24 +5093,24 @@ fn c0_tactic_source_positions_file(
         let fallback = match claim {
             CProofClaim::Grouped => tokens[function.body_close].span.start,
             CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {
-                find_claim_clause_offset(&tokens, &function, function_block, claim)?
+                find_claim_clause_offset(tokens, &function, function_block, claim)?
             }
         };
         let proof_span = match claim {
             CProofClaim::Grouped => {
-                match find_grouped_proof_edit(&tokens, &function, function_block)? {
+                match find_grouped_proof_edit(tokens, &function, function_block)? {
                     ProofSourceEdit::Explicit(span) => Some(span),
                     ProofSourceEdit::DefaultTerminator { .. }
                     | ProofSourceEdit::OmittedLoopPhase { .. } => None,
                 }
             }
             CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {
-                find_claim_proof_span(&tokens, &function, function_block, claim).ok()
+                find_claim_proof_span(tokens, &function, function_block, claim).ok()
             }
         };
         return proof_source_positions(
             click_source,
-            &tokens,
+            tokens,
             proof_span.as_ref(),
             Some(proof),
             fallback,
