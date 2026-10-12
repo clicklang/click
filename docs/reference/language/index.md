@@ -2738,6 +2738,16 @@ refused where they are written (`mdtests/old_of_result_is_refused.md`,
 since a proof may place the mark after the return. A C binding named `result`
 is still written `c(result)` inside a snapshot.
 
+`at(function.exit, ...)` reads the state the function returns in. It is
+available where `result` is: in a postcondition and in a proof step after
+execution has returned, where it is the current path's state. It is refused
+before the return. Because every returned path has its own `result`, one
+`transport(at(function.exit, P), P) using { }` closes a `result` goal on
+each path that the path's own state proves, and expansion writes that step
+for such goals (`mdtests/a_returned_path_transports_a_result_goal_from_function_exit.md`,
+`mdtests/a_function_exit_snapshot_before_the_return_is_refused.md`,
+`mdtests/a_function_exit_transport_of_a_false_result_claim_is_refused.md`).
+
 The selected snapshot is a complete recorded C state, not only a memory
 snapshot. Inside `at(...)`, reassigned parameters and declared scalar, pointer,
 and array locals resolve to their values in that snapshot. Outside `at(...)`,

@@ -17495,7 +17495,7 @@ fn a_loop_phase_expands_by_label_over_a_prepared_c_import() {
 }
 
 #[test]
-fn early_return_arms_close_without_an_entry_transport_of_result() {
+fn early_return_arms_transport_result_goals_from_function_exit() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/byte_representation_roundtrip.md");
     let fixture = crate::cli::read_mdtest(&path).unwrap();
@@ -17506,8 +17506,12 @@ fn early_return_arms_close_without_an_entry_transport_of_result() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let expanded = expand_c0_claim_source(source, &sources, "f", CProofClaim::Grouped).unwrap();
-    // `result` does not exist at function entry, so a transport from there
-    // could only restate the goal; each failure arm closes it directly.
+    // `result` does not exist at function entry. Each failure arm states
+    // its `result` goal at function exit, where the arm has returned.
     assert!(!expanded.contains("at(function.entry"), "{expanded}");
+    assert!(
+        expanded.contains("transport(at(function.exit, result == 18 or result == -1)"),
+        "{expanded}"
+    );
     verify_c0_sources(&expanded, &sources).unwrap();
 }

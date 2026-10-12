@@ -3332,26 +3332,31 @@ impl<'a> Proof<'a> {
                 }
             }
         }
-        let entry = ProgramPointRef {
+        // A goal about `result` exists only once the function has returned,
+        // so its first source is function exit rather than entry, and no
+        // recorded point before the return is offered.
+        let names_result = crate::surface::proposition_names_result(surface_goal);
+        let first = ProgramPointRef {
             region: CodeRegionRef::Function,
-            kind: ProgramPointKind::Entry,
+            kind: if names_result {
+                ProgramPointKind::Exit
+            } else {
+                ProgramPointKind::Entry
+            },
         };
-        // The source points are function entry and the most recently
+        // The source points are that function point and the most recently
         // recorded ones, newest first. A path records a point per statement
         // it ran, so offering every one made this search linear in the
         // path's length for each goal, and quadratic over a function's
         // early-return paths. An older point is still reachable by an
         // explicit `transport`.
-        let selectors = std::iter::once(SnapshotSelector::ProgramPoint(entry)).chain(
+        let selectors = std::iter::once(SnapshotSelector::ProgramPoint(first)).chain(
             view.fixed_state
                 .recorded_snapshots
                 .recent(MAX_TRANSPORT_SOURCE_POINTS)
                 .into_iter()
                 .map(|(selector, _)| selector.clone()),
         );
-        // A goal about `result` cannot be stated at a point before the
-        // return, so such a source would only be a no-op transport.
-        let names_result = crate::surface::proposition_names_result(surface_goal);
         let mut tried = BTreeSet::new();
         for selector in selectors {
             if (names_result && !crate::surface::snapshot_can_name_result(Some(&selector)))
