@@ -458,6 +458,302 @@ impl BitvectorUnaryOp {
     }
 }
 
+/// A comparison or overflow test of two bitvector operands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub(crate) enum BitvectorComparisonOp {
+    Bitvector32SignedLessThan,
+    Bitvector32SignedLessEqual,
+    Bitvector32SignedGreaterThan,
+    Bitvector32SignedGreaterEqual,
+    Bitvector32Equal,
+    Bitvector32SignedAddOverflows,
+    Bitvector32SignedSubtractOverflows,
+    Bitvector32SignedMultiplyOverflows,
+    Bitvector32SignedDivideOverflows,
+    Bitvector32SignedShiftLeftOverflows,
+    Bitvector64SignedLessThan,
+    Bitvector64SignedLessEqual,
+    Bitvector64SignedGreaterThan,
+    Bitvector64SignedGreaterEqual,
+    Bitvector64UnsignedLessThan,
+    Bitvector64UnsignedLessEqual,
+    Bitvector64UnsignedGreaterThan,
+    Bitvector64UnsignedGreaterEqual,
+    Bitvector64Equal,
+    Bitvector64SignedAddOverflows,
+    Bitvector64SignedSubtractOverflows,
+    Bitvector64SignedMultiplyOverflows,
+    Bitvector64SignedDivideOverflows,
+    Bitvector64SignedShiftLeftOverflows,
+}
+
+impl ConditionTerm {
+    /// The operator and operands of a bitvector comparison or overflow test,
+    /// or `None` for every other condition.
+    pub(crate) fn as_bitvector_comparison(
+        &self,
+    ) -> Option<(BitvectorComparisonOp, &Bitvector32Term, &Bitvector32Term)> {
+        match self {
+            Self::Bitvector32SignedLessThan(left, right) => Some((
+                BitvectorComparisonOp::Bitvector32SignedLessThan,
+                left,
+                right,
+            )),
+            Self::Bitvector32SignedLessEqual(left, right) => Some((
+                BitvectorComparisonOp::Bitvector32SignedLessEqual,
+                left,
+                right,
+            )),
+            Self::Bitvector32SignedGreaterThan(left, right) => Some((
+                BitvectorComparisonOp::Bitvector32SignedGreaterThan,
+                left,
+                right,
+            )),
+            Self::Bitvector32SignedGreaterEqual(left, right) => Some((
+                BitvectorComparisonOp::Bitvector32SignedGreaterEqual,
+                left,
+                right,
+            )),
+            Self::Bitvector32Equal(left, right) => {
+                Some((BitvectorComparisonOp::Bitvector32Equal, left, right))
+            }
+            Self::Bitvector32SignedAddOverflows(left, right) => Some((
+                BitvectorComparisonOp::Bitvector32SignedAddOverflows,
+                left,
+                right,
+            )),
+            Self::Bitvector32SignedSubtractOverflows(left, right) => Some((
+                BitvectorComparisonOp::Bitvector32SignedSubtractOverflows,
+                left,
+                right,
+            )),
+            Self::Bitvector32SignedMultiplyOverflows(left, right) => Some((
+                BitvectorComparisonOp::Bitvector32SignedMultiplyOverflows,
+                left,
+                right,
+            )),
+            Self::Bitvector32SignedDivideOverflows(left, right) => Some((
+                BitvectorComparisonOp::Bitvector32SignedDivideOverflows,
+                left,
+                right,
+            )),
+            Self::Bitvector32SignedShiftLeftOverflows(left, right) => Some((
+                BitvectorComparisonOp::Bitvector32SignedShiftLeftOverflows,
+                left,
+                right,
+            )),
+            Self::Bitvector64SignedLessThan(left, right) => Some((
+                BitvectorComparisonOp::Bitvector64SignedLessThan,
+                left,
+                right,
+            )),
+            Self::Bitvector64SignedLessEqual(left, right) => Some((
+                BitvectorComparisonOp::Bitvector64SignedLessEqual,
+                left,
+                right,
+            )),
+            Self::Bitvector64SignedGreaterThan(left, right) => Some((
+                BitvectorComparisonOp::Bitvector64SignedGreaterThan,
+                left,
+                right,
+            )),
+            Self::Bitvector64SignedGreaterEqual(left, right) => Some((
+                BitvectorComparisonOp::Bitvector64SignedGreaterEqual,
+                left,
+                right,
+            )),
+            Self::Bitvector64UnsignedLessThan(left, right) => Some((
+                BitvectorComparisonOp::Bitvector64UnsignedLessThan,
+                left,
+                right,
+            )),
+            Self::Bitvector64UnsignedLessEqual(left, right) => Some((
+                BitvectorComparisonOp::Bitvector64UnsignedLessEqual,
+                left,
+                right,
+            )),
+            Self::Bitvector64UnsignedGreaterThan(left, right) => Some((
+                BitvectorComparisonOp::Bitvector64UnsignedGreaterThan,
+                left,
+                right,
+            )),
+            Self::Bitvector64UnsignedGreaterEqual(left, right) => Some((
+                BitvectorComparisonOp::Bitvector64UnsignedGreaterEqual,
+                left,
+                right,
+            )),
+            Self::Bitvector64Equal(left, right) => {
+                Some((BitvectorComparisonOp::Bitvector64Equal, left, right))
+            }
+            Self::Bitvector64SignedAddOverflows(left, right) => Some((
+                BitvectorComparisonOp::Bitvector64SignedAddOverflows,
+                left,
+                right,
+            )),
+            Self::Bitvector64SignedSubtractOverflows(left, right) => Some((
+                BitvectorComparisonOp::Bitvector64SignedSubtractOverflows,
+                left,
+                right,
+            )),
+            Self::Bitvector64SignedMultiplyOverflows(left, right) => Some((
+                BitvectorComparisonOp::Bitvector64SignedMultiplyOverflows,
+                left,
+                right,
+            )),
+            Self::Bitvector64SignedDivideOverflows(left, right) => Some((
+                BitvectorComparisonOp::Bitvector64SignedDivideOverflows,
+                left,
+                right,
+            )),
+            Self::Bitvector64SignedShiftLeftOverflows(left, right) => Some((
+                BitvectorComparisonOp::Bitvector64SignedShiftLeftOverflows,
+                left,
+                right,
+            )),
+            Self::Constant(_)
+            | Self::Variable(_)
+            | Self::AlgebraicEqual(..)
+            | Self::Float32(_)
+            | Self::Float64(_)
+            | Self::PointerOffsetEqual(..)
+            | Self::PointerEqual(..)
+            | crate::kernel::integer_comparison_condition!(_, _) => None,
+        }
+    }
+}
+
+impl BitvectorComparisonOp {
+    /// Applies the comparison through its smart constructor.
+    pub(crate) fn build(self, left: Bitvector32Term, right: Bitvector32Term) -> ConditionTerm {
+        match self {
+            Self::Bitvector32SignedLessThan => ConditionTerm::signed_less_than(left, right),
+            Self::Bitvector32SignedLessEqual => ConditionTerm::signed_less_equal(left, right),
+            Self::Bitvector32SignedGreaterThan => ConditionTerm::signed_greater_than(left, right),
+            Self::Bitvector32SignedGreaterEqual => ConditionTerm::signed_greater_equal(left, right),
+            Self::Bitvector32Equal => ConditionTerm::equal(left, right),
+            Self::Bitvector32SignedAddOverflows => ConditionTerm::signed_add_overflows(left, right),
+            Self::Bitvector32SignedSubtractOverflows => {
+                ConditionTerm::signed_subtract_overflows(left, right)
+            }
+            Self::Bitvector32SignedMultiplyOverflows => {
+                ConditionTerm::signed_multiply_overflows(left, right)
+            }
+            Self::Bitvector32SignedDivideOverflows => {
+                ConditionTerm::signed_divide_overflows(left, right)
+            }
+            Self::Bitvector32SignedShiftLeftOverflows => {
+                ConditionTerm::signed_shift_left_overflows(left, right)
+            }
+            Self::Bitvector64SignedLessThan => ConditionTerm::int64_signed_less_than(left, right),
+            Self::Bitvector64SignedLessEqual => ConditionTerm::int64_signed_less_equal(left, right),
+            Self::Bitvector64SignedGreaterThan => {
+                ConditionTerm::int64_signed_greater_than(left, right)
+            }
+            Self::Bitvector64SignedGreaterEqual => {
+                ConditionTerm::int64_signed_greater_equal(left, right)
+            }
+            Self::Bitvector64UnsignedLessThan => ConditionTerm::uint64_less_than(left, right),
+            Self::Bitvector64UnsignedLessEqual => ConditionTerm::uint64_less_equal(left, right),
+            Self::Bitvector64UnsignedGreaterThan => ConditionTerm::uint64_greater_than(left, right),
+            Self::Bitvector64UnsignedGreaterEqual => {
+                ConditionTerm::uint64_greater_equal(left, right)
+            }
+            Self::Bitvector64Equal => ConditionTerm::int64_equal(left, right),
+            Self::Bitvector64SignedAddOverflows => {
+                ConditionTerm::int64_signed_add_overflows(left, right)
+            }
+            Self::Bitvector64SignedSubtractOverflows => {
+                ConditionTerm::int64_signed_subtract_overflows(left, right)
+            }
+            Self::Bitvector64SignedMultiplyOverflows => {
+                ConditionTerm::int64_signed_multiply_overflows(left, right)
+            }
+            Self::Bitvector64SignedDivideOverflows => {
+                ConditionTerm::int64_signed_divide_overflows(left, right)
+            }
+            Self::Bitvector64SignedShiftLeftOverflows => {
+                ConditionTerm::int64_signed_shift_left_overflows(left, right)
+            }
+        }
+    }
+
+    /// Applies the comparison as the bare node, without folding or
+    /// normalization.
+    pub(crate) fn build_raw(self, left: Bitvector32Term, right: Bitvector32Term) -> ConditionTerm {
+        let (left, right) = (Box::new(left), Box::new(right));
+        match self {
+            Self::Bitvector32SignedLessThan => {
+                ConditionTerm::Bitvector32SignedLessThan(left, right)
+            }
+            Self::Bitvector32SignedLessEqual => {
+                ConditionTerm::Bitvector32SignedLessEqual(left, right)
+            }
+            Self::Bitvector32SignedGreaterThan => {
+                ConditionTerm::Bitvector32SignedGreaterThan(left, right)
+            }
+            Self::Bitvector32SignedGreaterEqual => {
+                ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
+            }
+            Self::Bitvector32Equal => ConditionTerm::Bitvector32Equal(left, right),
+            Self::Bitvector32SignedAddOverflows => {
+                ConditionTerm::Bitvector32SignedAddOverflows(left, right)
+            }
+            Self::Bitvector32SignedSubtractOverflows => {
+                ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
+            }
+            Self::Bitvector32SignedMultiplyOverflows => {
+                ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
+            }
+            Self::Bitvector32SignedDivideOverflows => {
+                ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
+            }
+            Self::Bitvector32SignedShiftLeftOverflows => {
+                ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
+            }
+            Self::Bitvector64SignedLessThan => {
+                ConditionTerm::Bitvector64SignedLessThan(left, right)
+            }
+            Self::Bitvector64SignedLessEqual => {
+                ConditionTerm::Bitvector64SignedLessEqual(left, right)
+            }
+            Self::Bitvector64SignedGreaterThan => {
+                ConditionTerm::Bitvector64SignedGreaterThan(left, right)
+            }
+            Self::Bitvector64SignedGreaterEqual => {
+                ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
+            }
+            Self::Bitvector64UnsignedLessThan => {
+                ConditionTerm::Bitvector64UnsignedLessThan(left, right)
+            }
+            Self::Bitvector64UnsignedLessEqual => {
+                ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
+            }
+            Self::Bitvector64UnsignedGreaterThan => {
+                ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
+            }
+            Self::Bitvector64UnsignedGreaterEqual => {
+                ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
+            }
+            Self::Bitvector64Equal => ConditionTerm::Bitvector64Equal(left, right),
+            Self::Bitvector64SignedAddOverflows => {
+                ConditionTerm::Bitvector64SignedAddOverflows(left, right)
+            }
+            Self::Bitvector64SignedSubtractOverflows => {
+                ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
+            }
+            Self::Bitvector64SignedMultiplyOverflows => {
+                ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
+            }
+            Self::Bitvector64SignedDivideOverflows => {
+                ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
+            }
+            Self::Bitvector64SignedShiftLeftOverflows => {
+                ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -617,5 +913,51 @@ mod tests {
             .filter(|op| op.is_bitvector32())
             .collect::<Vec<_>>();
         assert_eq!(word_unaries, vec![BitvectorUnaryOp::BitwiseNot]);
+    }
+
+    fn comparison_ops() -> Vec<BitvectorComparisonOp> {
+        vec![
+            BitvectorComparisonOp::Bitvector32SignedLessThan,
+            BitvectorComparisonOp::Bitvector32SignedLessEqual,
+            BitvectorComparisonOp::Bitvector32SignedGreaterThan,
+            BitvectorComparisonOp::Bitvector32SignedGreaterEqual,
+            BitvectorComparisonOp::Bitvector32Equal,
+            BitvectorComparisonOp::Bitvector32SignedAddOverflows,
+            BitvectorComparisonOp::Bitvector32SignedSubtractOverflows,
+            BitvectorComparisonOp::Bitvector32SignedMultiplyOverflows,
+            BitvectorComparisonOp::Bitvector32SignedDivideOverflows,
+            BitvectorComparisonOp::Bitvector32SignedShiftLeftOverflows,
+            BitvectorComparisonOp::Bitvector64SignedLessThan,
+            BitvectorComparisonOp::Bitvector64SignedLessEqual,
+            BitvectorComparisonOp::Bitvector64SignedGreaterThan,
+            BitvectorComparisonOp::Bitvector64SignedGreaterEqual,
+            BitvectorComparisonOp::Bitvector64UnsignedLessThan,
+            BitvectorComparisonOp::Bitvector64UnsignedLessEqual,
+            BitvectorComparisonOp::Bitvector64UnsignedGreaterThan,
+            BitvectorComparisonOp::Bitvector64UnsignedGreaterEqual,
+            BitvectorComparisonOp::Bitvector64Equal,
+            BitvectorComparisonOp::Bitvector64SignedAddOverflows,
+            BitvectorComparisonOp::Bitvector64SignedSubtractOverflows,
+            BitvectorComparisonOp::Bitvector64SignedMultiplyOverflows,
+            BitvectorComparisonOp::Bitvector64SignedDivideOverflows,
+            BitvectorComparisonOp::Bitvector64SignedShiftLeftOverflows,
+        ]
+    }
+
+    #[test]
+    fn every_comparison_splits_back_from_its_bare_node() {
+        for op in comparison_ops() {
+            let node = op.build_raw(variable(1), variable(2));
+            assert_eq!(
+                node.as_bitvector_comparison(),
+                Some((op, &variable(1), &variable(2))),
+                "{op:?}"
+            );
+        }
+        assert_eq!(comparison_ops().len(), 24);
+        assert_eq!(
+            ConditionTerm::Constant(true).as_bitvector_comparison(),
+            None
+        );
     }
 }

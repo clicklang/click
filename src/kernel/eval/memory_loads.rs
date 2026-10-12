@@ -2747,111 +2747,9 @@ fn is_store_fact(condition: &ConditionTerm, value: bool) -> bool {
 /// identically. The comparison direction of the canonical model for
 /// whole facts.
 pub(crate) fn canonical_condition(condition: &ConditionTerm) -> ConditionTerm {
-    let binary = |left: &Bitvector32Term, right: &Bitvector32Term| {
-        (
-            Box::new(canonical_term(left)),
-            Box::new(canonical_term(right)),
-        )
-    };
     match condition {
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => condition.clone(),
         ConditionTerm::AlgebraicEqual(_, _) => condition.clone(),
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32SignedLessThan(left, right)
-        }
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        }
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        }
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        }
-        ConditionTerm::Bitvector32Equal(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32Equal(left, right)
-        }
-        ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-        }
-        ConditionTerm::Bitvector32SignedSubtractOverflows(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-        }
-        ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-        }
-        ConditionTerm::Bitvector32SignedDivideOverflows(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
-        }
-        ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right)
-        }
-        ConditionTerm::Bitvector64SignedLessThan(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector64SignedLessThan(left, right)
-        }
-        ConditionTerm::Bitvector64SignedLessEqual(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        }
-        ConditionTerm::Bitvector64SignedGreaterThan(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        }
-        ConditionTerm::Bitvector64SignedGreaterEqual(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        }
-        ConditionTerm::Bitvector64UnsignedLessThan(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector64UnsignedLessThan(left, right)
-        }
-        ConditionTerm::Bitvector64UnsignedLessEqual(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
-        }
-        ConditionTerm::Bitvector64UnsignedGreaterThan(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
-        }
-        ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right)
-        }
-        ConditionTerm::Bitvector64Equal(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector64Equal(left, right)
-        }
-        ConditionTerm::Bitvector64SignedAddOverflows(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector64SignedAddOverflows(left, right)
-        }
-        ConditionTerm::Bitvector64SignedSubtractOverflows(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector64SignedSubtractOverflows(left, right)
-        }
-        ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right)
-        }
-        ConditionTerm::Bitvector64SignedDivideOverflows(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector64SignedDivideOverflows(left, right)
-        }
-        ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
-            let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right)
-        }
         ConditionTerm::Float32(float_condition) => {
             ConditionTerm::Float32(float_condition.map_bitvector_terms(canonical_term))
         }
@@ -2873,6 +2771,12 @@ pub(crate) fn canonical_condition(condition: &ConditionTerm) -> ConditionTerm {
             }),
         ),
         crate::kernel::integer_comparison_condition!(_, _) => condition.clone(),
+        condition => {
+            let (op, left, right) = condition
+                .as_bitvector_comparison()
+                .expect("every other condition has its own arm");
+            op.build_raw(canonical_term(left), canonical_term(right))
+        }
     }
 }
 
@@ -2895,8 +2799,6 @@ fn substitute_load_variables(
     term: &Bitvector32Term,
     facts: &mut Option<&mut ExecutionFacts>,
 ) -> Bitvector32Term {
-    type ConditionConstructor = fn(Box<Bitvector32Term>, Box<Bitvector32Term>) -> ConditionTerm;
-
     enum Task<'a> {
         VisitTerm(&'a Bitvector32Term),
         VisitCondition(&'a ConditionTerm),
@@ -2908,7 +2810,7 @@ fn substitute_load_variables(
             name: String,
             argument_count: usize,
         },
-        RebuildConditionBinary(ConditionConstructor),
+        RebuildConditionBinary(BitvectorComparisonOp),
         RebuildFloatCondition {
             is_float64: bool,
             condition: CFloatCondition,
@@ -2925,14 +2827,6 @@ fn substitute_load_variables(
             byte_width: i64,
             unsigned: bool,
         },
-    }
-
-    macro_rules! visit_condition_binary {
-        ($constructor:path, $left:expr, $right:expr, $tasks:expr) => {{
-            $tasks.push(Task::RebuildConditionBinary($constructor));
-            $tasks.push(Task::VisitTerm($right));
-            $tasks.push(Task::VisitTerm($left));
-        }};
     }
 
     let mut tasks = vec![Task::VisitTerm(term)];
@@ -3008,182 +2902,6 @@ fn substitute_load_variables(
                 ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {
                     condition_results.push(condition.clone())
                 }
-                ConditionTerm::Bitvector32SignedLessThan(left, right) => visit_condition_binary!(
-                    ConditionTerm::Bitvector32SignedLessThan,
-                    left,
-                    right,
-                    tasks
-                ),
-                ConditionTerm::Bitvector32SignedLessEqual(left, right) => visit_condition_binary!(
-                    ConditionTerm::Bitvector32SignedLessEqual,
-                    left,
-                    right,
-                    tasks
-                ),
-                ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector32SignedGreaterThan,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector32SignedGreaterEqual,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector32Equal(left, right) => {
-                    visit_condition_binary!(ConditionTerm::Bitvector32Equal, left, right, tasks)
-                }
-                ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector32SignedAddOverflows,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector32SignedSubtractOverflows(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector32SignedSubtractOverflows,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector32SignedMultiplyOverflows,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector32SignedDivideOverflows(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector32SignedDivideOverflows,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector32SignedShiftLeftOverflows,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector64SignedLessThan(left, right) => visit_condition_binary!(
-                    ConditionTerm::Bitvector64SignedLessThan,
-                    left,
-                    right,
-                    tasks
-                ),
-                ConditionTerm::Bitvector64SignedLessEqual(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector64SignedLessEqual,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector64SignedGreaterThan(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector64SignedGreaterThan,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector64SignedGreaterEqual(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector64SignedGreaterEqual,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector64UnsignedLessThan(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector64UnsignedLessThan,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector64UnsignedLessEqual(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector64UnsignedLessEqual,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector64UnsignedGreaterThan(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector64UnsignedGreaterThan,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector64UnsignedGreaterEqual,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector64Equal(left, right) => {
-                    visit_condition_binary!(ConditionTerm::Bitvector64Equal, left, right, tasks)
-                }
-                ConditionTerm::Bitvector64SignedAddOverflows(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector64SignedAddOverflows,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector64SignedSubtractOverflows(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector64SignedSubtractOverflows,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector64SignedMultiplyOverflows,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector64SignedDivideOverflows(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector64SignedDivideOverflows,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
-                ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
-                    visit_condition_binary!(
-                        ConditionTerm::Bitvector64SignedShiftLeftOverflows,
-                        left,
-                        right,
-                        tasks
-                    )
-                }
                 ConditionTerm::Float32(float_condition) => {
                     let term_count = match float_condition {
                         CFloatCondition::Comparison { .. } => 2,
@@ -3236,6 +2954,14 @@ fn substitute_load_variables(
                     });
                     tasks.push(Task::VisitOffset(&right.offset));
                     tasks.push(Task::VisitOffset(&left.offset));
+                }
+                condition => {
+                    let (op, left, right) = condition
+                        .as_bitvector_comparison()
+                        .expect("every other condition has its own arm");
+                    tasks.push(Task::RebuildConditionBinary(op));
+                    tasks.push(Task::VisitTerm(right));
+                    tasks.push(Task::VisitTerm(left));
                 }
             },
             Task::VisitOffset(offset) => match offset {
@@ -3303,10 +3029,10 @@ fn substitute_load_variables(
                 let arguments = term_results.split_off(first);
                 term_results.push(Bitvector32Term::PureFunctionApplication { name, arguments });
             }
-            Task::RebuildConditionBinary(constructor) => {
+            Task::RebuildConditionBinary(op) => {
                 let right = term_results.pop().expect("visited right condition operand");
                 let left = term_results.pop().expect("visited left condition operand");
-                condition_results.push(constructor(Box::new(left), Box::new(right)));
+                condition_results.push(op.build_raw(left, right));
             }
             Task::RebuildFloatCondition {
                 is_float64,
