@@ -489,6 +489,13 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         for requirement in function.requires() {
             if let Some(proposition) = requirement.proposition() {
                 let context = format!("requires clause in `{}`", function.signature().name());
+                validate_contract_proposition_names(
+                    proposition,
+                    &requires_type_environment,
+                    &function.c_object_names,
+                    "requires",
+                    &context,
+                )?;
                 reject_held_outside_execution(proposition, &context)?;
                 validate_predicate_calls_in_proposition(
                     proposition,
@@ -520,6 +527,13 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             match ensure.ensure() {
                 Ensure::Proposition(proposition) => {
                     let context = format!("ensures clause in `{}`", function.signature().name());
+                    validate_contract_proposition_names(
+                        proposition,
+                        &ensures_type_environment,
+                        &function.c_object_names,
+                        "ensures",
+                        &context,
+                    )?;
                     reject_held_outside_execution(proposition, &context)?;
                     validate_predicate_calls_in_proposition(
                         proposition,
@@ -580,6 +594,40 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
     }
 
     crate::surface::clear_ambient_proof_source();
+    Ok(())
+}
+
+/// Refuse unbound value names before a contract reaches proof lowering.
+/// The shared collector removes lexical binders (quantifiers, lets, folds,
+/// and match arms). Calls have their own declaration checks; qualified C
+/// objects are resolved by the source-aware parser rather than this scope.
+fn validate_contract_proposition_names(
+    proposition: &ClickProposition,
+    variables: &BTreeMap<String, C0Type>,
+    c_objects: &BTreeSet<String>,
+    clause: &str,
+    context: &str,
+) -> Result<(), ClickError> {
+    let mut names = BTreeSet::new();
+    crate::surface::lowering::collect_click_proposition_referenced_names(proposition, &mut names);
+    if let Some(name) = names.iter().find(|name| {
+        !variables.contains_key(*name) && !c_objects.contains(*name) && !name.contains("::")
+    }) {
+        if name == "result" && clause == "ensures" {
+            return Err(ClickError::new(format!(
+                "`result` is not available in {context}"
+            )));
+        }
+        let hint = if matches!(name.as_str(), "true" | "false") {
+            "; `true` and `false` are not contract literals; compare with `1`/`0` or another `bool` value"
+        } else {
+            ""
+        };
+        return Err(ClickError::new(format!(
+            "unknown name `{name}` in `{clause} {}` ({context}){hint}",
+            describe_click_proposition(proposition),
+        )));
+    }
     Ok(())
 }
 
@@ -3139,5 +3187,55 @@ mod read_authority_tests {
             parser::parse("resource viewed_neighbor(p: int32*) { views p[0..1]; fact p[1] == 0; }")
                 .expect_err("an uncovered viewed fact read must reach public validation");
         assert!(error.message().contains("current read authority"));
+    }
+}
+
+#[cfg(test)]
+mod contract_name_tests {
+    use super::*;
+
+    #[test]
+    fn unknown_contract_names_are_refused_without_checking_a_proof() {
+        for (clause, name) in [
+            ("requires missing > 0; ensures result == 1;", "missing"),
+            ("ensures result == one;", "one"),
+            ("ensures result == true;", "true"),
+            ("ensures result == false;", "false"),
+            ("ensures forall (k: int32) { k == absent };", "absent"),
+        ] {
+            let source = format!("int32 f(int32 x) {{ {clause} }} by {{ assumption(); }}");
+            let file = crate::surface::parser::parse_file_items(&source).unwrap();
+            let error = validate_click_definitions(&file).unwrap_err();
+            assert!(
+                error.message().contains(&format!("unknown name `{name}`")),
+                "{}",
+                error.message()
+            );
+            assert!(!error.message().contains("tactic"), "{}", error.message());
+            assert!(
+                !error.message().contains("kernel lowering"),
+                "{}",
+                error.message()
+            );
+            if matches!(name, "true" | "false") {
+                assert!(error.message().contains("not contract literals"));
+                assert!(error.message().contains("`1`/`0`"));
+            }
+        }
+    }
+
+    #[test]
+    fn contract_names_respect_parameters_lets_and_quantifier_scope() {
+        let file = crate::surface::parser::parse_file_items(
+            r#"
+int32 f(int32 x) {
+    let saved = x;
+    requires forall (k: int32) { k == k };
+    ensures forall (x: int32) { saved == saved and x == x };
+} by { assumption(); }
+"#,
+        )
+        .unwrap();
+        validate_click_definitions(&file).unwrap();
     }
 }

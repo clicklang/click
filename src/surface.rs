@@ -1157,6 +1157,8 @@ struct ClickFunctionType {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionBlock {
+    /// C objects visible in this declaration, supplied by the source frontend.
+    c_object_names: std::sync::Arc<BTreeSet<String>>,
     signature: FunctionSignature,
     external: bool,
     /// Internal source grouping for an `executes` theorem's call and return.

@@ -1046,6 +1046,42 @@ pub(super) fn record_function_tables(
     tables: &mut parser::ProgramLayouts,
     function: syntax::C0Function,
 ) {
+    let names = function
+        .globals()
+        .keys()
+        .chain(function.global_arrays().keys())
+        .chain(function.global_aggregates().keys())
+        .chain(function.global_aggregate_arrays().keys())
+        .cloned()
+        .chain(
+            function
+                .static_locals()
+                .values()
+                .map(|object| object.name().to_string()),
+        )
+        .chain(
+            function
+                .static_arrays()
+                .values()
+                .map(|object| object.name().to_string()),
+        )
+        .chain(
+            function
+                .static_aggregates()
+                .values()
+                .map(|object| object.name().to_string()),
+        )
+        .chain(
+            function
+                .static_aggregate_arrays()
+                .values()
+                .map(|object| object.name().to_string()),
+        )
+        .collect();
+    tables.c_object_names.insert(
+        function.source_name().to_string(),
+        std::sync::Arc::new(names),
+    );
     let mut function_aggregate_objects = BTreeMap::new();
     for aggregate in function.global_aggregates().values() {
         function_aggregate_objects.insert(

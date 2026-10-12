@@ -253,6 +253,10 @@ through two calls to a pointer-taking helper without resetting the state.
   `false` spellings are understood directly by Click. The `true` and `false`
   constants are fallbacks when no ordinary C declaration binds that name;
   explicit macros expand before parsing.
+  These fallback constants apply in C source. In contract expressions, use
+  `1`/`0` or another `bool` value; an unbound `true` or `false` is diagnosed
+  at its clause. Other unbound value names in `requires` and `ensures` are
+  also refused during declaration checking, before any proof runs.
 - `void` as a function return type
 - `void*` and `const void*` as opaque object pointers. They preserve pointer
   identity, provenance, nullness, and qualification, but have no modeled
