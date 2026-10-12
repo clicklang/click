@@ -1403,6 +1403,10 @@ fn close_claim_directly_from_outcome<'a>(
         &path_case_facts(entry_facts, execution_paths, path_index),
         resource_facts,
         parameter_binding,
+        match outcome {
+            CFunctionOutcome::Return { value, .. } => Some(value),
+            _ => None,
+        },
     );
     let error = proof.step_error(format!(
         "`ensures {surface}` failed for `{claim_label}` path {path_index}: unclosed goal: {surface}{evaluated_sides}\n{context}"

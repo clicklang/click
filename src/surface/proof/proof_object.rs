@@ -1054,6 +1054,7 @@ struct ProofDiagnosticProofState(
     Option<crate::surface::proof_trace::ChildArgumentTrace>,
     Option<(&'static str, Box<Proposition>, Option<String>)>,
     Option<crate::surface::proof_diagnostics::MemoryHistoryDiagnostic>,
+    Option<(Variable, CType)>,
 );
 
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
@@ -1098,6 +1099,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
                 && let Some(variable) = diagnostic_value_variable(value)
             {
                 labels.source_name(variable, name.clone());
+                labels.source_type(variable, value.c_type());
             }
         }
         for (name, value) in self.0.state().locals().algebraic_values.iter() {
@@ -1107,6 +1109,9 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         }
         if let Some(state) = &self.3 {
             labels.register_current_state(state);
+        }
+        if let Some((variable, c_type)) = self.7 {
+            labels.source_type(variable, c_type);
         }
         if let Some(branch) = self.0.state().open_branches().get(self.0.focused_branch())
             && let Some(execution) = branch.state.execution.as_deref()
@@ -1529,6 +1534,15 @@ impl Proof<'_> {
             None,
             None,
             history,
+            match self.context.as_ref() {
+                ProofContext::FixedState(context) => context.fixed_state.result,
+                _ => self
+                    .outcome_fixed_state_view()
+                    .and_then(|view| view.fixed_state.result),
+            }
+            .and_then(|value| {
+                diagnostic_value_variable(value).map(|variable| (variable, value.c_type()))
+            }),
         )
     }
 }
