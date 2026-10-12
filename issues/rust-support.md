@@ -45,8 +45,10 @@ Both output fields remain below 65,521. Checked partition lemmas relate full-wid
 lengths, signed indices, four-byte prefixes, and zero-to-three-byte tails.
 General signed-range partition lemmas establish aligned full-batch remainders
 and decreasing actual outer-iterator remaining counts, without truncating usize
-metadata. Every full-batch vector step connects all four constructor lane values
-to exact absolute input-byte observations derived from those stored counts.
+metadata. Every full-batch and aligned-remainder vector step connects all four
+constructor lane values to exact absolute input-byte observations derived from
+those stored counts. The remainder uses an explicit constructor-entry snapshot
+and preserves the input bytes with the entry snapshot.
 Full outer-batch induction, lane reduction/reset, and the final vector and scalar
 remainders are checked in the whole-body proof. The full-batch loops also carry
 both A and B against the common specification through every native four-byte
@@ -113,7 +115,9 @@ through native additions and reductions. B includes the exact deferred
 batch-local seed contribution and remains nonnegative. The entry B seed stays
 fixed while Rust updates the working scalar B between batches. Actual outer
 exhaustion establishes both residues for the completed full-batch prefix.
-The general aligned remainder and scalar tail remain pending. Full original-computation smart audits
+Exact constructor-byte observations and byte preservation also verify in the
+general aligned remainder. Its checksum residue invariants and the general
+scalar tail remain pending. Full original-computation smart audits
 currently exhaust the standard ten-minute run bound before completing a site,
 while ordinary verification succeeds. This is an audit-tool limitation, not a
 reported proof failure; continue checksum proof work with ordinary verification

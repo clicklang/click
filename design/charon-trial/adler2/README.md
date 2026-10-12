@@ -631,6 +631,18 @@ across the constructor's local return storage, then rewrites the Integer
 observation using that equality. These observations supply the input values
 needed for the outer checksum recurrence.
 
+The aligned remainder also connects each actual constructor lane to its exact
+absolute input byte after any number of full batches. Its stored remaining
+count determines the local position, and its cursor invariant retains both
+signed and full-width address observations. An explicit constructor-entry mark
+uses the helper's checked Integer postconditions; byte preservation transports
+those observations to the vector-addition snapshot. [remainder-prefix.click](remainder-prefix.click)
+checks the four-byte start and pointer regrouping against the actual window,
+including starts near the signed-index limit. Shared borrowing retains checked
+wide-index aliases beside signed and mixed-index spellings. Missing aliases and
+short views remain rejected. The general remainder's checksum residue invariants
+remain pending.
+
 The full-batch loops carry both residues against `adler_spec_a` and
 `adler_spec_b` at every actual remaining count. Each native four-byte addition
 advances the global prefix; each original reduction preserves its residue.
