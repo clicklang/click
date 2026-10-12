@@ -439,16 +439,19 @@ Decision: open.
 
 ### N1. The README does not show Click working
 
-Today: README line 3 calls Click "a new programming language"; the docs call
-it "a verifier for existing C programs" (`docs/index.md`). The README never
-shows a sidecar or a `click verify` run, opens with a kernel-design essay,
-and carries merge-queue instructions for an agent signed in as `lacker`.
+The part of the README that agents may edit now opens with a ten-line C file,
+its sidecar, and a `click verify` transcript (`examples/clamp/`, checked by
+`readme_quick_start_is_the_clamp_example` in `tests/examples.rs`), followed by
+install, documentation, and a short contributing section; the merge-queue
+instructions for agents stay in `docs/internals/contributing.md`.
 
-Proposed fix: a one-line pitch, a ten-line C file with its sidecar and a
-`click verify` transcript, and install; move the essay and contributor and
-agent rules out.
+Remaining: the human-only top of the README still calls Click "a new
+programming language" and opens with the kernel-design essay.
 
-Decision: open.
+Proposed fix: a maintainer replaces line 3 with a one-line pitch and moves
+the essay to a design document.
+
+Decision: fix.
 
 ### N2. The first proof does not look like C and does not say how to run it
 

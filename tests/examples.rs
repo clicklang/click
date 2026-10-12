@@ -2920,3 +2920,78 @@ fn rbtree_augmented_wrappers_reject_missing_or_wrong_calls() {
         );
     }
 }
+
+/// Reruns a documented `click verify` session: each `c` or `click` block
+/// with a `filename=` is written to a scratch directory in page order, and
+/// each `console` block starting with `$ click verify FILE` must show exactly
+/// what that command prints there, stdout then stderr.
+fn run_documented_session(page: &str) -> BTreeMap<String, String> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let source = fs::read_to_string(root.join(page)).unwrap();
+    let directory = std::env::temp_dir().join(format!(
+        "click-documented-session-{}-{}",
+        page.replace('/', "-"),
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&directory);
+    fs::create_dir_all(&directory).unwrap();
+    let mut files = BTreeMap::new();
+    let mut sessions = 0;
+    let mut lines = source.lines();
+    while let Some(line) = lines.next() {
+        let Some(info) = line.strip_prefix("```") else {
+            continue;
+        };
+        let body = lines
+            .by_ref()
+            .take_while(|line| *line != "```")
+            .map(|line| format!("{line}\n"))
+            .collect::<String>();
+        if let Some(name) = info
+            .strip_prefix("c filename=")
+            .or_else(|| info.strip_prefix("click filename="))
+        {
+            fs::write(directory.join(name), &body).unwrap();
+            files.insert(name.to_string(), body);
+        } else if info == "console" {
+            let (command, expected) = body.split_once('\n').unwrap();
+            let sidecar = command
+                .strip_prefix("$ click verify ")
+                .unwrap_or_else(|| panic!("{page}: unexpected console command `{command}`"));
+            let output = Command::new(env!("CARGO_BIN_EXE_click"))
+                .args(["verify", sidecar])
+                .current_dir(&directory)
+                .output()
+                .unwrap();
+            // The scratch directory is not a Git worktree, so no incremental
+            // baseline can be recorded; that warning is not part of the session.
+            let stderr = String::from_utf8(output.stderr)
+                .unwrap()
+                .lines()
+                .filter(|line| !line.contains("could not record incremental baseline"))
+                .map(|line| format!("{line}\n"))
+                .collect::<String>();
+            let actual = format!("{}{stderr}", String::from_utf8(output.stdout).unwrap());
+            assert_eq!(actual, expected, "{page}: `{command}`");
+            sessions += 1;
+        }
+    }
+    assert!(sessions > 0, "{page} documents no `click verify` session");
+    fs::remove_dir_all(&directory).unwrap();
+    files
+}
+
+/// The README's quick start is `examples/clamp`, and its transcript is what
+/// `click verify` prints.
+#[test]
+fn readme_quick_start_is_the_clamp_example() {
+    let files = run_documented_session("README.md");
+    let example = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/clamp");
+    for name in ["clamp.c", "clamp.click"] {
+        assert_eq!(
+            files[name],
+            fs::read_to_string(example.join(name)).unwrap(),
+            "README `{name}` differs from examples/clamp"
+        );
+    }
+}

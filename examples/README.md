@@ -37,6 +37,8 @@ version and version-string bytes under the explicit kernel target.
 
 Current projects:
 
+- `clamp/` is the README quick start: a branchy `int` function proved in range
+  with `by auto`.
 - `basic-rust/` verifies scalar branches, reference reborrows, parent reuse, and
   disjoint struct fields through the pinned Rust compiler import.
 - `rust-move-drop/` verifies a moved Rust guard that restores borrowed storage
