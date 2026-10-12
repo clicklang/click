@@ -228,6 +228,27 @@ impl Bitvector32Term {
 }
 
 impl BitvectorBinaryOp {
+    /// Whether the operator is one of the original 32-bit word operators.
+    /// Some traversals rebuild exactly these as bare nodes.
+    pub(crate) fn is_bitvector32(self) -> bool {
+        matches!(
+            self,
+            Self::Add
+                | Self::Subtract
+                | Self::Multiply
+                | Self::Divide
+                | Self::UnsignedDivide
+                | Self::Remainder
+                | Self::UnsignedRemainder
+                | Self::ShiftLeft
+                | Self::ArithmeticShiftRight
+                | Self::LogicalShiftRight
+                | Self::BitwiseAnd
+                | Self::BitwiseOr
+                | Self::BitwiseXor
+        )
+    }
+
     /// Applies the operator through its smart constructor.
     pub(crate) fn build(self, left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
         match self {
@@ -274,9 +295,7 @@ impl BitvectorBinaryOp {
     }
 
     /// Applies the operator as the bare node, without folding or
-    /// normalization. Test-only until a traversal that builds bare nodes is
-    /// converted to this split.
-    #[cfg(test)]
+    /// normalization.
     pub(crate) fn build_raw(
         self,
         left: Bitvector32Term,
@@ -334,6 +353,12 @@ impl BitvectorBinaryOp {
 }
 
 impl BitvectorUnaryOp {
+    /// Whether the operator is the original 32-bit word complement. Some
+    /// traversals rebuild exactly the 32-bit word operators as bare nodes.
+    pub(crate) fn is_bitvector32(self) -> bool {
+        self == Self::BitwiseNot
+    }
+
     /// Applies the operator through its smart constructor.
     pub(crate) fn build(self, value: Bitvector32Term) -> Bitvector32Term {
         match self {
@@ -356,9 +381,7 @@ impl BitvectorUnaryOp {
     }
 
     /// Applies the operator as the bare node, without folding or
-    /// normalization. Test-only until a traversal that builds bare nodes is
-    /// converted to this split.
-    #[cfg(test)]
+    /// normalization.
     pub(crate) fn build_raw(self, value: Bitvector32Term) -> Bitvector32Term {
         let value = Box::new(value);
         match self {
@@ -528,5 +551,21 @@ mod tests {
             let split = smart.as_unary().map(|(split_op, _)| split_op);
             assert_eq!(split, Some(op), "{op:?} built {smart:?}");
         }
+    }
+
+    /// Exactly the original 32-bit word operators count as 32-bit: the 13
+    /// two-operand word operators and the word complement.
+    #[test]
+    fn the_32_bit_word_operators_are_exactly_the_original_word_variants() {
+        let word_binaries = binary_ops()
+            .into_iter()
+            .filter(|op| op.is_bitvector32())
+            .collect::<Vec<_>>();
+        assert_eq!(word_binaries, binary_ops()[..13].to_vec());
+        let word_unaries = unary_ops()
+            .into_iter()
+            .filter(|op| op.is_bitvector32())
+            .collect::<Vec<_>>();
+        assert_eq!(word_unaries, vec![BitvectorUnaryOp::BitwiseNot]);
     }
 }
