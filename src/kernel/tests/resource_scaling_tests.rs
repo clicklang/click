@@ -120,8 +120,7 @@ fn private_local_copy_ignores_unrelated_resources() {
                         state,
                         &c_declare(name, c_type),
                         &PureFactContext::new(),
-                        &CExecutionEnvironment::new(),
-                        CExecutionSemantics::EXECUTE_BODIES,
+                        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
                         &mut ExecutionBudget::default(),
                     )
                     .expect("the private local declares");
@@ -156,8 +155,7 @@ fn private_local_copy_ignores_unrelated_resources() {
                         &state,
                         &c_assign("target", expression.clone()),
                         &PureFactContext::new(),
-                        &CExecutionEnvironment::new(),
-                        CExecutionSemantics::EXECUTE_BODIES,
+                        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
                         &mut ExecutionBudget::default(),
                     )
                     .expect("the scalar assignment executes")

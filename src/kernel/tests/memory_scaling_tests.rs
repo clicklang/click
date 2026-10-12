@@ -462,8 +462,7 @@ fn one_heap_store_is_logarithmic_in_unrelated_allocations() {
                 &state,
                 &statement,
                 &PureFactContext::new(),
-                &CExecutionEnvironment::new(),
-                CExecutionSemantics::EXECUTE_BODIES,
+                CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
                 &mut ExecutionBudget::new(),
             )
             .unwrap()

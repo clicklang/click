@@ -1041,8 +1041,7 @@ fn void_local_declaration_is_an_explicit_type_error() {
         &CState::new(),
         &c_declare("invalid", CType::Void),
         &PureFactContext::new(),
-        &CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("invalid void declarations should execute to a type error");
@@ -1057,8 +1056,7 @@ fn void_local_declaration_is_an_explicit_type_error() {
         &CState::new(),
         &c_if(c_void_value(), CStatement::Skip, CStatement::Skip),
         &PureFactContext::new(),
-        &CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("a void condition should execute to a type error");

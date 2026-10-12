@@ -11,8 +11,7 @@ pub(in crate::kernel) fn execute_c_statement(
         state,
         statement,
         assumptions,
-        &CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::for_new_execution(),
     )
     .ok()?;
@@ -2605,30 +2604,23 @@ pub(in crate::kernel) fn execute_c_statement_paths(
     state: &CState,
     statement: &CStatement,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     // Keep a source block's sequence spine out of the large leaf-operation
     // frame. Adding a fact index must not multiply stack use per statement.
     if let CStatement::Seq(first, second) = statement {
         let mut paths = Vec::new();
-        for first_path in execute_c_statement_paths(
-            state,
-            first,
-            assumptions,
-            environment,
-            execution_semantics,
-            budget,
-        )? {
+        for first_path in
+            execute_c_statement_paths(state, first, assumptions, execution_context, budget)?
+        {
             match first_path.outcome {
                 CStatementOutcome::Normal(state) => {
                     paths.extend(execute_c_statement_paths_with_prefix(
                         &state,
                         second,
                         assumptions,
-                        environment,
-                        execution_semantics,
+                        execution_context,
                         &first_path.facts,
                         &first_path.obligations,
                         &first_path.loan_evidence,
@@ -2652,33 +2644,24 @@ pub(in crate::kernel) fn execute_c_statement_paths(
         budget.check_path_width(paths.len())?;
         return Ok(paths);
     }
-    execute_c_statement_leaf_paths(
-        state,
-        statement,
-        assumptions,
-        environment,
-        execution_semantics,
-        budget,
-    )
+    execute_c_statement_leaf_paths(state, statement, assumptions, execution_context, budget)
 }
 
 fn execute_c_statement_leaf_paths(
     state: &CState,
     statement: &CStatement,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    budget.install_c_byte_order(environment.byte_order());
+    budget.install_c_byte_order(execution_context.environment.byte_order());
     if let Some(pending) = &state.pending_thread_create {
         if let Some(resolved) = pending.resolve(state, assumptions) {
             return execute_c_statement_paths(
                 &resolved,
                 statement,
                 assumptions,
-                environment,
-                execution_semantics,
+                execution_context,
                 budget,
             );
         }
@@ -2703,8 +2686,7 @@ fn execute_c_statement_leaf_paths(
                     &bare,
                     statement,
                     assumptions,
-                    environment,
-                    execution_semantics,
+                    execution_context,
                     budget,
                 )?;
                 for path in &mut paths {
@@ -2743,8 +2725,7 @@ fn execute_c_statement_leaf_paths(
                     &bare,
                     statement,
                     assumptions,
-                    environment,
-                    execution_semantics,
+                    execution_context,
                     budget,
                 )?;
                 for path in &mut paths {
@@ -2840,14 +2821,9 @@ fn execute_c_statement_leaf_paths(
                 }
             };
             let mut paths = Vec::new();
-            for step_path in execute_c_statement_paths(
-                &retired,
-                step,
-                assumptions,
-                environment,
-                execution_semantics,
-                budget,
-            )? {
+            for step_path in
+                execute_c_statement_paths(&retired, step, assumptions, execution_context, budget)?
+            {
                 let outcome = match step_path.outcome {
                     CStatementOutcome::Normal(next_state) if *continue_after => {
                         CStatementOutcome::Continue(next_state)
@@ -3062,8 +3038,7 @@ fn execute_c_statement_leaf_paths(
             function_name,
             arguments,
             assumptions,
-            environment,
-            execution_semantics,
+            execution_context,
             budget,
         )?,
         CStatement::Call {
@@ -3074,8 +3049,7 @@ fn execute_c_statement_leaf_paths(
             function_name,
             arguments,
             assumptions,
-            environment,
-            execution_semantics,
+            execution_context,
             budget,
         )?,
         CStatement::HeapAllocate {
@@ -3149,14 +3123,9 @@ fn execute_c_statement_leaf_paths(
             ..
         } => {
             let mut paths = Vec::new();
-            for try_path in execute_c_statement_paths(
-                state,
-                try_body,
-                assumptions,
-                environment,
-                execution_semantics,
-                budget,
-            )? {
+            for try_path in
+                execute_c_statement_paths(state, try_body, assumptions, execution_context, budget)?
+            {
                 if let CStatementOutcome::Throw {
                     value: value @ CValue::Int32(_),
                     state: thrown_state,
@@ -3187,8 +3156,7 @@ fn execute_c_statement_leaf_paths(
                         thrown_state,
                         &bound_handler,
                         assumptions,
-                        environment,
-                        execution_semantics,
+                        execution_context,
                         &try_path.facts,
                         &try_path.obligations,
                         &try_path.loan_evidence,
@@ -3289,8 +3257,7 @@ fn execute_c_statement_leaf_paths(
                                     &branch_state,
                                     branch,
                                     assumptions,
-                                    environment,
-                                    execution_semantics,
+                                    execution_context,
                                     &truthiness_path.facts,
                                     &truthiness_path.obligations,
                                     &empty_checked_loan_evidence_sequence(),
@@ -3336,8 +3303,7 @@ fn execute_c_statement_leaf_paths(
             *do_while,
             body,
             assumptions,
-            environment,
-            execution_semantics,
+            execution_context,
             budget,
         )?,
         CStatement::Switch { expression, cases } => execute_c_switch_paths(
@@ -3345,8 +3311,7 @@ fn execute_c_statement_leaf_paths(
             expression,
             cases,
             assumptions,
-            environment,
-            execution_semantics,
+            execution_context,
             budget,
         )?,
     };
@@ -3359,8 +3324,7 @@ fn execute_c_switch_paths(
     expression: &CExpression,
     cases: &[CSwitchCase],
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     // A `switch` body is one scope: cases fall through into each other, so a
@@ -3395,8 +3359,7 @@ fn execute_c_switch_paths(
                     facts,
                     obligations,
                     assumptions,
-                    environment,
-                    execution_semantics,
+                    execution_context,
                     budget,
                 )?);
             }
@@ -3425,8 +3388,7 @@ fn execute_c_switch_dispatch_paths(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     if case_index == cases.len() {
@@ -3439,8 +3401,7 @@ fn execute_c_switch_dispatch_paths(
                 facts,
                 obligations,
                 assumptions,
-                environment,
-                execution_semantics,
+                execution_context,
                 budget,
             ),
             None => Ok(vec![CStatementExecutionPath::new(
@@ -3461,8 +3422,7 @@ fn execute_c_switch_dispatch_paths(
             facts,
             obligations,
             assumptions,
-            environment,
-            execution_semantics,
+            execution_context,
             budget,
         );
     };
@@ -3485,8 +3445,7 @@ fn execute_c_switch_dispatch_paths(
                 facts,
                 obligations,
                 assumptions,
-                environment,
-                execution_semantics,
+                execution_context,
                 budget,
             )?);
         } else {
@@ -3498,8 +3457,7 @@ fn execute_c_switch_dispatch_paths(
                 facts,
                 obligations,
                 assumptions,
-                environment,
-                execution_semantics,
+                execution_context,
                 budget,
             )?);
         }
@@ -3514,8 +3472,7 @@ fn execute_c_switch_suffix_paths(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     if case_index == cases.len() {
@@ -3531,8 +3488,7 @@ fn execute_c_switch_suffix_paths(
         state,
         &cases[case_index].body,
         &case_assumptions,
-        environment,
-        execution_semantics,
+        execution_context,
         budget,
     )? {
         let Some((case_facts, case_obligations)) = merge_execution_pure_facts_and_obligations(
@@ -3552,8 +3508,7 @@ fn execute_c_switch_suffix_paths(
                 case_facts,
                 case_obligations,
                 assumptions,
-                environment,
-                execution_semantics,
+                execution_context,
                 budget,
             )?),
             CStatementOutcome::Break(next_state) => paths.push(CStatementExecutionPath::new(
@@ -3646,8 +3601,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
     do_while: bool,
     body: &CStatement,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     struct PendingLoopPath {
@@ -3786,8 +3740,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
                                 &current_state,
                                 body,
                                 &body_assumptions,
-                                environment,
-                                execution_semantics,
+                                execution_context,
                                 budget,
                             )?,
                             &body_declared,

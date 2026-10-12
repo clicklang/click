@@ -70,8 +70,9 @@ fn store_byte(memory: CMemory, offset: i64, byte: CValue, byte_order: ByteOrder)
         &state,
         &statement,
         &PureFactContext::new(),
-        &CExecutionEnvironment::new().with_byte_order(byte_order),
-        CExecutionSemantics::EXECUTE_BODIES,
+        CExecutionContext::execute_bodies(
+            &CExecutionEnvironment::new().with_byte_order(byte_order),
+        ),
         &mut ExecutionBudget::new(),
     )
     .unwrap();

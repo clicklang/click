@@ -6758,8 +6758,7 @@ fn automatic_scalar_ownership_is_exact_and_required_for_all_accesses() {
         &CState::new(),
         &c_declare("word", CType::UInt32),
         &assumptions,
-        &CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
@@ -6811,8 +6810,7 @@ fn automatic_scalar_ownership_is_exact_and_required_for_all_accesses() {
             &empty,
             &statement,
             &assumptions,
-            &CExecutionEnvironment::new(),
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
             &mut ExecutionBudget::new(),
         )
         .unwrap();
@@ -6861,8 +6859,7 @@ fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
                 &state,
                 &statement,
                 &PureFactContext::new(),
-                &CExecutionEnvironment::new(),
-                CExecutionSemantics::EXECUTE_BODIES,
+                CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
                 &mut ExecutionBudget::new(),
             )
             .unwrap()

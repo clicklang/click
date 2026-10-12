@@ -12,8 +12,7 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
             state,
             statement,
             &PureFactContext::new(),
-            &CExecutionEnvironment::new(),
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
             &mut ExecutionBudget::default(),
         )
         .unwrap()
@@ -187,8 +186,7 @@ fn active_stable_loan_rejects_direct_local_assignment_and_alias_store() {
             zero_fill: None,
         },
         &PureFactContext::new(),
-        &CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("local declaration should execute");
@@ -208,8 +206,7 @@ fn active_stable_loan_rejects_direct_local_assignment_and_alias_store() {
             expression: c_int32_literal(1),
         },
         &PureFactContext::new(),
-        &CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("direct assignment should return a checked refusal");
@@ -228,8 +225,7 @@ fn active_stable_loan_rejects_direct_local_assignment_and_alias_store() {
             zero_fill: None,
         },
         &PureFactContext::new(),
-        &CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("name reuse should return a checked refusal");
@@ -240,8 +236,7 @@ fn active_stable_loan_rejects_direct_local_assignment_and_alias_store() {
         &alias_state,
         &c_store(c_variable("p"), c_int32_literal(2)),
         &PureFactContext::new(),
-        &CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("alias store should return a checked refusal");
@@ -257,8 +252,7 @@ fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
             state,
             statement,
             &PureFactContext::new(),
-            &CExecutionEnvironment::new(),
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
             &mut ExecutionBudget::default(),
         )
         .unwrap()
@@ -311,8 +305,7 @@ fn active_stable_loan_allows_a_disjoint_local_store() {
             zero_fill: None,
         },
         &PureFactContext::new(),
-        &CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("array declaration should execute");
@@ -331,8 +324,7 @@ fn active_stable_loan_allows_a_disjoint_local_store() {
         &state,
         &c_store(c_variable("p"), c_int32_literal(3)),
         &PureFactContext::new(),
-        &CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("disjoint store should execute");
@@ -363,8 +355,7 @@ fn volatile_parameter_accesses_emit_ordered_facts() {
         &bound,
         function.body(),
         &PureFactContext::new(),
-        &CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("volatile parameter body should execute");
@@ -395,8 +386,7 @@ fn volatile_parameter_accesses_emit_ordered_facts() {
             &bound,
             function.body(),
             &PureFactContext::new(),
-            &CExecutionEnvironment::new(),
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
             &mut exhausted,
         ),
         Err(ExecutionLimit::KernelVariables {
@@ -468,8 +458,7 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
             offset: PointerOffsetTerm::Constant(0),
         }))),
         &PureFactContext::new(),
-        &CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("test free should execute");
@@ -3215,8 +3204,7 @@ fn execute_declaration(state: &CState, statement: &CStatement) -> CState {
             state,
             statement,
             &PureFactContext::new(),
-            &CExecutionEnvironment::new(),
-            CExecutionSemantics::EXECUTE_BODIES,
+            CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
             &mut ExecutionBudget::default(),
         )
         .expect("the declaration executes"),
