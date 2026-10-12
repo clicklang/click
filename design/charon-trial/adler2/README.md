@@ -1,21 +1,22 @@
 # Unchanged adler2 crate adapter trial
 
 Click imports the complete selection rooted at `adler2::adler32_slice` and
-proves the four-lane helper bodies and the native-count general, small-batch,
-and four-byte bounds proofs. The general proof covers every input length through
-2,147,483,647 bytes from canonical initial states, using actual native remaining
-counts, checked signed observations, and shared input views throughout all loops.
-The small-batch proof also establishes both final fields equal the shared
-checksum specification on the entry input snapshot for every length through
-22,207 bytes, from any canonical initial state. **General-length checksum
-correctness remains unproved.**
+proves the four-lane helper bodies and the unchanged general computation.
+For every input length zero through 2,147,483,647 bytes from any canonical
+initial state, `Adler32::compute` terminates, preserves input bytes, and stores
+both fields equal to the shared checksum specification on the entry snapshot.
+The proof follows actual native remaining counts, checked signed observations,
+and shared input views through all original loops, reductions and final stores.
+General public-entry-point composition and implementation incremental processing
+remain pending.
 
 The 2,147,483,647-byte limit comes from the bound library
 ([`bounded-count.click`](bounded-count.click) and the proofs built on it), which
 states counts over `int32` and reads each `usize` count through
 `((count as u32) as i32)`. The kernel no longer needs it: a 64-bit count bounds a range
-and indexes memory directly (`design/typed-indices.md`), so restating the
-library over `uint64` would lift the limit.
+and indexes memory directly (`design/typed-indices.md`). Extending the
+specification and count/index lemmas to full-width indices would lift this
+proof limit.
 
 The function contracts use Rust syntax (`docs/reference/rust.md`,
 "Signatures in Rust syntax"): `fn` signatures, `impl` blocks, paths such as
@@ -98,9 +99,8 @@ nonzero domain from the native nonzero divisor; callers supply no additional
 mathematical precondition. Division has the corresponding checked unsigned
 bridge. The common specification proves residue congruence with a signed
 quotient witness, so subtracting weighted lane reductions can preserve a
-checksum even when that witness is negative. These facts support connecting
-the optimized state to the specification; they do not establish the general
-checksum postcondition.
+checksum even when that witness is negative. The general contract combines these observations with the actual loop and
+store proofs to establish both final checksum fields.
 
 The multiplication helper also exports the exact Integer product for each lane.
 `uint32_multiply_to_integer` uses the original native quotient guard, including its
@@ -310,8 +310,7 @@ and remaining length explicitly at the head, so the four-byte transition uses th
 These implications match the adapter's stored remaining-byte state and
 four-byte `next` transition. The single-vector loop establishes and maintains
 its numeric bounds, lane bounds and memory view; the original nested loops
-over arbitrary batches have the terminating bounds proof described below.
-Their full checksum correctness remains unproved.
+over arbitrary batches have the terminating checksum proof described below.
 
 Integer equality evidence now works in either orientation for explicit theorem
 applications and fact transport, including observations of native values and
@@ -355,8 +354,8 @@ single-byte checksum values `a = b = 1 + byte`.
 The contract also proves that both fields equal the
 [shared specification](../../adler32-spec.click) on the entry byte snapshot.
 Checked unsigned remainder bridges and signed-witness congruence remove the
-`6 * MOD` offset. This connection covers one byte from the constructor state;
-the general checksum postcondition remains unproved.
+`6 * MOD` offset. This focused connection covers one byte from the constructor state; the
+general contract below covers all supported lengths and canonical seeds.
 
 The proof follows the stored serial iterator, identifies its read with the
 original byte, bounds both additions, and checks the final modulo and `u16`
@@ -505,22 +504,19 @@ cargo nextest run --test rust_import --run-ignored only \
 
 ## Remaining proof work
 
-Connect the optimized lane recurrences to the shared
-mathematical checksum specification in the [checksum assessment](../../rust-checksum-assessment.md).
-The constructor-state contracts for zero through four bytes provide exact
-result and byte-order checks. The shared getter proves exact packing, and the
-zero- through four-byte public entry points compose it with the constructor
-and computation. Extend that composition to larger inputs by carrying both
-prefix residues through the original nested loops, reductions, recombination
-and final tail.
-The general contract supplies induction and bounds rather than a checksum
-postcondition. Full original-computation smart audits currently exhaust the
-standard ten-minute run bound before completing a site, although ordinary
-verification succeeds. Treat this as an audit-tool limitation and continue
-checksum correctness with ordinary verification; the timeout supplies no proof
-verdict. The standalone byte-observation claims pass complete audits. All helper bodies remain checked
-alongside the computation. Then prove incremental processing, the unchanged
-C implementation, and equality under matched input and seed conditions.
+Compose the checked constructor, general computation contract and shared getter
+at the public entry point for all supported lengths. The computation already
+proves both final field specifications, and the getter proves exact packing.
+Then connect repeated computation calls to the shared mathematical incremental
+equality, prove the unchanged C implementation, and derive C/Rust equality
+under matched input and seed conditions. See the
+[checksum assessment](../../rust-checksum-assessment.md).
+
+Full original-computation smart audits exhaust the standard ten-minute run bound
+before completing a site, although ordinary verification succeeds. This is an
+audit-tool limitation; the timeout supplies no proof verdict. Standalone byte
+observations pass complete audits, and all helper bodies remain checked alongside
+the computation.
 
 ## Historical trial
 
@@ -607,8 +603,8 @@ divisibility, and progress. Original-body mutations reject missing input
 authority, an admitted full outer batch, and either missing canonical seed
 bound. Whole-proof verification, tool agreement, and cursor, ranking,
 induction, and final-bound rejections also run nightly.
-Full outer batches and the mathematical checksum postcondition remain unproved
-by this contract.
+Full outer batches are outside this small-batch contract; the general contract
+below covers them and proves both final checksum fields.
 
 ## General whole-body induction
 
@@ -682,8 +678,13 @@ entry value. The original inner back edge, scalar seed addition, reductions and
 outer back edge retain the common B specification. It introduces no processed
 counter. The remainder reuses these native transition and positivity lemmas.
 Its original scalar seed addition, reductions and recombination now preserve
-those residues. The final scalar tail and receiver-field specification still
-need their general checksum proof.
+those residues. The original scalar tail carries both scalar residues against the global
+`length - remaining` prefix. Its full-range byte bridge identifies the actual
+post-`Next` byte at `length - remaining - 1`. B uses the newly updated A value.
+Actual exhaustion establishes the complete-input residues; byte extensionality
+transports them to the entry snapshot, and checked final reductions and 16-bit
+stores establish both receiver-field postconditions. The native byte bridge
+verifies, expands and reverifies; false final A and B specifications are rejected.
 
 The harness assembles the contract with the checked helper/getter bodies,
 iterator and recombination libraries, general partition lemmas, and tail

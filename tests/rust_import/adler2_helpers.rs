@@ -3280,3 +3280,48 @@ fn charon_adler2_general_compute_rejects_false_recombined_remainder_b() {
         "have to_integer(b) + 1 == adler_lane_b(to_integer(at(weighted_b, b)),",
     );
 }
+
+#[test]
+#[ignore = "nightly: full general checksum A postcondition"]
+fn charon_adler2_general_compute_rejects_false_final_a() {
+    reject_compute(
+        GENERAL_COMPUTE,
+        "ensures to_integer(self.a) == old(adler_spec_a(",
+        "ensures to_integer(self.a) + 1 == old(adler_spec_a(",
+    );
+}
+
+#[test]
+#[ignore = "nightly: full general checksum B postcondition"]
+fn charon_adler2_general_compute_rejects_false_final_b() {
+    reject_compute(
+        GENERAL_COMPUTE,
+        "ensures to_integer(self.b) == old(adler_spec_b(",
+        "ensures to_integer(self.b) + 1 == old(adler_spec_b(",
+    );
+}
+
+#[test]
+#[ignore = "nightly: full-range scalar byte observation and expansion"]
+fn adler_bounded_previous_byte_verify_expand_and_reverify() {
+    let p = Project::isolated("");
+    fs::write(p.root.join("borrow.click"), BOUNDED_COUNT).unwrap();
+    click::surface::verify_c0_sources(BOUNDED_COUNT, &[]).unwrap();
+    assert_cli(&p, &["verify"]);
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "adler_bounded_previous_byte_observation.ensures_0",
+            "--in-place",
+        ],
+    );
+    assert_cli(&p, &["verify"]);
+    let invalid = BOUNDED_COUNT.replace(
+        "ensures to_integer((int32)(bytes + (total - remaining - 1u64))[0]) ==",
+        "ensures to_integer((int32)(bytes + (total - remaining - 1u64))[0]) + 1 ==",
+    );
+    assert_ne!(invalid, BOUNDED_COUNT);
+    assert!(click::surface::verify_c0_sources(&invalid, &[]).is_err());
+}
