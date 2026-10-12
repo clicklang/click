@@ -2066,15 +2066,11 @@ impl ResourceContext {
             .any(|occurrence| self.loan_dependencies.map.get(occurrence).is_some())
         {
             let map = removed_occurrences
-                .into_iter()
+                .iter()
                 .fold(self.loan_dependencies.map.clone(), |map, occurrence| {
-                    map.without_key(&occurrence)
+                    map.without_key(occurrence)
                 });
-            self.loan_dependencies =
-                std::sync::Arc::new(crate::kernel::loans::LoanViewBindingsState {
-                    identity: crate::kernel::loans::next_loan_binding_identity(),
-                    map,
-                });
+            self.loan_dependencies = self.loan_dependencies.updated(map, removed_occurrences);
         }
         fact
     }
@@ -3847,6 +3843,61 @@ impl ResourceContext {
         !(concrete(first) && owned.all(concrete))
     }
 
+    /// Find one exposed member through address keys, never through ambient
+    /// resources. Borrowed members require an occurrence-bound checked loan;
+    /// an owner's ordinary read observation is deliberately ineligible.
+    pub(in crate::kernel) fn partition_memory_member_at(
+        &self,
+        pointer: &Pointer,
+        borrowed: bool,
+        accepts: impl Fn(&CMemoryRange) -> bool,
+    ) -> Option<&CMemoryRange> {
+        let mut base = pointer.clone();
+        loop {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(entries) = self.storage.index.memory_by_base.get(&base) {
+                for entry in entries.iter() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let fact = self.fact(*entry);
+                    let range = if borrowed {
+                        let Some(binding) = self.loan_dependency(self.occurrence(*entry)) else {
+                            continue;
+                        };
+                        if binding.viewed != *fact {
+                            continue;
+                        }
+                        fact.memory_view_range()
+                    } else {
+                        fact.memory_own_range()
+                    };
+                    if let Some(range) = range.filter(|range| accepts(range)) {
+                        return Some(range);
+                    }
+                }
+            }
+            base.offset = match &base.offset {
+                PointerOffsetTerm::Add(left, _) => (**left).clone(),
+                PointerOffsetTerm::Constant(value) if *value != 0 => PointerOffsetTerm::Constant(0),
+                _ => return None,
+            };
+        }
+    }
+
+    /// A checked live borrow and a separately held owner belong to disjoint
+    /// custody partitions. The loan binding follows checked composite
+    /// projections; observation alone never manufactures such a binding.
+    pub(in crate::kernel) fn proves_borrow_partition_separate(
+        &self,
+        left: &CMemoryRange,
+        right: &CMemoryRange,
+    ) -> bool {
+        let holds = |range: &CMemoryRange, borrowed| {
+            self.partition_memory_member_at(range.base(), borrowed, |member| member == range)
+                .is_some()
+        };
+        (holds(left, false) && holds(right, true)) || (holds(left, true) && holds(right, false))
+    }
+
     /// Two distinct owned members of `block`, the first accepted by `left`
     /// and the second by `right`, that the composition law separates: the
     /// on-demand form of the same-block separations a valid composition
@@ -5387,7 +5438,11 @@ impl ResourceContext {
         composition.observable_projection = Default::default();
         let owned = composition.iter().filter(|fact| fact.is_own());
         let owned_composite = composition.composite_facts().any(|fact| fact.is_own());
-        if owned.take(2).count() >= 2 || owned_composite {
+        let owned_count = owned.take(2).count();
+        if owned_count >= 2
+            || owned_composite
+            || (owned_count == 1 && !composition.loan_dependencies.map.is_empty())
+        {
             propositions.push(Proposition::CResourceComposition(composition));
         }
         propositions

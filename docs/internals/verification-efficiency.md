@@ -438,6 +438,21 @@ into a cached success.
 
 ## Lazy separation and compact composition carriers
 
+Borrow/owner separation over explicitly opened composites uses existing checked
+loan bindings. Composition admission indexes only changed memory-address keys
+and changed bindings; a persistent binding journal also captures changes that
+leave the resource store itself unchanged. Queries consult sources indexed by
+the two addresses, and recheck the exact retained composition. They do not scan
+unrelated resources or unrelated composition history. Repeated bindings share
+their existing state. No complete tree footprint or list of separated pairs is
+constructed. The `borrow_partition_tests` regressions check evidence withdrawal,
+overlap rejection, branch-local binding changes, and lookup/admission scaling
+with growing unrelated state. The surface regression
+`composite_borrow_partition_nested_openings_scale_with_depth` checks explicit
+nesting at several depths. Exit resource equality tries the requested
+fold/unfold comparison by consumption before searching combinations of exposed
+definitions, and exposure stops when a non-memory target is found.
+
 Resource contexts never materialize pairwise `CResourceSeparate`
 propositions, and neither do the fact contexts that hold them. A multi-owner
 context exposes one compact `CResourceComposition` carrier. Holding it states

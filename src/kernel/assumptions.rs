@@ -4736,6 +4736,40 @@ impl PureFactContext {
         })
     }
 
+    /// Separation of an exposed owner and a checked loan-bound projection.
+    /// Candidate lookup uses only the queried address keys, and the retained
+    /// composition is the authority subsequently checked by memory evidence.
+    pub(in crate::kernel) fn borrow_partition_separated_members<'a>(
+        &'a self,
+        left: &Pointer,
+        right: &Pointer,
+        contains_left: impl Fn(&CMemoryRange) -> bool,
+        contains_right: impl Fn(&CMemoryRange) -> bool,
+    ) -> Option<(&'a ResourceContext, &'a CMemoryRange, &'a CMemoryRange)> {
+        for source in self
+            .composition_object_resources
+            .partition_sources_at(&[left, right])
+        {
+            if !self.resource_compositions.contains(source) {
+                continue;
+            }
+            for borrowed in [false, true] {
+                if let Some((a, b)) = source
+                    .partition_memory_member_at(left, borrowed, &contains_left)
+                    .zip(source.partition_memory_member_at(right, !borrowed, &contains_right))
+                    && !self.memory_ranges_overlap_after_base_equality(a, b)
+                {
+                    record_implicit_reasoning_provenance(
+                        self,
+                        &Proposition::CResourceComposition(source.clone()),
+                    );
+                    return Some((source, a, b));
+                }
+            }
+        }
+        None
+    }
+
     pub(super) fn insert_proposition_fact(&mut self, proposition: Proposition) {
         if let Proposition::CResourceComposition(resources) = proposition {
             if std::sync::Arc::make_mut(&mut self.resource_compositions).insert(resources.clone()) {
