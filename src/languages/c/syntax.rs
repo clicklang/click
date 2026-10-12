@@ -96,6 +96,8 @@ pub const C0_PUBLIC_FORMS: &[&str] = &[
     "expression.statement-expression",
     "expression.builtin-expect",
     "expression.builtin-types-compatible",
+    "expression.builtin-offsetof",
+    "declaration.static-assert",
     "expression.sizeof-struct",
     "expression.sizeof-type",
     "expression.call",
@@ -9420,6 +9422,8 @@ impl Parser {
                     break;
                 }
                 self.parse_global_declaration()?;
+            } else if self.peek_ident() == Some("_Static_assert") {
+                self.parse_static_assert()?;
             } else if self.peek_ident() == Some("typedef") {
                 self.parse_typedef_declaration()?;
             } else if self.peek_ident() == Some("struct") && self.peek_n(2) == Some(&Token::LBrace)
@@ -10787,6 +10791,10 @@ impl Parser {
             if self.peek().is_none() {
                 return Err(self.error_here("expected union field or `}`, got end of input"));
             }
+            if self.peek_ident() == Some("_Static_assert") {
+                self.parse_static_assert()?;
+                continue;
+            }
             // GNU __extension__ suppresses a compiler diagnostic for the
             // following declaration without changing its type or layout.
             if self.peek_ident() == Some("__extension__") {
@@ -10881,6 +10889,10 @@ impl Parser {
         while self.peek() != Some(&Token::RBrace) {
             if self.peek().is_none() {
                 return Err(self.error_here("expected struct field or `}`, got end of input"));
+            }
+            if self.peek_ident() == Some("_Static_assert") {
+                self.parse_static_assert()?;
+                continue;
             }
             let field_type = self.parse_type_with_anonymous_struct(false, true, false)?;
             if let Some((field_name, c_type, function_pointer_signature)) =
@@ -11916,7 +11928,13 @@ impl Parser {
                 ..
             } => true,
             C0Expression::Load(pointer) | C0Expression::AggregateAddress { pointer, .. } => {
-                match pointer.as_ref() {
+                // Member lowering inserts byte offsets before the aggregate
+                // wrapper. These offsets preserve the declared member type.
+                let mut pointer = pointer.as_ref();
+                while let C0Expression::PointerOffsetBytes { pointer: base, .. } = pointer {
+                    pointer = base;
+                }
+                match pointer {
                     C0Expression::Variable(name) => {
                         self.variable_types.get(name) == Some(&C0Type::Int32Pointer)
                             && self.variable_structs.contains_key(name)
@@ -12792,8 +12810,17 @@ impl Parser {
                 self.position += 1;
                 Ok(C0Statement::Skip)
             }
-            Some(Token::Ident(name)) if name == "__builtin_types_compatible_p" => {
-                self.parse_types_compatible()?;
+            Some(Token::Ident(name)) if name == "_Static_assert" => {
+                self.parse_static_assert()?;
+                Ok(C0Statement::Skip)
+            }
+            Some(Token::Ident(name))
+                if matches!(
+                    name.as_str(),
+                    "__builtin_types_compatible_p" | "__builtin_offsetof"
+                ) =>
+            {
+                self.parse_primary()?;
                 self.expect(Token::Semicolon)?;
                 Ok(C0Statement::Skip)
             }
@@ -14487,7 +14514,10 @@ impl Parser {
                             self.parse_struct_value_initializer(&name, &struct_name)?;
                         C0Statement::Seq(Box::new(declaration), Box::new(initializer))
                     } else if matches!(self.peek(), Some(Token::Ident(_)))
-                        && self.peek_ident() != Some("__builtin_types_compatible_p")
+                        && !matches!(
+                            self.peek_ident(),
+                            Some("__builtin_types_compatible_p" | "__builtin_offsetof")
+                        )
                         && self.peek_next() == Some(&Token::LParen)
                     {
                         let source_name = self.expect_ident("function name")?;
@@ -14678,7 +14708,10 @@ impl Parser {
                     C0Statement::Seq(Box::new(declaration), Box::new(initializer))
                 } else if !object_constant
                     && matches!(self.peek(), Some(Token::Ident(_)))
-                    && self.peek_ident() != Some("__builtin_types_compatible_p")
+                    && !matches!(
+                        self.peek_ident(),
+                        Some("__builtin_types_compatible_p" | "__builtin_offsetof")
+                    )
                     && self.peek_next() == Some(&Token::LParen)
                 {
                     let call_start = self.position;
@@ -15370,7 +15403,10 @@ impl Parser {
                 )));
             }
             if matches!(self.peek(), Some(Token::Ident(_)))
-                && self.peek_ident() != Some("__builtin_types_compatible_p")
+                && !matches!(
+                    self.peek_ident(),
+                    Some("__builtin_types_compatible_p" | "__builtin_offsetof")
+                )
                 && self.peek_next() == Some(&Token::LParen)
             {
                 let source_name = self.expect_ident("function name")?;
@@ -15387,7 +15423,10 @@ impl Parser {
         let expression = match operator {
             Token::Equal => {
                 if matches!(self.peek(), Some(Token::Ident(_)))
-                    && self.peek_ident() != Some("__builtin_types_compatible_p")
+                    && !matches!(
+                        self.peek_ident(),
+                        Some("__builtin_types_compatible_p" | "__builtin_offsetof")
+                    )
                     && self.peek_next() == Some(&Token::LParen)
                 {
                     let call_start = self.position;
@@ -20273,6 +20312,62 @@ impl Parser {
         }
     }
 
+    fn parse_static_assert(&mut self) -> Result<(), C0SyntaxError> {
+        self.expect_ident_spelling("_Static_assert")?;
+        self.expect(Token::LParen)?;
+        let condition = self.parse_expression()?;
+        self.expect(Token::Comma)?;
+        let mut message = Vec::new();
+        if !matches!(self.peek(), Some(Token::StringLiteral(_))) {
+            return Err(self.error_here("`_Static_assert` requires a string literal message"));
+        }
+        while let Some(Token::StringLiteral(piece)) = self.peek().cloned() {
+            self.position += 1;
+            message.extend(piece);
+        }
+        self.expect(Token::RParen)?;
+        self.expect(Token::Semicolon)?;
+        let value = evaluate_static_integer_expression(&condition).map_err(|_| {
+            self.error_here("`_Static_assert` requires a defined integer constant expression")
+        })?;
+        if !static_integer_is_true(value) {
+            return Err(self.error_here(format!(
+                "static assertion failed: {}",
+                String::from_utf8_lossy(&message)
+            )));
+        }
+        Ok(())
+    }
+
+    fn parse_builtin_offsetof(&mut self) -> Result<C0Expression, C0SyntaxError> {
+        self.expect_ident_spelling("__builtin_offsetof")?;
+        self.expect(Token::LParen)?;
+        let ty = self.parse_type()?;
+        if !is_plain_struct_type(&ty) {
+            return Err(self.error_here("`__builtin_offsetof` requires a complete struct type"));
+        }
+        let name = ty.struct_name.as_ref().expect("plain struct has a tag");
+        self.expect(Token::Comma)?;
+        let member = self.expect_ident("offsetof member name")?;
+        if self.peek() != Some(&Token::RParen) {
+            return Err(
+                self.error_here("`__builtin_offsetof` currently supports a direct struct member")
+            );
+        }
+        self.expect(Token::RParen)?;
+        let layout = self.structs.get(name).ok_or_else(|| {
+            self.error_here(format!(
+                "`__builtin_offsetof` requires complete struct `{name}`"
+            ))
+        })?;
+        let field = layout
+            .fields
+            .get(&member)
+            .ok_or_else(|| self.error_here(format!("struct `{name}` has no member `{member}`")))?;
+        // size_t is unsigned 64-bit on both supported x86-64 targets.
+        Ok(C0Expression::UInt64Literal(u64::from(field.offset_bytes)))
+    }
+
     fn parse_types_compatible_operand(&mut self) -> Result<ParsedType, C0SyntaxError> {
         let ty = self.parse_type()?;
         if ty.compatibility_identity == CompatibilityIdentity::Unavailable
@@ -20310,6 +20405,9 @@ impl Parser {
     }
 
     fn parse_primary(&mut self) -> Result<C0Expression, C0SyntaxError> {
+        if self.peek_ident() == Some("__builtin_offsetof") {
+            return self.parse_builtin_offsetof();
+        }
         if self.peek_ident() == Some("__builtin_types_compatible_p") {
             return self.parse_types_compatible();
         }
