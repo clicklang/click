@@ -708,7 +708,7 @@ impl<'a> Proof<'a> {
             );
             crate::surface::proof::resources::materialize_unfolded_instance_arm_cells(
                 context.resource_environment,
-                context.spec_definitions.functions,
+                context.spec_definitions,
                 context.parameter_binding(),
                 after,
                 instance,
