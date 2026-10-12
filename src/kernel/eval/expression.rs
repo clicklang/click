@@ -900,6 +900,14 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
             add_signed_narrowing_obligations(obligations, assumptions, &value, 0, 255, "uint8")?;
             Some(CValue::UInt8(value))
         }
+        (
+            target @ (CType::Int8 | CType::UInt8 | CType::Int16 | CType::UInt16),
+            value @ (CValue::Int16(_)
+            | CValue::UInt16(_)
+            | CValue::UInt32(_)
+            | CValue::Int64(_)
+            | CValue::UInt64(_)),
+        ) => narrow_to_subword_value(value, target, obligations, assumptions),
         (CType::Int64, CValue::UInt64(value)) => {
             add_narrowing_bound_obligation(
                 obligations,
@@ -1003,6 +1011,92 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
         }
         _ => None,
     }
+}
+
+/// Narrows a 16-, 32- or 64-bit integer into a one- or two-byte type that no
+/// earlier conversion arm covers. Each conversion owes the destination's range
+/// in the source's own interpretation; within that range the low word already
+/// is the destination's sign- or zero-extended carrier.
+fn narrow_to_subword_value(
+    value: CValue,
+    target: CType,
+    obligations: &mut Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+) -> Option<CValue> {
+    let (type_name, lower, upper) = match target {
+        CType::Int8 => ("int8", i32::from(i8::MIN), i32::from(i8::MAX)),
+        CType::UInt8 => ("uint8", 0, i32::from(u8::MAX)),
+        CType::Int16 => ("int16", i32::from(i16::MIN), i32::from(i16::MAX)),
+        CType::UInt16 => ("uint16", 0, i32::from(u16::MAX)),
+        _ => return None,
+    };
+    let word = match value {
+        // Both carriers hold the exact 16-bit value as a 32-bit integer.
+        CValue::Int16(value) | CValue::UInt16(value) => {
+            add_signed_narrowing_obligations(
+                obligations,
+                assumptions,
+                &value,
+                lower,
+                upper,
+                type_name,
+            )?;
+            value
+        }
+        // An unsigned source is never below a destination lower bound.
+        CValue::UInt32(value) => {
+            add_narrowing_bound_obligation(
+                obligations,
+                assumptions,
+                ConditionTerm::unsigned_less_equal(
+                    value.clone(),
+                    Bitvector32Term::Constant(upper as u32),
+                ),
+                narrowing_context(type_name, false),
+            )?;
+            value
+        }
+        CValue::Int64(value) => {
+            for (condition, is_lower) in [
+                (
+                    ConditionTerm::int64_signed_greater_equal(
+                        value.clone(),
+                        Bitvector32Term::Int64Constant(i64::from(lower)),
+                    ),
+                    true,
+                ),
+                (
+                    ConditionTerm::int64_signed_less_equal(
+                        value.clone(),
+                        Bitvector32Term::Int64Constant(i64::from(upper)),
+                    ),
+                    false,
+                ),
+            ] {
+                add_narrowing_bound_obligation(
+                    obligations,
+                    assumptions,
+                    condition,
+                    narrowing_context(type_name, is_lower),
+                )?;
+            }
+            Bitvector32Term::uint32_from_64(value)
+        }
+        CValue::UInt64(value) => {
+            add_narrowing_bound_obligation(
+                obligations,
+                assumptions,
+                ConditionTerm::uint64_less_equal(
+                    value.clone(),
+                    Bitvector32Term::UInt64Constant(upper as u64),
+                ),
+                narrowing_context(type_name, false),
+            )?;
+            Bitvector32Term::uint32_from_64(value)
+        }
+        _ => return None,
+    };
+    Some(MachineIntegerType::from_c_type(target)?.value_from_term(word))
 }
 
 fn add_signed_narrowing_obligations(

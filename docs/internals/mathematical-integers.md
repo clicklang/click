@@ -841,8 +841,11 @@ Nested conversions are compared with the canonical modulo cast of the source
 observation, including a narrowing cast that discards an intermediate cast.
 Unsigned byte readback also admits an exact low-bit mask: a `uint32` source
 masked by `255` for a `uint8` observation or `65535` for a `uint16` observation.
-Both forms require the same two range bounds. A different mask, operand, or
-destination is refused; widening after an intervening truncation cannot be
+Both forms require the same two range bounds. C narrowing into `int8`,
+`uint8`, `int16` or `uint16` keeps the source's 32-bit carrier, or the low
+word of a 64-bit source, without a cast node; the rule admits exactly those
+two carriers, again with bounds on the source observation inside the
+destination range. A different mask, operand, or destination is refused; widening after an intervening truncation cannot be
 mistaken for a direct cast of the original value. These forms connect native
 Rust narrowing stores to their full-width modulo results.
 

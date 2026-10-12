@@ -69,7 +69,8 @@ or set of ABI-affecting flags.
   mismatched compiler features.
 - Existing LP64 behavior remains unchanged, and `scripts/check.sh` passes.
 
-Related: [signed-byte-integers.md](signed-byte-integers.md) for signed-byte types;
+Related: [the `int8` signed-byte type](../docs/reference/language/c0.md) and
+[the userspace plain-`char` bug](../bugs/userspace-plain-char-is-unsigned.md);
 [Supported struct layout and field access](../docs/reference/language/c0.md#struct-subset);
 [translation units and preprocessing](../docs/reference/language/c0.md#supported-expressions-and-statements)
 for the delivered single-profile baseline;
