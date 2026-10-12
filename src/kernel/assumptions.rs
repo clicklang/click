@@ -3279,6 +3279,12 @@ impl PureFactContext {
             })
     }
 
+    pub(in crate::kernel) fn exact_pointer_offset_alias_count(&self, pointer: &Pointer) -> usize {
+        self.pointer_offset_aliases
+            .get(&pointer.offset)
+            .map_or(0, |aliases| aliases.len())
+    }
+
     /// Re-express one selected address using checked graph equality to a
     /// supplied base. This proposes a spelling, not separation authority;
     /// consumers recheck the full pointer equality and complete byte ranges.

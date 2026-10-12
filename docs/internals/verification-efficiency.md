@@ -512,7 +512,12 @@ hold a violation, so a call composing its ensured resources into a caller
 frame never visits the caller's unrelated allocations
 (`src/kernel/tests/resource_scaling_tests.rs`).
 
-Within one block, an owned range is compared only with the owned ranges a
+Within one block, an owned range selects the smaller of the complete owned
+block and the candidates its same-block aliases nominate, retaining the
+indexed path for cross-block aliases. Every nominated pair still checks
+overlap. Containment queries try the written root before expanding equal
+spellings; a successful containment proof already selects its owned member.
+Otherwise, an owned range is compared with the owned ranges a
 fact could relate it to (`ResourceContext::owned_validity_candidates`). A
 base's *root* is its block and the first symbolic atom of its offset in
 canonical form (`p` for `p`, `p + 8`, and `p + 4*i`; nothing for a constant
