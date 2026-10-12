@@ -28,8 +28,8 @@ Examples have three distinct provenance classes:
   language or proof-model question. Their source should still remain fixed while a
   proof is repaired, but they are not evidence that Click accepts unchanged
   third-party source.
-- **C0 transcriptions** are semantics-preserving translations of identified C
-  into Click's supported C0 subset. They must include a `SOURCE.md` naming the
+- **C transcriptions** are semantics-preserving translations of identified C
+  into Click's supported C. They must include a `SOURCE.md` naming the
   upstream source and revision and recording every translation.
 - **Unchanged existing-source** fixtures preserve identified upstream files
   byte-for-byte. They must include a `SOURCE.md` plus a checked source-integrity
@@ -77,7 +77,7 @@ Current projects:
   heap-derived in-order sequence model, membership, rotation-preservation, and
   structural-termination work required by MVR; its sidecar currently imports
   the C without claiming those proofs.
-- `arena/` fixes the C0 implementation boundary for a first-fit allocator
+- `arena/` fixes the C implementation boundary for a first-fit allocator
   whose regions exercise user-defined suballocation and lifetime ownership.
   `arena_cells.click` verifies initialization, allocation anywhere, frees in
   any order, reads, writes, and destruction over per-cell occupancy with

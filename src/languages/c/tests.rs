@@ -664,24 +664,39 @@ fn c0_plain_char_retains_source_types_and_unsigned_byte_lowering() {
     )
     .expect("plain char declarations and expressions should parse");
     let function = &functions[0];
-    assert_eq!(function.return_type(), C0Type::Char);
-    assert_eq!(function.parameters()[0].c_type(), C0Type::Char);
+    assert_eq!(
+        function.return_type(),
+        C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned)
+    );
+    assert_eq!(
+        function.parameters()[0].c_type(),
+        C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned)
+    );
     assert_eq!(function.parameters()[1].c_type(), C0Type::UInt8);
-    assert_eq!(function.parameters()[2].c_type(), C0Type::CharPointer);
+    assert_eq!(
+        function.parameters()[2].c_type(),
+        C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned)
+    );
     assert_eq!(
         function.parameters()[3].c_type(),
-        C0Type::CharPointerPointer
+        C0Type::CharPointerPointer(crate::languages::c::syntax::PlainChar::Unsigned)
     );
     assert_eq!(
         function.global_arrays()["global"].element_type(),
-        C0Type::Char
+        C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned)
     );
-    assert_eq!(C0Type::Char.to_kernel_type(), crate::kernel::CType::UInt8);
     assert_eq!(
-        C0Type::CharArray(2).to_kernel_type(),
+        C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned).to_kernel_type(),
+        crate::kernel::CType::UInt8
+    );
+    assert_eq!(
+        C0Type::CharArray(crate::languages::c::syntax::PlainChar::Unsigned, 2).to_kernel_type(),
         crate::kernel::CType::UInt8Array(2)
     );
-    assert_ne!(C0Type::CharPointer, C0Type::UInt8Pointer);
+    assert_ne!(
+        C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned),
+        C0Type::UInt8Pointer
+    );
     assert_eq!(
         functions[2].to_kernel_function().string_literals()[0].bytes(),
         b"ok\0"
@@ -766,7 +781,7 @@ fn c0_plain_char_qualified_pointee_casts_preserve_read_only_views() {
         functions[0].body(),
         C0Statement::Return(
             C0Expression::Cast {
-                c_type: C0Type::CharPointer,
+                c_type: C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned),
                 pointee_constant: true,
                 ..
             },
@@ -854,10 +869,10 @@ fn c0_plain_char_explicit_byte_pointer_casts_preserve_source_identity() {
     let functions = syntax::parse_functions(
         "char *to_char(unsigned char *q) { return (char *)q; } unsigned char *to_byte(char *p) { return (unsigned char *)p; }",
     ).expect("explicit casts between one-level byte pointers are valid C");
-    for (function, expected) in functions
-        .iter()
-        .zip([C0Type::CharPointer, C0Type::UInt8Pointer])
-    {
+    for (function, expected) in functions.iter().zip([
+        C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned),
+        C0Type::UInt8Pointer,
+    ]) {
         assert!(
             matches!(function.body(), C0Statement::Return(C0Expression::Cast { c_type, .. }, _) if *c_type == expected)
         );
@@ -11945,7 +11960,7 @@ fn c0_floating_point_literals_use_declared_binary_formats() {
         .expect_err("hexadecimal floating-point literals must remain unsupported");
     assert!(
         hex.to_string()
-            .contains("hexadecimal floating-point literals are not supported in C0")
+            .contains("hexadecimal floating-point literals are not supported by Click")
     );
 
     let suffix = syntax::parse_function("double extended() { return 1.0L; }")
@@ -11953,7 +11968,7 @@ fn c0_floating_point_literals_use_declared_binary_formats() {
     assert!(
         suffix
             .to_string()
-            .contains("long double literals are not modeled in C0")
+            .contains("long double literals are not modeled by Click")
     );
 }
 

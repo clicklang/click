@@ -76,6 +76,7 @@ pub use iterated::{CIteratedGuard, CIteratedMemory};
 mod memory_equality_index;
 mod resource_algebra;
 mod term_operations;
+mod term_shape;
 pub(super) use derivations::*;
 pub(crate) use memory_state::resource_context_has_symbolic_range_read;
 pub use memory_state::value_independent_click_memory;
@@ -84,6 +85,7 @@ pub(in crate::kernel) use term_operations::{
     int64_add_interval_fits, int64_subtract_interval_fits,
 };
 pub(crate) use term_operations::{listed_premise_holds, proposition_holds_without_facts};
+pub(crate) use term_shape::{BitvectorBinaryOp, BitvectorComparisonOp, BitvectorUnaryOp};
 
 pub(super) const C_POINTER_BYTE_WIDTH: u32 = 8;
 
@@ -332,6 +334,21 @@ impl LoadKind {
     /// load term from a cell or a store applies.
     pub fn reads_value(self, value: &CValue) -> bool {
         Self::of_value(value) == Some(self)
+    }
+
+    /// The value a read of this kind returns from a cell holding `value`:
+    /// the value itself when the read is of its kind, or, for a one-byte
+    /// character read of a one-byte cell of the other signedness, the same
+    /// eight bits reinterpreted ([`CType::read_cell`]).
+    pub(crate) fn read_cell(self, value: &CValue) -> Option<CValue> {
+        if self.reads_value(value) {
+            return Some(value.clone());
+        }
+        match self {
+            Self::Int8 => CType::Int8.read_cell(value),
+            Self::UInt8 => CType::UInt8.read_cell(value),
+            _ => None,
+        }
     }
 
     /// Width when the kind is known but no typed producer recorded an access.
@@ -1420,7 +1437,13 @@ pub enum CType {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CPointerArrayElement {
     Void,
-    Char,
+    /// Plain `char` under a target where it is unsigned. Kept apart from
+    /// `UInt8` only so the C frontend recovers `char *` from the element;
+    /// its cells are `uint8*` pointers.
+    UnsignedPlainChar,
+    /// Plain `char` under a target where it is signed; its cells are
+    /// `int8*` pointers.
+    SignedPlainChar,
     Int8,
     Int16,
     Int32,
@@ -1458,7 +1481,8 @@ impl CPointerArrayElement {
     pub fn pointer_type(self) -> CType {
         match self {
             Self::Void => CType::VoidPointer,
-            Self::Char => CType::UInt8Pointer,
+            Self::UnsignedPlainChar => CType::UInt8Pointer,
+            Self::SignedPlainChar => CType::Int8Pointer,
             Self::Int8 => CType::Int8Pointer,
             Self::Int16 => CType::Int16Pointer,
             Self::Int32 => CType::Int32Pointer,
@@ -1477,8 +1501,8 @@ impl CPointerArrayElement {
     pub fn decayed_type_spelling(self) -> &'static str {
         match self {
             Self::Void => "void**",
-            Self::Char | Self::UInt8 => "uint8**",
-            Self::Int8 => "int8**",
+            Self::UnsignedPlainChar | Self::UInt8 => "uint8**",
+            Self::SignedPlainChar | Self::Int8 => "int8**",
             Self::Int16 => "int16**",
             Self::Int32 => "int32**",
             Self::UInt16 => "uint16**",
@@ -3334,6 +3358,10 @@ pub(super) struct CFunctionStaticStorage {
 pub struct CStringLiteral {
     pub(super) name: String,
     pub(super) bytes: Vec<u8>,
+    /// The character type of the literal's elements: `UInt8` where plain
+    /// `char` is unsigned and `Int8` where it is signed. Each byte is stored
+    /// as a cell of this type, holding the byte's value under it.
+    pub(super) element_type: CType,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -8962,13 +8990,180 @@ impl Hash for Proposition {
                 }
                 atomic => {
                     // Atomic proposition variants contain no Proposition
-                    // children. Their derived debug form gives this
-                    // traversal a stable payload while keeping the deep
-                    // connective topology iterative.
+                    // children, so their fields hash directly while the deep
+                    // connective topology above stays iterative.
                     6u8.hash(state);
-                    format!("{atomic:?}").hash(state);
+                    hash_atomic_proposition(atomic, state);
                 }
             }
+        }
+    }
+}
+
+/// Hashes one atomic proposition by its fields, consistently with the derived
+/// equality. Every field hashes structurally; a memory snapshot hashes by its
+/// cached content hash in O(1). Hashing an atom's debug text instead printed
+/// every snapshot it names, so inserting or looking up a call's effect summary
+/// cost the size of the whole memory, and each later call in a long function
+/// paid more than the last.
+fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
+    std::mem::discriminant(atomic).hash(state);
+    match atomic {
+        Proposition::Equal(left, right) => {
+            left.hash(state);
+            right.hash(state);
+        }
+        Proposition::ConditionIs(condition, value) => {
+            condition.hash(state);
+            value.hash(state);
+        }
+        Proposition::Predicate { name, arguments } => {
+            name.hash(state);
+            arguments.hash(state);
+        }
+        Proposition::CExpressionEvaluates {
+            state: c_state,
+            expression,
+            outcome,
+        } => {
+            c_state.hash(state);
+            expression.hash(state);
+            outcome.hash(state);
+        }
+        Proposition::CConditionEvaluates {
+            state: c_state,
+            condition,
+            outcome,
+        } => {
+            c_state.hash(state);
+            condition.hash(state);
+            outcome.hash(state);
+        }
+        Proposition::CStatementExecutes {
+            state: c_state,
+            statement,
+            outcome,
+        }
+        | Proposition::CStatementVerifies {
+            state: c_state,
+            statement,
+            outcome,
+        } => {
+            c_state.hash(state);
+            statement.hash(state);
+            outcome.hash(state);
+        }
+        Proposition::CFunctionExecutes {
+            state: c_state,
+            function,
+            arguments,
+            outcome,
+        }
+        | Proposition::CFunctionVerifies {
+            state: c_state,
+            function,
+            arguments,
+            outcome,
+        } => {
+            c_state.hash(state);
+            function.hash(state);
+            arguments.hash(state);
+            outcome.hash(state);
+        }
+        Proposition::CFunctionSatisfiesSpecification {
+            function,
+            specification,
+        }
+        | Proposition::CFunctionPartiallySatisfiesSpecification {
+            function,
+            specification,
+        } => {
+            function.hash(state);
+            specification.hash(state);
+        }
+        Proposition::CMemoryLoads {
+            memory,
+            pointer,
+            outcome,
+        } => {
+            memory.hash(state);
+            pointer.hash(state);
+            outcome.hash(state);
+        }
+        Proposition::CMemoryCanStore {
+            memory,
+            pointer,
+            byte_width,
+        } => {
+            memory.hash(state);
+            pointer.hash(state);
+            byte_width.hash(state);
+        }
+        Proposition::CMemoryLoadable {
+            memory,
+            base,
+            bytes,
+            wide,
+        } => {
+            memory.hash(state);
+            base.hash(state);
+            bytes.hash(state);
+            wide.hash(state);
+        }
+        Proposition::CMemoryReadDefined {
+            memory,
+            pointer,
+            value_type,
+        } => {
+            memory.hash(state);
+            pointer.hash(state);
+            value_type.hash(state);
+        }
+        Proposition::CResourceSeparate { left, right } => {
+            left.hash(state);
+            right.hash(state);
+        }
+        Proposition::CResourceComposition(resources) => resources.hash(state),
+        Proposition::CResourceContains { parent, child } => {
+            parent.hash(state);
+            child.hash(state);
+        }
+        Proposition::CMemoryMutatesOnly {
+            before,
+            after,
+            writes,
+        } => {
+            before.hash(state);
+            after.hash(state);
+            writes.hash(state);
+        }
+        Proposition::CMemoryEffectSummary {
+            before,
+            after,
+            mutable_ranges,
+        } => {
+            before.hash(state);
+            after.hash(state);
+            mutable_ranges.hash(state);
+        }
+        Proposition::CHeapAllocationFreed {
+            before,
+            after,
+            allocation_base,
+            bytes,
+        } => {
+            before.hash(state);
+            after.hash(state);
+            allocation_base.hash(state);
+            bytes.hash(state);
+        }
+        Proposition::And(..)
+        | Proposition::Or(..)
+        | Proposition::Not(..)
+        | Proposition::Implies(..)
+        | Proposition::ForAll { .. }
+        | Proposition::Exists { .. } => {
+            unreachable!("connectives are hashed iteratively by `Hash for Proposition`")
         }
     }
 }

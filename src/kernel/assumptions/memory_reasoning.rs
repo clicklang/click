@@ -292,7 +292,7 @@ impl PureFactContext {
         }
         if memory
             .known_value(pointer)
-            .is_some_and(|value| value_type.accepts(&value))
+            .is_some_and(|value| value_type.read_cell(&value).is_some())
             && !memory.is_ended_local_address(pointer)
             && !memory.is_deallocated_heap_address(pointer, self)
             && !memory.is_uninitialized_heap_address(pointer, value_type.byte_width(), self)

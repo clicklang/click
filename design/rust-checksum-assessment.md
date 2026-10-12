@@ -155,15 +155,21 @@ It checks the lane-loop ceilings, termination, original reductions and
 recombination, scalar sums, and final 16-bit stores. Both final fields equal
 the common mathematical specification on the entry input snapshot. The
 arbitrary-length computation has checked bounds and termination. Each full-batch
-vector step connects all four constructor lanes to exact absolute input-byte
-observations using actual iterator state. The full-batch loops preserve both
+and aligned-remainder vector step connects all four constructor lanes to exact
+absolute input-byte observations using actual iterator state. The remainder
+uses the constructor's call-entry Integer observations and preserves the input
+bytes with the entry snapshot. The full-batch loops preserve both
 residues against the common specification through their native additions and
 reductions. The B representative includes the deferred batch-local position
 times A contribution and remains nonnegative. Its entry seed stays fixed while
 Rust updates the working scalar B between batches. Actual outer exhaustion
 establishes both common checksum residues for the completed full-batch prefix.
-General vector and scalar remainders, and the full checksum identity, remain
-unproved.
+The aligned-remainder lane loop also preserves both residues through actual
+iterator exhaustion, including the deferred local-position times A contribution
+and the fixed entry B seed. The original remainder seed product and scalar
+addition, reductions, weighted B corrections and scalar recombination preserve
+both residues for the complete aligned prefix. The general scalar tail and
+full checksum identity remain unproved.
 
 Follow the [current roadmap](../issues/rust-support.md) for the remaining outer
 batches, short tails, common specification, unchanged C proof, and architecture

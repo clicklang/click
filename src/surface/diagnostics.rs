@@ -2,7 +2,7 @@ use super::*;
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::SharedCMemory;
 use crate::kernel::resource_tracker;
-use crate::kernel::{CComparisonOperator, CFloatBinaryOperator, CFloatCondition, CUpdateOperator};
+use crate::kernel::{CComparisonOperator, CFloatCondition, CUpdateOperator};
 use crate::surface::validation::describe_click_type;
 
 mod cpp_model;
@@ -1039,8 +1039,10 @@ pub(super) fn local_naming_tables_with_source(
                 .clone()
                 .with_pointee_struct_layout(name.clone(), layout.clone());
         } else if parameter.c_type().is_pointer() {
+            // Only the rendered cast matters here; the byte signedness is
+            // never read.
             *parameter = syntax::C0Parameter::new(
-                C0Type::CharPointer,
+                C0Type::CharPointer(syntax::PlainChar::Unsigned),
                 format!("((char *){})", parameter.name()),
                 None,
             );
@@ -2432,6 +2434,21 @@ pub(in crate::surface) fn describe_load_kind_mismatch(
         Some(cell) => format!("`{}`", cell.text()),
         None => "one address".to_string(),
     };
+    use crate::kernel::LoadKind;
+    if matches!(
+        (left_kind, right_kind),
+        (LoadKind::Int8, LoadKind::UInt8) | (LoadKind::UInt8, LoadKind::Int8)
+    ) {
+        // One byte, one name: the signed read is the unsigned read's
+        // two's-complement value, so the two agree exactly below 0x80.
+        return Some(format!(
+            "the two sides read {named} as different kinds of value, the left as {} and the right \
+             as {}. They read the same byte, and its signed value is its unsigned value only \
+             when the byte is below 0x80, so the two differ for every byte of 0x80 or more.",
+            describe_load_kind(left_kind),
+            describe_load_kind(right_kind),
+        ));
+    }
     Some(format!(
         "the two sides read {named} as different kinds of value, the left as {} and the right \
          as {}. A read's width and signedness are part of the value it names, so these are two \
@@ -2444,6 +2461,15 @@ pub(in crate::surface) fn describe_load_kind_mismatch(
 /// The kind of read a still-unresolved comparison side is, when that side is
 /// exactly one load.
 fn unresolved_load_kind(value: &CValue) -> Option<crate::kernel::LoadKind> {
+    if let CValue::Int8(term) = value
+        && let Some(unsigned) = term.signed_byte_operand()
+    {
+        return matches!(
+            unresolved_load_kind(&CValue::UInt8(unsigned.clone())),
+            Some(crate::kernel::LoadKind::UInt8)
+        )
+        .then_some(crate::kernel::LoadKind::Int8);
+    }
     let term = match value {
         CValue::Int8(term)
         | CValue::Bool(term)
@@ -2484,7 +2510,9 @@ fn describe_load_kind(kind: crate::kernel::LoadKind) -> &'static str {
 
 pub(super) fn unresolved_load(value: &CValue) -> Option<(SharedCMemory, Pointer)> {
     let term = match value {
-        CValue::Int8(term) => term,
+        // A signed byte read is the conversion of the byte's unsigned read,
+        // so it reads that read's address.
+        CValue::Int8(term) => term.signed_byte_operand().unwrap_or(term),
         CValue::Bool(term)
         | CValue::Int16(term)
         | CValue::Int32(term)
@@ -3922,8 +3950,8 @@ fn describe_mutex_pointer(pointer: &Pointer, parameter_binding: ParameterBinding
 /// count for.
 fn scalar_element_width(c_type: C0Type) -> Option<i64> {
     match c_type {
-        C0Type::CharPointer
-        | C0Type::CharArray(_)
+        C0Type::CharPointer(_)
+        | C0Type::CharArray(_, _)
         | C0Type::Int8Pointer
         | C0Type::Int8Array(_)
         | C0Type::UInt8Pointer
@@ -4234,7 +4262,7 @@ fn describe_struct_member_from(
 
 fn diagnostic_c0_type_byte_width(c_type: C0Type, pointer_width: u32) -> i64 {
     match c_type {
-        C0Type::Bool | C0Type::Char | C0Type::UInt8 => 1,
+        C0Type::Bool | C0Type::Char(_) | C0Type::UInt8 => 1,
         C0Type::Int8 => 1,
         C0Type::Int16 | C0Type::UInt16 => 2,
         C0Type::Int32 | C0Type::UInt32 => 4,
@@ -4270,14 +4298,14 @@ pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter
         C0Type::Void => 0,
         C0Type::Bool => 1,
         C0Type::VoidPointer | C0Type::VoidPointerPointer => 8,
-        C0Type::CharPointer
-        | C0Type::CharArray(_)
+        C0Type::CharPointer(_)
+        | C0Type::CharArray(_, _)
         | C0Type::UInt8Pointer
         | C0Type::UInt8Array(_) => 1,
         C0Type::Int8 | C0Type::Int8Array(_) => 1,
         C0Type::Int16 | C0Type::UInt16 | C0Type::Int16Array(_) | C0Type::UInt16Array(_) => 2,
         C0Type::Int32
-        | C0Type::Char
+        | C0Type::Char(_)
         | C0Type::UInt8
         | C0Type::UInt32
         | C0Type::Int32Pointer
@@ -4297,7 +4325,7 @@ pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter
         | C0Type::Int16PointerPointer
         | C0Type::UInt16PointerPointer
         | C0Type::Int32PointerPointer
-        | C0Type::CharPointerPointer
+        | C0Type::CharPointerPointer(_)
         | C0Type::UInt8PointerPointer
         | C0Type::UInt32PointerPointer
         | C0Type::Int128PointerPointer
@@ -5846,45 +5874,6 @@ pub(super) fn describe_bitvector_with_context(
                 .expect("checked registered above")
         }
         Bitvector32Term::Variable(variable) => lowering_only_variable("v", variable.0),
-        Bitvector32Term::Add(left, right) => {
-            describe_binary_bitvector_with_context(left, "+", right, parameter_binding)
-        }
-        Bitvector32Term::Subtract(left, right) => {
-            describe_binary_bitvector_with_context(left, "-", right, parameter_binding)
-        }
-        Bitvector32Term::Multiply(left, right) => {
-            describe_binary_bitvector_with_context(left, "*", right, parameter_binding)
-        }
-        Bitvector32Term::Divide(left, right) => {
-            describe_binary_bitvector_with_context(left, "/", right, parameter_binding)
-        }
-        Bitvector32Term::UnsignedDivide(left, right) => {
-            describe_binary_bitvector_with_context(left, "/", right, parameter_binding)
-        }
-        Bitvector32Term::Remainder(left, right) => {
-            describe_binary_bitvector_with_context(left, "%", right, parameter_binding)
-        }
-        Bitvector32Term::UnsignedRemainder(left, right) => {
-            describe_binary_bitvector_with_context(left, "%", right, parameter_binding)
-        }
-        Bitvector32Term::ShiftLeft(left, right) => {
-            describe_binary_bitvector_with_context(left, "<<", right, parameter_binding)
-        }
-        Bitvector32Term::ArithmeticShiftRight(left, right) => {
-            describe_binary_bitvector_with_context(left, ">>", right, parameter_binding)
-        }
-        Bitvector32Term::LogicalShiftRight(left, right) => {
-            describe_binary_bitvector_with_context(left, ">>", right, parameter_binding)
-        }
-        Bitvector32Term::BitwiseAnd(left, right) => {
-            describe_binary_bitvector_with_context(left, "&", right, parameter_binding)
-        }
-        Bitvector32Term::BitwiseOr(left, right) => {
-            describe_binary_bitvector_with_context(left, "|", right, parameter_binding)
-        }
-        Bitvector32Term::BitwiseXor(left, right) => {
-            describe_binary_bitvector_with_context(left, "^", right, parameter_binding)
-        }
         Bitvector32Term::BitwiseNot(value) => {
             format!(
                 "~{}",
@@ -5896,24 +5885,6 @@ pub(super) fn describe_bitvector_with_context(
                 "-{}",
                 describe_bitvector_with_context(value, parameter_binding)
             )
-        }
-        Bitvector32Term::Float32Binary {
-            operator,
-            left,
-            right,
-        }
-        | Bitvector32Term::Float64Binary {
-            operator,
-            left,
-            right,
-        } => {
-            let symbol = match operator {
-                CFloatBinaryOperator::Add => "+",
-                CFloatBinaryOperator::Subtract => "-",
-                CFloatBinaryOperator::Multiply => "*",
-                CFloatBinaryOperator::Divide => "/",
-            };
-            describe_binary_bitvector_with_context(left, symbol, right, parameter_binding)
         }
         Bitvector32Term::Int64From32(value)
         | Bitvector32Term::UInt64From32(value)
@@ -5927,44 +5898,6 @@ pub(super) fn describe_bitvector_with_context(
             "truncate32({})",
             describe_bitvector_with_context(value, parameter_binding)
         ),
-        Bitvector32Term::Int64Add(left, right) | Bitvector32Term::UInt64Add(left, right) => {
-            describe_binary_bitvector_with_context(left, "+", right, parameter_binding)
-        }
-        Bitvector32Term::Int64Subtract(left, right)
-        | Bitvector32Term::UInt64Subtract(left, right) => {
-            describe_binary_bitvector_with_context(left, "-", right, parameter_binding)
-        }
-        Bitvector32Term::Int64Multiply(left, right)
-        | Bitvector32Term::UInt64Multiply(left, right) => {
-            describe_binary_bitvector_with_context(left, "*", right, parameter_binding)
-        }
-        Bitvector32Term::Int64Divide(left, right) | Bitvector32Term::UInt64Divide(left, right) => {
-            describe_binary_bitvector_with_context(left, "/", right, parameter_binding)
-        }
-        Bitvector32Term::Int64Remainder(left, right)
-        | Bitvector32Term::UInt64Remainder(left, right) => {
-            describe_binary_bitvector_with_context(left, "%", right, parameter_binding)
-        }
-        Bitvector32Term::Int64ShiftLeft(left, right)
-        | Bitvector32Term::UInt64ShiftLeft(left, right) => {
-            describe_binary_bitvector_with_context(left, "<<", right, parameter_binding)
-        }
-        Bitvector32Term::Int64ArithmeticShiftRight(left, right)
-        | Bitvector32Term::UInt64LogicalShiftRight(left, right) => {
-            describe_binary_bitvector_with_context(left, ">>", right, parameter_binding)
-        }
-        Bitvector32Term::Int64BitwiseAnd(left, right)
-        | Bitvector32Term::UInt64BitwiseAnd(left, right) => {
-            describe_binary_bitvector_with_context(left, "&", right, parameter_binding)
-        }
-        Bitvector32Term::Int64BitwiseOr(left, right)
-        | Bitvector32Term::UInt64BitwiseOr(left, right) => {
-            describe_binary_bitvector_with_context(left, "|", right, parameter_binding)
-        }
-        Bitvector32Term::Int64BitwiseXor(left, right)
-        | Bitvector32Term::UInt64BitwiseXor(left, right) => {
-            describe_binary_bitvector_with_context(left, "^", right, parameter_binding)
-        }
         Bitvector32Term::Int64BitwiseNot(value) | Bitvector32Term::UInt64BitwiseNot(value) => {
             format!(
                 "~{}",
@@ -6021,6 +5954,17 @@ pub(super) fn describe_bitvector_with_context(
             format!("address({})", describe_pointer(pointer, parameter_binding))
         }
         Bitvector32Term::IntegerToMachine { .. } => "integer-to-machine".to_string(),
+        term => {
+            let (operator, left, right) = term
+                .as_binary()
+                .expect("every other variant has its own arm");
+            describe_binary_bitvector_with_context(
+                left,
+                operator.c_symbol(),
+                right,
+                parameter_binding,
+            )
+        }
     }
 }
 
@@ -6040,12 +5984,14 @@ pub(super) fn describe_parameter_bitvector(
                 return Some(parameter.name().to_string());
             }
             CExpression::Value(CValue::UInt8(value))
-                if value == term && matches!(parameter.c_type(), C0Type::Char | C0Type::UInt8) =>
+                if value == term
+                    && parameter.c_type().to_kernel_type() == crate::kernel::CType::UInt8 =>
             {
                 return Some(parameter.name().to_string());
             }
             CExpression::Value(CValue::Int8(value))
-                if value == term && parameter.c_type() == C0Type::Int8 =>
+                if value == term
+                    && parameter.c_type().to_kernel_type() == crate::kernel::CType::Int8 =>
             {
                 return Some(parameter.name().to_string());
             }

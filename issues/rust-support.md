@@ -1,5 +1,10 @@
 # P1: Support safe Rust and verify a shared C/Rust checksum specification
 
+Priority: P1.
+
+Soundness: incomplete. Language coverage. Unsupported Rust is refused. The
+pinned Charon front end is a documented trusted dependency.
+
 ## Goal and scope
 
 Deliver a useful, explicitly bounded safe-Rust verification path through Click
@@ -45,8 +50,10 @@ Both output fields remain below 65,521. Checked partition lemmas relate full-wid
 lengths, signed indices, four-byte prefixes, and zero-to-three-byte tails.
 General signed-range partition lemmas establish aligned full-batch remainders
 and decreasing actual outer-iterator remaining counts, without truncating usize
-metadata. Every full-batch vector step connects all four constructor lane values
-to exact absolute input-byte observations derived from those stored counts.
+metadata. Every full-batch and aligned-remainder vector step connects all four
+constructor lane values to exact absolute input-byte observations derived from
+those stored counts. The remainder uses an explicit constructor-entry snapshot
+and preserves the input bytes with the entry snapshot.
 Full outer-batch induction, lane reduction/reset, and the final vector and scalar
 remainders are checked in the whole-body proof. The full-batch loops also carry
 both A and B against the common specification through every native four-byte
@@ -113,7 +120,14 @@ through native additions and reductions. B includes the exact deferred
 batch-local seed contribution and remains nonnegative. The entry B seed stays
 fixed while Rust updates the working scalar B between batches. Actual outer
 exhaustion establishes both residues for the completed full-batch prefix.
-The general aligned remainder and scalar tail remain pending. Full original-computation smart audits
+Exact constructor-byte observations and byte preservation also verify in the
+general aligned remainder. Its lane loop now carries both A and B residues
+against the common specification through actual iterator exhaustion. The B
+representative retains the deferred local-position times A contribution and
+the fixed entry B seed. The original remainder seed product, scalar addition,
+lane reductions, weighted corrections and four scalar sums now preserve both
+residues for the complete aligned prefix. The general scalar tail and final
+field specification remain pending. Full original-computation smart audits
 currently exhaust the standard ten-minute run bound before completing a site,
 while ordinary verification succeeds. This is an audit-tool limitation, not a
 reported proof failure; continue checksum proof work with ordinary verification

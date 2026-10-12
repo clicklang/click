@@ -275,7 +275,7 @@ fn synthesize_struct_loadable_segment(
                 continue;
             }
             let width = match field.c_type() {
-                C0Type::Char | C0Type::UInt8 | C0Type::Int8 => 1,
+                C0Type::Char(_) | C0Type::UInt8 | C0Type::Int8 => 1,
                 C0Type::Int16 | C0Type::UInt16 => 2,
                 C0Type::Int64 | C0Type::UInt64 | C0Type::Float64 => 8,
                 _ => 4,
@@ -2809,6 +2809,14 @@ fn synthesize_surface_bitvector(
                     bound_variables,
                 );
                 let pointer = pointer?;
+                // An unsigned byte read is spelled as one whatever the
+                // pointer's own element type: through a signed plain `char`
+                // pointer it is the byte's one name, not the pointer's read.
+                let value_type = if *kind == crate::kernel::LoadKind::UInt8 {
+                    Some(CType::UInt8)
+                } else {
+                    value_type
+                };
                 Some(ContractExpression::CFragment(match value_type {
                     Some(CType::UInt8) => CExpression::TypedLoad {
                         pointer: Box::new(pointer),

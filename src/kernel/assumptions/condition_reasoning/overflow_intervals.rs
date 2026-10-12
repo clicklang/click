@@ -1056,6 +1056,24 @@ impl PureFactContext {
             | Bitvector32Term::Multiply(_, _) => {
                 return self.signed_interval_from_operands(term);
             }
+            // A signed byte read is its unsigned byte's two's-complement
+            // value: below 0x80 the same number, from 0x80 that number less
+            // 256, and otherwise somewhere in the signed byte range.
+            term if term.signed_byte_operand().is_some() => {
+                let unsigned = term.signed_byte_operand().expect("matched above");
+                let (unsigned_lower, unsigned_upper) = self
+                    .signed_interval(unsigned)
+                    .map(|(lower, upper)| (lower.max(0), upper.min(255)))
+                    .unwrap_or((0, 255));
+                let (lower, upper) = if unsigned_upper <= 127 {
+                    (unsigned_lower, unsigned_upper)
+                } else if unsigned_lower >= 128 {
+                    (unsigned_lower - 256, unsigned_upper - 256)
+                } else {
+                    (-128, 127)
+                };
+                return (lower <= upper).then_some((lower, upper));
+            }
             Bitvector32Term::If {
                 then_term,
                 else_term,

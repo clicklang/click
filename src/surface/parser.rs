@@ -84,10 +84,21 @@ enum CallOutputPattern {
     Named(Vec<(String, String)>),
 }
 
+/// [`parse_for_target`] under the default target, for tests.
+#[cfg(test)]
 pub(super) fn parse(source: &str) -> Result<ClickFile, ClickError> {
-    Parser::new(source)
-        .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?
-        .parse_file()
+    parse_for_target(source, crate::languages::c::target::CTarget::SUPPORTED)
+}
+
+/// [`parse`] under a selected C target, which fixes plain `char`.
+pub(super) fn parse_for_target(
+    source: &str,
+    target: crate::languages::c::target::CTarget,
+) -> Result<ClickFile, ClickError> {
+    let mut parser =
+        Parser::new(source).map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
+    parser.plain_char = Some(target.plain_char());
+    parser.parse_file()
 }
 
 /// Source-language metadata for one function: its execution identity and the
@@ -124,6 +135,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// Each function's locals of struct-pointer or reference type, by its
     /// source spelling.
     pub(in crate::surface) local_struct_pointers: BTreeMap<String, FunctionLocals>,
+    /// The signedness the program's C target gives plain `char`. `None` for
+    /// a program with no C target, where spelling plain `char` is refused.
+    pub(in crate::surface) plain_char: Option<syntax::PlainChar>,
 }
 
 pub(super) fn parse_with_layouts_and_aggregate_objects(
@@ -183,10 +197,12 @@ pub(super) fn declares_only_definitions(source: &str) -> bool {
     true
 }
 
+/// Parses file items under the default target, for tests.
 #[cfg(test)]
 pub(super) fn parse_file_items(source: &str) -> Result<ClickFile, ClickError> {
     let mut parser =
         Parser::new(source).map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
+    parser.plain_char = Some(crate::languages::c::target::CTarget::SUPPORTED.plain_char());
     parser.parse_file_items()
 }
 
@@ -504,6 +520,9 @@ struct Parser {
     /// The language of the `verifying` sources. Rust admits a Rust
     /// signature (`fn name(a: T) -> T`).
     language: SourceLanguage,
+    /// The signedness the selected C target gives plain `char`, or `None`
+    /// where no C target applies; plain `char` is then refused.
+    plain_char: Option<syntax::PlainChar>,
     /// The slice parameters of the Rust signature being parsed. Each is one
     /// name in the sidecar and a pointer with a `name_len` length underneath.
     rust_slice_params: BTreeSet<String>,
@@ -688,7 +707,7 @@ pub(in crate::surface) fn algebraic_field_c_type_supported(c_type: C0Type) -> bo
             | C0Type::Int8Array(_)
             | C0Type::Int16Array(_)
             | C0Type::Int32Array(_)
-            | C0Type::CharArray(_)
+            | C0Type::CharArray(_, _)
             | C0Type::UInt8Array(_)
             | C0Type::UInt16Array(_)
             | C0Type::UInt32Array(_)
@@ -832,6 +851,7 @@ impl Parser {
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
         parser.qualified_objects = Some(layouts.qualified_objects);
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
+        parser.plain_char = layouts.plain_char;
         Ok(parser)
     }
 
@@ -873,6 +893,7 @@ impl Parser {
             declared_resource_fields: BTreeMap::new(),
             hidden_child_fields: BTreeMap::new(),
             language,
+            plain_char: None,
             rust_slice_params: BTreeSet::new(),
             rust_impl_type: None,
             rust_impl_method_suffix: None,
@@ -3717,6 +3738,7 @@ impl Parser {
                         _ => None,
                     }),
             ),
+            self.plain_char,
         )
         .map_err(|message| self.error(message))?;
         let scalar_type = if let Some((c_type, count)) = integer {
@@ -3739,7 +3761,7 @@ impl Parser {
                 "float" => C0Type::Float32,
                 "double" => C0Type::Float64,
                 "volatile" => {
-                    return Err(self.error("the `volatile` qualifier is not supported in C0"));
+                    return Err(self.error("the `volatile` qualifier is not supported by Click"));
                 }
                 _ => {
                     return Err(self.error(format!(
@@ -3779,7 +3801,7 @@ impl Parser {
                 C0Type::Int16 => C0Type::Int16Pointer,
                 C0Type::UInt16 => C0Type::UInt16Pointer,
                 C0Type::Int32 => C0Type::Int32Pointer,
-                C0Type::Char => C0Type::CharPointer,
+                C0Type::Char(plain) => C0Type::CharPointer(plain),
                 C0Type::UInt8 => C0Type::UInt8Pointer,
                 C0Type::UInt32 => C0Type::UInt32Pointer,
                 C0Type::Int64 => C0Type::Int64Pointer,
@@ -3790,7 +3812,7 @@ impl Parser {
                 C0Type::Int16Pointer => C0Type::Int16PointerPointer,
                 C0Type::UInt16Pointer => C0Type::UInt16PointerPointer,
                 C0Type::Int32Pointer => C0Type::Int32PointerPointer,
-                C0Type::CharPointer => C0Type::CharPointerPointer,
+                C0Type::CharPointer(plain) => C0Type::CharPointerPointer(plain),
                 C0Type::UInt8Pointer => C0Type::UInt8PointerPointer,
                 C0Type::UInt32Pointer => C0Type::UInt32PointerPointer,
                 C0Type::Int64Pointer => C0Type::Int64PointerPointer,
@@ -3901,7 +3923,7 @@ impl Parser {
                     field.c_type(),
                     C0Type::Int8 | C0Type::Int16
                         | C0Type::Int32
-                        | C0Type::Char
+                        | C0Type::Char(_)
                         | C0Type::UInt8
                         | C0Type::UInt16
                         | C0Type::UInt32
@@ -3915,17 +3937,17 @@ impl Parser {
                         | C0Type::Int64Array(_)
                         | C0Type::UInt128Array(_)
                         | C0Type::UInt64Array(_)
-                        | C0Type::CharArray(_)
+                        | C0Type::CharArray(_, _)
                         | C0Type::UInt8Array(_)
                         | C0Type::Float32Array(_)
                         | C0Type::Float64Array(_)
                         | C0Type::Int32Pointer
-                        | C0Type::CharPointer
+                        | C0Type::CharPointer(_)
                         | C0Type::UInt8Pointer
                         | C0Type::Float32Pointer
                         | C0Type::Float64Pointer
                         | C0Type::Int32PointerPointer
-                        | C0Type::CharPointerPointer
+                        | C0Type::CharPointerPointer(_)
                         | C0Type::UInt8PointerPointer
                         | C0Type::Float32PointerPointer
                         | C0Type::Float64PointerPointer
@@ -4120,7 +4142,7 @@ impl Parser {
             C0Type::Int8 => (C0Type::Int8Pointer, 1),
             C0Type::Int16 => (C0Type::Int16Pointer, 2),
             C0Type::Int32 => (C0Type::Int32Pointer, 4),
-            C0Type::Char => (C0Type::CharPointer, 1),
+            C0Type::Char(plain) => (C0Type::CharPointer(plain), 1),
             C0Type::UInt8 => (C0Type::UInt8Pointer, 1),
             C0Type::UInt16 => (C0Type::UInt16Pointer, 2),
             C0Type::UInt32 => (C0Type::UInt32Pointer, 4),
@@ -4132,7 +4154,7 @@ impl Parser {
             C0Type::Int16Pointer => (C0Type::Int16PointerPointer, 8),
             C0Type::UInt16Pointer => (C0Type::UInt16PointerPointer, 8),
             C0Type::Int32Pointer => (C0Type::Int32PointerPointer, 8),
-            C0Type::CharPointer => (C0Type::CharPointerPointer, 8),
+            C0Type::CharPointer(plain) => (C0Type::CharPointerPointer(plain), 8),
             C0Type::UInt8Pointer => (C0Type::UInt8PointerPointer, 8),
             C0Type::UInt32Pointer => (C0Type::UInt32PointerPointer, 8),
             C0Type::Int64Pointer => (C0Type::Int64PointerPointer, 8),
@@ -8867,7 +8889,7 @@ impl Parser {
                         C0Type::Int8
                             | C0Type::Int16
                             | C0Type::Int32
-                            | C0Type::Char
+                            | C0Type::Char(_)
                             | C0Type::UInt8
                             | C0Type::UInt16
                             | C0Type::UInt32
@@ -8896,7 +8918,7 @@ impl Parser {
                         C0Type::Int8
                             | C0Type::Int16
                             | C0Type::Int32
-                            | C0Type::Char
+                            | C0Type::Char(_)
                             | C0Type::UInt8
                             | C0Type::UInt16
                             | C0Type::UInt32
@@ -9426,9 +9448,10 @@ impl Parser {
             C0Type::Int128Array(length) => Some((length, 16, CType::Int128)),
             C0Type::UInt64Array(length) => Some((length, 8, CType::UInt64)),
             C0Type::UInt128Array(length) => Some((length, 16, CType::UInt128)),
-            C0Type::CharArray(length) | C0Type::UInt8Array(length) => {
-                Some((length, 1, CType::UInt8))
-            }
+            C0Type::CharArray(crate::languages::c::syntax::PlainChar::Unsigned, length)
+            | C0Type::UInt8Array(length) => Some((length, 1, CType::UInt8)),
+            C0Type::CharArray(crate::languages::c::syntax::PlainChar::Signed, length)
+            | C0Type::Int8Array(length) => Some((length, 1, CType::Int8)),
             _ => None,
         };
         if let Some((length, element_width, element_type)) = array {
@@ -9453,7 +9476,7 @@ impl Parser {
             };
         }
         let element_width = match field.c_type {
-            C0Type::Char => 1,
+            C0Type::Char(_) => 1,
             C0Type::UInt8 => 1,
             C0Type::Int8 => 1,
             C0Type::Int16 | C0Type::UInt16 => 2,
@@ -9731,7 +9754,7 @@ impl Parser {
         if matches!(
             field.c_type,
             C0Type::Int32Array(_)
-                | C0Type::CharArray(_)
+                | C0Type::CharArray(_, _)
                 | C0Type::UInt8Array(_)
                 | C0Type::Int128Array(_)
                 | C0Type::Int64Array(_)
@@ -9774,7 +9797,7 @@ impl Parser {
             }
             return Ok(());
         }
-        if matches!(field.c_type, C0Type::Int8 | C0Type::Char | C0Type::UInt8) {
+        if matches!(field.c_type, C0Type::Int8 | C0Type::Char(_) | C0Type::UInt8) {
             if field.byte_width != 1 || field.slot_end_bytes < field.offset_bytes {
                 return Err(self.error("byte field places require one-byte width"));
             }
@@ -10951,7 +10974,7 @@ impl Parser {
                 CExpression::Value(CValue::UInt64(Bitvector32Term::UInt64Constant(value))),
             )),
             Some(Token::CharLiteral(value)) => Ok(ContractExpression::CFragment(
-                CExpression::Value(CValue::UInt8(Bitvector32Term::Constant(u32::from(value)))),
+                CExpression::Value(self.character_constant_value(value)?),
             )),
             Some(Token::LParen) => {
                 let expression = self.parse_contract_expression()?;
@@ -11459,7 +11482,12 @@ impl Parser {
             )),
             Some(Token::Int64Number(value)) => Ok(C0Expression::Int64Literal(value)),
             Some(Token::UInt64Number(value)) => Ok(C0Expression::UInt64Literal(value)),
-            Some(Token::CharLiteral(value)) => Ok(C0Expression::UInt8Literal(value)),
+            Some(Token::CharLiteral(value)) => Ok(
+                match self.character_constant_value(value)? {
+                    CValue::Int32(Bitvector32Term::Constant(bits)) => C0Expression::Int32Literal(bits),
+                    _ => C0Expression::UInt8Literal(value),
+                },
+            ),
             Some(Token::LParen) => {
                 self.position -= 1;
                 if self.peek_next() == Some(&Token::Ident("void".to_string()))
@@ -11778,6 +11806,28 @@ impl Parser {
         }
     }
 
+    /// The value of a sidecar character constant, as C gives it (C11
+    /// 6.4.4.4p10): the `int` value of a plain `char` holding the byte. A
+    /// byte below 0x80 means the same under every target and stays an
+    /// unsigned byte; a higher byte needs the target's plain `char`.
+    fn character_constant_value(&self, byte: u8) -> Result<CValue, ClickError> {
+        if byte < 0x80 {
+            return Ok(CValue::UInt8(Bitvector32Term::Constant(u32::from(byte))));
+        }
+        match self.plain_char {
+            Some(syntax::PlainChar::Unsigned) => {
+                Ok(CValue::UInt8(Bitvector32Term::Constant(u32::from(byte))))
+            }
+            Some(plain @ syntax::PlainChar::Signed) => Ok(CValue::Int32(Bitvector32Term::Constant(
+                plain.character_value(byte) as i32 as u32,
+            ))),
+            None => Err(self.error(format!(
+                "character constant `'{}'` has a target-dependent value, and no C target is selected here",
+                (byte as char).escape_default()
+            ))),
+        }
+    }
+
     fn error(&self, message: impl Into<String>) -> ClickError {
         self.error_at(self.here(), message)
     }
@@ -11995,7 +12045,7 @@ fn field_has_direct_memory_place(field: &ResolvedField) -> bool {
         C0Type::Int8
             | C0Type::Int16
             | C0Type::Int32
-            | C0Type::Char
+            | C0Type::Char(_)
             | C0Type::UInt8
             | C0Type::UInt16
             | C0Type::UInt32
@@ -12006,7 +12056,7 @@ fn field_has_direct_memory_place(field: &ResolvedField) -> bool {
             | C0Type::Int64Array(_)
             | C0Type::UInt128Array(_)
             | C0Type::UInt64Array(_)
-            | C0Type::CharArray(_)
+            | C0Type::CharArray(_, _)
             | C0Type::UInt8Array(_)
     )
 }
@@ -12021,7 +12071,7 @@ fn scalar_array_field_element(field: &ResolvedField) -> Option<(u32, CType)> {
         C0Type::Int128Array(_) => Some((16, CType::Int128)),
         C0Type::UInt64Array(_) => Some((8, CType::UInt64)),
         C0Type::UInt128Array(_) => Some((16, CType::UInt128)),
-        C0Type::CharArray(_) => Some((1, CType::UInt8)),
+        C0Type::CharArray(plain, _) => Some((1, plain.byte_type().to_kernel_type())),
         C0Type::UInt8Array(_) => Some((1, CType::UInt8)),
         _ => None,
     }

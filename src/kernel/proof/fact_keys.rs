@@ -11,9 +11,8 @@ use crate::kernel::{
     Term,
 };
 use crate::kernel::{
-    Bitvector32Term, CComparisonOperator, CFloatBinaryOperator, CFloatClassification,
-    CFloatCondition, CMemoryRange, ConditionTerm, Pointer, PointerBlock, PointerOffsetTerm,
-    Proposition, Variable,
+    Bitvector32Term, BitvectorBinaryOp, CComparisonOperator, CFloatClassification, CFloatCondition,
+    CMemoryRange, ConditionTerm, Pointer, PointerBlock, PointerOffsetTerm, Proposition, Variable,
 };
 use num_bigint::BigInt;
 use std::collections::BTreeMap;
@@ -762,45 +761,6 @@ enum AlphaVariableKey {
     Free(Variable),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-enum AlphaBitvectorBinaryOp {
-    Add,
-    Subtract,
-    Multiply,
-    Divide,
-    UnsignedDivide,
-    Remainder,
-    UnsignedRemainder,
-    ShiftLeft,
-    ArithmeticShiftRight,
-    LogicalShiftRight,
-    BitwiseAnd,
-    BitwiseOr,
-    BitwiseXor,
-    Int64Add,
-    Int64Subtract,
-    Int64Multiply,
-    Int64Divide,
-    Int64Remainder,
-    Int64ShiftLeft,
-    Int64ArithmeticShiftRight,
-    Int64BitwiseAnd,
-    Int64BitwiseOr,
-    Int64BitwiseXor,
-    UInt64Add,
-    UInt64Subtract,
-    UInt64Multiply,
-    UInt64Divide,
-    UInt64Remainder,
-    UInt64ShiftLeft,
-    UInt64LogicalShiftRight,
-    UInt64BitwiseAnd,
-    UInt64BitwiseOr,
-    UInt64BitwiseXor,
-    Float32(CFloatBinaryOperator),
-    Float64(CFloatBinaryOperator),
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaBitvectorKey {
     Constant(u32),
@@ -808,7 +768,7 @@ enum AlphaBitvectorKey {
     UInt64Constant(u64),
     MachineIntegerConstant(crate::kernel::MachineIntegerConstant),
     Variable(AlphaVariableKey),
-    Binary(AlphaBitvectorBinaryOp, Box<Self>, Box<Self>),
+    Binary(BitvectorBinaryOp, Box<Self>, Box<Self>),
     BitwiseNot(Box<Self>),
     Int64BitwiseNot(Box<Self>),
     UInt64BitwiseNot(Box<Self>),
@@ -1991,22 +1951,6 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
     {
         return None;
     }
-    let mut binary =
-        |operator, left: &Bitvector32Term, right: &Bitvector32Term| -> Option<AlphaBitvectorKey> {
-            Some(AlphaBitvectorKey::Binary(
-                operator,
-                Box::new(alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
-                    left,
-                    bindings,
-                    next_binder,
-                )?),
-                Box::new(alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
-                    right,
-                    bindings,
-                    next_binder,
-                )?),
-            ))
-        };
     Some(match term {
         Bitvector32Term::MachineIntegerCast {
             value,
@@ -2063,115 +2007,6 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 }
             }
         }
-        Bitvector32Term::Add(left, right) => binary(AlphaBitvectorBinaryOp::Add, left, right)?,
-        Bitvector32Term::Subtract(left, right) => {
-            binary(AlphaBitvectorBinaryOp::Subtract, left, right)?
-        }
-        Bitvector32Term::Multiply(left, right) => {
-            binary(AlphaBitvectorBinaryOp::Multiply, left, right)?
-        }
-        Bitvector32Term::Divide(left, right) => {
-            binary(AlphaBitvectorBinaryOp::Divide, left, right)?
-        }
-        Bitvector32Term::UnsignedDivide(left, right) => {
-            binary(AlphaBitvectorBinaryOp::UnsignedDivide, left, right)?
-        }
-        Bitvector32Term::Remainder(left, right) => {
-            binary(AlphaBitvectorBinaryOp::Remainder, left, right)?
-        }
-        Bitvector32Term::UnsignedRemainder(left, right) => {
-            binary(AlphaBitvectorBinaryOp::UnsignedRemainder, left, right)?
-        }
-        Bitvector32Term::ShiftLeft(left, right) => {
-            binary(AlphaBitvectorBinaryOp::ShiftLeft, left, right)?
-        }
-        Bitvector32Term::ArithmeticShiftRight(left, right) => {
-            binary(AlphaBitvectorBinaryOp::ArithmeticShiftRight, left, right)?
-        }
-        Bitvector32Term::LogicalShiftRight(left, right) => {
-            binary(AlphaBitvectorBinaryOp::LogicalShiftRight, left, right)?
-        }
-        Bitvector32Term::BitwiseAnd(left, right) => {
-            binary(AlphaBitvectorBinaryOp::BitwiseAnd, left, right)?
-        }
-        Bitvector32Term::BitwiseOr(left, right) => {
-            binary(AlphaBitvectorBinaryOp::BitwiseOr, left, right)?
-        }
-        Bitvector32Term::BitwiseXor(left, right) => {
-            binary(AlphaBitvectorBinaryOp::BitwiseXor, left, right)?
-        }
-        Bitvector32Term::Int64Add(left, right) => {
-            binary(AlphaBitvectorBinaryOp::Int64Add, left, right)?
-        }
-        Bitvector32Term::Int64Subtract(left, right) => {
-            binary(AlphaBitvectorBinaryOp::Int64Subtract, left, right)?
-        }
-        Bitvector32Term::Int64Multiply(left, right) => {
-            binary(AlphaBitvectorBinaryOp::Int64Multiply, left, right)?
-        }
-        Bitvector32Term::Int64Divide(left, right) => {
-            binary(AlphaBitvectorBinaryOp::Int64Divide, left, right)?
-        }
-        Bitvector32Term::Int64Remainder(left, right) => {
-            binary(AlphaBitvectorBinaryOp::Int64Remainder, left, right)?
-        }
-        Bitvector32Term::Int64ShiftLeft(left, right) => {
-            binary(AlphaBitvectorBinaryOp::Int64ShiftLeft, left, right)?
-        }
-        Bitvector32Term::Int64ArithmeticShiftRight(left, right) => binary(
-            AlphaBitvectorBinaryOp::Int64ArithmeticShiftRight,
-            left,
-            right,
-        )?,
-        Bitvector32Term::Int64BitwiseAnd(left, right) => {
-            binary(AlphaBitvectorBinaryOp::Int64BitwiseAnd, left, right)?
-        }
-        Bitvector32Term::Int64BitwiseOr(left, right) => {
-            binary(AlphaBitvectorBinaryOp::Int64BitwiseOr, left, right)?
-        }
-        Bitvector32Term::Int64BitwiseXor(left, right) => {
-            binary(AlphaBitvectorBinaryOp::Int64BitwiseXor, left, right)?
-        }
-        Bitvector32Term::UInt64Add(left, right) => {
-            binary(AlphaBitvectorBinaryOp::UInt64Add, left, right)?
-        }
-        Bitvector32Term::UInt64Subtract(left, right) => {
-            binary(AlphaBitvectorBinaryOp::UInt64Subtract, left, right)?
-        }
-        Bitvector32Term::UInt64Multiply(left, right) => {
-            binary(AlphaBitvectorBinaryOp::UInt64Multiply, left, right)?
-        }
-        Bitvector32Term::UInt64Divide(left, right) => {
-            binary(AlphaBitvectorBinaryOp::UInt64Divide, left, right)?
-        }
-        Bitvector32Term::UInt64Remainder(left, right) => {
-            binary(AlphaBitvectorBinaryOp::UInt64Remainder, left, right)?
-        }
-        Bitvector32Term::UInt64ShiftLeft(left, right) => {
-            binary(AlphaBitvectorBinaryOp::UInt64ShiftLeft, left, right)?
-        }
-        Bitvector32Term::UInt64LogicalShiftRight(left, right) => {
-            binary(AlphaBitvectorBinaryOp::UInt64LogicalShiftRight, left, right)?
-        }
-        Bitvector32Term::UInt64BitwiseAnd(left, right) => {
-            binary(AlphaBitvectorBinaryOp::UInt64BitwiseAnd, left, right)?
-        }
-        Bitvector32Term::UInt64BitwiseOr(left, right) => {
-            binary(AlphaBitvectorBinaryOp::UInt64BitwiseOr, left, right)?
-        }
-        Bitvector32Term::UInt64BitwiseXor(left, right) => {
-            binary(AlphaBitvectorBinaryOp::UInt64BitwiseXor, left, right)?
-        }
-        Bitvector32Term::Float32Binary {
-            operator,
-            left,
-            right,
-        } => binary(AlphaBitvectorBinaryOp::Float32(*operator), left, right)?,
-        Bitvector32Term::Float64Binary {
-            operator,
-            left,
-            right,
-        } => binary(AlphaBitvectorBinaryOp::Float64(*operator), left, right)?,
         Bitvector32Term::BitwiseNot(body) => AlphaBitvectorKey::BitwiseNot(Box::new(
             alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder)?,
         )),
@@ -2381,6 +2216,24 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
             >(
                 value, bindings, next_binder
             )?))
+        }
+        term => {
+            let (operator, left, right) = term
+                .as_binary()
+                .expect("every other variant has its own arm");
+            AlphaBitvectorKey::Binary(
+                operator,
+                Box::new(alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
+                    left,
+                    bindings,
+                    next_binder,
+                )?),
+                Box::new(alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
+                    right,
+                    bindings,
+                    next_binder,
+                )?),
+            )
         }
     })
 }

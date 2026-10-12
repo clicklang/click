@@ -417,13 +417,14 @@ fn prove_claims_by_checked_tactics(
         arguments: arguments.clone(),
         pure_facts: pure_facts.clone(),
     });
-    let caller_requirement_index = CallerRequirementIndex::from_entry_facts(
+    let caller_requirement_index = CallerRequirementIndex::from_entry_facts_elaborated(
         caller_source_owner.clone(),
         function_block,
         parsed_function.parameters(),
         &pure_facts,
         &entry_fact_origins,
         crate::kernel::CMemorySnapshotIdentity::of(state.memory()),
+        Some(spec_definitions.predicates),
     );
     let function = annotated_function_with_assumptions(
         function_block,

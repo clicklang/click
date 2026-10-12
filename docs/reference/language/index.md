@@ -1,6 +1,6 @@
 # Click language reference
 
-Click files are sidecar specifications for C0 sources.
+Click files are sidecar specifications for C sources.
 
 They may begin with local specification imports such as
 `import "../models/common.click";`. Imports contribute declarations but do not
@@ -11,7 +11,7 @@ for the module and selection rules.
 Terminology:
 
 - **Surface Click** is the user-written `.click` language described here.
-- **C fragments** are pieces of C0 syntax inside Surface Click, such as
+- **C fragments** are pieces of C syntax inside Surface Click, such as
   `p[k]`, `x + 1`, and `result == n`.
 - **Kernel Click** is the internal, typed proof core produced by elaboration.
   It has no `.click` concrete syntax and is never emitted as proof text.
@@ -34,7 +34,7 @@ int32 function_name(int32 p[], int32 n) {
 ```
 
 `verifying "file.c";` names a C source supplied to the verifier. Function
-signatures in the `.click` file are checked against the parsed C0 source.
+signatures in the `.click` file are checked against the parsed C source.
 Those attached signatures deliberately retain C declaration order. Typed
 binders introduced by Click itself use `name: type`: theorem and resource
 parameters, pure-function and predicate parameters, typed `let` bindings, and
@@ -1259,11 +1259,11 @@ syntax is Click contract syntax, not C fragment syntax.
 for a segment. Use it when the fact needs to appear where Click expects a
 proposition, such as a composite resource `fact`.
 
-`defined(expression)` is a pure proposition stating that evaluating the C0
+`defined(expression)` is a pure proposition stating that evaluating the C
 expression reaches a value rather than undefined behavior. Click elaborates it
 with the kernel's C expression semantics, so signed overflow, division, shifts,
 and memory-load obligations share the same rules as execution. It currently
-accepts C0 expression fragments; `old`, `at`, folds, lets, and Click function
+accepts C expression fragments; `old`, `at`, folds, lets, and Click function
 calls inside `defined(...)` are not yet supported.
 
 For two object pointers, `defined(right - left)` includes both the
@@ -2904,13 +2904,13 @@ The prelude currently provides byte-slice helpers over `uint8[]`: `byte_count`,
 are `size_t` (`uint64`) values as C measures them. These are ordinary Click
 functions and predicates, not built-in kernel concepts.
 
-In pointer-valued C0 contexts, the integer constant `0` is the null pointer
+In pointer-valued C contexts, the integer constant `0` is the null pointer
 constant. It may initialize or assign a pointer, be returned from a pointer
 function, be passed to a pointer parameter, or be compared with a pointer.
 Nonzero integers do not implicitly convert to pointers.
 
-C0 accepts a small multi-field struct slice with `int32` and pointer-valued
-fields. The C side lowers chained `obj->child->field` loads and stores at
+Supported C accepts the struct shapes listed in
+[struct subset](c.md#struct-subset). The C side lowers chained `obj->child->field` loads and stores at
 LP64-aligned byte offsets while retaining intermediate struct-pointer types.
 Click contracts can use field places in resources:
 `views obj->field` and `owns obj->field`. The access resource also makes the

@@ -745,204 +745,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 block: pointer.block.clone(),
                 offset: rewrite_offset(&pointer.offset, left, right),
             };
-            let binary = |left_term: &Bitvector32Term, right_term: &Bitvector32Term| {
-                (
-                    Box::new(rewrite_term_offset(left_term, left, right)),
-                    Box::new(rewrite_term_offset(right_term, left, right)),
-                )
-            };
             match term {
-                Bitvector32Term::MachineIntegerCast {
-                    value,
-                    source,
-                    destination,
-                } => Bitvector32Term::machine_integer_cast(
-                    *source,
-                    *destination,
-                    rewrite_term_offset(value, left, right),
-                ),
-
-                Bitvector32Term::Add(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::Add(left, right)
-                }
-                Bitvector32Term::Subtract(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::Subtract(left, right)
-                }
-                Bitvector32Term::Multiply(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::Multiply(left, right)
-                }
-                Bitvector32Term::Divide(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::Divide(left, right)
-                }
-                Bitvector32Term::UnsignedDivide(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::UnsignedDivide(left, right)
-                }
-                Bitvector32Term::Remainder(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::Remainder(left, right)
-                }
-                Bitvector32Term::UnsignedRemainder(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::UnsignedRemainder(left, right)
-                }
-                Bitvector32Term::ShiftLeft(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::ShiftLeft(left, right)
-                }
-                Bitvector32Term::ArithmeticShiftRight(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::ArithmeticShiftRight(left, right)
-                }
-                Bitvector32Term::LogicalShiftRight(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::LogicalShiftRight(left, right)
-                }
-                Bitvector32Term::BitwiseAnd(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::BitwiseAnd(left, right)
-                }
-                Bitvector32Term::BitwiseOr(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::BitwiseOr(left, right)
-                }
-                Bitvector32Term::BitwiseXor(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::BitwiseXor(left, right)
-                }
-                Bitvector32Term::Int64From32(value) => {
-                    Bitvector32Term::int64_from_32(rewrite_term_offset(value, left, right))
-                }
-                Bitvector32Term::UInt64From32(value) => {
-                    Bitvector32Term::uint64_from_32(rewrite_term_offset(value, left, right))
-                }
-                Bitvector32Term::UInt32From64(value) => {
-                    Bitvector32Term::uint32_from_64(rewrite_term_offset(value, left, right))
-                }
-                Bitvector32Term::Int64FromUInt32(value) => {
-                    Bitvector32Term::int64_from_uint32(rewrite_term_offset(value, left, right))
-                }
-                Bitvector32Term::UInt64FromInt32(value) => {
-                    Bitvector32Term::uint64_from_int32(rewrite_term_offset(value, left, right))
-                }
-                Bitvector32Term::UInt64FromInt64(value) => {
-                    Bitvector32Term::uint64_from_int64(rewrite_term_offset(value, left, right))
-                }
-                Bitvector32Term::Int64Add(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::int64_add(*left, *right)
-                }
-                Bitvector32Term::Int64Subtract(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::int64_subtract(*left, *right)
-                }
-                Bitvector32Term::Int64Multiply(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::int64_multiply(*left, *right)
-                }
-                Bitvector32Term::Int64Divide(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::int64_divide(*left, *right)
-                }
-                Bitvector32Term::Int64Remainder(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::int64_remainder(*left, *right)
-                }
-                Bitvector32Term::Int64ShiftLeft(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::int64_shift_left(*left, *right)
-                }
-                Bitvector32Term::Int64ArithmeticShiftRight(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::int64_arithmetic_shift_right(*left, *right)
-                }
-                Bitvector32Term::Int64BitwiseAnd(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::int64_bitwise_and(*left, *right)
-                }
-                Bitvector32Term::Int64BitwiseOr(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::int64_bitwise_or(*left, *right)
-                }
-                Bitvector32Term::Int64BitwiseXor(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::int64_bitwise_xor(*left, *right)
-                }
-                Bitvector32Term::Int64BitwiseNot(value) => {
-                    Bitvector32Term::int64_bitwise_not(rewrite_term_offset(value, left, right))
-                }
-                Bitvector32Term::UInt64Add(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::uint64_add(*left, *right)
-                }
-                Bitvector32Term::UInt64Subtract(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::uint64_subtract(*left, *right)
-                }
-                Bitvector32Term::UInt64Multiply(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::uint64_multiply(*left, *right)
-                }
-                Bitvector32Term::UInt64Divide(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::uint64_divide(*left, *right)
-                }
-                Bitvector32Term::UInt64Remainder(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::uint64_remainder(*left, *right)
-                }
-                Bitvector32Term::UInt64ShiftLeft(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::uint64_shift_left(*left, *right)
-                }
-                Bitvector32Term::UInt64LogicalShiftRight(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::uint64_logical_shift_right(*left, *right)
-                }
-                Bitvector32Term::UInt64BitwiseAnd(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::uint64_bitwise_and(*left, *right)
-                }
-                Bitvector32Term::UInt64BitwiseOr(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::uint64_bitwise_or(*left, *right)
-                }
-                Bitvector32Term::UInt64BitwiseXor(left_term, right_term) => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::uint64_bitwise_xor(*left, *right)
-                }
-                Bitvector32Term::UInt64BitwiseNot(value) => {
-                    Bitvector32Term::uint64_bitwise_not(rewrite_term_offset(value, left, right))
-                }
-                Bitvector32Term::BitwiseNot(value) => {
-                    Bitvector32Term::BitwiseNot(Box::new(rewrite_term_offset(value, left, right)))
-                }
-                Bitvector32Term::Float32Negate(value) => {
-                    Bitvector32Term::float32_negate(rewrite_term_offset(value, left, right))
-                }
-                Bitvector32Term::Float32Binary {
-                    operator,
-                    left: left_term,
-                    right: right_term,
-                } => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::float32_binary(*left, *right, *operator)
-                }
-                Bitvector32Term::Float64Negate(value) => {
-                    Bitvector32Term::float64_negate(rewrite_term_offset(value, left, right))
-                }
-                Bitvector32Term::Float64Binary {
-                    operator,
-                    left: left_term,
-                    right: right_term,
-                } => {
-                    let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::float64_binary(*left, *right, *operator)
-                }
                 Bitvector32Term::PureFunctionApplication { name, arguments } => {
                     Bitvector32Term::PureFunctionApplication {
                         name: name.clone(),
@@ -973,6 +776,23 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 | Bitvector32Term::Int64Constant(_)
                 | Bitvector32Term::UInt64Constant(_)
                 | Bitvector32Term::MachineIntegerConstant(_) => term.clone(),
+                term => match (term.as_binary(), term.as_unary()) {
+                    // The 32-bit word operators are rebuilt as bare nodes, the rest
+                    // through their smart constructors.
+                    (Some((op, lhs, rhs)), _) if op.is_bitvector32() => op.build_raw(
+                        rewrite_term_offset(lhs, left, right),
+                        rewrite_term_offset(rhs, left, right),
+                    ),
+                    (Some((op, lhs, rhs)), _) => op.build(
+                        rewrite_term_offset(lhs, left, right),
+                        rewrite_term_offset(rhs, left, right),
+                    ),
+                    (_, Some((op, operand))) if op.is_bitvector32() => {
+                        op.build_raw(rewrite_term_offset(operand, left, right))
+                    }
+                    (_, Some((op, operand))) => op.build(rewrite_term_offset(operand, left, right)),
+                    _ => unreachable!("every other variant has its own arm"),
+                },
             }
         }
         fn rewrite_resource_offset(
@@ -1500,16 +1320,6 @@ fn rewrite_atomic_proposition_by_exact_equality(
         // it is deterministic arithmetic on the rewritten node only, so the
         // rewritten goal states the value the substitution denotes.
         match term {
-            Bitvector32Term::MachineIntegerCast {
-                value,
-                source,
-                destination,
-            } => Bitvector32Term::machine_integer_cast(
-                *source,
-                *destination,
-                rewrite_term(value, from, to),
-            ),
-
             Bitvector32Term::Add(left, right) => {
                 let (left, right) = binary(left, right);
                 match (left.as_ref(), right.as_ref()) {
@@ -1532,22 +1342,6 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 rewrite_term(left, from, to),
                 rewrite_term(right, from, to),
             ),
-            Bitvector32Term::Divide(left, right) => {
-                let (left, right) = binary(left, right);
-                Bitvector32Term::Divide(left, right)
-            }
-            Bitvector32Term::UnsignedDivide(left, right) => {
-                let (left, right) = binary(left, right);
-                Bitvector32Term::UnsignedDivide(left, right)
-            }
-            Bitvector32Term::Remainder(left, right) => {
-                let (left, right) = binary(left, right);
-                Bitvector32Term::Remainder(left, right)
-            }
-            Bitvector32Term::UnsignedRemainder(left, right) => {
-                let (left, right) = binary(left, right);
-                Bitvector32Term::UnsignedRemainder(left, right)
-            }
             Bitvector32Term::ShiftLeft(left, right) => {
                 // The term denotes the shifted bits; signed C overflow is
                 // checked separately during expression evaluation. Preserve
@@ -1557,159 +1351,6 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     rewrite_term(left, from, to),
                     rewrite_term(right, from, to),
                 )
-            }
-            Bitvector32Term::ArithmeticShiftRight(left, right) => {
-                let (left, right) = binary(left, right);
-                Bitvector32Term::ArithmeticShiftRight(left, right)
-            }
-            Bitvector32Term::LogicalShiftRight(left, right) => {
-                let (left, right) = binary(left, right);
-                Bitvector32Term::LogicalShiftRight(left, right)
-            }
-            Bitvector32Term::BitwiseAnd(left, right) => {
-                let (left, right) = binary(left, right);
-                Bitvector32Term::BitwiseAnd(left, right)
-            }
-            Bitvector32Term::BitwiseOr(left, right) => {
-                let (left, right) = binary(left, right);
-                Bitvector32Term::BitwiseOr(left, right)
-            }
-            Bitvector32Term::BitwiseXor(left, right) => {
-                let (left, right) = binary(left, right);
-                Bitvector32Term::BitwiseXor(left, right)
-            }
-            Bitvector32Term::Int64From32(value) => {
-                Bitvector32Term::int64_from_32(rewrite_term(value, from, to))
-            }
-            Bitvector32Term::UInt64From32(value) => {
-                Bitvector32Term::uint64_from_32(rewrite_term(value, from, to))
-            }
-            Bitvector32Term::UInt32From64(value) => {
-                Bitvector32Term::uint32_from_64(rewrite_term(value, from, to))
-            }
-            Bitvector32Term::Int64FromUInt32(value) => {
-                Bitvector32Term::int64_from_uint32(rewrite_term(value, from, to))
-            }
-            Bitvector32Term::UInt64FromInt32(value) => {
-                Bitvector32Term::uint64_from_int32(rewrite_term(value, from, to))
-            }
-            Bitvector32Term::UInt64FromInt64(value) => {
-                Bitvector32Term::uint64_from_int64(rewrite_term(value, from, to))
-            }
-            Bitvector32Term::Int64Add(left, right) => Bitvector32Term::int64_add(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::Int64Subtract(left, right) => Bitvector32Term::int64_subtract(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::Int64Multiply(left, right) => Bitvector32Term::int64_multiply(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::Int64Divide(left, right) => Bitvector32Term::int64_divide(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::Int64Remainder(left, right) => Bitvector32Term::int64_remainder(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::Int64ShiftLeft(left, right) => Bitvector32Term::int64_shift_left(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::Int64ArithmeticShiftRight(left, right) => {
-                Bitvector32Term::int64_arithmetic_shift_right(
-                    rewrite_term(left, from, to),
-                    rewrite_term(right, from, to),
-                )
-            }
-            Bitvector32Term::Int64BitwiseAnd(left, right) => Bitvector32Term::int64_bitwise_and(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::Int64BitwiseOr(left, right) => Bitvector32Term::int64_bitwise_or(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::Int64BitwiseXor(left, right) => Bitvector32Term::int64_bitwise_xor(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::Int64BitwiseNot(value) => {
-                Bitvector32Term::int64_bitwise_not(rewrite_term(value, from, to))
-            }
-            Bitvector32Term::UInt64Add(left, right) => Bitvector32Term::uint64_add(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::UInt64Subtract(left, right) => Bitvector32Term::uint64_subtract(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::UInt64Multiply(left, right) => Bitvector32Term::uint64_multiply(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::UInt64Divide(left, right) => Bitvector32Term::uint64_divide(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::UInt64Remainder(left, right) => Bitvector32Term::uint64_remainder(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::UInt64ShiftLeft(left, right) => Bitvector32Term::uint64_shift_left(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::UInt64LogicalShiftRight(left, right) => {
-                Bitvector32Term::uint64_logical_shift_right(
-                    rewrite_term(left, from, to),
-                    rewrite_term(right, from, to),
-                )
-            }
-            Bitvector32Term::UInt64BitwiseAnd(left, right) => Bitvector32Term::uint64_bitwise_and(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::UInt64BitwiseOr(left, right) => Bitvector32Term::uint64_bitwise_or(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::UInt64BitwiseXor(left, right) => Bitvector32Term::uint64_bitwise_xor(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            Bitvector32Term::UInt64BitwiseNot(value) => {
-                Bitvector32Term::uint64_bitwise_not(rewrite_term(value, from, to))
-            }
-            Bitvector32Term::BitwiseNot(value) => {
-                Bitvector32Term::BitwiseNot(Box::new(rewrite_term(value, from, to)))
-            }
-            Bitvector32Term::Float32Negate(value) => {
-                Bitvector32Term::float32_negate(rewrite_term(value, from, to))
-            }
-            Bitvector32Term::Float32Binary {
-                operator,
-                left,
-                right,
-            } => {
-                let (left, right) = binary(left, right);
-                Bitvector32Term::float32_binary(*left, *right, *operator)
-            }
-            Bitvector32Term::Float64Negate(value) => {
-                Bitvector32Term::float64_negate(rewrite_term(value, from, to))
-            }
-            Bitvector32Term::Float64Binary {
-                operator,
-                left,
-                right,
-            } => {
-                let (left, right) = binary(left, right);
-                Bitvector32Term::float64_binary(*left, *right, *operator)
             }
             Bitvector32Term::PureFunctionApplication { name, arguments } => {
                 Bitvector32Term::PureFunctionApplication {
@@ -1764,6 +1405,21 @@ fn rewrite_atomic_proposition_by_exact_equality(
             | Bitvector32Term::Int64Constant(_)
             | Bitvector32Term::UInt64Constant(_)
             | Bitvector32Term::MachineIntegerConstant(_) => term.clone(),
+            term => match (term.as_binary(), term.as_unary()) {
+                // The 32-bit word operators are rebuilt as bare nodes, the rest
+                // through their smart constructors.
+                (Some((op, left, right)), _) if op.is_bitvector32() => {
+                    op.build_raw(rewrite_term(left, from, to), rewrite_term(right, from, to))
+                }
+                (Some((op, left, right)), _) => {
+                    op.build(rewrite_term(left, from, to), rewrite_term(right, from, to))
+                }
+                (_, Some((op, value))) if op.is_bitvector32() => {
+                    op.build_raw(rewrite_term(value, from, to))
+                }
+                (_, Some((op, value))) => op.build(rewrite_term(value, from, to)),
+                _ => unreachable!("every other variant has its own arm"),
+            },
         }
     }
 

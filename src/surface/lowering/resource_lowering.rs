@@ -236,7 +236,7 @@ pub(in crate::surface) fn initial_call_state(
             C0Type::Int16Pointer
             | C0Type::UInt16Pointer
             | C0Type::Int32Pointer
-            | C0Type::CharPointer
+            | C0Type::CharPointer(_)
             | C0Type::UInt8Pointer
             | C0Type::UInt32Pointer
             | C0Type::Int128Pointer
@@ -246,7 +246,7 @@ pub(in crate::surface) fn initial_call_state(
             | C0Type::Int16PointerPointer
             | C0Type::UInt16PointerPointer
             | C0Type::Int32PointerPointer
-            | C0Type::CharPointerPointer
+            | C0Type::CharPointerPointer(_)
             | C0Type::UInt8PointerPointer
             | C0Type::UInt32PointerPointer
             | C0Type::Int128PointerPointer
@@ -300,7 +300,12 @@ pub(in crate::surface) fn initial_call_state(
                     Bitvector32Term::Variable(Variable(arguments.len() as u64)),
                 )));
             }
-            C0Type::Char | C0Type::UInt8 => {
+            C0Type::Char(crate::languages::c::syntax::PlainChar::Signed) => {
+                arguments.push(CExpression::Value(CValue::Int8(Bitvector32Term::Variable(
+                    Variable(arguments.len() as u64),
+                ))));
+            }
+            C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned) | C0Type::UInt8 => {
                 arguments.push(CExpression::Value(CValue::UInt8(
                     Bitvector32Term::Variable(Variable(arguments.len() as u64)),
                 )));
@@ -342,7 +347,7 @@ pub(in crate::surface) fn initial_call_state(
                 )));
             }
             C0Type::Int32Array(_)
-            | C0Type::CharArray(_)
+            | C0Type::CharArray(_, _)
             | C0Type::UInt8Array(_)
             | C0Type::Int16Array(_)
             | C0Type::UInt16Array(_)
@@ -3304,7 +3309,7 @@ pub(in crate::surface) fn contract_expression_element_width(
                                 .map(C0Type::to_kernel_type)
                                 .map(CType::byte_width),
                             C0Type::Int32Array(_) => Some(4),
-                            C0Type::CharArray(_) => Some(1),
+                            C0Type::CharArray(_, _) => Some(1),
                             C0Type::UInt8Array(_) => Some(1),
                             C0Type::Int8Array(_) => Some(1),
                             C0Type::Int16Array(_) | C0Type::UInt16Array(_) => Some(2),

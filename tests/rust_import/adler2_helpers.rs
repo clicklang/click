@@ -19,6 +19,9 @@ const COUNT_BRIDGE: &str = include_str!("../../design/charon-trial/adler2/count-
 const SMALL_BATCH_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/small-batch-compute.click");
 
+const REMAINDER_PREFIX: &str =
+    include_str!("../../design/charon-trial/adler2/remainder-prefix.click");
+
 const GENERAL_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/general-compute.click");
 
@@ -87,6 +90,11 @@ fn compute_proof(contract: &str) -> String {
     } else {
         ""
     };
+    let remainder_prefix = if contract.contains("adler_checked_chunk_byte_observation(") {
+        REMAINDER_PREFIX
+    } else {
+        ""
+    };
     let four_byte_spec = if contract.contains("adler_four_byte_result_spec(") {
         FOUR_BYTE_SPEC
     } else {
@@ -98,7 +106,7 @@ fn compute_proof(contract: &str) -> String {
         ""
     };
     format!(
-        "{}\n{common_spec}\n{four_byte_spec}\n{serial_tail_spec}\n{lane_state}\n{vector_prefix}\n{batch_prefix}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{count_bridge}\n{bounded_count}\n{contract}\n{getters}",
+        "{}\n{common_spec}\n{four_byte_spec}\n{serial_tail_spec}\n{lane_state}\n{vector_prefix}\n{batch_prefix}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{count_bridge}\n{bounded_count}\n{remainder_prefix}\n{contract}\n{getters}",
         helper_library()
     )
 }
@@ -2585,6 +2593,7 @@ fn public_boundary_proof(length: usize) -> String {
 }
 
 #[test]
+#[ignore = "nightly: eight public entry-point proofs for empty and four-byte inputs"]
 fn charon_adler2_public_boundaries_match_empty_and_four_byte_spec() {
     let p = adler2_helpers_project();
     let prepared = load_import(&p.config()).unwrap();
@@ -3170,4 +3179,104 @@ fn adler_count_byte_observation_tools_expand_and_reverify() {
         assert_cli(&p, &["expand", "--claim", &claim, "--in-place"]);
     }
     assert_cli(&p, &["verify"]);
+}
+
+#[test]
+#[ignore = "nightly: actual remainder constructor bytes after arbitrary full batches"]
+fn charon_adler2_general_compute_rejects_false_remainder_byte() {
+    reject_compute(
+        GENERAL_COMPUTE,
+        "have to_integer(at(vector_a, __rust_mir_68.0[3])) == at(vector_a, to_integer((bytes[",
+        "have to_integer(at(vector_a, __rust_mir_68.0[3])) + 1 == at(vector_a, to_integer((bytes[",
+    );
+}
+
+#[test]
+#[ignore = "nightly: remainder address claims and expansion tools"]
+fn adler_remainder_positions_verify_expand_and_reverify() {
+    let source = format!("{GENERAL_PARTITION}\n{REMAINDER_PREFIX}");
+    click::surface::verify_c0_sources(&source, &[]).unwrap();
+    let p = Project::isolated("");
+    fs::write(p.root.join("borrow.click"), &source).unwrap();
+    assert_cli(&p, &["verify"]);
+    for theorem in [
+        "adler_checked_subprefix",
+        "adler_checked_four_byte_start",
+        "adler_checked_chunk_byte_observation",
+        "adler_checked_prefix_advance",
+        "adler_empty_remainder_position",
+        "adler_complete_remainder_position",
+        "adler_remainder_native_count_observation",
+    ] {
+        assert_cli(
+            &p,
+            &[
+                "expand",
+                "--claim",
+                &format!("{theorem}.ensures_0"),
+                "--in-place",
+            ],
+        );
+    }
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+#[ignore = "nightly: aligned-remainder A transition after arbitrary full batches"]
+fn charon_adler2_general_compute_rejects_false_remainder_a() {
+    let transition = GENERAL_COMPUTE
+        .lines()
+        .find(|line| {
+            line.contains("apply(adler_native_four_lane_a_prefix_step(")
+                && line.contains("__rust_mir_68.0")
+        })
+        .unwrap();
+    reject_compute(
+        GENERAL_COMPUTE,
+        transition,
+        &transition.replace(
+            "at(vector_a, __rust_mir_68.0[0]), at(vector_a, __rust_mir_68.0[1])",
+            "at(vector_a, __rust_mir_68.0[0]), at(vector_a, __rust_mir_68.0[0])",
+        ),
+    );
+}
+
+#[test]
+#[ignore = "nightly: aligned-remainder B specification preserves the entry seed"]
+fn charon_adler2_general_compute_rejects_false_remainder_b_seed() {
+    let transition = GENERAL_COMPUTE
+        .lines()
+        .find(|line| {
+            line.contains("apply(adler_native_deferred_b_prefix_step(")
+                && line.contains("__rust_mir_68.0")
+        })
+        .unwrap();
+    reject_compute(
+        GENERAL_COMPUTE,
+        transition,
+        &transition.replace(
+            "old(to_integer((self.b as u32)))",
+            "old(to_integer((self.b as u32))) + 1",
+        ),
+    );
+}
+
+#[test]
+#[ignore = "nightly: general remainder A reduction and scalar recombination"]
+fn charon_adler2_general_compute_rejects_false_recombined_remainder_a() {
+    reject_compute(
+        GENERAL_COMPUTE,
+        "have to_integer(a) == adler_lane_a(to_integer(at(remainder_lane_prefix, a)),",
+        "have to_integer(a) + 1 == adler_lane_a(to_integer(at(remainder_lane_prefix, a)),",
+    );
+}
+
+#[test]
+#[ignore = "nightly: general remainder B weighted corrections and scalar recombination"]
+fn charon_adler2_general_compute_rejects_false_recombined_remainder_b() {
+    reject_compute(
+        GENERAL_COMPUTE,
+        "have to_integer(b) == adler_lane_b(to_integer(at(weighted_b, b)),",
+        "have to_integer(b) + 1 == adler_lane_b(to_integer(at(weighted_b, b)),",
+    );
 }
