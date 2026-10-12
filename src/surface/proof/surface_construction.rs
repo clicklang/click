@@ -14,10 +14,12 @@ fn checked_surface_fact_in_state_with_assumptions(
             surface,
             assumptions,
             parameter_binding,
-            view.old_reference_state(state),
-            state,
-            None,
-            view.recorded_snapshots,
+            FixedStateFrame::new(
+                view.old_reference_state(state),
+                state,
+                None,
+                view.recorded_snapshots,
+            ),
             spec_definitions,
         )
         .map_err(ClickError::new)
@@ -370,10 +372,12 @@ fn checked_surface_comparison_fact_in_state_with_availability(
             surface,
             assumptions,
             parameter_binding,
-            view.old_reference_state(state),
-            state,
-            None,
-            view.recorded_snapshots,
+            FixedStateFrame::new(
+                view.old_reference_state(state),
+                state,
+                None,
+                view.recorded_snapshots,
+            ),
             spec_definitions,
         )
         .as_ref()
@@ -416,10 +420,12 @@ fn checked_surface_comparison_fact_in_state_with_availability(
                 &resolved,
                 assumptions,
                 parameter_binding,
-                view.old_reference_state(state),
-                state,
-                None,
-                view.recorded_snapshots,
+                FixedStateFrame::new(
+                    view.old_reference_state(state),
+                    state,
+                    None,
+                    view.recorded_snapshots,
+                ),
                 spec_definitions,
             )
             && lowered == *kernel

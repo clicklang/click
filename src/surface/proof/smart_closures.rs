@@ -2782,7 +2782,8 @@ impl<'a> Proof<'a> {
                         self.premise_fixed_state_view()
                             .into_iter()
                             .flat_map(|view| {
-                                view.recorded_snapshots
+                                view.fixed_state
+                                    .recorded_snapshots
                                     .recent(MAX_TRANSPORT_SOURCE_POINTS)
                                     .into_iter()
                                     .filter_map(|(selector, _)| {
@@ -2801,7 +2802,8 @@ impl<'a> Proof<'a> {
                 ];
                 if let Some(view) = self.premise_fixed_state_view() {
                     surface_candidates.extend(
-                        view.recorded_snapshots
+                        view.fixed_state
+                            .recorded_snapshots
                             .recent(MAX_TRANSPORT_SOURCE_POINTS)
                             .into_iter()
                             .filter_map(|(selector, _)| {
@@ -3197,7 +3199,8 @@ impl<'a> Proof<'a> {
         // early-return paths. An older point is still reachable by an
         // explicit `transport`.
         let selectors = std::iter::once(SnapshotSelector::ProgramPoint(entry)).chain(
-            view.recorded_snapshots
+            view.fixed_state
+                .recorded_snapshots
                 .recent(MAX_TRANSPORT_SOURCE_POINTS)
                 .into_iter()
                 .map(|(selector, _)| selector.clone()),
@@ -3909,7 +3912,7 @@ impl<'a> Proof<'a> {
             .or_else(|| self.execution_proposition_fixed_state_view())
             .or_else(|| match self.context.as_ref() {
                 ProofContext::FixedState(context)
-                    if !std::ptr::eq(context.pre_state, context.state) =>
+                    if !std::ptr::eq(context.fixed_state.pre_state, context.fixed_state.state) =>
                 {
                     Some(FixedStateOperationView::from_fixed_state(context))
                 }
@@ -3927,7 +3930,7 @@ impl<'a> Proof<'a> {
         let Some(view) = self.premise_fixed_state_view() else {
             return Some(surface);
         };
-        let Some(result @ CValue::Pointer(_)) = view.result else {
+        let Some(result @ CValue::Pointer(_)) = view.fixed_state.result else {
             return Some(surface);
         };
         // Resource witnesses may have no written name but coincide with the
@@ -4010,11 +4013,11 @@ impl<'a> Proof<'a> {
                         &mut current_names,
                     );
                     current_names.iter().any(|name| {
-                        !(name == "result" && view.result.is_some())
-                            && !view.state.locals().contains_name(name)
-                            && !view.pre_state.locals().contains_name(name)
+                        !(name == "result" && view.fixed_state.result.is_some())
+                            && !view.fixed_state.state.locals().contains_name(name)
+                            && !view.fixed_state.pre_state.locals().contains_name(name)
                             && !premise_anchor
-                                .and_then(|anchor| view.recorded_snapshots.get(anchor))
+                                .and_then(|anchor| view.fixed_state.recorded_snapshots.get(anchor))
                                 .is_some_and(|snapshot| snapshot.locals().contains_name(name))
                             && self.local_binding(name).is_none()
                             && self.local_integer_values().get(name).is_none()
@@ -4102,8 +4105,11 @@ impl<'a> Proof<'a> {
                 return Some(anchored);
             }
             if let Some(view) = self.premise_fixed_state_view()
-                && let Some(surface) =
-                    synthesize_surface_proposition(kernel, view.parameter_binding, view.pre_state)
+                && let Some(surface) = synthesize_surface_proposition(
+                    kernel,
+                    view.parameter_binding,
+                    view.fixed_state.pre_state,
+                )
                 && let Ok(anchored) = surface_at_snapshot(&surface, &function_entry)
                 && matches_kernel(&anchored).is_some()
             {
@@ -4127,13 +4133,13 @@ impl<'a> Proof<'a> {
                 ProofContext::FixedState(context) => Some((
                     context.parameter_binding.parameters,
                     context.parameter_binding.arguments,
-                    context.recorded_snapshots,
+                    context.fixed_state.recorded_snapshots,
                 )),
                 ProofContext::Execution(_) => self.premise_fixed_state_view().map(|view| {
                     (
                         view.parameter_binding.parameters,
                         view.parameter_binding.arguments,
-                        view.recorded_snapshots,
+                        view.fixed_state.recorded_snapshots,
                     )
                 }),
             }
@@ -4168,13 +4174,13 @@ impl<'a> Proof<'a> {
                 ProofContext::FixedState(context) => Some((
                     context.parameter_binding.parameters,
                     context.parameter_binding.arguments,
-                    context.recorded_snapshots,
+                    context.fixed_state.recorded_snapshots,
                 )),
                 ProofContext::Execution(_) => self.premise_fixed_state_view().map(|view| {
                     (
                         view.parameter_binding.parameters,
                         view.parameter_binding.arguments,
-                        view.recorded_snapshots,
+                        view.fixed_state.recorded_snapshots,
                     )
                 }),
             };
@@ -4292,6 +4298,7 @@ impl<'a> Proof<'a> {
                             }
                             if let Some(view) = self.premise_fixed_state_view()
                                 && let Some(anchored) = view
+                                    .fixed_state
                                     .recorded_snapshots
                                     .keys()
                                     .rev()
@@ -4360,15 +4367,15 @@ impl<'a> Proof<'a> {
             ProofContext::FixedState(context) => Some((
                 context.parameter_binding.parameters,
                 context.parameter_binding.arguments,
-                context.state,
-                context.recorded_snapshots,
+                context.fixed_state.state,
+                context.fixed_state.recorded_snapshots,
             )),
             ProofContext::Execution(_) => self.premise_fixed_state_view().map(|view| {
                 (
                     view.parameter_binding.parameters,
                     view.parameter_binding.arguments,
-                    view.state,
-                    view.recorded_snapshots,
+                    view.fixed_state.state,
+                    view.fixed_state.recorded_snapshots,
                 )
             }),
         };
@@ -5571,7 +5578,7 @@ impl<'a> Proof<'a> {
                     synthesize_surface_proposition_with_bound_variable_names(
                         fact,
                         context.parameter_binding,
-                        context.state,
+                        context.fixed_state.state,
                         &bound_variable_names,
                     )
                 }
@@ -5580,7 +5587,7 @@ impl<'a> Proof<'a> {
                     synthesize_surface_proposition_with_bound_variable_names(
                         fact,
                         view.parameter_binding,
-                        view.state,
+                        view.fixed_state.state,
                         &bound_variable_names,
                     )
                 }
@@ -5664,11 +5671,15 @@ impl<'a> Proof<'a> {
                 ProofContext::FixedState(context) => synthesize_surface_proposition(
                     &quantified,
                     context.parameter_binding,
-                    context.state,
+                    context.fixed_state.state,
                 ),
                 ProofContext::Execution(_) => {
                     let view = execution_view?;
-                    synthesize_surface_proposition(&quantified, view.parameter_binding, view.state)
+                    synthesize_surface_proposition(
+                        &quantified,
+                        view.parameter_binding,
+                        view.fixed_state.state,
+                    )
                 }
             };
             if let Some(synthesized) = synthesized
@@ -6059,7 +6070,7 @@ impl<'a> Proof<'a> {
         let data = proof.focused_outcome_data()?;
         let anchor = data.premise_anchor.as_ref()?;
         let view = proof.outcome_fixed_state_view()?;
-        let anchor_state = view.recorded_snapshots.get(anchor)?;
+        let anchor_state = view.fixed_state.recorded_snapshots.get(anchor)?;
         let mut anchored_candidates = Vec::new();
         for (kernel, _) in premise_pairs.iter().chain(&source_pairs) {
             let Some(surface) =

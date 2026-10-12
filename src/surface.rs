@@ -6008,6 +6008,33 @@ pub enum SmartTactic {
     Simp,
 }
 
+/// The fixed state a proposition is evaluated in: the entry state, the
+/// current state, the function's result if it has returned, and the states
+/// recorded at named snapshots.
+#[derive(Clone, Copy)]
+pub(in crate::surface) struct FixedStateFrame<'a> {
+    pub(in crate::surface) pre_state: &'a CState,
+    pub(in crate::surface) state: &'a CState,
+    pub(in crate::surface) result: Option<&'a CValue>,
+    pub(in crate::surface) recorded_snapshots: &'a RecordedSnapshots,
+}
+
+impl<'a> FixedStateFrame<'a> {
+    pub(in crate::surface) fn new(
+        pre_state: &'a CState,
+        state: &'a CState,
+        result: Option<&'a CValue>,
+        recorded_snapshots: &'a RecordedSnapshots,
+    ) -> Self {
+        Self {
+            pre_state,
+            state,
+            result,
+            recorded_snapshots,
+        }
+    }
+}
+
 /// A C function's parameters and the argument expressions bound to them,
 /// position by position.
 #[derive(Clone, Copy, Default)]

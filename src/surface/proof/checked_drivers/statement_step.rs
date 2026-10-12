@@ -86,10 +86,7 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
                 &case.condition,
                 assumptions,
                 ParameterBinding::new(parsed_function.parameters(), arguments),
-                &pre_state,
-                state,
-                None,
-                &execution.presentation.recorded_snapshots,
+                FixedStateFrame::new(&pre_state, state, None, &execution.presentation.recorded_snapshots),
                 SpecDefinitions::new(predicate_environment, click_function_environment),
             )
             .map_err(|message| {

@@ -49,10 +49,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                         surface_fact,
                         concrete_facts.assumptions(),
                         parameter_binding,
-                        proof_context.old_reference_state(&execution.core.frontier, state),
-                        state,
-                        None,
-                        &execution.presentation.recorded_snapshots,
+                        FixedStateFrame::new(proof_context.old_reference_state(&execution.core.frontier, state), state, None, &execution.presentation.recorded_snapshots),
                         SpecDefinitions::new(predicate_environment, click_function_environment),
                     )
                     .map_err(|message| {
@@ -271,10 +268,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                     surface_fact,
                     &exported_pure_facts,
                     parameter_binding,
-                    &old_reference,
-                    &abstract_state,
-                    None,
-                    &execution.presentation.recorded_snapshots,
+                    FixedStateFrame::new(&old_reference, &abstract_state, None, &execution.presentation.recorded_snapshots),
                     SpecDefinitions::new(predicate_environment, click_function_environment),
                 )
                 .map_err(|message| {
