@@ -3244,6 +3244,15 @@ impl<'a> Proof<'a> {
         let mut enclosing = enclosing;
         loop {
             while proof.is_at_region_boundary() {
+                // A break/continue has completed the bounded iteration's
+                // evidence. Decline this function-exit strategy rather than
+                // resuming the enclosing branch's tail on that terminal path.
+                if proof
+                    .execution()
+                    .is_some_and(|execution| execution.core.evidence_completed)
+                {
+                    return Ok(None);
+                }
                 let Some(record) = enclosing.pop() else {
                     return Ok(None);
                 };
