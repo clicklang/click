@@ -34,13 +34,27 @@ impl ResourceContext {
         {
             return self.composition_from_storage(view.storage.clone());
         }
-        let composition = self.observable_composition_uncached();
+        let mut composition = self.observable_composition_uncached();
+        self.retain_observable_source(&mut composition);
         *cache = Some(ObservableResourceProjection {
             classification,
             source: std::sync::Arc::downgrade(&self.storage),
             storage: composition.storage.clone(),
         });
         composition
+    }
+
+    /// Keep upstream's admission provenance for a filtered observation. An
+    /// ignored private delta retains its existing storage and checkpoint;
+    /// changed visible facts receive the current unfiltered source.
+    fn retain_observable_source(&self, composition: &mut Self) {
+        if !std::sync::Arc::ptr_eq(&composition.storage, &self.storage) {
+            std::sync::Arc::make_mut(&mut composition.storage).observable_projection_source =
+                Some((
+                    crate::kernel::primitives::never_address_taken_locals_key(),
+                    self.storage.clone(),
+                ));
+        }
     }
 
     /// The previous projection is retained as a compatibility reference for
@@ -104,6 +118,9 @@ impl ResourceContext {
             && composition.storage.facts.len() == self.storage.facts.len()
         {
             composition.storage = self.storage.clone();
+        }
+        if !std::sync::Arc::ptr_eq(&composition.storage, &retained) {
+            self.retain_observable_source(&mut composition);
         }
         *std::sync::Arc::get_mut(&mut self.observable_projection)
             .expect("detached observable cache")

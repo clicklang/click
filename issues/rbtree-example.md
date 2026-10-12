@@ -230,8 +230,9 @@ empty hole fits the unchanged context at the same black height, and the return
 is null. Its mutations reject unchanged links and a non-null fixup return.
 
 `rbtree_erase_right_child.click` and `rbtree_erase_left_child.click` cover
-non-root one-child deletion for both parent links. They derive colors from
-red-black validity, return the exact blackened/reparented replacement and
+one-child deletion at the root and on both non-root parent links. They derive
+colors from red-black validity, return the exact blackened/reparented
+replacement and
 unchanged context, and prove whole-tree balance, parent consistency, in-order
 contents, and null fixup. `rbtree_erase_one_child.click` supplies the balance,
 local symmetry, and parent-consistency theorems. Mutation tests reject unchanged
@@ -1314,7 +1315,14 @@ adds mirrored red-sibling cases 1/2 after propagation with nonempty subtrees.
 `rbtree_erase_color_flips_red_outer.click` adds mirrored cases 1/4 after
 propagation. `rbtree_erase_color_flips_red_all.click` completes both
 orientations of propagated red-sibling cases 1/3/4 with nonempty subtrees.
-The complete `rb_erase` wrapper remains. Depends on 12.
+The unchanged `rb_erase` wrapper now verifies for every leaf deletion: red or
+black leaves on either parent link, and the sole root. Its read-only
+callback-table splice and general color repair are both checked in the same
+unit. A conditional splice contract supplies either the deficit required by
+repair or a balanced context for the no-repair branch. The wrapper returns
+the detached node and exact balanced root, with parent consistency and
+in-order removal. Nodes with children still need wrapper integration.
+Depends on 12.
 
 ### Augmented
 

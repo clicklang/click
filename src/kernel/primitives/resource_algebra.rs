@@ -1159,6 +1159,16 @@ impl ResourceContext {
         Self::default()
     }
 
+    /// A temporary contract-reading view retains every resource and dependency,
+    /// but must not publish synthetic argument permissions into an ambient
+    /// prepared equality index. Its queries prepare only their selected input.
+    pub(crate) fn unpublished_contract_view(&self) -> Self {
+        let mut view = self.clone();
+        view.memory_equalities = Default::default();
+        view.observable_projection = Default::default();
+        view
+    }
+
     /// Begin a fresh resource lineage in the current trusted equality graph.
     /// Capturing the empty input is constant work; later inserts maintain its
     /// paired indexes through deltas. This establishes publication only, not
@@ -1239,8 +1249,20 @@ impl ResourceContext {
         if !std::sync::Arc::ptr_eq(&self.storage.origin, &previous.storage.origin) {
             return None;
         }
-        let mut left = self.storage.history.as_ref();
-        let mut right = previous.storage.history.as_ref();
+        let (current, prior) = match (
+            &self.storage.observable_projection_source,
+            &previous.storage.observable_projection_source,
+        ) {
+            (Some((key, current)), Some((prior_key, prior)))
+                if std::sync::Arc::ptr_eq(key, prior_key) =>
+            {
+                (current.as_ref(), prior.as_ref())
+            }
+            (None, None) => (self.storage.as_ref(), previous.storage.as_ref()),
+            _ => return None,
+        };
+        let mut left = current.history.as_ref();
+        let mut right = prior.history.as_ref();
         let mut changed = BTreeSet::new();
         while !Self::history_tail_is(left, right) {
             crate::instrumentation::record_deterministic_work(1);
@@ -2021,9 +2043,11 @@ impl ResourceContext {
                     .as_ref()
                     .map_or(1, |change| change.depth + 1),
                 entry_delta: Some((entry, true)),
+                metadata_only: false,
                 fact,
                 parent: self.storage.history.clone(),
             })),
+            observable_projection_source: None,
             materialized: std::sync::OnceLock::new(),
         });
         self.advance_observable_insertion(&previous, entry);
@@ -2229,9 +2253,11 @@ impl ResourceContext {
                     .as_ref()
                     .map_or(1, |change| change.depth + 1),
                 entry_delta: Some((entry, false)),
+                metadata_only: false,
                 fact: fact.clone(),
                 parent: self.storage.history.clone(),
             })),
+            observable_projection_source: None,
             materialized: std::sync::OnceLock::new(),
         });
         self.advance_observable_removal(&previous, entry);
@@ -2303,6 +2329,7 @@ impl ResourceContext {
             expansions_by_support_entry,
             origin: self.storage.origin.clone(),
             history: self.storage.history.clone(),
+            observable_projection_source: None,
             materialized: std::sync::OnceLock::new(),
         });
         self.advance_observable_rekey(&previous, fact);
@@ -2343,6 +2370,7 @@ impl ResourceContext {
             history = Some(std::sync::Arc::new(ResourceContextChange {
                 depth: history.as_ref().map_or(1, |change| change.depth + 1),
                 entry_delta: None,
+                metadata_only: false,
                 fact,
                 parent: history,
             }));
@@ -2367,6 +2395,7 @@ impl ResourceContext {
             expansions_by_support_entry: PersistentMap::default(),
             origin: self.storage.origin.clone(),
             history,
+            observable_projection_source: None,
             materialized: std::sync::OnceLock::new(),
         });
         self.observable_projection = Default::default();
@@ -4438,9 +4467,11 @@ impl ResourceContext {
                     .as_ref()
                     .map_or(1, |change| change.depth + 1),
                 entry_delta: None,
+                metadata_only: true,
                 fact: support.clone(),
                 parent: self.storage.history.clone(),
             })),
+            observable_projection_source: None,
             materialized: std::sync::OnceLock::new(),
         });
         self.advance_observable_expansion(&previous, support_occurrence);
@@ -4549,6 +4580,7 @@ impl ResourceContext {
             expansions_by_support_entry: self.storage.expansions_by_support_entry.clone(),
             origin: self.storage.origin.clone(),
             history: self.storage.history.clone(),
+            observable_projection_source: None,
             materialized: std::sync::OnceLock::new(),
         });
         self.advance_observable_expansion(&previous, occurrence);
@@ -4907,6 +4939,23 @@ impl ResourceContext {
         self.storage
             .materialized
             .get_or_init(|| self.iter().cloned().collect())
+    }
+
+    /// Select folded composites without materializing unrelated memory facts.
+    pub(in crate::kernel) fn composite_facts(&self) -> impl Iterator<Item = &CResourceFact> {
+        let entries = self
+            .storage
+            .index
+            .exact_shapes
+            .iter()
+            .skip_while(|((family, _, _), _)| *family < ResourceFamily::Composite)
+            .take_while(|((family, _, _), _)| *family == ResourceFamily::Composite)
+            .flat_map(|(_, entries)| entries.iter().copied())
+            .collect::<BTreeSet<_>>();
+        entries
+            .into_iter()
+            .map(|entry| self.fact(entry))
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
     /// Whether the context is a partition under `assumptions`, and the first
@@ -5966,6 +6015,7 @@ impl ResourceContext {
                 expansions_by_support_entry: PersistentMap::default(),
                 origin: self.storage.origin.clone(),
                 history: self.storage.history.clone(),
+                observable_projection_source: None,
                 materialized: std::sync::OnceLock::new(),
             });
             return self

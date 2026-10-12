@@ -1,10 +1,24 @@
 use super::*;
 
 #[test]
+fn long_flat_integer_sum_expands_and_rechecks_without_parenthesis_growth() {
+    let sum = std::iter::repeat_n("a", 24).collect::<Vec<_>>().join(" + ");
+    let source = format!(
+        "theorem sum(a: Integer) {{ ensures {sum} == 24 * a by {{ have {sum} == 24 * a by {{ arithmetic(); }} assumption(); }} }}"
+    );
+    verify_click_theorems(&source).unwrap();
+    let position = expansion::position_at_offset(&source, source.find("arithmetic()").unwrap());
+    let expanded =
+        expand_c0_tactic_source_at(&source, &[], position.line, position.column).unwrap();
+    assert!(!expanded.contains("arithmetic()"), "{expanded}");
+    verify_click_theorems(&expanded).unwrap();
+}
+
+#[test]
 #[ignore = "nightly: rechecks vector tactic and whole-proof certificates"]
 fn vector_field_input_pointer_certificates_round_trip() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/composite_resource_vector_fill_loop_snapshot.md");
+        .join("tests/fixtures/proof-expansion/vector-field-input.md");
     let markdown = std::fs::read_to_string(&path).unwrap();
     let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
     let name = "composite_resource_vector_fill_loop_snapshot";
@@ -1209,10 +1223,11 @@ fn multidimensional_local_array_field_expands_with_every_subscript() {
 }
 
 /// A `produces` clause naming a struct member is one ensure per field of
-/// that member, all sharing the proof the author wrote once. Every such
-/// claim resolves to that written clause: the locator used to count written
-/// clauses by claim index, so the later claims pointed past the last clause
-/// and `click audit` stopped with `could not locate source ensure 2`.
+/// that member, all sharing the proof the author wrote once. They are one
+/// claim, labelled by that written clause, and resolve to it: the locator
+/// used to count written clauses by claim index, so the later claims pointed
+/// past the last clause and `click audit` stopped with `could not locate
+/// source ensure 2`.
 #[test]
 fn flattened_aggregate_claims_resolve_to_their_written_clause() {
     let (click_source, c_sources) = mdtest_sources("mdtests/struct_aggregate_resources.md");
@@ -1220,29 +1235,39 @@ fn flattened_aggregate_claims_resolve_to_their_written_clause() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
+    let file = expansion::parse_source_with_c_layouts(&click_source, &c_sources).unwrap();
+    let write_inner = file
+        .function_blocks()
+        .iter()
+        .find(|block| block.signature().name() == "write_inner")
+        .unwrap();
+    let produced = (0..write_inner.ensures().len())
+        .filter(|index| write_inner.ensure_claim_label(*index) == "write_inner.produces_0")
+        .count();
+    assert!(produced >= 2, "the member should flatten to several claims");
+    assert_eq!(write_inner.ensure_claim_label(0), "write_inner.ensures_0");
     let sites = expansion::c0_smart_tactic_source_sites(&click_source, &c_sources).unwrap();
     let written = click_source
         .find("produces packet->inner by auto;")
         .expect("the fixture states the aggregate clause");
     let written = expansion::position_at_offset(&click_source, written);
-    let mut resolved = 0;
-    for site in sites
+    let produced_sites = sites
         .iter()
-        .filter(|site| site.claim_label.starts_with("write_inner.ensures_"))
-    {
-        let position = expansion::c0_tactic_source_position(
-            &click_source,
-            &c_sources,
-            &site.claim_label,
-            site.source_index,
-        )
-        .unwrap_or_else(|error| panic!("{}: {}", site.claim_label, error.message()));
-        if site.claim_label != "write_inner.ensures_0" {
-            assert_eq!(position.line, written.line, "{}", site.claim_label);
-            resolved += 1;
-        }
-    }
-    assert!(resolved >= 2, "the member should flatten to several claims");
+        .filter(|site| site.claim_label == "write_inner.produces_0")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        produced_sites.len(),
+        1,
+        "the written clause's one proof is one site"
+    );
+    let position = expansion::c0_tactic_source_position(
+        &click_source,
+        &c_sources,
+        "write_inner.produces_0",
+        produced_sites[0].source_index,
+    )
+    .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert_eq!(position.line, written.line);
 }
 
 /// A `simp()` closing an `initialize` script that several invariants share
@@ -2263,6 +2288,44 @@ theorem default_have(x: int32) {
 /// address a proof's tactics through its block, so each of them must see the
 /// one-tactic form as that block: every smart tactic in the proof below
 /// expands and rechecks, wherever the one-tactic proofs stand.
+#[test]
+fn batch_expansion_wraps_one_tactic_arithmetic_proofs() {
+    let c = "int nested(int x) { return x; }";
+    let source = r#"
+verifying "short.c";
+int32 nested(int32 x) {
+    requires 0 <= to_integer(x);
+    ensures result == x;
+} by {
+    execute();
+    have 0 <= to_integer(x) + 1 by arithmetic() using { 0 <= to_integer(x); };
+    have 0 <= to_integer(x) + 2 by arithmetic() using { 0 <= to_integer(x); };
+    have x == x by normalize();
+    simp();
+}
+"#;
+    let sources = [("short.c", c)];
+    verify_c0_sources(source, &sources).expect("the short arithmetic proofs verify");
+    let positions = source
+        .match_indices("arithmetic()")
+        .map(|(offset, _)| expansion::position_at_offset(source, offset))
+        .collect::<Vec<_>>();
+    let expanded = expansion::expand_tactics_source_at(
+        source,
+        &ProgramInputs::Bundle(sources.to_vec()),
+        &positions,
+    )
+    .expect("the batch expands both arithmetic proofs");
+    assert!(
+        expanded.source.contains("arithmetic_certificate"),
+        "{}",
+        expanded.source
+    );
+    assert!(expanded.source.contains("have x == x by normalize();"));
+    verify_c0_sources(&expanded.source, &sources)
+        .expect("the batch's structured certificates must parse and recheck");
+}
+
 #[test]
 fn expansion_reads_a_one_tactic_proof_as_its_block() {
     let source = r#"
@@ -12265,7 +12328,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
         "linked-list",
         "linked_list.click",
         "list_roundtrip",
-        "rewrite(at(statement(5).entry, observed) == at(statement(5).entry, node->value));",
+        "have node->next == tail by {\n        assumption();\n    }",
     ),
     (
         "input-cursor",

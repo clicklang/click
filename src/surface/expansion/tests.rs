@@ -2014,7 +2014,7 @@ int32 set_then_read(int32 p[], int32 value) {
         ("set_cell.c", callee_source),
         ("set_then_read.c", caller_source),
     ];
-    let position = c0_tactic_source_position(click_source, &sources, "set_then_read.ensures_1", 0)
+    let position = c0_tactic_source_position(click_source, &sources, "set_then_read.ensures_0", 0)
         .expect("later claim should have a source tactic");
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
@@ -2943,141 +2943,179 @@ fn a_declaration_position_skips_uses_inside_bodies() {
 }
 
 #[test]
-fn shared_tactic_index_preserves_trace_locations() {
-    let fixtures = [
-        "by { step(); step(); }\nby {\n step();\n}\n",
-        "# αβ\nby { have exists (x: int32) { x == x }; have 0 == 0 by { simp(); } }\n",
-        "by { if (exists (x: int32) { x == x }) { step(); } else { simp(); } step(); }",
-        "by { branch ensuring { true } then { step(); } else { simp(); } }",
-        "by { both { step(); } and { simp(); } }",
-        "by { have \"αβ\" == \"αβ\" by { simp(); } step(); }",
-        "by { cases { true => { step(); } exists (x: int32) { x == x } => { simp(); } false => { assumption(); } } }",
-        "by { outcomes { threw => { step(); } returned => { simp(); } } }",
-        "by { open(resource) { have true by { assumption(); } } }",
-        "by { let { slot: child } = unfold(parent); match x { A => { step(); } B => { simp(); } } }",
-    ];
-    for source in fixtures {
-        let index = SourceTacticIndex::new(source).unwrap();
-        let mut positions = Vec::new();
-        for line in 0..=source.lines().count() + 2 {
-            let expected = tactic_starts_on_line(source, line).unwrap();
-            assert_eq!(index.tactic_starts_on_line(line), expected, "{source}");
-            positions.extend(expected);
-        }
-        for position in &positions {
+fn trace_source_index_preserves_nested_locations_and_containment() {
+    let source = "# αβ UTF-8\nby {\n  have true by { open(resource) { assumption(); } }\n  if true { normalize(); } else { simp(); }\n  cases { true => { step(); } false => { normalize(); } }\n  both { normalize(); } and { simp(); }\n  outcomes { threw => { step(); } returned => { simp(); } }\n  branch ensuring { true } then { step(); } else { simp(); }\n  normalize();\n}\n";
+    let index = ProofSourceIndex::new(source).unwrap();
+    for line in 1..=10 {
+        for position in tactic_starts_on_line(source, line).unwrap() {
             assert_eq!(
-                index.tactic_line_has_multiple_starts(position).unwrap(),
-                tactic_line_has_multiple_starts(source, position).unwrap(),
-                "{source} {position:?}"
+                index.line_has_multiple_starts(&position).unwrap(),
+                tactic_line_has_multiple_starts(source, &position).unwrap(),
+                "{position:?}"
             );
-            assert_eq!(
-                index.tactic_source_at_position(position).unwrap(),
-                tactic_source_at_position(source, position).unwrap()
-            );
-            for target in &positions {
-                assert_eq!(
-                    index
-                        .tactic_arm_containing_position(position, target)
-                        .unwrap(),
-                    tactic_arm_containing_position(source, position, target).unwrap(),
-                    "{source} {position:?} {target:?}"
-                );
-                assert_eq!(
-                    index
-                        .tactic_have_body_contains_position(position, target)
-                        .unwrap(),
-                    tactic_have_body_contains_position(source, position, target).unwrap()
-                );
+            for target_line in 1..=10 {
+                for target in tactic_starts_on_line(source, target_line).unwrap() {
+                    assert_eq!(
+                        index.arm_containing(&position, &target).unwrap(),
+                        tactic_arm_containing_position(source, &position, &target).unwrap()
+                    );
+                    assert_eq!(
+                        index.have_body_contains(&position, &target).unwrap(),
+                        tactic_have_body_contains_position(source, &position, &target).unwrap()
+                    );
+                }
             }
         }
-        for position in [
-            SourcePosition::new(0, 1),
-            SourcePosition::new(1, 0),
-            SourcePosition::new(999, 1),
-            SourcePosition::new(1, 999),
-        ] {
-            assert_eq!(
-                index.tactic_source_at_position(&position).is_err(),
-                tactic_source_at_position(source, &position).is_err()
-            );
-        }
     }
-    for (source, path) in [
-        (
-            "have true by { open(resource) { have true by { assumption(); } } }",
-            vec![0, 0, 0],
-        ),
-        (
-            "if true { both { step(); } and { simp(); } } else { step(); }",
-            vec![0, 0, 1, 0],
-        ),
-        (
-            "cases { true => { step(); } false => { simp(); } }",
-            vec![1, 0],
-        ),
+    let have = position_at_offset(source, source.find("have").unwrap());
+    assert_eq!(
+        index.nested_position(&have, &[0, 0]).unwrap(),
+        SourcePosition::new(3, 35)
+    );
+    for (kind, path) in [
+        ("if", vec![1, 0]),
+        ("cases", vec![1, 0]),
+        ("both", vec![1, 0]),
     ] {
-        let outer = SourcePosition::new(1, 1);
+        let outer = position_at_offset(source, source.find(kind).unwrap());
         assert_eq!(
-            SourceTacticIndex::new(source)
-                .unwrap()
-                .nested_tactic_source_position(&outer, &path)
-                .unwrap(),
+            index.nested_position(&outer, &path).unwrap(),
             nested_tactic_source_position(source, &outer, &path).unwrap()
         );
     }
 }
 
 #[test]
-fn shared_tactic_index_scales_with_source_and_queries() {
-    for layout in ["lines", "long-line", "unrelated", "nested"] {
-        let mut measurements = Vec::new();
-        for size in [16, 64, 256] {
-            let separator = if layout == "long-line" { " " } else { "\n" };
-            let (source, paths) = if layout == "nested" {
-                (
-                    format!(
-                        "by {{ {}step();{} }}",
-                        "have true by { ".repeat(size),
-                        " }".repeat(size)
-                    ),
-                    vec![vec![0; size]],
-                )
-            } else {
-                let padding = if layout == "unrelated" {
-                    format!("# {}\n", "unrelated ".repeat(size * 8))
-                } else {
-                    String::new()
-                };
-                (
-                    format!(
-                        "{padding}by {{ have true by {{ {} }} }}",
-                        format!("have true by {{ simp(); }}{separator}").repeat(size)
-                    ),
-                    (0..size).map(|child| vec![child, 0]).collect(),
-                )
-            };
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let index = SourceTacticIndex::new(&source).unwrap();
-                let outer = position_at_offset(&source, source.find("have").unwrap());
-                for path in &paths {
-                    let position = index.nested_tactic_source_position(&outer, path).unwrap();
-                    assert!(
-                        index
-                            .tactic_source_at_position(&position)
-                            .unwrap()
-                            .ends_with("();")
-                    );
-                    index.tactic_line_has_multiple_starts(&position).unwrap();
-                }
+fn trace_source_index_scales_with_sites_and_unrelated_source() {
+    let mut total = Vec::new();
+    let mut query_work = Vec::new();
+    for size in [16, 64, 256] {
+        let source = format!(
+            "{}\nby {{ {} }}",
+            "# αβ unrelated\n".repeat(size * 4),
+            "have true by { normalize(); } ".repeat(size)
+        );
+        let positions: Vec<_> = source
+            .match_indices("have")
+            .map(|(offset, _)| position_at_offset(&source, offset))
+            .collect();
+        let ((index, locations), build_work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                let index = ProofSourceIndex::new(&source).unwrap();
+                let locations: Vec<_> = positions
+                    .iter()
+                    .map(|p| index.nested_position(p, &[0]).unwrap())
+                    .collect();
+                (index, locations)
             });
-            assert!(
-                work <= source.len() * 10 + size * 30,
-                "{layout} {size}: {work}"
-            );
-            measurements.push(work);
-        }
-        for pair in measurements.windows(2) {
-            assert!(pair[1] <= pair[0] * 5, "{layout}: {measurements:?}");
-        }
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for (have, nested) in positions.iter().zip(&locations) {
+                assert!(index.have_body_contains(have, nested).unwrap());
+                assert!(index.line_has_multiple_starts(nested).unwrap());
+                assert_eq!(index.nested_position(have, &[0]).unwrap(), *nested);
+                assert!(index.nested_position(have, &[usize::MAX]).is_err());
+                assert_eq!(index.arm_containing(have, nested).unwrap(), None);
+            }
+        });
+        total.push(build_work + work);
+        query_work.push(work);
+        assert!(
+            work <= size * 8,
+            "queries must inspect only their paths: {work}"
+        );
+    }
+    for pair in total.windows(2) {
+        assert!(pair[1] <= pair[0] * 5, "{total:?}");
+    }
+    for pair in query_work.windows(2) {
+        assert!(pair[1] <= pair[0] * 4, "{query_work:?}");
+    }
+    // A larger immutable container must not increase work per selected site.
+    let query = |unrelated| {
+        let source = format!(
+            "{}by {{ have true by {{ normalize(); }} }}",
+            "# unrelated αβ\n".repeat(unrelated)
+        );
+        let index = ProofSourceIndex::new(&source).unwrap();
+        let have = position_at_offset(&source, source.find("have").unwrap());
+        crate::instrumentation::measure_deterministic_work(|| {
+            let nested = index.nested_position(&have, &[0]).unwrap();
+            assert!(index.have_body_contains(&have, &nested).unwrap());
+            index.line_has_multiple_starts(&nested).unwrap()
+        })
+        .1
+    };
+    assert_eq!(query(16), query(4096));
+}
+
+#[test]
+fn trace_source_index_skips_nested_subtrees_during_construction() {
+    let mut work = Vec::new();
+    for depth in [16, 64, 256] {
+        let source = format!(
+            "by {{ {}normalize();{} }}",
+            "have true by { ".repeat(depth),
+            " }".repeat(depth)
+        );
+        let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
+            ProofSourceIndex::new(&source).unwrap()
+        });
+        work.push(measured);
+    }
+    for pair in work.windows(2) {
+        assert!(
+            pair[1] <= pair[0] * 5,
+            "nested blocks must skip already indexed subtrees: {work:?}"
+        );
+    }
+}
+
+#[test]
+fn trace_source_index_preserves_unicode_and_implicit_proof_columns() {
+    for source in [
+        "/* αβ */ by { have true by normalize(); simp(); }",
+        "/* αβ */ by { have true by { normalize(); } simp(); }",
+    ] {
+        let index = ProofSourceIndex::new(source).unwrap();
+        let have = position_at_offset(source, source.find("have").unwrap());
+        let child = index.nested_position(&have, &[0]).unwrap();
+        assert_eq!(
+            child,
+            position_at_offset(source, source.find("normalize").unwrap())
+        );
+        assert_eq!(
+            index.have_body_contains(&have, &child).unwrap(),
+            tactic_have_body_contains_position(source, &have, &child).unwrap()
+        );
+        assert_eq!(
+            index.line_has_multiple_starts(&have).unwrap(),
+            tactic_line_has_multiple_starts(source, &have).unwrap()
+        );
+        assert_eq!(
+            index.line_has_multiple_starts(&child).unwrap(),
+            tactic_line_has_multiple_starts(source, &child).unwrap()
+        );
+    }
+}
+
+#[test]
+fn trace_source_index_indexes_many_case_arms() {
+    for size in [16, 64, 256] {
+        let source = format!(
+            "by {{ cases {{ {} }} }}",
+            "true => { normalize(); } ".repeat(size)
+        );
+        let index = ProofSourceIndex::new(&source).unwrap();
+        let cases = position_at_offset(&source, source.find("cases").unwrap());
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for arm in 0..size {
+                let child = index.nested_position(&cases, &[arm, 0]).unwrap();
+                assert_eq!(index.arm_containing(&cases, &child).unwrap(), Some(arm));
+            }
+        });
+        assert!(
+            work <= size * 12,
+            "case targets must use indexed arm intervals: {work}"
+        );
     }
 }

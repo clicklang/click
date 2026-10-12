@@ -1479,7 +1479,7 @@ pub(in crate::surface::proof) fn finish_ordered_proof_units<'a>(
         let mut context_surface_builders = Vec::new();
         let theorems = crate::instrumentation::measure_operation(
             function_block.signature().name(),
-            &format!("{}.contract", function_block.signature().name()),
+            &function_block.contract_claim_label(),
             "proof context finishing",
             || {
                 finish_ordered_proof(
@@ -1553,7 +1553,7 @@ pub(in crate::surface::proof) fn finish_ordered_proof_units<'a>(
     if context_count > 1 {
         crate::instrumentation::measure_operation(
             function_block.signature().name(),
-            &format!("{}.contract", function_block.signature().name()),
+            &function_block.contract_claim_label(),
             "surface context synthesis",
             || {
                 for (claim, builders) in claim_surface_builders {

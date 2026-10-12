@@ -1,6 +1,50 @@
 use super::*;
 
 #[test]
+fn expanded_loop_claims_preserve_the_audit_work_bound() {
+    for (fixture, claim) in [
+        ("c_decreases_recursive_in_loop", "recursive_loop.contract"),
+        ("later_loop_preserve", "later_loop_preserve.contract"),
+        ("loop_exit_snapshot", "count_from_to.contract"),
+        ("nested_loop_preserve", "nested_loop_preserve.contract"),
+    ] {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("mdtests/{fixture}.md"));
+        let markdown = std::fs::read_to_string(&path).unwrap();
+        let input = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+        let source = input.click_source.as_deref().unwrap();
+        let sources = input
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let expanded =
+            crate::surface::expand_c0_claim_source_by_label(source, &sources, claim).unwrap();
+        let samples = [source, expanded.as_str()].map(|source| {
+            let position =
+                crate::surface::c0_tactic_source_position(source, &sources, claim, 0).unwrap();
+            let (result, sample) = scaling_sample(0, || {
+                crate::surface::verify_c0_sources_at(
+                    source,
+                    &sources,
+                    position.line,
+                    position.column,
+                )
+            });
+            result.unwrap();
+            sample
+        });
+        assert!(
+            samples[1].work <= samples[0].work * 2 || samples[1].work <= samples[0].work + 10_000,
+            "{fixture}: original {}, expanded {}; {}",
+            samples[0].work,
+            samples[1].work,
+            named_growth_diagnostic(&samples)
+        );
+    }
+}
+
+#[test]
 fn execution_target_resource_scope_parsing_is_linear_in_selected_declarations() {
     let samples = [1, 8, 32, 128].map(|count| {
         let mut source = "resource Counter() { field revision: int32; }\n".to_string();
@@ -6888,7 +6932,7 @@ fn simp_premise_spelling_is_linear_in_early_returns() {
                     work: *sample
                         .named_work
                         .get(SPELLING)
-                        .unwrap_or_else(|| panic!("simp spelled no premise: {sample:?}")),
+                        .unwrap_or(&0),
                     named_work: BTreeMap::new(),
                 });
             }

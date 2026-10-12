@@ -65,7 +65,7 @@ pub use memory_state::CallKeptRanges;
 pub(crate) use memory_state::{
     BlockRegistriesState, block_is_never_address_taken_local, capture_block_registries,
     clear_block_alignment_registry, clear_never_address_taken_locals,
-    register_aggregate_argument_source, register_block_alignment,
+    never_address_taken_locals_key, register_aggregate_argument_source, register_block_alignment,
     registered_aggregate_argument_source, registered_block_alignment,
     registered_block_alignment_charged, restore_block_registries, set_never_address_taken_locals,
     withdraw_never_address_taken_locals,
@@ -3994,6 +3994,10 @@ pub struct CVerifiedFunctionRule {
     /// these applications are its call edges, written by the kernel from the
     /// checked traces, so the termination check may trust them.
     pub(super) applied_tactics: std::collections::BTreeSet<String>,
+    /// Complete conservative call dependencies from kernel-checked execution.
+    /// None retains source-call analysis; a present empty set proves no calls.
+    /// Shared across claims and certificate reuse, never copied per step.
+    pub(super) checked_callees: Option<Arc<BTreeSet<String>>>,
 }
 
 impl CVerifiedFunctionRule {
@@ -4372,6 +4376,10 @@ pub struct CVerifiedFunctionContractClaim {
     /// The user-defined tactics the certification this claim came from
     /// applied.
     pub(super) applied_tactics: std::collections::BTreeSet<String>,
+    /// Complete conservative call dependencies from kernel-checked execution.
+    /// None retains source-call analysis; a present empty set proves no calls.
+    /// Shared across claims and certificate reuse, never copied per step.
+    pub(super) checked_callees: Option<Arc<BTreeSet<String>>>,
 }
 
 /// Kernel-checked evidence that a checked proof discharged one proposition at
@@ -4539,6 +4547,14 @@ pub enum CRuntimeError {
     UnsupportedOpaqueFunctionContract(String),
     AbstractFunctionPointerCall(String),
     FunctionContract(String),
+    /// Exact operands retained at a rejected contract boundary. Diagnostic
+    /// only: these values never establish a fact or grant access.
+    ContractResourceDiagnostic {
+        reason: String,
+        held: Option<Box<CResourceFact>>,
+        required: Box<CResourceFact>,
+        memory: Option<Box<CMemory>>,
+    },
     /// Lock or destroy encountered no successful modeled initialization for
     /// this mutex on the current path.
     UninitializedMutex {
@@ -6579,7 +6595,7 @@ pub struct ResourceContext {
     /// Disposable projection, never ownership evidence or semantic identity.
     /// Immutable forks share even the cold cache; producers detach it before
     /// advancing only their own delta.
-    observable_projection: std::sync::Arc<std::sync::Mutex<Option<ObservableResourceProjection>>>,
+    pub(super) observable_projection: std::sync::Arc<std::sync::Mutex<Option<ObservableResourceProjection>>>,
     /// Checked dependency bundles for resource occurrences that are views of
     /// an active stable loan.  This is deliberately separate from the
     /// resource algebra's support graph: equal resource terms can have
@@ -6760,7 +6776,7 @@ pub(super) struct ResourceMemoryIntervalNode {
 }
 
 #[derive(Clone)]
-struct ObservableResourceProjection {
+pub(super) struct ObservableResourceProjection {
     classification: u64,
     /// A weak checkpoint detects any producer that replaces storage without
     /// advancing the view, without retaining the unfiltered context.
@@ -6823,6 +6839,11 @@ pub(super) struct ResourceContextStorage {
     /// whose multiplicity or representation changed.
     pub(super) origin: std::sync::Arc<()>,
     pub(super) history: Option<std::sync::Arc<ResourceContextChange>>,
+    /// A scratch observable projection's unfiltered input and addressability
+    /// registry. Used only to compare admissions; the projection's live exact
+    /// index still decides which changed facts it actually supplies.
+    pub(super) observable_projection_source:
+        Option<(std::sync::Arc<()>, std::sync::Arc<ResourceContextStorage>)>,
     /// Legacy callers that explicitly enumerate every fact pay the
     /// output-sized materialization once per immutable snapshot.
     pub(super) materialized: std::sync::OnceLock<Vec<CResourceFact>>,
@@ -6842,6 +6863,8 @@ pub(super) struct ResourceContextChange {
     pub(super) depth: usize,
     /// Exact occurrence delta for derived indexes; metadata changes use None.
     pub(super) entry_delta: Option<(ResourceEntryId, bool)>,
+    /// An expansion-cache edit preserves entry ordinals and authority.
+    pub(super) metadata_only: bool,
     pub(super) fact: CResourceFact,
     pub(super) parent: Option<std::sync::Arc<ResourceContextChange>>,
 }
@@ -10443,6 +10466,10 @@ pub struct CFunctionContractExecution {
     pub(super) loop_semantics: CLoopSemantics,
     /// The user-defined tactics the certified proofs applied.
     pub(super) applied_tactics: std::collections::BTreeSet<String>,
+    /// Complete conservative call dependencies from kernel-checked execution.
+    /// None retains source-call analysis; a present empty set proves no calls.
+    /// Shared across claims and certificate reuse, never copied per step.
+    pub(super) checked_callees: Option<Arc<BTreeSet<String>>>,
 }
 
 /// A kernel-created record of one exact whole-function execution judgment.
@@ -10486,6 +10513,10 @@ pub struct CCheckedFunctionExecution {
     pub(super) entry_representation_origin: Option<CState>,
     /// The user-defined tactics this execution's proof applied.
     pub(super) applied_tactics: std::collections::BTreeSet<String>,
+    /// Complete conservative call dependencies from kernel-checked execution.
+    /// None retains source-call analysis; a present empty set proves no calls.
+    /// Shared across claims and certificate reuse, never copied per step.
+    pub(super) checked_callees: Option<Arc<BTreeSet<String>>>,
     /// Original checked input selection; later certification must not rebuild it.
     pub(super) boundary_transfer: Option<Arc<super::functions::CheckedBoundaryResourceTransfer>>,
     pub(super) checked_call_events: super::proof::CheckedCallEvents,
@@ -10510,6 +10541,7 @@ impl CFunctionContractExecution {
             reuse_context_facts: Vec::new(),
             checked_call_events: Default::default(),
             loop_semantics: CLoopSemantics::Verify,
+            checked_callees: None,
             applied_tactics: Default::default(),
         }
     }
