@@ -1321,7 +1321,10 @@ callback-table splice and general color repair are both checked in the same
 unit. A conditional splice contract supplies either the deficit required by
 repair or a balanced context for the no-repair branch. The wrapper returns
 the detached node and exact balanced root, with parent consistency and
-in-order removal. Nodes with children still need wrapper integration.
+in-order removal. The left-child and right-child sidecars now verify the
+unchanged wrapper for exactly one child at every tree position, including the
+borrowed callback-table splice, callback refinements, and context reconstruction.
+Two-child deletion still needs wrapper integration.
 Depends on 12.
 
 ### Augmented

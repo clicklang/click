@@ -1,5 +1,6 @@
 verifying "rb_erase.c";
 import "../rbtree-model/rbtree_spine_resources.click";
+import "../rbtree-model/rbtree_context_depth.click";
 
 # The rotation helper changes tags and the outer link, retaining both
 # already-updated child links of each local node.
@@ -618,39 +619,6 @@ theorem ctx_node_is_top_null(p: struct rb_node*) {
                 normalize() using { not(p == 0); }
             }
             contradiction(ctx_node_is(Context::Top, p) == 1);
-        }
-    }
-}
-
-function ctx_depth(ctx: Context) -> Integer
-decreases ctx
-{
-    match ctx {
-        Context::Top => 0,
-        Context::Left(identity, grandparent, color, sibling_model, up_model) =>
-        ctx_depth(up_model) + 1,
-        Context::Right(identity, grandparent, color, sibling_model, up_model) =>
-        ctx_depth(up_model) + 1,
-    }
-}
-
-theorem ctx_depth_is_nonnegative(ctx: Context) {
-    ensures 0 <= ctx_depth(ctx) by {
-        induct(ctx) as ih {
-            Context::Top => {
-                unfold(ctx_depth(Context::Top));
-                normalize();
-            }
-            Context::Left(identity, grandparent, color, sibling_model, up_model) => {
-                apply(ih(up_model));
-                unfold(ctx_depth(Context::Left(identity, grandparent, color, sibling_model, up_model)));
-                arithmetic() using { 0 <= ctx_depth(up_model); }
-            }
-            Context::Right(identity, grandparent, color, sibling_model, up_model) => {
-                apply(ih(up_model));
-                unfold(ctx_depth(Context::Right(identity, grandparent, color, sibling_model, up_model)));
-                arithmetic() using { 0 <= ctx_depth(up_model); }
-            }
         }
     }
 }
