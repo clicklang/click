@@ -6259,10 +6259,33 @@ fn cast_static_integer(
 ) -> Result<StaticIntegerValue, StaticIntegerEvaluationError> {
     let (kind, bits) =
         static_integer_type_info(c_type).ok_or(StaticIntegerEvaluationError::NotConstant)?;
-    convert_static_integer(value, kind, bits).map_err(|error| match error {
-        StaticIntegerEvaluationError::Overflow => StaticIntegerEvaluationError::OutOfRange,
-        error => error,
+    let value = convert_static_integer_modulo(value, kind == StaticIntegerKind::Signed, bits);
+    Ok(match kind {
+        StaticIntegerKind::Signed => StaticIntegerValue::Signed { value, bits },
+        StaticIntegerKind::Unsigned => StaticIntegerValue::Unsigned {
+            value: value as u128,
+            bits,
+        },
     })
+}
+
+/// A static integer converted to an integer type of `bits` bits, as GCC and
+/// Clang convert it: the value reduced modulo 2^`bits` into the type's range.
+/// C11 6.3.1.3p2 defines this for an unsigned type, and GCC defines the
+/// implementation-defined conversion to a signed type the same way ("the
+/// value is reduced modulo 2^N to be within range of the type").
+fn convert_static_integer_modulo(value: StaticIntegerValue, signed: bool, bits: u32) -> i128 {
+    let value = match value {
+        StaticIntegerValue::Signed { value, .. } => value,
+        StaticIntegerValue::Unsigned { value, .. } => value as i128,
+    };
+    let modulus = 1i128 << bits;
+    let reduced = value.rem_euclid(modulus);
+    if signed && reduced >= modulus / 2 {
+        reduced - modulus
+    } else {
+        reduced
+    }
 }
 
 fn evaluate_static_integer_expression(
@@ -6516,68 +6539,57 @@ fn evaluate_static_switch_case_value(
     }
 }
 
+/// The literal a static integer initializes an object of `c_type` with: the
+/// value converted to `c_type` as GCC and Clang convert it, out-of-range
+/// values included ([`convert_static_integer_modulo`]).
 fn static_integer_literal_for_type(
     c_type: C0Type,
     value: StaticIntegerValue,
 ) -> Result<C0Expression, StaticIntegerEvaluationError> {
-    if matches!(
-        c_type,
-        C0Type::Char(PlainChar::Unsigned)
-            | C0Type::UInt8
-            | C0Type::UInt16
-            | C0Type::UInt32
-            | C0Type::UInt64
-    ) && let StaticIntegerValue::Signed { value, .. } = value
-        && value < 0
-    {
-        let bits = static_integer_type_info(c_type)
-            .expect("unsigned static integer type has type information")
-            .1;
-        let modulus = 1i128
-            .checked_shl(bits)
-            .ok_or(StaticIntegerEvaluationError::Overflow)?;
-        let value = value.rem_euclid(modulus) as u128;
-        return if c_type == C0Type::UInt64 {
-            Ok(C0Expression::UInt64Literal(value as u64))
-        } else {
-            Ok(C0Expression::UInt32Literal(value as u32))
-        };
+    let (kind, bits) =
+        static_integer_type_info(c_type).ok_or(StaticIntegerEvaluationError::NotConstant)?;
+    let value = convert_static_integer_modulo(value, kind == StaticIntegerKind::Signed, bits);
+    Ok(match (kind, bits) {
+        (StaticIntegerKind::Signed, 64) => C0Expression::Int64Literal(value as i64),
+        (StaticIntegerKind::Unsigned, 64) => C0Expression::UInt64Literal(value as u64),
+        (StaticIntegerKind::Signed, _) => C0Expression::Int32Literal((value as i32) as u32),
+        (StaticIntegerKind::Unsigned, _) => C0Expression::UInt32Literal(value as u32),
+    })
+}
+
+/// Converts an integer constant expression that `c_type` cannot represent to
+/// the literal GCC and Clang give it, at an assignment, initialization,
+/// return, argument, or cast to the integer type `c_type`: `unsigned char c =
+/// -56` stores 200, and `signed char c = 200` stores -56. Both compilers
+/// accept these, at most with a `-Woverflow` or `-Wconstant-conversion`
+/// warning, and define the value modulo 2^N. A representable constant, or an
+/// expression that is not a constant, is left for the checked conversion.
+fn convert_integer_constant(c_type: C0Type, expression: &mut C0Expression) {
+    if static_integer_type_info(c_type).is_none() {
+        return;
     }
-    let (minimum, maximum) = match c_type {
-        C0Type::Int8 => (i128::from(i8::MIN), i128::from(i8::MAX)),
-        C0Type::Int16 => (i128::from(i16::MIN), i128::from(i16::MAX)),
-        C0Type::Int32 => (i128::from(i32::MIN), i128::from(i32::MAX)),
-        C0Type::Char(PlainChar::Signed) => (i128::from(i8::MIN), i128::from(i8::MAX)),
-        C0Type::Char(PlainChar::Unsigned) => (0, i128::from(u8::MAX)),
-        C0Type::UInt8 => (0, i128::from(u8::MAX)),
-        C0Type::UInt16 => (0, i128::from(u16::MAX)),
-        C0Type::UInt32 => (0, i128::from(u32::MAX)),
-        C0Type::Int64 => (i128::from(i64::MIN), i128::from(i64::MAX)),
-        C0Type::UInt64 => (0, i128::from(u64::MAX)),
-        _ => return Err(StaticIntegerEvaluationError::NotConstant),
+    let Ok(value) = evaluate_static_integer_expression(expression) else {
+        return;
     };
-    let value = match value {
-        StaticIntegerValue::Signed { value, .. } => value,
+    if static_integer_fits(c_type, value) {
+        return;
+    }
+    if let Ok(literal) = static_integer_literal_for_type(c_type, value) {
+        *expression = literal;
+    }
+}
+
+/// Whether `value` is representable in `c_type` unchanged.
+fn static_integer_fits(c_type: C0Type, value: StaticIntegerValue) -> bool {
+    let Some((kind, bits)) = static_integer_type_info(c_type) else {
+        return false;
+    };
+    let converted = convert_static_integer_modulo(value, kind == StaticIntegerKind::Signed, bits);
+    match value {
+        StaticIntegerValue::Signed { value, .. } => value == converted,
         StaticIntegerValue::Unsigned { value, .. } => {
-            i128::try_from(value).map_err(|_| StaticIntegerEvaluationError::OutOfRange)?
+            i128::try_from(value).is_ok_and(|value| value == converted)
         }
-    };
-    if value < minimum || value > maximum {
-        if matches!(c_type, C0Type::UInt32)
-            && (i128::from(i32::MIN)..=i128::from(i32::MAX)).contains(&value)
-        {
-            return Ok(C0Expression::UInt32Literal((value as i32) as u32));
-        }
-        return Err(StaticIntegerEvaluationError::OutOfRange);
-    }
-    if c_type == C0Type::Int64 {
-        Ok(C0Expression::Int64Literal(value as i64))
-    } else if c_type == C0Type::UInt64 {
-        Ok(C0Expression::UInt64Literal(value as u64))
-    } else if matches!(c_type, C0Type::Int8 | C0Type::Int16 | C0Type::Int32) {
-        Ok(C0Expression::Int32Literal((value as i32) as u32))
-    } else {
-        Ok(C0Expression::UInt32Literal(value as u32))
     }
 }
 
@@ -8073,6 +8085,7 @@ impl Parser {
         expression: &mut C0Expression,
     ) -> Result<(), C0SyntaxError> {
         self.validate_char_pointer_assignment(declared_type, expression)?;
+        convert_integer_constant(declared_type, expression);
         if declared_type.is_pointer()
             && !declared_pointee_constant
             && self.expression_pointee_is_constant(expression)
@@ -13273,6 +13286,9 @@ impl Parser {
         let mut written = Vec::new();
         let mut next = 0u32;
         self.parse_sparse_array_initializer_level(name, &dimensions, 0, &mut written, &mut next)?;
+        for (_, value) in &mut written {
+            convert_integer_constant(element_type, value);
+        }
         let store = |index: u32, value: C0Expression| C0Statement::Store {
             pointer: C0Expression::Add(
                 Box::new(C0Expression::Variable(name.to_string())),
@@ -18415,6 +18431,13 @@ impl Parser {
                     )?;
                 }
             }
+            if let Some(parameter) = function_name
+                .and_then(|name| self.function_declarations.get(name))
+                .and_then(|function| function.parameters.get(argument_index))
+                && !parameter.c_type.is_pointer()
+            {
+                convert_integer_constant(parameter.c_type, &mut expression);
+            }
             if known_scalar_parameter && self.expression_contains_aggregate(&expression) {
                 return Err(self.aggregate_expression_error());
             }
@@ -18848,8 +18871,9 @@ impl Parser {
                 ));
             }
         };
-        let expression = self.parse_unary()?;
+        let mut expression = self.parse_unary()?;
         self.validate_pointer_cast(c_type, struct_name.as_deref(), &expression, &cast_position)?;
+        convert_integer_constant(c_type, &mut expression);
         Ok(C0Expression::Cast {
             expression: Box::new(expression),
             c_type,
