@@ -29,6 +29,16 @@ plus the sizes of its new children. This justifies copying the old root's
 summary and recomputing the demoted node. Connecting those mathematical values
 to C metadata fields, including machine-integer bounds, remains unfinished.
 
+The C frontend now checks the type query, static assertion, and member offset
+used by Linux `container_of`; unsigned pointer subtraction preserves the offset
+and GNU `void*` arithmetic uses byte steps. The unchanged macro's first-member
+address recovery is verified in [`c_container_of.md`](../../mdtests/c_container_of.md).
+The generated copy callback parses and executes to its metadata access. Its
+ownership contract remains blocked on naming the enclosing `sized_node` from
+an `rb_node*`: contract casts currently accept only a `void*` C parameter, and
+named field-bearing resources cannot unfold a body with an existential witness.
+This is not yet a verified mutation-capable callback.
+
 This is an entry-point integration increment of
 [chunk 14](../../issues/rbtree-example.md#augmented), not the completed
 augmentation proof. Imported callback contracts currently have no writable

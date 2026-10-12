@@ -3493,3 +3493,11 @@ path = "reference/library/index.md#uint64_pack_uint16_to_integer"
 [[item]]
 id = "stdlib.theorem.uint64_less_than_implies_not_greater_equal"
 path = "reference/library/index.md#uint64_less_than_implies_not_greater_equal"
+
+[[item]]
+id = "c0.expression.builtin-offsetof"
+path = "reference/language/c0.md#supported-expressions-and-statements"
+
+[[item]]
+id = "c0.declaration.static-assert"
+path = "reference/language/c0.md#supported-expressions-and-statements"

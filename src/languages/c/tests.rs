@@ -14059,3 +14059,67 @@ fn c0_builtin_types_compatible_rejects_erased_typedef_metadata() {
     syntax::parse_functions("void run() { __builtin_types_compatible_p(int, int); }")
         .expect("a discarded compile-time result has no runtime effect");
 }
+
+#[test]
+fn c0_static_assert_checks_all_declaration_scopes() {
+    syntax::parse_functions(
+        r#"
+        _Static_assert(sizeof(long) == 8, "target");
+        struct A { _Static_assert(1, "struct"); char c; long x; };
+        union U { _Static_assert(1, "union"); int x; };
+        typedef struct A alias_t;
+        _Static_assert(__builtin_offsetof(alias_t, x) == 8, "padding");
+        int run() {
+            _Static_assert(__builtin_types_compatible_p(int, int), "same" " type");
+            return 0;
+        }
+    "#,
+    )
+    .expect("constant assertions are checked without runtime calls");
+    for body in [
+        r#"_Static_assert(0, "false");"#,
+        r#"_Static_assert(n, "nonconstant");"#,
+        r#"_Static_assert(1 / 0, "undefined");"#,
+        r#"_Static_assert(2147483647 + 1, "overflow");"#,
+        r#"_Static_assert(1, n);"#,
+    ] {
+        assert!(
+            syntax::parse_functions(&format!("int run(int n) {{ {body} return 0; }}")).is_err(),
+            "{body}"
+        );
+    }
+    let error =
+        syntax::parse_functions(r#"_Static_assert(0, "must hold"); int run() { return 0; }"#)
+            .unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("static assertion failed: must hold")
+    );
+}
+
+#[test]
+fn c0_builtin_offsetof_uses_layout_and_refuses_unsupported_designators() {
+    for (member, expected) in [("c", 0), ("x", 8), ("tail", 16)] {
+        let source = format!(
+            "struct A {{ char c; long x; int tail[3]; }}; unsigned long run() {{ return __builtin_offsetof(struct A, {member}); }}"
+        );
+        let functions = syntax::parse_functions(&source).unwrap();
+        assert!(
+            matches!(functions[0].body(), syntax::C0Statement::Return(syntax::C0Expression::UInt64Literal(value), _) if *value == expected)
+        );
+    }
+    for operands in [
+        "struct A, missing",
+        "struct A, tail[1]",
+        "struct A, x.member",
+        "struct A*, x",
+        "int, x",
+        "struct Incomplete, x",
+    ] {
+        let source = format!(
+            "struct A {{ char c; long x; int tail[3]; }}; unsigned long run() {{ return __builtin_offsetof({operands}); }}"
+        );
+        assert!(syntax::parse_functions(&source).is_err(), "{operands}");
+    }
+}
