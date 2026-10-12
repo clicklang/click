@@ -16,6 +16,19 @@ use super::wide_arithmetic::{Carrier, Relation, apply, have, relate, relation_pa
 use super::*;
 use crate::surface::checking::{IntegerRefutation, plan_integer_refutation};
 
+/// How many rewrites `auto`'s equality search chains before closing.
+const REWRITE_DEPTH: usize = 3;
+
+/// How many connected equalities the search offers, and how many checked
+/// rewrites it tries in all. A large connected component fails promptly
+/// instead of exploring every short chain of its equalities.
+const REWRITE_EQUALITIES: usize = 64;
+const REWRITE_ATTEMPTS: usize = 256;
+
+/// How many rewritten goals the search offers to `simp`, after the cheap
+/// closers miss: `simp` unfolds and computes what a rewrite exposes.
+const REWRITE_SIMP_CLOSURES: usize = 8;
+
 /// The machine type an order fact compares, with the names its bridges use.
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum MachineOrder {
@@ -194,6 +207,48 @@ fn range_items(value: &ContractExpression) -> Vec<Carried> {
         }
     }
     items
+}
+
+/// What `auto`'s rewrite search may still spend.
+struct RewriteBudget {
+    attempts: usize,
+    simp_closures: usize,
+}
+
+/// An equality in both directions, each with its kernel form.
+fn oriented_forms(
+    kernel: Proposition,
+    surface: ClickProposition,
+) -> Vec<(Proposition, ClickProposition)> {
+    let reverse = crate::kernel::proof::equality_rewrite::reverse_equality(&kernel).zip(
+        super::fixed_state_proofs::reverse_surface_equality(&surface),
+    );
+    std::iter::once((kernel, surface)).chain(reverse).collect()
+}
+
+/// `l == r` for an equality spelled `at(S, l) == at(S, r)` or `at(S, l == r)`.
+fn unanchored_equality(surface: &ClickProposition) -> Option<ClickProposition> {
+    match surface {
+        ClickProposition::At { proposition, .. } => Some(proposition.as_ref().clone()),
+        ClickProposition::Comparison {
+            left:
+                ContractExpression::At {
+                    selector: left_selector,
+                    expression: left,
+                },
+            operator,
+            right:
+                ContractExpression::At {
+                    selector: right_selector,
+                    expression: right,
+                },
+        } if left_selector == right_selector => Some(ClickProposition::Comparison {
+            left: left.as_ref().clone(),
+            operator: *operator,
+            right: right.as_ref().clone(),
+        }),
+        _ => None,
+    }
 }
 
 /// An `Integer` literal, negative ones as a negation of their magnitude.
@@ -483,7 +538,170 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_auto_conjunction_closure()? {
             return Ok(Some(closed));
         }
-        self.try_simp_closure()
+        if let Some(closed) = self.try_simp_closure()? {
+            return Ok(Some(closed));
+        }
+        self.try_auto_equality_chain_closure()
+    }
+
+    /// Rewrite the goal by the equality facts connected to it until
+    /// `assumption`, `normalize` or another direct closer finishes it: the
+    /// congruence step `simp` takes only once its decider has selected the
+    /// premises, here offered every connected equality, algebraic `==` facts
+    /// included. Each rewrite is an ordinary checked step.
+    pub(in crate::surface::proof) fn try_auto_equality_chain_closure(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        use crate::kernel::proof::equality_rewrite::{equality_rewrite_applies, reverse_equality};
+        let Some(goal) = self.goal() else {
+            return Ok(None);
+        };
+        let Some(mut equalities) =
+            crate::surface::planning::proposition_search::solver_connected_equalities(
+                self.facts().assumptions(),
+                goal,
+            )
+        else {
+            return Ok(None);
+        };
+        // Equalities that rewrite the goal itself come first, so the
+        // spelling cap keeps the ones a short chain starts from.
+        let applies = |kernel: &Proposition| {
+            equality_rewrite_applies(goal, kernel)
+                || reverse_equality(kernel)
+                    .is_some_and(|reverse| equality_rewrite_applies(goal, &reverse))
+        };
+        equalities.sort_by_key(|equality| !applies(equality));
+        let mut candidates: Vec<Vec<(Proposition, ClickProposition)>> = Vec::new();
+        for equality in &equalities {
+            check_verification_deadline()?;
+            if candidates.len() >= REWRITE_EQUALITIES {
+                break;
+            }
+            let Some((kernel, surface)) = self
+                .resolve_simp_premises(std::slice::from_ref(equality), &[])
+                .and_then(|mut spelled| spelled.pop())
+            else {
+                continue;
+            };
+            // A fact recorded at a statement's entry is spelled there; its
+            // unanchored form denotes the same fact where the proof stands
+            // when nothing it names has changed since, which lowering and
+            // the checked rewrite decide. Offer the unanchored form first.
+            if let Some(unanchored) = unanchored_equality(&surface)
+                && let Ok(lowered) =
+                    self.lower_surface_proposition(&unanchored, "`auto` rewrite equality")
+            {
+                candidates.push(oriented_forms(lowered, unanchored));
+            }
+            candidates.push(oriented_forms(kernel, surface));
+        }
+        if candidates.is_empty() {
+            return Ok(None);
+        }
+        let mut seen = std::collections::BTreeMap::from([(goal.clone(), REWRITE_DEPTH)]);
+        let mut budget = RewriteBudget {
+            attempts: REWRITE_ATTEMPTS,
+            simp_closures: REWRITE_SIMP_CLOSURES,
+        };
+        self.rewrite_search(
+            &candidates,
+            &mut vec![false; candidates.len()],
+            REWRITE_DEPTH,
+            &mut seen,
+            &mut budget,
+        )
+    }
+
+    /// A bounded depth-first search over rewrite sequences: every applicable
+    /// equality in either direction, each used at most once, closing after
+    /// every step by `assumption`, `normalize` or the direct logical closer.
+    /// An orientation whose left side does not occur in the goal costs no
+    /// checked step. A goal already reached with at least as many rewrites
+    /// left is not explored again, and the whole search tries at most
+    /// `REWRITE_ATTEMPTS` rewrites.
+    fn rewrite_search(
+        &self,
+        candidates: &[Vec<(Proposition, ClickProposition)>],
+        used: &mut Vec<bool>,
+        depth: usize,
+        seen: &mut std::collections::BTreeMap<Proposition, usize>,
+        budget: &mut RewriteBudget,
+    ) -> Result<Option<Self>, ClickError> {
+        let Some(current) = self.goal() else {
+            return Ok(None);
+        };
+        for (index, forms) in candidates.iter().enumerate() {
+            if used[index] {
+                continue;
+            }
+            for (kernel, surface) in forms {
+                check_verification_deadline()?;
+                if !crate::kernel::proof::equality_rewrite::equality_rewrite_applies(
+                    current, kernel,
+                ) {
+                    continue;
+                }
+                if budget.attempts == 0 {
+                    return Ok(None);
+                }
+                budget.attempts -= 1;
+                let Ok(rewritten) = self.apply_step(ProofStep::Rewrite(surface.clone())) else {
+                    continue;
+                };
+                let Some(goal) = rewritten.goal().cloned() else {
+                    continue;
+                };
+                let left = depth - 1;
+                match seen.get(&goal) {
+                    Some(&reached) if reached >= left => continue,
+                    Some(_) => {}
+                    None => {
+                        if let Some(closed) = rewritten.try_close_after_rewrite(budget)? {
+                            return Ok(Some(closed));
+                        }
+                    }
+                }
+                seen.insert(goal, left);
+                if depth > 1 {
+                    used[index] = true;
+                    let found =
+                        rewritten.rewrite_search(candidates, used, depth - 1, seen, budget)?;
+                    used[index] = false;
+                    if found.is_some() {
+                        return Ok(found);
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    fn try_close_after_rewrite(
+        &self,
+        budget: &mut RewriteBudget,
+    ) -> Result<Option<Self>, ClickError> {
+        // Inside a `have`, the stated fact is the focused goal; the proof
+        // around it is not complete yet.
+        let closes = |proof: &Self| proof.focused_discharged() || proof.is_complete();
+        if let Ok(closed) = self.apply_step(ProofStep::Assumption)
+            && closes(&closed)
+        {
+            return Ok(Some(closed));
+        }
+        if let Ok(closed) = self.apply_step(ProofStep::Normalize)
+            && closes(&closed)
+        {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_direct_logical_closure().ok().flatten() {
+            return Ok(Some(closed));
+        }
+        if budget.simp_closures == 0 {
+            return Ok(None);
+        }
+        budget.simp_closures -= 1;
+        Ok(self.try_simp_closure()?.filter(closes))
     }
 
     /// A conjunction goal: each conjunct by `auto` on the stated fact, then

@@ -19,8 +19,10 @@ An omitted proof means `simp` at the point where the statement holds:
   executes C.
 - `have P by auto;` also proves `P` where it is written. With no C to run
   toward the fact, `auto` first tries the solver, which refutes the integer
-  negation of a linear `Integer` bound from the facts connected to it, and
-  then `simp` (`mdtests/have_by_auto_refutes_a_linear_bound.md`).
+  negation of a linear `Integer` bound from the facts connected to it, then
+  `simp` (`mdtests/have_by_auto_refutes_a_linear_bound.md`), then a short
+  chain of `rewrite` steps by the connected equalities
+  (`mdtests/auto_rewrites_a_constructor_term_to_its_model.md`).
 
 A proof of one step needs no braces: `by T(args);` is `by { T(args); }` for
 any tactic written as a call, as in `have 0 <= x by assumption();`. `click
