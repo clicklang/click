@@ -7685,3 +7685,51 @@ fn signed_increment_overflow_checks_stay_flat_per_assignment() {
         "an unbounded increment still has an overflow path"
     );
 }
+
+#[test]
+fn unrelated_call_work_stays_flat_with_kept_pointer_aliases() {
+    let mut calls = Vec::new();
+    for size in [1, 8, 32, 64] {
+        let parameters = (0..size)
+            .map(|i| format!(", struct box* q{i}"))
+            .collect::<String>();
+        let sum = (0..size)
+            .map(|i| format!("q{i}->v"))
+            .collect::<Vec<_>>()
+            .join(" + ");
+        let c = format!(
+            "struct box {{ int32 v; }}; void touch(int32* flags, int32* data, int32 k) {{ return; }} int32 caller(int32* flags, int32* data, int32 k, struct box* b{parameters}) {{ int32 total; b->v = 1; touch(flags, data, k); total = {sum}; return total; }}"
+        );
+        let requirements = (0..size)
+            .map(|i| format!("requires q{i} == b;"))
+            .collect::<String>();
+        let source = format!(
+            "verifying \"aliases.c\"; void touch(int32* flags, int32* data, int32 k) {{ owns flags[0..k]; owns data[0..k]; }} by {{ execute(); simp(); }} int32 caller(int32* flags, int32* data, int32 k, struct box* b{parameters}) {{ owns flags[0..k]; owns data[0..k]; owns *b; {requirements} ensures result == {size}; }} by {{ step(); step(); step(); step(); step(); simp(); }}"
+        );
+        let (verified, events) = crate::instrumentation::collect(|| {
+            verify_c0_sources(&source, &[("aliases.c", c.as_str())])
+        });
+        verified.unwrap_or_else(|error| panic!("{size} aliases: {}", error.message()));
+        let call = events
+            .iter()
+            .filter_map(|event| match event {
+                crate::instrumentation::VerificationEvent::TacticFinished {
+                    tactic, work, ..
+                } if tactic.claim == "caller.contract"
+                    && tactic.tactic_name == "step"
+                    && tactic.source_index == 2 =>
+                {
+                    Some(*work)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(call.len(), 1, "one selected call step at size {size}");
+        calls.push(call[0]);
+    }
+    eprintln!("unrelated call work by alias count: {calls:?}");
+    assert!(
+        calls.iter().all(|work| *work <= calls[0] * 2),
+        "call work grew with irrelevant aliases: {calls:?}"
+    );
+}
