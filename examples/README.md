@@ -96,6 +96,10 @@ Current projects:
   a small object.
 - `jsonc-numeric/` verifies synthetic json-c-shaped `double` field reads and
   mixed integer/double scaling through pointer contracts and memory resources.
+- `label-build-flags/` is the worked example of the own-project guide: a
+  `Makefile` library whose `-I`/`-D` file is verified through a compiler
+  import and whose `strlen` caller is verified directly, with an `extern`
+  contract between them.
 - `jsonc-existing-source/` preserves the upstream json-c version helper and
   proves its numeric and string results without editing the upstream C.
 - `owned-string/` verifies a length-tracked string with a trailing terminator

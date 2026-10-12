@@ -113,3 +113,7 @@ languages used in that process. Once ordinary contract debugging is not enough, 
 [proof-failure triage guide](proof-failure-triage.md) to distinguish
 proof-authoring work from unsupported semantics, missing functionality,
 correctness bugs, and tooling failures.
+
+To verify a function in an existing project, with its include paths, `-D`
+settings, and libc calls, continue with
+[Verify a function in your own project](own-project.md).
