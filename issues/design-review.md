@@ -2,6 +2,9 @@
 
 Priority: P1.
 
+Depends on [smt-auto.md](smt-auto.md). Items P1–P4, W4 and W5 are expected to
+be fixed by its stages; rule on them after its stage-1 measurements land.
+
 On 2026-10-12 Click was reviewed the way an expert launch audience would
 review it, from four sides: the surface language, the proof and tactic
 workflow, the memory and resource model with its trust story, and a
@@ -76,7 +79,8 @@ and hand-written `arithmetic_certificate` blocks: about 270 lines of
 ACSL, Dafny and Verus specs use mathematical integers by default.
 
 Proposed fix: specification arithmetic is over `Integer` by default; C
-semantics are written explicitly where a spec means them.
+semantics are written explicitly where a spec means them
+([smt-auto.md](smt-auto.md) stage 4).
 
 Done when: decided, and if fixed, the examples shrink accordingly.
 
@@ -90,10 +94,10 @@ rewrite(l.model == left_model); normalize(); }`), and `simp` is described by
 heuristic limits ("up to eight variables", "nested at most twice",
 `docs/reference/tactics/index.md`).
 
-Proposed fix: a certificate-producing decision procedure for linear integer
-arithmetic plus congruence closure behind `simp` and `arithmetic`, in the
-style of Lean's `omega`/`linarith`; optionally a proof-producing SMT solver
-whose proofs the kernel re-checks.
+Proposed fix: [smt-auto.md](smt-auto.md) stage 1: a solver-backed decision
+procedure for linear integer arithmetic plus congruence closure behind `simp`
+and `arithmetic`, whose results are reconstructed as kernel-checked
+certificates.
 
 Done when: decided; if fixed, the procedure's certificates are kernel-checked
 and a representative example shrinks.
@@ -107,7 +111,9 @@ Today: "`have` takes no label, and a later step cites it by restating `P`"
 `using { ... }` (`examples/rust-byte-sum/sum.click`), and `rewrite(` appears
 about 6,900 times across rbtree-erase and arena.
 
-Proposed fix: `have h: P` and `using { h; }`.
+Proposed fix: `have h: P` and `using { h; }`. Unsat-core premise selection
+([smt-auto.md](smt-auto.md) stage 2) removes most citations, so rule on this
+after that stage.
 
 Done when: decided; if fixed, documented with an mdtest, and
 `mdtests/have_takes_no_label.md` updated.
@@ -183,8 +189,9 @@ identical blocks (`mdtests/bubble_sort3_two_pass_sorted.md`); committed
 expansions keep noise such as `have 0 == 0 by normalize();` and runs of
 `assumption();` (`examples/vector-push/vector_push.click`).
 
-Proposed fix: named, deduplicated certificate nodes; recommend keeping the
-smart source and caching certificates instead of committing expansions.
+Proposed fix: named, deduplicated certificate nodes; keep the
+smart source and cache certificates instead of committing expansions
+([smt-auto.md](smt-auto.md) stage 3).
 
 Decision: open.
 
@@ -195,8 +202,8 @@ Today: rbtree-insert takes about 118 s on 20 cores and rbtree-erase minutes
 43 sidecar lines per second; a full audit takes about 20 minutes
 (`docs/internals/testing.md`).
 
-Proposed fix: per-claim incremental caching by default; budgets reported in
-work units.
+Proposed fix: per-claim incremental caching by default
+([smt-auto.md](smt-auto.md) stage 3); budgets reported in work units.
 
 Decision: open.
 
