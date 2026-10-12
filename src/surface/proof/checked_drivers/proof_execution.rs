@@ -1914,7 +1914,8 @@ pub(super) fn solve_nested_have<'a>(
 ) -> Result<Option<ProofScope<'a>>, ClickError> {
     let source_proof = have.checking_proof();
     let selected = match source_proof.as_ref() {
-        SourceProof::Default | SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Simp) => {
+        SourceProof::Tactic(SmartTactic::Auto) => nested.try_auto_fact_closure()?,
+        SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
             nested.try_simp_closure()?
         }
         SourceProof::Script(body) => {

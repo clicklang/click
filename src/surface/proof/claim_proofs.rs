@@ -2668,10 +2668,13 @@ pub(super) fn finish_ordered_proof<'a>(
                                             prepared.begin_have(have.proposition.clone())?;
                                         let source_proof = have.checking_proof();
                     let selected = match source_proof.as_ref() {
+                                            SourceProof::Tactic(SmartTactic::Auto) => {
+                                                scope.try_auto_fact_closure()?
+                                            }
                                             SourceProof::Default
-                                            | SourceProof::Tactic(
-                                                SmartTactic::Auto | SmartTactic::Simp,
-                                            ) => scope.try_simp_closure()?,
+                                            | SourceProof::Tactic(SmartTactic::Simp) => {
+                                                scope.try_simp_closure()?
+                                            }
                                             SourceProof::Script(tactics) => {
                                                 scope.try_authoritative_linear_script(tactics)?
                                             }
