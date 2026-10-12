@@ -3260,6 +3260,12 @@ fn contract_expression_element_type(
     expression: &CExpression,
 ) -> Option<CType> {
     match expression {
+        // An indexed place becomes `&base[index]` when used as ownership.
+        // Its address still points to the base's element type.
+        CExpression::AddressOf(place) => match place.as_ref() {
+            CExpression::Index(base, _) => contract_expression_element_type(parameters, base),
+            _ => None,
+        },
         CExpression::Value(value) => value.c_type().pointee_type(),
         CExpression::Cast { target_type, .. } => target_type.pointee_type(),
         CExpression::Variable(name) => parameters
@@ -3292,6 +3298,10 @@ pub(in crate::surface) fn contract_expression_element_width(
     expression: &CExpression,
 ) -> Option<u32> {
     match expression {
+        CExpression::AddressOf(place) => match place.as_ref() {
+            CExpression::Index(base, _) => contract_expression_element_width(parameters, base),
+            _ => None,
+        },
         CExpression::Value(value) => value.c_type().pointee_type().map(CType::byte_width),
         CExpression::Cast { target_type, .. } => target_type.pointee_type().map(CType::byte_width),
         CExpression::Variable(name) => parameters
