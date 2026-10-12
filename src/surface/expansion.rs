@@ -2312,7 +2312,8 @@ fn find_ensure_proof_edit(
 }
 
 /// The keyword token of written `ensures`, `owns`, or `produces` clause
-/// `wanted`, counted together in source order.
+/// `wanted`, counted together in source order. A `produces` clause written
+/// in a contract `if` block is a clause of its own, in its place.
 fn find_ensure_clause(
     tokens: &[SourceToken],
     body_open: usize,
@@ -2321,11 +2322,32 @@ fn find_ensure_clause(
 ) -> Result<usize, ClickError> {
     let mut depth = 0;
     let mut found = 0;
+    // Whether the contract clause being read began with `if`, and whether
+    // the block open at depth one is that `if`'s clause block.
+    let mut in_if_header = false;
+    let mut in_if_block = false;
     let mut index = body_open + 1;
     while index < body_close {
         match tokens[index].text.as_str() {
-            "{" => depth += 1,
+            "{" => {
+                if depth == 0 {
+                    in_if_block = in_if_header;
+                }
+                depth += 1;
+            }
             "}" => depth -= 1,
+            "if" if depth == 0 => in_if_header = true,
+            ";" | "requires" | "consumes" | "views" | "let" | "decreases" | "constructs"
+                if depth == 0 =>
+            {
+                in_if_header = false;
+            }
+            "produces" if depth == 1 && in_if_block => {
+                if found == wanted {
+                    return Ok(index);
+                }
+                found += 1;
+            }
             "ensures"
                 if depth == 0
                     && tokens
@@ -2333,12 +2355,14 @@ fn find_ensure_clause(
                         .map(|token| token.text.as_str())
                         != Some("exceptional") =>
             {
+                in_if_header = false;
                 if found == wanted {
                     return Ok(index);
                 }
                 found += 1;
             }
             "owns" | "produces" if depth == 0 => {
+                in_if_header = false;
                 if found == wanted {
                     return Ok(index);
                 }
