@@ -76,7 +76,6 @@ use checked_drivers::*;
 use execution_planning::*;
 pub(super) use execution_planning::{
     StatementFactTransportPolicy, StatementPrerequisitePolicy, certified_statement_transitions,
-    verify_loop_execution_proofs,
 };
 use execution_state::*;
 pub(super) use execution_state::{

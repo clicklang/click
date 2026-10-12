@@ -2828,11 +2828,6 @@ pub(super) enum ProofSite {
         theorem_name: String,
         ensure_index: usize,
     },
-    LoopPhase {
-        function_name: String,
-        loop_index: usize,
-        phase: &'static str,
-    },
 }
 
 impl ProofSite {
@@ -2846,14 +2841,6 @@ impl ProofSite {
                 theorem_name,
                 ensure_index,
             } => format!("theorem `{theorem_name}` ensure {ensure_index}"),
-            Self::LoopPhase {
-                function_name,
-                loop_index,
-                phase,
-            } => format!(
-                "`{}`",
-                claim_labels::loop_phase_claim_label(function_name, *loop_index, phase)
-            ),
         }
     }
 }
@@ -3047,8 +3034,7 @@ fn expand_selected_tactics_context(
             .map(|rewritten| SelectedTacticExpansion::whole_rewrite(source, rewritten));
     }
     let site_signature = match &site {
-        ProofSite::FunctionClaim { function_name, .. }
-        | ProofSite::LoopPhase { function_name, .. } => proof_function_blocks(&file)
+        ProofSite::FunctionClaim { function_name, .. } => proof_function_blocks(&file)
             .find(|block| block.signature().name() == function_name)
             .map(|block| block.signature().clone()),
         ProofSite::TheoremEnsure { .. } => None,
@@ -3674,28 +3660,6 @@ fn claim_source_regions(
             continue;
         };
         let owner = function_name.to_string();
-        for clause in function_block.structural_clauses() {
-            let CodeRegion::Loop(loop_index) = clause.region() else {
-                continue;
-            };
-            for phase in ["initialize", "preserve"] {
-                if let Ok((_, Some(span), _)) =
-                    find_loop_phase_proof_span(&tokens, &function, *loop_index, phase)
-                {
-                    regions.push(ClaimRegion {
-                        anchor: span.start,
-                        span,
-                        label: claim_labels::loop_phase_claim_label(
-                            function_name,
-                            *loop_index,
-                            phase,
-                        ),
-                        owner: owner.clone(),
-                        written_phase: None,
-                    });
-                }
-            }
-        }
         if function_block.grouped_proof().is_some()
             && let Ok(span) = find_grouped_proof_span(&tokens, &function)
         {
@@ -4045,8 +4009,7 @@ fn locate_source_tactic_file(
                 })
                 .collect();
             located.function_block = match &located.site {
-                ProofSite::FunctionClaim { function_name, .. }
-                | ProofSite::LoopPhase { function_name, .. } => proof_function_blocks(file)
+                ProofSite::FunctionClaim { function_name, .. } => proof_function_blocks(file)
                     .find(|block| block.signature().name() == function_name)
                     .cloned(),
                 ProofSite::TheoremEnsure { .. } => None,
@@ -4237,49 +4200,6 @@ fn source_tactic_entries(
                     "could not locate Click function block `{function_name}`"
                 ))
             })?;
-        for clause in function_block.structural_clauses() {
-            if let CodeRegion::Loop(loop_index) = clause.region() {
-                for (phase, proof) in [
-                    ("initialize", clause.initialize_proof()),
-                    ("preserve", clause.preserve_proof()),
-                ] {
-                    let (selector, proof_span, insertion) =
-                        find_loop_phase_proof_span(&tokens, &function, *loop_index, phase)?;
-                    let default_proof = SourceProof::Default;
-                    let proof = proof.unwrap_or(&default_proof);
-                    let edit = proof_span.map_or_else(
-                        || ProofSourceEdit::OmittedLoopPhase {
-                            span: insertion..insertion,
-                            selector,
-                            phase,
-                        },
-                        ProofSourceEdit::Explicit,
-                    );
-                    proof_tactic_entries(
-                        &tokens,
-                        &edit,
-                        proof,
-                        &ProofSite::LoopPhase {
-                            function_name: function_name.to_string(),
-                            loop_index: *loop_index,
-                            phase,
-                        },
-                        &claim_labels::loop_phase_claim_label(function_name, *loop_index, phase),
-                        &mut entries,
-                    )?;
-                }
-            }
-            let block = find_structural_clause_block(&tokens, &function, *clause.region())?;
-            let edits = structural_item_proof_edits(&tokens, &block)?;
-            if edits.len() != clause.items().len() {
-                return Err(ClickError::new(format!(
-                    "structural source mapping for `{function_name}` {:?} found {} items, expected {}",
-                    clause.region(),
-                    edits.len(),
-                    clause.items().len()
-                )));
-            }
-        }
         if let Some(proof) = function_block.covering_proof() {
             let edit = find_grouped_proof_edit(&tokens, &function, function_block)?;
             proof_tactic_entries(
@@ -5039,41 +4959,6 @@ fn c0_tactic_source_positions_with_tokens(
     for function_block in proof_function_blocks(file) {
         let function_name = function_block.signature().name();
         let function = find_function(tokens, function_name)?;
-        for clause in function_block.structural_clauses() {
-            let block = find_structural_clause_block(tokens, &function, *clause.region())?;
-            let edits = structural_item_proof_edits(tokens, &block)?;
-            if edits.len() != clause.items().len() {
-                return Err(ClickError::new(format!(
-                    "structural source mapping for `{function_name}` {:?} found {} items, expected {}",
-                    clause.region(),
-                    edits.len(),
-                    clause.items().len()
-                )));
-            }
-        }
-        if let Some((loop_index, phase)) =
-            claim_labels::parse_loop_phase_claim_label(function_name, claim_label)
-            && let Some(clause) = function_block
-                .structural_clauses()
-                .iter()
-                .find(|clause| clause.region() == &CodeRegion::Loop(loop_index))
-        {
-            let proof = if phase == "initialize" {
-                clause.initialize_proof()
-            } else {
-                clause.preserve_proof()
-            };
-            let (fallback, proof_span, _) =
-                find_loop_phase_proof_span(tokens, &function, loop_index, phase)?;
-            return proof_source_positions(
-                click_source,
-                tokens,
-                proof_span.as_ref(),
-                proof,
-                fallback,
-                claim_label,
-            );
-        }
         let selected = function_block
             .claim_by_label(claim_label)
             .and_then(|claim| match claim {
@@ -5164,73 +5049,6 @@ fn find_claim_clause_offset(
     Ok(find_claim_proof_edit(tokens, function, function_block, claim)?.selector())
 }
 
-fn find_loop_phase_proof_span(
-    tokens: &[SourceToken],
-    function: &FunctionSource,
-    wanted_loop: usize,
-    phase: &str,
-) -> Result<(usize, Option<Range<usize>>, usize), ClickError> {
-    let mut depth = 0;
-    let mut index = function.body_open + 1;
-    while index < function.body_close {
-        match tokens[index].text.as_str() {
-            "{" => depth += 1,
-            "}" => depth -= 1,
-            "for"
-                if depth == 0
-                    && tokens.get(index + 1).map(|token| token.text.as_str()) == Some("loop")
-                    && tokens.get(index + 2).map(|token| token.text.as_str()) == Some("(") =>
-            {
-                let loop_index = tokens
-                    .get(index + 3)
-                    .and_then(|token| token.text.parse::<usize>().ok());
-                let mut open = index + 5;
-                if tokens.get(open).map(|token| token.text.as_str()) == Some("as") {
-                    open += 2;
-                }
-                if loop_index == Some(wanted_loop)
-                    && tokens.get(index + 4).map(|token| token.text.as_str()) == Some(")")
-                    && tokens.get(open).map(|token| token.text.as_str()) == Some("{")
-                {
-                    let selector = if phase == "initialize" {
-                        tokens[index].span.start
-                    } else {
-                        tokens[index + 1].span.start
-                    };
-                    let close = matching_delimiter(tokens, open, "{", "}")?;
-                    let mut nested = 0;
-                    for cursor in open + 1..close {
-                        match tokens[cursor].text.as_str() {
-                            "{" => nested += 1,
-                            "}" => nested -= 1,
-                            text if nested == 0 && text == phase => {
-                                let by = cursor + 1;
-                                if tokens.get(by).map(|token| token.text.as_str()) != Some("by") {
-                                    return Err(ClickError::new(format!(
-                                        "`{phase}` has no source `by` clause"
-                                    )));
-                                }
-                                return Ok((
-                                    selector,
-                                    Some(proof_span(tokens, by)?),
-                                    tokens[close].span.start,
-                                ));
-                            }
-                            _ => {}
-                        }
-                    }
-                    return Ok((selector, None, tokens[close].span.start));
-                }
-            }
-            _ => {}
-        }
-        index += 1;
-    }
-    Err(ClickError::new(format!(
-        "could not locate source loop({wanted_loop})"
-    )))
-}
-
 pub(super) fn parse_source_with_c_layouts(
     click_source: &str,
     c_sources: &[(&str, &str)],
@@ -5262,60 +5080,6 @@ fn parse_source_with_c_layouts_context(
         qualified_objects,
         local_struct_pointers,
     )
-}
-
-fn find_structural_clause_block(
-    tokens: &[SourceToken],
-    function: &FunctionSource,
-    wanted: CodeRegion,
-) -> Result<Range<usize>, ClickError> {
-    let mut depth = 0;
-    let mut index = function.body_open + 1;
-    while index < function.body_close {
-        match tokens[index].text.as_str() {
-            "{" => depth += 1,
-            "}" => depth -= 1,
-            "for" if depth == 0 => {
-                let kind = tokens.get(index + 1).map(|token| token.text.as_str());
-                let region = match kind {
-                    Some("loop" | "statement")
-                        if tokens.get(index + 2).map(|token| token.text.as_str()) == Some("(") =>
-                    {
-                        let region_index = tokens
-                            .get(index + 3)
-                            .and_then(|token| token.text.parse::<usize>().ok());
-                        if tokens.get(index + 4).map(|token| token.text.as_str()) != Some(")") {
-                            None
-                        } else {
-                            region_index.map(|region_index| {
-                                if kind == Some("loop") {
-                                    CodeRegion::Loop(region_index)
-                                } else {
-                                    CodeRegion::Statement(region_index)
-                                }
-                            })
-                        }
-                    }
-                    _ => None,
-                };
-                let mut open = index + 5;
-                if tokens.get(open).map(|token| token.text.as_str()) == Some("as") {
-                    open += 2;
-                }
-                if region == Some(wanted)
-                    && tokens.get(open).map(|token| token.text.as_str()) == Some("{")
-                {
-                    let close = matching_delimiter(tokens, open, "{", "}")?;
-                    return Ok(open..close);
-                }
-            }
-            _ => {}
-        }
-        index += 1;
-    }
-    Err(ClickError::new(format!(
-        "could not locate structural source block {wanted:?}"
-    )))
 }
 
 fn structural_item_proof_edits(
