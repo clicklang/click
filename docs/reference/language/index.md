@@ -2560,10 +2560,21 @@ ensures range_filled((struct range_job *)argument);
 
 The cast retypes the pointer for the clause; it does not change the pointer's
 value or provenance, and the C body's own conversion reaches the same object.
-Only `void *` parameters may use these struct casts, and a block casts each parameter to one
-struct, so the proof and its synthesized certificates read the parameter with
-one layout. Struct casts of other pointers, and struct casts inside resource or predicate
-definitions (whose parameters are already typed), are rejected.
+The direct `(struct T*)argument` form accepts a `void*` C parameter and
+records one target struct per parameter for proof synthesis. Contracts may
+also write `(struct T*)(void*)pointer` for a current object-pointer expression,
+including a typed struct pointer, field, or resource parameter. This explicit
+form retains the target layout on the expression and does not assign a layout
+to the source parameter. Integer and function-pointer operands are rejected.
+Source const qualifications survive the conversion; field reads and writes
+still require their ordinary memory permissions. Put `old(...)` or `at(...)`
+around the complete cast or field expression to select a snapshot.
+
+<!-- verified-example: mdtests/contract_object_pointer_casts.md -->
+<!-- verified-example: mdtests/contract_object_pointer_casts_rejects_missing_view.md -->
+<!-- verified-example: mdtests/contract_object_pointer_casts_rejects_const_write.md -->
+<!-- verified-example: mdtests/contract_object_pointer_casts_rejects_integer.md -->
+<!-- verified-example: mdtests/contract_object_pointer_casts_rejects_function_pointer.md -->
 
 When `old(p)` is passed as an array argument to a pure Click function or
 predicate, it becomes an entry-state Click array ref. For example,

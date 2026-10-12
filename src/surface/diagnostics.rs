@@ -4718,19 +4718,7 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             {
                 return format!("({} as {spelling})", describe_c_expression(expression));
             }
-            let spelling = match target_type {
-                CType::Int8 => "int8".to_string(),
-                CType::Int16 => "int16".to_string(),
-                CType::Int32 => "int32".to_string(),
-                CType::UInt8 => "uint8".to_string(),
-                CType::UInt16 => "uint16".to_string(),
-                CType::UInt32 => "uint32".to_string(),
-                CType::Int64 => "int64".to_string(),
-                CType::UInt64 => "uint64".to_string(),
-                CType::Int128 => "int128".to_string(),
-                CType::UInt128 => "uint128".to_string(),
-                _ => format!("{target_type:?}"),
-            };
+            let spelling = crate::kernel::c_type_spelling(*target_type);
             // Contract expressions use the `(type) expression` cast syntax.
             // Wrap the complete cast so it remains a single term when it is
             // embedded in a generated comparison or another proposition.
