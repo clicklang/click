@@ -1324,7 +1324,13 @@ the detached node and exact balanced root, with parent consistency and
 in-order removal. The left-child and right-child sidecars now verify the
 unchanged wrapper for exactly one child at every tree position, including the
 borrowed callback-table splice, callback refinements, and context reconstruction.
-Two-child deletion still needs wrapper integration.
+Two-child wrapper integration now covers every no-repair exit: immediate red-leaf
+successors and immediate successors with replacement children, at the root and
+on either parent link, plus both exits after deeper successor descent.
+The callback tables are borrowed without additional separation preconditions;
+the wrappers return the detached node and exact balanced, parent-consistent
+root with the remaining in-order contents. Black-leaf successors still need
+integration of their returned deficit with the general color-repair proof.
 Depends on 12.
 
 ### Augmented

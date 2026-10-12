@@ -32,8 +32,8 @@ parent link. It returns the detached node's fields, an empty hole, the unchanged
 context model with a one-black-level deficit, and the non-null parent to fix up.
 The right-child proof unfolds the sibling so execution can establish that the
 left link does not alias the erased node. This sidecar holds and returns exclusive
-ownership of the callback table; the root sidecars borrow it with explicit
-separation requirements.
+ownership of the callback table. The root-only black-successor sidecar still
+borrows it with explicit separation requirements.
 
 `rbtree_erase_red_leaf.click` covers a red leaf below the root on either parent
 link. Its unchanged context accepts an empty black hole at the same black
@@ -53,7 +53,7 @@ contents, and a null fixup parent. Both borrow the read-only callback table.
 case below the root, on either parent link. It returns the exact successor
 subtree and unchanged outer context, whole-tree balance, parent consistency,
 and the old left/right in-order contents, with null fixup. The erased node's
-color is not assumed. It holds and returns exclusive callback-table ownership.
+color is not assumed. It borrows the read-only callback table.
 
 `rbtree_erase_nonroot_black_successor.click` covers an immediate black-leaf
 successor below the root, on either parent link. It returns that successor as
@@ -264,7 +264,16 @@ at the root or on either parent link. Their splice proofs borrow the constant
 callback table without additional separation preconditions. They return the
 detached node and a balanced, parent-consistent root with exact in-order
 contents. Checked execution proves the repair call unreachable in these cases.
-Two-child deletion still needs wrapper integration.
+The immediate-successor sidecars (`rbtree_erase_successor.click`,
+`rbtree_erase_child_successor.click`, and their `nonroot` counterparts) now
+also verify the unchanged wrapper when the successor is a red leaf or has a
+replacement child. `rbtree_erase_spine.click` covers those same no-repair
+exits after arbitrary leftward successor descent, at every tree position.
+These proofs borrow the callback table without separation preconditions,
+return the detached node and exact balanced root, and preserve the in-order
+contents of the old left and right subtrees in the old outer context.
+The remaining wrapper integration is a black-leaf successor, immediate or
+deeper, whose returned deficit must be passed to color repair.
 
 `rb_erase.c` includes the existing unchanged splice and repair extracts and adds
 the dummy callbacks, const table, and `rb_erase` definition verbatim from pinned
