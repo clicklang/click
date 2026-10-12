@@ -238,7 +238,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
                     None,
                     LoadPurpose::Logical,
                 )
-                .or_else(|| value_type.accepts(&stored).then_some(stored))
+                .or_else(|| value_type.read_cell(&stored))
                 .inspect(|value| {
                     if let CValue::Pointer(value) = value {
                         record_pointer_read_observation(value.pointer(), memory, &pointer);
@@ -274,7 +274,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
                 .into_iter()
                 .find_map(|spelling| {
                     let stored = memory.known_value(&spelling)?;
-                    value_type.accepts(&stored).then_some(stored)
+                    value_type.read_cell(&stored)
                 })
         })
         .or_else(|| {
@@ -680,7 +680,7 @@ fn evaluate_c_memory_load_case(
                 obligations,
             }];
         }
-        if value_type.accepts(&value) {
+        if let Some(value) = value_type.read_cell(&value) {
             return vec![CExpressionPath {
                 outcome: CExpressionOutcome::Value(value),
                 facts,
@@ -748,7 +748,7 @@ fn evaluate_c_memory_load_case(
                 obligations,
             }];
         }
-        if value_type.accepts(&value) {
+        if let Some(value) = value_type.read_cell(&value) {
             return vec![CExpressionPath {
                 outcome: CExpressionOutcome::Value(value),
                 facts,
@@ -1041,8 +1041,8 @@ fn evaluate_c_memory_load_case(
                 purpose,
             ) {
                 CExpressionOutcome::Value(value)
-            } else if value_type.accepts(&stored_value) {
-                CExpressionOutcome::Value(stored_value)
+            } else if let Some(value) = value_type.read_cell(&stored_value) {
+                CExpressionOutcome::Value(value)
             } else {
                 CExpressionOutcome::RuntimeError(CRuntimeError::LoadTypeMismatch {
                     pointer: pointer.clone(),
@@ -1348,7 +1348,7 @@ fn cell_value_recorded_on_path(
     ) {
         return Some(value);
     }
-    value_type.accepts(&value).then_some(value)
+    value_type.read_cell(&value)
 }
 
 /// Reinterprets an int cell's loaded value as a pointer without letting the
@@ -1368,9 +1368,15 @@ fn canonicalized_pointer_value_from_int_cell(
 ) -> Option<CValue> {
     let pointee_byte_width = value_type.pointee_type()?.byte_width();
     let fresh = match value {
-        CValue::Int8(bits @ Bitvector32Term::MemoryLoad(_, _, _)) => {
-            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
-            return Some(CValue::Int8(Bitvector32Term::Variable(fresh)));
+        CValue::Int8(bits) => {
+            let unsigned @ Bitvector32Term::MemoryLoad(_, _, _) = bits.signed_byte_operand()?
+            else {
+                return None;
+            };
+            let fresh = mint_load_variable(unsigned, facts, assumptions, source)?;
+            return Some(CValue::Int8(Bitvector32Term::signed_byte(
+                Bitvector32Term::Variable(fresh),
+            )));
         }
         CValue::Int16(bits @ Bitvector32Term::MemoryLoad(_, _, _)) => {
             let fresh = mint_load_variable(bits, facts, assumptions, source)?;
@@ -1554,7 +1560,7 @@ fn symbolic_index_run_load(
     // A constant run's slots are not loads of its source, which is empty:
     // every live slot holds the run's one value, so the load reads it.
     if let crate::kernel::primitives::RunValueMode::Constant(value) = run.value_mode() {
-        return value_type.accepts(value).then(|| value.clone());
+        return value_type.read_cell(value);
     }
     canonicalized_symbolic_load_value_with_identity(
         run.source().memory(),
@@ -1587,9 +1593,16 @@ fn canonicalized_symbolic_load_value_with_identity(
     // load variable, with the defining fact beside it, so every fact,
     // offset, and range built from the value is canonical.
     match &value {
-        CValue::Int8(bits @ Bitvector32Term::MemoryLoad(_, _, _)) => {
-            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
-            return Some(CValue::Int8(Bitvector32Term::Variable(fresh)));
+        // A signed byte read names the byte's unsigned read.
+        CValue::Int8(bits) => {
+            if let Some(unsigned @ Bitvector32Term::MemoryLoad(_, _, _)) =
+                bits.signed_byte_operand()
+            {
+                let fresh = mint_load_variable(unsigned, facts, assumptions, source)?;
+                return Some(CValue::Int8(Bitvector32Term::signed_byte(
+                    Bitvector32Term::Variable(fresh),
+                )));
+            }
         }
         CValue::Int16(bits @ Bitvector32Term::MemoryLoad(_, _, _)) => {
             let fresh = mint_load_variable(bits, facts, assumptions, source)?;
@@ -2575,6 +2588,14 @@ pub(crate) fn canonical_form_of_load(
     pointer: Pointer,
     kind: LoadKind,
 ) -> Bitvector32Term {
+    // A signed byte read is the conversion of the byte's one unsigned read.
+    if kind == LoadKind::Int8 {
+        return Bitvector32Term::signed_byte(canonical_form_of_load(
+            memory,
+            pointer,
+            LoadKind::UInt8,
+        ));
+    }
     let load = Bitvector32Term::MemoryLoad(memory, Box::new(pointer), kind);
     match load_variable_for_term(&load) {
         Some((variable, _)) => Bitvector32Term::Variable(variable),
@@ -3750,9 +3771,17 @@ pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<Bitvec
 pub(crate) fn load_variable_for_term(
     bits: &Bitvector32Term,
 ) -> Option<(Variable, Bitvector32Term)> {
-    let Bitvector32Term::MemoryLoad(_, _, _) = bits else {
+    let Bitvector32Term::MemoryLoad(_, _, kind) = bits else {
         return None;
     };
+    // One byte, one name: a signed byte read is formed only as the
+    // conversion of the unsigned read (`Bitvector32Term::memory_read`). A
+    // raw signed-byte load term came from a producer that bypassed it; it is
+    // refused a name, so it can never stand as a second, unrelated value of
+    // the byte.
+    if *kind == LoadKind::Int8 {
+        return None;
+    }
     // Naming is deterministic per term, and callers ask per fact atom per
     // comparison; the epoch walk and canonicalization behind a cold call
     // are not free, so cache by term. Term hashing is cheap: embedded
@@ -4086,7 +4115,10 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
     c_type: CType,
 ) -> Option<CValue> {
     let (kind, wrap): (LoadKind, fn(Bitvector32Term) -> CValue) = match c_type {
-        CType::Int8 => (LoadKind::Int8, CValue::Int8),
+        // The cache names the byte's unsigned read; a signed read converts it.
+        CType::Int8 => (LoadKind::UInt8, |unsigned| {
+            CValue::Int8(Bitvector32Term::signed_byte(unsigned))
+        }),
         CType::Int16 => (LoadKind::Int16, CValue::Int16),
         CType::Int32 => (LoadKind::Bits32, CValue::Int32),
         CType::UInt8 => (LoadKind::UInt8, CValue::UInt8),

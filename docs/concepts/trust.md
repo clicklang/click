@@ -67,10 +67,14 @@ Click verifies C as it models it. The following are trusted:
   what each construct means, including which operations are undefined
   behavior.
 - The target model: `src/languages/c/target.rs` fixes the data layout (LP64,
-  little-endian, 8-bit `char`) and the predefined macros. Both selectable
-  targets currently treat plain `char` as unsigned. That matches the Linux
-  kernel's `-funsigned-char` build, but not a default x86-64 user-space
-  compiler, where plain `char` is signed. See
+  little-endian, 8-bit `char`) and the predefined macros. The kernel target
+  treats plain `char` as unsigned, matching the Linux kernel's
+  `-funsigned-char` build; the user-space target treats it as signed, matching
+  the x86-64 System V ABI and a default GCC or Clang build, and a compiler
+  import passes `-fsigned-char` or `-funsigned-char` to match. A C string
+  reaches a specification as `uint8` bytes: under signed plain `char` the
+  argument is the explicit byte view `(uint8*)s`, and the kernel reads a byte
+  through either character type as the same eight bits. See
   [Supported C](../reference/language/c.md#c-implementation-target).
 - Modeled system headers: `src/languages/c/modeled_*.h` declare `memcpy`,
   `memcmp`, `memset`, `strlen`, the allocation functions, and the selected

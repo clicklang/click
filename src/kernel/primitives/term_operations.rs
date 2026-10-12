@@ -3081,6 +3081,45 @@ impl CType {
         }
     }
 
+    /// `unsigned char *` or `signed char *` (plain `char *` is one of them).
+    pub(crate) fn is_character_pointer(self) -> bool {
+        matches!(self, Self::UInt8Pointer | Self::Int8Pointer)
+    }
+
+    /// The value a load of this type reads from a cell holding `stored`, or
+    /// `None` when the cell holds nothing this load can read.
+    ///
+    /// A load reads a cell of its own kind as stored ([`Self::accepts`]).
+    /// The one other read is a character-type access (C11 6.5p7): a one-byte
+    /// character load reads a one-byte integer cell of the other signedness
+    /// as the same eight bits. An `unsigned char` load of a `signed char`
+    /// cell holding `t` reads `t mod 256`; a `signed char` load of an
+    /// `unsigned char` cell holding `u` reads the two's-complement value of
+    /// `u`'s eight bits. Both are the modular conversion between the two
+    /// byte types, so a constant is folded and a symbolic value keeps an
+    /// explicit conversion term; nothing about the cell is guessed.
+    pub(crate) fn read_cell(self, stored: &CValue) -> Option<CValue> {
+        if self.accepts(stored) {
+            return Some(stored.clone());
+        }
+        let reinterpret = |source, destination, term: &Bitvector32Term| {
+            Bitvector32Term::machine_integer_cast(source, destination, term.clone())
+        };
+        match (self, stored) {
+            (Self::UInt8, CValue::Int8(term)) => Some(CValue::UInt8(reinterpret(
+                MachineIntegerType::Int8,
+                MachineIntegerType::UInt8,
+                term,
+            ))),
+            (Self::Int8, CValue::UInt8(term)) => Some(CValue::Int8(reinterpret(
+                MachineIntegerType::UInt8,
+                MachineIntegerType::Int8,
+                term,
+            ))),
+            _ => None,
+        }
+    }
+
     pub(crate) fn accepts(self, value: &CValue) -> bool {
         match (self, value) {
             (Self::Int128, CValue::Int128(term)) => {

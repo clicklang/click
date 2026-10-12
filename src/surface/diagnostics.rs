@@ -1039,8 +1039,10 @@ pub(super) fn local_naming_tables_with_source(
                 .clone()
                 .with_pointee_struct_layout(name.clone(), layout.clone());
         } else if parameter.c_type().is_pointer() {
+            // Only the rendered cast matters here; the byte signedness is
+            // never read.
             *parameter = syntax::C0Parameter::new(
-                C0Type::CharPointer,
+                C0Type::CharPointer(syntax::PlainChar::Unsigned),
                 format!("((char *){})", parameter.name()),
                 None,
             );
@@ -2432,6 +2434,21 @@ pub(in crate::surface) fn describe_load_kind_mismatch(
         Some(cell) => format!("`{}`", cell.text()),
         None => "one address".to_string(),
     };
+    use crate::kernel::LoadKind;
+    if matches!(
+        (left_kind, right_kind),
+        (LoadKind::Int8, LoadKind::UInt8) | (LoadKind::UInt8, LoadKind::Int8)
+    ) {
+        // One byte, one name: the signed read is the unsigned read's
+        // two's-complement value, so the two agree exactly below 0x80.
+        return Some(format!(
+            "the two sides read {named} as different kinds of value, the left as {} and the right \
+             as {}. They read the same byte, and its signed value is its unsigned value only \
+             when the byte is below 0x80, so the two differ for every byte of 0x80 or more.",
+            describe_load_kind(left_kind),
+            describe_load_kind(right_kind),
+        ));
+    }
     Some(format!(
         "the two sides read {named} as different kinds of value, the left as {} and the right \
          as {}. A read's width and signedness are part of the value it names, so these are two \
@@ -2444,6 +2461,15 @@ pub(in crate::surface) fn describe_load_kind_mismatch(
 /// The kind of read a still-unresolved comparison side is, when that side is
 /// exactly one load.
 fn unresolved_load_kind(value: &CValue) -> Option<crate::kernel::LoadKind> {
+    if let CValue::Int8(term) = value
+        && let Some(unsigned) = term.signed_byte_operand()
+    {
+        return matches!(
+            unresolved_load_kind(&CValue::UInt8(unsigned.clone())),
+            Some(crate::kernel::LoadKind::UInt8)
+        )
+        .then_some(crate::kernel::LoadKind::Int8);
+    }
     let term = match value {
         CValue::Int8(term)
         | CValue::Bool(term)
@@ -2484,7 +2510,9 @@ fn describe_load_kind(kind: crate::kernel::LoadKind) -> &'static str {
 
 pub(super) fn unresolved_load(value: &CValue) -> Option<(SharedCMemory, Pointer)> {
     let term = match value {
-        CValue::Int8(term) => term,
+        // A signed byte read is the conversion of the byte's unsigned read,
+        // so it reads that read's address.
+        CValue::Int8(term) => term.signed_byte_operand().unwrap_or(term),
         CValue::Bool(term)
         | CValue::Int16(term)
         | CValue::Int32(term)
@@ -3922,8 +3950,8 @@ fn describe_mutex_pointer(pointer: &Pointer, parameter_binding: ParameterBinding
 /// count for.
 fn scalar_element_width(c_type: C0Type) -> Option<i64> {
     match c_type {
-        C0Type::CharPointer
-        | C0Type::CharArray(_)
+        C0Type::CharPointer(_)
+        | C0Type::CharArray(_, _)
         | C0Type::Int8Pointer
         | C0Type::Int8Array(_)
         | C0Type::UInt8Pointer
@@ -4234,7 +4262,7 @@ fn describe_struct_member_from(
 
 fn diagnostic_c0_type_byte_width(c_type: C0Type, pointer_width: u32) -> i64 {
     match c_type {
-        C0Type::Bool | C0Type::Char | C0Type::UInt8 => 1,
+        C0Type::Bool | C0Type::Char(_) | C0Type::UInt8 => 1,
         C0Type::Int8 => 1,
         C0Type::Int16 | C0Type::UInt16 => 2,
         C0Type::Int32 | C0Type::UInt32 => 4,
@@ -4270,14 +4298,14 @@ pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter
         C0Type::Void => 0,
         C0Type::Bool => 1,
         C0Type::VoidPointer | C0Type::VoidPointerPointer => 8,
-        C0Type::CharPointer
-        | C0Type::CharArray(_)
+        C0Type::CharPointer(_)
+        | C0Type::CharArray(_, _)
         | C0Type::UInt8Pointer
         | C0Type::UInt8Array(_) => 1,
         C0Type::Int8 | C0Type::Int8Array(_) => 1,
         C0Type::Int16 | C0Type::UInt16 | C0Type::Int16Array(_) | C0Type::UInt16Array(_) => 2,
         C0Type::Int32
-        | C0Type::Char
+        | C0Type::Char(_)
         | C0Type::UInt8
         | C0Type::UInt32
         | C0Type::Int32Pointer
@@ -4297,7 +4325,7 @@ pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter
         | C0Type::Int16PointerPointer
         | C0Type::UInt16PointerPointer
         | C0Type::Int32PointerPointer
-        | C0Type::CharPointerPointer
+        | C0Type::CharPointerPointer(_)
         | C0Type::UInt8PointerPointer
         | C0Type::UInt32PointerPointer
         | C0Type::Int128PointerPointer
@@ -5956,12 +5984,14 @@ pub(super) fn describe_parameter_bitvector(
                 return Some(parameter.name().to_string());
             }
             CExpression::Value(CValue::UInt8(value))
-                if value == term && matches!(parameter.c_type(), C0Type::Char | C0Type::UInt8) =>
+                if value == term
+                    && parameter.c_type().to_kernel_type() == crate::kernel::CType::UInt8 =>
             {
                 return Some(parameter.name().to_string());
             }
             CExpression::Value(CValue::Int8(value))
-                if value == term && parameter.c_type() == C0Type::Int8 =>
+                if value == term
+                    && parameter.c_type().to_kernel_type() == crate::kernel::CType::Int8 =>
             {
                 return Some(parameter.name().to_string());
             }

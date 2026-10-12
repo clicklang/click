@@ -120,6 +120,10 @@ value `v` is `(v >> 8k) & 0xFF`:
 - A one-byte load reads that byte. An `unsigned char` load reads it as is;
   a `signed char` load reads its sign extension when the byte is a constant
   and is refused when it is symbolic.
+- A one-byte cell of one character type reads through the other as the same
+  eight bits: a byte has one name, its unsigned value, and a `signed char`
+  read is its two's-complement reinterpretation. Plain `char` is one of the
+  two, unsigned on the kernel target and signed on the user-space target.
 - A one-byte store updates the wider cell in place,
   `(v & ~(0xFF << 8k)) | (b << 8k)`, keeping its type and address. No
   separate one-byte cell is added, so the storage keeps a single description.

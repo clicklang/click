@@ -946,7 +946,10 @@ pub(super) fn theorem_application_bindings(
                         parameter.name()
                     )
                 })?;
-            if array_ref.element_type != expected_element_type {
+            if !crate::surface::validation::array_ref_elements_compatible(
+                array_ref.element_type,
+                expected_element_type,
+            ) {
                 return Err(format!(
                     "theorem `{}` parameter `{}` expects {:?} array elements, got {:?}",
                     theorem.name(),

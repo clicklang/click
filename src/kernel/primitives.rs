@@ -336,6 +336,21 @@ impl LoadKind {
         Self::of_value(value) == Some(self)
     }
 
+    /// The value a read of this kind returns from a cell holding `value`:
+    /// the value itself when the read is of its kind, or, for a one-byte
+    /// character read of a one-byte cell of the other signedness, the same
+    /// eight bits reinterpreted ([`CType::read_cell`]).
+    pub(crate) fn read_cell(self, value: &CValue) -> Option<CValue> {
+        if self.reads_value(value) {
+            return Some(value.clone());
+        }
+        match self {
+            Self::Int8 => CType::Int8.read_cell(value),
+            Self::UInt8 => CType::UInt8.read_cell(value),
+            _ => None,
+        }
+    }
+
     /// Width when the kind is known but no typed producer recorded an access.
     /// Bits32 can also name an LP64 pointer word, so keep its eight-byte ABI
     /// footprint. A fully unknown access uses MAX_SCALAR_ACCESS_BYTES instead.
@@ -1422,7 +1437,13 @@ pub enum CType {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CPointerArrayElement {
     Void,
-    Char,
+    /// Plain `char` under a target where it is unsigned. Kept apart from
+    /// `UInt8` only so the C frontend recovers `char *` from the element;
+    /// its cells are `uint8*` pointers.
+    UnsignedPlainChar,
+    /// Plain `char` under a target where it is signed; its cells are
+    /// `int8*` pointers.
+    SignedPlainChar,
     Int8,
     Int16,
     Int32,
@@ -1460,7 +1481,8 @@ impl CPointerArrayElement {
     pub fn pointer_type(self) -> CType {
         match self {
             Self::Void => CType::VoidPointer,
-            Self::Char => CType::UInt8Pointer,
+            Self::UnsignedPlainChar => CType::UInt8Pointer,
+            Self::SignedPlainChar => CType::Int8Pointer,
             Self::Int8 => CType::Int8Pointer,
             Self::Int16 => CType::Int16Pointer,
             Self::Int32 => CType::Int32Pointer,
@@ -1479,8 +1501,8 @@ impl CPointerArrayElement {
     pub fn decayed_type_spelling(self) -> &'static str {
         match self {
             Self::Void => "void**",
-            Self::Char | Self::UInt8 => "uint8**",
-            Self::Int8 => "int8**",
+            Self::UnsignedPlainChar | Self::UInt8 => "uint8**",
+            Self::SignedPlainChar | Self::Int8 => "int8**",
             Self::Int16 => "int16**",
             Self::Int32 => "int32**",
             Self::UInt16 => "uint16**",
@@ -3336,6 +3358,10 @@ pub(super) struct CFunctionStaticStorage {
 pub struct CStringLiteral {
     pub(super) name: String,
     pub(super) bytes: Vec<u8>,
+    /// The character type of the literal's elements: `UInt8` where plain
+    /// `char` is unsigned and `Int8` where it is signed. Each byte is stored
+    /// as a cell of this type, holding the byte's value under it.
+    pub(super) element_type: CType,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

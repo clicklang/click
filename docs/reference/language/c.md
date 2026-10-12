@@ -12,19 +12,40 @@ Click, this documentation calls that syntax a **C fragment**.
 
 The default concrete target is `x86_64-linux-kernel`: the existing LP64 data
 layout with eight-bit, unsigned plain `char`. This follows the Linux kernel's
-explicit `-funsigned-char` build setting, not the default of every x86-64 C
-compiler. The settings are centralized in `CTarget`; LP64 alone does not imply
-char signedness. `char` remains a distinct C type from both `signed char` and `unsigned char`.
+explicit `-funsigned-char` build setting. The `x86_64-linux-userspace` target
+follows the x86-64 System V ABI, as GCC and Clang build it by default, where
+plain `char` is signed. The settings are centralized in `CTarget`; LP64 alone
+does not imply char signedness. Under either target `char` remains a distinct
+C type from both `signed char` and `unsigned char`; only its values and its
+one-byte representation are those of `unsigned char` (kernel) or `signed
+char` (user space). The signedness is fixed when the source is parsed, so the
+same C verified under the two targets can have different results
+(`mdtests/kernel_plain_char_is_unsigned.md`,
+`mdtests/userspace_plain_char_is_signed.md`).
+
+<!-- verified-example: mdtests/userspace_plain_char_is_signed.md -->
+```click
+target "x86_64-linux-userspace";
+verifying "userspace_plain_char.c";
+
+int32 negative_byte() {
+    ensures result == 1;
+} by {
+    execute();
+    simp();
+}
+```
 
 Header discovery and expansion use the profile's modeled predefines, including
-`__CHAR_UNSIGNED__`, `__CHAR_BIT__`, LP64 type-size macros, Linux/x86-64 markers,
-`__KERNEL__`, and byte-order constants. These are not a complete compiler macro
+`__CHAR_UNSIGNED__` (kernel target only, as plain `char` is unsigned there),
+`__CHAR_BIT__`, LP64 type-size macros, Linux/x86-64 markers,
+`__KERNEL__` (kernel target only), and byte-order constants. These are not a complete compiler macro
 environment: compiler-version and feature-test macros are not synthesized.
 
 Verification results apply to this supported subset under these assumptions,
 not to every C target or every Linux kernel compiler option. The verifier does
-not discover the user's compiler flags or prove portability to signed-char,
-32-bit, or differently laid-out builds. Compiler-provided layout validation and
+not discover the user's compiler flags or prove portability between the two
+plain-`char` signednesses, to 32-bit, or to differently laid-out builds. Compiler-provided layout validation and
 symbolic target-independent proofs remain future work.
 
 The `click verify` command does not print the target on each run (see
@@ -70,8 +91,8 @@ The selected target and project configuration participate in the proof-artifact 
 and Click sources verified under different targets are different artifacts:
 certificates and incremental caches are never reused across them.
 
-`x86_64-linux-userspace` is C11/POSIX user space with the same LP64 layout and
-unsigned plain `char` selection, but without the `__KERNEL__` predefine. Its
+`x86_64-linux-userspace` is C11/POSIX user space with the same LP64 layout,
+signed plain `char` (no `__CHAR_UNSIGNED__`), and no `__KERNEL__` predefine. Its
 modeled `<stddef.h>` supplies `NULL`, and its declaration-only `<pthread.h>`
 declares `pthread_create`, `pthread_join`, and `pthread_mutex_init`, `_lock`,
 `_unlock`, and `_destroy`; the kernel target rejects both
@@ -158,7 +179,7 @@ does. Verifying plain C needs no compiler or system headers; see the
 | Header | Targets | Provides |
 | --- | --- | --- |
 | `<stdint.h>`, `<inttypes.h>`, `<stdbool.h>` | all | the standard type spellings mapped to Click's C types |
-| `<limits.h>` | all | `CHAR_BIT` and the integer limit macros for LP64 with unsigned plain `char` |
+| `<limits.h>` | all | `CHAR_BIT` and the integer limit macros for LP64; `CHAR_MIN`/`CHAR_MAX` follow the target's plain `char` |
 | `<stddef.h>` | user space | `NULL` |
 | `<string.h>` | user space | `memcpy`, `memcmp`, `memset`, `strlen`, and `NULL` |
 | `<stdlib.h>` | user space | `malloc`, `calloc`, `realloc`, `free`, and `NULL` |
@@ -201,8 +222,10 @@ through two calls to a pointer-taking helper without resetting the state.
 
 - `int32`
 - `uint8`
-- `char`, an unsigned eight-bit C type distinct from `unsigned char` on the
-  supported kernel target, with scalar, pointer, pointer-cell, and array forms
+- `char`, an eight-bit C type distinct from both `signed char` and
+  `unsigned char`, with scalar, pointer, pointer-cell, and array forms. Its
+  values are unsigned on the kernel target and signed on the user-space
+  target
 - `int8`/`signed char`/`int8_t`, a signed byte with range `-128..127`
 - `int16`/`short` and `uint16`/`unsigned short`
 - `uint32`
@@ -356,8 +379,17 @@ rejected. This does not admit automatic `long double` values or arithmetic.
 
 The accepted standard scalar spellings alias the existing Click's C type model,
 except that plain `char` retains its distinct C type identity. `signed char`
-is modeled separately as `int8`; signed plain-char target profiles are not
-yet modeled.
+is modeled separately as `int8`. Where plain `char` is signed it has `int8`'s
+values and representation without becoming `signed char`: converting between
+`char *` and `signed char *` still needs a cast.
+
+The character pointer types `char *`, `signed char *`, and `unsigned char *`
+convert to one another by an explicit one-level cast, which C11 6.3.2.3p7 and
+6.5p7 allow: a character type may read any object's bytes. A byte has one
+value in memory, its unsigned value; a `signed char` read of it is that
+value's two's-complement reinterpretation, so the reads agree
+(`mdtests/userspace_character_pointer_casts_read_the_same_bytes.md`,
+`mdtests/a_signed_read_of_a_byte_follows_from_its_unsigned_read.md`).
 
 Direct and callback function returns may be pointers to const-qualified data, including
 `const char *`. Qualification is retained across definitions, prototypes,
@@ -569,8 +601,10 @@ Supported C surface includes:
 - ASCII byte character literals such as `'x'`, `'\n'`, and `'\0'`, with the
   simple escapes `\a`, `\b`, `\f`, `\n`, `\r`, `\t`, `\v`, `\\`, `\'`, `\"`, and
   `\?`, octal escapes of one to three digits such as `'\001'`, and
-  hexadecimal escapes such as `'\x7f'`. A numeric escape must fit one byte;
-  plain `char` is unsigned in the supported profile, so `'\377'` is 255.
+  hexadecimal escapes such as `'\x7f'`. A numeric escape must fit one byte.
+  A character constant has the `int` value of a plain `char` holding the byte
+  (C11 6.4.4.4p10): `'\377'` is 255 on the kernel target and -1 on the
+  user-space target. String literals are arrays of plain `char`.
   Multi-character literals and universal character names are rejected. See
   `mdtests/c_numeric_character_escapes.md`
 - signed `+`, `-`, `*`, `/`, and `%`; in a proof, `defined(a + b)` or
@@ -894,19 +928,26 @@ Supported C surface includes:
   library functions from `<inttypes.h>`
 - the built-in `#include <limits.h>` on every target, which defines
   `CHAR_BIT`, the `char`, `short`, `int`, `long`, and `long long` minimum and
-  maximum macros, and the unsigned maxima, for the LP64 layout with unsigned
-  plain `char`. A program's own different definition of one of these names
-  conflicts with the header
+  maximum macros, and the unsigned maxima, for the LP64 layout. `CHAR_MIN`
+  and `CHAR_MAX` are 0 and 255 on the kernel target and -128 and 127 on the
+  user-space target (`mdtests/userspace_char_limits_are_signed.md`). A
+  program's own different definition of one of these names conflicts with
+  the header
 - for the user-space target, the declaration-only `#include <string.h>` and
   `#include <stdlib.h>`. Each declares exactly the functions Click specifies,
   `memcpy`, `memcmp`, `memset`, and `strlen`, and `malloc`, `calloc`,
   `realloc`, and `free`, and defines `NULL`; calls are checked against the
   standard-library contracts and the allocation model
   (`mdtests/c_builtin_string_and_stdlib_headers.md`,
-  `mdtests/c_builtin_string_header_declares_strlen.md`). Plain `char` is
-  unsigned 8-bit on every supported target, so a specification may pass a
-  `char` pointer where a predicate or pure function takes `uint8` bytes, as in
-  `requires cstr_readable(s);` for a `const char *s`. As in C, the `strlen`
+  `mdtests/c_builtin_string_header_declares_strlen.md`). A specification may
+  pass a `char` pointer where a predicate or pure function takes `uint8`
+  bytes, as in `requires cstr_readable(s);` for a `const char *s`. Where plain
+  `char` is signed, the argument is elaborated to the explicit byte view
+  `(uint8*)s`: the predicate reads the string's bytes as unsigned values,
+  and since a signed read of a byte is the conversion of its unsigned read,
+  `s[k] == '\0'` holds exactly when `((uint8*)s)[k] == '\0'` does. A library
+  contract over `uint8` bytes, such as `strlen`'s, likewise accepts a `char`
+  pointer of either signedness. As in C, the `strlen`
   contract's result and every C-string length in the library are `size_t`
   (`uint64`) values
 - function-pointer callbacks for modeled signatures, using `&function` to
