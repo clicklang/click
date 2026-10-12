@@ -17515,3 +17515,77 @@ fn early_return_arms_transport_result_goals_from_function_exit() {
     );
     verify_c0_sources(&expanded, &sources).unwrap();
 }
+
+#[test]
+fn guarded_resource_disjoint_store_and_unconditional_control_expand_and_recheck() {
+    let c = r#"struct base { struct base* left; struct base* right; uint64 padding; };
+struct cell { struct base base; int32 value; };
+int32 f(struct cell* root) {
+    struct base* child = root->base.left;
+    int32 value = ((struct cell*)(void*)child)->value;
+    root->value = value;
+    return value;
+}"#;
+    let guarded = r#"verifying "guarded.c";
+resource child_value(p: struct base*) {
+    field number: int32;
+    if p != 0 {
+        owns ((struct cell*)(void*)p)->value;
+        fact ((struct cell*)(void*)p)->value == number;
+    }
+}
+int32 f(struct cell* root) {
+    requires root != 0;
+    views root->base.left;
+    owns child: child_value(root->base.left);
+    owns root->value;
+    requires root->base.left != 0;
+    requires root->base.left != (struct base*)(void*)root;
+    ensures result == old(child.number);
+    ensures child.number == old(child.number);
+    ensures root->value == old(child.number);
+} by {
+    unfold(child);
+    execute();
+    fold(child);
+    simp();
+}"#;
+    let control = guarded
+        .replace("    if p != 0 {\n", "")
+        .replace("    }\n}\nint32 f", "}\nint32 f");
+    for proof in [guarded, control.as_str()] {
+        verify_c0_sources(proof, &[("guarded.c", c)]).unwrap();
+        let line = proof
+            .lines()
+            .position(|line| line.contains("execute();"))
+            .unwrap()
+            + 1;
+        let expanded = expand_c0_tactic_source_at(proof, &[("guarded.c", c)], line, 5).unwrap();
+        verify_c0_sources(&expanded, &[("guarded.c", c)]).unwrap();
+    }
+}
+
+#[test]
+fn unfolding_proof_bound_integer_arguments_expands_and_rechecks() {
+    for (path, label) in [
+        (
+            "mdtests/unfold_function_after_integer_intro.md",
+            "unfold_an_introduced_integer.ensures_0",
+        ),
+        (
+            "mdtests/unfold_function_after_integer_obtain.md",
+            "unfold_an_obtained_integer.ensures_0",
+        ),
+    ] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(path);
+        let text = std::fs::read_to_string(&path).unwrap();
+        let fixture = crate::cli::parse_mdtest(&path, &text).unwrap();
+        let source = fixture
+            .click_source
+            .unwrap()
+            .replace("unfold(black", "have d == d by auto; unfold(black");
+        verify_c0_sources(&source, &[]).unwrap();
+        let expanded = expand_c0_claim_source_by_label(&source, &[], label).unwrap();
+        verify_c0_sources(&expanded, &[]).unwrap();
+    }
+}

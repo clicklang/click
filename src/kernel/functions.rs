@@ -30993,7 +30993,7 @@ fn function_outcome_from_body_changing_quantities(
     else {
         return Ok((
             CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
-                "{} returned a value that does not match its declared type",
+                "{} {RETURN_TYPE_MISMATCH}",
                 function.name()
             ))),
             obligations,
@@ -31069,7 +31069,7 @@ fn function_outcome_from_body_with_resource_transfer(
     else {
         return Ok((
             CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
-                "{} returned a value that does not match its declared type",
+                "{} {RETURN_TYPE_MISMATCH}",
                 function.name()
             ))),
             obligations,
@@ -32078,7 +32078,7 @@ pub(super) fn function_outcome_from_body(
             else {
                 return (
                     CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
-                        "{} returned a value that does not match its declared type",
+                        "{} {RETURN_TYPE_MISMATCH}",
                         function.name()
                     ))),
                     obligations,

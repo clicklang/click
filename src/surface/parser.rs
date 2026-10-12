@@ -119,6 +119,7 @@ pub(in crate::surface) struct FunctionLocals {
 /// that are memory-backed.
 #[derive(Clone, Default)]
 pub(in crate::surface) struct ProgramLayouts {
+    pub(in crate::surface) c_object_names: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     pub(in crate::surface) struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
     pub(in crate::surface) union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
     /// Each function's address-backed aggregate objects, with their structs.
@@ -490,6 +491,7 @@ struct ProofLetParserRestore {
 }
 
 struct Parser {
+    c_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     source_aliases: BTreeMap<String, String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
     pending_contract_name: Option<String>,
@@ -849,6 +851,7 @@ impl Parser {
             container,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
+        parser.c_object_names_by_function = layouts.c_object_names;
         parser.qualified_objects = Some(layouts.qualified_objects);
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.plain_char = layouts.plain_char;
@@ -912,6 +915,7 @@ impl Parser {
             union_layouts,
             current_struct_params: BTreeMap::new(),
             current_void_pointer_params: BTreeSet::new(),
+            c_object_names_by_function: BTreeMap::new(),
             current_c_parameter_types: BTreeMap::new(),
             current_parameter_struct_casts: BTreeMap::new(),
             aggregate_objects_by_function,
@@ -3256,6 +3260,19 @@ impl Parser {
                 )));
             }
         }
+        let c_object_names = self
+            .c_object_names_by_function
+            .get(signature.name())
+            .cloned()
+            .unwrap_or_else(|| {
+                std::sync::Arc::new(
+                    self.current_aggregate_objects
+                        .keys()
+                        .chain(self.current_global_array_shapes.keys())
+                        .cloned()
+                        .collect(),
+                )
+            });
         self.current_struct_params = previous_struct_params;
         self.current_void_pointer_params = previous_void_pointer_params;
         self.current_c_parameter_types = previous_c_parameter_types;
@@ -3352,6 +3369,7 @@ impl Parser {
         let pointee_field_places =
             super::pointee_field_places(parameter_field_places.values(), &self.struct_layouts);
         Ok(FunctionBlock {
+            c_object_names,
             signature,
             external,
             one_call_proof: false,
@@ -5796,10 +5814,14 @@ impl Parser {
     /// A comparison operand whose outermost operator is `&`, `|` or `^` must
     /// be parenthesized. C binds comparisons tighter than these operators and
     /// Click binds them looser, so `x & 1 == 0` would read differently to a C
-    /// reader than it verifies.
+    /// reader than it verifies. Rust groups them as Click does, so a sidecar
+    /// verifying Rust needs no parentheses.
     fn parse_comparison_operand(&mut self) -> Result<ContractExpression, ClickError> {
         let start = self.position;
         let operand = self.parse_contract_expression()?;
+        if self.verifies_rust() {
+            return Ok(operand);
+        }
         let operator = match &operand {
             ContractExpression::BitwiseAnd(..) => "&",
             ContractExpression::BitwiseOr(..) => "|",

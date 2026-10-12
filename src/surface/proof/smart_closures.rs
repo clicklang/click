@@ -1845,6 +1845,7 @@ impl<'a> Proof<'a> {
         // its strategies and candidates; one closure attempt answers each
         // exact failed question once (`with_closure_failure_memo`).
         crate::kernel::with_closure_failure_memo(|| self.try_simp_closure_strategies())
+            .map_err(|error| self.attach_step_diagnostic(error))
     }
 
     /// Close a mathematical `Integer` bound goal with the solver behind
@@ -3999,6 +4000,11 @@ impl<'a> Proof<'a> {
                 return None;
             }
             if let Some(surface) = self.available_surface_fact(surface_facts, anchor, premise) {
+                return Some((premise.clone(), surface));
+            }
+            if let Some(surface) =
+                self.available_surface_fact(self.local_surface_facts(), anchor, premise)
+            {
                 return Some((premise.clone(), surface));
             }
             if crate::instrumentation::deadline_exceeded() {

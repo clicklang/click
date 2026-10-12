@@ -3503,6 +3503,14 @@ id = "stdlib.theorem.uint32_pack_uint16_high_first_to_integer"
 path = "reference/library/index.md#uint32_pack_uint16_high_first_to_integer"
 
 [[item]]
+id = "stdlib.theorem.uint32_unpack_uint16_low"
+path = "reference/library/index.md#uint32_unpack_uint16_low"
+
+[[item]]
+id = "stdlib.theorem.uint32_unpack_uint16_high"
+path = "reference/library/index.md#uint32_unpack_uint16_high"
+
+[[item]]
 id = "stdlib.theorem.uint64_pack_uint16_to_integer"
 path = "reference/library/index.md#uint64_pack_uint16_to_integer"
 

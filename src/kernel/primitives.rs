@@ -81,6 +81,7 @@ pub(super) use derivations::*;
 pub(crate) use memory_state::resource_context_has_symbolic_range_read;
 pub use memory_state::value_independent_click_memory;
 pub(super) use resource_algebra::*;
+pub(in crate::kernel) use term_operations::round_right_to_even;
 pub(in crate::kernel) use term_operations::{
     int64_add_interval_fits, int64_subtract_interval_fits,
 };
@@ -4551,6 +4552,11 @@ pub enum CInvalidFree {
     NonHeapPointer,
     DoubleFree,
 }
+
+/// How a [`CRuntimeError::FunctionContract`] message ends when a function
+/// returned a value its declared return type does not admit; the message
+/// starts with the function's name.
+pub const RETURN_TYPE_MISMATCH: &str = "returned a value that does not match its declared type";
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CRuntimeError {

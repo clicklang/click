@@ -708,7 +708,7 @@ impl<'a> Proof<'a> {
             );
             crate::surface::proof::resources::materialize_unfolded_instance_arm_cells(
                 context.resource_environment,
-                context.spec_definitions.functions,
+                context.spec_definitions,
                 context.parameter_binding(),
                 after,
                 instance,
@@ -866,6 +866,15 @@ impl<'a> Proof<'a> {
         };
         match self.context.as_ref() {
             ProofContext::Pure(context) => {
+                // The defining equation and refreshed goal share this scope.
+                // Select only named locals, with lexical binders taking
+                // precedence over a same-named theorem parameter.
+                let mut integer_values = context.theorem_context.integer_values.clone();
+                for name in &referenced_names {
+                    if let Some(value) = self.local_integer_values().get(name) {
+                        integer_values = integer_values.with_inserted(name.clone(), value.clone());
+                    }
+                }
                 let state = CState::new().with_memory(context.theorem_context.memory.clone());
                 self.apply_function_unfold_in_state(
                     application,
@@ -879,7 +888,7 @@ impl<'a> Proof<'a> {
                             .map(|setup| setup.algebraic_values.clone())
                             .unwrap_or_default(),
                     ),
-                    &context.theorem_context.integer_values,
+                    &integer_values,
                     FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
                     context.spec_definitions,
                     BTreeMap::new(),

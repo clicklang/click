@@ -512,7 +512,12 @@ hold a violation, so a call composing its ensured resources into a caller
 frame never visits the caller's unrelated allocations
 (`src/kernel/tests/resource_scaling_tests.rs`).
 
-Within one block, an owned range is compared only with the owned ranges a
+Within one block, an owned range selects the smaller of the complete owned
+block and the candidates its same-block aliases nominate, retaining the
+indexed path for cross-block aliases. Every nominated pair still checks
+overlap. Containment queries try the written root before expanding equal
+spellings; a successful containment proof already selects its owned member.
+Otherwise, an owned range is compared with the owned ranges a
 fact could relate it to (`ResourceContext::owned_validity_candidates`). A
 base's *root* is its block and the first symbolic atom of its offset in
 canonical form (`p` for `p`, `p + 8`, and `p + 4*i`; nothing for a constant
@@ -712,7 +717,11 @@ carries the merge of its members' folded constants as `Known(c)`,
 different constants in one class are still ambiguous, and a class whose
 constant rises re-folds only the compound terms that use one of its members.
 A constant only rises, so each registered term is re-folded a bounded number
-of times along one path. A query no longer walks the facts connected to the
+of times along one path. A class also keeps its signed byte reads of byte
+loads, and a rise inverts each into its byte's class
+([byte representation](byte-representation.md#character-reads-of-one-byte-cells));
+that set is relabelled with the smaller class's members on a union, and its
+inversions are bounded by the same rises, so no class or fact is scanned. A query no longer walks the facts connected to the
 term: before, a counter advanced by `N` calls re-walked its whole chain at
 every call, deep-comparing every same-address load at another snapshot, so
 the `N`th call cost `O(N^2)`. Only an `Unknown` class does query-time work:
@@ -1042,3 +1051,16 @@ conditions about other cells in the supplied snapshot. Cold canonicalization
 may still charge the explicit snapshot input. Expanded proof bodies remain
 the same size as unrelated requirements grow; whole-source work scales with
 the input that must be parsed and checked.
+
+### Checked integer increment chains
+
+After checking each original `int32` addition's overflow guard, execution
+combines a trailing constant offset with the next constant when their sum
+fits `int32`. This keeps a chain of increment values shallow, so later
+overflow decisions do not walk every earlier increment. The source expression
+and intermediate guards remain intact. The multi-size
+`signed_increment_overflow_checks_stay_flat_per_assignment` regression checks
+assignment work and total verification work, and an unbounded increment is
+still rejected. `increment_chain_keeps_intermediate_overflow_guard.md` rejects
+a program whose final arithmetic value would match its input but whose
+intermediate addition overflows.

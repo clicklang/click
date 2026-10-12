@@ -6776,6 +6776,69 @@ fn fixed_overflow_decision_scales_near_linearly_with_unrelated_order_facts() {
     }
 }
 
+/// `x_k = x_(k-1) + 1` executed as C: the k-th add's overflow decision must
+/// not grow with the increments before it. The value once carried every
+/// increment as a node, so each decision ranged a k-deep term and the chain
+/// was quadratic. The decision is still made: an unbounded base is refused.
+#[test]
+fn increment_chain_add_work_does_not_grow_with_earlier_increments() {
+    let base = Bitvector32Term::Variable(Variable(95_001));
+    let bounded = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_greater_equal(base.clone(), Bitvector32Term::Constant(0)),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_less_equal(base.clone(), Bitvector32Term::Constant(1_000_000)),
+            true,
+        );
+    let state = CState::new();
+    let increment = |value: Bitvector32Term, assumptions: &PureFactContext| {
+        let expression = c_add(CExpression::Value(CValue::Int32(value)), c_int32_literal(1));
+        crate::instrumentation::measure_deterministic_work(|| {
+            evaluate_c_expression_paths(
+                &state,
+                &expression,
+                assumptions,
+                &mut ExecutionBudget::default(),
+            )
+            .expect("an increment should evaluate")
+        })
+    };
+    let mut value = base.clone();
+    let mut samples = Vec::new();
+    for length in 1..=256 {
+        let (paths, work) = increment(value, &bounded);
+        let [path] = paths.as_slice() else {
+            panic!("increment {length} of a bounded base should not split: {paths:?}");
+        };
+        let CExpressionOutcome::Value(CValue::Int32(next)) = &path.outcome else {
+            panic!(
+                "increment {length} should produce an int32: {:?}",
+                path.outcome
+            );
+        };
+        value = next.clone();
+        if [16, 64, 256].contains(&length) {
+            samples.push((length, work));
+        }
+    }
+    assert!(
+        samples
+            .windows(2)
+            .all(|pair| pair[1].1 <= pair[0].1.saturating_mul(2)),
+        "an increment's add work grows with the chain before it: {samples:?}"
+    );
+    let (paths, _) = increment(value, &PureFactContext::new());
+    assert!(
+        paths.iter().any(|path| matches!(
+            path.outcome,
+            CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow)
+        )),
+        "an unbounded base must still owe the overflow"
+    );
+}
+
 /// The issue-named quantified-match curve: one query answered by
 /// instantiating one guarded quantified fact, while unrelated quantified
 /// facts about other memory blocks grow.
@@ -10661,4 +10724,77 @@ fn unsigned_u16_packing_bridges_match_disjoint_fields_and_retain_both_bounds() {
     // Overlapping fields and a wrapping high field disprove the unguarded rule.
     assert_ne!(65536u32 | (1u32 << 16), 65536u32 + 65536u32);
     assert_ne!(u64::from(65536u32.wrapping_shl(16)), 65536u64 * 65536);
+}
+
+#[test]
+fn uint32_unpacking_rules_retain_bounds_and_recover_all_word_bits() {
+    fn evaluate(term: &Bitvector32Term) -> u32 {
+        match term {
+            Bitvector32Term::Constant(value) => *value,
+            Bitvector32Term::BitwiseOr(left, right) => evaluate(left) | evaluate(right),
+            Bitvector32Term::BitwiseAnd(left, right) => evaluate(left) & evaluate(right),
+            Bitvector32Term::ShiftLeft(left, right) => evaluate(left).wrapping_shl(evaluate(right)),
+            Bitvector32Term::LogicalShiftRight(left, right) => {
+                evaluate(left).wrapping_shr(evaluate(right))
+            }
+            _ => panic!("unexpected extraction term"),
+        }
+    }
+    let mut boundaries = vec![
+        0,
+        1,
+        255,
+        256,
+        32767,
+        32768,
+        65520,
+        65521,
+        65535,
+        65536,
+        u32::MAX,
+    ];
+    boundaries.extend((0..16).map(|bit| 1u32 << bit));
+    for &low in &boundaries {
+        for &high in &boundaries {
+            for theorem in [
+                prove_uint32_unpack_uint16_low(
+                    Bitvector32Term::Constant(low),
+                    Bitvector32Term::Constant(high),
+                ),
+                prove_uint32_unpack_uint16_high(
+                    Bitvector32Term::Constant(low),
+                    Bitvector32Term::Constant(high),
+                ),
+            ] {
+                let Proposition::Implies(low_guard, rest) = theorem.proposition() else {
+                    panic!("low bound missing")
+                };
+                let Proposition::Implies(high_guard, conclusion) = rest.as_ref() else {
+                    panic!("high bound missing")
+                };
+                assert_eq!(PureFactContext::new().proves_exact(low_guard), low <= 65535);
+                assert_eq!(
+                    PureFactContext::new().proves_exact(high_guard),
+                    high <= 65535
+                );
+                let Proposition::ConditionIs(condition, true) = conclusion.as_ref() else {
+                    panic!("word identity missing")
+                };
+                let identity_holds = match condition {
+                    ConditionTerm::Constant(value) => *value,
+                    ConditionTerm::Bitvector32Equal(extracted, original) => {
+                        evaluate(extracted) == evaluate(original)
+                    }
+                    _ => panic!("unexpected word identity"),
+                };
+                if low <= 65535 && high <= 65535 {
+                    assert!(identity_holds, "low={low}, high={high}");
+                }
+            }
+        }
+    }
+    // Bounds cannot be dropped from the paired round trip.
+    let oversized = std::hint::black_box(65536u32);
+    assert_ne!(oversized & 65535, oversized);
+    assert_ne!((oversized.wrapping_shl(16) >> 16) & 65535, oversized);
 }

@@ -2402,6 +2402,8 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "uint64_pack_uint16_to_integer"
                 | "uint32_pack_uint16_to_integer"
                 | "uint32_pack_uint16_high_first_to_integer"
+                | "uint32_unpack_uint16_low"
+                | "uint32_unpack_uint16_high"
                 | "uint64_add_to_integer"
                 | "uint64_multiply_to_integer"
                 | "uint64_subtract_to_integer"
@@ -2533,6 +2535,8 @@ fn verify_kernel_standard_theorem_axiom(
         "uint64_pack_uint16_to_integer"
         | "uint32_pack_uint16_to_integer"
         | "uint32_pack_uint16_high_first_to_integer"
+        | "uint32_unpack_uint16_low"
+        | "uint32_unpack_uint16_high"
         | "uint64_divide_to_integer"
         | "uint64_remainder_to_integer"
         | "uint32_divide_to_integer"
@@ -2731,6 +2735,12 @@ fn verify_kernel_standard_theorem_axiom(
         };
         let value = uint32_parameter(0)?;
         match theorem.name() {
+            "uint32_unpack_uint16_low" => {
+                crate::kernel::prove_uint32_unpack_uint16_low(value, uint32_parameter(1)?)
+            }
+            "uint32_unpack_uint16_high" => {
+                crate::kernel::prove_uint32_unpack_uint16_high(value, uint32_parameter(1)?)
+            }
             "uint32_pack_uint16_high_first_to_integer" => {
                 crate::kernel::prove_unsigned_pack_u16_high_first_to_integer(
                     crate::kernel::MachineIntegerType::UInt32,
@@ -4370,6 +4380,35 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
             ] {
                 assert_ne!(source, invalid);
                 assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
+            }
+        }
+    }
+
+    #[test]
+    fn unsigned_unpacking_declarations_require_exact_bounds_words_and_unsigned_shift() {
+        for (name, extraction, result) in [
+            ("low", "(((high << 16) | low) & 65535u32)", "low"),
+            ("high", "((((high << 16) | low) >> 16) & 65535u32)", "high"),
+        ] {
+            let source = format!(
+                "theorem uint32_unpack_uint16_{name}(low: uint32, high: uint32) {{ requires low <= 65535u32; requires high <= 65535u32; ensures {extraction} == {result}; }}"
+            );
+            verify_standard_declaration(&source).unwrap();
+            for invalid in [
+                source.replace("requires low <= 65535u32;", ""),
+                source.replace("requires high <= 65535u32;", ""),
+                source.replace("65535", "65536"),
+                source.replace("high << 16", "high << 15"),
+                source.replace("& 65535u32", "& 32767u32"),
+                source.replace(&format!("== {result};"), "== 0u32;"),
+                source.replace(": uint32", ": int32"),
+                source.replace(": uint32", ": uint64"),
+            ] {
+                assert_ne!(source, invalid);
+                assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
+            }
+            if name == "high" {
+                assert!(verify_standard_declaration(&source.replace(">> 16", ">> 15")).is_err());
             }
         }
     }

@@ -1867,7 +1867,7 @@ fn source_have_error(
     cause: Option<ClickError>,
 ) -> ClickError {
     if let Some(error) = cause {
-        return error.with_context(format!(
+        return proof.attach_step_diagnostic(error).with_context(format!(
             "`{}` tactic {index}: `have` failed for `{}`",
             proof.claim_label(),
             crate::surface::diagnostics::describe_click_proposition(&have.proposition)

@@ -2333,6 +2333,92 @@ fn adler_bounded_native_count_observations_verify() {
 const PACKING: &str = include_str!("../../design/charon-trial/adler2/packing.click");
 const CHECKSUM: &str = include_str!("../../design/charon-trial/adler2/checksum.click");
 
+const RESTORATION: &str = include_str!("../../design/charon-trial/adler2/restoration.click");
+
+fn restoration_project() -> Project {
+    let p = adler2_helpers_project();
+    for (name, bytes) in [
+        (
+            "borrow.click.import.json",
+            include_bytes!("../../design/charon-trial/adler2/restoration.click.import.json")
+                .as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!("../../design/charon-trial/adler2/restoration.click.import.json.lock")
+                .as_slice(),
+        ),
+        (
+            "restoration.ullbc",
+            include_bytes!("../../design/charon-trial/adler2/restoration.ullbc").as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    fs::write(p.root.join("borrow.click"), RESTORATION).unwrap();
+    p
+}
+
+#[test]
+fn charon_adler2_restoration_extracts_original_checksum_words() {
+    let p = restoration_project();
+    C0VerificationSession::new_program_prepared(RESTORATION, load_import(&p.config()).unwrap())
+        .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: saved checksum word mutations and constructor expansion"]
+fn charon_adler2_restoration_rejects_false_words_and_expands() {
+    let p = restoration_project();
+    let prepared = load_import(&p.config()).unwrap();
+    for (before, after) in [
+        ("old(sum & 65535u32)", "old(sum)"),
+        ("old(sum & 65535u32)", "old((sum >> 16) & 65535u32)"),
+        ("old((sum >> 16) & 65535u32)", "old((sum >> 15) & 65535u32)"),
+        ("old(sum & 65535u32)", "old(sum & 32767u32)"),
+    ] {
+        let changed = RESTORATION.replacen(before, after, 1);
+        assert_ne!(changed, RESTORATION);
+        let error = C0VerificationSession::new_program_prepared(&changed, &prepared)
+            .err()
+            .expect("incorrect saved word observation must be refused");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+    assert_cli(&p, &["profile"]);
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "adler2::Adler32::from_checksum.contract",
+            "--in-place",
+        ],
+    );
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+#[ignore = "nightly: live Charon extraction of the unchanged restoration constructor"]
+fn charon_adler2_restoration_live_refresh_checks_original_body() {
+    let p = restoration_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    assert_eq!(
+        config["crate"]["roots"],
+        serde_json::json!(["adler2::Adler32::from_checksum"])
+    );
+    config["exporter"] = std::env::var("CLICK_CHARON").unwrap().into();
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(RESTORATION, load_import(&p.config()).unwrap())
+        .unwrap();
+}
+
 #[test]
 fn charon_adler2_checksum_packs_original_shared_fields() {
     let p = adler2_helpers_project();
@@ -2441,7 +2527,7 @@ fn verify_public_checksum_unit(
 ) -> Result<(), click::surface::ClickError> {
     let written_name = if name.ends_with("_default") {
         "default"
-    } else if name == "adler2::adler32_slice" {
+    } else if source.contains(&format!("fn {name}(")) {
         name
     } else {
         name.rsplit("::").next().unwrap()
@@ -2569,6 +2655,421 @@ fn charon_adler2_public_checksum_tools_recheck_original_contracts() {
         );
     }
     assert_cli(&p, &["verify"]);
+}
+
+const INCREMENTAL_CLIENT: &str = include_str!("../../design/charon-trial/adler2/incremental.click");
+const INCREMENTAL_SPLIT: &str =
+    include_str!("../../design/charon-trial/adler2/incremental-split.click");
+
+fn incremental_proof() -> String {
+    let public = public_general_proof();
+    let source = public.split_once("fn adler2::adler32_slice(").unwrap().0;
+    format!("{source}\n{INCREMENTAL_SPLIT}\n{INCREMENTAL_CLIENT}")
+        .replace("verifying \"src/lib.rs\";", "verifying \"incremental.rs\";")
+        .replace("adler2::", "adler_incremental::adler2::")
+}
+
+fn incremental_project() -> Project {
+    let p = adler2_helpers_project();
+    for (name, bytes) in [
+        (
+            "incremental.rs",
+            include_bytes!("../../design/charon-trial/adler2/incremental.rs").as_slice(),
+        ),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../../design/charon-trial/adler2/incremental.click.import.json")
+                .as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!("../../design/charon-trial/adler2/incremental.click.import.json.lock")
+                .as_slice(),
+        ),
+        (
+            "incremental.ullbc",
+            include_bytes!("../../design/charon-trial/adler2/incremental.ullbc").as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    fs::write(p.root.join("borrow.click"), incremental_proof()).unwrap();
+    p
+}
+
+const RESUMED_CLIENT: &str = include_str!("../../design/charon-trial/adler2/resumed.click");
+
+fn resumed_proof() -> String {
+    let public = public_general_proof();
+    let source = public.split_once("fn adler2::adler32_slice(").unwrap().0;
+    let restoration = RESTORATION.replace("verifying \"src/lib.rs\";", "");
+    format!("{source}\n{restoration}\n{INCREMENTAL_SPLIT}\n{RESUMED_CLIENT}")
+        .replace("verifying \"src/lib.rs\";", "verifying \"resumed.rs\";")
+        .replace("adler2::", "adler_resumed::adler2::")
+}
+
+fn resumed_project() -> Project {
+    let p = adler2_helpers_project();
+    for (name, bytes) in [
+        (
+            "resumed.rs",
+            include_bytes!("../../design/charon-trial/adler2/resumed.rs").as_slice(),
+        ),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../../design/charon-trial/adler2/resumed.click.import.json").as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!("../../design/charon-trial/adler2/resumed.click.import.json.lock")
+                .as_slice(),
+        ),
+        (
+            "resumed.ullbc",
+            include_bytes!("../../design/charon-trial/adler2/resumed.ullbc").as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    fs::write(p.root.join("borrow.click"), resumed_proof()).unwrap();
+    p
+}
+
+#[test]
+#[ignore = "nightly: restored Rust state and suffix updates at every supported split"]
+fn charon_adler2_resumed_client_matches_concatenated_input_and_rejects_false_claims() {
+    let p = resumed_project();
+    let prepared = load_import(&p.config()).unwrap();
+    verify_public_checksum_unit(&resumed_proof(), &prepared, "adler_resumed::resumed").unwrap();
+    for (before, after) in [
+        (
+            "ensures to_integer(result) == old(adler_spec_checksum(bytes, ((bytes.len() as u32) as i32), 1, 0));",
+            "ensures to_integer(result) == old(adler_spec_checksum(bytes, ((bytes.len() as u32) as i32), 1, 0)) + 1;",
+        ),
+        ("requires split <= bytes.len();", ""),
+        ("views *bytes;", ""),
+        (
+            "implies bytes[k] == old(bytes[k])",
+            "implies bytes[k] == old(bytes[k]) + 1",
+        ),
+    ] {
+        let changed = RESUMED_CLIENT.replacen(before, after, 1);
+        assert_ne!(changed, RESUMED_CLIENT);
+        let source = resumed_proof().replacen(RESUMED_CLIENT, &changed, 1);
+        let error = verify_public_checksum_unit(&source, &prepared, "adler_resumed::resumed")
+            .expect_err("false resumed-update claims must be refused");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: unchanged restoration/update/getter bodies and client expansion"]
+fn charon_adler2_resumed_client_tools_check_all_original_bodies() {
+    let p = resumed_project();
+    assert_cli(&p, &["profile"]);
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "adler_resumed::resumed.contract",
+            "--in-place",
+        ],
+    );
+    let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+    verify_public_checksum_unit(
+        &expanded,
+        &load_import(&p.config()).unwrap(),
+        "adler_resumed::resumed",
+    )
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: live Charon extraction and resumed client input closure"]
+fn charon_adler2_resumed_client_live_refresh_checks_the_input_closure() {
+    let p = resumed_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    assert_eq!(
+        config["crate"]["files"],
+        serde_json::json!(["resumed.rs", "src/lib.rs", "src/algo.rs"])
+    );
+    config["exporter"] = std::env::var("CLICK_CHARON").unwrap().into();
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    verify_public_checksum_unit(
+        &resumed_proof(),
+        &load_import(&p.config()).unwrap(),
+        "adler_resumed::resumed",
+    )
+    .unwrap();
+    fs::write(p.root.join("resumed.rs"), "pub fn different() {}\n").unwrap();
+    let error = load_import(&p.config()).unwrap_err();
+    assert!(error.contains("lock differs from its inputs"), "{error}");
+}
+
+#[test]
+#[ignore = "nightly: two actual Rust updates at every supported split"]
+fn charon_adler2_incremental_client_matches_concatenated_input() {
+    let p = incremental_project();
+    verify_public_checksum_unit(
+        &incremental_proof(),
+        &load_import(&p.config()).unwrap(),
+        "adler_incremental::incremental",
+    )
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: incremental client false results and missing input preconditions"]
+fn charon_adler2_incremental_client_rejects_false_claims() {
+    let p = incremental_project();
+    let prepared = load_import(&p.config()).unwrap();
+    for (before, after) in [
+        (
+            "ensures to_integer(result) == old(adler_spec_checksum(bytes, ((bytes.len() as u32) as i32), 1, 0));",
+            "ensures to_integer(result) == old(adler_spec_checksum(bytes, ((bytes.len() as u32) as i32), 1, 0)) + 1;",
+        ),
+        ("requires split <= bytes.len();", ""),
+        ("views *bytes;", ""),
+        (
+            "implies bytes[k] == old(bytes[k])",
+            "implies bytes[k] == old(bytes[k]) + 1",
+        ),
+    ] {
+        let changed = INCREMENTAL_CLIENT.replacen(before, after, 1);
+        assert_ne!(changed, INCREMENTAL_CLIENT);
+        let source = incremental_proof().replacen(INCREMENTAL_CLIENT, &changed, 1);
+        let error =
+            verify_public_checksum_unit(&source, &prepared, "adler_incremental::incremental")
+                .expect_err("false incremental claims must be refused");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: unchanged incremental callees and client contract expansion"]
+fn charon_adler2_incremental_client_tools_check_all_original_bodies() {
+    let p = incremental_project();
+    assert_cli(&p, &["profile"]);
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "adler_incremental::incremental.contract",
+            "--in-place",
+        ],
+    );
+    let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+    verify_public_checksum_unit(
+        &expanded,
+        &load_import(&p.config()).unwrap(),
+        "adler_incremental::incremental",
+    )
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: live Charon extraction of the real incremental client"]
+fn charon_adler2_incremental_client_live_refresh_checks_the_input_closure() {
+    let p = incremental_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    assert_eq!(
+        config["crate"]["files"],
+        serde_json::json!(["incremental.rs", "src/lib.rs", "src/algo.rs"])
+    );
+    config["exporter"] = std::env::var("CLICK_CHARON").unwrap().into();
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    verify_public_checksum_unit(
+        &incremental_proof(),
+        &load_import(&p.config()).unwrap(),
+        "adler_incremental::incremental",
+    )
+    .unwrap();
+    fs::write(p.root.join("incremental.rs"), "pub fn different() {}\n").unwrap();
+    let error = load_import(&p.config()).unwrap_err();
+    assert!(error.contains("lock differs from its inputs"), "{error}");
+}
+
+#[test]
+fn adler_incremental_split_observations_verify() {
+    click::surface::verify_c0_sources(&format!("{BOUNDED_COUNT}\n{INCREMENTAL_SPLIT}"), &[])
+        .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: incremental split and canonical seed bridge expansion"]
+fn adler_incremental_bridges_expand_and_reject_false_observations() {
+    let p = Project::isolated("");
+    let source = format!("{COMMON_ADLER_SPEC}\n{BOUNDED_COUNT}\n{PACKING}\n{INCREMENTAL_SPLIT}");
+    fs::write(p.root.join("borrow.click"), &source).unwrap();
+    assert_cli(&p, &["verify"]);
+    for claim in [
+        "adler_incremental_split.ensures_0",
+        "adler_canonical_observation.ensures_0",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+    }
+    assert_cli(&p, &["verify"]);
+    let invalid = INCREMENTAL_SPLIT.replacen(
+        "(int32)(uint32)prefix + (int32)(uint32)(total - prefix) == (int32)(uint32)total",
+        "(int32)(uint32)prefix + (int32)(uint32)(total - prefix) == (int32)(uint32)total - 1",
+        1,
+    );
+    assert_ne!(invalid, INCREMENTAL_SPLIT);
+    assert!(
+        click::surface::verify_c0_sources(&format!("{BOUNDED_COUNT}\n{invalid}"), &[]).is_err()
+    );
+    let invalid = PACKING.replacen(
+        "ensures (uint32)value <= 65520u32",
+        "ensures (uint32)value <= 65519u32",
+        1,
+    );
+    assert_ne!(invalid, PACKING);
+    assert!(
+        click::surface::verify_c0_sources(&format!("{COMMON_ADLER_SPEC}\n{invalid}"), &[]).is_err()
+    );
+}
+
+const PUBLIC_GENERAL: &str = include_str!("../../design/charon-trial/adler2/public-general.click");
+
+fn public_general_proof() -> String {
+    format!(
+        "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{PUBLIC_GENERAL}",
+        compute_proof(GENERAL_COMPUTE)
+    )
+}
+
+#[test]
+#[ignore = "nightly: general public API composition with the full computation specification"]
+fn charon_adler2_general_public_checksum_matches_common_spec() {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    let source = public_general_proof();
+    for name in ["adler2::Adler32::write_slice", "adler2::adler32_slice"] {
+        verify_public_checksum_unit(&source, &prepared, name).unwrap();
+    }
+}
+
+#[test]
+#[ignore = "nightly: general public API false checksums, seeds, authority and preservation"]
+fn charon_adler2_general_public_checksum_rejects_false_claims() {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    for (name, before, after) in [
+        (
+            "adler2::adler32_slice",
+            "ensures to_integer(result) == old(adler_spec_checksum(data, ((data.len() as u32) as i32), 1, 0));",
+            "ensures to_integer(result) == old(adler_spec_checksum(data, ((data.len() as u32) as i32), 1, 0)) + 1;",
+        ),
+        (
+            "adler2::adler32_slice",
+            "ensures to_integer(result) == old(adler_spec_checksum(data, ((data.len() as u32) as i32), 1, 0));",
+            "ensures to_integer(result) == old(adler_spec_checksum(data, ((data.len() as u32) as i32), 0, 1));",
+        ),
+        ("adler2::adler32_slice", "views *data;", ""),
+        (
+            "adler2::adler32_slice",
+            "implies data[k] == old(data[k])",
+            "implies data[k] == old(data[k]) + 1",
+        ),
+        (
+            "adler2::Adler32::write_slice",
+            "requires (self.a as u32) <= 65520u32;",
+            "requires (self.a as u32) <= 65521u32;",
+        ),
+        (
+            "adler2::Adler32::write_slice",
+            "requires (self.b as u32) <= 65520u32;",
+            "requires (self.b as u32) <= 65521u32;",
+        ),
+        (
+            "adler2::Adler32::write_slice",
+            "requires bytes.len() <= 2147483647u64;",
+            "requires bytes.len() <= 2147483648u64;",
+        ),
+    ] {
+        let contract = PUBLIC_GENERAL.replacen(before, after, 1);
+        assert_ne!(contract, PUBLIC_GENERAL, "{before}");
+        let source = public_general_proof().replacen(PUBLIC_GENERAL, &contract, 1);
+        let error = verify_public_checksum_unit(&source, &prepared, name)
+            .expect_err("false public claims or insufficient call preconditions must be refused");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: general public API original callees and contract expansion"]
+fn charon_adler2_general_public_checksum_tools_check_all_original_bodies() {
+    let p = adler2_helpers_project();
+    fs::write(p.root.join("borrow.click"), public_general_proof()).unwrap();
+    assert_cli(&p, &["profile"]);
+    for name in ["adler2::Adler32::write_slice", "adler2::adler32_slice"] {
+        assert_cli(
+            &p,
+            &[
+                "expand",
+                "--claim",
+                &format!("{name}.contract"),
+                "--in-place",
+            ],
+        );
+        let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+        verify_public_checksum_unit(&expanded, &load_import(&p.config()).unwrap(), name).unwrap();
+    }
+}
+
+#[test]
+#[ignore = "nightly: signed logical index native bridge expansion and false extent"]
+fn adler_bounded_signed_index_expands_and_rejects_past_end() {
+    let p = Project::isolated("");
+    fs::write(p.root.join("borrow.click"), BOUNDED_COUNT).unwrap();
+    assert_cli(&p, &["verify"]);
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "adler_bounded_signed_index.ensures_0",
+            "--in-place",
+        ],
+    );
+    assert_cli(&p, &["verify"]);
+    click::surface::verify_c0_sources(BOUNDED_COUNT, &[]).unwrap();
+    // Empty ranges have no guarded index; replacing the strict guard admits
+    // the one-past endpoint for every nonempty input.
+    let invalid = BOUNDED_COUNT.replacen(
+        "requires index < (int32)(uint32)count;",
+        "requires index <= (int32)(uint32)count;",
+        1,
+    );
+    assert_ne!(invalid, BOUNDED_COUNT);
+    let error = click::surface::verify_c0_sources(&invalid, &[]).unwrap_err();
+    assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+    assert!(
+        !error.message().contains("budget exhausted"),
+        "{}",
+        error.message()
+    );
 }
 
 fn public_boundary_proof(length: usize) -> String {
@@ -3279,4 +3780,49 @@ fn charon_adler2_general_compute_rejects_false_recombined_remainder_b() {
         "have to_integer(b) == adler_lane_b(to_integer(at(weighted_b, b)),",
         "have to_integer(b) + 1 == adler_lane_b(to_integer(at(weighted_b, b)),",
     );
+}
+
+#[test]
+#[ignore = "nightly: full general checksum A postcondition"]
+fn charon_adler2_general_compute_rejects_false_final_a() {
+    reject_compute(
+        GENERAL_COMPUTE,
+        "ensures to_integer(self.a) == old(adler_spec_a(",
+        "ensures to_integer(self.a) + 1 == old(adler_spec_a(",
+    );
+}
+
+#[test]
+#[ignore = "nightly: full general checksum B postcondition"]
+fn charon_adler2_general_compute_rejects_false_final_b() {
+    reject_compute(
+        GENERAL_COMPUTE,
+        "ensures to_integer(self.b) == old(adler_spec_b(",
+        "ensures to_integer(self.b) + 1 == old(adler_spec_b(",
+    );
+}
+
+#[test]
+#[ignore = "nightly: full-range scalar byte observation and expansion"]
+fn adler_bounded_previous_byte_verify_expand_and_reverify() {
+    let p = Project::isolated("");
+    fs::write(p.root.join("borrow.click"), BOUNDED_COUNT).unwrap();
+    click::surface::verify_c0_sources(BOUNDED_COUNT, &[]).unwrap();
+    assert_cli(&p, &["verify"]);
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "adler_bounded_previous_byte_observation.ensures_0",
+            "--in-place",
+        ],
+    );
+    assert_cli(&p, &["verify"]);
+    let invalid = BOUNDED_COUNT.replace(
+        "ensures to_integer((int32)(bytes + (total - remaining - 1u64))[0]) ==",
+        "ensures to_integer((int32)(bytes + (total - remaining - 1u64))[0]) + 1 ==",
+    );
+    assert_ne!(invalid, BOUNDED_COUNT);
+    assert!(click::surface::verify_c0_sources(&invalid, &[]).is_err());
 }

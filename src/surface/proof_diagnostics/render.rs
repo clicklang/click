@@ -56,6 +56,14 @@ pub(crate) struct SnapshotLabels {
 }
 
 impl SnapshotLabels {
+    pub(crate) fn source_type(&mut self, variable: Variable, c_type: crate::kernel::CType) {
+        self.source_types.insert(variable, c_type);
+    }
+    pub(crate) fn source_value_type(&mut self, value: &crate::kernel::CValue) {
+        if let crate::kernel::arithmetic_c_value!(Bitvector32Term::Variable(variable)) = value {
+            self.source_type(*variable, value.c_type());
+        }
+    }
     /// Stable report-local identities, distinct from source spellings.
     pub(crate) fn pointer_value_name(&mut self, pointer: &Pointer) -> String {
         if let Some(index) = self.pointer_values.get(pointer) {
@@ -1019,6 +1027,19 @@ impl Renderer<'_> {
         self.depth -= 1;
     }
     fn condition(&mut self, c: &ConditionTerm) {
+        // Definedness of a partial machine operation is the condition a
+        // capture or evaluation refusal most often names, so print the
+        // operation instead of a placeholder.
+        if let Some((operator, a, b)) = c.as_bitvector_comparison() {
+            let symbol = operator.c_symbol();
+            if operator.is_overflow() {
+                self.overflow_condition_bv(a, b, operator.operand_type(), symbol);
+            } else {
+                let symbol = if symbol == "==" { "=" } else { symbol };
+                self.binary_condition_bv(a, b, &format!("{} {symbol}", operator.operand_type()));
+            }
+            return;
+        }
         match c {
             ConditionTerm::Constant(v) => self.push(if *v { "true" } else { "false" }),
             ConditionTerm::Variable(v) => {
@@ -1039,44 +1060,6 @@ impl Renderer<'_> {
                 self.integer_shared(b);
                 self.push(")");
             }
-            ConditionTerm::Bitvector32SignedLessThan(a, b) => {
-                self.binary_condition_bv(a, b, "int32 <")
-            }
-            ConditionTerm::Bitvector32SignedLessEqual(a, b) => {
-                self.binary_condition_bv(a, b, "int32 <=")
-            }
-            ConditionTerm::Bitvector32SignedGreaterThan(a, b) => {
-                self.binary_condition_bv(a, b, "int32 >")
-            }
-            ConditionTerm::Bitvector32SignedGreaterEqual(a, b) => {
-                self.binary_condition_bv(a, b, "int32 >=")
-            }
-            ConditionTerm::Bitvector32Equal(a, b) => self.binary_condition_bv(a, b, "int32 ="),
-            ConditionTerm::Bitvector64Equal(a, b) => self.binary_condition_bv(a, b, "bits64 ="),
-            ConditionTerm::Bitvector64SignedLessThan(a, b) => {
-                self.binary_condition_bv(a, b, "int64 <")
-            }
-            ConditionTerm::Bitvector64SignedLessEqual(a, b) => {
-                self.binary_condition_bv(a, b, "int64 <=")
-            }
-            ConditionTerm::Bitvector64SignedGreaterThan(a, b) => {
-                self.binary_condition_bv(a, b, "int64 >")
-            }
-            ConditionTerm::Bitvector64SignedGreaterEqual(a, b) => {
-                self.binary_condition_bv(a, b, "int64 >=")
-            }
-            ConditionTerm::Bitvector64UnsignedLessThan(a, b) => {
-                self.binary_condition_bv(a, b, "uint64 <")
-            }
-            ConditionTerm::Bitvector64UnsignedLessEqual(a, b) => {
-                self.binary_condition_bv(a, b, "uint64 <=")
-            }
-            ConditionTerm::Bitvector64UnsignedGreaterThan(a, b) => {
-                self.binary_condition_bv(a, b, "uint64 >")
-            }
-            ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b) => {
-                self.binary_condition_bv(a, b, "uint64 >=")
-            }
             ConditionTerm::AlgebraicEqual(a, b) => {
                 self.algebraic(a);
                 self.push(" = ");
@@ -1091,39 +1074,6 @@ impl Renderer<'_> {
                 self.pointer(a);
                 self.push(" = ");
                 self.pointer(b);
-            }
-            // Definedness of a partial machine operation is the condition a
-            // capture or evaluation refusal most often names, so print the
-            // operation instead of a placeholder.
-            ConditionTerm::Bitvector32SignedAddOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int32", "+")
-            }
-            ConditionTerm::Bitvector32SignedSubtractOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int32", "-")
-            }
-            ConditionTerm::Bitvector32SignedMultiplyOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int32", "*")
-            }
-            ConditionTerm::Bitvector32SignedDivideOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int32", "/")
-            }
-            ConditionTerm::Bitvector32SignedShiftLeftOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int32", "<<")
-            }
-            ConditionTerm::Bitvector64SignedAddOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int64", "+")
-            }
-            ConditionTerm::Bitvector64SignedSubtractOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int64", "-")
-            }
-            ConditionTerm::Bitvector64SignedMultiplyOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int64", "*")
-            }
-            ConditionTerm::Bitvector64SignedDivideOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int64", "/")
-            }
-            ConditionTerm::Bitvector64SignedShiftLeftOverflows(a, b) => {
-                self.overflow_condition_bv(a, b, "int64", "<<")
             }
             _ => self.push("condition(<bounded operation>)"),
         }
@@ -1163,12 +1113,28 @@ impl Renderer<'_> {
             self.push(")");
             return;
         }
-        self.push(label);
+        // Equality shares one 32-bit kernel form between signed and unsigned
+        // C values. Retained type metadata disambiguates a returned value
+        // even when it has no source name.
+        let unsigned_equality = label == "int32 ="
+            && [a, b].iter().any(|value| {
+                matches!(value, Bitvector32Term::Variable(variable)
+                if self.labels.source_types.get(variable) == Some(&crate::kernel::CType::UInt32))
+            });
+        self.push(if unsigned_equality { "uint32 =" } else { label });
         self.push("(");
-        self.bitvector(a);
+        let signed = label.starts_with("int32 ") && !unsigned_equality;
+        self.comparison_bitvector(a, signed);
         self.push(", ");
-        self.bitvector(b);
+        self.comparison_bitvector(b, signed);
         self.push(")");
+    }
+    fn comparison_bitvector(&mut self, value: &Bitvector32Term, signed: bool) {
+        if signed && let Bitvector32Term::Constant(value) = value {
+            self.fmt(format_args!("{}", *value as i32));
+        } else {
+            self.bitvector(value);
+        }
     }
     fn overflow_condition_bv(
         &mut self,

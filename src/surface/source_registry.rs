@@ -547,6 +547,7 @@ mod tests {
         parameter_names: &[&str],
     ) -> FunctionBlock {
         FunctionBlock {
+            c_object_names: Default::default(),
             signature: FunctionSignature {
                 return_type: C0Type::Int32,
                 return_pointee_constant: false,

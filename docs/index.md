@@ -13,7 +13,9 @@ contradicts the page.
 
 The documentation assumes broad programming experience but no background in
 theorem proving. Start with [What Click proves](concepts/what-click-proves.md)
-and [Your first proof](concepts/first-proof.md) if Click is new to you.
+and [Your first proof](concepts/first-proof.md) if Click is new to you, then
+[Verify a function in your own project](concepts/own-project.md) to bring in
+your project's build flags and libc calls.
 
 ## Technical reference
 

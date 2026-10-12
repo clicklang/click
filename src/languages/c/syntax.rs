@@ -4782,10 +4782,6 @@ impl C0Statement {
         }
     }
 
-    pub fn to_kernel_statement(&self) -> crate::kernel::CStatement {
-        self.to_kernel_statement_with_control_targets(&BTreeMap::new())
-    }
-
     pub(crate) fn to_kernel_statement_with_control_targets(
         &self,
         targets: &BTreeMap<String, (crate::kernel::CControlTargetId, usize)>,
@@ -5325,7 +5321,7 @@ pub(crate) fn parse_translation_unit_for_target(
         Some(source_identity),
         line_map,
     )?
-    .with_plain_char(target.plain_char())
+    .with_target(target)
     .parse_translation_unit()?;
     unit.builtin_pthread_declarations = unit
         .function_declaration_lines
@@ -5370,7 +5366,7 @@ pub(crate) fn parse_translation_unit_for_import_target(
 ) -> Result<C0TranslationUnit, C0SyntaxError> {
     let mut parser =
         Parser::new_with_source_identity_and_map(source, target.abi(), Some(source_identity), map)?
-            .with_plain_char(target.plain_char());
+            .with_target(target);
     parser.refuse_promises = promises == PromiseAttributes::Refuse;
     parser.parse_translation_unit()
 }
@@ -5432,7 +5428,7 @@ pub(crate) fn parse_functions_for_target(
     target: super::target::CTarget,
 ) -> Result<Vec<C0Function>, C0SyntaxError> {
     Parser::new(source, target.abi())?
-        .with_plain_char(target.plain_char())
+        .with_target(target)
         .parse_functions()
 }
 
@@ -5456,7 +5452,7 @@ pub fn validate_header_for_target(
     target: super::target::CTarget,
 ) -> Result<(), C0SyntaxError> {
     Parser::new_with_source_identity_and_line_map(source, target.abi(), None, line_map)?
-        .with_plain_char(target.plain_char())
+        .with_target(target)
         .parse_header()
 }
 
@@ -7585,10 +7581,10 @@ impl Parser {
         })
     }
 
-    /// Selects the target's plain `char` signedness. Every parser starts with
-    /// the default target's, which the test-only entry points keep.
-    fn with_plain_char(mut self, plain_char: PlainChar) -> Self {
-        self.plain_char = plain_char;
+    /// Selects the target's plain `char` signedness. Every parser starts
+    /// with the default target's, which the test-only entry points keep.
+    fn with_target(mut self, target: super::target::CTarget) -> Self {
+        self.plain_char = target.plain_char();
         self
     }
 
@@ -8074,7 +8070,7 @@ impl Parser {
         &self,
         declared_type: C0Type,
         declared_pointee_constant: bool,
-        expression: &C0Expression,
+        expression: &mut C0Expression,
     ) -> Result<(), C0SyntaxError> {
         self.validate_char_pointer_assignment(declared_type, expression)?;
         if declared_type.is_pointer()
@@ -12794,7 +12790,7 @@ impl Parser {
 
     fn parse_return_statement(&mut self) -> Result<C0Statement, C0SyntaxError> {
         self.position += 1;
-        let expression = if self.peek() == Some(&Token::Semicolon) {
+        let mut expression = if self.peek() == Some(&Token::Semicolon) {
             C0Expression::Void
         } else if self.current_return_struct_name.is_some() {
             self.parse_expression_allow_direct_aggregate()?
@@ -12804,12 +12800,12 @@ impl Parser {
         self.validate_struct_pointer_assignment(
             self.current_return_pointer_struct_name.as_ref(),
             Some(self.current_return_type),
-            &expression,
+            &mut expression,
         )?;
         self.reject_discarded_const_pointer(
             self.current_return_type,
             self.current_return_pointee_constant,
-            &expression,
+            &mut expression,
         )?;
         // Check wide-to-int representability at the return statement,
         // where the proof can discharge its bounds from call facts.
@@ -13825,7 +13821,7 @@ impl Parser {
             return Ok(initializers);
         }
 
-        let value = self.parse_expression()?;
+        let mut value = self.parse_expression()?;
         // A callback field takes a function address or the null pointer. The
         // field's own signature is the expected one, so the check is the same
         // one an assignment through a pointer already performs.
@@ -13849,7 +13845,7 @@ impl Parser {
                 value,
             )]);
         }
-        self.reject_discarded_const_pointer(field.c_type, field.pointee_constant, &value)?;
+        self.reject_discarded_const_pointer(field.c_type, field.pointee_constant, &mut value)?;
         validate_aggregate_initializer(self, field.c_type, &value)?;
         Ok(vec![C0AggregateInitializer::new(
             field_offset,
@@ -14192,8 +14188,8 @@ impl Parser {
                 .collect());
         }
 
-        let value = self.parse_expression()?;
-        self.reject_discarded_const_pointer(field.c_type, field.pointee_constant, &value)?;
+        let mut value = self.parse_expression()?;
+        self.reject_discarded_const_pointer(field.c_type, field.pointee_constant, &mut value)?;
         Ok(vec![C0Statement::Store {
             pointer: field_pointer,
             value,
@@ -14872,16 +14868,20 @@ impl Parser {
                         C0Statement::Seq(Box::new(declaration), Box::new(call))
                     } else {
                         self.position = call_start;
-                        let expression = self.parse_expression()?;
+                        let mut expression = self.parse_expression()?;
                         if let Some(signature) = self.variable_function_pointers.get(&name) {
                             self.validate_function_pointer_value(signature, &expression)?;
                         }
                         self.validate_struct_pointer_assignment(
                             self.variable_structs.get(&name),
                             Some(c_type),
-                            &expression,
+                            &mut expression,
                         )?;
-                        self.reject_discarded_const_pointer(c_type, pointee_constant, &expression)?;
+                        self.reject_discarded_const_pointer(
+                            c_type,
+                            pointee_constant,
+                            &mut expression,
+                        )?;
                         C0Statement::Seq(
                             Box::new(declaration),
                             Box::new(C0Statement::Assign {
@@ -14892,16 +14892,16 @@ impl Parser {
                         )
                     }
                 } else {
-                    let expression = self.parse_expression()?;
+                    let mut expression = self.parse_expression()?;
                     if let Some(signature) = self.variable_function_pointers.get(&name) {
                         self.validate_function_pointer_value(signature, &expression)?;
                     }
                     self.validate_struct_pointer_assignment(
                         self.variable_structs.get(&name),
                         Some(c_type),
-                        &expression,
+                        &mut expression,
                     )?;
-                    self.reject_discarded_const_pointer(c_type, pointee_constant, &expression)?;
+                    self.reject_discarded_const_pointer(c_type, pointee_constant, &mut expression)?;
                     if object_constant {
                         let mut declaration = declaration;
                         if let C0Statement::Declare { initializer, .. } = &mut declaration {
@@ -15433,11 +15433,15 @@ impl Parser {
                 return Err(self.error_here("for-loop declarations require an initializer"));
             }
             self.position += 1;
-            let expression = self.parse_expression()?;
+            let mut expression = self.parse_expression()?;
             if let Some(signature) = &parsed_type.function_pointer_signature {
                 self.validate_function_pointer_value(signature, &expression)?;
             }
-            self.reject_discarded_const_pointer(parsed_type.c_type, pointee_constant, &expression)?;
+            self.reject_discarded_const_pointer(
+                parsed_type.c_type,
+                pointee_constant,
+                &mut expression,
+            )?;
             initializers.push(C0Statement::Seq(
                 Box::new(C0Statement::Declare {
                     c_type: parsed_type.c_type,
@@ -15586,14 +15590,14 @@ impl Parser {
                     self.position = call_start;
                 }
                 {
-                    let expression = self.parse_expression()?;
+                    let mut expression = self.parse_expression()?;
                     self.reject_discarded_const_pointer(
                         self.variable_types
                             .get(&name)
                             .copied()
                             .unwrap_or(C0Type::Void),
                         self.variable_pointee_is_constant(&name),
-                        &expression,
+                        &mut expression,
                     )?;
                     self.validate_function_pointer_assignment(&name, &expression)?;
                     expression
@@ -15654,7 +15658,7 @@ impl Parser {
                 )));
             }
         };
-        let expression = match expression {
+        let mut expression = match expression {
             C0Expression::Add(left, right)
                 if operator == Token::PlusPlus || operator == Token::PlusEqual =>
             {
@@ -15671,7 +15675,7 @@ impl Parser {
             self.validate_struct_pointer_assignment(
                 self.variable_structs.get(&name),
                 self.variable_types.get(&name).copied(),
-                &expression,
+                &mut expression,
             )?;
             self.validate_function_pointer_assignment(&name, &expression)?;
         }
@@ -15731,12 +15735,12 @@ impl Parser {
                 let value = self.parse_expression_allow_direct_aggregate()?;
                 return self.aggregate_copy_statement(pointer.as_ref().clone(), struct_name, value);
             }
-            let value = self.parse_expression()?;
+            let mut value = self.parse_expression()?;
             if let Some(target_type) = self.source_expression_type(&target) {
                 self.reject_discarded_const_pointer(
                     target_type,
                     self.expression_pointee_is_constant(&target),
-                    &value,
+                    &mut value,
                 )?;
             }
             return match target {
@@ -15902,15 +15906,27 @@ impl Parser {
         }
         if !matches!(function_name.as_str(), "malloc" | "calloc") {
             if self.function_declaration_for_call(&function_name).is_some() {
+                let call = C0Expression::Call {
+                    function_name: function_name.clone(),
+                    arguments: arguments.clone(),
+                    position: None,
+                };
+                let mut value = call.clone();
                 self.validate_struct_pointer_assignment(
                     self.variable_structs.get(&target),
                     self.variable_types.get(&target).copied(),
-                    &C0Expression::Call {
-                        function_name: function_name.clone(),
-                        arguments: arguments.clone(),
-                        position: None,
-                    },
+                    &mut value,
                 )?;
+                // A character pointer result of another character type is
+                // converted as by its explicit cast: the call becomes an
+                // embedded call, which lowering assigns to a temporary.
+                if value != call {
+                    return Ok(C0Statement::Assign {
+                        name: target,
+                        expression: value,
+                        site: C0Site::NONE,
+                    });
+                }
             }
             return Ok(C0Statement::CallAssign {
                 target,
@@ -16124,17 +16140,17 @@ impl Parser {
             ));
         }
 
-        let value = self.parse_assignment()?;
+        let mut value = self.parse_assignment()?;
         self.reject_discarded_const_pointer(
             c_type,
             self.variable_pointee_is_constant(&name),
-            &value,
+            &mut value,
         )?;
-        self.validate_char_pointer_assignment(c_type, &value)?;
+        self.validate_char_pointer_assignment(c_type, &mut value)?;
         self.validate_struct_pointer_assignment(
             self.variable_structs.get(&name),
             Some(c_type),
-            &value,
+            &mut value,
         )?;
 
         Ok(C0Expression::Assignment {
@@ -18220,7 +18236,7 @@ impl Parser {
         // precedence now that assignment expressions exist.
         let else_branch = self.parse_conditional()?;
         if let Some(then_type) = self.source_expression_type(&then_branch) {
-            self.validate_char_pointer_assignment(then_type, &else_branch)?;
+            self.validate_char_pointer_operands(then_type, &else_branch)?;
         }
         let then_struct = self.aggregate_struct_name(&then_branch);
         let else_struct = self.aggregate_struct_name(&else_branch);
@@ -18356,7 +18372,7 @@ impl Parser {
 
         loop {
             let argument_index = arguments.len();
-            let expression = self.parse_expression_allow_direct_aggregate()?;
+            let mut expression = self.parse_expression_allow_direct_aggregate()?;
             if let Some(parameter) = function_name
                 .and_then(|name| self.variable_function_pointers.get(name))
                 .and_then(|signature| signature.parameters.get(argument_index))
@@ -18364,7 +18380,7 @@ impl Parser {
                 self.reject_discarded_const_pointer(
                     parameter.c_type,
                     parameter.pointee_constant,
-                    &expression,
+                    &mut expression,
                 )?;
             }
             if let Some((parameter_type, struct_name, function_pointer_signature)) =
@@ -18376,7 +18392,7 @@ impl Parser {
                     self.validate_struct_pointer_assignment(
                         Some(struct_name),
                         Some(parameter_type),
-                        &expression,
+                        &mut expression,
                     )?;
                 }
             }
@@ -18388,13 +18404,16 @@ impl Parser {
                 .and_then(|name| self.function_declarations.get(name))
                 .and_then(|function| function.parameters.get(argument_index))
                 && parameter.c_type.is_pointer()
-                && !parameter.pointee_is_constant()
             {
-                self.reject_discarded_const_pointer(
-                    parameter.c_type,
-                    parameter.pointee_is_constant(),
-                    &expression,
-                )?;
+                if parameter.pointee_is_constant() {
+                    self.validate_char_pointer_assignment(parameter.c_type, &mut expression)?;
+                } else {
+                    self.reject_discarded_const_pointer(
+                        parameter.c_type,
+                        parameter.pointee_is_constant(),
+                        &mut expression,
+                    )?;
+                }
             }
             if known_scalar_parameter && self.expression_contains_aggregate(&expression) {
                 return Err(self.aggregate_expression_error());
@@ -18428,8 +18447,8 @@ impl Parser {
         &mut self,
         signature: &C0FunctionPointerSignature,
     ) -> Result<Vec<C0Expression>, C0SyntaxError> {
-        let arguments = self.parse_call_arguments(None)?;
-        for (argument, parameter) in arguments.iter().zip(signature.parameters()) {
+        let mut arguments = self.parse_call_arguments(None)?;
+        for (argument, parameter) in arguments.iter_mut().zip(signature.parameters()) {
             self.reject_discarded_const_pointer(
                 parameter.c_type,
                 parameter.pointee_constant,
@@ -18619,17 +18638,17 @@ impl Parser {
             expression = match self.peek() {
                 Some(Token::EqualEqual) => {
                     self.position += 1;
-                    let right = self.parse_relational()?;
+                    let mut right = self.parse_relational()?;
                     if let Some(left_type) = self.source_expression_type(&expression) {
-                        self.validate_char_pointer_assignment(left_type, &right)?;
+                        self.validate_char_pointer_assignment(left_type, &mut right)?;
                     }
                     C0Expression::Equal(Box::new(expression), Box::new(right))
                 }
                 Some(Token::BangEqual) => {
                     self.position += 1;
-                    let right = self.parse_relational()?;
+                    let mut right = self.parse_relational()?;
                     if let Some(left_type) = self.source_expression_type(&expression) {
-                        self.validate_char_pointer_assignment(left_type, &right)?;
+                        self.validate_char_pointer_assignment(left_type, &mut right)?;
                     }
                     C0Expression::NotEqual(Box::new(expression), Box::new(right))
                 }
@@ -18644,33 +18663,33 @@ impl Parser {
             expression = match self.peek() {
                 Some(Token::LessThan) => {
                     self.position += 1;
-                    let right = self.parse_shift()?;
+                    let mut right = self.parse_shift()?;
                     if let Some(left_type) = self.source_expression_type(&expression) {
-                        self.validate_char_pointer_assignment(left_type, &right)?;
+                        self.validate_char_pointer_assignment(left_type, &mut right)?;
                     }
                     C0Expression::LessThan(Box::new(expression), Box::new(right))
                 }
                 Some(Token::LessEqual) => {
                     self.position += 1;
-                    let right = self.parse_shift()?;
+                    let mut right = self.parse_shift()?;
                     if let Some(left_type) = self.source_expression_type(&expression) {
-                        self.validate_char_pointer_assignment(left_type, &right)?;
+                        self.validate_char_pointer_assignment(left_type, &mut right)?;
                     }
                     C0Expression::LessEqual(Box::new(expression), Box::new(right))
                 }
                 Some(Token::GreaterThan) => {
                     self.position += 1;
-                    let right = self.parse_shift()?;
+                    let mut right = self.parse_shift()?;
                     if let Some(left_type) = self.source_expression_type(&expression) {
-                        self.validate_char_pointer_assignment(left_type, &right)?;
+                        self.validate_char_pointer_assignment(left_type, &mut right)?;
                     }
                     C0Expression::GreaterThan(Box::new(expression), Box::new(right))
                 }
                 Some(Token::GreaterEqual) => {
                     self.position += 1;
-                    let right = self.parse_shift()?;
+                    let mut right = self.parse_shift()?;
                     if let Some(left_type) = self.source_expression_type(&expression) {
-                        self.validate_char_pointer_assignment(left_type, &right)?;
+                        self.validate_char_pointer_assignment(left_type, &mut right)?;
                     }
                     C0Expression::GreaterEqual(Box::new(expression), Box::new(right))
                 }
@@ -18711,7 +18730,7 @@ impl Parser {
                     self.position += 1;
                     let right = self.parse_multiply()?;
                     if let Some(right_type) = self.source_expression_type(&right) {
-                        self.validate_char_pointer_assignment(right_type, &expression)?;
+                        self.validate_char_pointer_operands(right_type, &expression)?;
                     }
                     self.scale_struct_pointer_arithmetic(expression, right, C0Expression::Subtract)?
                 }
@@ -18991,7 +19010,7 @@ impl Parser {
                 };
                 let (c_type, struct_name) =
                     self.sequential_access_target(target, source_name, position.clone())?;
-                self.validate_sequential_store_value(
+                let value = self.validate_sequential_store_value(
                     target,
                     value,
                     c_type,
@@ -18999,7 +19018,7 @@ impl Parser {
                 )?;
                 Ok(Some(C0Expression::SequentialWrite {
                     target: Box::new(target.clone()),
-                    value: Box::new(value.clone()),
+                    value: Box::new(value),
                     c_type,
                     struct_name,
                 }))
@@ -19110,18 +19129,23 @@ impl Parser {
         value: &C0Expression,
         c_type: C0Type,
         struct_name: Option<&str>,
-    ) -> Result<(), C0SyntaxError> {
+    ) -> Result<C0Expression, C0SyntaxError> {
         self.reject_constant_lvalue_write(target)?;
+        let mut value = value.clone();
         self.reject_discarded_const_pointer(
             c_type,
             self.expression_pointee_is_constant(target),
-            value,
+            &mut value,
         )?;
         if let Some(struct_name) = struct_name {
             let expected_struct = struct_name.to_string();
-            self.validate_struct_pointer_assignment(Some(&expected_struct), Some(c_type), value)?;
+            self.validate_struct_pointer_assignment(
+                Some(&expected_struct),
+                Some(c_type),
+                &mut value,
+            )?;
         }
-        Ok(())
+        Ok(value)
     }
 
     fn validate_kernel_condition(
@@ -19170,7 +19194,7 @@ impl Parser {
                 let value = &arguments[1];
                 let (c_type, struct_name) =
                     self.sequential_access_target(target, source_name, None)?;
-                self.validate_sequential_store_value(
+                let value = self.validate_sequential_store_value(
                     target,
                     value,
                     c_type,
@@ -19178,7 +19202,7 @@ impl Parser {
                 )?;
                 Ok(Some(C0Statement::SequentialStore {
                     target: target.clone(),
-                    value: value.clone(),
+                    value,
                     value_type: c_type,
                     pointee_constant: self.expression_pointee_is_constant(target), site: C0Site::NONE
                 }))
@@ -20097,38 +20121,102 @@ impl Parser {
         }
     }
 
+    /// Checks a value converted to `expected` by assignment, initialization,
+    /// return, argument passing, or comparison. An uncast conversion between
+    /// distinct pointers to one-byte character types (`char *`,
+    /// `signed char *`, `unsigned char *`) is only a `-Wpointer-sign` (or, for
+    /// a comparison, `-Wcompare-distinct-pointer-types`) warning in GCC and
+    /// Clang, so it is accepted and lowered exactly as the explicit cast to
+    /// the destination type: the kernel reads a one-byte cell through either
+    /// character type as the same byte. Any other conversion between
+    /// character pointers, such as `char **` to `unsigned char **`, is
+    /// refused.
     fn validate_char_pointer_assignment(
+        &self,
+        expected: C0Type,
+        expression: &mut C0Expression,
+    ) -> Result<(), C0SyntaxError> {
+        if let Some(c_type) = self.character_pointer_conversion(expected, expression)? {
+            let pointee_constant = self.expression_pointee_is_constant(expression);
+            let value = std::mem::replace(expression, C0Expression::Void);
+            *expression = C0Expression::Cast {
+                expression: Box::new(value),
+                c_type,
+                struct_name: None,
+                pointee_volatile: false,
+                pointee_constant,
+                explicit_qualification: false,
+            };
+        }
+        Ok(())
+    }
+
+    /// Refuses a character pointer operand that is not exactly `expected`'s
+    /// type, where C gives the two operands no common type to convert to:
+    /// the arms of `?:` (whose common type would be `void *`) and the
+    /// operands of a pointer subtraction, which GCC and Clang refuse.
+    fn validate_char_pointer_operands(
         &self,
         expected: C0Type,
         expression: &C0Expression,
     ) -> Result<(), C0SyntaxError> {
+        match self.character_pointer_conversion(expected, expression)? {
+            Some(c_type) => {
+                let actual = self
+                    .source_expression_type(expression)
+                    .map_or(c_type, decay_to_pointer);
+                Err(self.incompatible_character_pointers(c_type, actual))
+            }
+            None => Ok(()),
+        }
+    }
+
+    /// The pointer type an uncast character-pointer conversion of
+    /// `expression` to `expected` casts to, `None` when no conversion is
+    /// needed, or the refusal of an incompatible character pointer.
+    fn character_pointer_conversion(
+        &self,
+        expected: C0Type,
+        expression: &C0Expression,
+    ) -> Result<Option<C0Type>, C0SyntaxError> {
         if !expected.is_pointer() && expected.pointee_type().is_none() {
-            return Ok(());
+            return Ok(None);
         }
         let Some(actual) = self.source_expression_type(expression) else {
-            return Ok(());
+            return Ok(None);
         };
-        let decay = |ty: C0Type| {
-            if ty.is_pointer() {
-                ty
-            } else {
-                ty.pointee_type()
-                    .and_then(C0Type::pointer_type)
-                    .unwrap_or(ty)
-            }
-        };
-        let actual = decay(actual);
-        let expected = decay(expected);
-        // Preserve the existing byte-string literal extension, narrowly for a
-        // literal itself. Its ordinary C source type remains char[], and no
-        // arbitrary char pointer gains unsigned-char pointer compatibility.
-        if expected == C0Type::UInt8Pointer
+        let initializes_array = !expected.is_pointer();
+        let actual = decay_to_pointer(actual);
+        let expected = decay_to_pointer(expected);
+        // Preserve the existing byte-string literal extension for an array
+        // the literal initializes. Its ordinary C source type remains char[].
+        if initializes_array
+            && expected == C0Type::UInt8Pointer
             && matches!(actual, C0Type::CharPointer(_))
             && matches!(expression, C0Expression::Variable(name)
                 if self.string_literal_names.contains(name))
         {
-            return Ok(());
+            return Ok(None);
         }
+        if actual == expected
+            || !actual.is_pointer()
+            || !expected.is_pointer()
+            || actual == C0Type::VoidPointer
+            || expected == C0Type::VoidPointer
+        {
+            return Ok(None);
+        }
+        let one_byte_character_pointer = |ty| {
+            matches!(
+                ty,
+                C0Type::CharPointer(_) | C0Type::Int8Pointer | C0Type::UInt8Pointer
+            )
+        };
+        if one_byte_character_pointer(actual) && one_byte_character_pointer(expected) {
+            return Ok(Some(expected));
+        }
+        // `uint8 *` also types the byte pointers lowering makes, so only the
+        // other character pointer types identify a source-level mismatch.
         let is_char_pointer = |ty| {
             matches!(
                 ty,
@@ -20138,18 +20226,18 @@ impl Parser {
                     | C0Type::Int8PointerPointer
             )
         };
-        if actual != expected
-            && actual.is_pointer()
-            && expected.is_pointer()
-            && actual != C0Type::VoidPointer
-            && expected != C0Type::VoidPointer
-            && (is_char_pointer(actual) || is_char_pointer(expected))
-        {
-            return Err(self.error_here(format!(
-                "incompatible C pointer types: expected {expected:?}, got {actual:?}; plain char, signed char, and unsigned char are distinct types"
-            )));
+        if is_char_pointer(actual) || is_char_pointer(expected) {
+            return Err(self.incompatible_character_pointers(expected, actual));
         }
-        Ok(())
+        Ok(None)
+    }
+
+    fn incompatible_character_pointers(&self, expected: C0Type, actual: C0Type) -> C0SyntaxError {
+        self.error_here(format!(
+            "incompatible C pointer types: expected `{}`, got `{}`; plain char, signed char, and unsigned char are distinct types",
+            describe_pointer_cast_type(expected, None),
+            describe_pointer_cast_type(actual, None),
+        ))
     }
 
     fn validate_pointer_cast(
@@ -20162,17 +20250,8 @@ impl Parser {
         let Some(actual) = self.source_expression_type(expression) else {
             return Ok(());
         };
-        let decay = |ty: C0Type| {
-            if ty.is_pointer() {
-                ty
-            } else {
-                ty.pointee_type()
-                    .and_then(C0Type::pointer_type)
-                    .unwrap_or(ty)
-            }
-        };
-        let actual = decay(actual);
-        let expected = decay(expected);
+        let actual = decay_to_pointer(actual);
+        let expected = decay_to_pointer(expected);
         if !actual.is_pointer() || !expected.is_pointer() {
             return Ok(());
         }
@@ -20221,7 +20300,7 @@ impl Parser {
         &self,
         expected_struct: Option<&String>,
         target_type: Option<C0Type>,
-        expression: &C0Expression,
+        expression: &mut C0Expression,
     ) -> Result<(), C0SyntaxError> {
         if let Some(target_type) = target_type {
             self.validate_char_pointer_assignment(target_type, expression)?;
@@ -21038,6 +21117,17 @@ fn function_pointer_type(signature: &C0FunctionPointerSignature) -> C0Type {
             })
             .collect::<Vec<_>>(),
     ))
+}
+
+/// An array type's element pointer type; any other type unchanged.
+fn decay_to_pointer(ty: C0Type) -> C0Type {
+    if ty.is_pointer() {
+        ty
+    } else {
+        ty.pointee_type()
+            .and_then(C0Type::pointer_type)
+            .unwrap_or(ty)
+    }
 }
 
 fn describe_pointer_cast_type(c_type: C0Type, struct_name: Option<&str>) -> String {

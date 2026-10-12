@@ -1,6 +1,6 @@
 verifying "snapshots.rs";
 fn computed_move(a: u32, b: u32) -> u32 {
-    ensures result == (b ^ 1u32);
+    ensures result == b ^ 1u32;
 } by { execute(); simp(); }
 fn source_write(a: u32, b: u32) -> u32 {
     ensures result == a;

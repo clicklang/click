@@ -4712,6 +4712,32 @@ fn a_hidden_record_needs_its_child_declared_first() {
 }
 
 /// A Rust sidecar states a signature as Rust does. It declares the same
+/// Rust, like Click and unlike C, binds `^`, `&` and `|` tighter than a
+/// comparison, so a Rust sidecar needs no parentheses around a bitwise
+/// comparison operand; a C sidecar still does.
+#[test]
+fn a_rust_sidecar_compares_a_bitwise_operand_without_parentheses() {
+    let bare =
+        "verifying \"flip.rs\"; fn flip(b: u32) -> u32 { ensures result == b ^ 1u32; } by simp();";
+    let parenthesized = "verifying \"flip.rs\"; fn flip(b: u32) -> u32 { ensures result == (b ^ 1u32); } by simp();";
+    assert_eq!(
+        parser::parse(bare)
+            .expect("a Rust sidecar groups `b ^ 1u32` as Rust does")
+            .function_blocks(),
+        parser::parse(parenthesized)
+            .expect("the parenthesized spelling parses")
+            .function_blocks(),
+    );
+    let c =
+        "verifying \"flip.c\"; uint32 flip(uint32 b) { ensures result == b ^ 1u32; } by simp();";
+    let error = parser::parse(c).expect_err("a C sidecar must parenthesize the operand");
+    assert!(
+        error.message().contains("parenthesize a `^` operand"),
+        "{}",
+        error.message()
+    );
+}
+
 /// contract representation as a C signature, and `expr as T` is the scalar cast.
 #[test]
 fn a_rust_sidecar_states_its_signature_in_rust_syntax() {

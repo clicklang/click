@@ -205,6 +205,8 @@ fn rewrite_with_admitted_equality(
     if equality_is_vacuous(equality) {
         return Ok(goal.clone());
     }
+    let byte_equality = signed_byte_equality_as_byte_equality(equality);
+    let equality = byte_equality.as_ref().unwrap_or(equality);
     enum RewriteTask<'a> {
         Visit(&'a Proposition),
         BuildAnd,
@@ -352,6 +354,42 @@ fn rewrite_with_admitted_equality(
                 "`rewrite` equality does not occur in the current goal".to_string()
             }
         })
+}
+
+/// One byte, one name: an admitted `int8(u) == k`, with `u` a byte load and
+/// `k` in `-128..=127`, rewrites as `u == k mod 256`.
+///
+/// A signed byte read is `Bitvector32Term::signed_byte(u)`, the conversion
+/// of the byte's single (unsigned) name `u`, so every occurrence of the
+/// signed read contains `u`. Substituting `u` therefore rewrites both the
+/// signed reads (`int8(k mod 256)` folds back to `k`) and the unsigned reads
+/// the original equality could not reach. Soundness: a `UInt8` load holds one
+/// zero-extended byte, `0..=255`, and the conversion maps that range
+/// bijectively onto `-128..=127`, so `int8(u) == k` holds exactly when
+/// `u == k mod 256`. A constant outside `-128..=127` is the conversion of no
+/// byte; that equality is kept as written and never becomes a satisfiable
+/// byte equality. The reverse orientation `k == int8(u)`, which replaces a
+/// constant, is also kept as written. The check is the equality's own two
+/// operands; nothing else is consulted.
+fn signed_byte_equality_as_byte_equality(equality: &Proposition) -> Option<Proposition> {
+    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(from, to), true) = equality else {
+        return None;
+    };
+    let byte = from.signed_byte_operand()?;
+    if !matches!(
+        crate::kernel::eval::viewed_as_memory_load(byte),
+        Some(Bitvector32Term::MemoryLoad(_, _, LoadKind::UInt8))
+    ) {
+        return None;
+    }
+    let signed = i8::try_from(to.as_const()? as i32).ok()?;
+    Some(Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(
+            Box::new(byte.clone()),
+            Box::new(Bitvector32Term::Constant(u32::from(signed as u8))),
+        ),
+        true,
+    ))
 }
 
 /// Whether rewriting by this equality cannot change any goal: it states
@@ -741,7 +779,19 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         PointerOffsetTerm::scale_int32(rewritten, *byte_width)
                     }
                 }
-                _ => offset.clone(),
+                PointerOffsetTerm::Int64Scaled {
+                    value,
+                    byte_width,
+                    unsigned,
+                } => {
+                    let rewritten = rewrite_term_offset(value, left, right);
+                    if &rewritten == value.as_ref() {
+                        offset.clone()
+                    } else {
+                        PointerOffsetTerm::scale_int64(rewritten, *byte_width, *unsigned)
+                    }
+                }
+                PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => offset.clone(),
             }
         }
         fn rewrite_term_offset(

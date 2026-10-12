@@ -253,6 +253,10 @@ through two calls to a pointer-taking helper without resetting the state.
   `false` spellings are understood directly by Click. The `true` and `false`
   constants are fallbacks when no ordinary C declaration binds that name;
   explicit macros expand before parsing.
+  These fallback constants apply in C source. In contract expressions, use
+  `1`/`0` or another `bool` value; an unbound `true` or `false` is diagnosed
+  at its clause. Other unbound value names in `requires` and `ensures` are
+  also refused during declaration checking, before any proof runs.
 - `void` as a function return type
 - `void*` and `const void*` as opaque object pointers. They preserve pointer
   identity, provenance, nullness, and qualification, but have no modeled
@@ -380,8 +384,26 @@ rejected. This does not admit automatic `long double` values or arithmetic.
 The accepted standard scalar spellings alias the existing Click's C type model,
 except that plain `char` retains its distinct C type identity. `signed char`
 is modeled separately as `int8`. Where plain `char` is signed it has `int8`'s
-values and representation without becoming `signed char`: converting between
-`char *` and `signed char *` still needs a cast.
+values and representation without becoming `signed char`.
+
+Click accepts what GCC and Clang accept by default, not the letter of C11.
+An uncast conversion between pointers to distinct one-byte character types,
+`char *`, `signed char *` (`int8 *`), and `unsigned char *` (`uint8 *`), with
+otherwise allowed qualifiers, is only a `-Wpointer-sign` warning there, so
+Click accepts it in a return, an initialization, an assignment, a call argument
+(including a `static inline` callee's), and the operand of a comparison, where
+the warning is `-Wcompare-distinct-pointer-types`. Each is lowered exactly as
+the explicit cast to the destination type and reads the same bytes: a `uint8 *`
+passed as a `char *` reads the byte `0xC8` as `-56` where plain `char` is
+signed (`mdtests/a_uint8_pointer_passed_as_a_char_pointer_reads_signed_bytes.md`,
+`mdtests/a_char_pointer_assigned_to_an_unsigned_char_pointer_reads_unsigned_bytes.md`).
+A converted pointer keeps its `const` view, so discarding `const` is still
+refused. Conversions GCC and Clang refuse stay refused: pointers to character
+pointers such as `char **` to `unsigned char **`
+(`mdtests/a_char_pointer_pointer_is_not_converted_to_an_unsigned_char_pointer_pointer.md`),
+`?:` arms of different character pointer types, whose common type would be
+`void *`, the subtraction of such pointers, and conversions to or from a
+pointer to a wider integer type.
 
 The character pointer types `char *`, `signed char *`, and `unsigned char *`
 convert to one another by an explicit one-level cast, which C11 6.3.2.3p7 and
@@ -1373,10 +1395,16 @@ creates one literal object.
 String literals accept the same simple, octal, and hexadecimal escapes as
 character literals. An octal escape ends after three digits, so `"\\0012"` is
 the byte 1 followed by `2`.
-Each literal sequence is represented as a fresh function-owned `uint8` array with one
-explicit trailing NUL byte. The expression has the array-to-pointer behavior of
-a local byte array, so the result can be returned, indexed, or passed to a
-function expecting `uint8*`. The storage is stable across calls and remains
+Each literal sequence is represented as a fresh function-owned array of plain
+`char` with one explicit trailing NUL byte. The expression has the
+array-to-pointer behavior of a local byte array, so the result can be returned,
+indexed, or passed to a function expecting `uint8*`. Like any character
+pointer, the literal may also initialize, be assigned to, or be returned as a
+`uint8*` without a cast, which reads its bytes as unsigned on every target
+(`mdtests/a_string_literal_returned_as_a_uint8_pointer_reads_its_bytes.md`,
+`mdtests/a_string_literal_initializing_a_uint8_pointer_reads_its_bytes.md`,
+`mdtests/a_string_literal_assigned_to_a_uint8_pointer_reads_its_bytes.md`).
+The storage is stable across calls and remains
 read-only even after the pointer is copied to another local; an indirect store
 through that pointer is undefined behavior. The existing `viewable` byte-range
 interface can describe reads from the literal. Wide literals, non-ASCII

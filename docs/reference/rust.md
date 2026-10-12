@@ -148,10 +148,9 @@ The unchanged adler2 trial proves `Adler32::default` and `Adler32::new` return
 by-value record operands through the checked call interface. Selecting the
 complete checksum loop now produces a locked, prepared import, and its
 `MOD` and `CHUNK_SIZE` initializer contracts verify. Its unchanged whole body
-has a bounds and termination proof for canonical seeds and input lengths
-through 2,147,483,647 bytes, including full batches and both remainders.
-The checksum
-postcondition remains unproved. General trait dispatch and arbitrary Rust
+proves bounds, termination, and both final checksum fields against the common
+specification for canonical seeds and lengths through 2,147,483,647 bytes,
+including full batches and both remainders. General trait dispatch and arbitrary Rust
 crates remain outside the supported subset.
 
 ## Signatures in Rust syntax
@@ -386,8 +385,14 @@ modular reduction, shifts, packing, truncation, and unsigned comparison. Its
 [sidecar](https://github.com/clicklang/click/blob/master/examples/rust-unsigned/arithmetic.click)
 uses ordinary Click contracts and tactics. Expansion can use the shared
 `unsigned_sum_bound` arithmetic-certificate step for widened word bounds.
-It does not establish checksum-library support;
-whole-checksum adaptation and verification remain outstanding.
+The [unchanged Adler2 computation](https://github.com/clicklang/click/blob/master/design/charon-trial/adler2/README.md)
+is verified separately against the common checksum specification for lengths
+zero through 2,147,483,647 bytes from canonical initial states. The unchanged
+`write_slice` and `adler32_slice` wrappers compose checked bodies over the same
+range, preserve input bytes, and prove field and packed checksum correctness.
+A locked client also proves that two actual updates equal the full-input
+checksum for every valid split over that range. Saved-checksum restoration
+and resumed updates remain pending.
 
 ```sh
 cargo run --bin click -- import lock examples/rust-unsigned/arithmetic.click

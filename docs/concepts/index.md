@@ -9,6 +9,7 @@ fits into verification.
 - [What Click proves](what-click-proves.md)
 - [Files and sidecars](sidecars.md)
 - [Your first proof](first-proof.md)
+- [Verify a function in your own project](own-project.md)
 - [Contracts](contracts.md)
 - [Propositions](propositions.md)
 - [Proof scripts](proof-scripts.md)
