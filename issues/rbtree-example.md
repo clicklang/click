@@ -1356,6 +1356,20 @@ broader [global initializer issue](global-variables.md) is P2. Keep the table
 const and preserve the callback guarantees; the no-op fixture is not evidence
 for the complete mutation-capable augmentation proof.
 
+The public entry-point integration now verifies in `examples/rbtree-augmented`.
+`__rb_insert_augmented` and `rb_insert_augmented` reuse the checked insertion
+contract, and `__rb_erase_color` reuses the general repair contract.
+`rb_erase_augmented` is checked for leaf deletion at every position, including
+both the repair and no-repair paths. The C wrappers are verbatim pinned extracts;
+contracts retain balance, parent consistency, in-order contents, and detached
+ownership. This increment still uses callbacks without writable footprints;
+metadata ownership and its augmentation invariant remain unfinished.
+`rbtree_subtree_size.click` establishes the concrete mathematical count model:
+nonnegative sizes, reparenting invariance, and both rotation callback updates
+(copy the promoted root's summary and recompute the demoted node). C metadata
+fields and their machine-integer bounds are not yet connected to this model.
+
+
 ### Pinned source
 
 The in-repository import fixture is a demonstration arrangement, chosen for

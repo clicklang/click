@@ -2845,3 +2845,78 @@ fn rbtree_erase_wrapper_requires_nonnull_color_repair() {
         "unexpected refusal: {error}"
     );
 }
+
+#[test]
+fn rbtree_augmented_wrappers_keep_the_pinned_c() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    assert_eq!(
+        hex_digest(sha256(
+            &fs::read(root.join("examples/rbtree-augmented/rb_insert_augmented.c")).unwrap()
+        )),
+        "213bdc5c780db8f91b3595d7fdc1dc94cee1b56c8d0f7a54cb5e6859ed79ef58",
+    );
+    assert_eq!(
+        hex_digest(sha256(
+            &fs::read(root.join("examples/rbtree-augmented/rb_erase_augmented.c")).unwrap()
+        )),
+        "62e586fbf9b20527ee6454b9481a0ac0d6cab78dc005f5b189ec602ec63089e5",
+    );
+}
+
+#[test]
+fn rbtree_augmented_wrappers_reject_missing_or_wrong_calls() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for (sidecar, input, before, after, expected) in [
+        (
+            "rbtree_insert_augmented.click",
+            "rb_insert_augmented.c",
+            "\t__rb_insert(node, root, augment_rotate);",
+            "",
+            "requires a call to `__rb_insert` at the current frontier",
+        ),
+        (
+            "rbtree_insert_augmented.click",
+            "rb_insert_augmented.c",
+            "\t__rb_insert_augmented(node, root, augment->rotate);",
+            "\t__rb_insert_augmented(root->rb_node, root, augment->rotate);",
+            "missing resource fact `views root->rb_node`",
+        ),
+        (
+            "rbtree_erase_color.click",
+            "rb_erase_augmented.c",
+            "\t____rb_erase_color(parent, root, augment_rotate);",
+            "",
+            "requires a call to `____rb_erase_color` at the current frontier",
+        ),
+        (
+            "rbtree_erase_leaf.click",
+            "rb_erase_augmented.c",
+            "\t\t__rb_erase_color(rebalance, root, augment->rotate);",
+            "\t\t;",
+            "requires a call to `__rb_erase_color` at the current frontier",
+        ),
+    ] {
+        let path = root.join("examples/rbtree-augmented").join(sidecar);
+        let source = fs::read_to_string(&path).unwrap();
+        let mut inputs = read_verifying_sources(&path, &source).unwrap();
+        let (_, c) = inputs
+            .iter_mut()
+            .find(|(name, _)| name.ends_with(input))
+            .unwrap();
+        assert_eq!(c.matches(before).count(), 1, "{sidecar}: unique mutation");
+        *c = c.replace(before, after);
+        let project = read_click_project_at_root(&path, &source, &root.join("examples")).unwrap();
+        let error = limits::spawn(
+            "augmented wrapper mutation verifier",
+            "click-augmented-wrapper-mutation".to_string(),
+            move || verify_c0_project(&project, &source_refs(&inputs)),
+        )
+        .unwrap()
+        .expect_err("the augmented wrapper must reject the changed call");
+        assert!(
+            error.message().contains(expected),
+            "{sidecar}: {}",
+            error.message()
+        );
+    }
+}
