@@ -2612,7 +2612,7 @@ pub(super) fn describe_model_field_mismatch(
         resource_tracker::StatePoint::at(here),
         resource_tracker::StatePoint::at(there),
     );
-    describe_resource_version_mismatch(&explanation, since, parameter_binding)
+    describe_resource_version_mismatch(&explanation, since, &[], parameter_binding)
 }
 
 /// Names the write that stopped a comparison side from being carried across
@@ -2635,8 +2635,13 @@ pub(super) fn describe_unseparated_write(
         },
         &resource_tracker::ProgramPoint::at(&memory),
     );
-    describe_resource_version_mismatch(&explanation, "earlier in this function", parameter_binding)
-        .map(|mismatch| format!("; {mismatch}"))
+    describe_resource_version_mismatch(
+        &explanation,
+        "earlier in this function",
+        &[],
+        parameter_binding,
+    )
+    .map(|mismatch| format!("; {mismatch}"))
 }
 
 /// A `fold` field initializer that reads a model this state no longer holds.
@@ -2670,7 +2675,7 @@ pub(super) fn describe_unheld_model_field_initializer(
         resource_tracker::StatePoint::at(state),
         resource_tracker::StatePoint::at(entry_state),
     );
-    describe_resource_version_mismatch(&explanation, "function entry", parameter_binding)
+    describe_resource_version_mismatch(&explanation, "function entry", &[], parameter_binding)
 }
 
 /// The first model field in `expression` that `state` cannot resolve, skipping
@@ -2892,7 +2897,7 @@ pub(super) fn describe_two_sided_version_mismatch(
     } else {
         left_point
     };
-    describe_resource_version_mismatch(&explanation, since, parameter_binding)
+    describe_resource_version_mismatch(&explanation, since, &[], parameter_binding)
 }
 
 /// The explanation for a goal and an available fact that spell alike and
@@ -2915,6 +2920,7 @@ pub(super) fn describe_proposition_version_mismatch(
         } else {
             premise_point
         },
+        premises,
         parameter_binding,
     )
 }
@@ -2979,6 +2985,7 @@ pub(crate) fn proposition_version_explanation(
 pub(super) fn describe_resource_version_mismatch(
     explanation: &resource_tracker::Explanation,
     since: &str,
+    stated: &[&Proposition],
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     let (at, stop) = explanation.outcome.blocking_step()?;
@@ -2999,6 +3006,7 @@ pub(super) fn describe_resource_version_mismatch(
             },
             stop,
             since,
+            stated,
             parameter_binding,
         ),
         // No term names a memory footprint, so no goal or premise a refusal
@@ -3155,6 +3163,7 @@ fn describe_cell_version_stop(
     widths: AccessWidths,
     stop: &resource_tracker::Stop,
     since: &str,
+    stated: &[&Proposition],
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     let cell = describe_source_cell(pointer, parameter_binding);
@@ -3183,7 +3192,14 @@ fn describe_cell_version_stop(
     };
     format!(
         "{named} {changed} since {since}: {}",
-        describe_cell_cause(cell.as_ref(), widths, stop, certain, parameter_binding)
+        describe_cell_cause(
+            cell.as_ref(),
+            widths,
+            stop,
+            certain,
+            stated,
+            parameter_binding
+        )
     )
 }
 
@@ -3193,11 +3209,12 @@ fn describe_cell_cause(
     widths: AccessWidths,
     stop: &resource_tracker::Stop,
     certain: bool,
+    stated: &[&Proposition],
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     match &stop.change {
         resource_tracker::Change::Store { pointer } => {
-            describe_store_cause(cell, pointer, widths, certain, parameter_binding)
+            describe_store_cause(cell, pointer, widths, certain, stated, parameter_binding)
         }
         resource_tracker::Change::CellsSeeded { .. } => {
             "range contents were recorded; establish the index/address relation or preservation needed \
@@ -3287,6 +3304,7 @@ fn describe_store_cause(
     written: &Pointer,
     widths: AccessWidths,
     certain: bool,
+    stated: &[&Proposition],
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     let store = describe_source_cell(written, parameter_binding);
@@ -3325,7 +3343,7 @@ fn describe_store_cause(
         );
     }
     if cell.object == store.object {
-        return describe_same_object_store_cause(cell, store, widths);
+        return describe_same_object_store_cause(cell, store, widths, stated);
     }
     let repair = match (cell.element_range(), store.element_range()) {
         (Some(read), Some(written)) => format!(" {}", spelled_separation_repair(&read, &written)),
@@ -3354,6 +3372,7 @@ fn describe_same_object_store_cause(
     cell: &SourceCell,
     store: &SourceCell,
     widths: AccessWidths,
+    stated: &[&Proposition],
 ) -> String {
     match (cell.named_index(), store.named_index()) {
         (Some(read), Some(written)) if read != written => {
@@ -3361,6 +3380,15 @@ fn describe_same_object_store_cause(
                 describe_wide_store_byte_reach(cell, store, read, written, widths)
             {
                 return byte_reach;
+            }
+            if let (Some(read_term), Some(written_term)) = (&cell.index_term, &store.index_term)
+                && states_terms_differ(stated, read_term, written_term)
+            {
+                return format!(
+                    "the store to `{}` may have written it. `{read} != {written}` is already \
+                     available, so stating it again will not help.",
+                    store.text()
+                );
             }
             format!(
                 "the store to `{}` may have written it. If `{read}` and `{written}` differ, state \
@@ -3378,6 +3406,29 @@ fn describe_same_object_store_cause(
             store.text()
         ),
     }
+}
+
+/// Whether a fact states that two index terms differ, as `i != j` lowers:
+/// their equality is false. Operand order is not significant.
+fn states_terms_differ(
+    stated: &[&Proposition],
+    left: &Bitvector32Term,
+    right: &Bitvector32Term,
+) -> bool {
+    stated.iter().any(|fact| {
+        let Proposition::ConditionIs(condition, false) = fact else {
+            return false;
+        };
+        matches!(
+            condition.as_bitvector_comparison(),
+            Some((
+                crate::kernel::BitvectorComparisonOp::Bitvector32Equal
+                    | crate::kernel::BitvectorComparisonOp::Bitvector64Equal,
+                a,
+                b,
+            )) if (a == left && b == right) || (a == right && b == left)
+        )
+    })
 }
 
 /// Exact named cell for a diagnostic. Never offer a verifier-owned index as
@@ -3466,10 +3517,34 @@ pub(in crate::surface) fn store_cause_between_indexes_for_tests(
     read_bytes: u32,
     store_bytes: Option<u32>,
 ) -> String {
-    let spelled = |index: &str| SourceCell {
+    store_cause_between_indexes_with_facts_for_tests(
+        object,
+        (read_index, None),
+        (written_index, None),
+        element_bytes,
+        read_bytes,
+        store_bytes,
+        &[],
+    )
+}
+
+/// [`store_cause_between_indexes_for_tests`] with each index's kernel term
+/// and the facts the refusal may consult.
+#[cfg(test)]
+pub(in crate::surface) fn store_cause_between_indexes_with_facts_for_tests(
+    object: &str,
+    read_index: (&str, Option<Bitvector32Term>),
+    written_index: (&str, Option<Bitvector32Term>),
+    element_bytes: Option<u32>,
+    read_bytes: u32,
+    store_bytes: Option<u32>,
+    stated: &[&Proposition],
+) -> String {
+    let spelled = |(index, index_term): (&str, Option<Bitvector32Term>)| SourceCell {
         object: object.to_string(),
         index: CellIndex::Named(index.to_string()),
         element_bytes,
+        index_term,
     };
     describe_same_object_store_cause(
         &spelled(read_index),
@@ -3478,6 +3553,7 @@ pub(in crate::surface) fn store_cause_between_indexes_for_tests(
             read: read_bytes,
             store: store_bytes,
         },
+        stated,
     )
 }
 
@@ -3695,6 +3771,9 @@ struct SourceCell {
     /// then no byte question is asked of it: a width nobody declared is not
     /// one a refusal may reason from.
     element_bytes: Option<u32>,
+    /// The kernel term the index was spelled from, where it came from a
+    /// typed base, so a refusal can ask whether the facts already relate it.
+    index_term: Option<Bitvector32Term>,
 }
 
 impl SourceCell {
@@ -3773,6 +3852,7 @@ fn describe_source_cell(
                 object: field,
                 index: CellIndex::Whole,
                 element_bytes: None,
+                index_term: None,
             });
         }
         if let Some(member) =
@@ -3782,6 +3862,7 @@ fn describe_source_cell(
                 object: member,
                 index: CellIndex::StructMember,
                 element_bytes: None,
+                index_term: None,
             });
         }
         let element_width = diagnostic_parameter_element_width(parameter);
@@ -3797,6 +3878,7 @@ fn describe_source_cell(
                 CellIndex::Unnamed
             },
             element_bytes: u32::try_from(element_width).ok(),
+            index_term: Some(index.clone()),
         };
         let mut index_variables = std::collections::BTreeSet::new();
         crate::kernel::collect_bitvector_variables(&index, &mut index_variables);
@@ -3822,16 +3904,19 @@ fn describe_source_cell(
             object: declared,
             index: CellIndex::Whole,
             element_bytes: None,
+            index_term: None,
         }),
         PointerOffsetTerm::Constant(0) => Some(SourceCell {
             object: declared,
             index: CellIndex::Named("0".to_string()),
             element_bytes: None,
+            index_term: None,
         }),
         PointerOffsetTerm::Constant(_) => Some(SourceCell {
             object: format!("{declared}+{}", describe_pointer_offset(&pointer.offset)),
             index: CellIndex::Whole,
             element_bytes: None,
+            index_term: None,
         }),
         // Any other offset is a term the lowering owns; the object is still
         // the reader's, so it is named and the index is not.
@@ -3839,6 +3924,7 @@ fn describe_source_cell(
             object: declared,
             index: CellIndex::Unnamed,
             element_bytes: None,
+            index_term: None,
         }),
     }
 }
@@ -6192,6 +6278,18 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
     if let Some(unsigned) = describe_unsigned_comparison(condition, ParameterBinding::default()) {
         return unsigned;
     }
+    if let Some((operator, left, right)) = condition.as_bitvector_comparison() {
+        return if operator.is_overflow() {
+            format!(
+                "overflow({} {} {})",
+                describe_bitvector(left),
+                operator.c_symbol(),
+                describe_bitvector(right)
+            )
+        } else {
+            describe_binary_condition(left, operator.c_symbol(), right)
+        };
+    }
     match condition {
         ConditionTerm::AlgebraicEqual(_, _) => "algebraic equality".to_string(),
         ConditionTerm::IntegerLessThan(left, right) => {
@@ -6212,110 +6310,6 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
         }
         ConditionTerm::Constant(value) => value.to_string(),
         ConditionTerm::Variable(variable) => lowering_only_variable("cond", variable.0),
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => {
-            describe_binary_condition(left, "<", right)
-        }
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
-            describe_binary_condition(left, "<=", right)
-        }
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
-            describe_binary_condition(left, ">", right)
-        }
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-            describe_binary_condition(left, ">=", right)
-        }
-        ConditionTerm::Bitvector32Equal(left, right) => {
-            describe_binary_condition(left, "==", right)
-        }
-        ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
-            format!(
-                "overflow({} + {})",
-                describe_bitvector(left),
-                describe_bitvector(right)
-            )
-        }
-        ConditionTerm::Bitvector32SignedSubtractOverflows(left, right) => {
-            format!(
-                "overflow({} - {})",
-                describe_bitvector(left),
-                describe_bitvector(right)
-            )
-        }
-        ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right) => {
-            format!(
-                "overflow({} * {})",
-                describe_bitvector(left),
-                describe_bitvector(right)
-            )
-        }
-        ConditionTerm::Bitvector32SignedDivideOverflows(left, right) => {
-            format!(
-                "overflow({} / {})",
-                describe_bitvector(left),
-                describe_bitvector(right)
-            )
-        }
-        ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right) => {
-            format!(
-                "overflow({} << {})",
-                describe_bitvector(left),
-                describe_bitvector(right)
-            )
-        }
-        ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right) => {
-            describe_binary_condition(left, "<", right)
-        }
-        ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right) => {
-            describe_binary_condition(left, "<=", right)
-        }
-        ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right) => {
-            describe_binary_condition(left, ">", right)
-        }
-        ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right) => {
-            describe_binary_condition(left, ">=", right)
-        }
-        ConditionTerm::Bitvector64Equal(left, right) => {
-            describe_binary_condition(left, "==", right)
-        }
-        ConditionTerm::Bitvector64SignedAddOverflows(left, right) => {
-            format!(
-                "overflow({} + {})",
-                describe_bitvector(left),
-                describe_bitvector(right)
-            )
-        }
-        ConditionTerm::Bitvector64SignedSubtractOverflows(left, right) => {
-            format!(
-                "overflow({} - {})",
-                describe_bitvector(left),
-                describe_bitvector(right)
-            )
-        }
-        ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right) => {
-            format!(
-                "overflow({} * {})",
-                describe_bitvector(left),
-                describe_bitvector(right)
-            )
-        }
-        ConditionTerm::Bitvector64SignedDivideOverflows(left, right) => {
-            format!(
-                "overflow({} / {})",
-                describe_bitvector(left),
-                describe_bitvector(right)
-            )
-        }
-        ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
-            format!(
-                "overflow({} << {})",
-                describe_bitvector(left),
-                describe_bitvector(right)
-            )
-        }
         ConditionTerm::Float32(float_condition) => describe_float_condition(float_condition),
         ConditionTerm::Float64(float_condition) => describe_float_condition(float_condition),
         ConditionTerm::PointerOffsetEqual(left, right) => format!(
@@ -6329,6 +6323,9 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
                 describe_pointer(left, ParameterBinding::default()),
                 describe_pointer(right, ParameterBinding::default())
             )
+        }
+        crate::kernel::binary_bitvector_condition!(_, _) => {
+            unreachable!("bitvector comparisons are described above")
         }
     }
 }

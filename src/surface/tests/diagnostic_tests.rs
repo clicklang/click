@@ -1102,6 +1102,48 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
         super::diagnostics::store_cause_between_indexes_for_tests("a", "i", "j", None, 4, Some(8)),
         undecided_index
     );
+
+    // An inequality the facts already state is not offered again: stating it
+    // a second time cannot change what this check concludes.
+    use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition, Variable};
+    let i = Bitvector32Term::Variable(Variable(1));
+    let j = Bitvector32Term::Variable(Variable(2));
+    let differ = Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(Box::new(j.clone()), Box::new(i.clone())),
+        false,
+    );
+    assert_eq!(
+        super::diagnostics::store_cause_between_indexes_with_facts_for_tests(
+            "a",
+            ("i", Some(i.clone())),
+            ("j", Some(j.clone())),
+            Some(4),
+            4,
+            Some(4),
+            &[&differ],
+        ),
+        "the store to `a[j]` may have written it. `i != j` is already available, so stating \
+         it again will not help."
+    );
+    let unrelated = Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(
+            Box::new(i.clone()),
+            Box::new(Bitvector32Term::Constant(0)),
+        ),
+        false,
+    );
+    assert_eq!(
+        super::diagnostics::store_cause_between_indexes_with_facts_for_tests(
+            "a",
+            ("i", Some(i)),
+            ("j", Some(j)),
+            Some(4),
+            4,
+            Some(4),
+            &[&unrelated],
+        ),
+        undecided_index
+    );
 }
 
 #[test]
