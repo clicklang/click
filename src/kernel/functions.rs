@@ -15246,6 +15246,79 @@ mod allocation_continuity_tests {
         }
     }
 
+    /// An allocating call beside N live objects the caller keeps folded
+    /// (`boxed(p_j)`, one heap block each) must not expand them: none can
+    /// expose, continue or be left stale by an allocation the call did not
+    /// consume (`bugs/heap-object-steps-grow-with-live-allocations.md`).
+    #[test]
+    fn allocating_call_does_not_expand_the_callers_kept_objects() {
+        let boxed = c_function(CType::Void, "unused", vec![], c_return(c_void_value()))
+            .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
+                "boxed",
+                vec![c_parameter("p", CType::Int32Pointer)],
+                None,
+                false,
+                vec![CResourceSpec::owned_memory(CMemorySegment::new(
+                    c_variable("p"),
+                    c_int32_literal(0),
+                    c_int32_literal(1),
+                ))],
+                vec![],
+            )]);
+        let interface = boxed.contract_interface();
+        let heap = |id: u64| Pointer {
+            block: PointerBlock::Heap(id),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let bytes = Bitvector32Term::Constant(4);
+        let samples = [16, 64, 256]
+            .into_iter()
+            .map(|size| {
+                let mut memory = CMemory::new();
+                let mut kept = ResourceContext::new();
+                for index in 0..size {
+                    let object = heap(931_000 + index as u64);
+                    memory = memory
+                        .with_heap_allocation_claim(object.clone(), bytes.clone())
+                        .expect("a fresh live object");
+                    kept = kept.unchecked_with_fact(CResourceFact::own_composite(
+                        "boxed".into(),
+                        vec![CValue::pointer(object)],
+                    ));
+                }
+                let created = heap(932_000);
+                let output = ResourceContext::new().unchecked_with_fact(
+                    CResourceFact::own_allocation(created.clone(), bytes.clone()),
+                );
+                let state = CState::new().with_memory(memory.clone());
+                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    apply_verified_heap_allocation_delta(
+                        memory.clone(),
+                        &memory,
+                        &ResourceContext::new(),
+                        &kept,
+                        &output,
+                        interface,
+                        &PureFactContext::new(),
+                        None,
+                        &state,
+                        &state,
+                    )
+                });
+                let (after, _, retired) = result.expect("an allocating call");
+                assert!(retired.is_empty());
+                assert!(after.live_heap_block_size(&created).is_some());
+                (size, work)
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            samples
+                .windows(2)
+                .all(|pair| pair[1].1 <= pair[0].1.saturating_mul(2)),
+            "an allocating call's delta grows with the caller's kept objects: {samples:?}"
+        );
+    }
+
     fn external_pointer(variable: u64) -> Pointer {
         Pointer {
             block: PointerBlock::ExternalArgument,
@@ -15625,45 +15698,55 @@ fn apply_verified_heap_allocation_delta(
             "could not inspect output allocation effects at call".to_string(),
         ))
     })?;
-    // Returned projections describe the successor allocation. They decide
-    // whether an input allocation continues, but they are not resources that
-    // survived from the caller and therefore cannot be stale after the old
-    // allocation is freed.
-    let preserved = expand_allocations(preserved_caller_resources, mutex_state, &memory)
-        .ok_or_else(|| {
-            VerifiedAllocationDeltaError::Runtime(CRuntimeError::FunctionContract(
-                "could not inspect preserved caller allocation effects at call".to_string(),
-            ))
-        })?;
-    // Returned controls belong to the callee until checked custody returns;
-    // untouched controls belong to the caller. Keep their checked projections
-    // separate and visit the same returned facts without rebuilding the frame.
-    let returned_facts = || {
-        output
-            .facts()
-            .iter()
-            .chain(preserved.facts().iter().take(preserved.facts().len()))
-    };
     let allocation_assumptions = input
         .observable_facts_assuming_valid(assumptions)
         .into_iter()
         .fold(assumptions.clone(), |assumptions, fact| {
             assumptions.assume_proposition(fact)
         });
+    let input_allocations = input
+        .facts()
+        .iter()
+        .filter_map(|fact| {
+            fact.allocation()
+                .map(|(base, bytes)| (fact, base.clone(), bytes.clone()))
+        })
+        .collect::<Vec<_>>();
+    // The caller's untouched resources are expanded only when the callee
+    // consumed an allocation: they are what may still expose it, continue
+    // it, or be left stale by its retirement. A call that consumes none
+    // (an allocator, or a call on unrelated memory) never asks them, so it
+    // costs nothing in the live objects the caller keeps; expanding them
+    // anyway made every call linear in them.
+    //
+    // Returned projections describe the successor allocation. They decide
+    // whether an input allocation continues, but they are not resources that
+    // survived from the caller and therefore cannot be stale after the old
+    // allocation is freed.
+    let preserved = if input_allocations.is_empty() {
+        ResourceContext::new()
+    } else {
+        expand_allocations(preserved_caller_resources, mutex_state, &memory).ok_or_else(|| {
+            VerifiedAllocationDeltaError::Runtime(CRuntimeError::FunctionContract(
+                "could not inspect preserved caller allocation effects at call".to_string(),
+            ))
+        })?
+    };
     let mut output_allocations_by_block =
         BTreeMap::<PointerBlock, Vec<(Pointer, Bitvector32Term)>>::new();
-    for (base, bytes) in returned_facts().filter_map(CResourceFact::allocation) {
+    for (base, bytes) in output
+        .facts()
+        .iter()
+        .chain(preserved.facts())
+        .filter_map(CResourceFact::allocation)
+    {
         output_allocations_by_block
             .entry(base.block.clone())
             .or_default()
             .push((base.clone(), bytes.clone()));
     }
 
-    for allocation in input.facts().iter().filter_map(|fact| {
-        fact.allocation()
-            .map(|(base, bytes)| (fact, base.clone(), bytes.clone()))
-    }) {
-        let (fact, base, bytes) = allocation;
+    for (fact, base, bytes) in input_allocations {
         if output
             .cached_support_exposing_fact(fact, &allocation_assumptions)
             .is_some()
@@ -15801,7 +15884,10 @@ fn apply_verified_heap_allocation_delta(
         ));
     }
 
-    for fact in returned_facts() {
+    // Only what the call returns can be a new allocation. An allocation one
+    // of the caller's untouched resources exposes was the caller's before
+    // the call, so this call has nothing to claim for it.
+    for fact in output.facts() {
         let Some((base, bytes)) = fact.allocation() else {
             continue;
         };
