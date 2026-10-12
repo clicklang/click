@@ -2796,6 +2796,22 @@ pub(super) fn infer_contract_expression_type(
 /// Struct casts recover the modeled object from an opaque `void *`.
 /// Native byte-view casts retag scalar object pointers without changing
 /// allocation identity, permissions, or initialized storage.
+pub(in crate::surface) fn validate_void_pointer_cast_source(
+    operand: &CExpression,
+    variables: &BTreeMap<String, C0Type>,
+    context: &str,
+) -> Result<(), ClickError> {
+    let actual = infer_c_expression_type(operand, variables);
+    if actual.is_some_and(|ty| !ty.is_object_pointer())
+        || matches!(operand, CExpression::FunctionAddress(_))
+    {
+        return Err(ClickError::new(format!(
+            "contract void-pointer cast in {context} expects an object pointer operand, got {actual:?}"
+        )));
+    }
+    Ok(())
+}
+
 fn validate_pointer_cast_operands(
     expression: &CExpression,
     variables: &BTreeMap<String, C0Type>,
@@ -2809,6 +2825,10 @@ fn validate_pointer_cast_operands(
             ..
         } => {
             if target_type.is_pointer() {
+                if *target_type == CType::VoidPointer {
+                    validate_void_pointer_cast_source(operand, variables, context)?;
+                    return validate_pointer_cast_operands(operand, variables, context);
+                }
                 if *target_type == CType::UInt8Pointer && pointee_struct.is_none() {
                     let actual = infer_c_expression_type(operand, variables);
                     if actual.is_some()

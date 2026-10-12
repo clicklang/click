@@ -533,6 +533,7 @@ struct Parser {
     /// contract may cast to a struct pointer, and the struct each has been
     /// cast to so far.
     current_void_pointer_params: BTreeSet<String>,
+    current_c_parameter_types: BTreeMap<String, C0Type>,
     current_parameter_struct_casts: BTreeMap<String, String>,
     aggregate_objects_by_function: BTreeMap<String, BTreeMap<String, String>>,
     aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
@@ -890,6 +891,7 @@ impl Parser {
             union_layouts,
             current_struct_params: BTreeMap::new(),
             current_void_pointer_params: BTreeSet::new(),
+            current_c_parameter_types: BTreeMap::new(),
             current_parameter_struct_casts: BTreeMap::new(),
             aggregate_objects_by_function,
             aggregate_array_objects_by_function,
@@ -2831,6 +2833,14 @@ impl Parser {
                 .map(|parameter| parameter.name().to_string())
                 .collect(),
         );
+        let previous_c_parameter_types = std::mem::replace(
+            &mut self.current_c_parameter_types,
+            signature
+                .parameters()
+                .iter()
+                .map(|parameter| (parameter.name().to_string(), parameter.c_type()))
+                .collect(),
+        );
         let previous_parameter_struct_casts =
             std::mem::take(&mut self.current_parameter_struct_casts);
         let aggregate_objects = self
@@ -3227,6 +3237,7 @@ impl Parser {
         }
         self.current_struct_params = previous_struct_params;
         self.current_void_pointer_params = previous_void_pointer_params;
+        self.current_c_parameter_types = previous_c_parameter_types;
         let parameter_struct_casts = std::mem::replace(
             &mut self.current_parameter_struct_casts,
             previous_parameter_struct_casts,
@@ -9776,9 +9787,8 @@ impl Parser {
     }
 
     /// Recognizes `( [const] struct name [const] * )` at the cursor without
-    /// consuming it. A struct-pointer cast is the only pointer cast contract
-    /// expressions accept; it lets a contract over an opaque `void *`
-    /// parameter name the object the C body reaches through the same cast.
+    /// consuming it. Contracts retain the explicit target layout through
+    /// object-pointer conversions via `void *`.
     fn peek_struct_pointer_cast(&self) -> Option<StructPointerCast> {
         let mut index = self.position;
         if self.tokens.get(index) != Some(&Token::LParen) {
@@ -9833,10 +9843,25 @@ impl Parser {
     /// synthesized proof text reads the parameter with a single layout.
     fn record_parameter_struct_cast(
         &mut self,
-        operand: Option<&str>,
+        operand: &CExpression,
         struct_name: &str,
     ) -> Result<(), ClickError> {
-        let Some(name) = operand.filter(|name| self.current_void_pointer_params.contains(*name))
+        // An explicit conversion through void retains its target layout on
+        // the expression. It does not assign a layout to the source parameter.
+        if matches!(
+            operand,
+            CExpression::Cast {
+                target_type: CType::VoidPointer,
+                ..
+            }
+        ) {
+            return Ok(());
+        }
+        let name = match operand {
+            CExpression::Variable(name) => Some(name.as_str()),
+            _ => None,
+        };
+        let Some(name) = name.filter(|name| self.current_void_pointer_params.contains(*name))
         else {
             return Err(self.error(
                 "a struct pointer cast applies to a `void *` parameter of the function under contract",
@@ -9872,11 +9897,7 @@ impl Parser {
                     "struct pointer cast expects a current C `void *` expression; put old(...) around the whole cast for an entry-state value",
                 ));
             };
-            let operand_name = match &operand {
-                CExpression::Variable(name) => Some(name.as_str()),
-                _ => None,
-            };
-            self.record_parameter_struct_cast(operand_name, &cast.struct_name)?;
+            self.record_parameter_struct_cast(&operand, &cast.struct_name)?;
             return Ok(crate::surface::lowering::contract_c_unary(
                 source_operand,
                 CExpression::Cast {
@@ -9901,10 +9922,12 @@ impl Parser {
             {
                 return Err(self.error("contract cast targets must be unqualified native types; byte views inherit the source qualification"));
             }
-            if target_type.is_pointer() && target_type != CType::UInt8Pointer {
-                return Err(
-                    self.error("native contract pointer casts require a `uint8*` byte-view target")
-                );
+            if target_type.is_pointer()
+                && !matches!(target_type, CType::UInt8Pointer | CType::VoidPointer)
+            {
+                return Err(self.error(
+                    "native contract pointer casts require a `uint8*` byte-view target or a `void*` target",
+                ));
             }
             self.expect(Token::RParen)?;
             let operand = self.parse_contract_unary_at_depth(depth + 1)?;
@@ -9915,6 +9938,13 @@ impl Parser {
             }
             let expression =
                 contract_expression_as_c_fragment(&operand).unwrap_or(CExpression::Value(int32(0)));
+            if target_type == CType::VoidPointer {
+                crate::surface::validation::validate_void_pointer_cast_source(
+                    &expression,
+                    &self.current_c_parameter_types,
+                    "contract expression",
+                )?;
+            }
             return Ok(ContractExpression::CUnary {
                 operand: Box::new(operand),
                 lowered: CExpression::Cast {
@@ -11412,14 +11442,30 @@ impl Parser {
             Some(Token::CharLiteral(value)) => Ok(C0Expression::UInt8Literal(value)),
             Some(Token::LParen) => {
                 self.position -= 1;
+                if self.peek_next() == Some(&Token::Ident("void".to_string()))
+                    && self.tokens.get(self.position + 2) == Some(&Token::Star)
+                    && self.tokens.get(self.position + 3) == Some(&Token::RParen)
+                {
+                    self.position += 4;
+                    let operand = self.parse_ensure_unary()?;
+                    crate::surface::validation::validate_void_pointer_cast_source(
+                        &operand.to_kernel_expression(), &self.current_c_parameter_types, "contract expression"
+                    )?;
+                    return Ok(C0Expression::Cast {
+                        expression: Box::new(operand),
+                        c_type: C0Type::VoidPointer,
+                        struct_name: None,
+                        pointee_volatile: false,
+                        pointee_constant: false,
+                        explicit_qualification: false,
+                    });
+                }
                 if let Some(cast) = self.peek_struct_pointer_cast() {
                     self.consume_struct_pointer_cast(&cast)?;
                     let operand = self.parse_ensure_unary()?;
-                    let operand_name = match &operand {
-                        C0Expression::Variable(name) => Some(name.as_str()),
-                        _ => None,
-                    };
-                    self.record_parameter_struct_cast(operand_name, &cast.struct_name)?;
+                    self.record_parameter_struct_cast(
+                        &operand.to_kernel_expression(), &cast.struct_name,
+                    )?;
                     return Ok(C0Expression::Cast {
                         expression: Box::new(operand),
                         c_type: C0Type::Int32Pointer,
@@ -11635,8 +11681,12 @@ impl Parser {
     }
 
     fn starts_contract_scalar_cast(&self) -> bool {
-        self.peek() == Some(&Token::LParen)
-            && matches!(self.peek_next(), Some(Token::Ident(name)) if matches!(name.as_str(), "int8" | "uint8" | "int16" | "uint16" | "uint32" | "int32" | "uint64" | "int64" | "int128" | "uint128"))
+        (self.peek() == Some(&Token::LParen)
+            && self.peek_next() == Some(&Token::Ident("void".to_string()))
+            && self.tokens.get(self.position + 2) == Some(&Token::Star)
+            && self.tokens.get(self.position + 3) == Some(&Token::RParen))
+            || self.peek() == Some(&Token::LParen)
+                && matches!(self.peek_next(), Some(Token::Ident(name)) if matches!(name.as_str(), "int8" | "uint8" | "int16" | "uint16" | "uint32" | "int32" | "uint64" | "int64" | "int128" | "uint128"))
     }
 
     fn parenthesized_atom_continues_as_contract_expression(&self) -> bool {
