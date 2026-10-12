@@ -728,8 +728,10 @@ check at the cost of its lines. `scripts/step-scaling-hunt.py` looks for
 them: each shape generates a natural C function with an explicit
 one-`step()`-per-statement proof at sizes 1 to 128 (more calls, more owned
 parameter objects, more stated aliases, longer order-fact chains, deeper
-pointer chains), verifies it, and reports each size's largest step in work
-units and its mean step time. A shape whose steps stay flat in both is fine.
+pointer chains, longer increment chains, more sequential branches and loops,
+more constant-index stores, more callees, more unrelated facts, more live heap
+objects), verifies it, and reports each size's largest step in work units,
+its mean step time, and its largest `loop` or `branch` clause. A shape whose steps stay flat in both is fine.
 One that grows is filed in `bugs/` with the shape as its reproduction, and
 its fix lands with an ordinary multi-size regression. A step whose own input
 grows, such as one statement summing N fields, grows linearly by design; read
