@@ -121,8 +121,11 @@ batch-local seed contribution and remains nonnegative. The entry B seed stays
 fixed while Rust updates the working scalar B between batches. Actual outer
 exhaustion establishes both residues for the completed full-batch prefix.
 Exact constructor-byte observations and byte preservation also verify in the
-general aligned remainder. Its checksum residue invariants and the general
-scalar tail remain pending. Full original-computation smart audits
+general aligned remainder. Its lane loop now carries both A and B residues
+against the common specification through actual iterator exhaustion. The B
+representative retains the deferred local-position times A contribution and
+the fixed entry B seed. General remainder recombination and the scalar tail
+remain pending. Full original-computation smart audits
 currently exhaust the standard ten-minute run bound before completing a site,
 while ordinary verification succeeds. This is an audit-tool limitation, not a
 reported proof failure; continue checksum proof work with ordinary verification
