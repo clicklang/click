@@ -1526,6 +1526,44 @@ Proves the full unsigned observation range from native order. This theorem does 
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `int32_to_integer_bounds`
+
+```click
+theorem int32_to_integer_bounds(value: int32) {
+    ensures -2147483648 <= to_integer(value) by {
+        have -2147483648 <= value;
+        apply(int32_less_equal_to_integer(-2147483648, value)) using { -2147483648 <= value; }
+    }
+    ensures to_integer(value) <= 2147483647 by {
+        have value <= 2147483647;
+        apply(int32_less_equal_to_integer(value, 2147483647)) using { value <= 2147483647; }
+    }
+}
+```
+
+Proves the full signed 32-bit observation range from native order. `auto` applies it to an `int32` value whose range its `Integer` claim needs.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `int64_to_integer_bounds`
+
+```click
+theorem int64_to_integer_bounds(value: int64) {
+    ensures -9223372036854775808 <= to_integer(value) by {
+        have -9223372036854775808i64 <= value;
+        apply(int64_less_equal_to_integer(-9223372036854775808i64, value)) using { -9223372036854775808i64 <= value; }
+    }
+    ensures to_integer(value) <= 9223372036854775807 by {
+        have value <= 9223372036854775807i64;
+        apply(int64_less_equal_to_integer(value, 9223372036854775807i64)) using { value <= 9223372036854775807i64; }
+    }
+}
+```
+
+Proves the full signed 64-bit observation range from native order.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `uint64_to_integer_bounds`
 
 ```click

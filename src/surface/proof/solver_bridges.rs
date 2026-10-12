@@ -36,6 +36,11 @@ impl MachineOrder {
                 | ConditionTerm::Bitvector32SignedGreaterEqual(..),
                 _,
             ) => Some(Self::Int32),
+            // An `int32` equality; a `uint32` one is refused by the `int32`
+            // bridges and left out.
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true) => {
+                Some(Self::Int32)
+            }
             _ => None,
         }
     }
@@ -56,12 +61,18 @@ impl MachineOrder {
 
     /// The type range of an unsigned value's observation, when the standard
     /// library states one.
-    fn range(self) -> Option<(&'static str, &'static str)> {
+    fn range(self) -> Option<(&'static str, &'static str, &'static str)> {
         match self {
-            Self::Wide(carrier) if carrier.name() == "uint64" => {
-                Some(("uint64_to_integer_bounds", "18446744073709551615"))
-            }
-            _ => None,
+            Self::Int32 => Some(("int32_to_integer_bounds", "-2147483648", "2147483647")),
+            Self::Wide(carrier) => match carrier.name() {
+                "uint64" => Some(("uint64_to_integer_bounds", "0", "18446744073709551615")),
+                "int64" => Some((
+                    "int64_to_integer_bounds",
+                    "-9223372036854775808",
+                    "9223372036854775807",
+                )),
+                _ => None,
+            },
         }
     }
 }
@@ -149,6 +160,52 @@ impl Carried {
     }
 }
 
+/// The type range of a machine value's observation, for each type whose
+/// range theorem could apply. The wrong types' applications fail when the
+/// fact is established, and are left out.
+fn range_items(value: &ContractExpression) -> Vec<Carried> {
+    let mut items = Vec::new();
+    for (theorem, minimum, maximum) in [
+        ("int32_to_integer_bounds", "-2147483648", "2147483647"),
+        (
+            "int64_to_integer_bounds",
+            "-9223372036854775808",
+            "9223372036854775807",
+        ),
+        ("uint64_to_integer_bounds", "0", "18446744073709551615"),
+    ] {
+        let bounds = apply(theorem, vec![value.clone()], Vec::new());
+        for bound in [
+            relate(
+                integer_literal(minimum),
+                to_integer(value),
+                Relation::LessEqual,
+            ),
+            relate(
+                to_integer(value),
+                integer_literal(maximum),
+                Relation::LessEqual,
+            ),
+        ] {
+            items.push(Carried {
+                establish: Establish::Steps(vec![have(bound.clone(), vec![bounds.clone()])]),
+                surface: bound,
+            });
+        }
+    }
+    items
+}
+
+/// An `Integer` literal, negative ones as a negation of their magnitude.
+fn integer_literal(text: &str) -> ContractExpression {
+    match text.strip_prefix('-') {
+        Some(magnitude) => ContractExpression::Negate(Box::new(
+            ContractExpression::IntegerLiteral(magnitude.into()),
+        )),
+        None => ContractExpression::IntegerLiteral(text.into()),
+    }
+}
+
 /// The sums and differences observed by `to_integer(...)` in `expression`.
 fn observed_operations(expression: &ContractExpression, found: &mut Vec<ContractExpression>) {
     if let ContractExpression::Call { name, arguments } = expression
@@ -210,12 +267,35 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         let mut carried = self.carried_machine_facts(&candidates);
-        for operation in proposition_operations(surface_goal) {
+        // Every sum or difference an `Integer` claim observes, from the
+        // goal, the carried facts, and the connected `defined(...)` facts,
+        // and every one nested inside an observed operation: each gets its
+        // term-by-term observation and its type range.
+        let mut operations = proposition_operations(surface_goal);
+        for item in &carried {
+            operations.extend(proposition_operations(&item.surface));
+        }
+        operations.extend(self.defined_operations(&candidates));
+        let mut seen: Vec<ContractExpression> = Vec::new();
+        while let Some(operation) = operations.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            if seen.contains(&operation) {
+                continue;
+            }
+            seen.push(operation.clone());
             let (left, right, subtract) = match &operation {
                 ContractExpression::Add(left, right) => (left, right, false),
                 ContractExpression::Subtract(left, right) => (left, right, true),
                 _ => continue,
             };
+            for operand in [left.as_ref(), right.as_ref()] {
+                if matches!(
+                    operand,
+                    ContractExpression::Add(..) | ContractExpression::Subtract(..)
+                ) {
+                    operations.push(operand.clone());
+                }
+            }
             let exact = if subtract {
                 ContractExpression::Subtract(
                     Box::new(to_integer(left)),
@@ -230,9 +310,10 @@ impl<'a> Proof<'a> {
                     left: left.as_ref().clone(),
                     right: right.as_ref().clone(),
                     subtract,
-                    operation,
+                    operation: operation.clone(),
                 },
             });
+            carried.extend(range_items(&operation));
         }
         if carried.is_empty() {
             return Ok(None);
@@ -379,6 +460,49 @@ impl<'a> Proof<'a> {
         )))
     }
 
+    /// `auto` on a proposition goal with no C to run: the solver routes,
+    /// then `simp`.
+    pub(in crate::surface::proof) fn try_auto_proof_closure(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        if let Some(closed) = self.try_solver_closure()? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_bridged_solver_closure()? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_machine_goal_solver_closure()? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_solver_equality_closure()? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_definedness_solver_closure()? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_auto_conjunction_closure()? {
+            return Ok(Some(closed));
+        }
+        self.try_simp_closure()
+    }
+
+    /// A conjunction goal: each conjunct by `auto` on the stated fact, then
+    /// `assumption`, which closes a conjunction whose sides are facts.
+    pub(in crate::surface::proof) fn try_auto_conjunction_closure(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        let Some(ClickProposition::And(left, right)) = self.surface_goal() else {
+            return Ok(None);
+        };
+        let Some(proof) = self.prove_stated_fact(left)? else {
+            return Ok(None);
+        };
+        let Some(proof) = proof.prove_stated_fact(right)? else {
+            return Ok(None);
+        };
+        attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption))
+    }
+
     /// Prove `fact` where the proof stands with `auto` on the stated fact,
     /// as `have fact by auto;` does.
     fn prove_stated_fact(&self, fact: &ClickProposition) -> Result<Option<Self>, ClickError> {
@@ -411,6 +535,22 @@ impl<'a> Proof<'a> {
             ContractExpression::Add(Box::new(to_integer(left)), Box::new(to_integer(right)))
         };
         let stem = if subtract { "subtract" } else { "add" };
+        // An operand that is itself an operation must be defined too; prove
+        // that first so the outer theorem's conclusion completes the goal.
+        let mut base = self.clone();
+        for operand in [left.as_ref(), right.as_ref()] {
+            if matches!(
+                operand,
+                ContractExpression::Add(..) | ContractExpression::Subtract(..)
+            ) {
+                let defined = ClickProposition::Defined {
+                    expression: operand.clone(),
+                };
+                if let Some(next) = base.prove_stated_fact(&defined)? {
+                    base = next;
+                }
+            }
+        }
         for (width, minimum, maximum) in [
             ("int32", "-2147483648", "2147483647"),
             ("int64", "-9223372036854775808", "9223372036854775807"),
@@ -425,7 +565,7 @@ impl<'a> Proof<'a> {
                 ContractExpression::IntegerLiteral(maximum.into()),
                 Relation::LessEqual,
             );
-            let Some(bounded) = self.prove_stated_fact(&lower)? else {
+            let Some(bounded) = base.prove_stated_fact(&lower)? else {
                 continue;
             };
             let Some(bounded) = bounded.prove_stated_fact(&upper)? else {
@@ -470,6 +610,7 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         let stem = match (order, relation) {
+            (_, Relation::Equal) => "to_integer_equal_implies_equal",
             (_, Relation::LessEqual) => "to_integer_less_equal_implies_less_equal",
             // `int32` has no strict converse bridge in the standard library.
             (MachineOrder::Wide(_), Relation::Less) => "to_integer_less_than_implies_less_than",
@@ -478,7 +619,22 @@ impl<'a> Proof<'a> {
         let lower = order.typed_literals(&lower);
         let upper = order.typed_literals(&upper);
         let observed = relate(to_integer(&lower), to_integer(&upper), relation);
-        let scope = match self.begin_have(observed.clone()) {
+        // `to_integer(a + b)` can be stated only where `a + b` is defined.
+        let mut base = self.clone();
+        for side in [&lower, &upper] {
+            if matches!(
+                side,
+                ContractExpression::Add(..) | ContractExpression::Subtract(..)
+            ) {
+                let defined = ClickProposition::Defined {
+                    expression: side.clone(),
+                };
+                if let Some(next) = base.prove_stated_fact(&defined)? {
+                    base = next;
+                }
+            }
+        }
+        let scope = match base.begin_have(observed.clone()) {
             Ok(scope) => scope,
             Err(_) => return Ok(None),
         };
@@ -501,6 +657,37 @@ impl<'a> Proof<'a> {
         Ok(applied.try_direct_logical_closure().ok().flatten())
     }
 
+    /// The sums and differences named by connected `defined(...)` facts.
+    fn defined_operations(&self, candidates: &[Proposition]) -> Vec<ContractExpression> {
+        let mut operations = Vec::new();
+        for candidate in candidates {
+            if !matches!(
+                candidate,
+                Proposition::ConditionIs(
+                    ConditionTerm::Bitvector32SignedAddOverflows(..)
+                        | ConditionTerm::Bitvector32SignedSubtractOverflows(..)
+                        | ConditionTerm::Bitvector64SignedAddOverflows(..)
+                        | ConditionTerm::Bitvector64SignedSubtractOverflows(..),
+                    false
+                )
+            ) {
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some((_, ClickProposition::Defined { expression })) = self
+                .resolve_simp_premises(std::slice::from_ref(candidate), &[])
+                .and_then(|mut spelled| spelled.pop())
+                && matches!(
+                    expression,
+                    ContractExpression::Add(..) | ContractExpression::Subtract(..)
+                )
+            {
+                operations.push(expression);
+            }
+        }
+        operations
+    }
+
     /// The `Integer` reading of each connected machine order fact, and the
     /// type range of each unsigned value they mention.
     fn carried_machine_facts(&self, candidates: &[Proposition]) -> Vec<Carried> {
@@ -521,11 +708,6 @@ impl<'a> Proof<'a> {
             let Some((lower, upper, relation, _)) = relation_parts(&surface) else {
                 continue;
             };
-            let stem = match relation {
-                Relation::Less => "less_than_to_integer",
-                Relation::LessEqual => "less_equal_to_integer",
-                Relation::Equal => continue,
-            };
             let lower = order.typed_literals(&lower);
             let upper = order.typed_literals(&upper);
             let stated = relate(lower.clone(), upper.clone(), relation);
@@ -536,19 +718,27 @@ impl<'a> Proof<'a> {
                 steps.push(have(stated.clone(), vec![ProofStep::Assumption]));
             }
             let observed = relate(to_integer(&lower), to_integer(&upper), relation);
-            steps.push(have(
-                observed.clone(),
-                vec![apply(
-                    &format!("{}_{stem}", order.name()),
+            let carry = match relation {
+                Relation::Less => vec![apply(
+                    &format!("{}_less_than_to_integer", order.name()),
                     vec![lower.clone(), upper.clone()],
                     vec![stated],
                 )],
-            ));
+                Relation::LessEqual => vec![apply(
+                    &format!("{}_less_equal_to_integer", order.name()),
+                    vec![lower.clone(), upper.clone()],
+                    vec![stated],
+                )],
+                // Equal values have equal observations: rewriting by the
+                // fact leaves an identity.
+                Relation::Equal => vec![ProofStep::Rewrite(stated), ProofStep::Normalize],
+            };
+            steps.push(have(observed.clone(), carry));
             carried.push(Carried {
                 establish: Establish::Steps(steps),
                 surface: observed,
             });
-            if let Some((theorem, maximum)) = order.range() {
+            if let Some((theorem, minimum, maximum)) = order.range() {
                 for value in [lower, upper] {
                     if matches!(to_integer(&value), ContractExpression::IntegerLiteral(_))
                         || ranged.contains(&value)
@@ -559,13 +749,13 @@ impl<'a> Proof<'a> {
                     let bounds = apply(theorem, vec![value.clone()], Vec::new());
                     for bound in [
                         relate(
-                            ContractExpression::IntegerLiteral("0".into()),
+                            integer_literal(minimum),
                             to_integer(&value),
                             Relation::LessEqual,
                         ),
                         relate(
                             to_integer(&value),
-                            ContractExpression::IntegerLiteral(maximum.into()),
+                            integer_literal(maximum),
                             Relation::LessEqual,
                         ),
                     ] {

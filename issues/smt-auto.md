@@ -153,6 +153,7 @@ includes a machine-integer bridge theory; see the design.
 
 | Case | Before | After | What remains explicit |
 |---|---|---|---|
+| `examples/bounded-pool/bounded_pool.click` | 845 lines, 2.1 s | 455 lines, about 2 s | resource folds and authority steps; every arithmetic lemma is `by auto` |
 | `examples/rust-byte-sum/sum.click` (milestone 3, with operation bridging) | 184 lines, 0.29 s | 68 lines, about 1.4 s | memory transport for the read, fold laws (`peel`), loop control, and one conjunct of the invariant restated so it can be cited |
 
 The longer run time is solver search, all within the smart budget.
