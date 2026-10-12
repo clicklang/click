@@ -1349,6 +1349,18 @@ impl EqualityGraph {
         changed
     }
 
+    /// Bounds retained on any checked equivalent int32 value. Registration
+    /// visits only this term's dependencies; lookup never enumerates a class.
+    pub(in crate::kernel) fn signed_int32_interval(
+        &self,
+        term: &Bitvector32Term,
+    ) -> Option<(i64, i64)> {
+        let mut state = self.state.lock().expect("equality graph");
+        let node = state.terms.int32_class(term);
+        state.close(Vec::new());
+        state.terms.signed_int32_interval(node)
+    }
+
     /// Admit an already established int32 equality in this proof context.
     pub(in crate::kernel) fn add_int32_equality(
         &mut self,
