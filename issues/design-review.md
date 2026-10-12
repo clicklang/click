@@ -480,15 +480,17 @@ Decision: open.
 
 ### N5. Docs contradict themselves and are stale
 
-Today: `docs/reference/language/c0.md` says `click verify` prints the default
-target; `docs/reference/cli/verify.md` says it does not. The README's install
-section names versions 0.8.2 and 0.9.0 while `Cargo.toml` is 0.1.0, no tags
-exist, and it says "once `clicklang` is published to crates.io".
+The contradictions are fixed: `docs/reference/language/c0.md` no longer claims
+`click verify` prints the default target, the README installs from source
+and states that no release or crates.io package exists, and
+`tests/documentation.rs` checks that every version the README names is the
+`Cargo.toml` version.
 
-Proposed fix: fix each, add a consistency check, and cut a real release
-before launch.
+Remaining: no release has been tagged, so the installers fail.
 
-Decision: open.
+Proposed fix: tag the first release before launch (a maintainer action).
+
+Decision: fix.
 
 ### N6. Jargon load, and internal documents in the user book
 
