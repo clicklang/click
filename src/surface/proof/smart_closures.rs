@@ -25,6 +25,9 @@ const MAX_DIRECT_CALLER_BINDING_NAMES: usize = 4096;
 
 /// Goal-changing rewrites kept per link of an equality chain: the first
 /// continues the chain, the others get a one-link closing probe.
+/// How many times the solver behind `auto` plans again without the
+/// premises it could not spell.
+pub(in crate::surface::proof) const SOLVER_SPELLING_ROUNDS: usize = 4;
 const MAX_EQUALITY_REWRITE_BRANCHES: usize = 4;
 
 fn collect_signed_surface_terms<'a>(
@@ -326,7 +329,7 @@ fn signed_surface_terms_equal(
     true
 }
 
-pub(super) fn integer_plan_to_surface_certificate(
+pub(in crate::surface::proof) fn integer_plan_to_surface_certificate(
     plan: &IntegerArithmeticCertificate,
     premise_pairs: &[(Proposition, ClickProposition)],
     surface_goal: &ClickProposition,
@@ -1855,7 +1858,7 @@ impl<'a> Proof<'a> {
         if crate::kernel::proof::integer_arithmetic::integer_affine_claim(goal).is_none() {
             return Ok(None);
         }
-        let Some(candidates) =
+        let Some(mut candidates) =
             crate::surface::planning::proposition_search::solver_connected_premises(
                 self.facts().assumptions(),
                 goal,
@@ -1863,31 +1866,49 @@ impl<'a> Proof<'a> {
         else {
             return Ok(None);
         };
-        let IntegerRefutation::Proved {
-            certificate,
-            premises,
-        } = crate::instrumentation::measure_operation(
-            "surface",
-            "auto solver",
-            "auto solver: integer refutation",
-            || plan_integer_refutation(goal, &candidates),
-        )
-        else {
-            return Ok(None);
-        };
-        let Some(pairs) = self.resolve_simp_premises(&premises, &[]) else {
-            return Ok(None);
-        };
-        if pairs.len() != premises.len() {
-            return Ok(None);
+        // A certificate cites its premises by their source spelling. A fact
+        // with none (a conjunct of a written invariant, for one) cannot be
+        // cited, so the solver runs again without it, a bounded number of
+        // times.
+        for _ in 0..SOLVER_SPELLING_ROUNDS {
+            check_verification_deadline()?;
+            let IntegerRefutation::Proved {
+                certificate,
+                premises,
+            } = crate::instrumentation::measure_operation(
+                "surface",
+                "auto solver",
+                "auto solver: integer refutation",
+                || plan_integer_refutation(goal, &candidates),
+            )
+            else {
+                return Ok(None);
+            };
+            let mut pairs = Vec::with_capacity(premises.len());
+            let mut unspelled = Vec::new();
+            for premise in &premises {
+                match self
+                    .resolve_simp_premises(std::slice::from_ref(premise), &[])
+                    .and_then(|mut spelled| spelled.pop())
+                {
+                    Some(pair) => pairs.push(pair),
+                    None => unspelled.push(premise.clone()),
+                }
+            }
+            if !unspelled.is_empty() {
+                candidates.retain(|candidate| !unspelled.contains(candidate));
+                continue;
+            }
+            let Some(surface) =
+                integer_plan_to_surface_certificate(&certificate, &pairs, surface_goal)
+            else {
+                return Ok(None);
+            };
+            return attempt::candidate_outcome(self.apply_step(ProofStep::ArithmeticCertificate(
+                ArithmeticCertificate::integer(surface),
+            )));
         }
-        let Some(surface) = integer_plan_to_surface_certificate(&certificate, &pairs, surface_goal)
-        else {
-            return Ok(None);
-        };
-        attempt::candidate_outcome(self.apply_step(ProofStep::ArithmeticCertificate(
-            ArithmeticCertificate::integer(surface),
-        )))
+        Ok(None)
     }
 
     fn try_flat_simp_conjunction(
@@ -3899,7 +3920,7 @@ impl<'a> Proof<'a> {
 
     /// Spells each of `premises` in this context's recorded source forms,
     /// leaving out one that has none.
-    fn resolve_simp_premises(
+    pub(in crate::surface::proof) fn resolve_simp_premises(
         &self,
         premises: &[Proposition],
         introduced_surfaces: &[ClickProposition],
