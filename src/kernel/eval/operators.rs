@@ -283,21 +283,48 @@ pub(in crate::kernel) fn evaluate_c_add_paths(
                 }
             };
 
-            paths.extend(apply_c_add(
-                state,
-                left.clone(),
-                right,
-                left_step_width,
-                right_step_width,
-                facts,
-                obligations,
-                assumptions,
-            ));
+            paths.extend(
+                apply_c_add(
+                    state,
+                    left.clone(),
+                    right,
+                    left_step_width,
+                    right_step_width,
+                    facts,
+                    obligations,
+                    assumptions,
+                )
+                .into_iter()
+                .map(fold_c_int32_constant_increment),
+            );
         }
     }
 
     budget.check_path_width(paths.len())?;
     Ok(paths)
+}
+
+/// A C int32 sum `(x + a) + b` of constants whose signed sum is an int32 is
+/// `x + (a + b)`, both as bits and, on a path where the add did not
+/// overflow, as integers. Folding keeps a value incremented N times one node
+/// deep, where it was an N-deep term each later overflow decision ranged.
+/// Only executed C folds: a written proposition is lowered through
+/// [`apply_c_add`] directly and keeps the shape its proof names, in which a
+/// compound operand can be an opaque affine atom.
+fn fold_c_int32_constant_increment(mut path: CExpressionPath) -> CExpressionPath {
+    if let CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::Add(base, increment))) =
+        &path.outcome
+        && let (Bitvector32Term::Add(inner, addend), Bitvector32Term::Constant(increment)) =
+            (base.as_ref(), increment.as_ref())
+        && let Bitvector32Term::Constant(addend) = addend.as_ref()
+        && let Some(sum) = (*addend as i32).checked_add(*increment as i32)
+    {
+        path.outcome = CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::add(
+            inner.as_ref().clone(),
+            Bitvector32Term::Constant(sum as u32),
+        )));
+    }
+    path
 }
 
 pub(in crate::kernel) fn apply_c_add(
