@@ -19,6 +19,14 @@ N objects and N calls (`objects_and_calls`) the whole proof is quadratic:
 `ExternalArgument` block, so each is a candidate for the call's write set and
 for what the caller keeps, and is examined at every call.
 
+Diagnosis (master `b1523c784`): two thirds of the call's work is the same
+walk as `field-store-step-grows-with-owned-parameter-objects.md`.
+`with_call_memory_havoc` → `forget_cached_values` visits every cached cell
+of the `ExternalArgument` block, and here each visit runs an order-fact
+search (`proves_element_endpoint_order`, `condition_order_facts`), so the
+call costs about 400 units per other object, against 16 for a store.
+Fixing that walk likely fixes both.
+
 Acceptance: a multi-size regression over `many_objects` and `deep_chain`
 shows the call step's work and time constant in the number of owned objects
 the call neither takes nor may write, up to logarithmic factors; the caller

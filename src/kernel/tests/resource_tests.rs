@@ -8989,3 +8989,43 @@ fn observable_projection_with_one_owner_and_borrow_does_not_scan_views() {
         "one-owner borrow query costs: {costs:?}"
     );
 }
+
+/// A base with N stated aliases (`q_i == b`, as a function requiring N
+/// parameters equal to one it owns) must not cost N² to validate: every
+/// alias's related roots are the same recorded-equality class, so walking
+/// it once per alias re-walked one N-member class N times
+/// (`bugs/call-step-grows-with-stated-pointer-aliases.md`).
+#[test]
+fn owned_range_validity_is_linear_in_stated_aliases_of_its_base() {
+    let parameter = |id: u64| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(id)), 4),
+    };
+    let samples = [16, 64, 256]
+        .into_iter()
+        .map(|size| {
+            let owned = parameter(41_000);
+            let assumptions = (0..size).fold(PureFactContext::new(), |assumptions, index| {
+                assumptions.assume_condition(
+                    ConditionTerm::pointer_equal(parameter(41_100 + index as u64), owned.clone()),
+                    true,
+                )
+            });
+            let context = ResourceContext::new().unchecked_with_facts(
+                [41_001, 41_002, 41_000]
+                    .map(|id| CResourceFact::own_memory(memory_range(parameter(id), 0, 4))),
+            );
+            let (error, work) = crate::instrumentation::measure_deterministic_work(|| {
+                context.validity_error(&assumptions)
+            });
+            assert!(error.is_none(), "size-{size} owned ranges should be valid");
+            (size, work)
+        })
+        .collect::<Vec<_>>();
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 <= pair[0].1.saturating_mul(6),
+            "validity is superlinear in the base's stated aliases: {samples:?}"
+        );
+    }
+}

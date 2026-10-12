@@ -17,6 +17,16 @@ and 16,816 units at N = 8, 32 and 64. A profile at N = 256 attributes most of
 the time to `related_memory_base_roots`, which rebuilds the alias-root index
 over every stated equality during the call's resource composition.
 
+Partly fixed: `owned_validity_candidates` walked the base's whole
+recorded-equality class once per alias, N walks of one N-member class, so the
+call was quadratic. It now skips an alias whose root it already holds. At
+N = 64 the call charges 4,588 units (was 16,816); at N = 128, 6,124. What
+remains is linear in N: the call re-composes the kept `*b` range three
+times (frame and kept-ownership bookkeeping), and each composition validates
+it against `b`'s aliases and the roots they reach (`offsets_with_an_alias_at_root`).
+A constant call needs the kept range not to be re-validated when it comes
+back unchanged.
+
 Acceptance: a multi-size regression over `aliases` shows the call step's
 work and time constant in N up to logarithmic factors; the summed reads still
 resolve through the aliases; no budget or threshold is raised.

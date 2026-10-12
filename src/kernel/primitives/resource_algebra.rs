@@ -4913,6 +4913,13 @@ impl ResourceContext {
         let mut roots = related_memory_base_roots(base, assumptions);
         for alias in assumptions.exact_pointer_offset_aliases(base) {
             crate::instrumentation::record_deterministic_work(1);
+            // An alias whose root is already collected adds nothing: its
+            // related roots are the scalings of the same recorded-equality
+            // class, which is a whole connected component. Without this, N
+            // aliases of one base each re-walked the N-member class.
+            if roots.contains(&memory_base_root(&alias)) {
+                continue;
+            }
             roots.extend(related_memory_base_roots(&alias, assumptions));
         }
         for root in &roots {

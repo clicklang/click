@@ -33,6 +33,21 @@ first release (63 others live) falling to 4,294 for the last. At N = 256 the
 largest step is 135,379 units, mean step time is 129 ms, and the proof
 charges 30,743,678 units.
 
+Diagnosis (master `b1523c784`, N = 64): this is not the cell walk. Most of
+a `make_box` or `drop_box` call's work is resource expansion of every live
+`boxed(pj)` the caller keeps:
+
+- `apply_verified_heap_allocation_delta` expands the whole
+  `preserved_caller_resources` (`expand_all_composite_resource_facts_at_state`)
+  at every call, re-registering each child's addresses in the equality
+  graph (`register_pointer_address`, `MemoryAddresses::update`), only to
+  look for allocation effects;
+- `call_kept_ownership` → `expand_composites_for_frame` expands them again
+  for the frame check.
+
+A constant call needs both to look only at the composites the call's
+allocations and retirements can name.
+
 Acceptance: a multi-size regression over `heap_objects` shows each call,
 store and release step's work and time constant in the number of other live
 objects, up to logarithmic factors; ownership is still checked at every
