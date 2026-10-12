@@ -2607,6 +2607,7 @@ impl<'a> Proof<'a> {
             .transpose()?;
         let mut integer_binding = None;
         let mut algebraic_binding = None;
+        let mut antecedent_spelling = None;
         let state = self
             .state
             .apply_intro(|current, introduction, introduced| {
@@ -2721,6 +2722,7 @@ impl<'a> Proof<'a> {
                                     &antecedent,
                                     kernel,
                                 );
+                                antecedent_spelling = Some((antecedent.clone(), kernel.clone()));
                             }
                             Some(Arc::new(consequent))
                         }
@@ -2839,8 +2841,12 @@ impl<'a> Proof<'a> {
                 ),
                 _ => unreachable!("kernel returned an unrelated intro error"),
             })?;
+        if algebraic_binding.is_none() && integer_binding.is_none() && antecedent_spelling.is_none()
+        {
+            return Ok(state);
+        }
+        let mut locals = state.locals().clone();
         if let Some((name, variable, algebraic_type)) = algebraic_binding {
-            let mut locals = state.locals().clone();
             locals.algebraic_values = locals.algebraic_values.with_inserted(
                 name,
                 crate::kernel::SpecAlgebraicExpression {
@@ -2848,19 +2854,25 @@ impl<'a> Proof<'a> {
                     node: crate::kernel::SpecAlgebraicExpressionNode::Variable(variable),
                 },
             );
-            Ok(state.with_locals(locals))
         } else if let Some((name, variable)) = integer_binding {
-            let mut locals = state.locals().clone();
             locals.integer_values = locals.integer_values.with_inserted(
                 name,
                 crate::kernel::SpecIntegerExpression::Term(crate::kernel::IntegerTerm::var(
                     variable,
                 )),
             );
-            Ok(state.with_locals(locals))
-        } else {
-            Ok(state)
         }
+        // The introduced antecedent is spelled for premise lookups, as a
+        // pure `have` is; see `ProofLocals::surface_facts`. A spelling is an
+        // index, not authority: one that does not record is left out rather
+        // than failing the step.
+        if let Some((surface, kernel)) = &antecedent_spelling {
+            let mut spelled = locals.surface_facts.clone();
+            if spelled.record_lowering(surface, kernel).is_ok() {
+                locals.surface_facts = spelled;
+            }
+        }
+        Ok(state.with_locals(locals))
     }
 
     #[inline(never)]

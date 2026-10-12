@@ -930,6 +930,23 @@ impl<'a> Proof<'a> {
             facts = facts.with_kernel_checked_fact(fact.clone());
             checked.push(fact);
         }
+        // The opened body is spelled as written, under the names just bound,
+        // for premise lookups; see `ProofLocals::surface_facts`.
+        let mut written_body = Some(&binding.proposition);
+        for _ in &binding.bindings {
+            written_body = match written_body {
+                Some(ClickProposition::Exists { body, .. }) => Some(body.as_ref()),
+                _ => None,
+            };
+        }
+        // A spelling is an index, not authority: a body whose written shape
+        // does not record is left unspelled rather than failing the step.
+        if let (Some(written_body), Some(body)) = (written_body, checked.last()) {
+            let mut spelled = locals.surface_facts.clone();
+            if spelled.record_lowering(written_body, body).is_ok() {
+                locals.surface_facts = spelled;
+            }
+        }
         let mut transition = self.checked_fact_transition(locals, facts, false, added, checked);
         // Every machine-integer witness projects as `int32` does: a C string's
         // `size_t` length is chosen the same way as an `int32` index.

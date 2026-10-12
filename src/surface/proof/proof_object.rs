@@ -444,6 +444,12 @@ struct ProofLocals {
     values: PersistentMap<String, ContractExpression>,
     integer_values: PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     algebraic_values: PersistentMap<String, crate::kernel::SpecAlgebraicExpression>,
+    /// The written forms of facts a pure proof introduced by `have` or a
+    /// proof `if`, which have no execution frontier or outcome to carry
+    /// them. Like every recorded spelling it is an index, not authority: a
+    /// lookup outside a C outcome lowers the form again and keeps it only
+    /// when it still denotes the fact.
+    surface_facts: SurfacePropositionMap,
     next_choice_variable: u64,
 }
 
@@ -453,6 +459,7 @@ impl Default for ProofLocals {
             values: PersistentMap::default(),
             integer_values: PersistentMap::default(),
             algebraic_values: PersistentMap::default(),
+            surface_facts: SurfacePropositionMap::default(),
             next_choice_variable: 3_000_000,
         }
     }
@@ -1907,6 +1914,24 @@ impl<'a> Proof<'a> {
         &self,
     ) -> &PersistentMap<String, crate::kernel::SpecAlgebraicExpression> {
         &self.state().locals().algebraic_values
+    }
+
+    /// The written forms of facts a pure proof introduced; see
+    /// `ProofLocals::surface_facts`.
+    pub(super) fn local_surface_facts(&self) -> &SurfacePropositionMap {
+        &self.state().locals().surface_facts
+    }
+
+    /// Records `surface` as the written form of the checked `kernel` fact
+    /// for later premise lookups in a pure proof.
+    pub(super) fn with_local_surface_fact(
+        &self,
+        surface: &ClickProposition,
+        kernel: &Proposition,
+    ) -> Result<Self, ClickError> {
+        let mut locals = self.state.locals().clone();
+        locals.surface_facts.record_lowering(surface, kernel)?;
+        Ok(self.with_kernel_state(self.state.with_locals(locals)))
     }
 
     fn focused_branch_id(&self) -> BranchId {
