@@ -13969,3 +13969,93 @@ fn c0_scalar_updates_preserve_signed_overflow_undefined_behavior() {
         );
     }
 }
+
+#[test]
+fn c0_builtin_types_compatible_preserves_c_identity() {
+    for (left, right, expected) in [
+        ("int", "signed int", 1),
+        ("int", "unsigned int", 0),
+        ("char", "signed char", 0),
+        ("char*", "unsigned char*", 0),
+        ("long", "long long", 0),
+        ("unsigned long", "unsigned long long", 0),
+        ("long*", "long long*", 0),
+        ("wide_t", "long long", 1),
+        ("wide_t", "long", 0),
+        ("const volatile int", "int", 1),
+        ("int* const", "int*", 1),
+        ("volatile int*", "int*", 0),
+        ("const int*", "int*", 0),
+        ("const int* const", "const int*", 1),
+        ("struct A", "alias_t", 1),
+        ("struct A", "struct B", 0),
+        ("struct A*", "struct B*", 0),
+        ("union U", "union V", 0),
+        ("void", "void", 1),
+        ("typeof(*p)", "struct A", 1),
+        ("typeof(*p)", "void", 0),
+        ("typeof(((struct Wrapper*)0)->value)", "struct A", 1),
+        ("typeof(long long)", "wide_t", 1),
+    ] {
+        let source = format!(
+            "struct A {{ int field; }}; struct B {{ int field; }}; \
+            struct Wrapper {{ struct A value; }}; \
+            union U {{ int field; }}; union V {{ int field; }}; \
+            typedef struct A alias_t; typedef long long wide_t; \
+            int test(struct A* p) {{ return __builtin_types_compatible_p({left}, {right}); }}"
+        );
+        let functions = syntax::parse_functions(&source)
+            .unwrap_or_else(|e| panic!("{left}, {right}: {}", e.message()));
+        assert!(
+            matches!(functions[0].body(), syntax::C0Statement::Return(syntax::C0Expression::Int32Literal(value), _) if *value == expected),
+            "{left}, {right}: {:?}",
+            functions[0].body()
+        );
+    }
+}
+
+#[test]
+fn c0_builtin_types_compatible_refuses_erased_or_unsupported_identity() {
+    for operands in [
+        "typeof(*(int*)(void*)p), struct A", // Layout provenance is not the cast type.
+        "typeof(n), int", // May be an enum, whose identity the expression type erased.
+        "typeof(p), struct A*", // Nested qualifiers are not all retained by typeof.
+        "typeof(*p)*, struct A*", // A new pointer must not erase source qualifiers.
+        "typeof(cells), int*", // Array decay is not type compatibility.
+        "uint64, unsigned long",
+        "enum E, int",
+        "int[3], int[4]",
+        "int(), int()",
+        "int",
+        "int, int, int",
+        "n, int",
+    ] {
+        let source = format!(
+            "struct A {{ int field; }}; enum E {{ Zero }}; \
+            int test(struct A* p, int n) {{ int cells[3]; return __builtin_types_compatible_p({operands}); }}"
+        );
+        assert!(
+            syntax::parse_functions(&source).is_err(),
+            "must refuse {operands}"
+        );
+    }
+}
+
+#[test]
+fn c0_builtin_types_compatible_rejects_erased_typedef_metadata() {
+    for declaration in [
+        "typedef const int* T;", // Adding another pointer cannot collapse qualifier levels.
+        "typedef int T __attribute__((mode(word)));",
+        "typedef int T[3];",
+        "typedef int (*T)(int);",
+        "typedef typeof(*(const volatile struct A*)0) T;",
+    ] {
+        let source = format!(
+            "struct A {{ int field; }}; {declaration} \
+            int run() {{ return __builtin_types_compatible_p(T*, T*); }}"
+        );
+        assert!(syntax::parse_functions(&source).is_err(), "{declaration}");
+    }
+    syntax::parse_functions("void run() { __builtin_types_compatible_p(int, int); }")
+        .expect("a discarded compile-time result has no runtime effect");
+}
