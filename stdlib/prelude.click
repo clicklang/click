@@ -1035,6 +1035,19 @@ theorem uint32_pack_uint16_high_first_to_integer(low: uint32, high: uint32) {
     ensures to_integer((high << 16) | low) == to_integer(low) + 65536 * to_integer(high);
 }
 
+# Exact round trips of two bounded fields packed with the high field first.
+theorem uint32_unpack_uint16_low(low: uint32, high: uint32) {
+    requires low <= 65535u32;
+    requires high <= 65535u32;
+    ensures (((high << 16) | low) & 65535u32) == low;
+}
+
+theorem uint32_unpack_uint16_high(low: uint32, high: uint32) {
+    requires low <= 65535u32;
+    requires high <= 65535u32;
+    ensures ((((high << 16) | low) >> 16) & 65535u32) == high;
+}
+
 theorem uint64_pack_uint16_to_integer(low: uint64, high: uint64) {
     requires low <= 65535u64;
     requires high <= 65535u64;
