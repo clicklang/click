@@ -1055,7 +1055,12 @@ fn shift_right_jam(value: u128, shift: u32) -> u128 {
     truncated | u128::from(lost != 0)
 }
 
-fn round_right_to_even(value: u128, shift: u32) -> u128 {
+/// Round a nonnegative integer right shift to nearest, ties to even.
+///
+/// The floating-point conversions in this slice operate on the exact integer
+/// significands of IEEE values. Keeping the rounding here in integer space
+/// makes the result independent of the host floating-point environment.
+pub(in crate::kernel) fn round_right_to_even(value: u128, shift: u32) -> u128 {
     if shift == 0 {
         return value;
     }
@@ -2492,17 +2497,9 @@ impl ConditionTerm {
         }
     }
 
+    /// 64-bit equality reads no sign, so it is [`Self::int64_equal`].
     pub(crate) fn uint64_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
-        if left == right {
-            return Self::Constant(true);
-        }
-        if let Some(condition) = Self::address_equality_as_pointer_equality(&left, &right) {
-            return condition;
-        }
-        match (left.bitvector64_as_const(), right.bitvector64_as_const()) {
-            (Some(left), Some(right)) => Self::Constant(left == right),
-            _ => Self::Bitvector64Equal(Box::new(left), Box::new(right)),
-        }
+        Self::int64_equal(left, right)
     }
 
     pub(crate) fn int64_signed_add_overflows(

@@ -361,10 +361,6 @@ fn symbolic_base_aliases_a_held_cell(
     })
 }
 
-pub fn c_loadability_obligation_impossible(obligation: &Proposition) -> bool {
-    c_loadability_obligation_impossible_with_assumptions(obligation, &PureFactContext::new())
-}
-
 /// Reject a read of freed memory unless a checked path fact proves that the
 /// guard containing the read is false. The guarded obligation itself remains
 /// subject to ordinary certification.

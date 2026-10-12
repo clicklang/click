@@ -1870,20 +1870,6 @@ impl CLoopEffectCheck {
         }
     }
 
-    pub fn new_with_span(
-        effect: CLoopEffect,
-        span: CLoopEffectSpan,
-        context: Option<String>,
-    ) -> Self {
-        Self {
-            effect,
-            span,
-            context,
-            origin: CLoopEffectOrigin::Unspecified,
-            validated_ranges: None,
-        }
-    }
-
     pub fn new_with_origin(
         effect: CLoopEffect,
         span: CLoopEffectSpan,

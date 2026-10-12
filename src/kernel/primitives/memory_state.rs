@@ -1384,16 +1384,6 @@ impl CLocalEnvironment {
         self
     }
 
-    pub fn with_typed(mut self, name: impl Into<String>, value: CValue, c_type: CType) -> Self {
-        self.set_typed(name, value, c_type);
-        self
-    }
-
-    pub fn with_int32_array(mut self, name: impl Into<String>, length: u32) -> Self {
-        self.set_int32_array(name, length);
-        self
-    }
-
     pub fn set(&mut self, name: impl Into<String>, value: CValue) {
         let c_type = value.c_type();
         self.set_typed(name, value, c_type);
@@ -1556,53 +1546,6 @@ impl CLocalEnvironment {
                 constant,
                 pointee_constant,
             },
-        );
-    }
-
-    pub fn set_int32_array(&mut self, name: impl Into<String>, length: u32) {
-        self.set_array_object(name, CType::Int32, length);
-    }
-
-    pub fn set_uint8_array(&mut self, name: impl Into<String>, length: u32) {
-        self.set_array_object(name, CType::UInt8, length);
-    }
-
-    pub fn set_int8_array(&mut self, name: impl Into<String>, length: u32) {
-        self.set_array_object(name, CType::Int8, length);
-    }
-
-    pub fn set_int16_array(&mut self, name: impl Into<String>, length: u32) {
-        self.set_array_object(name, CType::Int16, length);
-    }
-
-    pub fn set_uint16_array(&mut self, name: impl Into<String>, length: u32) {
-        self.set_array_object(name, CType::UInt16, length);
-    }
-
-    pub fn set_uint32_array(&mut self, name: impl Into<String>, length: u32) {
-        self.set_array_object(name, CType::UInt32, length);
-    }
-
-    pub fn set_int64_array(&mut self, name: impl Into<String>, length: u32) {
-        self.set_array_object(name, CType::Int64, length);
-    }
-
-    pub fn set_uint64_array(&mut self, name: impl Into<String>, length: u32) {
-        self.set_array_object(name, CType::UInt64, length);
-    }
-
-    pub(in crate::kernel) fn set_array_object(
-        &mut self,
-        name: impl Into<String>,
-        element_type: CType,
-        length: u32,
-    ) {
-        let name = name.into();
-        self.set_array_object_at(
-            name.clone(),
-            element_type,
-            length,
-            CMemory::local_pointer(&name),
         );
     }
 
@@ -7887,11 +7830,6 @@ impl CState {
 
     pub fn with_local(mut self, name: impl Into<String>, value: CValue) -> Self {
         self.locals.set(name, value);
-        self
-    }
-
-    pub fn with_int32_array_local(mut self, name: impl Into<String>, length: u32) -> Self {
-        self.locals.set_int32_array(name, length);
         self
     }
 

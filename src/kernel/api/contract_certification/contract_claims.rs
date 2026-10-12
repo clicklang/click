@@ -190,60 +190,6 @@ pub fn c_function_outcomes_program_state_definitionally_equal(
     }
 }
 
-/// Proves two return outcomes equal from matching certified execution
-/// histories. This recognizes equal store chains and alpha-equivalent call
-/// havoc snapshots without treating unrelated fresh havoc identities as
-/// interchangeable.
-pub fn c_function_outcomes_equal_by_execution_provenance(
-    function: &CFunction,
-    left: &CFunctionOutcome,
-    left_facts: &(impl ExecutionFactSource + ?Sized),
-    right: &CFunctionOutcome,
-    right_facts: &(impl ExecutionFactSource + ?Sized),
-    assumptions: &PureFactContext,
-) -> bool {
-    if !c_function_outcomes_program_state_equal_by_execution_provenance(
-        left,
-        left_facts,
-        right,
-        right_facts,
-        assumptions,
-    ) {
-        return false;
-    }
-    let (
-        CFunctionOutcome::Return {
-            state: left_state, ..
-        },
-        CFunctionOutcome::Return {
-            state: right_state, ..
-        },
-    ) = (left, right)
-    else {
-        return false;
-    };
-    resource_context_definitionally_contains(
-        left_state.resources(),
-        right_state.resources(),
-        function.composite_resource_definitions(),
-        left_state.memory(),
-        assumptions,
-    ) || resource_context_definitionally_contains(
-        right_state.resources(),
-        left_state.resources(),
-        function.composite_resource_definitions(),
-        left_state.memory(),
-        assumptions,
-    ) || resource_contexts_definitionally_equal(
-        function,
-        left_state.memory(),
-        left_state.resources(),
-        right_state.memory(),
-        right_state.resources(),
-        assumptions,
-    )
-}
-
 /// Compares the observable program state of two return paths by matching their
 /// certified execution histories. Resource representation remains the
 /// responsibility of the separate resource certificate.
