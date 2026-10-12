@@ -97,8 +97,13 @@ post-`Next` remaining count identifies the returned byte and the next common
 prefix, and both checked native additions preserve their residues. The B step
 uses the newly updated A value. Signed subtraction definedness and the exact
 native-to-Integer byte and assignment observations are checked explicitly.
-The loop-exit bridge and final checksum postconditions remain pending, as do
-the arbitrary-length computation’s nested loops. Full original-computation smart audits
+The small-batch proof now connects scalar-loop exit to the full-input residues
+and proves both final fields equal the common specification on the entry input
+snapshot, for every length zero through 22,207 and any canonical initial state.
+Explicit byte-equality invariants and checked sum extensionality preserve the
+specification through the original reductions and final field stores. False
+final A and B checksum claims are rejected. The arbitrary-length computation’s
+nested-loop checksum proof remains pending. Full original-computation smart audits
 currently exhaust the standard ten-minute run bound before completing a site,
 while ordinary verification succeeds. This is an audit-tool limitation, not a
 reported proof failure; continue checksum proof work with ordinary verification

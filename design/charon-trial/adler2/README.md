@@ -5,7 +5,10 @@ proves the four-lane helper bodies and the native-count general, small-batch,
 and four-byte bounds proofs. The general proof covers every input length through
 2,147,483,647 bytes from canonical initial states, using actual native remaining
 counts, checked signed observations, and shared input views throughout all loops.
-**The general Adler-32 checksum postcondition remains unproved.**
+The small-batch proof also establishes both final fields equal the shared
+checksum specification on the entry input snapshot for every length through
+22,207 bytes, from any canonical initial state. **General-length checksum
+correctness remains unproved.**
 
 The 2,147,483,647-byte limit comes from the bound library
 ([`bounded-count.click`](bounded-count.click) and the proofs built on it), which
@@ -572,7 +575,13 @@ iterator state. Each returned byte is checked against its actual post-`Next`
 position; the signed prefix advances by one, the native A addition preserves
 its residue, and B includes the newly updated A value. Definedness bounds,
 byte casts and native assignment observations are explicit checked steps.
-The loop-exit bridge and final checksum postconditions remain pending. Nightly mutations reject a duplicated lane
+The scalar-loop exit establishes the full-input residues. Explicit byte-equality
+invariants preserve the entry input through both loops, and checked sum
+extensionality connects the current specification to the entry snapshot before
+either receiver field is stored. Native remainder equations and bounded
+16-bit cast certificates establish both final field postconditions against
+that fixed snapshot. No checksum result is assumed. Nightly mutations reject
+false final A and B checksum claims, a duplicated lane
 byte in the A transition, a changed completed-prefix A seed, an incorrect B
 byte weight, an omitted B seed contribution, a duplicated A lane during scalar
 recombination, changed recombined-prefix seeds, and an incorrect native B lane

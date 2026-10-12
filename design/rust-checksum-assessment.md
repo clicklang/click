@@ -149,10 +149,13 @@ native adapter. Variable-length memory contracts retain an explicit
 `INT32_MAX` range limit; slice metadata and native index checks keep their
 full target width.
 
-The computation proof covers arbitrary multiple-of-four lengths up to 22,204
-bytes from canonical initial states. It checks the lane-loop ceilings,
-termination, original reductions and recombination, scalar sums, and final
-16-bit stores. It does not yet establish the full mathematical checksum.
+The small-batch computation proof covers every length zero through 22,207
+bytes from canonical initial states, including the zero-to-three-byte tail.
+It checks the lane-loop ceilings, termination, original reductions and
+recombination, scalar sums, and final 16-bit stores. Both final fields equal
+the common mathematical specification on the entry input snapshot. The
+arbitrary-length computation has checked bounds and termination, but its
+full checksum identity remains unproved.
 
 Follow the [current roadmap](../issues/rust-support.md) for the remaining outer
 batches, short tails, common specification, unchanged C proof, and architecture

@@ -1483,6 +1483,16 @@ fn charon_adler2_small_batch_compute_proves_original_body() {
 }
 
 #[test]
+#[ignore = "nightly: both original final fields must equal the entry-input checksum specification"]
+fn charon_adler2_small_batch_compute_rejects_false_final_checksum() {
+    for field in ["a", "b"] {
+        let before = format!("ensures to_integer(self.{field}) == old(adler_spec_{field}(");
+        let after = format!("ensures to_integer(self.{field}) + 1 == old(adler_spec_{field}(");
+        reject_compute(SMALL_BATCH_COMPUTE, &before, &after);
+    }
+}
+
+#[test]
 #[ignore = "nightly: original vector constructor input-position rejections"]
 fn charon_adler2_small_batch_compute_rejects_wrong_constructor_input_positions() {
     reject_compute(
@@ -1888,6 +1898,8 @@ fn adler_common_spec_expands_and_rejects_false_results() {
         "adler_join_seed_polynomial.ensures_0",
         "adler_spec_b_concat.ensures_0",
         "adler_spec_checksum_concat.ensures_0",
+        "adler_sums_extensional.ensures_0",
+        "adler_spec_extensional.ensures_0",
     ] {
         let expanded =
             click::surface::expand_c0_claim_source_by_label(COMMON_ADLER_SPEC, &[], claim)
