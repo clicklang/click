@@ -273,7 +273,10 @@ impl<'a> Proof<'a> {
         spell(&GuardedTermSpeller {
             view: &view,
             accesses: &accesses,
-            snapshots: view.recorded_snapshots.recent(MAX_SPELLING_SNAPSHOTS),
+            snapshots: view
+                .fixed_state
+                .recorded_snapshots
+                .recent(MAX_SPELLING_SNAPSHOTS),
             bound,
         })
     }
@@ -391,7 +394,7 @@ impl GuardedTermSpeller<'_, '_> {
             && let Some(whole) = synthesize_surface_proposition_with_bound_variable_names(
                 proposition,
                 self.view.parameter_binding,
-                self.view.state,
+                self.view.fixed_state.state,
                 &self.bound,
             )
         {
@@ -460,12 +463,12 @@ impl GuardedTermSpeller<'_, '_> {
             Box::new(ContractExpression::ResourceField(access.clone()))
         };
         for access in self.accesses {
-            if Self::field_value(self.view.state, access) == Some(term) {
+            if Self::field_value(self.view.fixed_state.state, access) == Some(term) {
                 return Some(*named(access));
             }
         }
         for access in self.accesses {
-            if Self::field_value(self.view.pre_state, access) == Some(term) {
+            if Self::field_value(self.view.fixed_state.pre_state, access) == Some(term) {
                 return Some(ContractExpression::Old(named(access)));
             }
         }
@@ -518,7 +521,7 @@ impl GuardedTermSpeller<'_, '_> {
                 synthesize_surface_machine_expression(
                     term,
                     self.view.parameter_binding,
-                    self.view.state,
+                    self.view.fixed_state.state,
                 )
             })
             .or_else(|| {

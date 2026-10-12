@@ -44,10 +44,7 @@ pub(in crate::surface) fn lower_outcome_proposition_with_auxiliary_facts(
         &BTreeMap::new(),
         &crate::persistent::PersistentMap::default(),
         &BTreeMap::new(),
-        pre_state,
-        post_state,
-        Some(result),
-        &RecordedSnapshots::new(),
+        FixedStateFrame::new(pre_state, post_state, Some(result), &RecordedSnapshots::new()),
         spec_definitions,
         &std::collections::BTreeSet::new(),
         BTreeMap::new(),
@@ -81,10 +78,12 @@ pub(in crate::surface) fn lower_outcome_proposition_with_assumptions(
         assumptions,
         &values,
         &array_refs,
-        pre_state,
-        post_state,
-        Some(result),
-        &RecordedSnapshots::new(),
+        FixedStateFrame::new(
+            pre_state,
+            post_state,
+            Some(result),
+            &RecordedSnapshots::new(),
+        ),
         spec_definitions,
     )
 }
@@ -109,10 +108,7 @@ pub(in crate::surface) fn lower_outcome_proposition_with_recorded_snapshots(
         &assumptions,
         &values,
         &array_refs,
-        pre_state,
-        post_state,
-        Some(result),
-        recorded_snapshots,
+        FixedStateFrame::new(pre_state, post_state, Some(result), recorded_snapshots),
         spec_definitions,
     )
 }

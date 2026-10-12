@@ -889,10 +889,7 @@ fn check_pure_structural_induction(
         &parameter_expression,
         &context.values,
         &context.array_refs,
-        &state,
-        &state,
-        None,
-        &RecordedSnapshots::new(),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         spec_definitions,
     )
     .map_err(|message| ClickError::new(format!("`{claim_label}`: {message}")))?;
@@ -1019,10 +1016,7 @@ fn check_pure_structural_induction(
                         &symbolic,
                         &branch_context.values,
                         &branch_context.array_refs,
-                        &state,
-                        &state,
-                        None,
-                        &RecordedSnapshots::new(),
+                        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
                         spec_definitions,
                     )
                     .map_err(|message| ClickError::new(format!("`{claim_label}`: {message}")))?;
@@ -3370,10 +3364,7 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
         array_refs,
         algebraic_values,
         integer_values,
-        &state,
-        &state,
-        None,
-        &RecordedSnapshots::new(),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         spec_definitions,
         &BTreeSet::new(),
         BTreeMap::new(),
@@ -3420,10 +3411,7 @@ fn lower_pure_theorem_proposition_with_opaque_calls(
         &PureFactContext::new(),
         values,
         array_refs,
-        &state,
-        &state,
-        None,
-        &RecordedSnapshots::new(),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         spec_definitions,
         opaque_click_functions,
     )
@@ -3451,17 +3439,13 @@ fn lower_pure_theorem_proposition_opaque(
         assumptions,
         values,
         array_refs,
-        &state,
-        &state,
-        None,
-        &RecordedSnapshots::new(),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         spec_definitions,
         &opaque,
     )
     .map_err(|error| format!("pure theorem `{theorem_name}`: {error}"))
 }
 
-#[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 mod tests {
     use super::*;

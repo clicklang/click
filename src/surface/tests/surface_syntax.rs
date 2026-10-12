@@ -2403,10 +2403,7 @@ fn records_checked_surface_forms_for_lowered_propositions() {
         &PureFactContext::new(),
         &values,
         &BTreeMap::new(),
-        &state,
-        &state,
-        None,
-        &RecordedSnapshots::new(),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         SpecDefinitions::new(&predicates, &functions),
     )
     .expect("surface proposition should lower");

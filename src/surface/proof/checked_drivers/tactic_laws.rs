@@ -332,10 +332,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
             &exit_surface,
             available_pure_facts,
             ParameterBinding::new(parsed_function.parameters(), arguments),
-            &initial_state,
-            state,
-            None,
-            &execution.presentation.recorded_snapshots,
+            FixedStateFrame::new(&initial_state, state, None, &execution.presentation.recorded_snapshots),
             SpecDefinitions::new(predicate_environment, click_function_environment),
         )
         .map_err(|message| {

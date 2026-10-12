@@ -4803,10 +4803,12 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
             lowering_condition,
             pure_facts,
             ParameterBinding::new(parameters, arguments),
-            proof_context.old_reference_state(&execution.core.frontier, &execution.core.state),
-            &execution.core.state,
-            None,
-            &execution.presentation.recorded_snapshots,
+            FixedStateFrame::new(
+                proof_context.old_reference_state(&execution.core.frontier, &execution.core.state),
+                &execution.core.state,
+                None,
+                &execution.presentation.recorded_snapshots,
+            ),
             SpecDefinitions::new(predicate_environment, click_function_environment),
         ) {
             let surface_fact = if value {
@@ -4869,10 +4871,12 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
         lowering_condition,
         pure_facts,
         ParameterBinding::new(parameters, arguments),
-        proof_context.old_reference_state(&execution.core.frontier, &execution.core.state),
-        &execution.core.state,
-        None,
-        &execution.presentation.recorded_snapshots,
+        FixedStateFrame::new(
+            proof_context.old_reference_state(&execution.core.frontier, &execution.core.state),
+            &execution.core.state,
+            None,
+            &execution.presentation.recorded_snapshots,
+        ),
         SpecDefinitions::new(predicate_environment, click_function_environment),
     )
     .map_err(|message| {

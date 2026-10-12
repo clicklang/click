@@ -519,12 +519,9 @@ impl<'a> Proof<'a> {
             view.tactic_index,
             self.facts(),
             view.parameter_binding,
-            view.pre_state,
-            view.state,
-            view.result,
+            view.fixed_state,
             self.local_integer_values(),
             &algebraic_values,
-            view.recorded_snapshots,
             view.surface_propositions,
             &unfolded_predicates,
             view.effect_facts,
@@ -576,12 +573,14 @@ impl<'a> Proof<'a> {
             context.tactic_index,
             self.facts(),
             context.parameter_binding(),
-            &pre_state,
-            &execution.core.state,
-            None,
+            FixedStateFrame::new(
+                &pre_state,
+                &execution.core.state,
+                None,
+                &execution.presentation.recorded_snapshots,
+            ),
             self.local_integer_values(),
             &algebraic_values,
-            &execution.presentation.recorded_snapshots,
             &execution.presentation.surface_propositions,
             &execution.core.unfolded_predicates,
             &execution.core.effect_facts,
@@ -645,7 +644,7 @@ impl<'a> Proof<'a> {
             self.proposition_goal("`choose` requires a proposition goal")?;
         }
         if choice.name == "result"
-            || view.state.locals().contains_name(&choice.name)
+            || view.fixed_state.state.locals().contains_name(&choice.name)
             || self.state().locals().values.contains_key(&choice.name)
         {
             return Err(self.step_error(format!("`{}` is already in scope", choice.name)));
@@ -828,7 +827,7 @@ impl<'a> Proof<'a> {
                             || context.theorem_context.integer_values.get(name).is_some()
                     }
                     ProofContext::FixedState(context) => {
-                        context.state.locals().contains_name(name)
+                        context.fixed_state.state.locals().contains_name(name)
                             || context
                                 .parameter_binding
                                 .parameters
@@ -1034,10 +1033,12 @@ impl<'a> Proof<'a> {
                         &validation_surface,
                         self.facts().assumptions(),
                         view.parameter_binding,
-                        view.pre_state,
-                        view.pre_state,
-                        None,
-                        view.recorded_snapshots,
+                        FixedStateFrame::new(
+                            view.fixed_state.pre_state,
+                            view.fixed_state.pre_state,
+                            None,
+                            view.fixed_state.recorded_snapshots,
+                        ),
                         view.spec_definitions,
                     )
                     .map_err(|message| self.step_error(message))?;
@@ -1177,7 +1178,8 @@ impl<'a> Proof<'a> {
         let Some(entry_state) = context.constants.function_entry_state.as_ref() else {
             return Ok(None);
         };
-        let source_snapshot = crate::kernel::CMemorySnapshotIdentity::of(view.pre_state.memory());
+        let source_snapshot =
+            crate::kernel::CMemorySnapshotIdentity::of(view.fixed_state.pre_state.memory());
         if source_snapshot != crate::kernel::CMemorySnapshotIdentity::of(entry_state.memory()) {
             return Ok(None);
         }
@@ -1257,10 +1259,12 @@ impl<'a> Proof<'a> {
                         &validation_surface,
                         self.facts().assumptions(),
                         view.parameter_binding,
-                        view.pre_state,
-                        view.pre_state,
-                        None,
-                        view.recorded_snapshots,
+                        FixedStateFrame::new(
+                            view.fixed_state.pre_state,
+                            view.fixed_state.pre_state,
+                            None,
+                            view.fixed_state.recorded_snapshots,
+                        ),
                         view.spec_definitions,
                     )
                     .map_err(|message| {
@@ -1509,9 +1513,10 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             view.parameter_binding.parameters,
             &values,
-            view.state.memory(),
+            view.fixed_state.state.memory(),
         );
-        let (values, array_refs) = contract_environment_at_state(&values, &array_refs, view.state);
+        let (values, array_refs) =
+            contract_environment_at_state(&values, &array_refs, view.fixed_state.state);
         let checked_witness = ProofWitness::single(
             witness.name().to_string(),
             self.substitute_fixed_state_locals_in_expression(witness.value())?,
@@ -1545,9 +1550,9 @@ impl<'a> Proof<'a> {
                 &values,
                 &array_refs,
                 algebraic_values,
-                view.pre_state,
-                view.state,
-                view.recorded_snapshots,
+                view.fixed_state.pre_state,
+                view.fixed_state.state,
+                view.fixed_state.recorded_snapshots,
                 view.spec_definitions,
             )
             .map_err(|message| {
@@ -1593,12 +1598,12 @@ impl<'a> Proof<'a> {
             view.tactic_index,
             &values,
             &array_refs,
-            view.pre_state,
-            view.state,
-            view.result,
+            view.fixed_state.pre_state,
+            view.fixed_state.state,
+            view.fixed_state.result,
             self.facts().assumptions(),
             view.spec_definitions,
-            view.recorded_snapshots,
+            view.fixed_state.recorded_snapshots,
         )?;
         let goal = apply_witness_tactic(
             &checked_witness,
@@ -1777,10 +1782,7 @@ impl<'a> Proof<'a> {
             &values,
             &arrays,
             algebraic_values,
-            &state,
-            &state,
-            None,
-            &RecordedSnapshots::new(),
+            FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
             context.spec_definitions,
             &BTreeSet::new(),
         )
@@ -2152,10 +2154,7 @@ impl<'a> Proof<'a> {
                 &values,
                 &arrays,
                 algebraic_values,
-                &state,
-                &state,
-                None,
-                &RecordedSnapshots::new(),
+                FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
                 context.spec_definitions,
                 &BTreeSet::new(),
             )
@@ -2190,10 +2189,13 @@ impl<'a> Proof<'a> {
             let array_refs = array_refs_for_parameters(
                 view.parameter_binding.parameters,
                 &parameter_values,
-                view.state.memory(),
+                view.fixed_state.state.memory(),
             );
-            let (values, array_refs) =
-                contract_environment_at_state(&parameter_values, &array_refs, view.state);
+            let (values, array_refs) = contract_environment_at_state(
+                &parameter_values,
+                &array_refs,
+                view.fixed_state.state,
+            );
             let algebraic_values = contract_expression_referenced_names(&argument)
                 .into_iter()
                 .filter_map(|name| {
@@ -2209,10 +2211,7 @@ impl<'a> Proof<'a> {
                 &values,
                 &array_refs,
                 algebraic_values,
-                view.pre_state,
-                view.state,
-                view.result,
-                view.recorded_snapshots,
+                view.fixed_state,
                 view.spec_definitions,
                 &BTreeSet::new(),
             )
@@ -2378,7 +2377,7 @@ impl<'a> Proof<'a> {
                 crate::surface::diagnostics::value_naming_tables(&context.theorem_context.values)
             }
             ProofContext::FixedState(context) => with_locals(
-                context.state,
+                context.fixed_state.state,
                 context.parameter_binding.parameters,
                 context.parameter_binding.arguments,
             ),
@@ -2439,10 +2438,7 @@ impl<'a> Proof<'a> {
                     &self.substitute_fixed_state_locals_in_proposition(surface_equality)?,
                     self.facts().assumptions(),
                     view.parameter_binding,
-                    view.pre_state,
-                    view.state,
-                    view.result,
-                    view.recorded_snapshots,
+                    view.fixed_state,
                     view.spec_definitions,
                 )
                 .map_err(|message| {
@@ -2468,7 +2464,7 @@ impl<'a> Proof<'a> {
         );
         self.finish_rewrite(goal, equality, surface_equality, || {
             let (mut parameters, mut arguments) =
-                crate::surface::diagnostics::local_naming_tables(view.state);
+                crate::surface::diagnostics::local_naming_tables(view.fixed_state.state);
             parameters.extend(view.parameter_binding.parameters.iter().cloned());
             arguments.extend(view.parameter_binding.arguments.iter().cloned());
             (parameters, arguments)
@@ -2755,10 +2751,12 @@ impl<'a> Proof<'a> {
             tactic_index: context.tactic_index,
             effect_facts: &execution.core.effect_facts,
             parameter_binding: context.parameter_binding(),
-            pre_state: context.old_reference_state(&execution.core.frontier, &execution.core.state),
-            state: &execution.core.state,
-            result: None,
-            recorded_snapshots: &execution.presentation.recorded_snapshots,
+            fixed_state: FixedStateFrame::new(
+                context.old_reference_state(&execution.core.frontier, &execution.core.state),
+                &execution.core.state,
+                None,
+                &execution.presentation.recorded_snapshots,
+            ),
             surface_propositions: &execution.presentation.surface_propositions,
             spec_definitions: SpecDefinitions::new(
                 context.spec_definitions.predicates,
@@ -3136,10 +3134,12 @@ impl<'a> Proof<'a> {
                 OutcomeEffectContext::Frontier => &execution.core.effect_facts,
             },
             parameter_binding: context.parameter_binding(),
-            pre_state: context.old_reference_state(&execution.core.frontier, &execution.core.state),
-            state: &data.core.state,
-            result: Some(data.core.result.as_ref()),
-            recorded_snapshots: &data.recorded_snapshots,
+            fixed_state: FixedStateFrame::new(
+                context.old_reference_state(&execution.core.frontier, &execution.core.state),
+                &data.core.state,
+                Some(data.core.result.as_ref()),
+                &data.recorded_snapshots,
+            ),
             surface_propositions: &data.surface_propositions,
             spec_definitions: SpecDefinitions::new(
                 context.spec_definitions.predicates,
@@ -3584,7 +3584,7 @@ impl<'a> Proof<'a> {
         };
         let mut ranges = Vec::new();
         let mut held_any = false;
-        for fact in context.state.resources().facts() {
+        for fact in context.fixed_state.state.resources().facts() {
             let CResource::Memory(range) = fact.resource() else {
                 continue;
             };
@@ -3750,10 +3750,7 @@ impl<'a> Proof<'a> {
             self.facts(),
             view.effect_facts,
             view.parameter_binding,
-            view.pre_state,
-            view.state,
-            view.result,
-            view.recorded_snapshots,
+            view.fixed_state,
             view.surface_propositions,
             view.spec_definitions,
         )?;
@@ -3831,10 +3828,12 @@ impl<'a> Proof<'a> {
             self.facts(),
             &execution.core.effect_facts,
             context.parameter_binding(),
-            &pre_state,
-            &execution.core.state,
-            None,
-            &execution.presentation.recorded_snapshots,
+            FixedStateFrame::new(
+                &pre_state,
+                &execution.core.state,
+                None,
+                &execution.presentation.recorded_snapshots,
+            ),
             &execution.presentation.surface_propositions,
             context.spec_definitions,
         )?;

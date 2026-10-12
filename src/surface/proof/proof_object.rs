@@ -1516,7 +1516,7 @@ impl Proof<'_> {
                 // Fixed-state subproofs have no execution branch, but their
                 // live locals still name the values their goals contain.
                 // CState shares its persistent storage; no environment is copied.
-                ProofContext::FixedState(context) => Some(context.state.clone()),
+                ProofContext::FixedState(context) => Some(context.fixed_state.state.clone()),
                 _ => None,
             },
             None,
@@ -1543,10 +1543,7 @@ pub(in crate::surface::proof) struct FixedStateOperationView<'p> {
     pub(in crate::surface::proof) tactic_index: usize,
     pub(in crate::surface::proof) effect_facts: &'p ExecutionFacts,
     pub(in crate::surface::proof) parameter_binding: ParameterBinding<'p>,
-    pub(in crate::surface::proof) pre_state: &'p CState,
-    pub(in crate::surface::proof) state: &'p CState,
-    pub(in crate::surface::proof) result: Option<&'p CValue>,
-    pub(in crate::surface::proof) recorded_snapshots: &'p RecordedSnapshots,
+    pub(in crate::surface::proof) fixed_state: FixedStateFrame<'p>,
     pub(in crate::surface::proof) surface_propositions: &'p SurfacePropositionMap,
     pub(in crate::surface::proof) spec_definitions: SpecDefinitions<'p>,
     pub(in crate::surface::proof) theorem_environment: &'p TheoremEnvironment,
@@ -1563,10 +1560,7 @@ impl<'p> FixedStateOperationView<'p> {
             tactic_index: context.tactic_index,
             effect_facts: &context.effect_facts,
             parameter_binding: context.parameter_binding,
-            pre_state: context.pre_state,
-            state: context.state,
-            result: context.result,
-            recorded_snapshots: context.recorded_snapshots,
+            fixed_state: context.fixed_state,
             surface_propositions: context.surface_propositions,
             spec_definitions: SpecDefinitions::new(
                 context.spec_definitions.predicates,

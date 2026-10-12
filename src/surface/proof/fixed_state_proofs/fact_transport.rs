@@ -205,10 +205,7 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
     available: &ProofFacts,
     effect_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: &CState,
-    result: Option<&CValue>,
-    recorded_snapshots: &RecordedSnapshots,
+    fixed_state: FixedStateFrame<'_>,
     surface_propositions: &SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<CheckedFixedStateFactTransport, ClickError> {
@@ -225,10 +222,7 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
             available,
             effect_facts,
             parameter_binding,
-            pre_state,
-            state,
-            result,
-            recorded_snapshots,
+            fixed_state,
             surface_propositions,
             spec_definitions,
         )
@@ -245,10 +239,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
     available: &ProofFacts,
     effect_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: &CState,
-    result: Option<&CValue>,
-    recorded_snapshots: &RecordedSnapshots,
+    fixed_state: FixedStateFrame<'_>,
     surface_propositions: &SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<CheckedFixedStateFactTransport, ClickError> {
@@ -268,10 +259,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                 surface_premise,
                 available.assumptions(),
                 parameter_binding,
-                pre_state,
-                state,
-                result,
-                recorded_snapshots,
+                fixed_state,
                 spec_definitions,
             )
             .map_err(|message| {
@@ -296,7 +284,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                 describe_missing_pure_fact(
                     &premise,
                     &available,
-                    state.resources().facts(),
+                    fixed_state.state.resources().facts(),
                     parameter_binding,
                     effect_facts,
                 )
@@ -327,10 +315,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             surface_source,
             available.assumptions(),
             parameter_binding,
-            pre_state,
-            state,
-            result,
-            recorded_snapshots,
+            fixed_state,
             spec_definitions,
         )
         .map_err(|message| {
@@ -356,10 +341,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             surface_source,
             &symbolic_assumptions,
             parameter_binding,
-            pre_state,
-            state,
-            result,
-            recorded_snapshots,
+            fixed_state,
             spec_definitions,
         )
         .unwrap_or(ordinary_source)
@@ -367,7 +349,8 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         ordinary_source
     };
     let explicit_assumptions = assumptions_from_propositions(&explicit_premises);
-    let resource_facts = state
+    let resource_facts = fixed_state
+        .state
         .resources()
         .observable_facts_assuming_valid(&explicit_assumptions);
     let selected_assumptions = explicit_premises
@@ -384,7 +367,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
     // the stricter rule that `using` must establish its logical source. A
     // selected outcome snapshot that materializes to true likewise checks the
     // equivalent symbolic source used for frame transport.
-    if !(result.is_some() && (available.contains(&source) || concrete_source_is_true))
+    if !(fixed_state.result.is_some() && (available.contains(&source) || concrete_source_is_true))
         && !holds_without_facts_under_binders(&source)
         && !exact_fact_is_available(&source, &explicit_premises)
         && !separation_bridged_fact_is_available(
@@ -403,7 +386,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             describe_missing_pure_fact(
                 &source,
                 &available,
-                state.resources().facts(),
+                fixed_state.state.resources().facts(),
                 parameter_binding,
                 effect_facts,
             )
@@ -428,10 +411,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         surface_target,
         &target_lowering_assumptions,
         parameter_binding,
-        pre_state,
-        state,
-        result,
-        recorded_snapshots,
+        fixed_state,
         spec_definitions,
     )
     .map_err(|message| {
@@ -567,13 +547,15 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                 "explicit fact transport: quantified frame",
                 || {
                     let with_resources = |assumptions: PureFactContext| {
-                        state
+                        fixed_state
+                            .state
                             .resources()
                             .observable_facts_assuming_valid(&assumptions)
                             .into_iter()
                             .fold(assumptions, PureFactContext::assume_proposition)
                     };
-                    let resource_facts = state
+                    let resource_facts = fixed_state
+                        .state
                         .resources()
                         .observable_facts_assuming_valid(available.assumptions());
                     let mut context_variables = std::collections::BTreeSet::new();
@@ -597,7 +579,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                             certified_fact_transport_reaches_through(
                                 from,
                                 to,
-                                state.memory(),
+                                fixed_state.state.memory(),
                                 &assumptions.clone().assume_proposition(from.clone()),
                                 &transition_facts,
                             )
@@ -618,7 +600,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         if !certified_fact_transport_reaches_through(
             &source,
             &target,
-            state.memory(),
+            fixed_state.state.memory(),
             &transport_assumptions,
             &transition_facts,
         ) {
@@ -631,7 +613,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             let framed = crate::kernel::closure_memoized_fact_check(
                 crate::kernel::ClosureFactCheck::QuantifiedFrame,
                 &[&source, &target],
-                Some(state.memory()),
+                Some(fixed_state.state.memory()),
                 available.assumptions(),
                 effect_facts,
                 || match quantified_frame() {
@@ -647,9 +629,10 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             }
             let read_refusal =
                 frame_refusal.unwrap_or(crate::kernel::QuantifiedFrameRefusal::NothingToFrame);
-            let mut labels = render::SnapshotLabels::with_state(parameter_binding, state);
-            labels.source_state(pre_state, "function.entry".into());
-            for (selector, snapshot) in recorded_snapshots.recent(16) {
+            let mut labels =
+                render::SnapshotLabels::with_state(parameter_binding, fixed_state.state);
+            labels.source_state(fixed_state.pre_state, "function.entry".into());
+            for (selector, snapshot) in fixed_state.recorded_snapshots.recent(16) {
                 labels.source_state(snapshot, describe_snapshot_selector(selector));
             }
             let mut rendered = describe_unreachable_fact_transport(

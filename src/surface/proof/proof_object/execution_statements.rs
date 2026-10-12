@@ -2058,10 +2058,7 @@ impl<'a> Proof<'a> {
                 surface_source,
                 facts,
                 context.parameter_binding(),
-                pre_state,
-                state,
-                None,
-                &view.execution.presentation.recorded_snapshots,
+                FixedStateFrame::new(pre_state, state, None, &view.execution.presentation.recorded_snapshots),
                 context.spec_definitions,
             )
             .map_err(|message| {
@@ -2088,10 +2085,7 @@ impl<'a> Proof<'a> {
                 surface_target,
                 facts,
                 context.parameter_binding(),
-                pre_state,
-                state,
-                None,
-                &view.execution.presentation.recorded_snapshots,
+                FixedStateFrame::new(pre_state, state, None, &view.execution.presentation.recorded_snapshots),
                 context.spec_definitions,
             )
             .map_err(|message| {

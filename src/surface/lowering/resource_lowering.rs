@@ -2223,10 +2223,7 @@ fn evaluate_resource_argument_with_snapshot(
             assumptions,
             values,
             array_refs,
-            entry_state,
-            state,
-            result,
-            &RecordedSnapshots::new(),
+            FixedStateFrame::new(entry_state, state, result, &RecordedSnapshots::new()),
             SpecDefinitions::new(
                 &PredicateEnvironment::new(&[]),
                 &ClickFunctionEnvironment::new(&[]),
@@ -2274,10 +2271,7 @@ fn evaluate_resource_argument_with_snapshot(
                 assumptions,
                 values,
                 array_refs,
-                &candidate_entry,
-                state,
-                result,
-                &RecordedSnapshots::new(),
+                FixedStateFrame::new(&candidate_entry, state, result, &RecordedSnapshots::new()),
                 SpecDefinitions::new(
                     &PredicateEnvironment::new(&[]),
                     &ClickFunctionEnvironment::new(&[]),

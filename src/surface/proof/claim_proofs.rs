@@ -1446,10 +1446,7 @@ fn close_claim_directly_from_outcome<'a>(
                     root.facts().assumptions(),
                     &values,
                     &array_refs,
-                    pre_state,
-                    state,
-                    Some(value),
-                    &RecordedSnapshots::new(),
+                    FixedStateFrame::new(pre_state, state, Some(value), &RecordedSnapshots::new()),
                     spec_definitions,
                     &BTreeSet::new(),
                 )

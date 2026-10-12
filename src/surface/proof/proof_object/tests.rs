@@ -320,10 +320,7 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
                     &surface,
                     &PureFactContext::new(),
                     ParameterBinding::new(parsed_function.parameters(), &arguments),
-                    &old_state,
-                    state,
-                    None,
-                    &snapshots,
+                    FixedStateFrame::new(&old_state, state, None, &snapshots),
                     SpecDefinitions::new(&predicates, &functions),
                 )
                 .expect("the selected load bound should lower")
@@ -835,10 +832,7 @@ fn both_preserves_written_body_across_an_inserted_guard_and_reverifies_cold() {
         &body_surface,
         &PureFactContext::new(),
         ParameterBinding::new(parsed_function.parameters(), &[]),
-        &state,
-        &state,
-        None,
-        &snapshots,
+        FixedStateFrame::new(&state, &state, None, &snapshots),
         SpecDefinitions::new(&predicates, &functions),
     )
     .expect("body should lower");
@@ -2401,10 +2395,7 @@ fn fixed_state_proposition_unfold_checks_the_same_retained_step() {
             surface,
             &PureFactContext::new(),
             parameter_binding,
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("fixed-state proposition should lower")
@@ -2449,10 +2440,7 @@ fn fixed_state_proposition_unfold_checks_the_same_retained_step() {
             0,
             &facts,
             parameter_binding,
-            &state,
-            &state,
-            Some(&result),
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, Some(&result), &recorded_snapshots),
             &surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
@@ -2544,10 +2532,7 @@ fn result_aware_fixed_state_goal_focus_shares_facts_and_checks_assumption() {
             0,
             &facts,
             ParameterBinding::default(),
-            &state,
-            &state,
-            Some(&result),
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, Some(&result), &recorded_snapshots),
             &surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
@@ -2633,10 +2618,7 @@ fn loop_entry_simp_keeps_checked_unspellable_assumptions_and_scales() {
             0,
             &facts,
             ParameterBinding::new(parsed.parameters(), &arguments),
-            &state,
-            &state,
-            Some(&result),
-            &snapshots,
+            FixedStateFrame::new(&state, &state, Some(&result), &snapshots),
             &surfaces,
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
@@ -2673,10 +2655,7 @@ fn loop_entry_simp_keeps_checked_unspellable_assumptions_and_scales() {
             0,
             &facts[..facts.len() - 1],
             ParameterBinding::new(parsed.parameters(), &arguments),
-            &state,
-            &state,
-            Some(&result),
-            &snapshots,
+            FixedStateFrame::new(&state, &state, Some(&result), &snapshots),
             &surfaces,
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
@@ -2716,10 +2695,7 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
             0,
             &facts,
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            Some(&result),
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, Some(&result), &recorded_snapshots),
             &surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
@@ -2864,10 +2840,7 @@ fn fixed_state_context_have_goal_does_not_reuse_an_older_surface_lowering() {
         0,
         std::slice::from_ref(&older),
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        &state,
-        &state,
-        Some(&result),
-        &recorded_snapshots,
+        FixedStateFrame::new(&state, &state, Some(&result), &recorded_snapshots),
         &surface_propositions,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
         &theorem_environment,
@@ -2975,10 +2948,7 @@ fn execution_frontier_rejects_proposition_closers_transactionally() {
         0,
         &[],
         ParameterBinding::default(),
-        &state,
-        &state,
-        None,
-        &recorded_snapshots,
+        FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
         &surface_propositions,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
         &theorem_environment,
@@ -3147,10 +3117,7 @@ fn universal_intro_binding_is_local_to_its_focused_sibling_branch() {
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &[]),
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("test proposition should lower")
@@ -3250,11 +3217,8 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
             &facts,
             goal.clone(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             None,
-            None,
-            &recorded_snapshots,
             &surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
@@ -3697,10 +3661,7 @@ fn fixed_state_extract_uses_persistent_proper_conjunct_membership() {
         &surface,
         &PureFactContext::new(),
         ParameterBinding::default(),
-        &state,
-        &state,
-        None,
-        &recorded_snapshots,
+        FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("constant equality should lower");
@@ -3942,10 +3903,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("test proposition should lower")
@@ -4121,10 +4079,7 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
         &premise,
         &PureFactContext::new(),
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        &state,
-        &state,
-        None,
-        &RecordedSnapshots::new(),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the exact premise should lower");
@@ -4132,10 +4087,7 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
         &conclusion,
         &PureFactContext::new(),
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        &state,
-        &state,
-        None,
-        &RecordedSnapshots::new(),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the theorem conclusion should lower");
@@ -4491,10 +4443,7 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
         &synthesized_surface,
         &PureFactContext::new(),
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        &state,
-        &state,
-        None,
-        &RecordedSnapshots::new(),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the existential requirement should lower");
@@ -4515,10 +4464,7 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
         &actual_surface,
         &PureFactContext::new(),
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        &state,
-        &state,
-        None,
-        &RecordedSnapshots::new(),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the named contract requirement should lower");
@@ -4806,10 +4752,7 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
             &source_surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            None,
-            &RecordedSnapshots::new(),
+            FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("qualified static source cell should lower");
@@ -4837,10 +4780,7 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
                     &surface,
                     &PureFactContext::new(),
                     ParameterBinding::new(parsed_function.parameters(), &arguments),
-                    &state,
-                    &state,
-                    None,
-                    &RecordedSnapshots::new(),
+                    FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
                     SpecDefinitions::new(&predicate_environment, &click_function_environment),
                 )
                 .expect("qualified static bound should lower"),
@@ -4971,10 +4911,7 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
         &premise,
         &PureFactContext::new(),
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        &state,
-        &state,
-        None,
-        &RecordedSnapshots::new(),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the exact premise should lower");
@@ -5113,10 +5050,7 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
         &premise,
         &PureFactContext::new(),
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        &state,
-        &state,
-        None,
-        &RecordedSnapshots::new(),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the exact theorem premise should lower");
@@ -5422,10 +5356,7 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
         &premise,
         &PureFactContext::new(),
         parameter_binding,
-        &state,
-        &state,
-        None,
-        &recorded_snapshots,
+        FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the exact premise should lower");
@@ -5433,10 +5364,7 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
         &conclusion,
         &PureFactContext::new(),
         parameter_binding,
-        &state,
-        &state,
-        None,
-        &recorded_snapshots,
+        FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the theorem conclusion should lower");
@@ -5592,10 +5520,7 @@ fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
         &have.proposition,
         &PureFactContext::new(),
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        &state,
-        &state,
-        Some(&result),
-        &recorded_snapshots,
+        FixedStateFrame::new(&state, &state, Some(&result), &recorded_snapshots),
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the result-aware goal should lower");
@@ -5608,11 +5533,8 @@ fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
             &facts,
             kernel_goal.clone(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            Some(&result),
+            FixedStateFrame::new(&state, &state, Some(&result), &recorded_snapshots),
             None,
-            &recorded_snapshots,
             &surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
@@ -5692,10 +5614,7 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
         surface_premise,
         &PureFactContext::new(),
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        &state,
-        &state,
-        Some(&result),
-        &recorded_snapshots,
+        FixedStateFrame::new(&state, &state, Some(&result), &recorded_snapshots),
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the result-aware theorem premise should lower");
@@ -5713,10 +5632,7 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
             0,
             &facts,
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            Some(&result),
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, Some(&result), &recorded_snapshots),
             &surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
@@ -5814,10 +5730,7 @@ fn fixed_state_transport_can_follow_another_checked_step() {
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &[]),
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("test proposition should lower")
@@ -5838,10 +5751,7 @@ fn fixed_state_transport_can_follow_another_checked_step() {
             0,
             &facts,
             ParameterBinding::new(parsed_function.parameters(), &[]),
-            &state,
-            &state,
-            Some(&result),
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, Some(&result), &recorded_snapshots),
             &surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
@@ -6379,10 +6289,7 @@ fn fixed_state_predecessor_simp_builds_checked_scope_with_logarithmic_local_upda
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("the fixed fixed-state proposition should lower")
@@ -6475,10 +6382,7 @@ fn fixed_state_equality_simp_builds_its_recorded_path_with_logarithmic_local_upd
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("the fixed equality should lower")
@@ -6565,10 +6469,7 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("the fixed equality should lower")
@@ -6669,10 +6570,7 @@ fn fixed_state_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("the fixed signed comparison should lower")
@@ -6864,10 +6762,7 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("the fixed increment proposition should lower")
@@ -7203,10 +7098,7 @@ fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("the selected fixed-state proposition should lower")
@@ -7344,10 +7236,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             surface,
             &PureFactContext::new(),
             parameter_binding,
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("the fixed increment-lower-bound proposition should lower")
@@ -7614,10 +7503,7 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_theorem_application() {
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("the fixed equality proposition should lower")
@@ -7810,10 +7696,7 @@ fn ge_and_not_gt_equality_simp_retains_one_indexed_theorem_application() {
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("the fixed equality proposition should lower")
@@ -7915,10 +7798,7 @@ fn le_and_neq_strict_simp_retains_one_indexed_theorem_application() {
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("the fixed strict-order proposition should lower")
@@ -8033,10 +7913,7 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("the symbolic arithmetic proposition should lower")
@@ -8202,10 +8079,7 @@ fn selected_disjunction_simp_retains_checked_cases_and_scales() {
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("the fixed proposition should lower")
@@ -8343,10 +8217,7 @@ fn surface_structural_simp_retains_recursive_child_proofs_and_scales() {
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("the fixed structural proposition should lower")
@@ -8586,10 +8457,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            &state,
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("the fixed predecessor proposition should lower")
@@ -10048,10 +9916,7 @@ fn execution_transport_forks_without_copying_unrelated_state() {
         &surface,
         &PureFactContext::new(),
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        &state,
-        &state,
-        None,
-        &RecordedSnapshots::new(),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("constant equality should lower at the frontier position");
@@ -10169,10 +10034,7 @@ fn execution_transport_search_returns_checked_successors_and_scales() {
         &source,
         &PureFactContext::new(),
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        &state,
-        &state,
-        None,
-        &RecordedSnapshots::new(),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the exact transport source should lower");
@@ -11355,10 +11217,7 @@ fn execution_proof_cases_split_is_logarithmic_in_unrelated_facts() {
         &disjunction,
         &PureFactContext::new(),
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        &state,
-        &state,
-        None,
-        &RecordedSnapshots::new(),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the exact cases disjunction should lower");
@@ -14509,10 +14368,7 @@ fn snapshot_premise_synthesis_seeks_near_anchor_without_scanning_history() {
             &surface,
             &PureFactContext::new(),
             parameter_binding,
-            &state,
-            &state,
-            None,
-            &snapshots,
+            FixedStateFrame::new(&state, &state, None, &snapshots),
             SpecDefinitions::new(
                 &PredicateEnvironment::new(&[]),
                 &ClickFunctionEnvironment::new(&[]),

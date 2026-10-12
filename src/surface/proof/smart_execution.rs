@@ -374,10 +374,7 @@ impl<'a> Proof<'a> {
         self.select_theorem_application_step_in_fixed_state(
             application,
             context.parameter_binding,
-            context.pre_state,
-            context.state,
-            context.result,
-            context.recorded_snapshots,
+            context.fixed_state,
             context.surface_propositions,
             context.spec_definitions,
             context.theorem_environment,
@@ -405,10 +402,12 @@ impl<'a> Proof<'a> {
         self.select_theorem_application_step_in_fixed_state(
             application,
             context.parameter_binding(),
-            pre_state,
-            &execution.core.state,
-            None,
-            &execution.presentation.recorded_snapshots,
+            FixedStateFrame::new(
+                pre_state,
+                &execution.core.state,
+                None,
+                &execution.presentation.recorded_snapshots,
+            ),
             &execution.presentation.surface_propositions,
             context.spec_definitions,
             context.theorem_environment,
@@ -595,10 +594,7 @@ impl<'a> Proof<'a> {
                 self.select_theorem_application_step_in_fixed_state(
                     application,
                     view.parameter_binding,
-                    view.pre_state,
-                    view.state,
-                    view.result,
-                    view.recorded_snapshots,
+                    view.fixed_state,
                     view.surface_propositions,
                     view.spec_definitions,
                     view.theorem_environment,
@@ -627,15 +623,11 @@ impl<'a> Proof<'a> {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn select_theorem_application_step_in_fixed_state(
         &self,
         application: &TheoremApplication,
         parameter_binding: ParameterBinding<'_>,
-        pre_state: &CState,
-        state: &CState,
-        result: Option<&CValue>,
-        recorded_snapshots: &RecordedSnapshots,
+        fixed_state: FixedStateFrame<'_>,
         surface_propositions: &SurfacePropositionMap,
         spec_definitions: SpecDefinitions<'_>,
         theorem_environment: &TheoremEnvironment,
@@ -651,9 +643,13 @@ impl<'a> Proof<'a> {
                 error.message
             ))
         })?;
-        let array_refs =
-            array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
-        let (values, array_refs) = contract_environment_at_state(&values, &array_refs, state);
+        let array_refs = array_refs_for_parameters(
+            parameter_binding.parameters,
+            &values,
+            fixed_state.state.memory(),
+        );
+        let (values, array_refs) =
+            contract_environment_at_state(&values, &array_refs, fixed_state.state);
         let integer_values = crate::persistent::PersistentMap::default();
         let algebraic_values = application
             .arguments
@@ -672,16 +668,17 @@ impl<'a> Proof<'a> {
             values: &values,
             array_refs: &array_refs,
             algebraic_values: &algebraic_values,
-            pre_state,
-            post_state: state,
-            result,
-            recorded_snapshots,
+            pre_state: fixed_state.pre_state,
+            post_state: fixed_state.state,
+            result: fixed_state.result,
+            recorded_snapshots: fixed_state.recorded_snapshots,
             integer_values: &integer_values,
             pointer_element_widths: parameter_pointer_element_widths(parameter_binding.parameters),
         };
         let unfolded_predicates = self.active_unfolded_predicates();
         let mut lowering_assumptions = self.facts().assumptions().clone();
-        for fact in state
+        for fact in fixed_state
+            .state
             .resources()
             .observable_facts_assuming_valid(self.facts().assumptions())
         {
@@ -791,7 +788,7 @@ impl<'a> Proof<'a> {
                     self.facts(),
                     &lowering_assumptions,
                     parameter_binding,
-                    state,
+                    fixed_state.state,
                     spec_definitions,
                 ) {
                     Ok(surface) => {
@@ -810,13 +807,13 @@ impl<'a> Proof<'a> {
                 .cloned()
                 .collect::<Vec<_>>();
             if let Some(candidate) =
-                synthesize_surface_proposition(&matched, parameter_binding, state)
+                synthesize_surface_proposition(&matched, parameter_binding, fixed_state.state)
                 && !candidates.contains(&candidate)
             {
                 candidates.push(candidate);
             }
             if let Some(candidate) =
-                synthesize_surface_proposition(&requirement, parameter_binding, state)
+                synthesize_surface_proposition(&requirement, parameter_binding, fixed_state.state)
                 && !candidates.contains(&candidate)
             {
                 candidates.push(candidate);
@@ -847,10 +844,7 @@ impl<'a> Proof<'a> {
                         candidate,
                         &lowering_assumptions,
                         parameter_binding,
-                        pre_state,
-                        state,
-                        result,
-                        recorded_snapshots,
+                        fixed_state,
                         spec_definitions,
                     );
                     direct.as_ref().is_ok_and(matches_requirement)
@@ -1136,10 +1130,12 @@ impl<'a> Proof<'a> {
                 self.facts().assumptions(),
                 context.values,
                 context.array_refs,
-                context.pre_state,
-                context.post_state,
-                context.result,
-                context.recorded_snapshots,
+                FixedStateFrame::new(
+                    context.pre_state,
+                    context.post_state,
+                    context.result,
+                    context.recorded_snapshots,
+                ),
                 spec_definitions,
             )
             .map_err(|message| self.step_error(message))?;
@@ -1167,10 +1163,12 @@ impl<'a> Proof<'a> {
                 &explicit,
                 context.values,
                 context.array_refs,
-                context.pre_state,
-                context.post_state,
-                context.result,
-                context.recorded_snapshots,
+                FixedStateFrame::new(
+                    context.pre_state,
+                    context.post_state,
+                    context.result,
+                    context.recorded_snapshots,
+                ),
                 spec_definitions,
             )
             .map_err(|message| {

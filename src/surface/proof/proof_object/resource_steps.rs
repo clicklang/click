@@ -881,10 +881,7 @@ impl<'a> Proof<'a> {
                             .unwrap_or_default(),
                     ),
                     &context.theorem_context.integer_values,
-                    &state,
-                    &state,
-                    None,
-                    &RecordedSnapshots::new(),
+                    FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
                     context.spec_definitions,
                     BTreeMap::new(),
                 )
@@ -894,10 +891,10 @@ impl<'a> Proof<'a> {
                 let array_refs = array_refs_for_parameters(
                     context.parameter_binding.parameters,
                     &values,
-                    context.state.memory(),
+                    context.fixed_state.state.memory(),
                 );
                 let (values, array_refs) =
-                    contract_environment_at_state(&values, &array_refs, context.state);
+                    contract_environment_at_state(&values, &array_refs, context.fixed_state.state);
                 self.apply_function_unfold_in_state(
                     application,
                     premises,
@@ -905,10 +902,7 @@ impl<'a> Proof<'a> {
                     array_refs,
                     local_algebraic_values(BTreeMap::new()),
                     self.local_integer_values(),
-                    context.pre_state,
-                    context.state,
-                    context.result,
-                    context.recorded_snapshots,
+                    context.fixed_state,
                     context.spec_definitions,
                     crate::surface::lowering::parameter_pointer_element_widths(
                         context.parameter_binding.parameters,
@@ -923,10 +917,10 @@ impl<'a> Proof<'a> {
                 let array_refs = array_refs_for_parameters(
                     view.parameter_binding.parameters,
                     &values,
-                    view.state.memory(),
+                    view.fixed_state.state.memory(),
                 );
                 let (values, array_refs) =
-                    contract_environment_at_state(&values, &array_refs, view.state);
+                    contract_environment_at_state(&values, &array_refs, view.fixed_state.state);
                 self.apply_function_unfold_in_state(
                     application,
                     premises,
@@ -934,10 +928,7 @@ impl<'a> Proof<'a> {
                     array_refs,
                     local_algebraic_values(BTreeMap::new()),
                     self.local_integer_values(),
-                    view.pre_state,
-                    view.state,
-                    view.result,
-                    view.recorded_snapshots,
+                    view.fixed_state,
                     view.spec_definitions,
                     crate::surface::lowering::parameter_pointer_element_widths(
                         view.parameter_binding.parameters,
@@ -968,10 +959,12 @@ impl<'a> Proof<'a> {
                     array_refs,
                     local_algebraic_values(BTreeMap::new()),
                     self.local_integer_values(),
-                    pre_state,
-                    &execution.core.state,
-                    None,
-                    &execution.presentation.recorded_snapshots,
+                    FixedStateFrame::new(
+                        pre_state,
+                        &execution.core.state,
+                        None,
+                        &execution.presentation.recorded_snapshots,
+                    ),
                     context.spec_definitions,
                     crate::surface::lowering::parameter_pointer_element_widths(
                         context.parsed_function.parameters(),
@@ -993,10 +986,7 @@ impl<'a> Proof<'a> {
             String,
             crate::kernel::SpecIntegerExpression,
         >,
-        pre_state: &CState,
-        state: &CState,
-        result: Option<&CValue>,
-        recorded_snapshots: &RecordedSnapshots,
+        fixed_state: FixedStateFrame<'_>,
         spec_definitions: SpecDefinitions<'_>,
         parameter_pointer_element_widths: BTreeMap<String, u32>,
     ) -> Result<CheckedFocusedTransition, ClickError> {
@@ -1066,10 +1056,7 @@ impl<'a> Proof<'a> {
                 &array_refs,
                 &algebraic_values,
                 integer_values,
-                pre_state,
-                state,
-                result,
-                recorded_snapshots,
+                fixed_state,
                 spec_definitions,
                 &BTreeSet::from([application.name.clone()]),
                 parameter_pointer_element_widths.clone(),
@@ -1097,10 +1084,7 @@ impl<'a> Proof<'a> {
                 &array_refs,
                 &algebraic_values,
                 integer_values,
-                pre_state,
-                state,
-                result,
-                recorded_snapshots,
+                fixed_state,
                 spec_definitions,
                 &parameter_pointer_element_widths,
             )?;
@@ -1149,10 +1133,7 @@ impl<'a> Proof<'a> {
                                 &array_refs,
                                 &algebraic_values,
                                 integer_values,
-                                pre_state,
-                                state,
-                                result,
-                                recorded_snapshots,
+                                fixed_state,
                                 spec_definitions,
                                 &opaque_calls,
                                 parameter_pointer_element_widths.clone(),
@@ -1283,10 +1264,7 @@ impl<'a> Proof<'a> {
                         &array_refs,
                         &algebraic_values,
                         integer_values,
-                        pre_state,
-                        state,
-                        result,
-                        recorded_snapshots,
+                        fixed_state,
                         spec_definitions,
                         &opaque_calls,
                         parameter_pointer_element_widths,
@@ -1358,10 +1336,7 @@ impl<'a> Proof<'a> {
             String,
             crate::kernel::SpecIntegerExpression,
         >,
-        pre_state: &CState,
-        state: &CState,
-        result: Option<&CValue>,
-        recorded_snapshots: &RecordedSnapshots,
+        fixed_state: FixedStateFrame<'_>,
         spec_definitions: SpecDefinitions<'_>,
         parameter_pointer_element_widths: &BTreeMap<String, u32>,
     ) -> Result<Proposition, ClickError> {
@@ -1381,10 +1356,7 @@ impl<'a> Proof<'a> {
                     array_refs,
                     algebraic_values,
                     integer_values,
-                    pre_state,
-                    state,
-                    result,
-                    recorded_snapshots,
+                    fixed_state,
                     spec_definitions,
                     &opaque_calls,
                     parameter_pointer_element_widths.clone(),
@@ -1794,10 +1766,7 @@ impl<'a> Proof<'a> {
                             &surface,
                             checked.facts.assumptions(),
                             context.parameter_binding,
-                            context.pre_state,
-                            context.state,
-                            context.result,
-                            context.recorded_snapshots,
+                            context.fixed_state,
                             context.spec_definitions,
                         )
                         .map_err(|message| self.step_error(message))?
@@ -1813,10 +1782,7 @@ impl<'a> Proof<'a> {
                             &surface,
                             checked.facts.assumptions(),
                             view.parameter_binding,
-                            view.pre_state,
-                            view.state,
-                            view.result,
-                            view.recorded_snapshots,
+                            view.fixed_state,
                             view.spec_definitions,
                         )
                         .map_err(|message| self.step_error(message))?
@@ -1907,10 +1873,12 @@ impl<'a> Proof<'a> {
                                 context.parsed_function.parameters(),
                                 context.arguments,
                             ),
-                            pre_state,
-                            &execution.core.state,
-                            None,
-                            &execution.presentation.recorded_snapshots,
+                            FixedStateFrame::new(
+                                pre_state,
+                                &execution.core.state,
+                                None,
+                                &execution.presentation.recorded_snapshots,
+                            ),
                             context.spec_definitions,
                         )
                         .map_err(|message| {

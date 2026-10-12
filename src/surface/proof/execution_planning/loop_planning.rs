@@ -411,10 +411,12 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
             environment.parsed_function.parameters(),
             environment.arguments,
         ),
-        environment.initial_state,
-        &context.state,
-        None,
-        &recorded_snapshots,
+        FixedStateFrame::new(
+            environment.initial_state,
+            &context.state,
+            None,
+            &recorded_snapshots,
+        ),
         &context.surface_propositions,
         environment.spec_definitions,
         environment.theorem_environment,
@@ -1106,10 +1108,12 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 environment.parsed_function.parameters(),
                 environment.arguments,
             ),
-            environment.initial_state,
-            preservation.state(),
-            None,
-            &recorded_snapshots,
+            FixedStateFrame::new(
+                environment.initial_state,
+                preservation.state(),
+                None,
+                &recorded_snapshots,
+            ),
             environment.spec_definitions,
         )
     {
