@@ -16786,7 +16786,174 @@ impl Parser {
         }
     }
 
+    /// Lowers embedded calls in a statement. Only the arms that nest
+    /// statements recurse; every other statement is lowered by
+    /// [`Self::lower_flat_statement_calls`], kept out of line so that each
+    /// level of statement nesting costs one small frame, not the
+    /// locals of every statement kind (zlib's `DO16` nests deeply).
     fn lower_statement_calls(
+        &mut self,
+        statement: C0Statement,
+    ) -> Result<C0Statement, C0SyntaxError> {
+        match statement {
+            C0Statement::Seq(first, second) => Ok(C0Statement::Seq(
+                Box::new(self.lower_statement_calls(*first)?),
+                Box::new(self.lower_statement_calls(*second)?),
+            )),
+            C0Statement::If {
+                condition,
+                then_branch,
+                else_branch,
+                site,
+            } => {
+                let (prefix, condition) = self.lower_expression_calls(condition)?;
+                let then_branch = self.lower_statement_calls(*then_branch)?;
+                let else_branch = self.lower_statement_calls(*else_branch)?;
+                Ok(prepend_statements(
+                    prefix,
+                    C0Statement::If {
+                        condition,
+                        then_branch: Box::new(then_branch),
+                        else_branch: Box::new(else_branch),
+                        site,
+                    },
+                ))
+            }
+            C0Statement::While {
+                condition,
+                body,
+                site,
+            } => {
+                let (prefix, condition) = self.lower_expression_calls(condition)?;
+                let body = self.lower_statement_calls(*body)?;
+                if !prefix.is_empty() {
+                    let guard = prepend_statements(
+                        prefix,
+                        C0Statement::If {
+                            condition: C0Expression::Not(Box::new(condition)),
+                            then_branch: Box::new(C0Statement::Break),
+                            else_branch: Box::new(C0Statement::Skip),
+                            site: site.clone(),
+                        },
+                    );
+                    return Ok(C0Statement::While {
+                        condition: C0Expression::Int32Literal(1),
+                        body: Box::new(C0Statement::Seq(Box::new(guard), Box::new(body))),
+                        site,
+                    });
+                }
+                Ok(C0Statement::While {
+                    condition,
+                    body: Box::new(body),
+                    site,
+                })
+            }
+            C0Statement::DoWhile {
+                condition,
+                body,
+                site,
+            } => {
+                let (prefix, condition) = self.lower_expression_calls(condition)?;
+                let body = self.lower_statement_calls(*body)?;
+                if prefix.is_empty() {
+                    return Ok(C0Statement::DoWhile {
+                        condition,
+                        body: Box::new(body),
+                        site,
+                    });
+                }
+                // A do-while condition runs after the first body execution,
+                // and `continue` must also reach it. Use an unconditional
+                // while shell whose tail checks the lowered condition. A
+                // continue gets the same call-and-check sequence before
+                // returning to the shell head; nested loops keep their own
+                // continue targets.
+                let body =
+                    prepend_condition_check_before_loop_continues(body, &prefix, &condition)?;
+                let condition_check = prepend_statements(
+                    prefix,
+                    C0Statement::If {
+                        condition: C0Expression::Not(Box::new(condition)),
+                        then_branch: Box::new(C0Statement::Break),
+                        else_branch: Box::new(C0Statement::Skip),
+                        site: site.clone(),
+                    },
+                );
+                Ok(C0Statement::While {
+                    condition: C0Expression::Int32Literal(1),
+                    body: Box::new(C0Statement::Seq(Box::new(body), Box::new(condition_check))),
+                    site,
+                })
+            }
+            C0Statement::For {
+                initializer,
+                condition,
+                step,
+                body,
+                site,
+            } => {
+                let (prefix, condition) = self.lower_expression_calls(condition)?;
+                let initializer = self.lower_statement_calls(*initializer)?;
+                let step = self.lower_statement_calls(*step)?;
+                let body = self.lower_statement_calls(*body)?;
+                if !prefix.is_empty() {
+                    let guard = prepend_statements(
+                        prefix,
+                        C0Statement::If {
+                            condition: C0Expression::Not(Box::new(condition)),
+                            then_branch: Box::new(C0Statement::Break),
+                            else_branch: Box::new(C0Statement::Skip),
+                            site: site.clone(),
+                        },
+                    );
+                    return Ok(C0Statement::For {
+                        initializer: Box::new(initializer),
+                        condition: C0Expression::Int32Literal(1),
+                        step: Box::new(step),
+                        body: Box::new(C0Statement::Seq(Box::new(guard), Box::new(body))),
+                        site,
+                    });
+                }
+                Ok(C0Statement::For {
+                    initializer: Box::new(initializer),
+                    condition,
+                    step: Box::new(step),
+                    body: Box::new(body),
+                    site,
+                })
+            }
+            C0Statement::Switch {
+                expression,
+                cases,
+                site,
+            } => {
+                let (prefix, expression) = self.lower_expression_calls(expression)?;
+                let cases = cases
+                    .into_iter()
+                    .map(|case| {
+                        Ok(C0SwitchCase {
+                            value: case.value,
+                            body: Box::new(self.lower_statement_calls(*case.body)?),
+                        })
+                    })
+                    .collect::<Result<Vec<_>, C0SyntaxError>>()?;
+                Ok(prepend_statements(
+                    prefix,
+                    C0Statement::Switch {
+                        expression,
+                        cases,
+                        site,
+                    },
+                ))
+            }
+            statement => self.lower_flat_statement_calls(statement),
+        }
+    }
+
+    /// [`Self::lower_statement_calls`] for a statement that nests no
+    /// statement.
+    #[inline(never)]
+    fn lower_flat_statement_calls(
         &mut self,
         statement: C0Statement,
     ) -> Result<C0Statement, C0SyntaxError> {
@@ -16969,10 +17136,6 @@ impl Parser {
                     C0Statement::HeapFree { pointer, site },
                 ))
             }
-            C0Statement::Seq(first, second) => Ok(C0Statement::Seq(
-                Box::new(self.lower_statement_calls(*first)?),
-                Box::new(self.lower_statement_calls(*second)?),
-            )),
             C0Statement::Return(expression, site) => {
                 let (prefix, expression) = self.lower_expression_calls(expression)?;
                 Ok(prepend_statements(
@@ -17058,151 +17221,13 @@ impl Parser {
                     },
                 ))
             }
-            C0Statement::If {
-                condition,
-                then_branch,
-                else_branch,
-                site,
-            } => {
-                let (prefix, condition) = self.lower_expression_calls(condition)?;
-                let then_branch = self.lower_statement_calls(*then_branch)?;
-                let else_branch = self.lower_statement_calls(*else_branch)?;
-                Ok(prepend_statements(
-                    prefix,
-                    C0Statement::If {
-                        condition,
-                        then_branch: Box::new(then_branch),
-                        else_branch: Box::new(else_branch),
-                        site,
-                    },
-                ))
-            }
-            C0Statement::While {
-                condition,
-                body,
-                site,
-            } => {
-                let (prefix, condition) = self.lower_expression_calls(condition)?;
-                let body = self.lower_statement_calls(*body)?;
-                if !prefix.is_empty() {
-                    let guard = prepend_statements(
-                        prefix,
-                        C0Statement::If {
-                            condition: C0Expression::Not(Box::new(condition)),
-                            then_branch: Box::new(C0Statement::Break),
-                            else_branch: Box::new(C0Statement::Skip),
-                            site: site.clone(),
-                        },
-                    );
-                    return Ok(C0Statement::While {
-                        condition: C0Expression::Int32Literal(1),
-                        body: Box::new(C0Statement::Seq(Box::new(guard), Box::new(body))),
-                        site,
-                    });
-                }
-                Ok(C0Statement::While {
-                    condition,
-                    body: Box::new(body),
-                    site,
-                })
-            }
-            C0Statement::DoWhile {
-                condition,
-                body,
-                site,
-            } => {
-                let (prefix, condition) = self.lower_expression_calls(condition)?;
-                let body = self.lower_statement_calls(*body)?;
-                if prefix.is_empty() {
-                    return Ok(C0Statement::DoWhile {
-                        condition,
-                        body: Box::new(body),
-                        site,
-                    });
-                }
-                // A do-while condition runs after the first body execution,
-                // and `continue` must also reach it. Use an unconditional
-                // while shell whose tail checks the lowered condition. A
-                // continue gets the same call-and-check sequence before
-                // returning to the shell head; nested loops keep their own
-                // continue targets.
-                let body =
-                    prepend_condition_check_before_loop_continues(body, &prefix, &condition)?;
-                let condition_check = prepend_statements(
-                    prefix,
-                    C0Statement::If {
-                        condition: C0Expression::Not(Box::new(condition)),
-                        then_branch: Box::new(C0Statement::Break),
-                        else_branch: Box::new(C0Statement::Skip),
-                        site: site.clone(),
-                    },
-                );
-                Ok(C0Statement::While {
-                    condition: C0Expression::Int32Literal(1),
-                    body: Box::new(C0Statement::Seq(Box::new(body), Box::new(condition_check))),
-                    site,
-                })
-            }
-            C0Statement::For {
-                initializer,
-                condition,
-                step,
-                body,
-                site,
-            } => {
-                let (prefix, condition) = self.lower_expression_calls(condition)?;
-                let initializer = self.lower_statement_calls(*initializer)?;
-                let step = self.lower_statement_calls(*step)?;
-                let body = self.lower_statement_calls(*body)?;
-                if !prefix.is_empty() {
-                    let guard = prepend_statements(
-                        prefix,
-                        C0Statement::If {
-                            condition: C0Expression::Not(Box::new(condition)),
-                            then_branch: Box::new(C0Statement::Break),
-                            else_branch: Box::new(C0Statement::Skip),
-                            site: site.clone(),
-                        },
-                    );
-                    return Ok(C0Statement::For {
-                        initializer: Box::new(initializer),
-                        condition: C0Expression::Int32Literal(1),
-                        step: Box::new(step),
-                        body: Box::new(C0Statement::Seq(Box::new(guard), Box::new(body))),
-                        site,
-                    });
-                }
-                Ok(C0Statement::For {
-                    initializer: Box::new(initializer),
-                    condition,
-                    step: Box::new(step),
-                    body: Box::new(body),
-                    site,
-                })
-            }
-            C0Statement::Switch {
-                expression,
-                cases,
-                site,
-            } => {
-                let (prefix, expression) = self.lower_expression_calls(expression)?;
-                let cases = cases
-                    .into_iter()
-                    .map(|case| {
-                        Ok(C0SwitchCase {
-                            value: case.value,
-                            body: Box::new(self.lower_statement_calls(*case.body)?),
-                        })
-                    })
-                    .collect::<Result<Vec<_>, C0SyntaxError>>()?;
-                Ok(prepend_statements(
-                    prefix,
-                    C0Statement::Switch {
-                        expression,
-                        cases,
-                        site,
-                    },
-                ))
+            C0Statement::Seq(..)
+            | C0Statement::If { .. }
+            | C0Statement::While { .. }
+            | C0Statement::DoWhile { .. }
+            | C0Statement::For { .. }
+            | C0Statement::Switch { .. } => {
+                unreachable!("nested statements are lowered by lower_statement_calls")
             }
         }
     }
