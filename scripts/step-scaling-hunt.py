@@ -226,8 +226,256 @@ int32 caller(int32* flags, int32* data, int32 k, {params}) {{
 SHAPES.update({'aliases': aliases, 'order_chain': order_chain, 'deep_chain': deep_chain})
 
 
+def branches(n):
+    ifs = "\n".join(f"""    if (a{i} > 0) {{
+        s = s + 1;
+    }}""" for i in range(n))
+    params = ", ".join(f"int32 a{i}" for i in range(n))
+    c = f"""int32 caller({params}) {{
+    int32 s;
+    s = 0;
+{ifs}
+    return s;
+}}"""
+    arms = "\n".join(
+        f"""        branch ensuring {{
+            fact 0 <= s;
+            fact s <= {i + 1};
+        }} then {{
+            step();
+            have 0 <= s by {{ simp(); }}
+            have s <= {i + 1} by {{ simp(); }}
+        }} else {{
+            have s <= {i + 1} by {{ simp(); }}
+        }}"""
+        for i in range(n)
+    )
+    click = f"""verifying "hunt.c";
+
+int32 caller({params}) {{
+    ensures result >= 0 by {{
+        step();
+        step();
+{arms}
+        step();
+        simp();
+    }}
+}}"""
+    return mdtest(f"branches {n}", c, click)
+
+
+def straight_line(n):
+    decls = "\n".join(f"    int32 x{i};" for i in range(1, n + 1))
+    assigns = "\n".join(f"    x{i} = x{i - 1} + 1;" for i in range(1, n + 1))
+    c = f"""int32 caller(int32 x0) {{
+{decls}
+{assigns}
+    return x{n};
+}}"""
+    steps = "\n".join("    step();" for _ in range(2 * n + 1))
+    click = f"""verifying "hunt.c";
+
+int32 caller(int32 x0) {{
+    requires 0 <= x0;
+    requires x0 <= 1000000;
+    ensures result == x0 + {n};
+}} by {{
+{steps}
+    simp();
+}}"""
+    return mdtest(f"straight line {n}", c, click)
+
+
+def loops(n):
+    body = "\n".join(f"""    i = 0;
+    while (i < 4) {{
+        p[i] = {k};
+        i = i + 1;
+    }}""" for k in range(n))
+    c = f"""int32 caller(int32* p) {{
+    int32 i;
+{body}
+    return 0;
+}}"""
+    proof = "\n".join(
+        """    step();
+    loop { decreases 4 - i; invariant i >= 0; invariant i <= 4; }"""
+        for _ in range(n)
+    )
+    click = f"""verifying "hunt.c";
+
+int32 caller(int32* p) {{
+    owns p[0..4];
+    ensures result == 0;
+}} by {{
+    step();
+{proof}
+    step();
+    simp();
+}}"""
+    return mdtest(f"loops {n}", c, click)
+
+
+def const_array(n):
+    stores = "\n".join(f"    data[{i}] = {i};" for i in range(n))
+    c = f"""int32 caller(int32* data) {{
+    int32 first;
+{stores}
+    first = data[0];
+    return first;
+}}"""
+    steps = "\n".join("    step();" for _ in range(n + 3))
+    click = f"""verifying "hunt.c";
+
+int32 caller(int32* data) {{
+    owns data[0..{n}];
+    ensures result == 0;
+}} by {{
+{steps}
+    simp();
+}}"""
+    return mdtest(f"constant-index array {n}", c, click)
+
+
+def many_callees(n):
+    callees_c = "\n\n".join(f"""void touch{i}(int32* data) {{
+    return;
+}}""" for i in range(n))
+    calls = "\n".join(f"    touch{i}(data);" for i in range(n))
+    c = f"""{callees_c}
+
+int32 caller(int32* data, struct box* b) {{
+    b->v = 5;
+{calls}
+    return b->v;
+}}"""
+    c = "struct box {\n    int32 v;\n};\n\n" + c
+    callees_click = "\n\n".join(f"""void touch{i}(int32* data) {{
+    owns data[0..4];
+}} by {{
+    execute();
+    simp();
+}}""" for i in range(n))
+    steps = "\n".join("    step();" for _ in range(n + 2))
+    click = f"""verifying "hunt.c";
+
+{callees_click}
+
+int32 caller(int32* data, struct box* b) {{
+    owns data[0..4];
+    owns *b;
+    ensures result == 5;
+}} by {{
+{steps}
+    simp();
+}}"""
+    return mdtest(f"many callees {n}", c, click)
+
+
+def unrelated_facts(n):
+    params = ", ".join(f"int32 a{i}" for i in range(n))
+    requires = "\n".join(f"    requires a{i} < {i + 1000};" for i in range(n))
+    c = f"""struct box {{
+    int32 v;
+}};
+
+{TOUCH_C}
+
+int32 caller(int32* flags, int32* data, int32 k, struct box* b, {params}) {{
+    b->v = 5;
+    touch(flags, data, k);
+    return b->v;
+}}"""
+    click = f"""verifying "hunt.c";
+
+{TOUCH_CLICK}
+
+int32 caller(int32* flags, int32* data, int32 k, struct box* b, {params}) {{
+    owns flags[0..k];
+    owns data[0..k];
+    owns *b;
+{requires}
+    ensures result == 5;
+}} by {{
+    step();
+    step();
+    step();
+    simp();
+}}"""
+    return mdtest(f"unrelated facts {n}", c, click)
+
+
+SHAPES.update(
+    {
+        "branches": branches,
+        "straight_line": straight_line,
+        "loops": loops,
+        "const_array": const_array,
+        "many_callees": many_callees,
+        "unrelated_facts": unrelated_facts,
+    }
+)
+
+
+
+def heap_objects(n):
+    decls = "\n".join(f"    struct box* p{i};" for i in range(n))
+    makes = "\n".join(f"    p{i} = make_box();\n    p{i}->v = {i};" for i in range(n))
+    drops = "\n".join(f"    drop_box(p{i});" for i in range(n))
+    c = f"""struct box {{
+    int32 v;
+}};
+
+int32 caller() {{
+{decls}
+{makes}
+{drops}
+    return 0;
+}}"""
+    make_proof = "\n".join(
+        f"""    step();
+    unfold(boxed(p{i}));
+    step();
+    fold(boxed(p{i}));"""
+        for i in range(n)
+    )
+    steps = "\n".join("    step();" for _ in range(n))
+    click = f"""verifying "hunt.c";
+
+resource boxed(p: struct box*) {{
+    owns *p;
+}}
+
+extern struct box* make_box() {{
+    produces boxed(result);
+}}
+
+extern void drop_box(struct box* p) {{
+    consumes boxed(p);
+}}
+
+int32 caller() {{
+    ensures result == 0;
+}} by {{
+{steps}
+{make_proof}
+{steps}
+    step();
+    simp();
+}}"""
+    return mdtest(f"heap objects {n}", c, click)
+
+
+SHAPES["heap_objects"] = heap_objects
+
 
 STEP = re.compile(r"click timing: tactic caller\S* \d+ step class simple .* ([0-9.]+)s work (\d+)")
+# Proof-structure tactics: `loop` clauses (classified smart) and `branch`
+# and other containers (control). A `loop` clause over one small loop should
+# not grow with the loops before it either.
+CONTROL = re.compile(
+    r"click timing: tactic caller\S* \d+ (loop|branch|\w+) class (?:control|smart) .* ([0-9.]+)s work (\d+)"
+)
 
 
 def verify(path):
@@ -237,12 +485,10 @@ def verify(path):
         capture_output=True,
         text=True,
     )
-    steps = [
-        (int(m.group(2)), float(m.group(1)))
-        for m in map(STEP.match, (out.stdout + out.stderr).splitlines())
-        if m
-    ]
-    return out.returncode == 0, steps, out.stdout + out.stderr
+    lines = (out.stdout + out.stderr).splitlines()
+    steps = [(int(m.group(2)), float(m.group(1))) for m in map(STEP.match, lines) if m]
+    controls = [int(m.group(3)) for m in map(CONTROL.match, lines) if m and m.group(1) in ("loop", "branch")]
+    return out.returncode == 0, steps, controls, out.stdout + out.stderr
 
 
 def main():
@@ -256,33 +502,42 @@ def main():
     directory = tempfile.mkdtemp(prefix="click-step-hunt.")
     for shape in args.shapes:
         largest = []
+        largest_control = []
         mean_ms = []
         for n in sizes:
             path = os.path.join(directory, f"{shape}_{n}.md")
             with open(path, "w") as handle:
                 handle.write(SHAPES[shape](n))
-            ok, steps, output = verify(path)
+            ok, steps, controls, output = verify(path)
             if not ok or not steps:
                 print(f"{shape:18} N={n:<4} did not verify: {path}")
                 print(output[-1500:])
                 break
             work = [units for units, _ in steps]
             largest.append(max(work))
+            largest_control.append(max(controls, default=0))
             mean_ms.append(1000 * sum(seconds for _, seconds in steps) / len(steps))
             print(
                 f"{shape:18} N={n:<4} steps={len(steps):<4} total={sum(work):<9} "
                 f"largest step={max(work):<7} mean step={mean_ms[-1]:.2f} ms"
+                + (f" largest control={max(controls)}" if controls else "")
             )
         if len(largest) >= 2:
             # Work is deterministic. Time also catches costs no work budget
             # charges, such as hashing; it is compared from the second size,
             # past the first sizes' fixed overhead, and is noisier.
-            growth = largest[-1] / largest[0]
-            timing = mean_ms[-1] / mean_ms[min(1, len(mean_ms) - 1)]
-            verdict = "GROWS" if growth > 2 or timing > 2 else "flat"
+            # Compare from the second size: the smallest pays fixed costs
+            # (the first call, the first store into a block) that later
+            # sizes share, which reads as growth.
+            first = min(1, len(largest) - 2)
+            growth = largest[-1] / largest[first]
+            timing = mean_ms[-1] / mean_ms[first]
+            control = largest_control[-1] / largest_control[first] if largest_control[first] else 1
+            verdict = "GROWS" if max(growth, timing, control) > 2 else "flat"
             print(
-                f"{shape:18} largest step x{growth:.1f}, mean step time x{timing:.1f} "
-                f"from N={sizes[0]} to N={sizes[len(largest) - 1]}: {verdict}"
+                f"{shape:18} largest step x{growth:.1f}, mean step time x{timing:.1f}, "
+                f"largest loop/branch x{control:.1f} from N={sizes[first]} to "
+                f"N={sizes[len(largest) - 1]}: {verdict}"
             )
     print(f"generated mdtests: {directory}")
 
