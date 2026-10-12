@@ -17542,3 +17542,28 @@ int32 f(struct cell* root) {
         verify_c0_sources(&expanded, &[("guarded.c", c)]).unwrap();
     }
 }
+
+#[test]
+fn unfolding_proof_bound_integer_arguments_expands_and_rechecks() {
+    for (path, label) in [
+        (
+            "mdtests/unfold_function_after_integer_intro.md",
+            "unfold_an_introduced_integer.ensures_0",
+        ),
+        (
+            "mdtests/unfold_function_after_integer_obtain.md",
+            "unfold_an_obtained_integer.ensures_0",
+        ),
+    ] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(path);
+        let text = std::fs::read_to_string(&path).unwrap();
+        let fixture = crate::cli::parse_mdtest(&path, &text).unwrap();
+        let source = fixture
+            .click_source
+            .unwrap()
+            .replace("unfold(black", "have d == d by auto; unfold(black");
+        verify_c0_sources(&source, &[]).unwrap();
+        let expanded = expand_c0_claim_source_by_label(&source, &[], label).unwrap();
+        verify_c0_sources(&expanded, &[]).unwrap();
+    }
+}

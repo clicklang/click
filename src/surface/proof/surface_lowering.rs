@@ -720,6 +720,12 @@ impl<'a> Proof<'a> {
         names
             .into_iter()
             .filter_map(|name| {
+                // A checked Integer binder keeps its specification sort.
+                // `intro`'s generic surface cursor can also name the variable
+                // as a C fragment; that spelling must not override this binding.
+                if self.local_integer_values().get(&name).is_some() {
+                    return Some((name.clone(), ContractExpression::Binding(name)));
+                }
                 surface_bindings
                     .and_then(|bindings| bindings.get(&name))
                     .or_else(|| self.local_binding(&name))
