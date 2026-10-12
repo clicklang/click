@@ -6,7 +6,7 @@
 use super::*;
 
 /// A two-operand arithmetic [`Bitvector32Term`] operator.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) enum BitvectorBinaryOp {
     Add,
     Subtract,
@@ -46,7 +46,7 @@ pub(crate) enum BitvectorBinaryOp {
 }
 
 /// A one-operand arithmetic [`Bitvector32Term`] operator or conversion.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) enum BitvectorUnaryOp {
     BitwiseNot,
     Int64BitwiseNot,
@@ -228,6 +228,51 @@ impl Bitvector32Term {
 }
 
 impl BitvectorBinaryOp {
+    /// The C spelling of the operator. Signed and unsigned forms of one
+    /// operation share a spelling.
+    pub(crate) fn c_symbol(self) -> &'static str {
+        match self {
+            Self::Add
+            | Self::Int64Add
+            | Self::UInt64Add
+            | Self::Float32(CFloatBinaryOperator::Add)
+            | Self::Float64(CFloatBinaryOperator::Add) => "+",
+            Self::Subtract
+            | Self::Int64Subtract
+            | Self::UInt64Subtract
+            | Self::Float32(CFloatBinaryOperator::Subtract)
+            | Self::Float64(CFloatBinaryOperator::Subtract) => "-",
+            Self::Multiply
+            | Self::Int64Multiply
+            | Self::UInt64Multiply
+            | Self::Float32(CFloatBinaryOperator::Multiply)
+            | Self::Float64(CFloatBinaryOperator::Multiply) => "*",
+            Self::Divide
+            | Self::UnsignedDivide
+            | Self::Int64Divide
+            | Self::UInt64Divide
+            | Self::Float32(CFloatBinaryOperator::Divide)
+            | Self::Float64(CFloatBinaryOperator::Divide) => "/",
+            Self::Remainder
+            | Self::UnsignedRemainder
+            | Self::Int64Remainder
+            | Self::UInt64Remainder => "%",
+            Self::ShiftLeft | Self::Int64ShiftLeft | Self::UInt64ShiftLeft => "<<",
+            Self::ArithmeticShiftRight
+            | Self::LogicalShiftRight
+            | Self::Int64ArithmeticShiftRight
+            | Self::UInt64LogicalShiftRight => ">>",
+            Self::BitwiseAnd | Self::Int64BitwiseAnd | Self::UInt64BitwiseAnd => "&",
+            Self::BitwiseOr | Self::Int64BitwiseOr | Self::UInt64BitwiseOr => "|",
+            Self::BitwiseXor | Self::Int64BitwiseXor | Self::UInt64BitwiseXor => "^",
+        }
+    }
+
+    /// Whether the operator is a float operation.
+    pub(crate) fn is_float(self) -> bool {
+        matches!(self, Self::Float32(_) | Self::Float64(_))
+    }
+
     /// Whether the operator is one of the original 32-bit word operators.
     /// Some traversals rebuild exactly these as bare nodes.
     pub(crate) fn is_bitvector32(self) -> bool {
@@ -353,6 +398,11 @@ impl BitvectorBinaryOp {
 }
 
 impl BitvectorUnaryOp {
+    /// Whether the operator is a float negation.
+    pub(crate) fn is_float(self) -> bool {
+        matches!(self, Self::Float32Negate | Self::Float64Negate)
+    }
+
     /// Whether the operator is the original 32-bit word complement. Some
     /// traversals rebuild exactly the 32-bit word operators as bare nodes.
     pub(crate) fn is_bitvector32(self) -> bool {

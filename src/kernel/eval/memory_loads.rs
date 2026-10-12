@@ -2874,22 +2874,14 @@ fn substitute_load_variables(
     term: &Bitvector32Term,
     facts: &mut Option<&mut ExecutionFacts>,
 ) -> Bitvector32Term {
-    type BinaryConstructor = fn(Box<Bitvector32Term>, Box<Bitvector32Term>) -> Bitvector32Term;
-    type UnaryConstructor = fn(Box<Bitvector32Term>) -> Bitvector32Term;
     type ConditionConstructor = fn(Box<Bitvector32Term>, Box<Bitvector32Term>) -> ConditionTerm;
 
     enum Task<'a> {
         VisitTerm(&'a Bitvector32Term),
         VisitCondition(&'a ConditionTerm),
         VisitOffset(&'a PointerOffsetTerm),
-        RebuildBinary(BinaryConstructor),
-        RebuildUnary(UnaryConstructor),
-        RebuildMachineCast(MachineIntegerType, MachineIntegerType),
-        RebuildFloatUnary(bool),
-        RebuildFloatBinary {
-            is_float64: bool,
-            operator: CFloatBinaryOperator,
-        },
+        RebuildBinary(BitvectorBinaryOp),
+        RebuildUnary(BitvectorUnaryOp),
         RebuildIf,
         RebuildPureFunction {
             name: String,
@@ -2914,19 +2906,6 @@ fn substitute_load_variables(
         },
     }
 
-    macro_rules! visit_binary {
-        ($constructor:path, $left:expr, $right:expr, $tasks:expr) => {{
-            $tasks.push(Task::RebuildBinary($constructor));
-            $tasks.push(Task::VisitTerm($right));
-            $tasks.push(Task::VisitTerm($left));
-        }};
-    }
-    macro_rules! visit_unary {
-        ($constructor:path, $value:expr, $tasks:expr) => {{
-            $tasks.push(Task::RebuildUnary($constructor));
-            $tasks.push(Task::VisitTerm($value));
-        }};
-    }
     macro_rules! visit_condition_binary {
         ($constructor:path, $left:expr, $right:expr, $tasks:expr) => {{
             $tasks.push(Task::RebuildConditionBinary($constructor));
@@ -2945,15 +2924,6 @@ fn substitute_load_variables(
                 #[cfg(test)]
                 LOAD_SUBSTITUTION_TERM_VISITS.with(|visits| visits.set(visits.get() + 1));
                 match term {
-                    Bitvector32Term::MachineIntegerCast {
-                        value,
-                        source,
-                        destination,
-                    } => {
-                        tasks.push(Task::RebuildMachineCast(*source, *destination));
-                        tasks.push(Task::VisitTerm(value));
-                    }
-
                     Bitvector32Term::Constant(_)
                     | Bitvector32Term::Variable(_)
                     | Bitvector32Term::Int64Constant(_)
@@ -2972,167 +2942,6 @@ fn substitute_load_variables(
                     | Bitvector32Term::IntegerToMachine { .. } => term_results.push(term.clone()),
                     Bitvector32Term::ClickFunctionApplication { .. }
                     | Bitvector32Term::AlgebraicMatch { .. } => term_results.push(term.clone()),
-                    Bitvector32Term::Add(left, right) => {
-                        visit_binary!(Bitvector32Term::Add, left, right, tasks)
-                    }
-                    Bitvector32Term::Subtract(left, right) => {
-                        visit_binary!(Bitvector32Term::Subtract, left, right, tasks)
-                    }
-                    Bitvector32Term::Multiply(left, right) => {
-                        visit_binary!(Bitvector32Term::Multiply, left, right, tasks)
-                    }
-                    Bitvector32Term::Divide(left, right) => {
-                        visit_binary!(Bitvector32Term::Divide, left, right, tasks)
-                    }
-                    Bitvector32Term::UnsignedDivide(left, right) => {
-                        visit_binary!(Bitvector32Term::UnsignedDivide, left, right, tasks)
-                    }
-                    Bitvector32Term::Remainder(left, right) => {
-                        visit_binary!(Bitvector32Term::Remainder, left, right, tasks)
-                    }
-                    Bitvector32Term::UnsignedRemainder(left, right) => {
-                        visit_binary!(Bitvector32Term::UnsignedRemainder, left, right, tasks)
-                    }
-                    Bitvector32Term::ShiftLeft(left, right) => {
-                        visit_binary!(Bitvector32Term::ShiftLeft, left, right, tasks)
-                    }
-                    Bitvector32Term::ArithmeticShiftRight(left, right) => {
-                        visit_binary!(Bitvector32Term::ArithmeticShiftRight, left, right, tasks)
-                    }
-                    Bitvector32Term::LogicalShiftRight(left, right) => {
-                        visit_binary!(Bitvector32Term::LogicalShiftRight, left, right, tasks)
-                    }
-                    Bitvector32Term::BitwiseAnd(left, right) => {
-                        visit_binary!(Bitvector32Term::BitwiseAnd, left, right, tasks)
-                    }
-                    Bitvector32Term::BitwiseOr(left, right) => {
-                        visit_binary!(Bitvector32Term::BitwiseOr, left, right, tasks)
-                    }
-                    Bitvector32Term::BitwiseXor(left, right) => {
-                        visit_binary!(Bitvector32Term::BitwiseXor, left, right, tasks)
-                    }
-                    Bitvector32Term::BitwiseNot(value) => {
-                        visit_unary!(Bitvector32Term::BitwiseNot, value, tasks)
-                    }
-                    Bitvector32Term::Float32Negate(value) => {
-                        tasks.push(Task::RebuildFloatUnary(false));
-                        tasks.push(Task::VisitTerm(value));
-                    }
-                    Bitvector32Term::Float64Negate(value) => {
-                        tasks.push(Task::RebuildFloatUnary(true));
-                        tasks.push(Task::VisitTerm(value));
-                    }
-                    Bitvector32Term::Float32Binary {
-                        operator,
-                        left,
-                        right,
-                    } => {
-                        tasks.push(Task::RebuildFloatBinary {
-                            is_float64: false,
-                            operator: *operator,
-                        });
-                        tasks.push(Task::VisitTerm(right));
-                        tasks.push(Task::VisitTerm(left));
-                    }
-                    Bitvector32Term::Float64Binary {
-                        operator,
-                        left,
-                        right,
-                    } => {
-                        tasks.push(Task::RebuildFloatBinary {
-                            is_float64: true,
-                            operator: *operator,
-                        });
-                        tasks.push(Task::VisitTerm(right));
-                        tasks.push(Task::VisitTerm(left));
-                    }
-                    Bitvector32Term::Int64From32(value) => {
-                        visit_unary!(Bitvector32Term::Int64From32, value, tasks)
-                    }
-                    Bitvector32Term::Int64FromUInt32(value) => {
-                        visit_unary!(Bitvector32Term::Int64FromUInt32, value, tasks)
-                    }
-                    Bitvector32Term::UInt64From32(value) => {
-                        visit_unary!(Bitvector32Term::UInt64From32, value, tasks)
-                    }
-                    Bitvector32Term::UInt32From64(value) => {
-                        visit_unary!(Bitvector32Term::UInt32From64, value, tasks)
-                    }
-                    Bitvector32Term::UInt64FromInt32(value) => {
-                        visit_unary!(Bitvector32Term::UInt64FromInt32, value, tasks)
-                    }
-                    Bitvector32Term::UInt64FromInt64(value) => {
-                        visit_unary!(Bitvector32Term::UInt64FromInt64, value, tasks)
-                    }
-                    Bitvector32Term::Int64BitwiseNot(value) => {
-                        visit_unary!(Bitvector32Term::Int64BitwiseNot, value, tasks)
-                    }
-                    Bitvector32Term::UInt64BitwiseNot(value) => {
-                        visit_unary!(Bitvector32Term::UInt64BitwiseNot, value, tasks)
-                    }
-                    Bitvector32Term::Int64Add(left, right) => {
-                        visit_binary!(Bitvector32Term::Int64Add, left, right, tasks)
-                    }
-                    Bitvector32Term::Int64Subtract(left, right) => {
-                        visit_binary!(Bitvector32Term::Int64Subtract, left, right, tasks)
-                    }
-                    Bitvector32Term::Int64Multiply(left, right) => {
-                        visit_binary!(Bitvector32Term::Int64Multiply, left, right, tasks)
-                    }
-                    Bitvector32Term::Int64Divide(left, right) => {
-                        visit_binary!(Bitvector32Term::Int64Divide, left, right, tasks)
-                    }
-                    Bitvector32Term::Int64Remainder(left, right) => {
-                        visit_binary!(Bitvector32Term::Int64Remainder, left, right, tasks)
-                    }
-                    Bitvector32Term::Int64ShiftLeft(left, right) => {
-                        visit_binary!(Bitvector32Term::Int64ShiftLeft, left, right, tasks)
-                    }
-                    Bitvector32Term::Int64ArithmeticShiftRight(left, right) => visit_binary!(
-                        Bitvector32Term::Int64ArithmeticShiftRight,
-                        left,
-                        right,
-                        tasks
-                    ),
-                    Bitvector32Term::Int64BitwiseAnd(left, right) => {
-                        visit_binary!(Bitvector32Term::Int64BitwiseAnd, left, right, tasks)
-                    }
-                    Bitvector32Term::Int64BitwiseOr(left, right) => {
-                        visit_binary!(Bitvector32Term::Int64BitwiseOr, left, right, tasks)
-                    }
-                    Bitvector32Term::Int64BitwiseXor(left, right) => {
-                        visit_binary!(Bitvector32Term::Int64BitwiseXor, left, right, tasks)
-                    }
-                    Bitvector32Term::UInt64Add(left, right) => {
-                        visit_binary!(Bitvector32Term::UInt64Add, left, right, tasks)
-                    }
-                    Bitvector32Term::UInt64Subtract(left, right) => {
-                        visit_binary!(Bitvector32Term::UInt64Subtract, left, right, tasks)
-                    }
-                    Bitvector32Term::UInt64Multiply(left, right) => {
-                        visit_binary!(Bitvector32Term::UInt64Multiply, left, right, tasks)
-                    }
-                    Bitvector32Term::UInt64Divide(left, right) => {
-                        visit_binary!(Bitvector32Term::UInt64Divide, left, right, tasks)
-                    }
-                    Bitvector32Term::UInt64Remainder(left, right) => {
-                        visit_binary!(Bitvector32Term::UInt64Remainder, left, right, tasks)
-                    }
-                    Bitvector32Term::UInt64ShiftLeft(left, right) => {
-                        visit_binary!(Bitvector32Term::UInt64ShiftLeft, left, right, tasks)
-                    }
-                    Bitvector32Term::UInt64LogicalShiftRight(left, right) => {
-                        visit_binary!(Bitvector32Term::UInt64LogicalShiftRight, left, right, tasks)
-                    }
-                    Bitvector32Term::UInt64BitwiseAnd(left, right) => {
-                        visit_binary!(Bitvector32Term::UInt64BitwiseAnd, left, right, tasks)
-                    }
-                    Bitvector32Term::UInt64BitwiseOr(left, right) => {
-                        visit_binary!(Bitvector32Term::UInt64BitwiseOr, left, right, tasks)
-                    }
-                    Bitvector32Term::UInt64BitwiseXor(left, right) => {
-                        visit_binary!(Bitvector32Term::UInt64BitwiseXor, left, right, tasks)
-                    }
                     Bitvector32Term::If {
                         condition,
                         then_term,
@@ -3156,6 +2965,18 @@ fn substitute_load_variables(
                             tasks.push(Task::VisitTerm(argument));
                         }
                     }
+                    term => match (term.as_binary(), term.as_unary()) {
+                        (Some((op, left, right)), _) => {
+                            tasks.push(Task::RebuildBinary(op));
+                            tasks.push(Task::VisitTerm(right));
+                            tasks.push(Task::VisitTerm(left));
+                        }
+                        (_, Some((op, value))) => {
+                            tasks.push(Task::RebuildUnary(op));
+                            tasks.push(Task::VisitTerm(value));
+                        }
+                        _ => unreachable!("every other variant has its own arm"),
+                    },
                 }
             }
             Task::VisitCondition(condition) => match condition {
@@ -3421,41 +3242,26 @@ fn substitute_load_variables(
                     tasks.push(Task::VisitTerm(value));
                 }
             },
-            Task::RebuildBinary(constructor) => {
+            // Integer operators and conversions are rebuilt as bare nodes;
+            // float operators and the machine cast through their smart
+            // constructors.
+            Task::RebuildBinary(op) => {
                 let right = term_results.pop().expect("visited right term");
                 let left = term_results.pop().expect("visited left term");
-                term_results.push(constructor(Box::new(left), Box::new(right)));
-            }
-            Task::RebuildMachineCast(source, destination) => {
-                let value = term_results.pop().expect("visited machine cast operand");
-                term_results.push(Bitvector32Term::machine_integer_cast(
-                    source,
-                    destination,
-                    value,
-                ));
-            }
-            Task::RebuildUnary(constructor) => {
-                let value = term_results.pop().expect("visited unary term");
-                term_results.push(constructor(Box::new(value)));
-            }
-            Task::RebuildFloatUnary(is_float64) => {
-                let value = term_results.pop().expect("visited float unary term");
-                term_results.push(if is_float64 {
-                    Bitvector32Term::float64_negate(value)
+                term_results.push(if op.is_float() {
+                    op.build(left, right)
                 } else {
-                    Bitvector32Term::float32_negate(value)
+                    op.build_raw(left, right)
                 });
             }
-            Task::RebuildFloatBinary {
-                is_float64,
-                operator,
-            } => {
-                let right = term_results.pop().expect("visited right float term");
-                let left = term_results.pop().expect("visited left float term");
-                term_results.push(if is_float64 {
-                    Bitvector32Term::float64_binary(left, right, operator)
+            Task::RebuildUnary(op) => {
+                let value = term_results.pop().expect("visited unary term");
+                let smart =
+                    op.is_float() || matches!(op, BitvectorUnaryOp::MachineIntegerCast { .. });
+                term_results.push(if smart {
+                    op.build(value)
                 } else {
-                    Bitvector32Term::float32_binary(left, right, operator)
+                    op.build_raw(value)
                 });
             }
             Task::RebuildIf => {
