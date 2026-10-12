@@ -33,19 +33,7 @@ fn sum(bytes: &[u8]) -> i32 {
             }
             have 0 <= (int32)bytes[i] and 255 >= (int32)bytes[i];
             have 0 <= to_integer(total);
-            have to_integer(total) + to_integer((int32)bytes[i]) >= -2147483648 by auto;
-            have to_integer(total) + to_integer((int32)bytes[i]) <= 2147483647 by auto;
-            have defined(total + (int32)bytes[i]) by {
-                apply(int32_add_defined_by_integer_bounds(total, (int32)bytes[i])) using {
-                    to_integer(total) + to_integer((int32)bytes[i]) >= -2147483648;
-                    to_integer(total) + to_integer((int32)bytes[i]) <= 2147483647;
-                } simp();
-            }
-            have to_integer(total + (int32)bytes[i]) == to_integer(total) + to_integer((int32)bytes[i]) by {
-                apply(int32_add_to_integer(total, (int32)bytes[i])) using {
-                    defined(total + (int32)bytes[i]);
-                }
-            }
+            have defined(total + (int32)bytes[i]) by auto;
             have i < 18446744073709551615u64 by auto;
             have prefix(bytes, i + 1u64) == prefix(bytes, i) + to_integer((int32)bytes[i]) by {
                 peel(prefix(bytes, i + 1u64)) using {
@@ -55,12 +43,6 @@ fn sum(bytes: &[u8]) -> i32 {
                 simp();
             }
             have to_integer(total + (int32)bytes[i]) == prefix(bytes, i + 1u64) by auto;
-            have to_integer(i) + 1 <= 18446744073709551615 by auto;
-            have to_integer(i + 1u64) == to_integer(i) + 1 by {
-                apply(uint64_add_to_integer(i, 1u64)) using {
-                    to_integer(i) + 1 <= 18446744073709551615;
-                }
-            }
             have 0 <= to_integer(total + (int32)bytes[i]) by auto;
             have to_integer(total + (int32)bytes[i]) <= 255 * to_integer(i + 1u64) by auto;
             execute_until(assignment(i, 1));

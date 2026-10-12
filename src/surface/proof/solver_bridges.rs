@@ -66,10 +66,126 @@ impl MachineOrder {
     }
 }
 
-/// One carried fact: the steps that establish it and its source spelling.
+/// One carried fact: how it is established and its source spelling.
 struct Carried {
-    steps: Vec<ProofStep>,
+    establish: Establish,
     surface: ClickProposition,
+}
+
+enum Establish {
+    /// A fixed sequence of steps.
+    Steps(Vec<ProofStep>),
+    /// The term-by-term observation of `left + right` or `left - right`:
+    /// a signed operation once it is defined, which `auto` proves when it is
+    /// not already a fact, and an unsigned one once it stays in range.
+    Operation {
+        operation: ContractExpression,
+        left: ContractExpression,
+        right: ContractExpression,
+        subtract: bool,
+    },
+}
+
+impl Carried {
+    fn establish<'a>(&self, proof: &Proof<'a>) -> Result<Option<Proof<'a>>, ClickError> {
+        match &self.establish {
+            Establish::Steps(steps) => Ok(steps
+                .iter()
+                .try_fold(proof.clone(), |proof, step| proof.apply_step(step.clone()))
+                .ok()),
+            Establish::Operation {
+                operation,
+                left,
+                right,
+                subtract,
+            } => {
+                let stem = if *subtract { "subtract" } else { "add" };
+                let arguments = vec![left.clone(), right.clone()];
+                let defined = ClickProposition::Defined {
+                    expression: operation.clone(),
+                };
+                let observe = |proof: &Proof<'a>, name: String, requirement: &ClickProposition| {
+                    proof
+                        .apply_step(have(
+                            self.surface.clone(),
+                            vec![apply(&name, arguments.clone(), vec![requirement.clone()])],
+                        ))
+                        .ok()
+                };
+                for width in ["int32", "int64"] {
+                    let name = format!("{width}_{stem}_to_integer");
+                    if let Some(next) = observe(proof, name.clone(), &defined) {
+                        return Ok(Some(next));
+                    }
+                }
+                // Not yet known to be defined: prove it, then observe.
+                if let Some(next) = proof.prove_stated_fact(&defined)? {
+                    for width in ["int32", "int64"] {
+                        let name = format!("{width}_{stem}_to_integer");
+                        if let Some(observed) = observe(&next, name, &defined) {
+                            return Ok(Some(observed));
+                        }
+                    }
+                }
+                // An unsigned operation that does not wrap.
+                let guard = if *subtract {
+                    relate(to_integer(right), to_integer(left), Relation::LessEqual)
+                } else {
+                    relate(
+                        ContractExpression::Add(
+                            Box::new(to_integer(left)),
+                            Box::new(to_integer(right)),
+                        ),
+                        ContractExpression::IntegerLiteral("18446744073709551615".into()),
+                        Relation::LessEqual,
+                    )
+                };
+                let Some(next) = proof.prove_stated_fact(&guard)? else {
+                    return Ok(None);
+                };
+                Ok(observe(&next, format!("uint64_{stem}_to_integer"), &guard))
+            }
+        }
+    }
+}
+
+/// The sums and differences observed by `to_integer(...)` in `expression`.
+fn observed_operations(expression: &ContractExpression, found: &mut Vec<ContractExpression>) {
+    if let ContractExpression::Call { name, arguments } = expression
+        && name == "to_integer"
+        && let [argument] = arguments.as_slice()
+        && matches!(
+            argument,
+            ContractExpression::Add(..) | ContractExpression::Subtract(..)
+        )
+        && !found.contains(argument)
+    {
+        found.push(argument.clone());
+    }
+    match expression {
+        ContractExpression::Add(left, right)
+        | ContractExpression::Subtract(left, right)
+        | ContractExpression::Multiply(left, right) => {
+            observed_operations(left, found);
+            observed_operations(right, found);
+        }
+        ContractExpression::Negate(value) => observed_operations(value, found),
+        ContractExpression::Call { arguments, .. } => {
+            for argument in arguments {
+                observed_operations(argument, found);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn proposition_operations(proposition: &ClickProposition) -> Vec<ContractExpression> {
+    let mut found = Vec::new();
+    if let ClickProposition::Comparison { left, right, .. } = proposition {
+        observed_operations(left, &mut found);
+        observed_operations(right, &mut found);
+    }
+    found
 }
 
 impl<'a> Proof<'a> {
@@ -93,7 +209,31 @@ impl<'a> Proof<'a> {
         else {
             return Ok(None);
         };
-        let carried = self.carried_machine_facts(&candidates);
+        let mut carried = self.carried_machine_facts(&candidates);
+        for operation in proposition_operations(surface_goal) {
+            let (left, right, subtract) = match &operation {
+                ContractExpression::Add(left, right) => (left, right, false),
+                ContractExpression::Subtract(left, right) => (left, right, true),
+                _ => continue,
+            };
+            let exact = if subtract {
+                ContractExpression::Subtract(
+                    Box::new(to_integer(left)),
+                    Box::new(to_integer(right)),
+                )
+            } else {
+                ContractExpression::Add(Box::new(to_integer(left)), Box::new(to_integer(right)))
+            };
+            carried.push(Carried {
+                surface: relate(to_integer(&operation), exact, Relation::Equal),
+                establish: Establish::Operation {
+                    left: left.as_ref().clone(),
+                    right: right.as_ref().clone(),
+                    subtract,
+                    operation,
+                },
+            });
+        }
         if carried.is_empty() {
             return Ok(None);
         }
@@ -104,11 +244,7 @@ impl<'a> Proof<'a> {
         let mut established: Vec<(Proposition, &Carried)> = Vec::new();
         for item in &carried {
             check_verification_deadline()?;
-            let Ok(next) = item
-                .steps
-                .iter()
-                .try_fold(trial.clone(), |proof, step| proof.apply_step(step.clone()))
-            else {
+            let Some(next) = item.establish(&trial)? else {
                 continue;
             };
             let Ok(kernel) = next.lower_cited_surface_proposition(&item.surface, "carried fact")
@@ -139,11 +275,9 @@ impl<'a> Proof<'a> {
             let mut proof = self.clone();
             for (kernel, item) in &established {
                 if used.contains(kernel) {
-                    for step in &item.steps {
-                        match proof.apply_step(step.clone()) {
-                            Ok(next) => proof = next,
-                            Err(_) => return Ok(None),
-                        }
+                    match item.establish(&proof)? {
+                        Some(next) => proof = next,
+                        None => return Ok(None),
                     }
                 }
             }
@@ -245,6 +379,77 @@ impl<'a> Proof<'a> {
         )))
     }
 
+    /// Prove `fact` where the proof stands with `auto` on the stated fact,
+    /// as `have fact by auto;` does.
+    fn prove_stated_fact(&self, fact: &ClickProposition) -> Result<Option<Self>, ClickError> {
+        let Ok(scope) = self.begin_have(fact.clone()) else {
+            return Ok(None);
+        };
+        let Some(closed) = scope.try_auto_fact_closure()? else {
+            return Ok(None);
+        };
+        Ok(closed.join().ok())
+    }
+
+    /// Close `defined(a + b)` or `defined(a - b)` over `int32` or `int64`:
+    /// prove both `Integer` bounds of the exact result with `auto`, then
+    /// apply the type's `..._defined_by_integer_bounds` theorem.
+    pub(in crate::surface::proof) fn try_definedness_solver_closure(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        let Some(ClickProposition::Defined { expression }) = self.surface_goal() else {
+            return Ok(None);
+        };
+        let (left, right, subtract) = match expression {
+            ContractExpression::Add(left, right) => (left, right, false),
+            ContractExpression::Subtract(left, right) => (left, right, true),
+            _ => return Ok(None),
+        };
+        let exact = if subtract {
+            ContractExpression::Subtract(Box::new(to_integer(left)), Box::new(to_integer(right)))
+        } else {
+            ContractExpression::Add(Box::new(to_integer(left)), Box::new(to_integer(right)))
+        };
+        let stem = if subtract { "subtract" } else { "add" };
+        for (width, minimum, maximum) in [
+            ("int32", "-2147483648", "2147483647"),
+            ("int64", "-9223372036854775808", "9223372036854775807"),
+        ] {
+            let lower = ClickProposition::Comparison {
+                left: exact.clone(),
+                operator: ComparisonOperator::GreaterEqual,
+                right: ContractExpression::IntegerLiteral(minimum.into()),
+            };
+            let upper = relate(
+                exact.clone(),
+                ContractExpression::IntegerLiteral(maximum.into()),
+                Relation::LessEqual,
+            );
+            let Some(bounded) = self.prove_stated_fact(&lower)? else {
+                continue;
+            };
+            let Some(bounded) = bounded.prove_stated_fact(&upper)? else {
+                continue;
+            };
+            let Ok(applied) = bounded.apply_step(apply(
+                &format!("{width}_{stem}_defined_by_integer_bounds"),
+                vec![left.as_ref().clone(), right.as_ref().clone()],
+                vec![lower, upper],
+            )) else {
+                continue;
+            };
+            if applied.is_complete() || applied.goal() != self.goal() {
+                return Ok(Some(applied));
+            }
+            // The goal may also ask that each operand is defined, which
+            // the facts already say.
+            if let Some(closed) = applied.try_direct_logical_closure().ok().flatten() {
+                return Ok(Some(closed));
+            }
+        }
+        Ok(None)
+    }
+
     /// Close a machine order goal `a < b` or `a <= b` by proving its
     /// `Integer` reading with `auto` on the stated fact and carrying it back
     /// with the type's bridge (`uint64_to_integer_less_than_implies_less_than`,
@@ -340,7 +545,7 @@ impl<'a> Proof<'a> {
                 )],
             ));
             carried.push(Carried {
-                steps,
+                establish: Establish::Steps(steps),
                 surface: observed,
             });
             if let Some((theorem, maximum)) = order.range() {
@@ -365,7 +570,10 @@ impl<'a> Proof<'a> {
                         ),
                     ] {
                         carried.push(Carried {
-                            steps: vec![have(bound.clone(), vec![bounds.clone()])],
+                            establish: Establish::Steps(vec![have(
+                                bound.clone(),
+                                vec![bounds.clone()],
+                            )]),
                             surface: bound,
                         });
                     }
