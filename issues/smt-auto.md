@@ -2,6 +2,10 @@
 
 Priority: P1.
 
+Soundness: not soundness. This is automation. Solver search is untrusted.
+Every result becomes a certificate that the existing kernel checks, so the
+work changes neither the trusted base nor what verifies.
+
 Proof size, automation and proof workflow are the parts of the
 [launch design review](design-review.md) that matter most. Its items P1–P4,
 W4 and W5 depend on this issue. This issue makes `auto`

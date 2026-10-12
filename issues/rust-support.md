@@ -1,5 +1,10 @@
 # P1: Support safe Rust and verify a shared C/Rust checksum specification
 
+Priority: P1.
+
+Soundness: incomplete. Language coverage. Unsupported Rust is refused. The
+pinned Charon front end is a documented trusted dependency.
+
 ## Goal and scope
 
 Deliver a useful, explicitly bounded safe-Rust verification path through Click

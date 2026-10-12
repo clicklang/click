@@ -3739,7 +3739,7 @@ impl Parser {
                 "float" => C0Type::Float32,
                 "double" => C0Type::Float64,
                 "volatile" => {
-                    return Err(self.error("the `volatile` qualifier is not supported in C0"));
+                    return Err(self.error("the `volatile` qualifier is not supported by Click"));
                 }
                 _ => {
                     return Err(self.error(format!(

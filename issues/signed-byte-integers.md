@@ -1,5 +1,13 @@
 # Model signed eight-bit integers
 
+Priority: P2.
+
+Soundness: incomplete. The body appears stale. On 2026-10-12 the release
+binary verified `signed char x = -1; return x;` and the `int8_t` form
+returning `-1`, and refused `255`. `docs/reference/language/c0.md` documents
+`int8`/`signed char`/`int8_t`. Check the remaining acceptance criteria and
+delete the issue if they are met.
+
 ## Violated invariant
 
 The initial kernel target intentionally gives plain `char` unsigned semantics,

@@ -2794,7 +2794,7 @@ theorem cstr_len_has_terminator(bytes: uint8[], len: uint64) {
 
 ## External C contracts
 
-These declarations cover the narrow byte-oriented libc slice supported by C0.
+These declarations cover the narrow byte-oriented libc slice supported by Click.
 They are body-less assumptions: callers must satisfy their requirements, and
 Click does not verify an implementation of the external function.
 
@@ -2874,8 +2874,8 @@ extern uint8* memset(uint8 destination[], int32 value, uint64 bytes) {
 ```
 
 **Meaning:** Fills `bytes` bytes (a `size_t` count, as in C) of an owned
-destination with a value C0 can represent as `unsigned char`, and returns the
-destination pointer. C converts any `int` fill value to `unsigned char`; C0
+destination with a value Click can represent as `unsigned char`, and returns the
+destination pointer. C converts any `int` fill value to `unsigned char`; Click
 models that narrowing only for a representable value, so the contract requires
 one.
 

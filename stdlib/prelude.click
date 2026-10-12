@@ -922,7 +922,7 @@ extern int32 __click_constant_p_unknown() {
 }
 
 // The C library's byte functions, with C's `size_t` counts. C converts
-// `memset`'s `int` fill value to `unsigned char`; C0 models that narrowing
+// `memset`'s `int` fill value to `unsigned char`; Click models that narrowing
 // only for a representable value, so the value is required to be one.
 extern uint8* memcpy(uint8 destination[], uint8 source[], uint64 bytes) {
     requires viewable(source[0..bytes]);

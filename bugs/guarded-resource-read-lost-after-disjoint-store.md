@@ -1,5 +1,10 @@
 # A read exposed from a guarded resource is lost after a disjoint store
 
+Soundness: incomplete. Click refuses a true fold: the guarded body's
+field-value fact is not carried across a disjoint store. Nothing false is
+accepted. Its priority comes from the rbtree subtree-size work it was
+reduced from, not from soundness.
+
 An unfolded resource's checked field-value fact must survive a write to a
 separately owned field. Adding a proved nonnull guard around the same resource
 body currently prevents refolding it after that write. Removing the guard

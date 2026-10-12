@@ -4,7 +4,8 @@ Compiler imports let a sidecar verify the C selected by a configured compiler
 preprocessor. Click still parses and lowers the resulting C and independently
 checks its proofs. This mode is explicit and separate from the existing bounded
 source-bundle preprocessor. The same command also refreshes the preliminary
-typed C++ artifact described below.
+typed C++ artifact described below. [Language coverage](../coverage.md) summarizes
+what the C and C++ import paths admit.
 
 ```text
 usage: click import lock <sidecar.click>
@@ -19,7 +20,7 @@ system headers, or frontend toolchain.
   `<pthread.h>`, `<stdatomic.h>`, `<limits.h>`, `<string.h>`, or `<stdlib.h>`
   describes a library the program calls. Click supplies its own declarations
   and a specification of each call; see the
-  [C0 system headers](../language/c0.md#system-headers). Proofs assume a C
+  [C system headers](../language/c.md#system-headers). Proofs assume a C
   library that implements Click's interfaces as specified. Click does not
   import or verify a platform's library headers or bodies to supply an
   interface.
@@ -202,16 +203,17 @@ that exception while normal scalar statements continue. One object-free
 `try` with exactly one named by-value `catch (int name)` is also supported.
 The handler binds the thrown payload and resumes from the thrown state, so a
 caller can catch a verified helper's exception without declaring `throws`.
-One narrow unwinding case is also supported: a `try` block may construct one
-destructible automatic guard first, then call a potentially throwing helper.
-Its public, non-virtual constructor and destructor must be explicitly
+One narrow unwinding case is also supported: a `try` block may first
+construct destructible automatic guards, then call a potentially throwing
+helper. Each guard's public, non-virtual constructor and destructor must be explicitly
 `noexcept`; the destructor runs on both normal and exceptional exits before
 the handler observes state. The constructor's Click contract must establish
 any object invariant required by the destructor that is not already available
-from the checked execution state. The `cpp_one_guard_unwind` mdtest verifies
-both outcomes.
+from the checked execution state. The `cpp_one_guard_unwind` and
+`cpp_two_guard_unwind` mdtests verify both outcomes with one and two guards;
+the guards are destroyed in reverse construction order.
 The importer still rejects nested handlers, catch-all or non-`int` handlers,
-other local declarations inside either block, multiple or late guards, returns
+other local declarations inside either block, guards constructed after the call, returns
 from a guarded `try`, `noexcept` free functions (whose termination behavior is
 not modeled), and broader exceptional resource transfer. This is not general
 C++ unwinding support or an exception-ABI proof. Clang's typed
@@ -1276,8 +1278,9 @@ indexed native object-pointer slice, nonliteral null-pointer conversions, multip
 indirection, call results outside the supported initializer, return-call and direct Boolean
 condition slices,
 indirect calls, loops,
-external specifications, and broader C++ syntax also remain outside this
-end-to-end subset.
+external specifications other than the [standard-library
+contracts](#c-standard-library), and broader C++ syntax also remain outside
+this end-to-end subset.
 
 ## Validation and supported profile
 

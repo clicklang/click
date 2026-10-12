@@ -20,7 +20,7 @@ pub(crate) fn parse<'a>(
             }
             "double" if longs > 0 => {
                 return Err(
-                    "unsupported C type `long double`: extended-precision floating-point values are not modeled in C0",
+                    "unsupported C type `long double`: extended-precision floating-point values are not modeled by Click",
                 );
             }
             _ => break,

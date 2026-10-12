@@ -436,7 +436,7 @@ indexed store-gap decisions use the same bound. Known load kinds, pointer
 reads, and retained typed cells use their own access widths; a wider unknown
 fallback must not erase precise separation evidence.
 
-The shared runtime and internal C0 type identities also model signed and
+The shared runtime and internal Click's C type identities also model signed and
 unsigned wide object pointers, pointer slots, fixed scalar arrays, and arrays
 of those pointers. Scalar array elements and pointer arithmetic use a 16-byte
 stride; pointer objects and pointer-array slots retain the LP64 8-byte width.
@@ -457,7 +457,7 @@ checked signed multiplication, division/remainder, and comparisons. Contracts
 observe these values through `to_integer` and use checked reverse conversions.
 Wide source pointers, references, arrays, and record fields
 remain unsupported, as do ordinary C and Rust wide source spellings. Internal
-C0 identities model the wider memory profile without granting source admission.
+C identities model the wider memory profile without granting source admission.
 
 ## Work budgets and certificate scaling
 

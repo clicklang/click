@@ -2,6 +2,12 @@
 
 Priority: P1.
 
+Soundness: soundness-adjacent. This file is a tracker. Items M1 (no
+independent checker), M2 (no written semantics) and M3 (`memcpy` reading under
+`viewable`) are trust questions without a known false acceptance. N3 tracks the `unsound` userspace-`char` bug, which carries its
+own label. Each item that becomes a reproduced false acceptance is filed in
+`bugs/` with its own label.
+
 Depends on [smt-auto.md](smt-auto.md). Items P1–P4, W4 and W5 are expected to
 be fixed by its stages; rule on them after its stage-1 measurements land.
 
@@ -390,31 +396,6 @@ Proposed fix: state that `separate` is needed only for views and
 
 Decision: open.
 
-### M6. C semantics are narrow and the summary is stale
-
-Today: one target (x86-64 LP64 little-endian), fork/join and mutex
-concurrency only, read-only unions; `docs/concepts/what-click-proves.md`
-lists a scalar set without `int64`/`uint64`, which
-`docs/reference/language/limitations.md` supports.
-
-Proposed fix: one coverage matrix (undefined behavior, provenance,
-concurrency, target), kept in sync mechanically.
-
-Decision: open.
-
-### M7. Soundness triage is inconsistent
-
-Today: "An unsound rule is P1" (`issues/README.md`), yet "Give private
-static storage sound ownership" is P2
-(`issues/private-static-helper-ownership.md`), and `old(result)` is accepted
-with the argument that it is not unsound
-(`issues/result-accepted-in-entry-snapshots.md`).
-
-Proposed fix: a soundness label on issues with a written argument, and a
-re-triage.
-
-Decision: open.
-
 ## N. Newcomer experience
 
 ### N1. Maintainer launch actions
@@ -435,14 +416,14 @@ returns a constant (`examples/jsonc-existing-source`); compiler import is a
 separate mode documented mostly for C++ (`docs/reference/cli/import.md`).
 
 Proposed fix: "verify one function in your project": include paths, `-D`
-flags, contracts for libc calls, and what to do when C0 refuses a construct.
+flags, contracts for libc calls, and what to do when Click refuses a construct.
 
 Decision: open.
 
 ### N3. The default C target is the Linux kernel's
 
 Today: the default is `x86_64-linux-kernel` with unsigned plain `char`
-(`docs/reference/language/c0.md`); userspace code needs an explicit
+(`docs/reference/language/c.md`); userspace code needs an explicit
 `target`. The userspace target also models plain `char` as unsigned, unlike
 the x86-64 System V ABI.
 

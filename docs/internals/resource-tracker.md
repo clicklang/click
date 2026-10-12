@@ -321,7 +321,7 @@ reads only `PointerBlock::proven_distinct` and the checked write set the edge
 itself carries — which is path-independent, and so may be read off an interned
 edge.
 
-Two of those answers are not reachable from C0 yet, and fail closed where they
+Two of those answers are not reachable from C yet, and fail closed where they
 stop: a `free` of an object distinct from the subject needs a `malloc`, whose
 `branch` continuation is reached by a transition that records no edge, and a
 loop's checked write set is separated from its own head state by a memory the
@@ -841,7 +841,7 @@ aggregate object's name — so an object neither of them reaches is storage no
 pointer value in the program designates. Nothing else can reach it either:
 arithmetic that leaves the object it was derived from is undefined behaviour
 that Click refuses on every displaced access (`CMemoryCanStore` /
-`access_in_bounds`), and an integer cast to a pointer is outside C0. An `&x`
+`access_in_bounds`), and an integer cast to a pointer is outside supported C. An `&x`
 written in a *proof* creates no runtime pointer.
 
 `src/languages/c/address_taken.rs` is the one conservative syntactic pass

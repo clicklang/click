@@ -71,7 +71,7 @@ Click verifies C as it models it. The following are trusted:
   targets currently treat plain `char` as unsigned. That matches the Linux
   kernel's `-funsigned-char` build, but not a default x86-64 user-space
   compiler, where plain `char` is signed. See
-  [Supported C0](../reference/language/c0.md#c-implementation-target).
+  [Supported C](../reference/language/c.md#c-implementation-target).
 - Modeled system headers: `src/languages/c/modeled_*.h` declare `memcpy`,
   `memcmp`, `memset`, `strlen`, the allocation functions, and the selected
   pthread and atomic interfaces. They carry no executable semantics; their
