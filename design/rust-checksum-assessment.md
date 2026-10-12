@@ -156,8 +156,10 @@ recombination, scalar sums, and final 16-bit stores. Both final fields equal
 the common mathematical specification on the entry input snapshot. The
 arbitrary-length computation has checked bounds and termination. Each full-batch
 vector step connects all four constructor lanes to exact absolute input-byte
-observations using actual iterator state. Its full checksum identity remains
-unproved.
+observations using actual iterator state. The full-batch loops preserve the A
+residue against the common specification through their native additions and
+lane reductions. General B induction, vector and scalar remainders, and the
+full checksum identity remain unproved.
 
 Follow the [current roadmap](../issues/rust-support.md) for the remaining outer
 batches, short tails, common specification, unchanged C proof, and architecture

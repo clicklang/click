@@ -629,13 +629,24 @@ The [partition lemmas](general-partition.click) check signed addition before
 regrouping byte pointers. The proof first establishes machine-byte equality
 across the constructor's local return storage, then rewrites the Integer
 observation using that equality. These observations supply the input values
-needed for the outer checksum recurrence; they do not establish its residues.
+needed for the outer checksum recurrence.
+
+The full-batch loops now carry the A residue against `adler_spec_a` at every
+actual remaining count. Each native four-byte addition advances the global
+prefix; each original lane reduction preserves that residue. At outer-loop
+exhaustion the retained scalar A and four A lanes represent the specified A for
+the complete full-batch prefix. Both loops also retain equality of the input
+bytes with the entry snapshot. The independent A transition lemmas in
+[vector-prefix.click](vector-prefix.click) are reused by the joint A/B lemmas.
+The deferred B contribution, the aligned remainder, and the final scalar tail
+still need their general checksum invariants.
 
 The harness assembles the contract with the checked helper/getter bodies,
 iterator and recombination libraries, general partition lemmas, and tail
 bounds. Normal tests check the bounded metadata and native stored-guard
 regression. Nightly tests check the complete body, missing authority and seeds,
-false final bounds and absolute lane values, and CLI
+false final bounds, absolute lane values, a duplicated A-transition byte, and
+a false lane-reduction residue, plus CLI
 verify/profile/audit/expanded-proof agreement. The absolute-position lemmas also
 expand and reverify independently; mutations reject undefined pointer sums and
 false byte observations.
@@ -645,5 +656,6 @@ cargo nextest run --profile nightly --test rust_import \
   -E 'test(charon_adler2_general_compute)'
 ```
 
-This is a bounds and termination proof. The functional checksum and incremental
-processing postconditions remain separate roadmap work.
+The whole-body bounds and termination proof now includes A correctness for the
+full-batch prefix. Complete checksum and incremental processing postconditions
+remain separate roadmap work.

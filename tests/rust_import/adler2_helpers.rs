@@ -77,6 +77,11 @@ fn compute_proof(contract: &str) -> String {
     } else {
         ""
     };
+    let vector_prefix = if contract.contains("adler_native_four_lane_a_prefix_step(") {
+        VECTOR_PREFIX
+    } else {
+        ""
+    };
     let four_byte_spec = if contract.contains("adler_four_byte_result_spec(") {
         FOUR_BYTE_SPEC
     } else {
@@ -88,7 +93,7 @@ fn compute_proof(contract: &str) -> String {
         ""
     };
     format!(
-        "{}\n{common_spec}\n{four_byte_spec}\n{serial_tail_spec}\n{lane_state}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{count_bridge}\n{bounded_count}\n{contract}\n{getters}",
+        "{}\n{common_spec}\n{four_byte_spec}\n{serial_tail_spec}\n{lane_state}\n{vector_prefix}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{count_bridge}\n{bounded_count}\n{contract}\n{getters}",
         helper_library()
     )
 }
@@ -1961,6 +1966,14 @@ const GENERAL_PARTITION: &str =
 #[ignore = "nightly: absolute byte observations, expansion and false offsets"]
 fn charon_adler2_absolute_chunk_bytes_expand_and_reject_false_offsets() {
     for claim in [
+        "adler_defined_add_zero.ensures_0",
+        "adler_full_batch_prefix_window.ensures_0",
+        "adler_full_batch_prefix_window.ensures_1",
+        "adler_full_batch_prefix_window.ensures_2",
+        "adler_full_batch_prefix_advance.ensures_0",
+        "adler_full_batch_within_advance.ensures_0",
+        "adler_full_batch_end_guard.ensures_0",
+        "adler_full_batch_end_sum.ensures_0",
         "adler_defined_byte_pointer_add.ensures_0",
         "adler_absolute_chunk_pointer.ensures_0",
         "adler_absolute_chunk_pointer.ensures_1",
@@ -2134,6 +2147,23 @@ fn charon_adler2_general_compute_rejects_false_absolute_byte() {
         "have to_integer(at(vector_a, __rust_mir_42.0[3])) == at(vector_a, to_integer((bytes[",
         "have to_integer(at(vector_a, __rust_mir_42.0[3])) + 1 == at(vector_a, to_integer((bytes[",
     );
+}
+
+#[test]
+#[ignore = "nightly: full-batch A residue and reduction rejection"]
+fn charon_adler2_general_compute_rejects_false_full_batch_a() {
+    for (before, after) in [
+        (
+            "at(vector_a, __rust_mir_42.0[0]), at(vector_a, __rust_mir_42.0[1]), at(vector_a, __rust_mir_42.0[2]), at(vector_a, __rust_mir_42.0[3])",
+            "at(vector_a, __rust_mir_42.0[0]), at(vector_a, __rust_mir_42.0[0]), at(vector_a, __rust_mir_42.0[2]), at(vector_a, __rust_mir_42.0[3])",
+        ),
+        (
+            "have to_integer(a_vec.0[0]) == truncating_remainder(to_integer(at(full_lane_prefix, a_vec.0[0])), 65521)",
+            "have to_integer(a_vec.0[0]) == truncating_remainder(to_integer(at(full_lane_prefix, a_vec.0[0])), 65521) + 1",
+        ),
+    ] {
+        reject_compute(GENERAL_COMPUTE, before, after);
+    }
 }
 
 #[test]
@@ -2758,6 +2788,7 @@ fn vector_prefix_proof() -> String {
 }
 
 #[test]
+#[ignore = "nightly: complete common specification and native vector-prefix library"]
 fn adler_native_vector_prefix_transitions_match_common_fields() {
     click::surface::verify_c0_sources(&vector_prefix_proof(), &[]).unwrap();
 }
@@ -2785,12 +2816,16 @@ fn adler_native_vector_prefix_tools_expand_and_reverify() {
         String::from_utf8_lossy(&audit.stderr)
     );
     for name in [
+        "adler_four_lane_a_prefix_step",
+        "adler_native_four_lane_a_prefix_step",
         "adler_four_lane_prefix_step",
         "adler_native_four_lane_prefix_step",
         "adler_native_iterator_prefix_step",
     ] {
         let conclusions = if name == "adler_native_iterator_prefix_step" {
             3
+        } else if name.ends_with("_a_prefix_step") {
+            1
         } else {
             2
         };

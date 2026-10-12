@@ -48,8 +48,10 @@ and decreasing actual outer-iterator remaining counts, without truncating usize
 metadata. Every full-batch vector step connects all four constructor lane values
 to exact absolute input-byte observations derived from those stored counts.
 Full outer-batch induction, lane reduction/reset, and the final vector and scalar
-remainders are checked in the whole-body proof. Checksum correctness remains
-incomplete.
+remainders are checked in the whole-body proof. The full-batch loops also carry
+A against the common specification through every native four-byte step and lane
+reduction, using prefixes derived from actual remaining counts. General B
+induction and checksum correctness through the remainders remain incomplete.
 The shared mathematical specification proves byte-sum and weighted-sum
 concatenation and incremental equality for A, B, and the packed checksum under
 explicit signed-range split bounds and canonical A seeds. These are independent
