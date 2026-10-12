@@ -30,6 +30,7 @@
 - [What Click trusts](concepts/trust.md)
 - [Files and sidecars](concepts/sidecars.md)
 - [Your first proof](concepts/first-proof.md)
+- [Verify a function in your own project](concepts/own-project.md)
 - [Contracts](concepts/contracts.md)
 - [Propositions](concepts/propositions.md)
 - [Proofs and proof scripts](concepts/proof-scripts.md)

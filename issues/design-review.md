@@ -408,17 +408,6 @@ essay moves to a design document or the website) and tags the first release.
 
 Decision: fix (maintainer).
 
-### N2. No guide for verifying a function in your own project
-
-Today: the only unchanged third-party C example proves `json_c_version()`
-returns a constant (`examples/jsonc-existing-source`); compiler import is a
-separate mode documented mostly for C++ (`docs/reference/cli/import.md`).
-
-Proposed fix: "verify one function in your project": include paths, `-D`
-flags, contracts for libc calls, and what to do when Click refuses a construct.
-
-Decision: open.
-
 ### N4. Jargon load, and internal documents in the user book
 
 Today: "smart", "kernel", "frontier", "certificate" and "proof unit" appear

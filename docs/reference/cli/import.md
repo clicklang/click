@@ -1295,8 +1295,9 @@ about that new environment. A supplied digest alone does not authenticate who
 prepared a native-platform artifact.
 
 Compiler-backed C imports accept two explicit targets. The config target must
-match the sidecar's `target` directive; an omitted directive selects the kernel
-target. Prepared imports retain their target through verification and expansion.
+match the sidecar's target, from its `target` directive or `click.project.json`;
+without either the sidecar selects the default `x86_64-linux-userspace`, so a
+kernel-target config needs one of them. Prepared imports retain their target through verification and expansion.
 
 | Target | Fixed compiler profile |
 | --- | --- |
@@ -1313,8 +1314,12 @@ Both profiles require explicit include directories: `-nostdinc` disables
 ambient system include search. Supply the program's own header roots with
 ordered `-isystem` or `-I` arguments; those roots and opened headers
 participate in the preparation inventory and lock identity. A standard
-library interface is not such a root: it comes from Click, per the
-[interface boundary](#interface-boundary). Lock preparation may succeed while
+library interface is not such a root, per the
+[interface boundary](#interface-boundary). Compiler mode does not supply
+Click's modeled system headers either, so a translation unit that includes
+`<string.h>`, `<stddef.h>`, `<stdint.h>`, or another system header fails at
+`click import lock` with the compiler's missing-header error; those headers
+are available only to sources Click reads directly. Lock preparation may succeed while
 Click's C parser still refuses an unsupported declaration in an included
 header.
 
