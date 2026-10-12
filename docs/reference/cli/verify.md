@@ -105,7 +105,7 @@ The command does not print the default C implementation target on every run.
 Successful verification is relative to the target the sidecar selected, not a
 portability claim. There is no target-selection flag: a sidecar selects its
 target with the `target` directive described in
-[Supported C0](../language/c0.md#selecting-a-target), and that selection also
+[Supported C](../language/c.md#selecting-a-target), and that selection also
 separates incremental verification markers.
 
 Successful file or location verification prints one `external assumptions:`

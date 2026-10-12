@@ -13,10 +13,10 @@ Pointer { block, offset }
 ```
 
 The pointer block carries provenance. Pointer offsets are separate terms, not
-raw integers. C0 pointer arithmetic is scaled by the pointee type: `int32*`
+raw integers. C pointer arithmetic is scaled by the pointee type: `int32*`
 adds four bytes per element, while `uint8*` adds one byte per element.
 
-C0's integer constant `0` converts to a single canonical null pointer in
+Click's integer constant `0` converts to a single canonical null pointer in
 pointer-valued return, initialization, assignment, argument, and comparison
 contexts. This narrow conversion does not identify pointers with integers:
 nonzero integers still cannot be used as pointers.
@@ -201,9 +201,10 @@ free edge for the old block, allocates a fresh block, copies the initialized
 cells whose complete byte ranges fit in the new extent, and transfers the
 complete allocation and memory resources to the fresh block. The old and new
 resources use typed logical units when the extents are exactly divisible by
-the pointer's element width and byte units otherwise. This applies to the
-supported `int32*`, `uint8*`, `int32**`, `uint8**`, and matching struct-pointer
-layouts, including raw byte extents. A partial cell is conservatively not
+the pointer's element width and byte units otherwise. This applies to every
+pointer type `realloc` accepts, listed in
+[Heap allocation](../reference/language/c.md#heap-allocation), including raw
+byte extents. A partial cell is conservatively not
 reintroduced as initialized. For a bounded zeroed `calloc`
 source, the successful result also records the preserved zeroed prefix; any
 grown tail is uninitialized and is not treated as zero.

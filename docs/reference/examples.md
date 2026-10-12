@@ -213,7 +213,7 @@ authorities.
   provenance for reads.
 - `mdtests/struct_union_by_value_copy.md`: a struct containing a supported union
   can cross a by-value parameter and return boundary with fresh aggregate
-  storage; the C0/kernel regression also checks preservation of overlapping
+  storage; the C/kernel regression also checks preservation of overlapping
   union-member views.
 - `mdtests/struct_array_parameter_fields.md`: a one-dimensional struct array
   parameter retains the ABI stride for indexed field loads and stores.
@@ -700,7 +700,7 @@ a subtree and `ctx_at(child, root)` for the frame above it.
   `mdtests/rb_next_conjunctive_guard.md` keeps the guard's own refusal for a
   proof that never opens the entry node; and
   `mdtests/rb_next_const_signature.md` keeps the `const` signature Linux
-  declares, which C0 refuses at the cast that returns the node.
+  declares, which Click refuses at the cast that returns the node.
 - `mdtests/rb_prev.md`: the Linux `rb_prev` with its predecessor contract,
   certified, the mirror of `rb_next.md` with its own list lemmas where the
   model's are not symmetric; `mdtests/rb_prev_rejects_a_dropped_context.md` is

@@ -9,7 +9,7 @@ the verified demonstration is
 
 ## Selected profile
 
-Every rule below is stated for one profile. The C is C11 under the default
+Every rule below is stated for one profile. The C is GNU C11 under the default
 kernel target: x86-64 Linux, LP64, eight-bit bytes, little-endian. The target
 is selected by the sidecar (`target "..."`), and with no declaration the
 default applies; there is no separate compiler import record for this

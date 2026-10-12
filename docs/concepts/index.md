@@ -20,7 +20,7 @@ fits into verification.
 - [Smart and simple tactics](smart-and-simple-tactics.md)
 - [Proof workflow](proof-workflow.md)
 - [Surface Click and Kernel Click](surface-and-kernel.md)
-- [C0 and C fragments](c0-and-c-fragments.md)
+- [C fragments](c-fragments.md)
 - [Undefined behavior](undefined-behavior.md)
 - [Loops and invariants](loops-and-invariants.md)
 - [Predicates](predicates.md)

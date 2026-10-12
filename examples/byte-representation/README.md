@@ -40,7 +40,7 @@ claim `result == 18 or result == 0` from `f`'s guarantee.
 | Buffer bound | The buffer is `malloc(16)`, a literal fixed with the source; both copy lengths are `sizeof(struct record)`, so the round trip also relies on `16 == sizeof(struct record)` under this layout. |
 
 The `(unsigned char *)(void *)` casts carry an object pointer through a
-type-erased interface, the documented C0 spelling; a direct object-pointer to
+type-erased interface, the documented C spelling; a direct object-pointer to
 byte-pointer cast is refused by the frontend.
 
 ## What the copy does and does not establish

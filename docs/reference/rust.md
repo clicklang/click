@@ -5,6 +5,7 @@ uses pinned, unmodified [Charon](https://github.com/AeneasVerif/charon) after ru
 type and borrow checking. Every imported body follows the native ULLBC control
 flow path into Click's shared execution, memory, and certificate rules.
 Verification uses the same sidecars, tactics, and bounded engine as C and C++.
+[Language coverage](coverage.md) compares the Rust subset with C and C++.
 
 Charon is the default and sole extraction backend. All 16 canonical examples
 use native `.ullbc` artifacts, and the original compiler-backed regressions run
@@ -180,8 +181,9 @@ fn reduce(value: u32) -> u32 {
 A Rust source's function contracts require this form. A C-shaped signature
 is refused with a suggestion of the `fn` spelling. A field through a
 reference is `p.f`; `p->f` is refused. The
-parameter and return types are the integer and float types, `bool`, `()`,
-and a struct by name; `usize` and `isize` are 64 bits. `expr as T` takes a
+sidecar parser accepts every Rust integer and float type name, `bool`, `()`,
+and a struct by name, but the importer admits only the types in
+[Supported semantics](#supported-semantics); `usize` and `isize` are 64 bits. `expr as T` takes a
 scalar type and binds as in Rust, tighter than a binary operator.
 
 A parameter may be a reference, `&T` or `&mut T`, to a scalar or a struct.
@@ -362,7 +364,8 @@ interpretation. Record
 size, alignment, and field offsets come from rustc for the selected target;
 Rust's default field order is not assumed.
 
-The fixed profile is Rust 2024, compiler commit
+Single-file imports (schema 3) use Rust 2024; crate imports (schema 4) select
+2021 or 2024. The rest of the fixed profile is compiler commit
 `923c95cdf5ba65cea505aa2ea829f578e1506ed8`, target
 `x86_64-unknown-linux-gnu`, overflow checks enabled, panic abort, and MIR optimization level zero. Click must
 prove that arithmetic overflow does not occur. Compiler acceptance alone does

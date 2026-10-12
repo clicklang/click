@@ -8939,7 +8939,7 @@ impl Parser {
         }
         if header.variadic {
             return Err(self.error_here(format!(
-                "variadic function definitions (`...`) are not supported in C0; only a body-less prototype of `{}` can be declared",
+                "variadic function definitions (`...`) are not supported by Click; only a body-less prototype of `{}` can be declared",
                 header.source_name
             )));
         }
@@ -9006,7 +9006,7 @@ impl Parser {
             parsed_return_type.c_type
         };
         if self.peek() == Some(&Token::LParen) {
-            return Err(self.error_here("function-pointer declarations are not supported in C0"));
+            return Err(self.error_here("function-pointer declarations are not supported by Click"));
         }
         let source_name = self.expect_ident("function name")?;
         self.expect(Token::LParen)?;
@@ -11731,7 +11731,7 @@ impl Parser {
             c_type = match c_type {
                 C0Type::Bool => {
                     return Err(self.error_at_previous(
-                        "pointers to `_Bool` are not supported in the current C0 pointer model",
+                        "pointers to `_Bool` are not supported in Click's current C pointer model",
                     ));
                 }
                 C0Type::Int8 => C0Type::Int8Pointer,
@@ -12054,7 +12054,7 @@ impl Parser {
             loop {
                 if self.peek() == Some(&Token::Ellipsis) {
                     return Err(self.error_here(
-                        "variadic function-pointer signatures (`...`) are not supported in C0",
+                        "variadic function-pointer signatures (`...`) are not supported by Click",
                     ));
                 }
                 let parsed_type = self.parse_type()?;
@@ -12208,9 +12208,8 @@ impl Parser {
                 "float" => C0Type::Float32,
                 "double" => C0Type::Float64,
                 "volatile" => {
-                    return Err(
-                        self.error_at_previous("the `volatile` qualifier is not supported in C0")
-                    );
+                    return Err(self
+                        .error_at_previous("the `volatile` qualifier is not supported by Click"));
                 }
                 _ => {
                     let Some(typedef) = self.typedefs.get(&name) else {
@@ -15976,7 +15975,7 @@ impl Parser {
         let c_type = self.variable_types.get(&name).copied().ok_or_else(|| {
             self.error_at_position(
                 position.clone(),
-                format!("assignment expression target `{name}` has no supported C0 type"),
+                format!("assignment expression target `{name}` has no supported C type"),
             )
         })?;
         if !c_type.is_supported_static_scalar() {
@@ -18175,7 +18174,7 @@ impl Parser {
             }
             if header.variadic {
                 return Err(self.error_at_previous(format!(
-                    "calls to variadic function `{source_name}` are not supported in C0; its variable arguments are not modeled"
+                    "calls to variadic function `{source_name}` are not supported by Click; its variable arguments are not modeled"
                 )));
             }
         }
@@ -18916,7 +18915,7 @@ impl Parser {
         let Some(c_type) = self.source_expression_type(target) else {
             return Err(self.error_at_position(
                 position,
-                format!("`{primitive}` target has no supported C0 type"),
+                format!("`{primitive}` target has no supported C type"),
             ));
         };
         if !c_type.is_supported_static_scalar() {
@@ -21010,7 +21009,7 @@ fn parse_float_literal_expression(literal: &str) -> Result<C0Expression, &'stati
             .filter(|value| value.is_finite())
             .map(|value| C0Expression::Float32Literal(value.to_bits()))
             .ok_or("value is not a finite binary32 literal"),
-        "l" | "L" => Err("long double literals are not modeled in C0"),
+        "l" | "L" => Err("long double literals are not modeled by Click"),
         _ => Err("unsupported floating-point literal suffix"),
     }
 }
@@ -21165,7 +21164,7 @@ fn tokenize(source: &str) -> Result<(Vec<Token>, Vec<SourcePosition>), C0SyntaxE
                 if matches!(chars.get(index), Some('.' | 'p' | 'P')) {
                     return Err(C0SyntaxError::at(
                         position,
-                        "hexadecimal floating-point literals are not supported in C0",
+                        "hexadecimal floating-point literals are not supported by Click",
                     ));
                 }
             } else {

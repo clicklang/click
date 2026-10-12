@@ -1,5 +1,16 @@
 # The userspace target models plain `char` as unsigned
 
+Priority: P1.
+
+Soundness: unsound. Under `target "x86_64-linux-userspace";` the
+reproduction below verifies `result == 0`. The same C built with the system
+gcc on x86-64 Linux returns 1. This was reproduced again on 2026-10-12 with
+the release binary. A verified claim is false for the named target. The
+deviation is documented in `docs/concepts/trust.md`, but that does not change
+what the target name promises. An interim fix that refuses plain `char`
+values above 127 under the userspace target would also end the false
+acceptance. Design review N3 has already ruled this "fix".
+
 ## Violated invariant
 
 A claim verified under `target "x86_64-linux-userspace";` holds for that
@@ -52,5 +63,5 @@ specifications as `uint8` bytes.
 - C strings, `char *` parameters, string literals, and the prelude's string
   functions keep working under both targets, with a stated rule for how a
   `char` byte reaches a specification.
-- mdtests cover both targets, and `docs/reference/language/c0.md` and
+- mdtests cover both targets, and `docs/reference/language/c.md` and
   `docs/concepts/trust.md` describe each target's plain `char`.

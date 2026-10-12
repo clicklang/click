@@ -11945,7 +11945,7 @@ fn c0_floating_point_literals_use_declared_binary_formats() {
         .expect_err("hexadecimal floating-point literals must remain unsupported");
     assert!(
         hex.to_string()
-            .contains("hexadecimal floating-point literals are not supported in C0")
+            .contains("hexadecimal floating-point literals are not supported by Click")
     );
 
     let suffix = syntax::parse_function("double extended() { return 1.0L; }")
@@ -11953,7 +11953,7 @@ fn c0_floating_point_literals_use_declared_binary_formats() {
     assert!(
         suffix
             .to_string()
-            .contains("long double literals are not modeled in C0")
+            .contains("long double literals are not modeled by Click")
     );
 }
 
