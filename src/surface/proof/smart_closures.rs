@@ -418,6 +418,17 @@ pub(super) fn integer_plan_to_surface_certificate(
                 };
                 (surface, certificate)
             }
+            IntegerArithmeticNode::NegatedGoal { .. } => {
+                let surface = integer_surface_negated_goal(surface_goal)?;
+                let certificate = IntegerCertificateNode::NegatedGoal {
+                    result: surface.clone(),
+                };
+                (surface, certificate)
+            }
+            // A divided bound has no general source spelling derived from
+            // its source's spelling; planners that divide spell the result
+            // from their own atom table.
+            IntegerArithmeticNode::Divide { .. } => return None,
         };
         node_surfaces.push(surface);
         nodes.push(certificate_node);
@@ -592,6 +603,22 @@ fn surface_expression_is_constant(expression: &ContractExpression) -> bool {
         }
         _ => false,
     }
+}
+
+/// The integer negation of a goal `l <= r` is `r < l`, and of `l < r` is
+/// `r <= l`. An equality goal has no single-bound negation.
+fn integer_surface_negated_goal(goal: &ClickProposition) -> Option<ClickProposition> {
+    let (left, operator, right) = integer_surface_ordered_parts(goal)?;
+    let operator = match operator {
+        ComparisonOperator::LessEqual => ComparisonOperator::LessThan,
+        ComparisonOperator::LessThan => ComparisonOperator::LessEqual,
+        _ => return None,
+    };
+    Some(ClickProposition::Comparison {
+        left: right,
+        operator,
+        right: left,
+    })
 }
 
 fn integer_surface_equality_to_less_equal(

@@ -29,15 +29,22 @@ plus the sizes of its new children. This justifies copying the old root's
 summary and recomputing the demoted node. Connecting those mathematical values
 to C metadata fields, including machine-integer bounds, remains unfinished.
 
-The C frontend now checks the type query, static assertion, and member offset
-used by Linux `container_of`; unsigned pointer subtraction preserves the offset
-and GNU `void*` arithmetic uses byte steps. The unchanged macro's first-member
+The C frontend checks the type query, static assertion, and member offset used
+by Linux `container_of`; unsigned pointer subtraction preserves the offset and
+GNU `void*` arithmetic uses byte steps. The unchanged macro's first-member
 address recovery is verified in [`c_container_of.md`](../../mdtests/c_container_of.md).
-The generated copy callback parses and executes to its metadata access. Its
-ownership contract remains blocked on naming the enclosing `sized_node` from
-an `rb_node*`: contract casts currently accept only a `void*` C parameter, and
-named field-bearing resources cannot unfold a body with an existential witness.
-This is not yet a verified mutation-capable callback.
+
+`rbtree_size_copy.click` verifies the unchanged generated copy callback in
+`rbtree_size_copy.c`. Its `size_metadata` resource ties the owned C size field to
+an `int32` model value. Copy preserves the source resource and returns target
+metadata equal to the source's entry value. The `CopySize` callback contract
+expresses this transition; `sized_copy_has_size_contract` certifies the concrete
+static-inline function through an execution theorem with explicit resource maps.
+Explicit contract casts through `void*` describe the enclosing node. This establishes metadata transport, not
+that the value counts a subtree: rotation/recomputation, propagation and its
+loop measure, machine-integer bounds, and the tree/metadata invariant remain.
+The copy body is extracted separately from the full callback table; integrating
+that table also requires termination evidence for its propagation callback.
 
 This is an entry-point integration increment of
 [chunk 14](../../issues/rbtree-example.md#augmented), not the completed

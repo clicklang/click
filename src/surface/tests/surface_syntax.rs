@@ -1297,6 +1297,52 @@ fn arithmetic_certificate_is_the_only_integer_family_spelling() {
 }
 
 #[test]
+fn integer_certificate_refutation_and_division_round_trip() {
+    let source = r#"
+        theorem refutation_forms(x: Integer) {
+            requires 2 * x <= 5;
+            ensures x <= 2 by {
+                arithmetic_certificate {
+                    premise 0: 2 * x <= 5 => 2 * x <= 5;
+                    negated_goal => 2 < x;
+                    divide 0 by 2 => x <= 2;
+                    conclusion 2;
+                }
+            }
+        }
+    "#;
+    let file = parse(source).expect("integer certificate should parse");
+    let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
+        panic!("expected an explicit theorem proof");
+    };
+    let ProofTactic::ArithmeticCertificate(ArithmeticCertificate {
+        family: ArithmeticCertificateFamily::Integer(certificate),
+    }) = &tactics[0]
+    else {
+        panic!("expected the Integer family");
+    };
+    assert!(matches!(
+        certificate.nodes.as_slice(),
+        [
+            IntegerCertificateNode::Premise { .. },
+            IntegerCertificateNode::NegatedGoal { .. },
+            IntegerCertificateNode::Divide { source: 0, .. },
+        ]
+    ));
+    let printed = super::printing::format_partial_tactic_sequence(tactics);
+    assert!(printed.contains("negated_goal => "), "{printed}");
+    assert!(printed.contains("divide 0 by 2 => "), "{printed}");
+    let reprinted = format!(
+        "theorem refutation_forms(x: Integer) {{\n    requires 2 * x <= 5;\n    ensures x <= 2 by {{\n{printed}\n    }}\n}}\n"
+    );
+    let reparsed = parse(&reprinted).expect("printed certificate should parse again");
+    let SourceProof::Script(again) = reparsed.theorem_definitions()[0].ensures()[0].proof() else {
+        panic!("expected an explicit theorem proof");
+    };
+    assert_eq!(again, tactics);
+}
+
+#[test]
 fn signed_int32_arithmetic_certificate_round_trips_every_step_spelling() {
     let source = r#"
         theorem signed_certificate_forms(n: int32) {
