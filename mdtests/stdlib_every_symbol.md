@@ -69,6 +69,14 @@ theorem use_uint32_to_integer_bounds(value: uint32) {
     ensures 0 <= to_integer(value) by apply(uint32_to_integer_bounds(value));
     ensures to_integer(value) <= 4294967295 by apply(uint32_to_integer_bounds(value));
 }
+theorem use_int32_to_integer_bounds(value: int32) {
+    ensures -2147483648 <= to_integer(value) by apply(int32_to_integer_bounds(value));
+    ensures to_integer(value) <= 2147483647 by apply(int32_to_integer_bounds(value));
+}
+theorem use_int64_to_integer_bounds(value: int64) {
+    ensures -9223372036854775808 <= to_integer(value) by apply(int64_to_integer_bounds(value));
+    ensures to_integer(value) <= 9223372036854775807 by apply(int64_to_integer_bounds(value));
+}
 theorem use_uint64_to_integer_bounds(value: uint64) {
     ensures 0 <= to_integer(value) by apply(uint64_to_integer_bounds(value));
     ensures to_integer(value) <= 18446744073709551615 by apply(uint64_to_integer_bounds(value));

@@ -3215,6 +3215,14 @@ id = "stdlib.theorem.uint64_to_integer_bounds"
 path = "reference/library/index.md#uint64_to_integer_bounds"
 
 [[item]]
+id = "stdlib.theorem.int32_to_integer_bounds"
+path = "reference/library/index.md#int32_to_integer_bounds"
+
+[[item]]
+id = "stdlib.theorem.int64_to_integer_bounds"
+path = "reference/library/index.md#int64_to_integer_bounds"
+
+[[item]]
 id = "stdlib.theorem.int32_add_to_integer"
 path = "reference/library/index.md#int32_add_to_integer"
 

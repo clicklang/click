@@ -1807,6 +1807,10 @@ fn verify_theorem_ensure(
         SourceProof::Default | SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Simp) => {
             let (certificate, completion) = check_direct_pure_goal_with_proof(
                 !matches!(ensure_clause.proof(), SourceProof::Default),
+                matches!(
+                    ensure_clause.proof(),
+                    SourceProof::Tactic(SmartTactic::Auto)
+                ),
                 claim_label,
                 context,
                 surface_goal,
@@ -2291,8 +2295,11 @@ fn claim_script_sites(
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn check_direct_pure_goal_with_proof(
     has_written_tactic: bool,
+    // `by auto;` tries the solver before `simp`.
+    auto: bool,
     claim_label: &str,
     context: &PureTheoremContext,
     surface_goal: &ClickProposition,
@@ -2326,7 +2333,12 @@ fn check_direct_pure_goal_with_proof(
             TacticTiming::new(claim_label, 0, 0, &ProofTactic::Simp, 0),
         )
     };
-    let result = match root.try_simp_closure() {
+    let result = if auto {
+        root.try_auto_proof_closure()
+    } else {
+        root.try_simp_closure()
+    };
+    let result = match result {
         Ok(result) => result,
         Err(error) => return Err(error.with_search_failures(search.finish())),
     };
