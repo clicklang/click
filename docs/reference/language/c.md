@@ -384,14 +384,26 @@ rejected. This does not admit automatic `long double` values or arithmetic.
 The accepted standard scalar spellings alias the existing Click's C type model,
 except that plain `char` retains its distinct C type identity. `signed char`
 is modeled separately as `int8`. Where plain `char` is signed it has `int8`'s
-values and representation without becoming `signed char`: converting between
-`char *` and `signed char *` still needs a cast.
+values and representation without becoming `signed char`.
 
-An uncast conversion between pointers to character types of different
-signedness, such as `char *` to `unsigned char *` (`uint8 *`) where plain
-`char` is signed, is refused as a pointer signedness mismatch (C11
-6.5.16.1p1; GCC's `-Wpointer-sign`). The refusal names both types, plain
-`char`'s signedness on the target, and the cast that fixes it.
+Click accepts what GCC and Clang accept by default, not the letter of C11.
+An uncast conversion between pointers to distinct one-byte character types,
+`char *`, `signed char *` (`int8 *`), and `unsigned char *` (`uint8 *`), with
+otherwise allowed qualifiers, is only a `-Wpointer-sign` warning there, so
+Click accepts it in a return, an initialization, an assignment, a call argument
+(including a `static inline` callee's), and the operand of a comparison, where
+the warning is `-Wcompare-distinct-pointer-types`. Each is lowered exactly as
+the explicit cast to the destination type and reads the same bytes: a `uint8 *`
+passed as a `char *` reads the byte `0xC8` as `-56` where plain `char` is
+signed (`mdtests/a_uint8_pointer_passed_as_a_char_pointer_reads_signed_bytes.md`,
+`mdtests/a_char_pointer_assigned_to_an_unsigned_char_pointer_reads_unsigned_bytes.md`).
+A converted pointer keeps its `const` view, so discarding `const` is still
+refused. Conversions GCC and Clang refuse stay refused: pointers to character
+pointers such as `char **` to `unsigned char **`
+(`mdtests/a_char_pointer_pointer_is_not_converted_to_an_unsigned_char_pointer_pointer.md`),
+`?:` arms of different character pointer types, whose common type would be
+`void *`, the subtraction of such pointers, and conversions to or from a
+pointer to a wider integer type.
 
 The character pointer types `char *`, `signed char *`, and `unsigned char *`
 convert to one another by an explicit one-level cast, which C11 6.3.2.3p7 and
@@ -1386,15 +1398,13 @@ the byte 1 followed by `2`.
 Each literal sequence is represented as a fresh function-owned array of plain
 `char` with one explicit trailing NUL byte. The expression has the
 array-to-pointer behavior of a local byte array, so the result can be returned,
-indexed, or passed to a function expecting `uint8*`. Under
-`x86_64-linux-kernel`, where plain `char` is unsigned, the literal may also
-initialize, be assigned to, or be returned as a `uint8*` without a cast. Where
-plain `char` is signed, as under the default target, `execute()` refuses those
-three conversions as a pointer signedness mismatch naming the cast that fixes
-it
-(`mdtests/a_string_literal_returned_as_a_uint8_pointer_names_signed_plain_char.md`,
-`mdtests/a_string_literal_initializing_a_uint8_pointer_names_signed_plain_char.md`,
-`mdtests/a_string_literal_assigned_to_a_uint8_pointer_names_signed_plain_char.md`). The storage is stable across calls and remains
+indexed, or passed to a function expecting `uint8*`. Like any character
+pointer, the literal may also initialize, be assigned to, or be returned as a
+`uint8*` without a cast, which reads its bytes as unsigned on every target
+(`mdtests/a_string_literal_returned_as_a_uint8_pointer_reads_its_bytes.md`,
+`mdtests/a_string_literal_initializing_a_uint8_pointer_reads_its_bytes.md`,
+`mdtests/a_string_literal_assigned_to_a_uint8_pointer_reads_its_bytes.md`).
+The storage is stable across calls and remains
 read-only even after the pointer is copied to another local; an indirect store
 through that pointer is undefined behavior. The existing `viewable` byte-range
 interface can describe reads from the literal. Wide literals, non-ASCII
