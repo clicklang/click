@@ -638,10 +638,18 @@ signed and full-width address observations. An explicit constructor-entry mark
 uses the helper's checked Integer postconditions; byte preservation transports
 those observations to the vector-addition snapshot. [remainder-prefix.click](remainder-prefix.click)
 checks the four-byte start and pointer regrouping against the actual window,
-including starts near the signed-index limit. Shared borrowing retains checked
+including starts near the signed-index limit. Its endpoint lemmas check the
+Integer consumed-byte observation at initialization and actual exhaustion.
+Shared borrowing retains checked
 wide-index aliases beside signed and mixed-index spellings. Missing aliases and
-short views remain rejected. The general remainder's checksum residue invariants
-remain pending.
+short views remain rejected. The remainder lane loop carries both checksum
+residues against the common specification at the global position
+`full_batch_prefix + remainder_length - remaining`. Initialization reuses the
+completed full-batch residues. Each actual native lane addition advances that
+position by four under checked signed-addition guards; B retains its deferred
+local-position times A contribution and fixed entry seed. Actual iterator
+exhaustion establishes both residues for the complete aligned prefix, including
+an empty remainder. General remainder recombination remains pending.
 
 The full-batch loops carry both residues against `adler_spec_a` and
 `adler_spec_b` at every actual remaining count. Each native four-byte addition
@@ -665,8 +673,9 @@ checked iterator endpoints and coupling of the deferred state to the global
 checksum prefix. Its zero-lane residue lemma initializes B from any canonical
 entry value. The original inner back edge, scalar seed addition, reductions and
 outer back edge retain the common B specification. It introduces no processed
-counter. The aligned remainder and final scalar tail still need their general
-checksum invariants.
+counter. The remainder reuses these native transition and positivity lemmas.
+Its original scalar seed addition, reductions, recombination and final scalar
+tail still need their general checksum invariants.
 
 The harness assembles the contract with the checked helper/getter bodies,
 iterator and recombination libraries, general partition lemmas, and tail
@@ -675,7 +684,8 @@ regression. Nightly tests check the complete body, missing authority and seeds,
 false final bounds, absolute lane values, a duplicated A-transition byte, and
 a false lane-reduction residue, an incorrect deferred B seed product and a false
 B reduction residue, a changed entry B seed and a full-input claim at the
-completed-batch boundary, plus CLI verify/profile/audit/expanded-proof agreement.
+completed-batch boundary, a duplicated remainder A byte and a changed remainder
+B seed, plus CLI verify/profile/audit/expanded-proof agreement.
 The deferred B lemmas independently verify, profile, audit, expand and reverify;
 mutations reject incorrect native positions, byte weights, missing overflow
 bounds, invalid reduction floors, wrong global-prefix advances and changed seeds. The absolute-position lemmas also

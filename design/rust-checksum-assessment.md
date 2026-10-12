@@ -164,8 +164,10 @@ reductions. The B representative includes the deferred batch-local position
 times A contribution and remains nonnegative. Its entry seed stays fixed while
 Rust updates the working scalar B between batches. Actual outer exhaustion
 establishes both common checksum residues for the completed full-batch prefix.
-General vector and scalar remainders, and the full checksum identity, remain
-unproved.
+The aligned-remainder lane loop also preserves both residues through actual
+iterator exhaustion, including the deferred local-position times A contribution
+and the fixed entry B seed. Its general recombination, the scalar tail and the
+full checksum identity remain unproved.
 
 Follow the [current roadmap](../issues/rust-support.md) for the remaining outer
 batches, short tails, common specification, unchanged C proof, and architecture

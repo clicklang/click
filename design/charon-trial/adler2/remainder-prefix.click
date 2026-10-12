@@ -101,3 +101,29 @@ theorem adler_checked_prefix_advance(base: int32, pos: int32) {
   assumption();
  }
 }
+
+theorem adler_empty_remainder_position(total: int32, remaining: int32) {
+ requires 0 <= total;
+ requires remaining == total;
+ ensures to_integer(total - remaining) == 0 by {
+  have 0 <= remaining by { rewrite(remaining == total); assumption(); }
+  have remaining <= total by { rewrite(remaining == total); normalize(); }
+  apply(int32_nonnegative_subtract_within_value_is_defined(total, remaining)) using { 0 <= remaining; remaining <= total; }
+  have to_integer(remaining) == to_integer(total) by { rewrite(remaining == total); normalize(); }
+  apply(int32_subtract_to_integer(total, remaining)) using { defined(total - remaining); }
+  arithmetic() using { to_integer(total - remaining) == to_integer(total) - to_integer(remaining); to_integer(remaining) == to_integer(total); }
+ }
+}
+
+theorem adler_complete_remainder_position(total: int32, remaining: int32) {
+ requires 0 <= total;
+ requires remaining == 0;
+ ensures to_integer(total - remaining) == to_integer(total) by {
+  have 0 <= remaining by { rewrite(remaining == 0); normalize(); }
+  have remaining <= total by { rewrite(remaining == 0); assumption(); }
+  apply(int32_nonnegative_subtract_within_value_is_defined(total, remaining)) using { 0 <= remaining; remaining <= total; }
+  have to_integer(remaining) == 0 by { rewrite(remaining == 0); normalize(); }
+  apply(int32_subtract_to_integer(total, remaining)) using { defined(total - remaining); }
+  arithmetic() using { to_integer(total - remaining) == to_integer(total) - to_integer(remaining); to_integer(remaining) == 0; }
+ }
+}

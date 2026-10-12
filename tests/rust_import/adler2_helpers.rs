@@ -3204,6 +3204,8 @@ fn adler_remainder_positions_verify_expand_and_reverify() {
         "adler_checked_four_byte_start",
         "adler_checked_chunk_byte_observation",
         "adler_checked_prefix_advance",
+        "adler_empty_remainder_position",
+        "adler_complete_remainder_position",
     ] {
         assert_cli(
             &p,
@@ -3216,4 +3218,44 @@ fn adler_remainder_positions_verify_expand_and_reverify() {
         );
     }
     assert_cli(&p, &["verify"]);
+}
+
+#[test]
+#[ignore = "nightly: aligned-remainder A transition after arbitrary full batches"]
+fn charon_adler2_general_compute_rejects_false_remainder_a() {
+    let transition = GENERAL_COMPUTE
+        .lines()
+        .find(|line| {
+            line.contains("apply(adler_native_four_lane_a_prefix_step(")
+                && line.contains("__rust_mir_68.0")
+        })
+        .unwrap();
+    reject_compute(
+        GENERAL_COMPUTE,
+        transition,
+        &transition.replace(
+            "at(vector_a, __rust_mir_68.0[0]), at(vector_a, __rust_mir_68.0[1])",
+            "at(vector_a, __rust_mir_68.0[0]), at(vector_a, __rust_mir_68.0[0])",
+        ),
+    );
+}
+
+#[test]
+#[ignore = "nightly: aligned-remainder B specification preserves the entry seed"]
+fn charon_adler2_general_compute_rejects_false_remainder_b_seed() {
+    let transition = GENERAL_COMPUTE
+        .lines()
+        .find(|line| {
+            line.contains("apply(adler_native_deferred_b_prefix_step(")
+                && line.contains("__rust_mir_68.0")
+        })
+        .unwrap();
+    reject_compute(
+        GENERAL_COMPUTE,
+        transition,
+        &transition.replace(
+            "old(to_integer((self.b as u32)))",
+            "old(to_integer((self.b as u32))) + 1",
+        ),
+    );
 }
