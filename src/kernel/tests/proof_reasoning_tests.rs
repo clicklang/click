@@ -10725,3 +10725,76 @@ fn unsigned_u16_packing_bridges_match_disjoint_fields_and_retain_both_bounds() {
     assert_ne!(65536u32 | (1u32 << 16), 65536u32 + 65536u32);
     assert_ne!(u64::from(65536u32.wrapping_shl(16)), 65536u64 * 65536);
 }
+
+#[test]
+fn uint32_unpacking_rules_retain_bounds_and_recover_all_word_bits() {
+    fn evaluate(term: &Bitvector32Term) -> u32 {
+        match term {
+            Bitvector32Term::Constant(value) => *value,
+            Bitvector32Term::BitwiseOr(left, right) => evaluate(left) | evaluate(right),
+            Bitvector32Term::BitwiseAnd(left, right) => evaluate(left) & evaluate(right),
+            Bitvector32Term::ShiftLeft(left, right) => evaluate(left).wrapping_shl(evaluate(right)),
+            Bitvector32Term::LogicalShiftRight(left, right) => {
+                evaluate(left).wrapping_shr(evaluate(right))
+            }
+            _ => panic!("unexpected extraction term"),
+        }
+    }
+    let mut boundaries = vec![
+        0,
+        1,
+        255,
+        256,
+        32767,
+        32768,
+        65520,
+        65521,
+        65535,
+        65536,
+        u32::MAX,
+    ];
+    boundaries.extend((0..16).map(|bit| 1u32 << bit));
+    for &low in &boundaries {
+        for &high in &boundaries {
+            for theorem in [
+                prove_uint32_unpack_uint16_low(
+                    Bitvector32Term::Constant(low),
+                    Bitvector32Term::Constant(high),
+                ),
+                prove_uint32_unpack_uint16_high(
+                    Bitvector32Term::Constant(low),
+                    Bitvector32Term::Constant(high),
+                ),
+            ] {
+                let Proposition::Implies(low_guard, rest) = theorem.proposition() else {
+                    panic!("low bound missing")
+                };
+                let Proposition::Implies(high_guard, conclusion) = rest.as_ref() else {
+                    panic!("high bound missing")
+                };
+                assert_eq!(PureFactContext::new().proves_exact(low_guard), low <= 65535);
+                assert_eq!(
+                    PureFactContext::new().proves_exact(high_guard),
+                    high <= 65535
+                );
+                let Proposition::ConditionIs(condition, true) = conclusion.as_ref() else {
+                    panic!("word identity missing")
+                };
+                let identity_holds = match condition {
+                    ConditionTerm::Constant(value) => *value,
+                    ConditionTerm::Bitvector32Equal(extracted, original) => {
+                        evaluate(extracted) == evaluate(original)
+                    }
+                    _ => panic!("unexpected word identity"),
+                };
+                if low <= 65535 && high <= 65535 {
+                    assert!(identity_holds, "low={low}, high={high}");
+                }
+            }
+        }
+    }
+    // Bounds cannot be dropped from the paired round trip.
+    let oversized = std::hint::black_box(65536u32);
+    assert_ne!(oversized & 65535, oversized);
+    assert_ne!((oversized.wrapping_shl(16) >> 16) & 65535, oversized);
+}

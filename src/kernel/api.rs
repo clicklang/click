@@ -9181,6 +9181,57 @@ fn prove_unsigned_pack_u16_in_order_to_integer(
     )))
 }
 
+/// Recover the low word of `(high << 16) | low` for two bounded uint16 fields.
+/// The bounds are part of the issued theorem, never inferred from its operands.
+pub fn prove_uint32_unpack_uint16_low(low: Bitvector32Term, high: Bitvector32Term) -> Theorem {
+    prove_uint32_unpack_uint16_word(low, high, false)
+}
+
+/// Recover the high word using an unsigned (logical) right shift and mask.
+pub fn prove_uint32_unpack_uint16_high(low: Bitvector32Term, high: Bitvector32Term) -> Theorem {
+    prove_uint32_unpack_uint16_word(low, high, true)
+}
+
+fn prove_uint32_unpack_uint16_word(
+    low: Bitvector32Term,
+    high: Bitvector32Term,
+    high_word: bool,
+) -> Theorem {
+    // Each bound confines the field to 16 bits. Shifting high left 16 then
+    // ORing low puts the fields in disjoint halves without discarding high
+    // bits. Masking selects the low half; logically shifting right first
+    // selects the high half, including when the packed word's sign bit is set.
+    let packed = Bitvector32Term::BitwiseOr(
+        Bitvector32Term::ShiftLeft(high.clone().into(), Bitvector32Term::Constant(16).into())
+            .into(),
+        low.clone().into(),
+    );
+    let selected = if high_word {
+        Bitvector32Term::LogicalShiftRight(packed.into(), Bitvector32Term::Constant(16).into())
+    } else {
+        packed
+    };
+    let extracted =
+        Bitvector32Term::BitwiseAnd(selected.into(), Bitvector32Term::Constant(65535).into());
+    let exact = if high_word { high.clone() } else { low.clone() };
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_equal(low, Bitvector32Term::Constant(65535)),
+            true,
+        )),
+        Box::new(Proposition::Implies(
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::unsigned_less_equal(high, Bitvector32Term::Constant(65535)),
+                true,
+            )),
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::equal(extracted, exact),
+                true,
+            )),
+        )),
+    ))
+}
+
 pub fn prove_uint64_integer_bridge(
     name: &str,
     left: Bitvector32Term,

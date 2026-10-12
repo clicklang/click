@@ -57,8 +57,11 @@ canonical A seeds. A locked real Rust client now performs two unchanged
 `write_slice` calls at every split of every supported input, including empty
 prefixes and suffixes, proves the full-input packed specification, and preserves
 all bytes. Its proof connects actual updated fields and suffix byte addresses
-to the checked concatenation theorem. Saved-checksum restoration and resumed
-updates remain pending.
+to the checked concatenation theorem. A second locked client saves the prefix
+checksum, restores a fresh receiver through unchanged `from_checksum`, and
+proves the same full-input result and byte preservation after the suffix update.
+Bounded unpacking rules recover exactly the canonical fields produced by the
+first update; arbitrary saved words are not assumed canonical.
 
 Constructors, one- through four-byte computations, and the shared checksum
 getter verify. The getter proves exact packing for any two u16 fields and has a
@@ -94,33 +97,7 @@ current roadmap: replace status when work lands rather than append checkpoints.
 
 ## Remaining work, in delivery order
 
-### 1. Verify saved-checksum restoration and resumed updates
-
-Use the [shared Adler-32 specification](../design/adler32-spec.click), following
-[the checksum assessment](../design/rust-checksum-assessment.md). Compose the
-checked [word-extraction constructor](../design/charon-trial/adler2/restoration.click)
-with the general update contract and getter,
-showing that a saved packed checksum restores the same canonical A/B state.
-The constructor now proves the exact low/high masked words for every `u32`
-input. The next bridge is the bounded packing/unpacking round trip: with each
-word at most 65535, masking `(high << 16) | low` recovers `low`, and shifting
-then masking recovers `high`. Existing packing theorems establish the Integer
-value but do not expose these word identities. Arbitrary saved values need
-not have canonical Adler seeds; saved states produced by a checked update do.
-Connect the resumed update to the checked mathematical incremental equality.
-Prove arbitrary finite input correctness under the explicit supported memory
-range and API preconditions, including compatible initial states.
-
-Acceptance:
-
-- The unchanged Rust public entry point composes checked bodies, terminates,
-  preserves input bytes, cannot panic, and returns the specified packed checksum.
-- Restoring a saved checksum and continuing an update equals processing
-  concatenated input, including empty and chunk/remainder boundaries.
-- A false checksum postcondition fails. No assumed library summary supplies
-  the checksum computation's postcondition.
-
-### 2. Verify C and publish the shared demonstration
+### 1. Verify C and publish the shared demonstration
 
 Pin the selected configuration and revision of
 [zlib's Adler-32](https://github.com/madler/zlib/blob/develop/adler32.c), verify
@@ -146,7 +123,7 @@ Acceptance:
 - Publish reproducible locked fixtures and a scoped demonstration. Keep slow
   whole-proof checks nightly and bounded regressions in the normal gate.
 
-### 3. Close experimental-support architecture requirements
+### 2. Close experimental-support architecture requirements
 
 Resolve these requirements alongside the library proof; do not postpone them
 behind new language coverage:
