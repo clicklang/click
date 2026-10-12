@@ -35,6 +35,7 @@ mod resources;
 mod signed_definedness;
 mod smart_closures;
 mod smart_execution;
+mod solver_bridges;
 mod structural;
 mod surface_certificates;
 mod surface_construction;

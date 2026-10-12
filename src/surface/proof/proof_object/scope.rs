@@ -583,10 +583,22 @@ impl<'a> ProofScope<'a> {
     pub(in crate::surface::proof) fn try_auto_fact_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        match self.try_solver_closure()? {
-            Some(closed) => Ok(Some(closed)),
-            None => self.try_simp_closure(),
+        if let Some(closed) = self.try_solver_closure()? {
+            return Ok(Some(closed));
         }
+        let bridged = match self.body.try_bridged_solver_closure()? {
+            Some(body) => Some(body),
+            None => match self.body.try_machine_goal_solver_closure()? {
+                Some(body) => Some(body),
+                None => self.body.try_solver_equality_closure()?,
+            },
+        };
+        if let Some(body) = bridged {
+            let mut next = self.clone();
+            next.body = body;
+            return Ok(Some(next));
+        }
+        self.try_simp_closure()
     }
 
     pub(in crate::surface::proof) fn try_solver_closure(&self) -> Result<Option<Self>, ClickError> {
