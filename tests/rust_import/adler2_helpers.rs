@@ -3206,6 +3206,7 @@ fn adler_remainder_positions_verify_expand_and_reverify() {
         "adler_checked_prefix_advance",
         "adler_empty_remainder_position",
         "adler_complete_remainder_position",
+        "adler_remainder_native_count_observation",
     ] {
         assert_cli(
             &p,
@@ -3257,5 +3258,25 @@ fn charon_adler2_general_compute_rejects_false_remainder_b_seed() {
             "old(to_integer((self.b as u32)))",
             "old(to_integer((self.b as u32))) + 1",
         ),
+    );
+}
+
+#[test]
+#[ignore = "nightly: general remainder A reduction and scalar recombination"]
+fn charon_adler2_general_compute_rejects_false_recombined_remainder_a() {
+    reject_compute(
+        GENERAL_COMPUTE,
+        "have to_integer(a) == adler_lane_a(to_integer(at(remainder_lane_prefix, a)),",
+        "have to_integer(a) + 1 == adler_lane_a(to_integer(at(remainder_lane_prefix, a)),",
+    );
+}
+
+#[test]
+#[ignore = "nightly: general remainder B weighted corrections and scalar recombination"]
+fn charon_adler2_general_compute_rejects_false_recombined_remainder_b() {
+    reject_compute(
+        GENERAL_COMPUTE,
+        "have to_integer(b) == adler_lane_b(to_integer(at(weighted_b, b)),",
+        "have to_integer(b) + 1 == adler_lane_b(to_integer(at(weighted_b, b)),",
     );
 }

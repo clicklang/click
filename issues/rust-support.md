@@ -124,8 +124,10 @@ Exact constructor-byte observations and byte preservation also verify in the
 general aligned remainder. Its lane loop now carries both A and B residues
 against the common specification through actual iterator exhaustion. The B
 representative retains the deferred local-position times A contribution and
-the fixed entry B seed. General remainder recombination and the scalar tail
-remain pending. Full original-computation smart audits
+the fixed entry B seed. The original remainder seed product, scalar addition,
+lane reductions, weighted corrections and four scalar sums now preserve both
+residues for the complete aligned prefix. The general scalar tail and final
+field specification remain pending. Full original-computation smart audits
 currently exhaust the standard ten-minute run bound before completing a site,
 while ordinary verification succeeds. This is an audit-tool limitation, not a
 reported proof failure; continue checksum proof work with ordinary verification

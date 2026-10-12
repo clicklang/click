@@ -649,7 +649,14 @@ completed full-batch residues. Each actual native lane addition advances that
 position by four under checked signed-addition guards; B retains its deferred
 local-position times A contribution and fixed entry seed. Actual iterator
 exhaustion establishes both residues for the complete aligned prefix, including
-an empty remainder. General remainder recombination remains pending.
+an empty remainder. The original remainder seed product and scalar B addition
+supply the exact deferred contribution. Checked native remainder observations
+carry both residues through the lane reductions; the original ordered B
+corrections and four scalar sums establish both scalar residues for the complete
+aligned prefix. The local remainder length stays distinct from the global
+specification position, and the B specification keeps the entry receiver seed.
+The native unsigned count bridge is checked independently and expanded with
+the remainder-position claims.
 
 The full-batch loops carry both residues against `adler_spec_a` and
 `adler_spec_b` at every actual remaining count. Each native four-byte addition
@@ -674,8 +681,9 @@ checksum prefix. Its zero-lane residue lemma initializes B from any canonical
 entry value. The original inner back edge, scalar seed addition, reductions and
 outer back edge retain the common B specification. It introduces no processed
 counter. The remainder reuses these native transition and positivity lemmas.
-Its original scalar seed addition, reductions, recombination and final scalar
-tail still need their general checksum invariants.
+Its original scalar seed addition, reductions and recombination now preserve
+those residues. The final scalar tail and receiver-field specification still
+need their general checksum proof.
 
 The harness assembles the contract with the checked helper/getter bodies,
 iterator and recombination libraries, general partition lemmas, and tail
@@ -685,7 +693,8 @@ false final bounds, absolute lane values, a duplicated A-transition byte, and
 a false lane-reduction residue, an incorrect deferred B seed product and a false
 B reduction residue, a changed entry B seed and a full-input claim at the
 completed-batch boundary, a duplicated remainder A byte and a changed remainder
-B seed, plus CLI verify/profile/audit/expanded-proof agreement.
+B seed, false scalar A and B recombination observations, plus CLI
+verify/profile/audit/expanded-proof agreement.
 The deferred B lemmas independently verify, profile, audit, expand and reverify;
 mutations reject incorrect native positions, byte weights, missing overflow
 bounds, invalid reduction floors, wrong global-prefix advances and changed seeds. The absolute-position lemmas also
