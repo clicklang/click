@@ -190,12 +190,13 @@ pub(super) fn parse_file_items(source: &str) -> Result<ClickFile, ClickError> {
     parser.parse_file_items()
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn parse_file_items_for_module(
     source: &str,
     identity: &str,
     line_offset: usize,
     imported_algebraic_types: &[AlgebraicTypeDefinition],
+    imported_tactic_names: &BTreeSet<String>,
+    imported_callees: &[&FunctionBlock],
     layouts: ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
     let mut parser = Parser::with_program_layouts(
@@ -203,6 +204,39 @@ pub(super) fn parse_file_items_for_module(
         layouts,
         Some(&crate::source::SourceContainer::new(identity, line_offset)),
     )?;
+    parser
+        .tactic_names
+        .extend(imported_tactic_names.iter().cloned());
+    for block in imported_callees {
+        let parameters = block
+            .signature()
+            .parameters()
+            .iter()
+            .map(|parameter| parameter.name().to_string())
+            .collect::<Vec<_>>();
+        for requirement in block.requires() {
+            if let Requirement::Resource(resource) = requirement {
+                parser.record_callee_resource_binder(
+                    block.signature().name(),
+                    resource,
+                    &parameters,
+                    CalleeResourceBinderKind::Supplied,
+                );
+            }
+        }
+        for ensure in block.ensures() {
+            if !ensure.borrowed()
+                && let Ensure::Resource(resource) = ensure.ensure()
+            {
+                parser.record_callee_resource_binder(
+                    block.signature().name(),
+                    resource,
+                    &parameters,
+                    CalleeResourceBinderKind::Produced,
+                );
+            }
+        }
+    }
     for definition in imported_algebraic_types {
         for variant in definition.variants() {
             parser.algebraic_variant_fields.insert(

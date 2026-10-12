@@ -1317,8 +1317,9 @@ propagation. `rbtree_erase_color_flips_red_all.click` completes both
 orientations of propagated red-sibling cases 1/3/4 with nonempty subtrees.
 The unchanged `rb_erase` wrapper now verifies for every leaf deletion: red or
 black leaves on either parent link, and the sole root. Its read-only
-callback-table splice and general color repair are both checked in the same
-unit. A conditional splice contract supplies either the deficit required by
+callback-table splice is checked in `rbtree_erase_leaf_wrapper.click`, which
+imports the separately checked general color-repair proof and refolding tactic.
+A conditional splice contract supplies either the deficit required by
 repair or a balanced context for the no-repair branch. The wrapper returns
 the detached node and exact balanced root, with parent consistency and
 in-order removal. The left-child and right-child sidecars now verify the
@@ -1329,8 +1330,12 @@ successors and immediate successors with replacement children, at the root and
 on either parent link, plus both exits after deeper successor descent.
 The callback tables are borrowed without additional separation preconditions;
 the wrappers return the detached node and exact balanced, parent-consistent
-root with the remaining in-order contents. Black-leaf successors still need
-integration of their returned deficit with the general color-repair proof.
+root with the remaining in-order contents. The immediate and deeper black-leaf
+successor wrappers now import their splice and general repair contracts. The
+splices expose a nonempty deficit context and its repair parent; each wrapper
+returns the exact repaired root with balance, parent consistency, and the
+remaining in-order contents. Wrapper integration now covers all splice cases.
+Shared callback and parent-link proofs are imported and checked separately.
 Depends on 12.
 
 ### Augmented

@@ -2834,7 +2834,7 @@ fn rbtree_erase_wrapper_uses_the_unchanged_pinned_callbacks_and_body() {
 #[ignore = "nightly: erase wrapper mutation verifies the combined repair sidecar"]
 fn rbtree_erase_wrapper_requires_nonnull_color_repair() {
     let error = erase_source_replacement_error(
-        "rbtree_erase_color_flips_red_all.click",
+        "rbtree_erase_leaf_wrapper.click",
         "rb_erase.c",
         "if (rebalance)",
         "if (!rebalance)",

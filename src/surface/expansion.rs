@@ -2090,11 +2090,14 @@ fn splice_source(
 /// one grouped proof. A tactic is declared before any proof applies it, so
 /// [`find_function`] reaches its declaration first.
 fn proof_function_blocks(file: &ClickFile) -> impl Iterator<Item = &FunctionBlock> {
-    file.function_blocks().iter().chain(
-        file.tactic_definitions()
-            .iter()
-            .map(TacticDefinition::function_block),
-    )
+    file.function_blocks()
+        .iter()
+        .chain(
+            file.tactic_definitions()
+                .iter()
+                .map(TacticDefinition::function_block),
+        )
+        .filter(|block| file.function_is_selected(block.signature().name()))
 }
 
 /// The token after a Rust signature's return type, `-> T` or `-> ()`, when
@@ -4967,6 +4970,9 @@ fn c0_tactic_source_positions_with_tokens(
         }
     }
     for tactic in file.tactic_definitions() {
+        if !file.function_is_selected(tactic.name()) {
+            continue;
+        }
         if claim_label != tactic.function_block().contract_claim_label() {
             continue;
         }

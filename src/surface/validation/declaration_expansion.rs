@@ -122,6 +122,8 @@ fn load_standard_library(source: &str) -> Result<ClickFile, ClickError> {
         "stdlib/prelude.click",
         0,
         &[],
+        &BTreeSet::new(),
+        &[],
         Default::default(),
     )?)?;
     if !file.verifying_sources().is_empty()
