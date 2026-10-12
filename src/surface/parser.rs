@@ -5787,10 +5787,14 @@ impl Parser {
     /// A comparison operand whose outermost operator is `&`, `|` or `^` must
     /// be parenthesized. C binds comparisons tighter than these operators and
     /// Click binds them looser, so `x & 1 == 0` would read differently to a C
-    /// reader than it verifies.
+    /// reader than it verifies. Rust groups them as Click does, so a sidecar
+    /// verifying Rust needs no parentheses.
     fn parse_comparison_operand(&mut self) -> Result<ContractExpression, ClickError> {
         let start = self.position;
         let operand = self.parse_contract_expression()?;
+        if self.verifies_rust() {
+            return Ok(operand);
+        }
         let operator = match &operand {
             ContractExpression::BitwiseAnd(..) => "&",
             ContractExpression::BitwiseOr(..) => "|",
