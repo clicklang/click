@@ -4913,16 +4913,6 @@ pub(crate) fn substitute_bitvector_variable(
     to: &Bitvector32Term,
 ) -> Bitvector32Term {
     match term {
-        Bitvector32Term::MachineIntegerCast {
-            value,
-            source,
-            destination,
-        } => Bitvector32Term::machine_integer_cast(
-            *source,
-            *destination,
-            substitute_bitvector_variable(value, from, to),
-        ),
-
         Bitvector32Term::MachineIntegerConstant(value) => {
             Bitvector32Term::MachineIntegerConstant(*value)
         }
@@ -4940,195 +4930,6 @@ pub(crate) fn substitute_bitvector_variable(
             // same load variable as a direct read of that cell.
             substitute_through_load_variable(*variable, from, to)
                 .unwrap_or(Bitvector32Term::Variable(*variable))
-        }
-        Bitvector32Term::Int64From32(value) => {
-            Bitvector32Term::int64_from_32(substitute_bitvector_variable(value, from, to))
-        }
-        Bitvector32Term::UInt64From32(value) => {
-            Bitvector32Term::uint64_from_32(substitute_bitvector_variable(value, from, to))
-        }
-        Bitvector32Term::UInt32From64(value) => {
-            Bitvector32Term::uint32_from_64(substitute_bitvector_variable(value, from, to))
-        }
-        Bitvector32Term::Int64FromUInt32(value) => {
-            Bitvector32Term::int64_from_uint32(substitute_bitvector_variable(value, from, to))
-        }
-        Bitvector32Term::UInt64FromInt32(value) => {
-            Bitvector32Term::uint64_from_int32(substitute_bitvector_variable(value, from, to))
-        }
-        Bitvector32Term::UInt64FromInt64(value) => {
-            Bitvector32Term::uint64_from_int64(substitute_bitvector_variable(value, from, to))
-        }
-        Bitvector32Term::Int64Add(left, right) => Bitvector32Term::int64_add(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::Int64Subtract(left, right) => Bitvector32Term::int64_subtract(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::Int64Multiply(left, right) => Bitvector32Term::int64_multiply(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::Int64Divide(left, right) => Bitvector32Term::int64_divide(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::Int64Remainder(left, right) => Bitvector32Term::int64_remainder(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::Int64ShiftLeft(left, right) => Bitvector32Term::int64_shift_left(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::Int64ArithmeticShiftRight(left, right) => {
-            Bitvector32Term::int64_arithmetic_shift_right(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        Bitvector32Term::Int64BitwiseAnd(left, right) => Bitvector32Term::int64_bitwise_and(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::Int64BitwiseOr(left, right) => Bitvector32Term::int64_bitwise_or(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::Int64BitwiseXor(left, right) => Bitvector32Term::int64_bitwise_xor(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::Int64BitwiseNot(value) => {
-            Bitvector32Term::int64_bitwise_not(substitute_bitvector_variable(value, from, to))
-        }
-        Bitvector32Term::UInt64Add(left, right) => Bitvector32Term::uint64_add(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::UInt64Subtract(left, right) => Bitvector32Term::uint64_subtract(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::UInt64Multiply(left, right) => Bitvector32Term::uint64_multiply(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::UInt64Divide(left, right) => Bitvector32Term::uint64_divide(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::UInt64Remainder(left, right) => Bitvector32Term::uint64_remainder(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::UInt64ShiftLeft(left, right) => Bitvector32Term::uint64_shift_left(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::UInt64LogicalShiftRight(left, right) => {
-            Bitvector32Term::uint64_logical_shift_right(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        Bitvector32Term::UInt64BitwiseAnd(left, right) => Bitvector32Term::uint64_bitwise_and(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::UInt64BitwiseOr(left, right) => Bitvector32Term::uint64_bitwise_or(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::UInt64BitwiseXor(left, right) => Bitvector32Term::uint64_bitwise_xor(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::UInt64BitwiseNot(value) => {
-            Bitvector32Term::uint64_bitwise_not(substitute_bitvector_variable(value, from, to))
-        }
-        Bitvector32Term::Float32Negate(value) => {
-            Bitvector32Term::float32_negate(substitute_bitvector_variable(value, from, to))
-        }
-        Bitvector32Term::Float32Binary {
-            operator,
-            left,
-            right,
-        } => Bitvector32Term::float32_binary(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-            *operator,
-        ),
-        Bitvector32Term::Float64Negate(value) => {
-            Bitvector32Term::float64_negate(substitute_bitvector_variable(value, from, to))
-        }
-        Bitvector32Term::Float64Binary {
-            operator,
-            left,
-            right,
-        } => Bitvector32Term::float64_binary(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-            *operator,
-        ),
-        Bitvector32Term::Add(left, right) => Bitvector32Term::add(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::Subtract(left, right) => Bitvector32Term::subtract(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::Multiply(left, right) => Bitvector32Term::multiply(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::Divide(left, right) => Bitvector32Term::divide(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::UnsignedDivide(left, right) => Bitvector32Term::unsigned_divide(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::Remainder(left, right) => Bitvector32Term::remainder(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::UnsignedRemainder(left, right) => Bitvector32Term::unsigned_remainder(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::ShiftLeft(left, right) => Bitvector32Term::shift_left(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::ArithmeticShiftRight(left, right) => {
-            Bitvector32Term::arithmetic_shift_right(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
-        }
-        Bitvector32Term::LogicalShiftRight(left, right) => Bitvector32Term::logical_shift_right(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::BitwiseAnd(left, right) => Bitvector32Term::bitwise_and(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::BitwiseOr(left, right) => Bitvector32Term::bitwise_or(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::BitwiseXor(left, right) => Bitvector32Term::bitwise_xor(
-            substitute_bitvector_variable(left, from, to),
-            substitute_bitvector_variable(right, from, to),
-        ),
-        Bitvector32Term::BitwiseNot(value) => {
-            Bitvector32Term::bitwise_not(substitute_bitvector_variable(value, from, to))
         }
         Bitvector32Term::If {
             condition,
@@ -5256,6 +5057,14 @@ pub(crate) fn substitute_bitvector_variable(
                 destination: *destination,
             }
         }
+        term => match (term.as_binary(), term.as_unary()) {
+            (Some((op, left, right)), _) => op.build(
+                substitute_bitvector_variable(left, from, to),
+                substitute_bitvector_variable(right, from, to),
+            ),
+            (_, Some((op, value))) => op.build(substitute_bitvector_variable(value, from, to)),
+            _ => unreachable!("every other variant has its own arm"),
+        },
     }
 }
 
