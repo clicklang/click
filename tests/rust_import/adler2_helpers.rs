@@ -1957,6 +1957,38 @@ fn adler_common_spec_expands_and_rejects_false_results() {
 const GENERAL_PARTITION: &str =
     include_str!("../../design/charon-trial/adler2/general-partition.click");
 
+#[test]
+#[ignore = "nightly: absolute byte observations, expansion and false offsets"]
+fn charon_adler2_absolute_chunk_bytes_expand_and_reject_false_offsets() {
+    for claim in [
+        "adler_defined_byte_pointer_add.ensures_0",
+        "adler_absolute_chunk_pointer.ensures_0",
+        "adler_absolute_chunk_pointer.ensures_1",
+        "adler_absolute_chunk_byte_observation.ensures_0",
+    ] {
+        let expanded =
+            click::surface::expand_c0_claim_source_by_label(GENERAL_PARTITION, &[], claim)
+                .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
+        click::surface::verify_c0_sources(&expanded, &[]).unwrap();
+    }
+    for (before, after) in [
+        ("requires defined(left + right);", ""),
+        (
+            "ensures to_integer((int32)((bytes + start) + pos)[lane]) == to_integer((int32)bytes[(start + pos) + lane])",
+            "ensures to_integer((int32)((bytes + start) + pos)[lane]) == to_integer((int32)bytes[(start + pos) + lane]) + 1",
+        ),
+    ] {
+        let invalid = GENERAL_PARTITION.replacen(before, after, 1);
+        assert_ne!(invalid, GENERAL_PARTITION);
+        let error = click::surface::verify_c0_sources(&invalid, &[]).unwrap_err();
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
 const STORED_GUARD_C: &str = r#"int adler_stored_guard(int remaining, unsigned long size) {
     while (0 < remaining && (size <= 2147483647UL && (int)(unsigned int)size <= remaining)) {
         remaining -= 22208;
@@ -2092,6 +2124,16 @@ fn charon_adler2_general_compute_proves_original_body() {
         load_import(&p.config()).unwrap(),
     )
     .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: actual full-batch constructor byte positions"]
+fn charon_adler2_general_compute_rejects_false_absolute_byte() {
+    reject_compute(
+        GENERAL_COMPUTE,
+        "have to_integer(at(vector_a, __rust_mir_42.0[3])) == at(vector_a, to_integer((bytes[",
+        "have to_integer(at(vector_a, __rust_mir_42.0[3])) + 1 == at(vector_a, to_integer((bytes[",
+    );
 }
 
 #[test]

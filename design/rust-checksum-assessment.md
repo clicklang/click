@@ -154,8 +154,10 @@ bytes from canonical initial states, including the zero-to-three-byte tail.
 It checks the lane-loop ceilings, termination, original reductions and
 recombination, scalar sums, and final 16-bit stores. Both final fields equal
 the common mathematical specification on the entry input snapshot. The
-arbitrary-length computation has checked bounds and termination, but its
-full checksum identity remains unproved.
+arbitrary-length computation has checked bounds and termination. Each full-batch
+vector step connects all four constructor lanes to exact absolute input-byte
+observations using actual iterator state. Its full checksum identity remains
+unproved.
 
 Follow the [current roadmap](../issues/rust-support.md) for the remaining outer
 batches, short tails, common specification, unchanged C proof, and architecture

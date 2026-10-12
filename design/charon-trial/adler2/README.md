@@ -612,8 +612,7 @@ by this contract.
 
 ## General whole-body induction
 
-The [general computation contract](general-compute.click), pending the native-count
-repair noted above, previously verified the original
+The [general computation contract](general-compute.click) verifies the original
 body for every length in `0..2147483647`, with canonical seeds `a,b < 65521`.
 The signed observation limit is explicit; full-width metadata is not truncated
 to admit larger inputs. The proof includes arbitrary numbers of full
@@ -623,11 +622,23 @@ arithmetic guard, and ranks all loops by their actual stored remaining state.
 Both final fields remain below 65,521. No assumed checksum summary or generated
 processed counter supplies these guarantees.
 
+Each full-batch vector step also proves that all four constructor lanes equal
+exact mathematical byte observations at absolute positions in the original
+input. The positions come from the stored outer and inner remaining counts.
+The [partition lemmas](general-partition.click) check signed addition before
+regrouping byte pointers. The proof first establishes machine-byte equality
+across the constructor's local return storage, then rewrites the Integer
+observation using that equality. These observations supply the input values
+needed for the outer checksum recurrence; they do not establish its residues.
+
 The harness assembles the contract with the checked helper/getter bodies,
 iterator and recombination libraries, general partition lemmas, and tail
 bounds. Normal tests check the bounded metadata and native stored-guard
 regression. Nightly tests check the complete body, missing authority and seeds,
-false final bounds, and CLI verify/profile/audit/expanded-proof agreement.
+false final bounds and absolute lane values, and CLI
+verify/profile/audit/expanded-proof agreement. The absolute-position lemmas also
+expand and reverify independently; mutations reject undefined pointer sums and
+false byte observations.
 
 ```sh
 cargo nextest run --profile nightly --test rust_import \

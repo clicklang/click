@@ -45,7 +45,9 @@ Both output fields remain below 65,521. Checked partition lemmas relate full-wid
 lengths, signed indices, four-byte prefixes, and zero-to-three-byte tails.
 General signed-range partition lemmas establish aligned full-batch remainders
 and decreasing actual outer-iterator remaining counts, without truncating usize
-metadata. Full outer-batch induction, lane reduction/reset, and the final vector and scalar
+metadata. Every full-batch vector step connects all four constructor lane values
+to exact absolute input-byte observations derived from those stored counts.
+Full outer-batch induction, lane reduction/reset, and the final vector and scalar
 remainders are checked in the whole-body proof. Checksum correctness remains
 incomplete.
 The shared mathematical specification proves byte-sum and weighted-sum
