@@ -1288,7 +1288,7 @@ requirement. An empty viewable or memory range does not establish that its
 base has object provenance.
 
 `aligned(pointer, n)` states that the pointer's address is a multiple of `n`,
-a power of two. It is sugar for `address(pointer) & (n - 1) == 0`. Click
+a power of two. It is sugar for `(address(pointer) & (n - 1)) == 0`. Click
 decides it from how the pointer was formed, never from its pointee type: a
 successful heap allocation is 16-byte aligned; a declared local's block is
 aligned for its type from its declaration, a struct local's for its
@@ -2466,6 +2466,12 @@ exists (k: int32) { 0 <= k and k < n and p[k] == x }
 
 Do not use C logical operators such as `&&`, `||`, or `!` in Click
 propositions. Those remain C-fragment syntax.
+
+A comparison binds looser than every expression operator, which differs from C
+for `&`, `^` and `|`. Parenthesize a comparison operand whose outermost
+operator is one of those three: `(x & 1) == 0`, not `x & 1 == 0`, which is
+refused. See
+[Contract-expression precedence](grammar.md#contract-expression-precedence).
 
 Range proposition helpers:
 
