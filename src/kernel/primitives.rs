@@ -6685,14 +6685,12 @@ impl ResourceContext {
                 }
                 return self;
             }
-            self.loan_dependencies =
-                std::sync::Arc::new(crate::kernel::loans::LoanViewBindingsState {
-                    identity: crate::kernel::loans::next_loan_binding_identity(),
-                    map: self
-                        .loan_dependencies
-                        .map
-                        .with_inserted(occurrence, dependency),
-                });
+            self.loan_dependencies = self.loan_dependencies.updated(
+                self.loan_dependencies
+                    .map
+                    .with_inserted(occurrence, dependency),
+                [occurrence],
+            );
         }
         self
     }

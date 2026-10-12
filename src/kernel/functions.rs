@@ -25366,7 +25366,9 @@ pub(super) fn expose_composite_resource_fact(
         if !seen.insert(context.clone()) {
             continue;
         }
-        if structural && context.satisfies_memory_fact_structurally(target) {
+        if (structural && context.satisfies_memory_fact_structurally(target))
+            || (!structural && context.satisfies_fact(target, assumptions))
+        {
             return Some(context);
         }
         // The composite whose pointer argument is the target's base by

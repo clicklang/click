@@ -1847,6 +1847,17 @@ impl PureFactContext {
                 )
             }
         };
+        if self
+            .borrow_partition_separated_members(
+                left,
+                right,
+                |range| contains(left, range),
+                |range| contains(right, range),
+            )
+            .is_some()
+        {
+            return true;
+        }
         let direct = self
             .memory_separation_candidates(&left.block, &right.block)
             .find_map(|(proposition, left_range, right_range)| {
@@ -2264,6 +2275,17 @@ impl PureFactContext {
         ) else {
             return false;
         };
+        if self
+            .borrow_partition_separated_members(
+                left.base(),
+                right.base(),
+                |range| memory_range_contained_for_memory_resolution(left, range, self),
+                |range| memory_range_contained_for_memory_resolution(right, range, self),
+            )
+            .is_some()
+        {
+            return true;
+        }
         // Separate sides need not have the same logical element width.
         // Each query is contained in its own certificate side below.
         if self
@@ -2900,6 +2922,26 @@ impl PureFactContext {
                 right.signed_constant_end(),
             )
             && (left_end <= right_start || right_end <= left_start)
+        {
+            return true;
+        }
+
+        if let (CResource::Memory(a), CResource::Memory(b)) = (left, right)
+            && self
+                .borrow_partition_separated_members(
+                    a.base(),
+                    b.base(),
+                    |range| {
+                        self.proves_resource_contains_inner(&CResource::Memory(range.clone()), left)
+                    },
+                    |range| {
+                        self.proves_resource_contains_inner(
+                            &CResource::Memory(range.clone()),
+                            right,
+                        )
+                    },
+                )
+                .is_some()
         {
             return true;
         }
@@ -4161,6 +4203,17 @@ impl PureFactContext {
         }
         if self.pointer_overlaps_range_after_path_equality(pointer, range) {
             return false;
+        }
+        if self
+            .borrow_partition_separated_members(
+                range.base(),
+                pointer,
+                |available| memory_range_shallowly_contained_with_facts(range, available, self),
+                |available| self.pointer_directly_in_memory_range(pointer, available),
+            )
+            .is_some()
+        {
+            return true;
         }
         let owned_member_holds_pointer = |resources: &ResourceContext| {
             resources.proves_owned_range_separate_from_pointer_shallow(

@@ -47,7 +47,7 @@ Neither contract assumes the erased node's or child's color.
 Validity implies that copying the erased node's parent/color word blackens the
 child. The proofs return that exact replacement model and the unchanged context,
 with whole-tree red-black validity, parent consistency, preserved child in-order
-contents, and a null fixup parent. Both use exclusive callback-table ownership.
+contents, and a null fixup parent. Both borrow the read-only callback table.
 
 `rbtree_erase_nonroot_successor.click` extends the immediate red-leaf successor
 case below the root, on either parent link. It returns the exact successor
@@ -256,7 +256,15 @@ The wrapper returns ownership of the detached node and a balanced root with
 consistent parents and exactly the in-order contents of the old context with
 the erased leaf removed. Its contract requires views of the static const dummy
 callback fields; initialization of these views at program startup is outside
-this local proof. Nodes with children still need wrapper integration.
+this local proof.
+
+`rbtree_erase_left_child.click` and `rbtree_erase_right_child.click` also verify
+the unchanged wrapper end to end when the erased node has exactly one child,
+at the root or on either parent link. Their splice proofs borrow the constant
+callback table without additional separation preconditions. They return the
+detached node and a balanced, parent-consistent root with exact in-order
+contents. Checked execution proves the repair call unreachable in these cases.
+Two-child deletion still needs wrapper integration.
 
 `rb_erase.c` includes the existing unchanged splice and repair extracts and adds
 the dummy callbacks, const table, and `rb_erase` definition verbatim from pinned
