@@ -31,6 +31,17 @@ whole state and fact set (`statement_kernel_variables`), work that is not
 charged; the charged growth is in the store's own execution and was not yet
 isolated.
 
+Diagnosis (master `b1523c784`, sampling which call paths charge the work):
+the store's work is cache invalidation. `CMemory::without_possible_aliasing_cells`
+asks `forget_cached_values` the fate of every cached cell its
+`AliasCandidates` admit, and for an `ExternalArgument` store that is every
+cached cell of every parameter object. Each one is then kept cheaply, by
+ownership (`access_owned_apart_from_store`, a base-indexed lookup), but it
+is still visited: about 16 units per other object. A constant store needs
+the walk itself to skip cells that ownership places in another member, for
+example an index from cached cells to the owned member that holds them,
+consulted like the `store_gap_kept_ranges` skip.
+
 Acceptance: a multi-size regression over the `many_objects` and `deep_chain`
 shapes shows each store step's work, and its time, constant in N up to
 logarithmic factors; ownership and write permission are still checked per
