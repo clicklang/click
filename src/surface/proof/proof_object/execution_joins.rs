@@ -261,8 +261,7 @@ impl<'a> Proof<'a> {
                         },
                         crate::surface::diagnostics::describe_pure_facts_for_diagnostic(
                             &selecting,
-                            parameters,
-                            context.arguments,
+                            ParameterBinding::new(parameters, context.arguments),
                         )
                     )
                 })
@@ -314,8 +313,10 @@ impl<'a> Proof<'a> {
                         "`branch` recorded condition evidence the proof object rejected: {}",
                         crate::surface::proof::cursor_execution::describe_evidence_refusal(
                             &refusal,
-                            context.parsed_function.parameters(),
-                            context.arguments,
+                            ParameterBinding::new(
+                                context.parsed_function.parameters(),
+                                context.arguments
+                            ),
                         )
                     ))
                 })?;
@@ -379,8 +380,7 @@ impl<'a> Proof<'a> {
             let kernel_path_fact = lower_fixed_state_proposition_with_assumptions(
                 &surface_path_fact,
                 transition.pure_facts.assumptions(),
-                context.parsed_function.parameters(),
-                context.arguments,
+                context.parameter_binding(),
                 pre_state,
                 &arm_execution.core.state,
                 None,
@@ -504,7 +504,6 @@ impl<'a> Proof<'a> {
     /// two-arm ownership normalization has not migrated. Produces the arm's
     /// post-interface context and the structured `Branch { ensuring, .. }`
     /// with an empty impossible arm.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn merge_decided_interface_execution_path(
         &self,
         parent_unfolds: &PersistentOrderedSet<String>,
@@ -701,8 +700,7 @@ impl<'a> Proof<'a> {
             };
             let then_expected = lower_interface_resource_clause(
                 resource,
-                context.parsed_function.parameters(),
-                context.arguments,
+                context.parameter_binding(),
                 &arms[0].execution.core.state,
                 arms[0].facts.assumptions(),
             )?;
@@ -711,8 +709,7 @@ impl<'a> Proof<'a> {
             }
             let else_expected = lower_interface_resource_clause(
                 resource,
-                context.parsed_function.parameters(),
-                context.arguments,
+                context.parameter_binding(),
                 &arms[1].execution.core.state,
                 arms[1].facts.assumptions(),
             )?;
@@ -1247,8 +1244,7 @@ impl<'a> Proof<'a> {
                     };
                     let goal = crate::surface::diagnostics::describe_required_pure_fact(
                         &missing.goal,
-                        context.parsed_function.parameters(),
-                        context.arguments,
+                        context.parameter_binding(),
                     );
                     if missing.side_condition {
                         format!(

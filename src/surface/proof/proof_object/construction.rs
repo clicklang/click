@@ -41,8 +41,7 @@ impl<'a> Proof<'a> {
         claim_label: &'a str,
         goal: Proposition,
         surface_goal: ClickProposition,
-        parameters: &'a [syntax::C0Parameter],
-        arguments: &'a [CExpression],
+        parameter_binding: ParameterBinding<'a>,
         entry: &'a CState,
         post: &'a CState,
         snapshots: &'a RecordedSnapshots,
@@ -55,8 +54,7 @@ impl<'a> Proof<'a> {
             0,
             &[],
             |state| OpenBranch::surface_proposition_in(state, goal, surface_goal),
-            parameters,
-            arguments,
+            parameter_binding,
             entry,
             post,
             post.locals().get(crate::kernel::C_CONTRACT_RESULT_NAME),
@@ -165,7 +163,6 @@ impl<'a> Proof<'a> {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[cfg(test)]
     pub(in crate::surface::proof) fn for_pure_goal(
         claim_label: &'a str,
@@ -186,7 +183,6 @@ impl<'a> Proof<'a> {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(in crate::surface::proof) fn for_pure_surface_goal(
         claim_label: &'a str,
         requires: &[Proposition],
@@ -255,7 +251,6 @@ impl<'a> Proof<'a> {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn for_pure_goal_with_surface(
         claim_label: &'a str,
         requires: &[Proposition],
@@ -347,8 +342,7 @@ impl<'a> Proof<'a> {
         tactic_index: usize,
         available: &'a [Proposition],
         goal: Proposition,
-        parameters: &'a [syntax::C0Parameter],
-        arguments: &'a [CExpression],
+        parameter_binding: ParameterBinding<'a>,
         pre_state: &'a CState,
         state: &'a CState,
         recorded_snapshots: &'a RecordedSnapshots,
@@ -363,8 +357,7 @@ impl<'a> Proof<'a> {
             tactic_index,
             available,
             |context| OpenBranch::proposition_in(context, goal),
-            parameters,
-            arguments,
+            parameter_binding,
             pre_state,
             state,
             None,
@@ -387,8 +380,7 @@ impl<'a> Proof<'a> {
         available: &'a [Proposition],
         goal: Proposition,
         surface_goal: ClickProposition,
-        parameters: &'a [syntax::C0Parameter],
-        arguments: &'a [CExpression],
+        parameter_binding: ParameterBinding<'a>,
         pre_state: &'a CState,
         state: &'a CState,
         recorded_snapshots: &'a RecordedSnapshots,
@@ -403,8 +395,7 @@ impl<'a> Proof<'a> {
             tactic_index,
             available,
             |context| OpenBranch::surface_proposition_in(context, goal, surface_goal),
-            parameters,
-            arguments,
+            parameter_binding,
             pre_state,
             state,
             None,
@@ -426,8 +417,7 @@ impl<'a> Proof<'a> {
         tactic_index: usize,
         available: &'a [Proposition],
         goal: Proposition,
-        parameters: &'a [syntax::C0Parameter],
-        arguments: &'a [CExpression],
+        parameter_binding: ParameterBinding<'a>,
         pre_state: &'a CState,
         state: &'a CState,
         result: Option<&'a CValue>,
@@ -445,8 +435,7 @@ impl<'a> Proof<'a> {
             tactic_index,
             available,
             |context| OpenBranch::proposition_in(context, goal),
-            parameters,
-            arguments,
+            parameter_binding,
             pre_state,
             state,
             result,
@@ -461,15 +450,13 @@ impl<'a> Proof<'a> {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[cfg(test)]
     pub(super) fn for_fixed_state_goal_with_requirements_inner(
         claim_label: &'a str,
         tactic_index: usize,
         available: &'a [Proposition],
         goal: impl FnOnce(BranchState) -> OpenBranch,
-        parameters: &'a [syntax::C0Parameter],
-        arguments: &'a [CExpression],
+        parameter_binding: ParameterBinding<'a>,
         pre_state: &'a CState,
         state: &'a CState,
         result: Option<&'a CValue>,
@@ -487,8 +474,7 @@ impl<'a> Proof<'a> {
             tactic_index,
             available,
             goal,
-            parameters,
-            arguments,
+            parameter_binding,
             pre_state,
             state,
             result,
@@ -508,8 +494,7 @@ impl<'a> Proof<'a> {
         claim_label: &'a str,
         tactic_index: usize,
         available: &'a [Proposition],
-        parameters: &'a [syntax::C0Parameter],
-        arguments: &'a [CExpression],
+        parameter_binding: ParameterBinding<'a>,
         pre_state: &'a CState,
         state: &'a CState,
         result: Option<&'a CValue>,
@@ -525,8 +510,7 @@ impl<'a> Proof<'a> {
             tactic_index,
             available,
             OpenBranch::frontier,
-            parameters,
-            arguments,
+            parameter_binding,
             pre_state,
             state,
             result,
@@ -541,14 +525,12 @@ impl<'a> Proof<'a> {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn for_fixed_state(
         claim_label: &'a str,
         tactic_index: usize,
         available: &'a [Proposition],
         goal: impl FnOnce(BranchState) -> OpenBranch,
-        parameters: &'a [syntax::C0Parameter],
-        arguments: &'a [CExpression],
+        parameter_binding: ParameterBinding<'a>,
         pre_state: &'a CState,
         state: &'a CState,
         result: Option<&'a CValue>,
@@ -585,8 +567,7 @@ impl<'a> Proof<'a> {
             context: Arc::new(ProofContext::FixedState(FixedStateProofContext {
                 claim_label,
                 tactic_index,
-                parameters,
-                arguments,
+                parameter_binding,
                 pre_state,
                 state,
                 result,

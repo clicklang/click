@@ -5994,6 +5994,23 @@ pub enum SmartTactic {
     Simp,
 }
 
+/// A C function's parameters and the argument expressions bound to them,
+/// position by position.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct ParameterBinding<'a> {
+    pub(crate) parameters: &'a [syntax::C0Parameter],
+    pub(crate) arguments: &'a [CExpression],
+}
+
+impl<'a> ParameterBinding<'a> {
+    pub(crate) fn new(parameters: &'a [syntax::C0Parameter], arguments: &'a [CExpression]) -> Self {
+        Self {
+            parameters,
+            arguments,
+        }
+    }
+}
+
 /// The pure definitions a specification is lowered against: its predicates
 /// and its Click functions.
 #[derive(Clone, Copy)]

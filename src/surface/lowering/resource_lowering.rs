@@ -452,12 +452,16 @@ pub(in crate::surface) fn initial_call_state(
     }
     let mut loadable_ranges = BTreeMap::new();
     for requirement in requires {
-        if let Some((name, bytes)) = concrete_loadable_block(requirement, parameters, &arguments)? {
+        if let Some((name, bytes)) =
+            concrete_loadable_block(requirement, ParameterBinding::new(parameters, &arguments))?
+        {
             loadable_ranges.insert(name, bytes);
         }
         if let Requirement::Resource(resource) = requirement {
-            for (name, bytes) in concrete_access_resource_blocks(resource, parameters, &arguments)?
-            {
+            for (name, bytes) in concrete_access_resource_blocks(
+                resource,
+                ParameterBinding::new(parameters, &arguments),
+            )? {
                 loadable_ranges.insert(name, bytes);
             }
         }
@@ -467,10 +471,17 @@ pub(in crate::surface) fn initial_call_state(
     // In particular, a resource such as `pointer[0..1]` must follow the
     // pointer value already present in the entry state, rather than deriving
     // a second pointer from the raw memory-load term for the pointer slot.
-    let memory =
-        materialize_symbolic_access_resource_cells(memory, requires, parameters, &arguments)?;
+    let memory = materialize_symbolic_access_resource_cells(
+        memory,
+        requires,
+        ParameterBinding::new(parameters, &arguments),
+    )?;
     let state = state.with_memory(memory);
-    let resources = resource_context_from_requirements(requires, parameters, &arguments, &state)?;
+    let resources = resource_context_from_requirements(
+        requires,
+        ParameterBinding::new(parameters, &arguments),
+        &state,
+    )?;
     let mut state =
         crate::kernel::c_state_with_assumed_mutex_inputs(state.with_resource_context(resources));
     {
@@ -728,8 +739,7 @@ pub(in crate::surface) fn visit_struct_field_cells(
 fn materialize_symbolic_access_resource_cells(
     mut memory: CMemory,
     requires: &[Requirement],
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
 ) -> Result<CMemory, ClickError> {
     for requirement in requires {
         let Requirement::Resource(resource) = requirement else {
@@ -743,12 +753,11 @@ fn materialize_symbolic_access_resource_cells(
             }
             ResourceClause::Named { .. } => {}
             ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment) => {
-                memory = materialize_access_segment_cells(memory, segment, parameters, arguments)?;
+                memory = materialize_access_segment_cells(memory, segment, parameter_binding)?;
             }
             ResourceClause::MemoryAggregate { segments, .. } => {
                 for segment in segments {
-                    memory =
-                        materialize_access_segment_cells(memory, segment, parameters, arguments)?;
+                    memory = materialize_access_segment_cells(memory, segment, parameter_binding)?;
                 }
             }
             ResourceClause::Declared { .. }
@@ -777,8 +786,7 @@ fn materialize_symbolic_access_resource_cells(
 /// than inventing a second one for one defect.
 pub(in crate::surface) fn check_resource_segment_base_loadability(
     function_block: &FunctionBlock,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
     assumptions: &PureFactContext,
 ) -> Result<(), ClickError> {
@@ -819,8 +827,7 @@ pub(in crate::surface) fn check_resource_segment_base_loadability(
         for segment in segments {
             let Err(message) = check_segment_base_loadability(
                 &segment.base,
-                parameters,
-                arguments,
+                parameter_binding,
                 state,
                 assumptions,
             ) else {
@@ -854,8 +861,7 @@ pub(in crate::surface) fn check_resource_segment_base_loadability(
 /// not hold rather than the last.
 fn check_segment_base_loadability(
     base: &CExpression,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
     assumptions: &PureFactContext,
 ) -> Result<(), String> {
@@ -867,7 +873,7 @@ fn check_segment_base_loadability(
     else {
         return Ok(());
     };
-    check_segment_base_loadability(pointer, parameters, arguments, state, assumptions)?;
+    check_segment_base_loadability(pointer, parameter_binding, state, assumptions)?;
     // An inline array field is addressed by a typed load of the array
     // itself. That reads no cell: the elements are the struct's own storage,
     // and the segment covers them directly.
@@ -888,10 +894,11 @@ fn check_segment_base_loadability(
     ) {
         return Ok(());
     }
-    let Ok(values) = parameter_values(parameters, arguments) else {
+    let Ok(values) = parameter_values(parameter_binding) else {
         return Ok(());
     };
-    let array_refs = array_refs_for_parameters(parameters, &values, state.memory());
+    let array_refs =
+        array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
     // The address of the cell, not its content: a base whose address this
     // entry cannot evaluate is reported by the clause's own lowering.
     let Ok(CValue::Pointer(cell)) = crate::surface::proof::evaluate_c_fragment_through_kernel(
@@ -919,11 +926,10 @@ fn check_segment_base_loadability(
             &obligation,
             &[],
             &[],
-            parameters,
-            arguments,
+            parameter_binding,
             &[],
         ),
-        folded_matched_instance_note(state, parameters, arguments, assumptions)
+        folded_matched_instance_note(state, parameter_binding, assumptions)
     ))
 }
 
@@ -939,8 +945,7 @@ fn check_segment_base_loadability(
 /// reads the clause set this entry state already holds.
 pub(in crate::surface) fn folded_matched_instance_note(
     state: &CState,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     assumptions: &PureFactContext,
 ) -> String {
     // Only an instance whose arm nothing selects explains a missing cell. One
@@ -989,8 +994,7 @@ pub(in crate::surface) fn folded_matched_instance_note(
     let declared = crate::surface::diagnostics::format_declared_resource(
         instance.name(),
         instance.arguments(),
-        parameters,
-        arguments,
+        parameter_binding,
     );
     // The premises may have refuted some arms without deciding one. Then the
     // cells every surviving arm owns are readable and this cell is not one of
@@ -1016,12 +1020,11 @@ pub(in crate::surface) fn folded_matched_instance_note(
 fn materialize_access_segment_cells(
     mut memory: CMemory,
     segment: &ContractSegment,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
 ) -> Result<CMemory, ClickError> {
     let state = CState::new().with_memory(memory.clone());
     let source_segment = segment;
-    let Ok(segment) = evaluate_requirement_segment(parameters, arguments, &state, source_segment)
+    let Ok(segment) = evaluate_requirement_segment(parameter_binding, &state, source_segment)
     else {
         return Ok(memory);
     };
@@ -1039,7 +1042,7 @@ fn materialize_access_segment_cells(
     // A complete object (`*p`) is one struct at the base: its cells
     // take the field types of the layout, so a `uint64` or pointer field
     // reads back with its own type rather than as int32 words.
-    if let Some(layout) = object_segment_layout(parameters, source_segment) {
+    if let Some(layout) = object_segment_layout(parameter_binding.parameters, source_segment) {
         let base_memory = memory.clone();
         for field in layout.fields().values() {
             memory = visit_struct_field_cells(
@@ -1062,7 +1065,9 @@ fn materialize_access_segment_cells(
         }
         return Ok(memory);
     }
-    if let Some(layout) = contract_segment_struct_layout(parameters, source_segment) {
+    if let Some(layout) =
+        contract_segment_struct_layout(parameter_binding.parameters, source_segment)
+    {
         let base_memory = memory.clone();
         for index in *start..*end {
             let element_pointer = offset_pointer_by_elements(
@@ -1093,8 +1098,9 @@ fn materialize_access_segment_cells(
         return Ok(memory);
     }
 
-    let element_type = contract_segment_element_type(parameters, &segment.source);
-    let element_width = contract_segment_element_width(parameters, &segment.source);
+    let element_type = contract_segment_element_type(parameter_binding.parameters, &segment.source);
+    let element_width =
+        contract_segment_element_width(parameter_binding.parameters, &segment.source);
     let source = crate::kernel::intern_c_memory(memory.clone());
     // One run for the segment's elements, spelled from the segment's own
     // base as each element's pointer is (see `memory_with_symbolic_loadable_cells`).
@@ -1110,15 +1116,13 @@ fn materialize_access_segment_cells(
 
 pub(in crate::surface) fn requirement_propositions(
     requires: &[Requirement],
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Vec<Proposition>, ClickError> {
     requirement_propositions_with_assumptions(
         requires,
-        parameters,
-        arguments,
+        parameter_binding,
         state,
         spec_definitions,
         &PureFactContext::new(),
@@ -1127,16 +1131,14 @@ pub(in crate::surface) fn requirement_propositions(
 
 pub(in crate::surface) fn requirement_propositions_with_assumptions(
     requires: &[Requirement],
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
     spec_definitions: SpecDefinitions<'_>,
     initial_assumptions: &PureFactContext,
 ) -> Result<Vec<Proposition>, ClickError> {
     Ok(requirement_propositions_with_sources_and_assumptions(
         requires,
-        parameters,
-        arguments,
+        parameter_binding,
         state,
         spec_definitions,
         initial_assumptions,
@@ -1167,8 +1169,7 @@ pub(in crate::surface) enum LoweredRequirementFactRole {
 
 pub(in crate::surface) fn requirement_propositions_with_sources_and_assumptions(
     requires: &[Requirement],
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
     spec_definitions: SpecDefinitions<'_>,
     initial_assumptions: &PureFactContext,
@@ -1204,16 +1205,14 @@ pub(in crate::surface) fn requirement_propositions_with_sources_and_assumptions(
             let result = match requirement {
                 Requirement::LoadableSegment { .. } => loadable_requirement_props(
                     requirement,
-                    parameters,
-                    arguments,
+                    parameter_binding,
                     state.memory(),
                     &assumptions,
                 )
                 .map(Some),
                 Requirement::Proposition(proposition) => {
                     requirement_proposition_and_facts_with_assumptions(
-                        parameters,
-                        arguments,
+                        parameter_binding,
                         state,
                         proposition,
                         spec_definitions,
@@ -1225,8 +1224,7 @@ pub(in crate::surface) fn requirement_propositions_with_sources_and_assumptions(
                 }
                 Requirement::Resource(resource) => resource_clause_loadable_props_at_state(
                     resource,
-                    parameters,
-                    arguments,
+                    parameter_binding,
                     state,
                     &assumptions,
                 ),
@@ -1385,15 +1383,14 @@ pub(in crate::surface) fn requirement_definedness_surfaces(
 
 pub(in crate::surface) fn requirement_definedness_propositions(
     requires: &[Requirement],
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Vec<(ClickProposition, Proposition)>, ClickError> {
     let mut result = Vec::new();
     for surface in requirement_definedness_surfaces(requires) {
         let kernel =
-            requirement_proposition_prop(parameters, arguments, state, &surface, spec_definitions)?;
+            requirement_proposition_prop(parameter_binding, state, &surface, spec_definitions)?;
         if matches!(normalize_proposition(&kernel), SimpProposition::True)
             || result
                 .iter()
@@ -1408,8 +1405,7 @@ pub(in crate::surface) fn requirement_definedness_propositions(
 
 pub(in crate::surface) fn resource_context_from_requirements(
     requires: &[Requirement],
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
 ) -> Result<ResourceContext, ClickError> {
     let mut context = state.resources().clone();
@@ -1428,8 +1424,7 @@ pub(in crate::surface) fn resource_context_from_requirements(
             // clause supplies are available.
             context = context.unchecked_with_facts(lower_resource_clause_facts_at_state_for_entry(
                 resource,
-                parameters,
-                arguments,
+                parameter_binding,
                 &lowering_state,
             )?);
             lowering_state = lowering_state.with_resource_context(context.clone());
@@ -1440,12 +1435,11 @@ pub(in crate::surface) fn resource_context_from_requirements(
 
 pub(in crate::surface) fn lower_resource_clause(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     memory: &CMemory,
 ) -> Result<CResourceFact, ClickError> {
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
-        let mut facts = lower_resource_clause_facts(resource, parameters, arguments, memory)?;
+        let mut facts = lower_resource_clause_facts(resource, parameter_binding, memory)?;
         if facts.len() != 1 {
             return Err(ClickError::new(format!(
                 "resource clause expands to {} typed memory facts where one fact is required",
@@ -1455,32 +1449,41 @@ pub(in crate::surface) fn lower_resource_clause(
         return Ok(facts.pop().expect("resource clause fact count was checked"));
     }
     let values =
-        parameter_values(parameters, arguments).map_err(|error| ClickError::new(error.message))?;
+        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
     let state = CState::new().with_memory(memory.clone());
-    lower_resource_clause_with_values(resource, parameters, &values, &state, None)
+    lower_resource_clause_with_values(
+        resource,
+        parameter_binding.parameters,
+        &values,
+        &state,
+        None,
+    )
 }
 
 pub(in crate::surface) fn lower_resource_clause_facts(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     memory: &CMemory,
 ) -> Result<Vec<CResourceFact>, ClickError> {
     let values =
-        parameter_values(parameters, arguments).map_err(|error| ClickError::new(error.message))?;
+        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
     let state = CState::new().with_memory(memory.clone());
-    lower_resource_clause_facts_with_values(resource, parameters, &values, &state, None)
+    lower_resource_clause_facts_with_values(
+        resource,
+        parameter_binding.parameters,
+        &values,
+        &state,
+        None,
+    )
 }
 
 pub(in crate::surface) fn lower_resource_clause_at_state(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
 ) -> Result<CResourceFact, ClickError> {
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
-        let mut facts =
-            lower_resource_clause_facts_at_state(resource, parameters, arguments, state)?;
+        let mut facts = lower_resource_clause_facts_at_state(resource, parameter_binding, state)?;
         if facts.len() != 1 {
             return Err(ClickError::new(format!(
                 "resource clause expands to {} typed memory facts where one fact is required",
@@ -1490,43 +1493,52 @@ pub(in crate::surface) fn lower_resource_clause_at_state(
         return Ok(facts.pop().expect("resource clause fact count was checked"));
     }
     let values =
-        parameter_values(parameters, arguments).map_err(|error| ClickError::new(error.message))?;
-    lower_resource_clause_with_values(resource, parameters, &values, state, None)
+        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
+    lower_resource_clause_with_values(resource, parameter_binding.parameters, &values, state, None)
 }
 
 pub(in crate::surface) fn lower_resource_clause_facts_at_state(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
 ) -> Result<Vec<CResourceFact>, ClickError> {
     let values =
-        parameter_values(parameters, arguments).map_err(|error| ClickError::new(error.message))?;
-    lower_resource_clause_facts_with_values(resource, parameters, &values, state, None)
+        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
+    lower_resource_clause_facts_with_values(
+        resource,
+        parameter_binding.parameters,
+        &values,
+        state,
+        None,
+    )
 }
 
 fn lower_resource_clause_facts_at_state_for_entry(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
 ) -> Result<Vec<CResourceFact>, ClickError> {
     let values =
-        parameter_values(parameters, arguments).map_err(|error| ClickError::new(error.message))?;
-    lower_resource_clause_facts_with_values_mode(resource, parameters, &values, state, None, true)
+        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
+    lower_resource_clause_facts_with_values_mode(
+        resource,
+        parameter_binding.parameters,
+        &values,
+        state,
+        None,
+        true,
+    )
 }
 
 pub(in crate::surface) fn lower_resource_clause_at_state_with_result(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
     result: &CValue,
 ) -> Result<CResourceFact, ClickError> {
     lower_resource_clause_at_state_with_assumptions(
         resource,
-        parameters,
-        arguments,
+        parameter_binding,
         state,
         Some(result),
         &PureFactContext::new(),
@@ -1538,18 +1550,17 @@ pub(in crate::surface) fn lower_resource_clause_at_state_with_result(
 /// graph; do not reconstruct facts or publish ambient resources at this query.
 pub(in crate::surface) fn lower_resource_clause_at_state_with_assumptions(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
     result: Option<&CValue>,
     assumptions: &PureFactContext,
 ) -> Result<CResourceFact, ClickError> {
     let values =
-        parameter_values(parameters, arguments).map_err(|error| ClickError::new(error.message))?;
+        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
         let mut facts = lower_resource_clause_facts_with_values_mode_at_entry(
             resource,
-            parameters,
+            parameter_binding.parameters,
             &values,
             state,
             state,
@@ -1567,7 +1578,7 @@ pub(in crate::surface) fn lower_resource_clause_at_state_with_assumptions(
     }
     lower_resource_clause_with_values_mode_at_entry(
         resource,
-        parameters,
+        parameter_binding.parameters,
         &values,
         state,
         state,
@@ -1591,16 +1602,22 @@ pub(in crate::surface) fn lower_resource_clause_at_state_with_assumptions(
 /// its fields did not describe.
 pub(in crate::surface) fn lower_resource_clause_at_current_locals(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
     result: Option<&CValue>,
 ) -> Result<CResourceFact, ClickError> {
     let values =
-        parameter_values(parameters, arguments).map_err(|error| ClickError::new(error.message))?;
-    let array_refs = array_refs_for_parameters(parameters, &values, state.memory());
+        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
+    let array_refs =
+        array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
     let (values, _) = contract_environment_at_state(&values, &array_refs, state);
-    lower_resource_clause_with_values(resource, parameters, &values, state, result)
+    lower_resource_clause_with_values(
+        resource,
+        parameter_binding.parameters,
+        &values,
+        state,
+        result,
+    )
 }
 
 /// [`lower_resource_clause_at_current_locals`] under the facts the proof
@@ -1609,15 +1626,13 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals(
 /// it stands there, exactly as the `fold` that built the resource read it.
 pub(in crate::surface) fn lower_interface_resource_clause(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
     assumptions: &PureFactContext,
 ) -> Result<CResourceFact, ClickError> {
     lower_resource_clause_at_current_locals_with_assumptions(
         resource,
-        parameters,
-        arguments,
+        parameter_binding,
         state,
         None,
         assumptions,
@@ -1629,20 +1644,20 @@ pub(in crate::surface) fn lower_interface_resource_clause(
 /// owned cell through an alias; they do not assume the proposed fold's body.
 pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_assumptions(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
     result: Option<&CValue>,
     assumptions: &PureFactContext,
 ) -> Result<CResourceFact, ClickError> {
     let values =
-        parameter_values(parameters, arguments).map_err(|error| ClickError::new(error.message))?;
-    let array_refs = array_refs_for_parameters(parameters, &values, state.memory());
+        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
+    let array_refs =
+        array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
     let (values, _) = contract_environment_at_state(&values, &array_refs, state);
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
         let mut facts = lower_resource_clause_facts_with_values_mode_at_entry(
             resource,
-            parameters,
+            parameter_binding.parameters,
             &values,
             state,
             state,
@@ -1660,7 +1675,7 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_assumptio
     }
     lower_resource_clause_with_values_mode_at_entry(
         resource,
-        parameters,
+        parameter_binding.parameters,
         &values,
         state,
         state,
@@ -1672,18 +1687,17 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_assumptio
 
 pub(in crate::surface) fn lower_resource_clause_facts_at_state_with_result_and_entry(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     entry_state: &CState,
     state: &CState,
     result: &CValue,
     base_assumptions: &PureFactContext,
 ) -> Result<Vec<CResourceFact>, ClickError> {
     let values =
-        parameter_values(parameters, arguments).map_err(|error| ClickError::new(error.message))?;
+        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
     lower_resource_clause_facts_with_values_mode_at_entry(
         resource,
-        parameters,
+        parameter_binding.parameters,
         &values,
         entry_state,
         state,
@@ -1973,8 +1987,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                         ),
                         crate::surface::diagnostics::describe_c_value(
                             &value,
-                            &naming_parameters,
-                            &naming_arguments
+                            ParameterBinding::new(&naming_parameters, &naming_arguments)
                         ),
                         crate::kernel::c_type_spelling(value.c_type()),
                         crate::surface::validation::describe_c0_type(*parameter_type)
@@ -2714,8 +2727,7 @@ fn lower_resource_segment_with_values(
 
 fn loadable_requirement_props(
     requirement: &Requirement,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     memory: &CMemory,
     assumptions: &PureFactContext,
 ) -> Result<Vec<Proposition>, ClickError> {
@@ -2723,15 +2735,15 @@ fn loadable_requirement_props(
         && segment.state == ContractSegmentState::Current
     {
         let state = CState::new().with_memory(memory.clone());
-        let values = parameter_values(parameters, arguments)?;
+        let values = parameter_values(parameter_binding)?;
         let range = lower_resource_segment_with_values(
             "viewable",
             segment,
             &values,
-            &array_refs_for_parameters(parameters, &values, memory),
+            &array_refs_for_parameters(parameter_binding.parameters, &values, memory),
             &state,
             None,
-            contract_segment_element_width(parameters, segment),
+            contract_segment_element_width(parameter_binding.parameters, segment),
         )?;
         let guards = memory_range_loadable_guards(&range);
         reject_impossible_range_guards(&guards, assumptions)?;
@@ -2739,7 +2751,7 @@ fn loadable_requirement_props(
         propositions.extend(guards);
         return Ok(propositions);
     }
-    let (base, bytes, guards) = loadable_base_and_bytes(requirement, parameters, arguments)?;
+    let (base, bytes, guards) = loadable_base_and_bytes(requirement, parameter_binding)?;
     reject_impossible_range_guards(&guards, assumptions)?;
     let mut propositions = vec![Proposition::CMemoryLoadable {
         memory: memory.clone(),
@@ -2753,26 +2765,22 @@ fn loadable_requirement_props(
 
 pub(in crate::surface) fn resource_clause_loadable_prop(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     memory: &CMemory,
 ) -> Result<Option<Proposition>, ClickError> {
     resource_clause_loadable_prop_at_state(
         resource,
-        parameters,
-        arguments,
+        parameter_binding,
         &CState::new().with_memory(memory.clone()),
     )
 }
 
 pub(in crate::surface) fn resource_clause_loadable_prop_at_state(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
 ) -> Result<Option<Proposition>, ClickError> {
-    let Some(ranges) =
-        resource_clause_memory_ranges_at_state(resource, parameters, arguments, state)?
+    let Some(ranges) = resource_clause_memory_ranges_at_state(resource, parameter_binding, state)?
     else {
         return Ok(None);
     };
@@ -2791,13 +2799,11 @@ pub(in crate::surface) fn resource_clause_loadable_prop_at_state(
 
 pub(in crate::surface) fn resource_clause_loadable_props_at_state(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
     assumptions: &PureFactContext,
 ) -> Result<Option<Vec<Proposition>>, ClickError> {
-    let Some(ranges) =
-        resource_clause_memory_ranges_at_state(resource, parameters, arguments, state)?
+    let Some(ranges) = resource_clause_memory_ranges_at_state(resource, parameter_binding, state)?
     else {
         return Ok(None);
     };
@@ -2839,15 +2845,14 @@ fn reject_impossible_range_guards(
 
 pub(in crate::surface) fn resource_clause_memory_ranges_at_state(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
 ) -> Result<Option<Vec<CMemoryRange>>, ClickError> {
     let ranges = match resource {
         ResourceClause::Conditional { .. } => return Ok(None),
         ResourceClause::Named { .. } => return Ok(None),
         ResourceClause::ViewMemory(_) | ResourceClause::OwnMemory(_) => {
-            let lowered = lower_resource_clause_at_state(resource, parameters, arguments, state)?;
+            let lowered = lower_resource_clause_at_state(resource, parameter_binding, state)?;
             vec![
                 lowered
                     .memory_view_range()
@@ -2857,7 +2862,7 @@ pub(in crate::surface) fn resource_clause_memory_ranges_at_state(
             ]
         }
         ResourceClause::MemoryAggregate { .. } => {
-            lower_resource_clause_facts_at_state(resource, parameters, arguments, state)?
+            lower_resource_clause_facts_at_state(resource, parameter_binding, state)?
                 .into_iter()
                 .map(|lowered| {
                     lowered
@@ -2904,15 +2909,14 @@ pub(in crate::surface) fn memory_range_loadable_guards(range: &CMemoryRange) -> 
 
 pub(in crate::surface) fn concrete_loadable_block(
     requirement: &Requirement,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
 ) -> Result<Option<(String, ConcreteMemoryRangeSeed)>, ClickError> {
     match requirement {
         Requirement::LoadableSegment { segment } => {
             let state = CState::new();
             let source_segment = segment;
             let Ok(segment) =
-                evaluate_requirement_segment(parameters, arguments, &state, source_segment)
+                evaluate_requirement_segment(parameter_binding, &state, source_segment)
             else {
                 return Ok(None);
             };
@@ -2924,13 +2928,16 @@ pub(in crate::surface) fn concrete_loadable_block(
             let Bitvector32Term::Constant(end) = segment.end else {
                 return Ok(None);
             };
-            if let Some(layout) = object_segment_layout(parameters, source_segment) {
+            if let Some(layout) =
+                object_segment_layout(parameter_binding.parameters, source_segment)
+            {
                 return Ok(Some((
                     format!("{:?}", segment.source),
                     object_range_seed(segment.base, layout),
                 )));
             }
-            let element_width = contract_segment_element_width(parameters, &segment.source);
+            let element_width =
+                contract_segment_element_width(parameter_binding.parameters, &segment.source);
             let bytes = end
                 .checked_mul(element_width)
                 .ok_or_else(|| ClickError::new("`viewable` segment overflows byte count"))?;
@@ -2941,12 +2948,17 @@ pub(in crate::surface) fn concrete_loadable_block(
                     bytes,
                     element_width,
                     element_type: (!contract_expression_is_struct_array(
-                        parameters,
+                        parameter_binding.parameters,
                         &segment.source.base,
                     ))
-                    .then(|| contract_segment_element_type(parameters, &segment.source)),
-                    struct_layout: contract_segment_struct_layout(parameters, source_segment)
-                        .cloned(),
+                    .then(|| {
+                        contract_segment_element_type(parameter_binding.parameters, &segment.source)
+                    }),
+                    struct_layout: contract_segment_struct_layout(
+                        parameter_binding.parameters,
+                        source_segment,
+                    )
+                    .cloned(),
                 },
             )))
         }
@@ -2956,8 +2968,7 @@ pub(in crate::surface) fn concrete_loadable_block(
 
 pub(in crate::surface) fn concrete_access_resource_blocks(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
 ) -> Result<Vec<(String, ConcreteMemoryRangeSeed)>, ClickError> {
     let segments = match resource {
         ResourceClause::Conditional { .. } => return Ok(vec![]),
@@ -2976,8 +2987,7 @@ pub(in crate::surface) fn concrete_access_resource_blocks(
     for segment in segments {
         let state = CState::new();
         let source_segment = segment;
-        let Ok(segment) =
-            evaluate_requirement_segment(parameters, arguments, &state, source_segment)
+        let Ok(segment) = evaluate_requirement_segment(parameter_binding, &state, source_segment)
         else {
             continue;
         };
@@ -2991,7 +3001,7 @@ pub(in crate::surface) fn concrete_access_resource_blocks(
                 "resource segment has an end before its start: {start}..{end}"
             )));
         }
-        if let Some(layout) = object_segment_layout(parameters, source_segment)
+        if let Some(layout) = object_segment_layout(parameter_binding.parameters, source_segment)
             && *start == 0
         {
             result.push((
@@ -3000,7 +3010,8 @@ pub(in crate::surface) fn concrete_access_resource_blocks(
             ));
             continue;
         }
-        let element_width = contract_segment_element_width(parameters, &segment.source);
+        let element_width =
+            contract_segment_element_width(parameter_binding.parameters, &segment.source);
         let element_count = end - start;
         let bytes = element_count
             .checked_mul(element_width)
@@ -3012,11 +3023,17 @@ pub(in crate::surface) fn concrete_access_resource_blocks(
                 bytes,
                 element_width,
                 element_type: (!contract_expression_is_struct_array(
-                    parameters,
+                    parameter_binding.parameters,
                     &segment.source.base,
                 ))
-                .then(|| contract_segment_element_type(parameters, &segment.source)),
-                struct_layout: contract_segment_struct_layout(parameters, source_segment).cloned(),
+                .then(|| {
+                    contract_segment_element_type(parameter_binding.parameters, &segment.source)
+                }),
+                struct_layout: contract_segment_struct_layout(
+                    parameter_binding.parameters,
+                    source_segment,
+                )
+                .cloned(),
             },
         ));
     }
@@ -3025,13 +3042,12 @@ pub(in crate::surface) fn concrete_access_resource_blocks(
 
 pub(in crate::surface) fn loadable_base_and_bytes(
     requirement: &Requirement,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
 ) -> Result<(Pointer, Bitvector32Term, Vec<Proposition>), ClickError> {
     match requirement {
         Requirement::LoadableSegment { segment } => {
             let state = CState::new();
-            let segment = evaluate_requirement_segment(parameters, arguments, &state, segment)
+            let segment = evaluate_requirement_segment(parameter_binding, &state, segment)
                 .map_err(|message| {
                     ClickError::new(format!("could not lower `viewable` segment: {message}"))
                 })?;
@@ -3043,7 +3059,8 @@ pub(in crate::surface) fn loadable_base_and_bytes(
                     "`viewable` segment has an end before its start: {start}..{end}"
                 )));
             }
-            let element_width = contract_segment_element_width(parameters, &segment.source);
+            let element_width =
+                contract_segment_element_width(parameter_binding.parameters, &segment.source);
             let bytes = crate::kernel::memory_range_byte_count(
                 segment.start.clone(),
                 segment.end.clone(),
@@ -3356,15 +3373,13 @@ pub(in crate::surface) fn symbolic_value_from_load(
 }
 
 pub(in crate::surface) fn requirement_proposition_prop(
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
     proposition: &ClickProposition,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, ClickError> {
     requirement_proposition_prop_with_assumptions(
-        parameters,
-        arguments,
+        parameter_binding,
         state,
         proposition,
         spec_definitions,
@@ -3373,16 +3388,14 @@ pub(in crate::surface) fn requirement_proposition_prop(
 }
 
 pub(in crate::surface) fn requirement_proposition_prop_with_assumptions(
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
     proposition: &ClickProposition,
     spec_definitions: SpecDefinitions<'_>,
     assumptions: &PureFactContext,
 ) -> Result<Proposition, ClickError> {
     requirement_proposition_and_facts_with_assumptions(
-        parameters,
-        arguments,
+        parameter_binding,
         state,
         proposition,
         spec_definitions,
@@ -3392,8 +3405,7 @@ pub(in crate::surface) fn requirement_proposition_prop_with_assumptions(
 }
 
 fn requirement_proposition_and_facts_with_assumptions(
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     state: &CState,
     proposition: &ClickProposition,
     spec_definitions: SpecDefinitions<'_>,
@@ -3403,14 +3415,14 @@ fn requirement_proposition_and_facts_with_assumptions(
     // lowered by the kernel at the entry state, with the parameters bound
     // to their argument values where the state does not bind them.
     let spec = crate::surface::lowering::elaborate_requirement_proposition(
-        parameters,
+        parameter_binding.parameters,
         state,
         proposition,
         spec_definitions,
     )
     .map_err(ClickError::new)?;
     let mut lowering_state = state.clone();
-    for (name, value) in parameter_values(parameters, arguments)? {
+    for (name, value) in parameter_values(parameter_binding)? {
         if lowering_state.locals().get(&name).is_none() {
             lowering_state = lowering_state.with_local(name, value);
         }
@@ -3439,11 +3451,10 @@ fn requirement_proposition_and_facts_with_assumptions(
                 obligation,
                 &[],
                 &[],
-                parameters,
-                arguments,
+                parameter_binding,
                 &[],
             ),
-            folded_matched_instance_note(&lowering_state, parameters, arguments, assumptions)
+            folded_matched_instance_note(&lowering_state, parameter_binding, assumptions)
         )));
     }
     // The kernel selected this lowering path, and every outstanding read
@@ -3455,12 +3466,12 @@ fn requirement_proposition_and_facts_with_assumptions(
 }
 
 pub(in crate::surface) fn parameter_values(
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
 ) -> Result<BTreeMap<String, CValue>, ClickError> {
-    parameters
+    parameter_binding
+        .parameters
         .iter()
-        .zip(arguments)
+        .zip(parameter_binding.arguments)
         .map(|(parameter, argument)| {
             let CExpression::Value(value) = argument else {
                 return Err(ClickError::new(format!(

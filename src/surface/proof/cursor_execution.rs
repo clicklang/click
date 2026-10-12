@@ -29,6 +29,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     let tactic_index = proof_context.tactic_index;
     let parameters = proof_context.parsed_function.parameters();
     let arguments = proof_context.arguments;
+    let parameter_binding = ParameterBinding::new(parameters, arguments);
     let predicate_environment = proof_context.spec_definitions.predicates;
     let click_function_environment = proof_context.spec_definitions.functions;
     let resource_environment = proof_context.resource_environment;
@@ -47,8 +48,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                 let fact = lower_fixed_state_proposition_with_assumptions(
                         surface_fact,
                         concrete_facts.assumptions(),
-                        parameters,
-                        arguments,
+                        parameter_binding,
                         proof_context.old_reference_state(&execution.core.frontier, state),
                         state,
                         None,
@@ -71,8 +71,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                             &fact,
                             &concrete_facts.to_vec(),
                             state.resources().facts(),
-                            parameters,
-                            arguments,
+                            parameter_binding,
                             &[]
                         )
                     )));
@@ -84,8 +83,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
             ProofAssertion::Resource(resource) => {
                 let expected = lower_interface_resource_clause(
                     resource,
-                    parameters,
-                    arguments,
+                    parameter_binding,
                     state,
                     concrete_facts.assumptions(),
                 )?;
@@ -107,8 +105,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                             &expected,
                             &concrete_facts.to_vec(),
                             state.resources().facts(),
-                            parameters,
-                            arguments,
+                            parameter_binding,
                             &[]
                         )
                     )));
@@ -201,8 +198,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
             };
             let fact = lower_interface_resource_clause(
                 resource,
-                parameters,
-                arguments,
+                parameter_binding,
                 &abstract_state,
                 concrete_facts.assumptions(),
             )
@@ -232,7 +228,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
             // pass through.
             let mut entry_loadables = Vec::new();
             if let Ok(entry_lowered) =
-                lower_resource_clause_at_state(resource, parameters, arguments, &entry_state)
+                lower_resource_clause_at_state(resource, parameter_binding, &entry_state)
             {
                 append_lowered_resource_clause_loadable_fact(
                     resource,
@@ -274,8 +270,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
             let fact = lower_fixed_state_proposition(
                     surface_fact,
                     &exported_pure_facts,
-                    parameters,
-                    arguments,
+                    parameter_binding,
                     &old_reference,
                     &abstract_state,
                     None,
@@ -452,7 +447,6 @@ fn resource_is_direct_observed_core(
     Ok(false)
 }
 
-#[allow(clippy::too_many_arguments)]
 /// The pure facts a step refusal lists as its proof context.
 ///
 /// A step run inside a proof context hands the kernel that context as its
@@ -487,6 +481,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
     let function = proof_context.function;
     let parameters = proof_context.parsed_function.parameters();
     let arguments = proof_context.arguments;
+    let parameter_binding = ParameterBinding::new(parameters, arguments);
     let claim_label = proof_context.claim_label;
     let tactic_index = proof_context.tactic_index;
 
@@ -573,11 +568,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
             .map(|(index, transition)| {
                 format!(
                     "\n  condition path {index}: {}",
-                    describe_pure_facts_for_diagnostic(
-                        &transition.path_facts,
-                        parameters,
-                        arguments
-                    )
+                    describe_pure_facts_for_diagnostic(&transition.path_facts, parameter_binding)
                 )
             })
             .collect::<String>();
@@ -588,8 +579,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
             describe_proof_context(
                 &listed_context_pure_facts(available_pure_facts, context),
                 &current_resources,
-                parameters,
-                arguments,
+                parameter_binding,
                 &[]
             )
         )));
@@ -624,7 +614,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
         .map_err(|refusal| {
             ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` recorded condition evidence the proof object rejected: {}",
-                describe_evidence_refusal(&refusal, parameters, arguments)
+                describe_evidence_refusal(&refusal, parameter_binding)
             ))
         })?;
     *available_pure_facts = condition_transition.pure_facts;
@@ -764,6 +754,7 @@ fn execute_concrete_loop_head_step(
     let function = proof_context.function;
     let parameters = proof_context.parsed_function.parameters();
     let arguments = proof_context.arguments;
+    let parameter_binding = ParameterBinding::new(parameters, arguments);
     let claim_label = proof_context.claim_label;
     let tactic_index = proof_context.tactic_index;
 
@@ -866,7 +857,7 @@ fn execute_concrete_loop_head_step(
                 .map_err(|refusal| {
                     ClickError::new(format!(
                         "{transition_label} recorded loop entry evidence the proof object rejected: {}",
-                        describe_evidence_refusal(&refusal, parameters, arguments)
+                        describe_evidence_refusal(&refusal, parameter_binding)
                     ))
                 })?;
         }
@@ -924,8 +915,7 @@ fn execute_concrete_loop_head_step(
             describe_proof_context(
                 available_pure_facts,
                 &current_resources,
-                parameters,
-                arguments,
+                parameter_binding,
                 &[]
             )
         )));
@@ -947,7 +937,7 @@ fn execute_concrete_loop_head_step(
         .map_err(|refusal| {
             ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` recorded condition evidence the proof object rejected: {}",
-                describe_evidence_refusal(&refusal, parameters, arguments)
+                describe_evidence_refusal(&refusal, parameter_binding)
             ))
         })?;
     *available_pure_facts = condition_transition.pure_facts;
@@ -1065,7 +1055,6 @@ fn execute_concrete_loop_head_step(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn next_top_level_statement_from_frontier_position(
     view: ExecutionView<'_>,
     state: &CState,
@@ -1456,8 +1445,7 @@ pub(super) fn route_throw_to_handler(
     available_pure_facts: &mut PureFactList,
     introduced_facts: &mut Vec<Proposition>,
     function: &CFunction,
-    arguments: &[CExpression],
-    parameters: &[syntax::C0Parameter],
+    parameter_binding: ParameterBinding<'_>,
     function_block: &FunctionBlock,
     function_environment: &CExecutionEnvironment,
     claim_label: &str,
@@ -1530,7 +1518,7 @@ pub(super) fn route_throw_to_handler(
         let next_state = next_state.clone();
         execution.core.record_statement_transition(
             function,
-            arguments,
+            parameter_binding.arguments,
             transition.theorem.clone(),
             transition.context.clone(),
             &transition.execution_facts,
@@ -1538,7 +1526,7 @@ pub(super) fn route_throw_to_handler(
         ).map_err(|refusal| {
             ClickError::new(format!(
                 "{transition_label}: recorded handler binding evidence the proof object rejected: {}",
-                describe_evidence_refusal(&refusal, parameters, arguments)
+                describe_evidence_refusal(&refusal, parameter_binding)
             ))
         })?;
         execution
@@ -1609,7 +1597,6 @@ pub(super) fn collect_planning_statement_transitions<R>(
     (result, transitions)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn execute_step_from_frontier_position(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
@@ -1664,7 +1651,6 @@ pub(super) struct PreparedCallOutcomeSplit {
 /// active exceptional continuation is still present. Ordinary `step()` still
 /// uses the one-successor path below; this helper exists only for the explicit
 /// proof-object outcome split.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn prepare_call_outcome_split(
     execution: &ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
@@ -1821,7 +1807,6 @@ pub(super) fn prepare_call_outcome_split(
 /// [`prepare_call_outcome_split`].  This is intentionally a recorder, not an
 /// evaluator: the theorem, outcome, facts, and loan evidence all come from
 /// the one checked transition list produced during preparation.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn apply_prepared_call_outcome_transition(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
@@ -1876,7 +1861,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
         .map_err(|refusal| {
             ClickError::new(format!(
                 "{transition_label}: recorded call outcome evidence the proof object rejected: {}",
-                describe_evidence_refusal(&refusal, parameters, arguments)
+                describe_evidence_refusal(&refusal, ParameterBinding::new(parameters, arguments))
             ))
         })?;
     append_execution_effect_facts(
@@ -1912,8 +1897,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
             available_pure_facts,
             introduced_facts,
             function,
-            arguments,
-            parameters,
+            ParameterBinding::new(parameters, arguments),
             function_block,
             function_environment,
             claim_label,
@@ -2066,6 +2050,7 @@ fn execute_step_from_frontier_position_selecting_path(
     let function = proof_context.function;
     let parameters = proof_context.parsed_function.parameters();
     let arguments = proof_context.arguments;
+    let parameter_binding = ParameterBinding::new(parameters, arguments);
     let function_environment = proof_context.function_environment;
     let claim_label = proof_context.claim_label;
     let tactic_index = proof_context.tactic_index;
@@ -2568,7 +2553,7 @@ fn execute_step_from_frontier_position_selecting_path(
             .map_err(|refusal| {
                 ClickError::new(format!(
                     "`{claim_label}` tactic {tactic_index}: `{tactic_name}` recorded statement evidence the proof object rejected: {}",
-                    describe_evidence_refusal(&refusal, parameters, arguments)
+                    describe_evidence_refusal(&refusal, parameter_binding)
                 ))
             })?;
         let generated_load_source_events = transitions
@@ -2748,13 +2733,12 @@ fn execute_step_from_frontier_position_selecting_path(
             let outcome = CFunctionOutcome::UndefinedBehavior(kind);
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{}\n{}",
-                describe_function_outcome(&outcome, parameters, arguments),
+                describe_function_outcome(&outcome, parameter_binding),
                 crate::surface::diagnostics::describe_c_statement_site(),
                 describe_proof_context(
                     &listed_context_pure_facts(available_pure_facts, context),
                     &current_resources,
-                    parameters,
-                    arguments,
+                    parameter_binding,
                     &[]
                 )
             )));
@@ -2775,8 +2759,8 @@ fn execute_step_from_frontier_position_selecting_path(
             };
             let detail = format!(
                 "{}{}",
-                describe_runtime_error(error, parameters, arguments),
-                describe_missing_range_end_note(error, &current_resources, parameters, arguments)
+                describe_runtime_error(error, parameter_binding),
+                describe_missing_range_end_note(error, &current_resources, parameter_binding)
             );
             if matches!(
                 error,
@@ -2794,8 +2778,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 describe_proof_context(
                     &listed_context_pure_facts(available_pure_facts, context),
                     &current_resources,
-                    parameters,
-                    arguments,
+                    parameter_binding,
                     &[]
                 )
             ))
@@ -2827,7 +2810,7 @@ fn execute_step_from_frontier_position_selecting_path(
             describe_c_statement_head(&step_statement),
             transitions.len(),
             crate::surface::diagnostics::describe_c_statement_site(),
-            describe_undecided_statement_successors(&transitions, parameters, arguments),
+            describe_undecided_statement_successors(&transitions, parameter_binding),
             case_split_guidance,
             describe_multiple_statement_successors_guidance(
                 &step_statement,
@@ -2843,8 +2826,7 @@ fn execute_step_from_frontier_position_selecting_path(
             describe_proof_context(
                 &listed_context_pure_facts(available_pure_facts, context),
                 &current_resources,
-                parameters,
-                arguments,
+                parameter_binding,
                 &[]
             )
         ));
@@ -2896,7 +2878,7 @@ fn execute_step_from_frontier_position_selecting_path(
         .map_err(|refusal| {
             ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` recorded statement evidence the proof object rejected: {}",
-                describe_evidence_refusal(&refusal, parameters, arguments)
+                describe_evidence_refusal(&refusal, parameter_binding)
             ))
         })?;
     if let Some(parent) = loop_return_parent {
@@ -2948,7 +2930,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 .map_err(|refusal| {
                     ClickError::new(format!(
                         "`{claim_label}` tactic {tactic_index}: `{tactic_name}` recorded a loop's returned path the proof object rejected: {}",
-                        describe_evidence_refusal(&refusal, parameters, arguments)
+                        describe_evidence_refusal(&refusal, parameter_binding)
                     ))
                 })?;
         }
@@ -2995,7 +2977,7 @@ fn execute_step_from_frontier_position_selecting_path(
             left,
             operator,
             right,
-        }) = synthesize_surface_proposition(&equation, parameters, arguments, &current_state)
+        }) = synthesize_surface_proposition(&equation, parameter_binding, &current_state)
         {
             let store_entry_point = ProgramPointRef {
                 region: CodeRegionRef::Statement(statement_index),
@@ -3205,8 +3187,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     available_pure_facts,
                     &mut introduced_facts,
                     function,
-                    arguments,
-                    parameters,
+                    parameter_binding,
                     function_block,
                     function_environment,
                     claim_label,
@@ -3408,13 +3389,12 @@ fn execute_step_from_frontier_position_selecting_path(
             let outcome = CFunctionOutcome::UndefinedBehavior(kind);
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{}\n{}",
-                describe_function_outcome(&outcome, parameters, arguments),
+                describe_function_outcome(&outcome, parameter_binding),
                 crate::surface::diagnostics::describe_c_statement_site(),
                 describe_proof_context(
                     &listed_context_pure_facts(available_pure_facts, context),
                     &current_resources,
-                    parameters,
-                    arguments,
+                    parameter_binding,
                     &execution_pure_facts
                 )
             )));
@@ -3429,8 +3409,8 @@ fn execute_step_from_frontier_position_selecting_path(
             };
             let detail = format!(
                 "{}{}",
-                describe_runtime_error(&error, parameters, arguments),
-                describe_missing_range_end_note(&error, &current_resources, parameters, arguments)
+                describe_runtime_error(&error, parameter_binding),
+                describe_missing_range_end_note(&error, &current_resources, parameter_binding)
             );
             if matches!(
                 error,
@@ -3448,8 +3428,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 describe_proof_context(
                     &listed_context_pure_facts(available_pure_facts, context),
                     &current_resources,
-                    parameters,
-                    arguments,
+                    parameter_binding,
                     &execution_pure_facts
                 )
             ))
@@ -3645,8 +3624,10 @@ fn path_case_split_condition(
         .find_map(|condition| {
             let surface = synthesize_surface_proposition(
                 &Proposition::ConditionIs((*condition).clone(), true),
-                proof_context.parsed_function.parameters(),
-                proof_context.arguments,
+                ParameterBinding::new(
+                    proof_context.parsed_function.parameters(),
+                    proof_context.arguments,
+                ),
                 state,
             )?;
             Some(((*condition).clone(), surface))
@@ -3767,8 +3748,7 @@ fn set_function_exit_execution(
 /// statements or a premise.
 pub(super) fn describe_evidence_refusal(
     refusal: &crate::kernel::proof::EvidenceRefusal,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
 ) -> String {
     let mut text = refusal.reason.to_string();
     if let Some(expected) = &refusal.expected {
@@ -3786,7 +3766,7 @@ pub(super) fn describe_evidence_refusal(
     if let Some(premise) = &refusal.premise {
         text.push_str(&format!(
             "; the premise is {}",
-            describe_pure_fact(premise, parameters, arguments)
+            describe_pure_fact(premise, parameter_binding)
         ));
     }
     text

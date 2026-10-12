@@ -56,7 +56,6 @@ fn fresh_loop_binder_name(
         })
 }
 
-#[allow(clippy::too_many_arguments)]
 /// The written invariants of `loop_index`, read through the proof scope the
 /// clause was written under: a clause bound inside a proof `match` arm names
 /// that arm's bindings, and lowering sees the values they stand for.
@@ -408,8 +407,10 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         &claim_label,
         0,
         &context.pure_facts,
-        environment.parsed_function.parameters(),
-        environment.arguments,
+        ParameterBinding::new(
+            environment.parsed_function.parameters(),
+            environment.arguments,
+        ),
         environment.initial_state,
         &context.state,
         None,
@@ -532,8 +533,10 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                     let owed =
                         crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
                             obligation.proposition(),
-                            environment.parsed_function.parameters(),
-                            environment.arguments,
+                            ParameterBinding::new(
+                                environment.parsed_function.parameters(),
+                                environment.arguments,
+                            ),
                             &context.state,
                         )
                         .map(|surface| crate::surface::printing::source_click_proposition(&surface))
@@ -541,8 +544,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                             let (parameters, arguments) = phase.diagnostic_naming_tables();
                             crate::surface::diagnostics::describe_stated_fact(
                                 obligation.proposition(),
-                                &parameters,
-                                &arguments,
+                                ParameterBinding::new(&parameters, &arguments),
                             )
                         });
                     error.with_context(format!(
@@ -759,7 +761,6 @@ impl AutomaticBodySearch<'_> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
     loop_index: usize,
     preservation: &crate::kernel::CLoopPreservationContext,
@@ -1101,8 +1102,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         && let Ok(lowered) = lower_fixed_state_proposition(
             &loop_condition,
             pure_facts,
-            environment.parsed_function.parameters(),
-            environment.arguments,
+            ParameterBinding::new(
+                environment.parsed_function.parameters(),
+                environment.arguments,
+            ),
             environment.initial_state,
             preservation.state(),
             None,

@@ -1001,7 +1001,10 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
         } else {
             parsed_function.return_type().to_kernel_type()
         },
-        entry_values: parameter_values(parsed_function.parameters(), arguments)?,
+        entry_values: parameter_values(ParameterBinding::new(
+            parsed_function.parameters(),
+            arguments,
+        ))?,
         aggregate_parameters: parsed_function
             .parameters()
             .iter()
@@ -1266,7 +1269,10 @@ pub(in crate::surface) fn lower_branch_interface_fact(
         } else {
             parsed_function.return_type().to_kernel_type()
         },
-        entry_values: parameter_values(parsed_function.parameters(), arguments)?,
+        entry_values: parameter_values(ParameterBinding::new(
+            parsed_function.parameters(),
+            arguments,
+        ))?,
         aggregate_parameters: parsed_function
             .parameters()
             .iter()
@@ -5373,7 +5379,10 @@ impl AnnotationLowerer<'_> {
                 {
                     return Err(format!(
                         "let binding `{name}` evaluated to `{}` of type `{}`, which does not match the declared type `{}`",
-                        crate::surface::diagnostics::describe_c_value(fixed, &[], &[]),
+                        crate::surface::diagnostics::describe_c_value(
+                            fixed,
+                            ParameterBinding::default()
+                        ),
                         crate::kernel::c_type_spelling(fixed.c_type()),
                         crate::surface::validation::describe_c0_type(*c_type)
                     ));

@@ -5244,8 +5244,7 @@ fn resource_reference_entry_setup_has_near_linear_work() {
             crate::instrumentation::measure_deterministic_work(|| {
                 crate::surface::lowering::resource_context_from_requirements(
                     file.function_blocks()[0].requires(),
-                    &[],
-                    &[],
+                    ParameterBinding::default(),
                     &crate::kernel::CState::new(),
                 )
                 .unwrap()

@@ -989,8 +989,7 @@ pub(super) fn append_surface_tactics_at_branch_path(
 pub(super) fn surface_branch_path_for_outcome(
     tactics: &[ProofTactic],
     available: &(impl PropositionSource + ?Sized),
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     pre_state: &CState,
     post_state: &CState,
     result: &CValue,
@@ -1007,8 +1006,7 @@ pub(super) fn surface_branch_path_for_outcome(
             return Ok(branch_path);
         };
         let lowered = lower_outcome_proposition_with_recorded_snapshots(
-            parameters,
-            arguments,
+            parameter_binding,
             pre_state,
             post_state,
             result,

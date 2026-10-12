@@ -1892,8 +1892,7 @@ fn source_have_error(
                     goal,
                     &premises,
                     "the available fact was stated",
-                    &[],
-                    &[],
+                    ParameterBinding::default(),
                 )
             })
             .map(|mismatch| format!("\n  {mismatch}"))
@@ -3144,7 +3143,6 @@ fn record_source_successor_smart_expansions(
 /// already consumed by the operation that created the focused Proof arms.
 /// The untouched continuation is borrowed directly, so this cursor retains
 /// no semantic state and does not clone the proof tree.
-#[allow(clippy::too_many_arguments)]
 fn advance_focused_execution_region_after_leading_tactic<'a>(
     proof: Proof<'a>,
     enclosing_record: Option<&ExecutionSplit<'a>>,
@@ -4775,7 +4773,6 @@ fn advance_checked_open_scope<'a>(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn introduce_proof_case_assumption(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
@@ -4805,8 +4802,7 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
         if let Ok(proposition) = lower_fixed_state_proposition(
             lowering_condition,
             pure_facts,
-            parameters,
-            arguments,
+            ParameterBinding::new(parameters, arguments),
             proof_context.old_reference_state(&execution.core.frontier, &execution.core.state),
             &execution.core.state,
             None,
@@ -4872,8 +4868,7 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
     let proposition = lower_fixed_state_proposition(
         lowering_condition,
         pure_facts,
-        parameters,
-        arguments,
+        ParameterBinding::new(parameters, arguments),
         proof_context.old_reference_state(&execution.core.frontier, &execution.core.state),
         &execution.core.state,
         None,

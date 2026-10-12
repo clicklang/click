@@ -1226,7 +1226,6 @@ fn validate_resource_definition<'a>(
 /// read its shape, the index shadows nothing, the guard reads only cells the
 /// same body owns (so no one can change it while the resource is folded), and
 /// the guard cells are not themselves elements.
-#[allow(clippy::too_many_arguments)]
 fn validate_iterated_resource_clauses(
     definition: &ResourceDefinition,
     composite_body: &CompositeResourceBody,
@@ -1532,8 +1531,7 @@ fn validate_resource_fact_memory_read_authority(
         definition.name(),
         composite_body,
         &substitutions,
-        &validation_parameters,
-        &arguments,
+        ParameterBinding::new(&validation_parameters, &arguments),
         CMemory::new(),
     )
     .map_err(|message| {
