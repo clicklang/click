@@ -155,8 +155,10 @@ It checks the lane-loop ceilings, termination, original reductions and
 recombination, scalar sums, and final 16-bit stores. Both final fields equal
 the common mathematical specification on the entry input snapshot. The
 arbitrary-length computation has checked bounds and termination. Each full-batch
-vector step connects all four constructor lanes to exact absolute input-byte
-observations using actual iterator state. The full-batch loops preserve both
+and aligned-remainder vector step connects all four constructor lanes to exact
+absolute input-byte observations using actual iterator state. The remainder
+uses the constructor's call-entry Integer observations and preserves the input
+bytes with the entry snapshot. The full-batch loops preserve both
 residues against the common specification through their native additions and
 reductions. The B representative includes the deferred batch-local position
 times A contribution and remains nonnegative. Its entry seed stays fixed while
