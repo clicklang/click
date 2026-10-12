@@ -1110,6 +1110,17 @@ pub fn verify_project_functions(
     instrumentation::with_default_tactic_limits(|| {
         let sources = CSourceContext::of(inputs)?.with_click_project(project);
         let file = resolve_click_project_context(project, &sources)?;
+        for name in &functions {
+            if !file.function_is_selected(name)
+                && let Some(owner) = file
+                    .declaration_owner(&DeclarationIdentity::CFunction(name.clone()))
+                    .or_else(|| file.declaration_owner(&DeclarationIdentity::Tactic(name.clone())))
+            {
+                return Err(ClickError::new(format!(
+                    "`{name}` is imported from `{owner}`; select that module to verify its proof"
+                )));
+            }
+        }
         let source = project.entry_source().expect("resolved entry source");
         verify_c0_sources_with_context(
             source,
