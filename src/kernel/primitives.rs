@@ -76,6 +76,7 @@ pub use iterated::{CIteratedGuard, CIteratedMemory};
 mod memory_equality_index;
 mod resource_algebra;
 mod term_operations;
+mod term_shape;
 pub(super) use derivations::*;
 pub(crate) use memory_state::resource_context_has_symbolic_range_read;
 pub use memory_state::value_independent_click_memory;

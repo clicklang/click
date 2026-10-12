@@ -1876,116 +1876,14 @@ impl PureFactContext {
             return Bitvector32Term::Constant(value);
         }
         match term {
-            Bitvector32Term::MachineIntegerCast {
-                value,
-                source,
-                destination,
-            } => Bitvector32Term::machine_integer_cast(
-                *source,
-                *destination,
-                self.simplify_bitvector_under_assumptions(value),
-            ),
-
             Bitvector32Term::MachineIntegerConstant(value) => {
                 Bitvector32Term::MachineIntegerConstant(*value)
             }
 
             Bitvector32Term::Constant(value) => Bitvector32Term::Constant(*value),
             Bitvector32Term::Variable(variable) => Bitvector32Term::Variable(*variable),
-            Bitvector32Term::Add(left, right) => Bitvector32Term::add(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::Subtract(left, right) => Bitvector32Term::subtract(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::Multiply(left, right) => Bitvector32Term::multiply(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::Divide(left, right) => Bitvector32Term::divide(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::UnsignedDivide(left, right) => Bitvector32Term::unsigned_divide(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::Remainder(left, right) => Bitvector32Term::remainder(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::UnsignedRemainder(left, right) => Bitvector32Term::unsigned_remainder(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::ShiftLeft(left, right) => Bitvector32Term::shift_left(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::ArithmeticShiftRight(left, right) => {
-                Bitvector32Term::arithmetic_shift_right(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            Bitvector32Term::LogicalShiftRight(left, right) => {
-                Bitvector32Term::logical_shift_right(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            Bitvector32Term::BitwiseAnd(left, right) => Bitvector32Term::bitwise_and(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::BitwiseOr(left, right) => Bitvector32Term::bitwise_or(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::BitwiseXor(left, right) => Bitvector32Term::bitwise_xor(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::BitwiseNot(value) => {
-                Bitvector32Term::bitwise_not(self.simplify_bitvector_under_assumptions(value))
-            }
-            Bitvector32Term::Float32Negate(value) => {
-                Bitvector32Term::float32_negate(self.simplify_bitvector_under_assumptions(value))
-            }
-            Bitvector32Term::Float32Binary {
-                operator,
-                left,
-                right,
-            } => Bitvector32Term::float32_binary(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-                *operator,
-            ),
-            Bitvector32Term::Float64Negate(value) => {
-                Bitvector32Term::float64_negate(self.simplify_bitvector_under_assumptions(value))
-            }
-            Bitvector32Term::Float64Binary {
-                operator,
-                left,
-                right,
-            } => Bitvector32Term::float64_binary(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-                *operator,
-            ),
             Bitvector32Term::Int64Constant(value) => Bitvector32Term::Int64Constant(*value),
             Bitvector32Term::UInt64Constant(value) => Bitvector32Term::UInt64Constant(*value),
-            Bitvector32Term::Int64From32(value) => {
-                Bitvector32Term::int64_from_32(self.simplify_bitvector_under_assumptions(value))
-            }
-            Bitvector32Term::Int64FromUInt32(value) => {
-                Bitvector32Term::int64_from_uint32(self.simplify_bitvector_under_assumptions(value))
-            }
-            Bitvector32Term::UInt64From32(value) => {
-                Bitvector32Term::uint64_from_32(self.simplify_bitvector_under_assumptions(value))
-            }
             Bitvector32Term::UInt32From64(value) => {
                 match self.wide_constant_from_equalities(value) {
                     Some(bits) => Bitvector32Term::Constant(bits as u32),
@@ -1994,102 +1892,6 @@ impl PureFactContext {
                     ),
                 }
             }
-            Bitvector32Term::UInt64FromInt32(value) => {
-                Bitvector32Term::uint64_from_int32(self.simplify_bitvector_under_assumptions(value))
-            }
-            Bitvector32Term::UInt64FromInt64(value) => {
-                Bitvector32Term::uint64_from_int64(self.simplify_bitvector_under_assumptions(value))
-            }
-            Bitvector32Term::Int64Add(left, right) => Bitvector32Term::int64_add(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::Int64Subtract(left, right) => Bitvector32Term::int64_subtract(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::Int64Multiply(left, right) => Bitvector32Term::int64_multiply(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::Int64Divide(left, right) => Bitvector32Term::int64_divide(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::Int64Remainder(left, right) => Bitvector32Term::int64_remainder(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::Int64ShiftLeft(left, right) => Bitvector32Term::int64_shift_left(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::Int64ArithmeticShiftRight(left, right) => {
-                Bitvector32Term::int64_arithmetic_shift_right(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            Bitvector32Term::Int64BitwiseAnd(left, right) => Bitvector32Term::int64_bitwise_and(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::Int64BitwiseOr(left, right) => Bitvector32Term::int64_bitwise_or(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::Int64BitwiseXor(left, right) => Bitvector32Term::int64_bitwise_xor(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::Int64BitwiseNot(value) => {
-                Bitvector32Term::int64_bitwise_not(self.simplify_bitvector_under_assumptions(value))
-            }
-            Bitvector32Term::UInt64Add(left, right) => Bitvector32Term::uint64_add(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::UInt64Subtract(left, right) => Bitvector32Term::uint64_subtract(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::UInt64Multiply(left, right) => Bitvector32Term::uint64_multiply(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::UInt64Divide(left, right) => Bitvector32Term::uint64_divide(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::UInt64Remainder(left, right) => Bitvector32Term::uint64_remainder(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::UInt64ShiftLeft(left, right) => Bitvector32Term::uint64_shift_left(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::UInt64LogicalShiftRight(left, right) => {
-                Bitvector32Term::uint64_logical_shift_right(
-                    self.simplify_bitvector_under_assumptions(left),
-                    self.simplify_bitvector_under_assumptions(right),
-                )
-            }
-            Bitvector32Term::UInt64BitwiseAnd(left, right) => Bitvector32Term::uint64_bitwise_and(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::UInt64BitwiseOr(left, right) => Bitvector32Term::uint64_bitwise_or(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::UInt64BitwiseXor(left, right) => Bitvector32Term::uint64_bitwise_xor(
-                self.simplify_bitvector_under_assumptions(left),
-                self.simplify_bitvector_under_assumptions(right),
-            ),
-            Bitvector32Term::UInt64BitwiseNot(value) => Bitvector32Term::uint64_bitwise_not(
-                self.simplify_bitvector_under_assumptions(value),
-            ),
             Bitvector32Term::If {
                 condition,
                 then_term,
@@ -2136,6 +1938,16 @@ impl PureFactContext {
             Bitvector32Term::PointerAddress(pointer) => {
                 Bitvector32Term::PointerAddress(pointer.clone())
             }
+            term => match (term.as_binary(), term.as_unary()) {
+                (Some((op, left, right)), _) => op.build(
+                    self.simplify_bitvector_under_assumptions(left),
+                    self.simplify_bitvector_under_assumptions(right),
+                ),
+                (_, Some((op, value))) => {
+                    op.build(self.simplify_bitvector_under_assumptions(value))
+                }
+                _ => unreachable!("every other variant has its own arm"),
+            },
         }
     }
 
