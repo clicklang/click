@@ -6826,6 +6826,14 @@ impl ClickFile {
         self.declaration_owners.get(identity).map(String::as_str)
     }
 
+    fn function_is_selected(&self, name: &str) -> bool {
+        self.entry_module.as_ref().is_none_or(|entry| {
+            self.declaration_owner(&DeclarationIdentity::CFunction(name.to_string()))
+                .or_else(|| self.declaration_owner(&DeclarationIdentity::Tactic(name.to_string())))
+                == Some(entry.as_str())
+        })
+    }
+
     fn theorem_is_selected(&self, name: &str) -> bool {
         match &self.entry_module {
             None => true,

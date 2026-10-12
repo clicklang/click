@@ -1278,9 +1278,11 @@ pub fn c0_project_function_names(
     c_sources: &[(&str, &str)],
 ) -> Result<Vec<String>, ClickError> {
     let sources = CSourceContext::bundle(c_sources).with_click_project(project);
-    Ok(resolve_click_project_context(project, &sources)?
+    let file = resolve_click_project_context(project, &sources)?;
+    Ok(file
         .function_blocks()
         .iter()
+        .filter(|function| file.function_is_selected(function.signature().name()))
         .map(|function| function.signature().name().to_string())
         .collect())
 }
@@ -1302,6 +1304,7 @@ fn selected_entry_proof_names(file: &ClickFile) -> Vec<String> {
         .chain(
             file.function_blocks()
                 .iter()
+                .filter(|function| file.function_is_selected(function.signature().name()))
                 .map(|function| format!("function:{}", function.signature().name())),
         )
         .collect()
@@ -2135,6 +2138,13 @@ fn verify_c0_sources_in_context(
                     }
                     Some(BTreeSet::new())
                 }
+                None if file.entry_module().is_some() => Some(
+                    file.function_blocks()
+                        .iter()
+                        .filter(|block| file.function_is_selected(block.signature().name()))
+                        .map(|block| block.signature().name().to_string())
+                        .collect(),
+                ),
                 None => None,
             }
         };
@@ -2181,7 +2191,9 @@ fn verify_c0_sources_in_context(
         let resource_definitions = combined_resource_definitions(&file)?;
         let theorem_definitions = selected_theorem_definitions(
             &file,
-            selected_functions.as_ref(),
+            selected_functions
+                .as_ref()
+                .filter(|_| verification_target.is_some() || expansion_capture.is_some()),
             verification_target.as_ref(),
         );
         let selected_theorem_names = theorem_definitions
@@ -3594,6 +3606,11 @@ fn verify_c0_sources_in_context(
             .chain(
                 all_function_names
                     .iter()
+                    .filter(|name| {
+                        selected_functions
+                            .as_ref()
+                            .is_none_or(|selected| selected.contains(*name))
+                    })
                     .map(|name| format!("function:{name}")),
             )
             .collect(),
@@ -3654,6 +3671,7 @@ pub(in crate::surface) fn tactic_expansion_required_functions(
         return Ok(file
             .function_blocks()
             .iter()
+            .filter(|function| file.function_is_selected(function.signature().name()))
             .map(|function| function.signature().name().to_string())
             .collect());
     };
@@ -3892,7 +3910,11 @@ fn c0_project_summary_file(
         parse_verified_sources_context_with_entry(file, sources, ProgramEntryStorage::Skip)?;
     Ok(CProjectSummary {
         external_dependencies: c0_external_dependencies_parsed(file, &parsed_sources)?,
-        selected_proof_count: file.function_blocks().len()
+        selected_proof_count: file
+            .function_blocks()
+            .iter()
+            .filter(|function| file.function_is_selected(function.signature().name()))
+            .count()
             + file
                 .theorem_definitions()
                 .iter()
@@ -6690,12 +6712,13 @@ pub(in crate::surface) fn build_function_environment(
         environment =
             environment.with_function_contract(contract.with_proof_parameters(proof_parameters));
     }
-    for (_, function) in parsed_sources.values() {
+    for (source_path, function) in parsed_sources.values() {
         let function = match function_blocks
             .iter()
             .find(|block| block.signature().name() == function.source_name())
         {
             Some(function_block) => {
+                check_signature(function_block.signature(), function, source_path)?;
                 let (resource_requires, resource_ensures) = function_resource_summary(
                     function_block,
                     function,

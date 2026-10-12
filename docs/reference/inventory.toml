@@ -976,7 +976,7 @@ path = "reference/language/index.md#file-shape"
 
 [[item]]
 id = "language.import"
-path = "reference/language/index.md#file-shape"
+path = "concepts/sidecars.md#local-specification-imports"
 
 [[item]]
 id = "language.algebraic-declaration"
