@@ -514,17 +514,6 @@ fn collect_function_theorem_dependencies(function: &FunctionBlock, names: &mut B
     for clause in function.ensures() {
         collect_applied_theorems_from_proof(&clause.proof, names);
     }
-    for clause in function.structural_clauses() {
-        for proof in [
-            clause.initialize_proof.as_ref(),
-            clause.preserve_proof.as_ref(),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            collect_applied_theorems_from_proof(proof, names);
-        }
-    }
 }
 
 /// Whether a theorem's binders are all kernel sorts that certification can
@@ -1063,14 +1052,6 @@ pub(in crate::surface) fn proof_unit_erased_click_file(
             .chain(&mut function.exceptional_ensures)
         {
             ensure.proof = SourceProof::Default;
-        }
-        for clause in &mut function.structural_clauses {
-            // Omitted loop-phase proofs and explicit default/expanded proofs
-            // are all syntax for the selected function's proof unit.  Erase
-            // presence as well as contents so inserting an expansion for an
-            // omitted phase does not look like an interface change.
-            clause.initialize_proof = None;
-            clause.preserve_proof = None;
         }
     }
     file
@@ -2633,19 +2614,7 @@ fn verify_c0_sources_in_context(
                 )));
             }
         }
-        let verified_loop_rules = verify_loop_execution_proofs(
-            expansion_capture.as_deref_mut(),
-            &function_block,
-            parsed_function,
-            &function_environment,
-            spec_definitions,
-            &resource_environment,
-            &theorem_environment,
-            function_source_registry.clone(),
-        )?;
-        let mut verification_function_environment = function_environment
-            .clone()
-            .with_verified_loop_rules(verified_loop_rules);
+        let mut verification_function_environment = function_environment.clone();
         if function_environment.has_conditional_resource_effects() {
             verification_function_environment =
                 verification_function_environment.with_conditional_resource_cases();
@@ -5064,35 +5033,6 @@ pub(in crate::surface) fn c_function_termination_plans(
                 }
             })
             .transpose()?;
-        let mut loop_measures = BTreeMap::new();
-        for clause in function.structural_clauses() {
-            if clause.decreases().is_none() {
-                continue;
-            }
-            let CodeRegion::Loop(index) = clause.region() else {
-                return Err(ClickError::new(format!(
-                    "`decreases` is supported only for loop regions, not {:?} in `{}`",
-                    clause.region(),
-                    function.signature().name()
-                )));
-            };
-            let Some(expressions) = loop_termination_measure(
-                clause,
-                &format!(
-                    "loop {index} `decreases` in `{}`",
-                    function.signature().name()
-                ),
-            )?
-            else {
-                continue;
-            };
-            if loop_measures.insert(*index, expressions).is_some() {
-                return Err(ClickError::new(format!(
-                    "duplicate `decreases` measure for loop {index} in `{}`",
-                    function.signature().name()
-                )));
-            }
-        }
         // Frontier-local loops are bound to C loop identities during proof
         // execution. Proof order is not C loop order: distinct proof branches
         // may annotate the same C loop. Their verified rules supply the exact
@@ -5111,11 +5051,11 @@ pub(in crate::surface) fn c_function_termination_plans(
         if requests {
             requested.insert(function.signature().name().to_string());
         }
-        if selected && (recursive_measure.is_some() || !loop_measures.is_empty()) {
+        if selected && recursive_measure.is_some() {
             plans.push(c_function_termination_plan(
                 executing_function_name(executing_names, function.signature().name()),
                 recursive_measure,
-                loop_measures,
+                BTreeMap::new(),
             ));
         }
     }

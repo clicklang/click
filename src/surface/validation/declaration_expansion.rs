@@ -503,11 +503,6 @@ fn expand_declared_resources_in_function_block(
         .drain(..)
         .map(|resource| expand_declared_resource_clause(resource, resource_definitions))
         .collect::<Result<Vec<_>, _>>()?;
-    function.structural_clauses = function
-        .structural_clauses
-        .drain(..)
-        .map(|clause| expand_declared_resource_structural_clause(clause, resource_definitions))
-        .collect::<Result<Vec<_>, _>>()?;
     function.grouped_proof = function
         .grouped_proof
         .take()

@@ -246,46 +246,7 @@ pub(in crate::surface) fn capture_c0_proof_site_expansion(
     let mut capture = ExpansionCapture::for_site(site.clone());
     let verification =
         verify_c0_sources_with_expansion_capture(click_source, c_sources, &mut capture);
-    if let Some(result) = capture.result {
-        return result.map_err(ClickError::new);
-    }
-    match verification {
-        Err(error) => Err(error),
-        Ok(_) if matches!(site, ProofSite::LoopPhase { .. }) => {
-            // A loop phase nested under an unreachable C path can have no
-            // initialization/preservation obligations at all. There is no
-            // path certificate to retain, and a synthesized stand-in proof
-            // would present itself as verified evidence; report the empty
-            // obligation set instead of inventing one.
-            Err(ClickError::new(format!(
-                "verification retained no certificate for {}: the phase produced no proof obligations (its loop may sit under an unreachable path), so there is no proof to expand",
-                site.description()
-            )))
-        }
-        Ok(_) => Err(ClickError::new(format!(
-            "verification did not retain a certificate for {}",
-            site.description()
-        ))),
-    }
-}
-
-pub(super) fn finish_proof_site_expansion_capture(
-    capture: Option<&mut ExpansionCapture>,
-    site: &ProofSite,
-    certificate: &ProofCertificate,
-) {
-    let Some(capture) = capture else {
-        return;
-    };
-    if capture.site != *site
-        || capture.source_index.is_some()
-        || capture.batch.is_some()
-        || capture.result.is_some()
-    {
-        return;
-    }
-    capture.active = true;
-    capture.result = Some(Ok(certificate.to_proof_tactics().to_vec()));
+    retained_proof_site_expansion(capture, verification, &site)
 }
 
 pub(super) fn record_proof_site_tactic_expansion(

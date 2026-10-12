@@ -1270,6 +1270,56 @@ fn flattened_aggregate_claims_resolve_to_their_written_clause() {
     assert_eq!(position.line, written.line);
 }
 
+/// A `produces` clause written in a contract `if` block is a claim of its
+/// own, numbered among the written clauses in its place. The source locator
+/// used to count only top-level clauses, so every later clause resolved to
+/// the clause after it, the last to none, and selecting any line of the
+/// file by `--claim FILE:LINE` stopped with `could not locate source
+/// ensure 2`.
+#[test]
+fn a_conditional_produces_clause_is_located_in_its_place() {
+    let (click, sources) = mdtest_sources("mdtests/population_initialized_cleanup.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let start = click.find("    if old(obj->refs) > 1 {").unwrap();
+    let end = click.find("int32 cleanup(int32 payload) {").unwrap();
+    let inputs = ProgramInputs::Bundle(sources.clone());
+    for produces_proof in ["", " by auto"] {
+        let click = format!(
+            "{}    if old(obj->refs) > 1 {{
+        produces child_control(obj){produces_proof};
+    }}
+    ensures count(child_ref(obj)) == old(count(child_ref(obj))) - 1 by auto;
+    ensures obj->refs >= 0 by auto;
+}}
+
+{}",
+            &click[..start],
+            &click[end..]
+        );
+        for (text, label) in [
+            ("produces child_control(obj)", "child_release.produces_0"),
+            ("ensures count(child_ref(obj))", "child_release.ensures_0"),
+            ("ensures obj->refs >= 0", "child_release.ensures_1"),
+        ] {
+            for scope in [ClaimLocationScope::Innermost, ClaimLocationScope::ProofUnit] {
+                let selected = claim_at(
+                    None,
+                    &click,
+                    &inputs,
+                    line_containing(&click, text),
+                    None,
+                    scope,
+                )
+                .unwrap_or_else(|error| panic!("{text}: {error:?}"));
+                assert_eq!(selected.label, label, "{text} ({produces_proof:?})");
+            }
+        }
+    }
+}
+
 /// A `simp()` closing an `initialize` script that several invariants share
 /// expands to one step per invariant, each holding the whole script. Those
 /// steps stand for the tactics written before the closer too, so the rewrite
@@ -17414,4 +17464,32 @@ fn an_omitted_loop_phase_expands_to_an_explicit_phase_proof() {
         "{}",
         error.message()
     );
+}
+
+/// A loop phase is expanded by its label over compiler-prepared C exactly as
+/// over a source bundle, through the prepared entry point and through the
+/// input-generic one `click expand --claim` uses, and the rewrite checks
+/// over the same prepared import.
+#[test]
+fn a_loop_phase_expands_by_label_over_a_prepared_c_import() {
+    use crate::languages::c::compiler_import::PreparedCImport;
+
+    let sources = [("omitted.c", OMITTED_PHASE_C)];
+    let imports = [PreparedCImport::for_test("omitted.c", OMITTED_PHASE_C)];
+    let inputs = ProgramInputs::Prepared(&imports);
+    for phase in ["initialize", "preserve"] {
+        let label = format!("f.loop(0).{phase}");
+        let bundled = expand_c0_claim_source_by_label(OMITTED_PHASE_CLICK, &sources, &label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+        let prepared =
+            expand_c0_prepared_claim_source_by_label(OMITTED_PHASE_CLICK, &imports, &label)
+                .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+        assert_eq!(prepared, bundled, "{label}");
+        let generic = expand_claim_by_label(None, OMITTED_PHASE_CLICK, &inputs, &label, None)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+        assert_eq!(generic.source, bundled, "{label}");
+        assert_eq!(generic.proof_unit, "f.contract", "{label}");
+        verify_c0_prepared_sources(&prepared, &imports)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+    }
 }

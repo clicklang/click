@@ -516,28 +516,6 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             }
         }
 
-        for structural_clause in function.structural_clauses() {
-            for item in structural_clause.items() {
-                {
-                    let proposition = item.proposition();
-                    let context = format!("invariant clause in `{}`", function.signature().name());
-                    validate_predicate_calls_in_proposition(
-                        proposition,
-                        &proposition_calls,
-                        &click_functions,
-                        &context,
-                    )?;
-                    validate_contract_applications_in_proposition(
-                        proposition,
-                        &contracts,
-                        &requires_type_environment,
-                        &click_function_types,
-                        &context,
-                    )?;
-                }
-            }
-        }
-
         for ensure in function.ensures() {
             match ensure.ensure() {
                 Ensure::Proposition(proposition) => {
