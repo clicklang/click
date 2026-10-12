@@ -17266,3 +17266,152 @@ fn algebraic_integer_match_bindings_expand_and_recheck() {
         });
     }
 }
+
+/// The Click line, 1-based, of the first line of `source` containing `text`.
+fn line_containing(source: &str, text: &str) -> usize {
+    source
+        .lines()
+        .position(|line| line.contains(text))
+        .unwrap_or_else(|| panic!("no line contains `{text}`"))
+        + 1
+}
+
+/// A loop phase written in a grouped proof's `loop` tactic is a claim of its
+/// own: its label, and a line of its proof, select just that phase, and the
+/// expansion replaces only the phase's `by` clause with its checked
+/// certificate. The rest of the contract proof, including the other phase
+/// and the `simp()` after the loop, is untouched.
+#[test]
+fn a_written_loop_phase_expands_alone_by_label_and_by_line() {
+    let (click, sources) = mdtest_sources("mdtests/loop_entry_guard_before_written_implication.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let function = "loop_entry_guard_before_written_implication";
+    let label = format!("{function}.loop(0).preserve");
+    let expanded = expand_c0_claim_source_by_label(&click, &sources, &label).unwrap();
+    let written = "preserve by simp;";
+    let start = click.find(written).unwrap();
+    let end = start + written.len();
+    assert!(expanded.starts_with(&click[..start]), "{expanded}");
+    assert!(expanded.ends_with(&click[end..]), "{expanded}");
+    let phase = &expanded[start..expanded.len() - (click.len() - end)];
+    assert!(phase.starts_with("preserve by {"), "{phase}");
+    assert!(!phase.contains("simp"), "{phase}");
+    verify_c0_sources(&expanded, &sources).unwrap();
+
+    let inputs = ProgramInputs::Bundle(sources.clone());
+    let at = |text: &str, scope| {
+        claim_at(
+            None,
+            &click,
+            &inputs,
+            line_containing(&click, text),
+            None,
+            scope,
+        )
+        .unwrap()
+    };
+    let selected = at(written, ClaimLocationScope::Innermost);
+    assert_eq!(selected.label, label);
+    assert_eq!(selected.owner, function);
+    assert_eq!(
+        at("initialize by {", ClaimLocationScope::Innermost).label,
+        format!("{function}.loop(0).initialize")
+    );
+    // A line of the phase inside the loop tactic, past its first line.
+    assert_eq!(
+        at("intro();", ClaimLocationScope::Innermost).label,
+        format!("{function}.loop(0).initialize")
+    );
+    // The proof unit that checks the phase is the contract proof writing it,
+    // which is what audit and proof tracing select, without verifying.
+    assert_eq!(
+        at(written, ClaimLocationScope::ProofUnit).label,
+        format!("{function}.contract")
+    );
+    // The `loop` keyword's own line belongs to the contract proof.
+    assert_eq!(
+        at("loop {", ClaimLocationScope::Innermost).label,
+        format!("{function}.contract")
+    );
+    let by_line = expand_claim_by_label(
+        None,
+        &click,
+        &inputs,
+        &selected.label,
+        Some(selected.position),
+    )
+    .unwrap();
+    assert_eq!(by_line.source, expanded);
+    assert_eq!(by_line.proof_unit, format!("{function}.contract"));
+}
+
+const OMITTED_PHASE_C: &str = "int32 f(int32 a, int32 b) {
+    while (a > 0) {
+        a = 0;
+        b = 0;
+    }
+    return a;
+}
+";
+
+const OMITTED_PHASE_CLICK: &str = r#"verifying "omitted.c";
+
+int32 f(int32 a, int32 b) {
+    requires a <= 0;
+    ensures result <= 0;
+} by {
+    loop {
+        decreases a + 1;
+        invariant a <= 0;
+    }
+    step();
+    simp();
+}
+"#;
+
+/// A `loop` tactic that writes neither phase leaves both to automation.
+/// Expanding one by its label writes it out as an explicit phase proof in
+/// the tactic's body, and changes nothing else.
+#[test]
+fn an_omitted_loop_phase_expands_to_an_explicit_phase_proof() {
+    let sources = [("omitted.c", OMITTED_PHASE_C)];
+    verify_c0_sources(OMITTED_PHASE_CLICK, &sources).unwrap();
+    let insertion = OMITTED_PHASE_CLICK.find("}\n    step();").unwrap();
+    for phase in ["initialize", "preserve"] {
+        let expanded = expand_c0_claim_source_by_label(
+            OMITTED_PHASE_CLICK,
+            &sources,
+            &format!("f.loop(0).{phase}"),
+        )
+        .unwrap();
+        assert!(
+            expanded.starts_with(&OMITTED_PHASE_CLICK[..insertion]),
+            "{expanded}"
+        );
+        assert!(
+            expanded.ends_with(&OMITTED_PHASE_CLICK[insertion..]),
+            "{expanded}"
+        );
+        let inserted =
+            &expanded[insertion..expanded.len() - (OMITTED_PHASE_CLICK.len() - insertion)];
+        assert!(
+            inserted.starts_with(&format!("    {phase} by {{\n")),
+            "{inserted}"
+        );
+        assert!(inserted.ends_with("        }\n    "), "{inserted}");
+        verify_c0_sources(&expanded, &sources).unwrap();
+    }
+    let error =
+        expand_c0_claim_source_by_label(OMITTED_PHASE_CLICK, &sources, "f.loop(1).preserve")
+            .unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("no `loop` tactic in `f`'s proofs proves loop(1)"),
+        "{}",
+        error.message()
+    );
+}

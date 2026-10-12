@@ -185,6 +185,7 @@ pub fn claim_at(
     inputs: &CInput,
     line: usize,
     column: Option<usize>,
+    scope: crate::surface::ClaimLocationScope,
 ) -> Result<crate::surface::SourceClaim, crate::surface::ClaimLocationError> {
     crate::surface::claim_at(
         project,
@@ -192,6 +193,7 @@ pub fn claim_at(
         &inputs.program_inputs(),
         line,
         column,
+        scope,
     )
 }
 
@@ -228,7 +230,8 @@ pub fn describe_claim_location_error(
 /// command reads, `FILE:LINE[:COLUMN]` ([`parse_claim_location`]), to the
 /// claim covering it. Lines are lines of `target`, whose Click source starts
 /// after `line_offset` lines (an mdtest's preceding markdown). `None` when
-/// the argument is a claim label.
+/// the argument is a claim label. `scope` says whether a loop phase written
+/// in a proof script names itself or the proof that writes it.
 pub fn claim_at_argument(
     argument: &str,
     target: &Path,
@@ -236,6 +239,7 @@ pub fn claim_at_argument(
     project: Option<&ClickProject>,
     click_source: &str,
     inputs: &CInput,
+    scope: crate::surface::ClaimLocationScope,
 ) -> Option<Result<crate::surface::SourceClaim, String>> {
     let location = parse_claim_location(argument)?;
     Some(location.and_then(|(path, line, column)| {
@@ -256,7 +260,7 @@ pub fn claim_at_argument(
                     line_offset + 1
                 )
             })?;
-        claim_at(project, click_source, inputs, click_line, column).map_err(|error| {
+        claim_at(project, click_source, inputs, click_line, column, scope).map_err(|error| {
             describe_claim_location_error(&path, line_offset, click_line, column, &error)
         })
     }))
