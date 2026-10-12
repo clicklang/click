@@ -156,14 +156,14 @@ recombination, scalar sums, and final 16-bit stores. Both final fields equal
 the common mathematical specification on the entry input snapshot. The
 arbitrary-length computation has checked bounds and termination. Each full-batch
 vector step connects all four constructor lanes to exact absolute input-byte
-observations using actual iterator state. The full-batch loops preserve the A
-residue against the common specification through their native additions and
-lane reductions. The original inner loop also carries a nonnegative B
-representative with the deferred batch-local position times A contribution.
-Its exact native transition and the original scalar seed addition and reductions
-preserve the combined B residue. Connecting B to the common specification at the
-global prefix, vector and scalar remainders, and the full checksum identity
-remain unproved.
+observations using actual iterator state. The full-batch loops preserve both
+residues against the common specification through their native additions and
+reductions. The B representative includes the deferred batch-local position
+times A contribution and remains nonnegative. Its entry seed stays fixed while
+Rust updates the working scalar B between batches. Actual outer exhaustion
+establishes both common checksum residues for the completed full-batch prefix.
+General vector and scalar remainders, and the full checksum identity, remain
+unproved.
 
 Follow the [current roadmap](../issues/rust-support.md) for the remaining outer
 batches, short tails, common specification, unchanged C proof, and architecture

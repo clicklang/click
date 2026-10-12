@@ -49,9 +49,10 @@ metadata. Every full-batch vector step connects all four constructor lane values
 to exact absolute input-byte observations derived from those stored counts.
 Full outer-batch induction, lane reduction/reset, and the final vector and scalar
 remainders are checked in the whole-body proof. The full-batch loops also carry
-A against the common specification through every native four-byte step and lane
-reduction, using prefixes derived from actual remaining counts. General B
-induction and checksum correctness through the remainders remain incomplete.
+both A and B against the common specification through every native four-byte
+step and reduction, using prefixes derived from actual remaining counts and a
+fixed entry B seed. Checksum correctness through the general remainders remains
+incomplete.
 The shared mathematical specification proves byte-sum and weighted-sum
 concatenation and incremental equality for A, B, and the packed checksum under
 explicit signed-range split bounds and canonical A seeds. These are independent
@@ -107,13 +108,12 @@ snapshot, for every length zero through 22,207 and any canonical initial state.
 Explicit byte-equality invariants and checked sum extensionality preserve the
 specification through the original reductions and final field stores. False
 final A and B checksum claims are rejected. For arbitrary supported lengths,
-the nested full-batch loops carry A against the common specification through
-native additions and lane reductions. Their B proof checks the exact deferred
-batch-local seed contribution, preserves a nonnegative representative through
-every native vector step, and connects the original scalar seed addition and
-all reductions to its combined residue. B still needs specification induction
-at the global prefix; the general aligned remainder and scalar tail also remain
-pending. Full original-computation smart audits
+the nested full-batch loops carry both A and B against the common specification
+through native additions and reductions. B includes the exact deferred
+batch-local seed contribution and remains nonnegative. The entry B seed stays
+fixed while Rust updates the working scalar B between batches. Actual outer
+exhaustion establishes both residues for the completed full-batch prefix.
+The general aligned remainder and scalar tail remain pending. Full original-computation smart audits
 currently exhaust the standard ten-minute run bound before completing a site,
 while ordinary verification succeeds. This is an audit-tool limitation, not a
 reported proof failure; continue checksum proof work with ordinary verification

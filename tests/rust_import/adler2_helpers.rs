@@ -2815,10 +2815,54 @@ fn charon_adler2_general_compute_rejects_false_deferred_b() {
     );
 }
 
+#[test]
+#[ignore = "nightly: full-batch B specification seed and completed-prefix rejection"]
+fn charon_adler2_general_compute_rejects_false_b_specification() {
+    let outer_invariant = GENERAL_COMPUTE
+        .lines()
+        .find(|line| {
+            line.trim_start()
+                .starts_with("invariant truncating_remainder(adler_lane_b(to_integer(b),")
+        })
+        .unwrap();
+    reject_compute(
+        GENERAL_COMPUTE,
+        outer_invariant,
+        &outer_invariant.replace(
+            "old(to_integer((self.b as u32)))",
+            "(old(to_integer((self.b as u32))) + 1)",
+        ),
+    );
+    let completed_prefix = GENERAL_COMPUTE
+        .lines()
+        .rfind(|line| {
+            line.trim_start()
+                .starts_with("have truncating_remainder(adler_lane_b(to_integer(b),")
+                && line.contains("adler_spec_b(bytes,")
+        })
+        .unwrap();
+    let index = completed_prefix
+        .split_once("adler_spec_b(bytes, ")
+        .unwrap()
+        .1
+        .split_once(", to_integer(a),")
+        .unwrap()
+        .0;
+    reject_compute(
+        GENERAL_COMPUTE,
+        completed_prefix,
+        &completed_prefix.replacen(
+            &format!("adler_spec_b(bytes, {index},"),
+            "adler_spec_b(bytes, ((bytes.len() as u32) as i32),",
+            1,
+        ),
+    );
+}
+
 const BATCH_PREFIX: &str = include_str!("../../design/charon-trial/adler2/batch-prefix.click");
 
 fn batch_prefix_proof(source: &str) -> String {
-    format!("{COMMON_ADLER_SPEC}\n{LANE_STATE}\n{source}")
+    format!("{COMMON_ADLER_SPEC}\n{LANE_STATE}\n{VECTOR_PREFIX}\n{source}")
 }
 
 #[test]
@@ -2855,6 +2899,8 @@ fn adler_deferred_batch_b_tools_expand_and_reverify() {
         "adler_canonical_lane_b_floor",
         "adler_empty_full_batch_position",
         "adler_complete_full_batch_position",
+        "adler_native_deferred_b_prefix_step",
+        "adler_zero_lane_b_residue",
     ] {
         assert_cli(
             &p,
@@ -2892,6 +2938,18 @@ fn adler_deferred_batch_b_rejects_false_transitions() {
         ),
         ("requires 0 <= b;", ""),
         ("requires a3 <= 65520;", "requires a3 <= 65523;"),
+        (
+            "adler_spec_b(bytes, n + 4, a_seed, b_seed) by",
+            "adler_spec_b(bytes, n + 4, a_seed, b_seed + 1) by",
+        ),
+        (
+            "adler_spec_b(bytes, n + 4, a_seed, b_seed) by",
+            "adler_spec_b(bytes, n + 3, a_seed, b_seed) by",
+        ),
+        (
+            "requires to_integer(v1) == to_integer((int32)bytes[n + 1]);",
+            "requires to_integer(v1) == to_integer((int32)bytes[n]);",
+        ),
         (
             "ensures to_integer(22208 - remaining) == 0 by",
             "ensures to_integer(22208 - remaining) == 1 by",

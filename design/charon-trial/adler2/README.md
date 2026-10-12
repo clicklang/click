@@ -631,13 +631,15 @@ across the constructor's local return storage, then rewrites the Integer
 observation using that equality. These observations supply the input values
 needed for the outer checksum recurrence.
 
-The full-batch loops now carry the A residue against `adler_spec_a` at every
-actual remaining count. Each native four-byte addition advances the global
-prefix; each original lane reduction preserves that residue. At outer-loop
-exhaustion the retained scalar A and four A lanes represent the specified A for
-the complete full-batch prefix. Both loops also retain equality of the input
-bytes with the entry snapshot. The independent A transition lemmas in
-[vector-prefix.click](vector-prefix.click) are reused by the joint A/B lemmas.
+The full-batch loops carry both residues against `adler_spec_a` and
+`adler_spec_b` at every actual remaining count. Each native four-byte addition
+advances the global prefix; each original reduction preserves its residue.
+The B seed remains the entry receiver value as Rust updates the working scalar
+B between batches. At outer-loop exhaustion the retained scalars and four-lane
+state represent the specified A and B for the complete full-batch prefix.
+Both loops retain equality of the input bytes with the entry snapshot. The
+independent A transition lemmas in [vector-prefix.click](vector-prefix.click)
+are reused by the joint A/B lemmas.
 The B proof observes the batch-local position from the stored inner remainder
 and includes the deferred position times scalar A contribution in its lane
 representative. The checked native vector step adds four times the old A
@@ -646,11 +648,13 @@ passes through every original inner iteration. At batch exit, the original
 `22208 * a` multiplication and scalar B addition supply the exact deferred
 contribution. Frozen observations connect the actual A-lane, B-lane and scalar
 remainders to the source-proved B reduction, preserving the combined B residue.
-[batch-prefix.click](batch-prefix.click) proves the native transition, positivity
-and checked iterator endpoint observations. It introduces no processed counter.
-The remaining step for full batches is to connect this B residue to
-`adler_spec_b` at the global prefix in both loop invariants. The aligned remainder
-and final scalar tail still need their general checksum invariants.
+[batch-prefix.click](batch-prefix.click) proves the native transition, positivity,
+checked iterator endpoints and coupling of the deferred state to the global
+checksum prefix. Its zero-lane residue lemma initializes B from any canonical
+entry value. The original inner back edge, scalar seed addition, reductions and
+outer back edge retain the common B specification. It introduces no processed
+counter. The aligned remainder and final scalar tail still need their general
+checksum invariants.
 
 The harness assembles the contract with the checked helper/getter bodies,
 iterator and recombination libraries, general partition lemmas, and tail
@@ -658,10 +662,11 @@ bounds. Normal tests check the bounded metadata and native stored-guard
 regression. Nightly tests check the complete body, missing authority and seeds,
 false final bounds, absolute lane values, a duplicated A-transition byte, and
 a false lane-reduction residue, an incorrect deferred B seed product and a false
-B reduction residue, plus CLI verify/profile/audit/expanded-proof agreement.
-The deferred B lemmas independently verify, profile, expand and reverify;
+B reduction residue, a changed entry B seed and a full-input claim at the
+completed-batch boundary, plus CLI verify/profile/audit/expanded-proof agreement.
+The deferred B lemmas independently verify, profile, audit, expand and reverify;
 mutations reject incorrect native positions, byte weights, missing overflow
-bounds and invalid reduction floors. The absolute-position lemmas also
+bounds, invalid reduction floors, wrong global-prefix advances and changed seeds. The absolute-position lemmas also
 expand and reverify independently; mutations reject undefined pointer sums and
 false byte observations.
 
@@ -670,6 +675,6 @@ cargo nextest run --profile nightly --test rust_import \
   -E 'test(charon_adler2_general_compute)'
 ```
 
-The whole-body bounds and termination proof now includes A correctness for the
-full-batch prefix. Complete checksum and incremental processing postconditions
+The whole-body bounds and termination proof includes both A and B correctness
+for the full-batch prefix. Complete checksum and incremental processing postconditions
 remain separate roadmap work.
