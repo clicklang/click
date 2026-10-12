@@ -6595,7 +6595,8 @@ pub struct ResourceContext {
     /// Disposable projection, never ownership evidence or semantic identity.
     /// Immutable forks share even the cold cache; producers detach it before
     /// advancing only their own delta.
-    pub(super) observable_projection: std::sync::Arc<std::sync::Mutex<Option<ObservableResourceProjection>>>,
+    pub(super) observable_projection:
+        std::sync::Arc<std::sync::Mutex<Option<ObservableResourceProjection>>>,
     /// Checked dependency bundles for resource occurrences that are views of
     /// an active stable loan.  This is deliberately separate from the
     /// resource algebra's support graph: equal resource terms can have
@@ -6863,8 +6864,6 @@ pub(super) struct ResourceContextChange {
     pub(super) depth: usize,
     /// Exact occurrence delta for derived indexes; metadata changes use None.
     pub(super) entry_delta: Option<(ResourceEntryId, bool)>,
-    /// An expansion-cache edit preserves entry ordinals and authority.
-    pub(super) metadata_only: bool,
     pub(super) fact: CResourceFact,
     pub(super) parent: Option<std::sync::Arc<ResourceContextChange>>,
 }

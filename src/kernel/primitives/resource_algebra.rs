@@ -2043,7 +2043,6 @@ impl ResourceContext {
                     .as_ref()
                     .map_or(1, |change| change.depth + 1),
                 entry_delta: Some((entry, true)),
-                metadata_only: false,
                 fact,
                 parent: self.storage.history.clone(),
             })),
@@ -2253,7 +2252,6 @@ impl ResourceContext {
                     .as_ref()
                     .map_or(1, |change| change.depth + 1),
                 entry_delta: Some((entry, false)),
-                metadata_only: false,
                 fact: fact.clone(),
                 parent: self.storage.history.clone(),
             })),
@@ -2370,7 +2368,6 @@ impl ResourceContext {
             history = Some(std::sync::Arc::new(ResourceContextChange {
                 depth: history.as_ref().map_or(1, |change| change.depth + 1),
                 entry_delta: None,
-                metadata_only: false,
                 fact,
                 parent: history,
             }));
@@ -4467,7 +4464,6 @@ impl ResourceContext {
                     .as_ref()
                     .map_or(1, |change| change.depth + 1),
                 entry_delta: None,
-                metadata_only: true,
                 fact: support.clone(),
                 parent: self.storage.history.clone(),
             })),
