@@ -6776,6 +6776,69 @@ fn fixed_overflow_decision_scales_near_linearly_with_unrelated_order_facts() {
     }
 }
 
+/// `x_k = x_(k-1) + 1` executed as C: the k-th add's overflow decision must
+/// not grow with the increments before it. The value once carried every
+/// increment as a node, so each decision ranged a k-deep term and the chain
+/// was quadratic. The decision is still made: an unbounded base is refused.
+#[test]
+fn increment_chain_add_work_does_not_grow_with_earlier_increments() {
+    let base = Bitvector32Term::Variable(Variable(95_001));
+    let bounded = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_greater_equal(base.clone(), Bitvector32Term::Constant(0)),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_less_equal(base.clone(), Bitvector32Term::Constant(1_000_000)),
+            true,
+        );
+    let state = CState::new();
+    let increment = |value: Bitvector32Term, assumptions: &PureFactContext| {
+        let expression = c_add(CExpression::Value(CValue::Int32(value)), c_int32_literal(1));
+        crate::instrumentation::measure_deterministic_work(|| {
+            evaluate_c_expression_paths(
+                &state,
+                &expression,
+                assumptions,
+                &mut ExecutionBudget::default(),
+            )
+            .expect("an increment should evaluate")
+        })
+    };
+    let mut value = base.clone();
+    let mut samples = Vec::new();
+    for length in 1..=256 {
+        let (paths, work) = increment(value, &bounded);
+        let [path] = paths.as_slice() else {
+            panic!("increment {length} of a bounded base should not split: {paths:?}");
+        };
+        let CExpressionOutcome::Value(CValue::Int32(next)) = &path.outcome else {
+            panic!(
+                "increment {length} should produce an int32: {:?}",
+                path.outcome
+            );
+        };
+        value = next.clone();
+        if [16, 64, 256].contains(&length) {
+            samples.push((length, work));
+        }
+    }
+    assert!(
+        samples
+            .windows(2)
+            .all(|pair| pair[1].1 <= pair[0].1.saturating_mul(2)),
+        "an increment's add work grows with the chain before it: {samples:?}"
+    );
+    let (paths, _) = increment(value, &PureFactContext::new());
+    assert!(
+        paths.iter().any(|path| matches!(
+            path.outcome,
+            CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow)
+        )),
+        "an unbounded base must still owe the overflow"
+    );
+}
+
 /// The issue-named quantified-match curve: one query answered by
 /// instantiating one guarded quantified fact, while unrelated quantified
 /// facts about other memory blocks grow.

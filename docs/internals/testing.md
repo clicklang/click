@@ -734,8 +734,8 @@ objects), verifies it, and reports each size's largest step in work units,
 its mean step time, and its largest `loop` or `branch` clause. A shape whose steps stay flat in both is fine.
 One that grows is filed in `bugs/` with the shape as its reproduction, and
 its fix lands with an ordinary multi-size regression. A step whose own input
-grows, such as one statement summing N fields, grows linearly by design; read
-the per-size output before filing.
+grows, such as one statement summing N fields or a `return` that releases N
+locals, grows linearly by design; read the per-size output before filing.
 
 Time is reported beside work because work counts only what is charged. The
 hunt's first finding was invisible to it: an atomic proposition hashed its
