@@ -2995,3 +2995,10 @@ fn readme_quick_start_is_the_clamp_example() {
         );
     }
 }
+
+/// The first-proof tutorial's commands print what it shows, failure included.
+#[test]
+fn first_proof_tutorial_sessions_match_the_verifier() {
+    let files = run_documented_session("docs/concepts/first-proof.md");
+    assert!(files["increment.click"].contains("requires x < 2147483647;"));
+}

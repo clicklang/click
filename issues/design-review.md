@@ -453,17 +453,6 @@ the essay to a design document.
 
 Decision: fix.
 
-### N2. The first proof does not look like C and does not say how to run it
-
-Today: `docs/concepts/first-proof.md` writes `int32 zero()` in a `.c` file
-and shows no command or output; the `int` to `int32` mapping is in
-`docs/reference/language/c0.md`.
-
-Proposed fix: plain `int`/`int32_t` in the tutorial, the exact command, and
-its success and failure output.
-
-Decision: open.
-
 ### N3. No guide for verifying a function in your own project
 
 Today: the only unchanged third-party C example proves `json_c_version()`
