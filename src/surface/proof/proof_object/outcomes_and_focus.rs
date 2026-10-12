@@ -747,21 +747,23 @@ impl<'a> Proof<'a> {
                     let ProofContext::Execution(context) = self.context.as_ref() else {
                         unreachable!()
                     };
+                    let snapshots = &execution
+                        .provenance_for_outcome(path_index)
+                        .recorded_snapshots;
+                    let layout = &context.constants.source_layout;
                     return Err(self.step_error(format!(
                         "path {path_index}: {}{}",
-                        describe_function_outcome(
-                            path.outcome(),
-                            ParameterBinding::new(
-                                context.parsed_function.parameters(),
-                                context.arguments
+                        crate::surface::diagnostics::with_c_statement_site(
+                            last_statement_site(layout, snapshots),
+                            || describe_function_outcome(
+                                path.outcome(),
+                                ParameterBinding::new(
+                                    context.parsed_function.parameters(),
+                                    context.arguments
+                                )
                             )
                         ),
-                        describe_last_statement_site(
-                            &context.constants.source_layout,
-                            &execution
-                                .provenance_for_outcome(path_index)
-                                .recorded_snapshots,
-                        ),
+                        describe_last_statement_site(layout, snapshots),
                     )));
                 }
             };
@@ -1014,11 +1016,20 @@ fn describe_last_statement_site(
     layout: &crate::surface::lowering::SourceExecutionLayout,
     snapshots: &RecordedSnapshots,
 ) -> String {
+    last_statement_site(layout, snapshots)
+        .map(|site| format!("\n  C statement at {}: `{}`", site.location(), site.text()))
+        .unwrap_or_default()
+}
+
+/// The site of the C statement whose snapshot `snapshots` recorded last.
+fn last_statement_site(
+    layout: &crate::surface::lowering::SourceExecutionLayout,
+    snapshots: &RecordedSnapshots,
+) -> Option<std::sync::Arc<syntax::C0StatementSite>> {
     snapshots
         .latest_statement()
         .and_then(|statement_index| layout.site(statement_index))
-        .map(|site| format!("\n  C statement at {}: `{}`", site.location(), site.text()))
-        .unwrap_or_default()
+        .cloned()
 }
 
 /// The premise anchor of an execution frontier: the entry of the last

@@ -728,11 +728,89 @@ fn c0_plain_char_rejects_unsigned_char_pointer_aliasing() {
     ] {
         let error = syntax::parse_functions(source).expect_err(source);
         assert!(
+            error.message().contains("incompatible C pointer types")
+                || error.message().contains("pointer signedness mismatch"),
+            "{source}: {}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+fn c0_character_pointer_signedness_mismatch_names_the_target() {
+    use crate::languages::c::target::CTarget;
+    for (source, target, expected) in [
+        (
+            "void f(char *p) { unsigned char *q = p; }",
+            CTarget::X86_64LinuxUserspace,
+            "pointer signedness mismatch: `char *` (plain `char` is signed on x86_64-linux-userspace) is converted to `uint8 *` without a cast; cast it with `(uint8 *)` or use `char *`",
+        ),
+        (
+            "char *f(unsigned char *q) { return q; }",
+            CTarget::X86_64LinuxUserspace,
+            "pointer signedness mismatch: `uint8 *` is converted to `char *` (plain `char` is signed on x86_64-linux-userspace) without a cast; cast it with `(char *)` or use `uint8 *`",
+        ),
+        (
+            "void g(unsigned char *p); void f(signed char *q) { g(q); }",
+            CTarget::X86_64LinuxUserspace,
+            "pointer signedness mismatch: `int8 *` is converted to `uint8 *` without a cast; cast it with `(uint8 *)` or use `int8 *`",
+        ),
+        (
+            "void f(char *p, signed char *q) { p = q; }",
+            CTarget::X86_64LinuxKernel,
+            "pointer signedness mismatch: `int8 *` is converted to `char *` (plain `char` is unsigned on x86_64-linux-kernel) without a cast; cast it with `(char *)` or use `int8 *`",
+        ),
+    ] {
+        let error = syntax::parse_functions_for_target(source, target).expect_err(source);
+        assert!(
+            error.message().contains(expected),
+            "{source}: {}",
+            error.message()
+        );
+    }
+    // Same-signedness character pointers stay distinct types with the
+    // general refusal.
+    for (source, target) in [
+        (
+            "void f(char *p, unsigned char *q) { p = q; }",
+            CTarget::X86_64LinuxKernel,
+        ),
+        (
+            "void f(char *p, signed char *q) { p = q; }",
+            CTarget::X86_64LinuxUserspace,
+        ),
+        (
+            "void f(char **p, unsigned char **q) { p = q; }",
+            CTarget::X86_64LinuxUserspace,
+        ),
+    ] {
+        let error = syntax::parse_functions_for_target(source, target).expect_err(source);
+        assert!(
             error.message().contains("incompatible C pointer types"),
             "{source}: {}",
             error.message()
         );
     }
+}
+
+#[test]
+fn c0_string_literal_as_uint8_pointer_notes_signed_plain_char() {
+    use crate::languages::c::target::CTarget;
+    let source = "uint8 *f() { return \"ok\"; }";
+    let notes = |target| {
+        let functions = syntax::parse_functions_for_target(source, target)
+            .expect("the byte-string literal extension still parses");
+        let mut notes = Vec::new();
+        collect_site_notes(functions[0].body(), &mut notes);
+        notes
+    };
+    assert_eq!(
+        notes(CTarget::X86_64LinuxUserspace),
+        [
+            "pointer signedness mismatch: `char *` (plain `char` is signed on x86_64-linux-userspace) is converted to `uint8 *` without a cast; cast it with `(uint8 *)` or use `char *`"
+        ]
+    );
+    assert!(notes(CTarget::X86_64LinuxKernel).is_empty());
 }
 
 #[test]
@@ -760,7 +838,9 @@ fn c0_plain_char_inline_call_assignments_preserve_source_compatibility() {
         let error = syntax::parse_functions_for_source(&source, "inline.c")
             .expect_err("mangled inline calls must retain source return types");
         assert!(
-            error.message().contains("incompatible C pointer types"),
+            error
+                .message()
+                .contains("pointer signedness mismatch: `char *`"),
             "{}",
             error.message()
         );
@@ -14143,5 +14223,21 @@ fn c0_builtin_offsetof_uses_layout_and_refuses_unsupported_designators() {
             "struct A {{ char c; long x; int tail[3]; }}; unsigned long run() {{ return __builtin_offsetof({operands}); }}"
         );
         assert!(syntax::parse_functions(&source).is_err(), "{operands}");
+    }
+}
+
+/// The site notes of `statement` and the statements sequenced with it.
+fn collect_site_notes(statement: &syntax::C0Statement, notes: &mut Vec<String>) {
+    if let syntax::C0Statement::Seq(first, second) = statement {
+        collect_site_notes(first, notes);
+        collect_site_notes(second, notes);
+        return;
+    }
+    if let Some(note) = statement
+        .site()
+        .and_then(syntax::C0Site::get)
+        .and_then(|site| site.note())
+    {
+        notes.push(note.to_string());
     }
 }
