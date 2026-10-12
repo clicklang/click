@@ -122,13 +122,7 @@ fn load_standard_library(source: &str) -> Result<ClickFile, ClickError> {
         "stdlib/prelude.click",
         0,
         &[],
-        BTreeMap::new(),
-        BTreeMap::new(),
-        BTreeMap::new(),
-        BTreeMap::new(),
-        BTreeMap::new(),
-        BTreeMap::new(),
-        BTreeMap::new(),
+        Default::default(),
     )?)?;
     if !file.verifying_sources().is_empty()
         || file
