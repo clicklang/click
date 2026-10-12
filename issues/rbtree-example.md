@@ -1203,6 +1203,11 @@ Mutation checks reject incorrect links, parent/color writes, and fixup results.
 Depends on 7 and 10.
 
 **Chunk 12. `____rb_erase_color`, left-sibling cases: in progress.**
+The per-case `rbtree_erase_color_*` increments named in chunks 12 and 13 were
+retired once `rbtree_erase_color_flips_red_all.click` subsumed them
+([design/proof-reuse.md](../design/proof-reuse.md) R1); they remain in Git
+history, and their mutations now run against the general proof. The record
+below is kept as development history.
 `rbtree_erase_color_red_left.click` verifies the first-iteration color-flip exit
 for an empty left child, a red parent, and a black leaf right sibling, through
 arbitrary outer contexts. The exact whole-root model is balanced and

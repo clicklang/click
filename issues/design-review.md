@@ -122,25 +122,23 @@ Decision: open.
 
 ### P5. Copy-paste across case files and sidecars
 
-Today: 74% of `examples/rbtree-erase` (29,160 of 39,582 lines) is 22
-color-repair increments that the general proof
-`rbtree_erase_color_flips_red_all.click` already subsumes. They are kept
-because 82 mutation-test references point at them. The 24 inline copies of
-the `__rb_change_child` proof are in those increments, which predate contract
-import. `rb_erase` has 11 per-case contracts and no general one. The general
-repair proof's left and right arms (about 1,380 lines each) are mirror
-images. C++ caller sidecars repeat callee contracts
-(`examples/basic-cpp/with_restore_caller.click`).
+Today: the 22 color-repair increments that
+`rbtree_erase_color_flips_red_all.click` subsumes (29,160 of 39,582 lines,
+including the 24 inline copies of the `__rb_change_child` proof) are retired,
+and their mutations run against the general proof (R1). `rb_erase` has 11
+per-case contracts and no general one. The general repair proof's left and
+right arms (about 1,380 lines each) are mirror images. C++ caller sidecars
+repeat callee contracts (`examples/basic-cpp/with_restore_caller.click`).
 
 Proposed fix: [design/proof-reuse.md](../design/proof-reuse.md):
 
-- R1: retire superseded increments.
+- R1: retire superseded increments. Done.
 - R2: one general contract per function.
 - R3: automatic unfolding of recursive spec functions.
 - R4: automatic opening and closing of resources.
 - R5: one script for several arms.
 
-Decision: open.
+Decision: R1 ruled fix and done; R2–R5 open.
 
 ### P6. Loop proofs restate facts
 
@@ -452,17 +450,6 @@ Proposed fix: a maintainer replaces line 3 with a one-line pitch and moves
 the essay to a design document.
 
 Decision: fix.
-
-### N2. The first proof does not look like C and does not say how to run it
-
-Today: `docs/concepts/first-proof.md` writes `int32 zero()` in a `.c` file
-and shows no command or output; the `int` to `int32` mapping is in
-`docs/reference/language/c0.md`.
-
-Proposed fix: plain `int`/`int32_t` in the tutorial, the exact command, and
-its success and failure output.
-
-Decision: open.
 
 ### N3. No guide for verifying a function in your own project
 

@@ -126,6 +126,13 @@ gate budget.
 Add a rule to `docs/internals/testing.md` or the examples guide: an example
 keeps only its general proof and that proof's regressions.
 
+Done: the 22 increments are deleted. Their 80 nightly mutation tests named 39
+distinct C mutations; two were already checked against the general proof and
+the other 37 now are. `examples/rbtree-erase` went from 44 sidecars and 39,582
+lines to 22 sidecars and 10,422 lines. The gate is unaffected: the example and
+all of these mutation tests were already nightly. The rule is in
+`examples/README.md`.
+
 ### R2. One general contract per function
 
 The norm is one contract per function. Cases become `match` arms inside one
