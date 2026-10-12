@@ -733,7 +733,19 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         PointerOffsetTerm::scale_int32(rewritten, *byte_width)
                     }
                 }
-                _ => offset.clone(),
+                PointerOffsetTerm::Int64Scaled {
+                    value,
+                    byte_width,
+                    unsigned,
+                } => {
+                    let rewritten = rewrite_term_offset(value, left, right);
+                    if &rewritten == value.as_ref() {
+                        offset.clone()
+                    } else {
+                        PointerOffsetTerm::scale_int64(rewritten, *byte_width, *unsigned)
+                    }
+                }
+                PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => offset.clone(),
             }
         }
         fn rewrite_term_offset(
