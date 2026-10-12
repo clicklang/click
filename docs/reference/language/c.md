@@ -565,7 +565,13 @@ Supported C surface includes:
   retains the low 32 bits (modulo 2^32), including for symbolic values.
   Other narrowing requires a concrete representable value or a checked target
   range where the conversion is modeled (`int8`: `-128..127`, `int16`: `-32768..32767`, `uint8`:
-  `0..255`, and `uint16`: `0..65535`), while aggregate casts remain outside supported C
+  `0..255`, and `uint16`: `0..65535`), while aggregate casts remain outside supported C.
+  Narrowing into those four types is modeled from every 16-, 32- and 64-bit
+  integer source, explicitly or implicitly; the range is stated in the
+  source's own type, and a 64-bit source keeps its low word. Relating such a
+  narrowed 64-bit value back to its source uses the range-checked
+  `integer_cast_identity` rule
+  (`mdtests/narrowing_from_wide_sources_into_bytes_and_shorts.md`)
 - the GNU type operators `typeof(type-name)` and `__typeof__(type-name)`, plus
   their expression forms `typeof(expression)` and `__typeof__(expression)`;
   expression operands are inspected only for their modeled Click's C type and are not

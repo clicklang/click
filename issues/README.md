@@ -47,7 +47,7 @@ reproduced. To move a file off `unsound`, the reproduction must stop
 verifying. Narrowing the documented claim does not count. Re-check the label
 whenever the file's reproduction or scope changes.
 
-## P1: before launch (10)
+## P1: before launch (4)
 
 The launch strategy is to complete P1, deliver the minimum viable rbtree
 (MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
@@ -119,7 +119,7 @@ Specification and proof:
 - [SMT-backed automation with kernel-checked certificates](smt-auto.md)
 - [Launch design review: open critiques, each to be fixed or ruled wontfix](design-review.md) (depends on smt-auto.md)
 
-## P2: after launch (20)
+## P2: after launch (18)
 
 - [Make `step` simple across a call precondition](simplify-step.md)
 - [Reject `result` inside entry snapshots](result-accepted-in-entry-snapshots.md)
@@ -141,7 +141,6 @@ C language coverage:
 - [Extend bounded control flow](control-flow.md)
 - [Resolve linked initializers in their defining file](linked-initializer-private-names.md)
 - [Model concurrency and atomics](concurrency-and-atomics.md)
-- [Model signed eight-bit integers](signed-byte-integers.md)
 
 Additional languages:
 
