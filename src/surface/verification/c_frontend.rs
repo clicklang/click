@@ -1046,7 +1046,7 @@ pub(super) fn record_function_tables(
     tables: &mut parser::ProgramLayouts,
     function: syntax::C0Function,
 ) {
-    let names = function
+    let mut names: BTreeSet<String> = function
         .globals()
         .keys()
         .chain(function.global_arrays().keys())
@@ -1078,6 +1078,49 @@ pub(super) fn record_function_tables(
                 .map(|object| object.name().to_string()),
         )
         .collect();
+    // Statement snapshots can name locals at the recorded boundary. Index
+    // their declarations once, alongside the function's ambient objects;
+    // snapshot lowering still checks whether each local is available there.
+    let mut pending = vec![function.body()];
+    while let Some(statement) = pending.pop() {
+        match statement {
+            syntax::C0Statement::Declare { name, .. }
+            | syntax::C0Statement::DeclareStructValue { name, .. } => {
+                names.insert(name.clone());
+            }
+            syntax::C0Statement::Seq(first, second) => {
+                pending.push(second);
+                pending.push(first);
+            }
+            syntax::C0Statement::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                pending.push(else_branch);
+                pending.push(then_branch);
+            }
+            syntax::C0Statement::While { body, .. }
+            | syntax::C0Statement::DoWhile { body, .. }
+            | syntax::C0Statement::Label {
+                statement: body, ..
+            } => pending.push(body),
+            syntax::C0Statement::For {
+                initializer,
+                body,
+                step,
+                ..
+            } => {
+                pending.push(step);
+                pending.push(body);
+                pending.push(initializer);
+            }
+            syntax::C0Statement::Switch { cases, .. } => {
+                pending.extend(cases.iter().map(syntax::C0SwitchCase::body));
+            }
+            _ => {}
+        }
+    }
     tables.c_object_names.insert(
         function.source_name().to_string(),
         std::sync::Arc::new(names),
