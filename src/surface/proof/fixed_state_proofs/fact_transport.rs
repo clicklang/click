@@ -10,8 +10,7 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
     target: &Proposition,
     available: &[Proposition],
     effect_facts: &(impl ExecutionFactSource + ?Sized),
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     view: ExecutionView<'_>,
     state: &CState,
     spec_definitions: SpecDefinitions<'_>,
@@ -24,8 +23,7 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
                 kernel,
                 SurfaceFactMatch::AvailabilityEquivalent,
                 available,
-                parameters,
-                arguments,
+                parameter_binding,
                 state,
                 spec_definitions,
             )
@@ -206,8 +204,7 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
     tactic_index: usize,
     available: &ProofFacts,
     effect_facts: &(impl ExecutionFactSource + ?Sized),
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     pre_state: &CState,
     state: &CState,
     result: Option<&CValue>,
@@ -227,8 +224,7 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
             tactic_index,
             available,
             effect_facts,
-            parameters,
-            arguments,
+            parameter_binding,
             pre_state,
             state,
             result,
@@ -248,8 +244,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
     tactic_index: usize,
     available: &ProofFacts,
     effect_facts: &(impl ExecutionFactSource + ?Sized),
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     pre_state: &CState,
     state: &CState,
     result: Option<&CValue>,
@@ -272,8 +267,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             lower_fixed_state_proposition_with_assumptions(
                 surface_premise,
                 available.assumptions(),
-                parameters,
-                arguments,
+                parameter_binding,
                 pre_state,
                 state,
                 result,
@@ -303,8 +297,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                     &premise,
                     &available,
                     state.resources().facts(),
-                    parameters,
-                    arguments,
+                    parameter_binding,
                     effect_facts,
                 )
             )));
@@ -333,8 +326,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         lower_fixed_state_proposition_with_assumptions(
             surface_source,
             available.assumptions(),
-            parameters,
-            arguments,
+            parameter_binding,
             pre_state,
             state,
             result,
@@ -363,8 +355,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         lower_fixed_state_proposition_with_assumptions(
             surface_source,
             &symbolic_assumptions,
-            parameters,
-            arguments,
+            parameter_binding,
             pre_state,
             state,
             result,
@@ -413,8 +404,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                 &source,
                 &available,
                 state.resources().facts(),
-                parameters,
-                arguments,
+                parameter_binding,
                 effect_facts,
             )
         )));
@@ -437,8 +427,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
     let target = lower_fixed_state_proposition_with_assumptions(
         surface_target,
         &target_lowering_assumptions,
-        parameters,
-        arguments,
+        parameter_binding,
         pre_state,
         state,
         result,
@@ -658,7 +647,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             }
             let read_refusal =
                 frame_refusal.unwrap_or(crate::kernel::QuantifiedFrameRefusal::NothingToFrame);
-            let mut labels = render::SnapshotLabels::with_state(parameters, arguments, state);
+            let mut labels = render::SnapshotLabels::with_state(parameter_binding, state);
             labels.source_state(pre_state, "function.entry".into());
             for (selector, snapshot) in recorded_snapshots.recent(16) {
                 labels.source_state(snapshot, describe_snapshot_selector(selector));
@@ -751,8 +740,10 @@ fn describe_unreachable_fact_transport(
         if let Proposition::CMemoryMutatesOnly { writes, .. } = fact.proposition() {
             for (pointer, bytes) in writes.iter().take(LISTED) {
                 if let Some((names, values)) = labels.naming_tables()
-                    && let Some(cell) =
-                        crate::surface::diagnostics::diagnostic_source_cell(pointer, names, values)
+                    && let Some(cell) = crate::surface::diagnostics::diagnostic_source_cell(
+                        pointer,
+                        ParameterBinding::new(names, values),
+                    )
                 {
                     rendered.push_str(&format!(
                         "\n    memory change: store to {cell} ({bytes} bytes)"
@@ -835,8 +826,7 @@ pub(in crate::surface::proof) fn fact_transport_planning_failure(
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn fact_transport_candidates_at_outcome(
     available: &[Proposition],
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
+    parameter_binding: ParameterBinding<'_>,
     pre_state: &CState,
     post_state: &CState,
     result: &CValue,
@@ -853,8 +843,7 @@ pub(in crate::surface::proof) fn fact_transport_candidates_at_outcome(
             kernel,
             SurfaceFactMatch::CanonicalExact,
             available,
-            parameters,
-            arguments,
+            parameter_binding,
             pre_state,
             post_state,
             result,

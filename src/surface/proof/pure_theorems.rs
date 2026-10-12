@@ -827,7 +827,6 @@ fn prepare_structural_induction_arm_tactics(
         .collect()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn check_pure_structural_induction(
     theorem: &TheoremDefinition,
     claim_label: &str,
@@ -2138,8 +2137,7 @@ fn verify_contract_refinement_theorem(
     let proof_goal = obligations.proposition().clone();
     let presentation = super::surface_synthesis::synthesize_surface_proposition_at_entry_and_post(
         &proof_goal,
-        &parameters,
-        &arguments,
+        ParameterBinding::new(&parameters, &arguments),
         obligations.entry(),
         obligations.post(),
     )
@@ -2167,8 +2165,7 @@ fn verify_contract_refinement_theorem(
         claim_label,
         proof_goal,
         presentation,
-        &parameters,
-        &arguments,
+        ParameterBinding::new(&parameters, &arguments),
         obligations.entry(),
         obligations.post(),
         &snapshots,
@@ -2247,7 +2244,6 @@ fn verify_contract_refinement_theorem(
 /// owns both the semantic successor and the exact simple certificate that
 /// produced it, so ordinary operation does not reconstruct and check that
 /// certificate through the legacy gateway.
-#[allow(clippy::too_many_arguments)]
 /// The ordered int32 equalities a `rewrite ...; normalize` certificate cites.
 ///
 /// Returns `None` for any other certificate shape, or when a cited surface
@@ -3304,7 +3300,6 @@ pub(super) fn lower_pure_theorem_proposition(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn lower_pure_theorem_proposition_with_integer_values(
     theorem_name: &str,
     proposition: &ClickProposition,
@@ -3386,7 +3381,6 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
     .map_err(|error| format!("pure theorem `{theorem_name}`: {error}"))
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn lower_pure_theorem_proposition_with_algebraic_values(
     theorem_name: &str,
     proposition: &ClickProposition,
@@ -3411,7 +3405,6 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_values(
 /// A pure theorem's proposition lowered at its parameter state by the
 /// kernel, with the calls named in `opaque_click_functions` kept as
 /// applications.
-#[allow(clippy::too_many_arguments)]
 fn lower_pure_theorem_proposition_with_opaque_calls(
     theorem_name: &str,
     proposition: &ClickProposition,
@@ -3437,7 +3430,6 @@ fn lower_pure_theorem_proposition_with_opaque_calls(
     .map_err(|error| format!("pure theorem `{theorem_name}`: {error}"))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn lower_pure_theorem_proposition_opaque(
     theorem_name: &str,
     proposition: &ClickProposition,

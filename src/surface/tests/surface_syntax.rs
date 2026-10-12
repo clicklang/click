@@ -2411,7 +2411,7 @@ fn surface_synthesis_qualifies_a_c_local_named_result() {
     );
     let state = CState::new().with_local("result", CValue::Int32(local));
 
-    let surface = synthesize_surface_proposition(&proposition, &[], &[], &state)
+    let surface = synthesize_surface_proposition(&proposition, ParameterBinding::default(), &state)
         .expect("the local comparison should have a surface form");
     let ClickProposition::Comparison { left, .. } = surface else {
         panic!("expected a comparison form");
@@ -2444,8 +2444,10 @@ fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
 
     let surface = synthesize_surface_proposition(
         &proposition,
-        function.parameters(),
-        &[CExpression::Value(CValue::pointer(pool))],
+        ParameterBinding::new(
+            function.parameters(),
+            &[CExpression::Value(CValue::pointer(pool))],
+        ),
         &CState::new(),
     )
     .expect("the hidden state should not need a surface spelling");
@@ -2492,8 +2494,10 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     );
     let surface = synthesize_surface_proposition(
         &proposition,
-        function.parameters(),
-        &[CExpression::Value(CValue::pointer(owner.clone()))],
+        ParameterBinding::new(
+            function.parameters(),
+            &[CExpression::Value(CValue::pointer(owner.clone()))],
+        ),
         &CState::new(),
     )
     .expect("known struct field load should have a surface spelling");
@@ -2531,8 +2535,10 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     );
     let surface = synthesize_surface_proposition(
         &proposition,
-        function.parameters(),
-        &[CExpression::Value(CValue::pointer(owner))],
+        ParameterBinding::new(
+            function.parameters(),
+            &[CExpression::Value(CValue::pointer(owner))],
+        ),
         &CState::new(),
     )
     .expect("indexed pointer field load should have a surface spelling");
@@ -4830,16 +4836,13 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     let parse_with_functions = |functions: &[&str]| {
         parser::parse_with_layouts_and_aggregate_objects(
             &source,
-            BTreeMap::new(),
-            BTreeMap::new(),
-            BTreeMap::new(),
-            BTreeMap::new(),
-            BTreeMap::new(),
-            BTreeMap::new(),
-            functions
-                .iter()
-                .map(|name| ((*name).to_string(), parser::FunctionLocals::default()))
-                .collect(),
+            parser::ProgramLayouts {
+                local_struct_pointers: functions
+                    .iter()
+                    .map(|name| ((*name).to_string(), parser::FunctionLocals::default()))
+                    .collect(),
+                ..Default::default()
+            },
         )
     };
     let named = |file: ClickFile| file.function_blocks()[0].signature().name().to_string();
@@ -4983,7 +4986,10 @@ fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
             width,
         );
         assert_eq!(
-            super::diagnostics::describe_memory_range(&range, parameters, &arguments),
+            super::diagnostics::describe_memory_range(
+                &range,
+                ParameterBinding::new(parameters, &arguments)
+            ),
             expected
         );
     }

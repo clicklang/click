@@ -4401,7 +4401,6 @@ impl CMemory {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(in crate::kernel) fn write_scalar_array_region(
         mut self,
         base: &Pointer,
@@ -4646,7 +4645,6 @@ impl CMemory {
     // Authority is checked by the statement executor. External argument
     // storage follows ordinary typed-load semantics: unknown initialized
     // bytes remain symbolic. Known automatic storage must be initialized.
-    #[allow(clippy::too_many_arguments)]
     pub(in crate::kernel) fn write_scalar_array_snapshot(
         mut self,
         base: &Pointer,
@@ -4894,7 +4892,6 @@ impl CMemory {
     }
 
     /// The run of [`Self::with_seeded_cells`], its preconditions checked.
-    #[allow(clippy::too_many_arguments)]
     fn with_run_of_cells(
         mut self,
         base: Pointer,

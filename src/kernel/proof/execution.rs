@@ -9017,7 +9017,6 @@ impl ExecutionProofCore {
     /// The part of the evidence judgment shared by statement and condition
     /// theorems: the theorem starts from the running state, and every
     /// premise it assumes is retained.
-    #[allow(clippy::too_many_arguments)]
     fn check_evidence_state_and_premises(
         &self,
         function: &CFunction,
@@ -9804,7 +9803,6 @@ impl ExecutionProofCore {
     /// Applies the verified rule of tactic `name` at the reached state and
     /// records the checked application. Returns the successor state and fact
     /// context the proof continues from.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn record_tactic_application(
         &mut self,
         function: &CFunction,
@@ -9993,7 +9991,6 @@ impl ExecutionProofCore {
         Ok(entry_successor)
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn record_resource_rewrite_with_children(
         &mut self,
         function: &CFunction,
@@ -10143,7 +10140,6 @@ impl ExecutionProofCore {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn record_return_resource_rewrite_with_children(
         &mut self,
         function: &CFunction,
@@ -10235,7 +10231,6 @@ impl ExecutionProofCore {
     }
 
     /// Checks and retains an ordinary wrapper exchange on a completed path.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn record_return_transfer_wrapper_rewrite(
         &mut self,
         function: &CFunction,

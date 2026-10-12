@@ -8862,6 +8862,13 @@ fn native_owned_fragments_supply_indexed_writes() {
 fn observable_projection_uses_current_loan_bindings_and_composite_eligibility() {
     let _session = crate::kernel::VerificationSession::enter();
     let context = context_with_one_loan_dependency(false);
+    assert_eq!(
+        context
+            .observable_facts_assuming_valid(&PureFactContext::new())
+            .len(),
+        1,
+        "a separately held owner and live borrow expose their composition"
+    );
     let original = context.observable_composition();
     let (occurrence, binding) = context.live_loan_dependencies().next().unwrap();
     assert_eq!(original.loan_dependency(occurrence), Some(binding));
@@ -8873,6 +8880,12 @@ fn observable_projection_uses_current_loan_bindings_and_composite_eligibility() 
     assert!(updated.loan_dependency(occurrence).is_none());
     assert_eq!(updated, current.observable_composition_uncached());
     assert_ne!(original, updated);
+    assert!(
+        current
+            .observable_facts_assuming_valid(&PureFactContext::new())
+            .is_empty(),
+        "one owner alone does not expose a separation composition"
+    );
     let composite = CResourceFact::own_composite("observable_box".into(), Vec::new());
     let context = ResourceContext::new().unchecked_with_fact(composite.clone());
     assert_eq!(
@@ -8942,5 +8955,37 @@ fn observable_projection_ignores_excluded_loan_bindings_when_hashing() {
     assert!(
         costs.iter().all(|work| *work == costs[0]),
         "excluded loan costs: {costs:?}"
+    );
+}
+
+#[test]
+fn observable_projection_with_one_owner_and_borrow_does_not_scan_views() {
+    let mut costs = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let context =
+            context_with_one_loan_dependency(false).unchecked_with_facts((0..size).map(|index| {
+                CResourceFact::view_token(format!("ambient_observer_{index}"), Vec::new())
+            }));
+        let expected = context.observable_composition();
+        let assumptions = PureFactContext::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..16 {
+                let observed = context.observable_facts_assuming_valid(&assumptions);
+                let [Proposition::CResourceComposition(composition)] = observed.as_slice() else {
+                    panic!("one owner and a live borrow expose their composition");
+                };
+                assert!(std::sync::Arc::ptr_eq(
+                    &composition.storage,
+                    &expected.storage
+                ));
+            }
+        });
+        assert!(work <= 256, "one-owner borrow queries N={size}: {work}");
+        costs.push(work);
+    }
+    assert!(
+        costs.iter().all(|work| *work == costs[0]),
+        "one-owner borrow query costs: {costs:?}"
     );
 }

@@ -1485,7 +1485,12 @@ impl Proof<'_> {
                 .or_else(|| self.execution_fixed_state_view());
             let (parameters, arguments) = names
                 .as_ref()
-                .map(|view| (view.parameters, view.arguments))
+                .map(|view| {
+                    (
+                        view.parameter_binding.parameters,
+                        view.parameter_binding.arguments,
+                    )
+                })
                 .unwrap_or((&[], &[]));
             let premises = self
                 .state
@@ -1495,7 +1500,9 @@ impl Proof<'_> {
                 .map(|branch| branch.state.facts.recent_facts(8))
                 .unwrap_or_default();
             crate::surface::diagnostics::proposition_version_explanation(
-                goal, &premises, parameters, arguments,
+                goal,
+                &premises,
+                ParameterBinding::new(parameters, arguments),
             )
             .map(|(explanation, _)| {
                 crate::surface::proof_diagnostics::MemoryHistoryDiagnostic::capture(explanation)
@@ -1535,8 +1542,7 @@ pub(in crate::surface::proof) struct FixedStateOperationView<'p> {
     pub(in crate::surface::proof) claim_label: &'p str,
     pub(in crate::surface::proof) tactic_index: usize,
     pub(in crate::surface::proof) effect_facts: &'p ExecutionFacts,
-    pub(in crate::surface::proof) parameters: &'p [syntax::C0Parameter],
-    pub(in crate::surface::proof) arguments: &'p [CExpression],
+    pub(in crate::surface::proof) parameter_binding: ParameterBinding<'p>,
     pub(in crate::surface::proof) pre_state: &'p CState,
     pub(in crate::surface::proof) state: &'p CState,
     pub(in crate::surface::proof) result: Option<&'p CValue>,
@@ -1556,8 +1562,7 @@ impl<'p> FixedStateOperationView<'p> {
             claim_label: context.claim_label,
             tactic_index: context.tactic_index,
             effect_facts: &context.effect_facts,
-            parameters: context.parameters,
-            arguments: context.arguments,
+            parameter_binding: context.parameter_binding,
             pre_state: context.pre_state,
             state: context.state,
             result: context.result,

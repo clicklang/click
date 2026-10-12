@@ -121,22 +121,23 @@ mod verification;
 pub use crate::source::SourceContainer;
 use checking::*;
 pub use expansion::{
-    CProofClaim, ClaimLocationError, ClickImportSite, ProofSourceIndex, SelectedTacticExpansion,
-    SmartTacticCandidate, SmartTacticSelectionError, SmartTacticSourceSite, SourceClaim,
-    SourcePosition, c0_select_smart_tactic, c0_smart_tactic_source_sites,
-    c0_tactic_source_position, claim_at, click_declaration_source_position, click_import_sites,
-    expand_c0_claim_source, expand_c0_claim_source_by_label,
-    expand_c0_prepared_claim_source_by_label, expand_c0_prepared_tactic_source_at,
-    expand_c0_tactic_source_at, expand_c0_tactics_source_at,
-    expand_program_prepared_claim_source_by_label, expand_program_prepared_tactic_source_at,
-    expand_project_claim_source_by_label, expand_project_tactic_source_at,
-    expand_project_tactics_source_at, expand_tactics_source_at, map_verifying_source_paths,
-    nested_tactic_source_position, project_select_smart_tactic, project_smart_tactic_source_sites,
-    project_tactic_source_position, project_tactic_source_positions, select_smart_tactic,
-    selected_c_target, selected_project_c_target, selected_project_thread_runtime,
-    selected_thread_runtime, smart_tactic_source_sites, tactic_arm_containing_position,
-    tactic_have_body_contains_position, tactic_line_has_multiple_starts, tactic_source_at_position,
-    tactic_source_position, tactic_starts_on_line, verifying_source_paths,
+    CProofClaim, ClaimExpansion, ClaimLocationError, ClaimLocationScope, ClickImportSite,
+    ProofSourceIndex, SelectedTacticExpansion, SmartTacticCandidate, SmartTacticSelectionError,
+    SmartTacticSourceSite, SourceClaim, SourcePosition, c0_select_smart_tactic,
+    c0_smart_tactic_source_sites, c0_tactic_source_position, claim_at,
+    click_declaration_source_position, click_import_sites, expand_c0_claim_source,
+    expand_c0_claim_source_by_label, expand_c0_prepared_claim_source_by_label,
+    expand_c0_prepared_tactic_source_at, expand_c0_tactic_source_at, expand_c0_tactics_source_at,
+    expand_claim_by_label, expand_program_prepared_claim_source_by_label,
+    expand_program_prepared_tactic_source_at, expand_project_claim_source_by_label,
+    expand_project_tactic_source_at, expand_project_tactics_source_at, expand_tactics_source_at,
+    map_verifying_source_paths, nested_tactic_source_position, project_select_smart_tactic,
+    project_smart_tactic_source_sites, project_tactic_source_position,
+    project_tactic_source_positions, select_smart_tactic, selected_c_target,
+    selected_project_c_target, selected_project_thread_runtime, selected_thread_runtime,
+    smart_tactic_source_sites, tactic_arm_containing_position, tactic_have_body_contains_position,
+    tactic_line_has_multiple_starts, tactic_source_at_position, tactic_source_position,
+    tactic_starts_on_line, verifying_source_paths,
 };
 use expansion::{
     ExpansionCapture, NestedTacticCapture, ProofSite, VerificationTarget, verification_target_at,
@@ -5993,6 +5994,23 @@ pub enum SmartTactic {
     Simp,
 }
 
+/// A C function's parameters and the argument expressions bound to them,
+/// position by position.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct ParameterBinding<'a> {
+    pub(crate) parameters: &'a [syntax::C0Parameter],
+    pub(crate) arguments: &'a [CExpression],
+}
+
+impl<'a> ParameterBinding<'a> {
+    pub(crate) fn new(parameters: &'a [syntax::C0Parameter], arguments: &'a [CExpression]) -> Self {
+        Self {
+            parameters,
+            arguments,
+        }
+    }
+}
+
 /// The pure definitions a specification is lowered against: its predicates
 /// and its Click functions.
 #[derive(Clone, Copy)]
@@ -6823,6 +6841,14 @@ impl ClickFile {
 
     fn declaration_owner(&self, identity: &DeclarationIdentity) -> Option<&str> {
         self.declaration_owners.get(identity).map(String::as_str)
+    }
+
+    fn function_is_selected(&self, name: &str) -> bool {
+        self.entry_module.as_ref().is_none_or(|entry| {
+            self.declaration_owner(&DeclarationIdentity::CFunction(name.to_string()))
+                .or_else(|| self.declaration_owner(&DeclarationIdentity::Tactic(name.to_string())))
+                == Some(entry.as_str())
+        })
     }
 
     fn theorem_is_selected(&self, name: &str) -> bool {

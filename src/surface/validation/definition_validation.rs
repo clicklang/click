@@ -516,28 +516,6 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             }
         }
 
-        for structural_clause in function.structural_clauses() {
-            for item in structural_clause.items() {
-                {
-                    let proposition = item.proposition();
-                    let context = format!("invariant clause in `{}`", function.signature().name());
-                    validate_predicate_calls_in_proposition(
-                        proposition,
-                        &proposition_calls,
-                        &click_functions,
-                        &context,
-                    )?;
-                    validate_contract_applications_in_proposition(
-                        proposition,
-                        &contracts,
-                        &requires_type_environment,
-                        &click_function_types,
-                        &context,
-                    )?;
-                }
-            }
-        }
-
         for ensure in function.ensures() {
             match ensure.ensure() {
                 Ensure::Proposition(proposition) => {
@@ -1248,7 +1226,6 @@ fn validate_resource_definition<'a>(
 /// read its shape, the index shadows nothing, the guard reads only cells the
 /// same body owns (so no one can change it while the resource is folded), and
 /// the guard cells are not themselves elements.
-#[allow(clippy::too_many_arguments)]
 fn validate_iterated_resource_clauses(
     definition: &ResourceDefinition,
     composite_body: &CompositeResourceBody,
@@ -1554,8 +1531,7 @@ fn validate_resource_fact_memory_read_authority(
         definition.name(),
         composite_body,
         &substitutions,
-        &validation_parameters,
-        &arguments,
+        ParameterBinding::new(&validation_parameters, &arguments),
         CMemory::new(),
     )
     .map_err(|message| {

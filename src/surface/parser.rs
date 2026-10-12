@@ -103,29 +103,34 @@ pub(in crate::surface) struct FunctionLocals {
     pub(in crate::surface) references: BTreeSet<String>,
 }
 
+/// The program facts a sidecar is parsed against: its struct and union
+/// layouts, and by function, the objects a contract may name and the locals
+/// that are memory-backed.
+#[derive(Clone, Default)]
+pub(in crate::surface) struct ProgramLayouts {
+    pub(in crate::surface) struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
+    pub(in crate::surface) union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
+    /// Each function's address-backed aggregate objects, with their structs.
+    pub(in crate::surface) aggregate_objects: BTreeMap<String, BTreeMap<String, String>>,
+    /// Each function's aggregate objects that are arrays.
+    pub(in crate::surface) aggregate_array_objects: BTreeMap<String, BTreeSet<String>>,
+    /// The shapes of the arrays each function's contract may index.
+    pub(in crate::surface) global_array_shapes:
+        BTreeMap<String, BTreeMap<String, GlobalArrayShape>>,
+    /// By translation unit, the globals and function statics a contract may
+    /// name, `name` or `function::name`.
+    pub(in crate::surface) qualified_objects:
+        BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>,
+    /// Each function's locals of struct-pointer or reference type, by its
+    /// source spelling.
+    pub(in crate::surface) local_struct_pointers: BTreeMap<String, FunctionLocals>,
+}
+
 pub(super) fn parse_with_layouts_and_aggregate_objects(
     source: &str,
-    struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
-    union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
-    aggregate_objects_by_function: BTreeMap<String, BTreeMap<String, String>>,
-    aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
-    global_array_shapes_by_function: BTreeMap<String, BTreeMap<String, GlobalArrayShape>>,
-    qualified_objects: BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>,
-    local_struct_pointers_by_function: BTreeMap<String, FunctionLocals>,
+    layouts: ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
-    let mut parser = Parser::new_with_layouts_and_aggregate_objects(
-        source,
-        struct_layouts,
-        union_layouts,
-        aggregate_objects_by_function,
-        aggregate_array_objects_by_function,
-        global_array_shapes_by_function,
-        None,
-    )
-    .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
-    parser.qualified_objects = Some(qualified_objects);
-    parser.local_struct_pointers_by_function = local_struct_pointers_by_function;
-    parser.parse_file()
+    Parser::with_program_layouts(source, layouts, None)?.parse_file()
 }
 
 /// Whether a Click source declares only definitions for importers:
@@ -185,30 +190,53 @@ pub(super) fn parse_file_items(source: &str) -> Result<ClickFile, ClickError> {
     parser.parse_file_items()
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn parse_file_items_for_module(
     source: &str,
     identity: &str,
     line_offset: usize,
     imported_algebraic_types: &[AlgebraicTypeDefinition],
-    struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
-    union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
-    aggregate_objects_by_function: BTreeMap<String, BTreeMap<String, String>>,
-    aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
-    global_array_shapes_by_function: BTreeMap<String, BTreeMap<String, GlobalArrayShape>>,
-    qualified_objects: BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>,
-    local_struct_pointers_by_function: BTreeMap<String, FunctionLocals>,
+    imported_tactic_names: &BTreeSet<String>,
+    imported_callees: &[&FunctionBlock],
+    layouts: ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
-    let mut parser = Parser::new_with_layouts_and_aggregate_objects(
+    let mut parser = Parser::with_program_layouts(
         source,
-        struct_layouts,
-        union_layouts,
-        aggregate_objects_by_function,
-        aggregate_array_objects_by_function,
-        global_array_shapes_by_function,
+        layouts,
         Some(&crate::source::SourceContainer::new(identity, line_offset)),
-    )
-    .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
+    )?;
+    parser
+        .tactic_names
+        .extend(imported_tactic_names.iter().cloned());
+    for block in imported_callees {
+        let parameters = block
+            .signature()
+            .parameters()
+            .iter()
+            .map(|parameter| parameter.name().to_string())
+            .collect::<Vec<_>>();
+        for requirement in block.requires() {
+            if let Requirement::Resource(resource) = requirement {
+                parser.record_callee_resource_binder(
+                    block.signature().name(),
+                    resource,
+                    &parameters,
+                    CalleeResourceBinderKind::Supplied,
+                );
+            }
+        }
+        for ensure in block.ensures() {
+            if !ensure.borrowed()
+                && let Ensure::Resource(resource) = ensure.ensure()
+            {
+                parser.record_callee_resource_binder(
+                    block.signature().name(),
+                    resource,
+                    &parameters,
+                    CalleeResourceBinderKind::Produced,
+                );
+            }
+        }
+    }
     for definition in imported_algebraic_types {
         for variant in definition.variants() {
             parser.algebraic_variant_fields.insert(
@@ -217,8 +245,6 @@ pub(super) fn parse_file_items_for_module(
             );
         }
     }
-    parser.qualified_objects = Some(qualified_objects);
-    parser.local_struct_pointers_by_function = local_struct_pointers_by_function;
     parser.parse_file_items()
 }
 
@@ -785,6 +811,27 @@ impl Parser {
             BTreeMap::new(),
             None,
         )
+    }
+
+    /// A parser for `source` against a program's layouts and objects.
+    fn with_program_layouts(
+        source: &str,
+        layouts: ProgramLayouts,
+        container: Option<&crate::source::SourceContainer>,
+    ) -> Result<Self, ClickError> {
+        let mut parser = Self::new_with_layouts_and_aggregate_objects(
+            source,
+            layouts.struct_layouts,
+            layouts.union_layouts,
+            layouts.aggregate_objects,
+            layouts.aggregate_array_objects,
+            layouts.global_array_shapes,
+            container,
+        )
+        .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
+        parser.qualified_objects = Some(layouts.qualified_objects);
+        parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
+        Ok(parser)
     }
 
     fn new_with_layouts_and_aggregate_objects(

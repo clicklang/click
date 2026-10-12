@@ -1270,6 +1270,56 @@ fn flattened_aggregate_claims_resolve_to_their_written_clause() {
     assert_eq!(position.line, written.line);
 }
 
+/// A `produces` clause written in a contract `if` block is a claim of its
+/// own, numbered among the written clauses in its place. The source locator
+/// used to count only top-level clauses, so every later clause resolved to
+/// the clause after it, the last to none, and selecting any line of the
+/// file by `--claim FILE:LINE` stopped with `could not locate source
+/// ensure 2`.
+#[test]
+fn a_conditional_produces_clause_is_located_in_its_place() {
+    let (click, sources) = mdtest_sources("mdtests/population_initialized_cleanup.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let start = click.find("    if old(obj->refs) > 1 {").unwrap();
+    let end = click.find("int32 cleanup(int32 payload) {").unwrap();
+    let inputs = ProgramInputs::Bundle(sources.clone());
+    for produces_proof in ["", " by auto"] {
+        let click = format!(
+            "{}    if old(obj->refs) > 1 {{
+        produces child_control(obj){produces_proof};
+    }}
+    ensures count(child_ref(obj)) == old(count(child_ref(obj))) - 1 by auto;
+    ensures obj->refs >= 0 by auto;
+}}
+
+{}",
+            &click[..start],
+            &click[end..]
+        );
+        for (text, label) in [
+            ("produces child_control(obj)", "child_release.produces_0"),
+            ("ensures count(child_ref(obj))", "child_release.ensures_0"),
+            ("ensures obj->refs >= 0", "child_release.ensures_1"),
+        ] {
+            for scope in [ClaimLocationScope::Innermost, ClaimLocationScope::ProofUnit] {
+                let selected = claim_at(
+                    None,
+                    &click,
+                    &inputs,
+                    line_containing(&click, text),
+                    None,
+                    scope,
+                )
+                .unwrap_or_else(|error| panic!("{text}: {error:?}"));
+                assert_eq!(selected.label, label, "{text} ({produces_proof:?})");
+            }
+        }
+    }
+}
+
 /// A `simp()` closing an `initialize` script that several invariants share
 /// expands to one step per invariant, each holding the whole script. Those
 /// steps stand for the tactics written before the closer too, so the rewrite
@@ -17264,5 +17314,182 @@ fn algebraic_integer_match_bindings_expand_and_recheck() {
         verify_c0_sources(&expanded, &[]).unwrap_or_else(|error| {
             panic!("{label} expansion should recheck: {}", error.message())
         });
+    }
+}
+
+/// The Click line, 1-based, of the first line of `source` containing `text`.
+fn line_containing(source: &str, text: &str) -> usize {
+    source
+        .lines()
+        .position(|line| line.contains(text))
+        .unwrap_or_else(|| panic!("no line contains `{text}`"))
+        + 1
+}
+
+/// A loop phase written in a grouped proof's `loop` tactic is a claim of its
+/// own: its label, and a line of its proof, select just that phase, and the
+/// expansion replaces only the phase's `by` clause with its checked
+/// certificate. The rest of the contract proof, including the other phase
+/// and the `simp()` after the loop, is untouched.
+#[test]
+fn a_written_loop_phase_expands_alone_by_label_and_by_line() {
+    let (click, sources) = mdtest_sources("mdtests/loop_entry_guard_before_written_implication.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let function = "loop_entry_guard_before_written_implication";
+    let label = format!("{function}.loop(0).preserve");
+    let expanded = expand_c0_claim_source_by_label(&click, &sources, &label).unwrap();
+    let written = "preserve by simp;";
+    let start = click.find(written).unwrap();
+    let end = start + written.len();
+    assert!(expanded.starts_with(&click[..start]), "{expanded}");
+    assert!(expanded.ends_with(&click[end..]), "{expanded}");
+    let phase = &expanded[start..expanded.len() - (click.len() - end)];
+    assert!(phase.starts_with("preserve by {"), "{phase}");
+    assert!(!phase.contains("simp"), "{phase}");
+    verify_c0_sources(&expanded, &sources).unwrap();
+
+    let inputs = ProgramInputs::Bundle(sources.clone());
+    let at = |text: &str, scope| {
+        claim_at(
+            None,
+            &click,
+            &inputs,
+            line_containing(&click, text),
+            None,
+            scope,
+        )
+        .unwrap()
+    };
+    let selected = at(written, ClaimLocationScope::Innermost);
+    assert_eq!(selected.label, label);
+    assert_eq!(selected.owner, function);
+    assert_eq!(
+        at("initialize by {", ClaimLocationScope::Innermost).label,
+        format!("{function}.loop(0).initialize")
+    );
+    // A line of the phase inside the loop tactic, past its first line.
+    assert_eq!(
+        at("intro();", ClaimLocationScope::Innermost).label,
+        format!("{function}.loop(0).initialize")
+    );
+    // The proof unit that checks the phase is the contract proof writing it,
+    // which is what audit and proof tracing select, without verifying.
+    assert_eq!(
+        at(written, ClaimLocationScope::ProofUnit).label,
+        format!("{function}.contract")
+    );
+    // The `loop` keyword's own line belongs to the contract proof.
+    assert_eq!(
+        at("loop {", ClaimLocationScope::Innermost).label,
+        format!("{function}.contract")
+    );
+    let by_line = expand_claim_by_label(
+        None,
+        &click,
+        &inputs,
+        &selected.label,
+        Some(selected.position),
+    )
+    .unwrap();
+    assert_eq!(by_line.source, expanded);
+    assert_eq!(by_line.proof_unit, format!("{function}.contract"));
+}
+
+const OMITTED_PHASE_C: &str = "int32 f(int32 a, int32 b) {
+    while (a > 0) {
+        a = 0;
+        b = 0;
+    }
+    return a;
+}
+";
+
+const OMITTED_PHASE_CLICK: &str = r#"verifying "omitted.c";
+
+int32 f(int32 a, int32 b) {
+    requires a <= 0;
+    ensures result <= 0;
+} by {
+    loop {
+        decreases a + 1;
+        invariant a <= 0;
+    }
+    step();
+    simp();
+}
+"#;
+
+/// A `loop` tactic that writes neither phase leaves both to automation.
+/// Expanding one by its label writes it out as an explicit phase proof in
+/// the tactic's body, and changes nothing else.
+#[test]
+fn an_omitted_loop_phase_expands_to_an_explicit_phase_proof() {
+    let sources = [("omitted.c", OMITTED_PHASE_C)];
+    verify_c0_sources(OMITTED_PHASE_CLICK, &sources).unwrap();
+    let insertion = OMITTED_PHASE_CLICK.find("}\n    step();").unwrap();
+    for phase in ["initialize", "preserve"] {
+        let expanded = expand_c0_claim_source_by_label(
+            OMITTED_PHASE_CLICK,
+            &sources,
+            &format!("f.loop(0).{phase}"),
+        )
+        .unwrap();
+        assert!(
+            expanded.starts_with(&OMITTED_PHASE_CLICK[..insertion]),
+            "{expanded}"
+        );
+        assert!(
+            expanded.ends_with(&OMITTED_PHASE_CLICK[insertion..]),
+            "{expanded}"
+        );
+        let inserted =
+            &expanded[insertion..expanded.len() - (OMITTED_PHASE_CLICK.len() - insertion)];
+        assert!(
+            inserted.starts_with(&format!("    {phase} by {{\n")),
+            "{inserted}"
+        );
+        assert!(inserted.ends_with("        }\n    "), "{inserted}");
+        verify_c0_sources(&expanded, &sources).unwrap();
+    }
+    let error =
+        expand_c0_claim_source_by_label(OMITTED_PHASE_CLICK, &sources, "f.loop(1).preserve")
+            .unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("no `loop` tactic in `f`'s proofs proves loop(1)"),
+        "{}",
+        error.message()
+    );
+}
+
+/// A loop phase is expanded by its label over compiler-prepared C exactly as
+/// over a source bundle, through the prepared entry point and through the
+/// input-generic one `click expand --claim` uses, and the rewrite checks
+/// over the same prepared import.
+#[test]
+fn a_loop_phase_expands_by_label_over_a_prepared_c_import() {
+    use crate::languages::c::compiler_import::PreparedCImport;
+
+    let sources = [("omitted.c", OMITTED_PHASE_C)];
+    let imports = [PreparedCImport::for_test("omitted.c", OMITTED_PHASE_C)];
+    let inputs = ProgramInputs::Prepared(&imports);
+    for phase in ["initialize", "preserve"] {
+        let label = format!("f.loop(0).{phase}");
+        let bundled = expand_c0_claim_source_by_label(OMITTED_PHASE_CLICK, &sources, &label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+        let prepared =
+            expand_c0_prepared_claim_source_by_label(OMITTED_PHASE_CLICK, &imports, &label)
+                .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+        assert_eq!(prepared, bundled, "{label}");
+        let generic = expand_claim_by_label(None, OMITTED_PHASE_CLICK, &inputs, &label, None)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+        assert_eq!(generic.source, bundled, "{label}");
+        assert_eq!(generic.proof_unit, "f.contract", "{label}");
+        verify_c0_prepared_sources(&prepared, &imports)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
     }
 }

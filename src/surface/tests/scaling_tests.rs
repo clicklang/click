@@ -5244,8 +5244,7 @@ fn resource_reference_entry_setup_has_near_linear_work() {
             crate::instrumentation::measure_deterministic_work(|| {
                 crate::surface::lowering::resource_context_from_requirements(
                     file.function_blocks()[0].requires(),
-                    &[],
-                    &[],
+                    ParameterBinding::default(),
                     &crate::kernel::CState::new(),
                 )
                 .unwrap()
@@ -7561,4 +7560,60 @@ void inspect(struct node* parent, struct node* child{parameters}) {{
         work.windows(2).all(|pair| pair[0] == pair[1]),
         "held field lookup traversed unrelated compositions: {work:?}"
     );
+}
+
+/// Explicitly opening nested owners and borrowed projections must not search
+/// every combination of unfolded definitions during exit certification.
+#[test]
+fn composite_borrow_partition_nested_openings_scale_with_depth() {
+    let c = "struct node { int value; }; struct callbacks { void (*invoke)(void); }; void update(struct node *p, const struct callbacks *cb) { p->value = 1; cb->invoke(); }";
+    let mut previous_work = None;
+    let samples = [2usize, 4, 8, 16].map(|depth| {
+        let mut source = String::from(r#"
+verifying "callback.c";
+contract void Callback() { ensures 1 == 1; }
+resource node0(p: struct node*) { owns p->value; }
+resource callbacks0(cb: const struct callbacks*) {
+    views cb->invoke;
+    fact Callback(cb->invoke);
+}
+"#);
+        for layer in 1..=depth {
+            let child = layer - 1;
+            source.push_str(&format!("resource node{layer}(p: struct node*) {{ owns node{child}(p); }}\nresource callbacks{layer}(cb: const struct callbacks*) {{ owns callbacks{child}(cb); }}\n"));
+        }
+        source.push_str(&format!("void update(struct node* p, const struct callbacks* cb) {{ owns node{depth}(p); views callbacks{depth}(cb); ensures p->value == 1; }} by {{\n"));
+        for layer in (1..=depth).rev() {
+            source.push_str(&format!("unfold(node{layer}(p)); observe(callbacks{layer}(cb));\n"));
+        }
+        source.push_str("unfold(node0(p)); open(callbacks0(cb)) { execute(); } fold(node0(p));\n");
+        for layer in 1..=depth {
+            source.push_str(&format!("fold(node{layer}(p));\n"));
+        }
+        source.push_str("simp(); }");
+        if depth == 2 {
+            // Initialize shared frontend tables outside the scaling samples.
+            verify_c0_sources(&source, &[("callback.c", c)]).unwrap();
+        }
+        let verify = || verify_c0_sources(&source, &[("callback.c", c)]);
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            if let Some(previous) = previous_work {
+                // Enforce the same growth law while running: a regression
+                // should fail locally instead of exploring exponentially.
+                crate::instrumentation::with_run_work_limit(3 * previous, verify)
+            } else {
+                verify()
+            }
+        });
+        result.unwrap_or_else(|error| panic!("depth {depth}: {}", error.message()));
+        previous_work = Some(work);
+        (depth, work)
+    });
+    eprintln!("nested borrow partition work: {samples:?}");
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 <= 3 * pair[0].1,
+            "superlinear nested openings: {samples:?}"
+        );
+    }
 }

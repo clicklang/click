@@ -122,13 +122,9 @@ fn load_standard_library(source: &str) -> Result<ClickFile, ClickError> {
         "stdlib/prelude.click",
         0,
         &[],
-        BTreeMap::new(),
-        BTreeMap::new(),
-        BTreeMap::new(),
-        BTreeMap::new(),
-        BTreeMap::new(),
-        BTreeMap::new(),
-        BTreeMap::new(),
+        &BTreeSet::new(),
+        &[],
+        Default::default(),
     )?)?;
     if !file.verifying_sources().is_empty()
         || file
@@ -502,11 +498,6 @@ fn expand_declared_resources_in_function_block(
         .constructs
         .drain(..)
         .map(|resource| expand_declared_resource_clause(resource, resource_definitions))
-        .collect::<Result<Vec<_>, _>>()?;
-    function.structural_clauses = function
-        .structural_clauses
-        .drain(..)
-        .map(|clause| expand_declared_resource_structural_clause(clause, resource_definitions))
         .collect::<Result<Vec<_>, _>>()?;
     function.grouped_proof = function
         .grouped_proof

@@ -549,8 +549,7 @@ impl<'a> Proof<'a> {
                 let Ok(Some(ranges)) =
                     crate::surface::lowering::resource_clause_memory_ranges_at_state(
                         resource,
-                        parameters,
-                        context.arguments,
+                        ParameterBinding::new(parameters, context.arguments),
                         entry,
                     )
                 else {
@@ -735,8 +734,10 @@ impl<'a> Proof<'a> {
         }
         let goal = self.goal()?;
         let (parameters, arguments) = self.diagnostic_naming_tables();
-        let lowered =
-            crate::surface::diagnostics::describe_stated_fact(goal, &parameters, &arguments);
+        let lowered = crate::surface::diagnostics::describe_stated_fact(
+            goal,
+            ParameterBinding::new(&parameters, &arguments),
+        );
         // The back-edge locals do not name a value read at an earlier
         // snapshot, which the lowered spelling elides. The synthesized form
         // names that snapshot even where it does not lower back exactly, as
@@ -807,8 +808,7 @@ impl<'a> Proof<'a> {
             let synthesize = || {
                 crate::surface::proof::surface_synthesis::synthesize_surface_proposition_at_entry_post_and_snapshot(
                     goal,
-                    context.parsed_function.parameters(),
-                    context.arguments,
+                    context.parameter_binding(),
                     context.old_reference_state(&execution.core.frontier, &execution.core.state),
                     &execution.core.state,
                     Some((state, selector)),
@@ -1018,8 +1018,7 @@ impl<'a> Proof<'a> {
                     .state;
                 let fact = crate::surface::lowering::lower_resource_clause_at_state(
                     resource,
-                    context.parsed_function.parameters(),
-                    context.arguments,
+                    context.parameter_binding(),
                     state,
                 )?;
                 let crate::kernel::CResource::Composite { arguments, .. } = fact.resource() else {
@@ -1087,8 +1086,7 @@ impl<'a> Proof<'a> {
         for fact in &checked.added_facts {
             if let Some(surface) = synthesize_surface_proposition(
                 fact,
-                context.parsed_function.parameters(),
-                context.arguments,
+                context.parameter_binding(),
                 &checked.execution.core.state,
             ) {
                 // At a call successor, a synthesized `old(...)` names the
@@ -1221,7 +1219,10 @@ impl<'a> Proof<'a> {
             .with_selected_call_binders(callee, parameters.len(), bindings);
         let before = &*execution.core.state;
         let pre_state = context.old_reference_state(&execution.core.frontier, before);
-        let values = parameter_values(context.parsed_function.parameters(), context.arguments)?;
+        let values = parameter_values(ParameterBinding::new(
+            context.parsed_function.parameters(),
+            context.arguments,
+        ))?;
         let array_refs = array_refs_for_parameters(
             context.parsed_function.parameters(),
             &values,
@@ -1285,8 +1286,7 @@ impl<'a> Proof<'a> {
                 ) => {
                     let spelling = synthesize_surface_proposition(
                         &requirement,
-                        context_parameters,
-                        context_arguments,
+                        ParameterBinding::new(context_parameters, context_arguments),
                         &before_state,
                     )
                     .map(|proposition| {
@@ -1458,8 +1458,7 @@ impl<'a> Proof<'a> {
                             &bundle.binder_names,
                             || crate::surface::proof::surface_synthesis::synthesize_surface_proposition_at_entry_post_and_snapshot(
                                 goal,
-                                context.parsed_function.parameters(),
-                                context.arguments,
+                                context.parameter_binding(),
                                 context.old_reference_state(&execution.core.frontier, &execution.core.state),
                                 &execution.core.state,
                                 bundle
@@ -2058,8 +2057,7 @@ impl<'a> Proof<'a> {
             let source = lower_fixed_state_proposition(
                 surface_source,
                 facts,
-                context.parsed_function.parameters(),
-                context.arguments,
+                context.parameter_binding(),
                 pre_state,
                 state,
                 None,
@@ -2078,8 +2076,10 @@ impl<'a> Proof<'a> {
                         &source,
                         facts,
                         state.resources().facts(),
-                        context.parsed_function.parameters(),
-                        context.arguments,
+                        ParameterBinding::new(
+                            context.parsed_function.parameters(),
+                            context.arguments
+                        ),
                         &view.execution.core.effect_facts,
                     )
                 )));
@@ -2087,8 +2087,7 @@ impl<'a> Proof<'a> {
             let target = lower_fixed_state_proposition(
                 surface_target,
                 facts,
-                context.parsed_function.parameters(),
-                context.arguments,
+                context.parameter_binding(),
                 pre_state,
                 state,
                 None,
@@ -2110,8 +2109,7 @@ impl<'a> Proof<'a> {
                 &target,
                 facts,
                 &transition_facts,
-                context.parsed_function.parameters(),
-                context.arguments,
+                context.parameter_binding(),
                 view.execution.view(view.context),
                 state,
                 context.spec_definitions,

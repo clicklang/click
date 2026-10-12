@@ -32,8 +32,8 @@ parent link. It returns the detached node's fields, an empty hole, the unchanged
 context model with a one-black-level deficit, and the non-null parent to fix up.
 The right-child proof unfolds the sibling so execution can establish that the
 left link does not alias the erased node. This sidecar holds and returns exclusive
-ownership of the callback table; the root sidecars borrow it with explicit
-separation requirements.
+ownership of the callback table. The root-only black-successor sidecar
+borrows it without additional separation requirements.
 
 `rbtree_erase_red_leaf.click` covers a red leaf below the root on either parent
 link. Its unchanged context accepts an empty black hole at the same black
@@ -47,13 +47,13 @@ Neither contract assumes the erased node's or child's color.
 Validity implies that copying the erased node's parent/color word blackens the
 child. The proofs return that exact replacement model and the unchanged context,
 with whole-tree red-black validity, parent consistency, preserved child in-order
-contents, and a null fixup parent. Both use exclusive callback-table ownership.
+contents, and a null fixup parent. Both borrow the read-only callback table.
 
 `rbtree_erase_nonroot_successor.click` extends the immediate red-leaf successor
 case below the root, on either parent link. It returns the exact successor
 subtree and unchanged outer context, whole-tree balance, parent consistency,
 and the old left/right in-order contents, with null fixup. The erased node's
-color is not assumed. It holds and returns exclusive callback-table ownership.
+color is not assumed. It borrows the read-only callback table.
 
 `rbtree_erase_nonroot_black_successor.click` covers an immediate black-leaf
 successor below the root, on either parent link. It returns that successor as
@@ -246,8 +246,8 @@ red-black invariants, and in-order contents are preserved. A structural context
 proof derives case coverage from the black-deficit invariant, so callers need
 no separate `erase_flips_red_all` precondition.
 
-The same sidecar now verifies the unchanged `rb_erase` wrapper end to end for
-all leaf deletions: red or black leaves on either parent link, and the sole
+`rbtree_erase_leaf_wrapper.click` imports that repair proof and verifies the
+unchanged `rb_erase` wrapper end to end for all leaf deletions: red or black leaves on either parent link, and the sole
 root. The splice borrows the callback table read-only and calls the verified
 parent-link helper. For a nonroot black leaf, its empty hole and deficit
 context satisfy the general repair contract; otherwise the wrapper refolds
@@ -256,7 +256,34 @@ The wrapper returns ownership of the detached node and a balanced root with
 consistent parents and exactly the in-order contents of the old context with
 the erased leaf removed. Its contract requires views of the static const dummy
 callback fields; initialization of these views at program startup is outside
-this local proof. Nodes with children still need wrapper integration.
+this local proof.
+
+`rbtree_erase_left_child.click` and `rbtree_erase_right_child.click` also verify
+the unchanged wrapper end to end when the erased node has exactly one child,
+at the root or on either parent link. Their splice proofs borrow the constant
+callback table without additional separation preconditions. They return the
+detached node and a balanced, parent-consistent root with exact in-order
+contents. Checked execution proves the repair call unreachable in these cases.
+The immediate-successor sidecars (`rbtree_erase_successor.click`,
+`rbtree_erase_child_successor.click`, and their `nonroot` counterparts) now
+also verify the unchanged wrapper when the successor is a red leaf or has a
+replacement child. `rbtree_erase_spine.click` covers those same no-repair
+exits after arbitrary leftward successor descent, at every tree position.
+These proofs borrow the callback table without separation preconditions,
+return the detached node and exact balanced root, and preserve the in-order
+contents of the old left and right subtrees in the old outer context.
+The black-leaf successor wrappers (`rbtree_erase_black_successor_wrapper.click`,
+`rbtree_erase_nonroot_black_successor_wrapper.click`, and
+`rbtree_erase_black_spine_wrapper.click`) import their splice contracts and the
+general color-repair proof. Each splice returns a nonempty deficit context and
+identifies the repair parent. The wrapper returns the detached node and exact
+balanced, parent-consistent root, preserving the splice's remaining in-order
+contents. These complete wrapper integration across the splice cases.
+
+`rbtree_erase_callbacks.click` checks the shared dummy callbacks and their
+refinements. The repair and deeper-successor proofs import the existing
+`rbtree_change_child.click` parent-link contract. Every module is verified
+separately; importing a contract does not rerun its proof.
 
 `rb_erase.c` includes the existing unchanged splice and repair extracts and adds
 the dummy callbacks, const table, and `rb_erase` definition verbatim from pinned

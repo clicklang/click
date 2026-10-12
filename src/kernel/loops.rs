@@ -3709,7 +3709,6 @@ mod loop_invariant_correspondence_tests {
 /// Cost is the loop's own binders, the locals the exits disagree on, and the
 /// cells they disagree on; no unrelated project-wide or path-wide state is
 /// scanned, and a component every exit agrees on is compared once and kept.
-#[allow(clippy::too_many_arguments)]
 fn abstract_loop_exit_states(
     head: &CLoopHead,
     binders: &[CLoopBinder],

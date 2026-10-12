@@ -12,7 +12,6 @@ pub(in crate::surface::proof) struct CheckedStatementStep {
 /// This is the audited semantic operation shared by explicit source check
 /// and the checked proof-object frontier. It performs no premise selection;
 /// the proof's facts and resources are the transition context.
-#[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn check_statement_step(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
@@ -36,7 +35,6 @@ pub(in crate::surface::proof) fn check_statement_step(
 /// Checks one statement with the caller-selected prerequisite policy. The
 /// source-backed retry policy shares Contextual derivation and differs only in
 /// exposing a supported call carrier before hidden derivation.
-#[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn check_statement_step_with_policy(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
@@ -87,8 +85,7 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
             let proposition = lower_fixed_state_proposition_with_assumptions(
                 &case.condition,
                 assumptions,
-                parsed_function.parameters(),
-                arguments,
+                ParameterBinding::new(parsed_function.parameters(), arguments),
                 &pre_state,
                 state,
                 None,

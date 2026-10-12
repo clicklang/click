@@ -146,6 +146,16 @@ agrees about its block, so equal names mean equal terms. The stop information
 is *computed from the point the walk stopped at* rather than recorded along the
 way, which is why naming pays nothing for it.
 
+Naming walks ask their questions in one empty fact context per verification
+session (`naming_context`). It holds no fact, but an alias question still
+registers the queried pointers, and the producer-recorded reads their
+addresses depend on, in the context's equality graph. A fresh context per walk
+registered a load's whole chain of address reads again at every call it was
+named after, so a call step's cost grew with how deeply its arguments were
+reached (`naming_a_load_after_a_call_is_flat_in_its_address_read_depth`). The
+shared context registers each read once, and is rebuilt when a session restore
+replaces the logical-read table it reads.
+
 `cell_value_on_path` is the one question asked under a path's facts, and it
 names nothing. A store at an address the facts could not place when it ran —
 `buf[u] = 7` — drops the cached cells it may write, so a later C read of
@@ -1114,6 +1124,20 @@ Four pairs it does not build:
   expanding it, so the pair is skipped outright rather than approximated.
   `owns *r` is *not* such a clause: `*r` lowers to the plain
   range `r[0..size/4]`, which is what makes `const_callback_field` expressible.
+
+The entry-clause generator still does not expand composites. Once a proof
+explicitly opens them, separation can instead follow checked loan bindings:
+an exposed memory view carrying a live occurrence-bound loan is separate from
+a separately held memory owner in the same validated composition. Ordinary
+observations of an owner carry no loan binding and cannot use this rule; two
+borrowed views cannot use it either. Rewriting or removing a view must preserve
+its exact checked occurrence, not just its printed resource term.
+
+Address-indexed composition sources feed the shared separation query used by
+read normalization, resource goals, and memory evidence. A retained memory hop
+rechecks the source composition, both range memberships, and the current
+non-overlap guards. A later equality proving overlap invalidates that hop.
+No pairwise facts or recursive footprint expansion are produced.
 
 The two sites that know they are at a contract entry produce it independently
 from the same list, so neither trusts the other: the body proof's

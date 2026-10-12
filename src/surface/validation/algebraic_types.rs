@@ -1156,21 +1156,6 @@ pub(super) fn validate_algebraic_type_uses(
                 &format!("requires clause in `{}`", function.signature().name()),
             )?;
         }
-        for clause in function.structural_clauses() {
-            for item in clause.items() {
-                {
-                    let proposition = item.proposition();
-                    validate_algebraic_proposition(
-                        proposition,
-                        &requires_variables,
-                        click_functions,
-                        &predicate_types,
-                        &definitions,
-                        &format!("structural clause in `{}`", function.signature().name()),
-                    )?;
-                }
-            }
-        }
         for ensure in function.ensures() {
             if let Ensure::Proposition(proposition) = ensure.ensure() {
                 validate_algebraic_proposition(

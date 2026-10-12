@@ -200,7 +200,6 @@ impl std::ops::DerefMut for SpecEvaluation<'_> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn lower_spec_proposition_at_state_with_loop_entry(
     state: &CState,
     proposition: &SpecProposition,
@@ -217,7 +216,6 @@ pub(super) fn lower_spec_proposition_at_state_with_loop_entry(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(in crate::kernel) fn lower_spec_proposition_at_state_without_range_guards(
     state: &CState,
     proposition: &SpecProposition,
@@ -234,7 +232,6 @@ pub(in crate::kernel) fn lower_spec_proposition_at_state_without_range_guards(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(in crate::kernel) fn lower_spec_proposition_at_state_with_algebraic_bindings(
     state: &CState,
     proposition: &SpecProposition,
@@ -251,7 +248,6 @@ pub(in crate::kernel) fn lower_spec_proposition_at_state_with_algebraic_bindings
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(in crate::kernel) fn evaluate_spec_expression_paths_with_bindings(
     state: &CState,
     expression: &SpecExpression,
@@ -268,7 +264,6 @@ pub(in crate::kernel) fn evaluate_spec_expression_paths_with_bindings(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn evaluate_spec_integer_measure_paths(
     state: &CState,
     expression: &SpecIntegerExpression,
@@ -283,7 +278,6 @@ pub(super) fn evaluate_spec_integer_measure_paths(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn evaluate_spec_expression_paths_with_loop_entry(
     state: &CState,
     expression: &SpecExpression,
@@ -3221,7 +3215,6 @@ fn integer_term_bits(term: &IntegerTerm) -> usize {
         .saturating_add(1)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn lower_spec_algebraic_comparison_at_state_in(
     scope: SpecScope<'_>,
     left: &SpecAlgebraicExpression,
@@ -4065,7 +4058,6 @@ impl<'a> Iterator for SequenceElements<'a> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn lower_spec_sequence_comparison_at_state_in(
     scope: SpecScope<'_>,
     left: &SpecSequenceExpression,
@@ -5458,7 +5450,6 @@ fn separation_extent_is_impossible(
 ///
 /// A separation names valid memory extents in every context. Relations over
 /// opaque resources, and containment relations, contribute no range bounds.
-#[allow(clippy::too_many_arguments)]
 fn lower_spec_resource_relation_at_state_in(
     scope: SpecScope<'_>,
     left: &SpecResource,
