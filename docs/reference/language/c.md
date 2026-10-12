@@ -383,6 +383,12 @@ is modeled separately as `int8`. Where plain `char` is signed it has `int8`'s
 values and representation without becoming `signed char`: converting between
 `char *` and `signed char *` still needs a cast.
 
+An uncast conversion between pointers to character types of different
+signedness, such as `char *` to `unsigned char *` (`uint8 *`) where plain
+`char` is signed, is refused as a pointer signedness mismatch (C11
+6.5.16.1p1; GCC's `-Wpointer-sign`). The refusal names both types, plain
+`char`'s signedness on the target, and the cast that fixes it.
+
 The character pointer types `char *`, `signed char *`, and `unsigned char *`
 convert to one another by an explicit one-level cast, which C11 6.3.2.3p7 and
 6.5p7 allow: a character type may read any object's bytes. A byte has one
@@ -1373,10 +1379,18 @@ creates one literal object.
 String literals accept the same simple, octal, and hexadecimal escapes as
 character literals. An octal escape ends after three digits, so `"\\0012"` is
 the byte 1 followed by `2`.
-Each literal sequence is represented as a fresh function-owned `uint8` array with one
-explicit trailing NUL byte. The expression has the array-to-pointer behavior of
-a local byte array, so the result can be returned, indexed, or passed to a
-function expecting `uint8*`. The storage is stable across calls and remains
+Each literal sequence is represented as a fresh function-owned array of plain
+`char` with one explicit trailing NUL byte. The expression has the
+array-to-pointer behavior of a local byte array, so the result can be returned,
+indexed, or passed to a function expecting `uint8*`. Under
+`x86_64-linux-kernel`, where plain `char` is unsigned, the literal may also
+initialize, be assigned to, or be returned as a `uint8*` without a cast. Where
+plain `char` is signed, as under the default target, `execute()` refuses those
+three conversions as a pointer signedness mismatch naming the cast that fixes
+it
+(`mdtests/a_string_literal_returned_as_a_uint8_pointer_names_signed_plain_char.md`,
+`mdtests/a_string_literal_initializing_a_uint8_pointer_names_signed_plain_char.md`,
+`mdtests/a_string_literal_assigned_to_a_uint8_pointer_names_signed_plain_char.md`). The storage is stable across calls and remains
 read-only even after the pointer is copied to another local; an indirect store
 through that pointer is undefined behavior. The existing `viewable` byte-range
 interface can describe reads from the literal. Wide literals, non-ASCII

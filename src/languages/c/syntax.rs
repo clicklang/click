@@ -2521,6 +2521,11 @@ pub struct C0Site(Option<std::sync::Arc<C0StatementSite>>);
 pub struct C0StatementSite {
     position: SourcePosition,
     text: Box<str>,
+    /// A source-level explanation of a conversion in this statement that the
+    /// kernel refuses only by its representation, such as a plain-`char`
+    /// pointer converted to `uint8 *` where plain `char` is signed. A refusal
+    /// at this statement that the explanation accounts for prints it.
+    note: Option<Box<str>>,
 }
 
 /// The longest statement excerpt a site keeps, in characters.
@@ -2562,6 +2567,12 @@ impl C0StatementSite {
     /// first line, with `…` marking a statement that continues past it.
     pub fn text(&self) -> &str {
         &self.text
+    }
+
+    /// The front end's explanation of a representation mismatch in this
+    /// statement; see [`C0StatementSite`].
+    pub fn note(&self) -> Option<&str> {
+        self.note.as_deref()
     }
 
     /// `file:line:column`, or `line L, column C` for a source with no file.
@@ -5325,7 +5336,7 @@ pub(crate) fn parse_translation_unit_for_target(
         Some(source_identity),
         line_map,
     )?
-    .with_plain_char(target.plain_char())
+    .with_target(target)
     .parse_translation_unit()?;
     unit.builtin_pthread_declarations = unit
         .function_declaration_lines
@@ -5370,7 +5381,7 @@ pub(crate) fn parse_translation_unit_for_import_target(
 ) -> Result<C0TranslationUnit, C0SyntaxError> {
     let mut parser =
         Parser::new_with_source_identity_and_map(source, target.abi(), Some(source_identity), map)?
-            .with_plain_char(target.plain_char());
+            .with_target(target);
     parser.refuse_promises = promises == PromiseAttributes::Refuse;
     parser.parse_translation_unit()
 }
@@ -5432,7 +5443,7 @@ pub(crate) fn parse_functions_for_target(
     target: super::target::CTarget,
 ) -> Result<Vec<C0Function>, C0SyntaxError> {
     Parser::new(source, target.abi())?
-        .with_plain_char(target.plain_char())
+        .with_target(target)
         .parse_functions()
 }
 
@@ -5456,7 +5467,7 @@ pub fn validate_header_for_target(
     target: super::target::CTarget,
 ) -> Result<(), C0SyntaxError> {
     Parser::new_with_source_identity_and_line_map(source, target.abi(), None, line_map)?
-        .with_plain_char(target.plain_char())
+        .with_target(target)
         .parse_header()
 }
 
@@ -7433,6 +7444,11 @@ struct Parser {
     current_function_source_name: Option<String>,
     import_mode: bool,
     abi: CAbi,
+    /// The selected C target, named by diagnostics that depend on it.
+    target: super::target::CTarget,
+    /// The note the statement being parsed gives its site; see
+    /// [`C0StatementSite`].
+    site_note: std::cell::RefCell<Option<Box<str>>>,
     /// The signedness the selected C target gives plain `char`.
     plain_char: PlainChar,
     current_return_struct_name: Option<String>,
@@ -7585,10 +7601,12 @@ impl Parser {
         })
     }
 
-    /// Selects the target's plain `char` signedness. Every parser starts with
-    /// the default target's, which the test-only entry points keep.
-    fn with_plain_char(mut self, plain_char: PlainChar) -> Self {
-        self.plain_char = plain_char;
+    /// Selects the target, and with it plain `char`'s signedness. Every
+    /// parser starts with the default target, which the test-only entry
+    /// points keep.
+    fn with_target(mut self, target: super::target::CTarget) -> Self {
+        self.target = target;
+        self.plain_char = target.plain_char();
         self
     }
 
@@ -7717,6 +7735,8 @@ impl Parser {
             current_function_source_name: None,
             import_mode,
             abi,
+            target: super::target::CTarget::SUPPORTED,
+            site_note: std::cell::RefCell::new(None),
             plain_char: super::target::CTarget::SUPPORTED.plain_char(),
             current_return_struct_name: None,
             current_return_pointer_struct_name: None,
@@ -12714,8 +12734,12 @@ impl Parser {
     #[inline(never)]
     fn parse_statement(&mut self) -> Result<C0Statement, C0SyntaxError> {
         let start = self.position;
-        let mut statement = self.parse_statement_unsited()?;
-        let site = self.site_between(start, self.position);
+        // A note belongs to the innermost statement whose parse records it.
+        let outer_note = self.site_note.take();
+        let parsed = self.parse_statement_unsited();
+        let note = std::mem::replace(self.site_note.get_mut(), outer_note);
+        let mut statement = parsed?;
+        let site = self.site_between(start, self.position, note);
         fill_missing_sites(&mut statement, &site);
         Ok(statement)
     }
@@ -12724,7 +12748,7 @@ impl Parser {
     /// including) token `end`: its first token's position, and its text from
     /// that token to its last token or to the end of that line, whichever is
     /// first. Comments and anything past the length limit are left out.
-    fn site_between(&self, start: usize, end: usize) -> C0Site {
+    fn site_between(&self, start: usize, end: usize, note: Option<Box<str>>) -> C0Site {
         let Some(first) = self.positions.get(start) else {
             return C0Site::NONE;
         };
@@ -12749,7 +12773,7 @@ impl Parser {
                 .checked_sub(1)
                 .and_then(|last| self.positions.get(last))
                 .is_some_and(|last| last.line != first.line);
-            return statement_site(first, &tail, continues);
+            return statement_site(first, &tail, continues, note);
         }
         let tail = line
             .chars()
@@ -12772,7 +12796,7 @@ impl Parser {
             Some(_) => (tail, true),
             None => (tail, false),
         };
-        statement_site(first, &text, continues)
+        statement_site(first, &text, continues, note)
     }
 
     /// Keep common straight-line statements off the large fallback dispatcher.
@@ -20122,11 +20146,17 @@ impl Parser {
         // Preserve the existing byte-string literal extension, narrowly for a
         // literal itself. Its ordinary C source type remains char[], and no
         // arbitrary char pointer gains unsigned-char pointer compatibility.
+        // Where plain `char` is signed, the kernel refuses the literal's
+        // signed bytes as `uint8 *` when this conversion executes; the site
+        // note lets that refusal say why in source terms.
         if expected == C0Type::UInt8Pointer
             && matches!(actual, C0Type::CharPointer(_))
             && matches!(expression, C0Expression::Variable(name)
                 if self.string_literal_names.contains(name))
         {
+            if let Some(message) = pointer_signedness_mismatch(actual, expected, self.target) {
+                *self.site_note.borrow_mut() = Some(message.into_boxed_str());
+            }
             return Ok(());
         }
         let is_char_pointer = |ty| {
@@ -20145,9 +20175,13 @@ impl Parser {
             && expected != C0Type::VoidPointer
             && (is_char_pointer(actual) || is_char_pointer(expected))
         {
-            return Err(self.error_here(format!(
-                "incompatible C pointer types: expected {expected:?}, got {actual:?}; plain char, signed char, and unsigned char are distinct types"
-            )));
+            return Err(self.error_here(
+                pointer_signedness_mismatch(actual, expected, self.target).unwrap_or_else(|| {
+                    format!(
+                        "incompatible C pointer types: expected {expected:?}, got {actual:?}; plain char, signed char, and unsigned char are distinct types"
+                    )
+                }),
+            ));
         }
         Ok(())
     }
@@ -21040,6 +21074,47 @@ fn function_pointer_type(signature: &C0FunctionPointerSignature) -> C0Type {
     ))
 }
 
+/// The refusal for an uncast conversion between pointers to one-byte
+/// character types of different signedness (C11 6.5.16.1p1; GCC's
+/// `-Wpointer-sign`), naming plain `char`'s signedness on `target`. `None`
+/// when `actual` and `expected` are not such a pair.
+fn pointer_signedness_mismatch(
+    actual: C0Type,
+    expected: C0Type,
+    target: super::target::CTarget,
+) -> Option<String> {
+    let signed = |ty| match ty {
+        C0Type::CharPointer(plain) => Some(plain.is_signed()),
+        C0Type::Int8Pointer => Some(true),
+        C0Type::UInt8Pointer => Some(false),
+        _ => None,
+    };
+    if signed(actual)? == signed(expected)? {
+        return None;
+    }
+    let spelling = |ty| describe_pointer_cast_type(ty, None);
+    let describe = |ty| match ty {
+        C0Type::CharPointer(plain) => format!(
+            "`{}` (plain `char` is {} on {})",
+            spelling(ty),
+            if plain.is_signed() {
+                "signed"
+            } else {
+                "unsigned"
+            },
+            target.name()
+        ),
+        _ => format!("`{}`", spelling(ty)),
+    };
+    Some(format!(
+        "pointer signedness mismatch: {} is converted to {} without a cast; cast it with `({})` or use `{}`",
+        describe(actual),
+        describe(expected),
+        spelling(expected),
+        spelling(actual)
+    ))
+}
+
 fn describe_pointer_cast_type(c_type: C0Type, struct_name: Option<&str>) -> String {
     let spelling = match c_type {
         C0Type::CharPointer(_) => "char*",
@@ -21496,7 +21571,12 @@ fn balanced_statement_sequence(mut statements: Vec<C0Statement>) -> Option<C0Sta
 /// A site at `position` quoting `text`, without a trailing comment and
 /// bounded to [`SITE_TEXT_LIMIT`] characters, with `…` marking a statement
 /// that continues past it.
-fn statement_site(position: &SourcePosition, text: &str, continues: bool) -> C0Site {
+fn statement_site(
+    position: &SourcePosition,
+    text: &str,
+    continues: bool,
+    note: Option<Box<str>>,
+) -> C0Site {
     let text = without_trailing_comment(text).trim();
     if text.is_empty() {
         return C0Site::NONE;
@@ -21508,6 +21588,7 @@ fn statement_site(position: &SourcePosition, text: &str, continues: bool) -> C0S
     C0Site(Some(std::sync::Arc::new(C0StatementSite {
         position: position.clone(),
         text: excerpt.into_boxed_str(),
+        note,
     })))
 }
 

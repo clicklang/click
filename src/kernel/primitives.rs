@@ -4552,6 +4552,11 @@ pub enum CInvalidFree {
     DoubleFree,
 }
 
+/// How a [`CRuntimeError::FunctionContract`] message ends when a function
+/// returned a value its declared return type does not admit; the message
+/// starts with the function's name.
+pub const RETURN_TYPE_MISMATCH: &str = "returned a value that does not match its declared type";
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CRuntimeError {
     UnboundVariable(String),

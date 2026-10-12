@@ -63,6 +63,25 @@ impl Drop for CStatementSiteScope {
     }
 }
 
+/// Describes a refusal with `site` as the C statement being stepped, for a
+/// refusal described after its step, from the site its path recorded last.
+pub(in crate::surface) fn with_c_statement_site<T>(
+    site: Option<std::sync::Arc<crate::languages::c::syntax::C0StatementSite>>,
+    describe: impl FnOnce() -> T,
+) -> T {
+    struct Pop;
+    impl Drop for Pop {
+        fn drop(&mut self) {
+            C_STATEMENT_SITES.with(|sites| {
+                sites.borrow_mut().pop();
+            });
+        }
+    }
+    C_STATEMENT_SITES.with(|sites| sites.borrow_mut().push(site));
+    let _pop = Pop;
+    describe()
+}
+
 /// What a parameter's pointer points at, for printing a read through it as
 /// the sidecar writes it.
 #[derive(Clone, Debug)]
@@ -300,6 +319,20 @@ pub(in crate::surface) fn describe_c_statement_site() -> String {
             .and_then(Option::as_ref)
             .map(|site| format!("\n  C statement at {}: `{}`", site.location(), site.text()))
             .unwrap_or_default()
+    })
+}
+
+/// The front end's explanation of a representation mismatch in the C
+/// statement being stepped, which a type-mismatch refusal there prints in
+/// place of its generic text; see [`syntax::C0StatementSite::note`].
+fn c_statement_site_note() -> Option<String> {
+    C_STATEMENT_SITES.with(|sites| {
+        sites
+            .borrow()
+            .last()
+            .and_then(Option::as_ref)
+            .and_then(|site| site.note())
+            .map(str::to_string)
     })
 }
 
@@ -1185,7 +1218,9 @@ pub(super) fn describe_runtime_error(
         crate::kernel::CRuntimeError::UnknownFunction(name) => {
             format!("unknown function `{name}`")
         }
-        crate::kernel::CRuntimeError::TypeMismatch => "type mismatch".to_string(),
+        crate::kernel::CRuntimeError::TypeMismatch => {
+            c_statement_site_note().unwrap_or_else(|| "type mismatch".to_string())
+        }
         crate::kernel::CRuntimeError::LoadTypeMismatch {
             pointer,
             value_type,
@@ -1322,6 +1357,12 @@ pub(super) fn describe_runtime_error(
             message.push_str(&format!("\n  required: {}", render_resource_fact_labeled(required, &mut labels)));
             message.push_str(&labels.trace_legend());
             message
+        }
+        crate::kernel::CRuntimeError::FunctionContract(message)
+            if message.ends_with(crate::kernel::RETURN_TYPE_MISMATCH)
+                && let Some(note) = c_statement_site_note() =>
+        {
+            note
         }
         crate::kernel::CRuntimeError::FunctionContract(message) => {
             format!(
