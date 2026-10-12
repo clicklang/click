@@ -26,6 +26,7 @@
 
 - [Concepts](concepts/index.md)
 - [What Click proves](concepts/what-click-proves.md)
+- [What Click trusts](concepts/trust.md)
 - [Files and sidecars](concepts/sidecars.md)
 - [Your first proof](concepts/first-proof.md)
 - [Contracts](concepts/contracts.md)
