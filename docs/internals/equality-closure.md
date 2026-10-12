@@ -248,6 +248,14 @@ expressions are not separately interned for support tracking: that would allow
 cross-arena snapshot comparisons to traverse unrelated memory. This is an
 additive consumer migration.
 
+Checked signed int32 addition-overflow facts use the same predicate classes.
+Overflow checking consults this retained truth before reconstructing operand
+intervals, including the reversed operand order of this symmetric predicate.
+Thus an established `defined(x + z)` follows checked aliases of `x` and `z`;
+equality alone never establishes definedness. Withdrawal and snapshots retain
+the ordinary typed graph scope, and this predicate does not match subtraction
+or a 64-bit overflow condition.
+
 Constant endpoints of checked signed int32 order facts annotate their value
 class with an interval. A class union intersects these intervals, so overflow
 checking can use bounds supplied on an equal variable or a same-snapshot read.

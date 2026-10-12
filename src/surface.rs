@@ -2521,6 +2521,20 @@ struct ClickArrayRef {
 }
 
 type ClickArrayRefs = BTreeMap<String, ClickArrayRef>;
+
+/// The names a contract expression reads: scalar values and array
+/// references, as `contract_environment_at_state` builds them.
+#[derive(Clone, Copy)]
+struct ContractEnvironment<'a> {
+    values: &'a BTreeMap<String, CValue>,
+    array_refs: &'a ClickArrayRefs,
+}
+
+impl<'a> ContractEnvironment<'a> {
+    fn new(values: &'a BTreeMap<String, CValue>, array_refs: &'a ClickArrayRefs) -> Self {
+        Self { values, array_refs }
+    }
+}
 #[derive(Clone)]
 struct RecordedSnapshots {
     version: std::sync::Arc<RecordedSnapshotVersion>,

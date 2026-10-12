@@ -111,8 +111,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_va
     lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_algebraic_values(
         proposition,
         assumptions,
-        &values,
-        &array_refs,
+        ContractEnvironment::new(&values, &array_refs),
         algebraic_values,
         integer_values,
         fixed_state,
@@ -145,8 +144,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_integer_valu
     lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_integer_values(
         proposition,
         assumptions,
-        &values,
-        &array_refs,
+        ContractEnvironment::new(&values, &array_refs),
         integer_values,
         fixed_state,
         spec_definitions,
@@ -176,8 +174,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions_
         proposition,
         assumptions,
         assumptions,
-        &values,
-        &array_refs,
+        ContractEnvironment::new(&values, &array_refs),
         &BTreeMap::new(),
         &crate::persistent::PersistentMap::default(),
         fixed_state,
@@ -195,16 +192,14 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions_
 pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel(
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_fixed_state_proposition_through_kernel_with_algebraic_values(
         proposition,
         assumptions,
-        values,
-        array_refs,
+        contract_environment,
         &BTreeMap::new(),
         fixed_state,
         spec_definitions,
@@ -214,8 +209,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel(
 pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_algebraic_values(
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
@@ -223,8 +217,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_alge
     lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_algebraic_values(
         proposition,
         assumptions,
-        values,
-        array_refs,
+        contract_environment,
         algebraic_values,
         &crate::persistent::PersistentMap::default(),
         fixed_state,
@@ -238,8 +231,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_alge
 pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_algebraic_values(
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     fixed_state: FixedStateFrame<'_>,
@@ -250,8 +242,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_opaq
     lower_fixed_state_proposition_through_kernel_with_bound_array_memories(
         proposition,
         assumptions,
-        values,
-        array_refs,
+        contract_environment,
         algebraic_values,
         integer_values,
         &BTreeMap::new(),
@@ -275,8 +266,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_opaq
 pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_bound_array_memories(
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     bound_array_memories: &BTreeMap<String, SpecMemory>,
@@ -289,8 +279,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_boun
         proposition,
         assumptions,
         assumptions,
-        values,
-        array_refs,
+        contract_environment,
         algebraic_values,
         integer_values,
         bound_array_memories,
@@ -311,8 +300,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
     obligation_assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     fixed_state: FixedStateFrame<'_>,
@@ -324,8 +312,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording
         proposition,
         assumptions,
         obligation_assumptions,
-        values,
-        array_refs,
+        contract_environment,
         algebraic_values,
         integer_values,
         &BTreeMap::new(),
@@ -344,8 +331,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
     obligation_assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     bound_array_memories: &BTreeMap<String, SpecMemory>,
@@ -358,8 +344,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording
         proposition,
         assumptions,
         obligation_assumptions,
-        values,
-        array_refs,
+        contract_environment,
         algebraic_values,
         integer_values,
         bound_array_memories,
@@ -376,8 +361,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
     obligation_assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     bound_array_memories: &BTreeMap<String, SpecMemory>,
@@ -403,8 +387,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording
     let assumptions = symbolic_load_assumptions.as_ref().unwrap_or(assumptions);
     let states = FixedStateLowering::for_proposition(
         proposition,
-        values,
-        array_refs,
+        contract_environment,
         fixed_state.pre_state,
         fixed_state.state,
         fixed_state.result,
@@ -441,7 +424,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording
                 &StatedSite::new(
                     StatedForm::Proposition(proposition),
                     fixed_state.state,
-                    values,
+                    contract_environment.values,
                 ),
             ),
             None => refusal.message,
@@ -459,7 +442,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording
         &StatedSite::new(
             StatedForm::Proposition(proposition),
             fixed_state.state,
-            values,
+            contract_environment.values,
         ),
     )?;
     Ok((lowered, introductions, facts))
@@ -470,8 +453,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording
 pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_opaque_calls(
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &std::collections::BTreeSet<String>,
@@ -479,8 +461,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_opaq
     lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_pointer_widths(
         proposition,
         assumptions,
-        values,
-        array_refs,
+        contract_environment,
         fixed_state,
         spec_definitions,
         opaque_click_functions,
@@ -492,8 +473,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_opaq
 pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_pointer_widths(
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &std::collections::BTreeSet<String>,
@@ -502,8 +482,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_opaq
     lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_algebraic_values(
         proposition,
         assumptions,
-        values,
-        array_refs,
+        contract_environment,
         &BTreeMap::new(),
         &crate::persistent::PersistentMap::default(),
         fixed_state,
@@ -517,8 +496,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_opaq
 pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_integer_values(
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
@@ -529,8 +507,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_opaq
         proposition,
         assumptions,
         assumptions,
-        values,
-        array_refs,
+        contract_environment,
         &BTreeMap::new(),
         integer_values,
         fixed_state,
@@ -548,8 +525,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_opaq
 pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel(
     expression: &ContractExpression,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &std::collections::BTreeSet<String>,
@@ -557,8 +533,7 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel(
     evaluate_fixed_state_expression_through_kernel_with_algebraic_values(
         expression,
         assumptions,
-        values,
-        array_refs,
+        contract_environment,
         BTreeMap::new(),
         fixed_state,
         spec_definitions,
@@ -570,8 +545,7 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel(
 pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_algebraic_values(
     expression: &ContractExpression,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
@@ -583,8 +557,7 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
         (!click_function_calls.is_empty()).then(|| assumptions.clone().keep_spec_loads_symbolic());
     let assumptions = symbolic_load_assumptions.as_ref().unwrap_or(assumptions);
     let states = FixedStateLowering::new(
-        values,
-        array_refs,
+        contract_environment,
         fixed_state.pre_state,
         fixed_state.state,
         fixed_state.result,
@@ -614,7 +587,7 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
         &StatedSite::new(
             StatedForm::Expression(expression),
             fixed_state.state,
-            values,
+            contract_environment.values,
         ),
     )?;
     let obligations = obligations
@@ -634,8 +607,7 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression(
     expression: &ContractExpression,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<crate::kernel::IntegerTerm, String> {
@@ -643,8 +615,7 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression(
         expression,
         integer_values,
         assumptions,
-        values,
-        array_refs,
+        contract_environment,
         fixed_state,
         spec_definitions,
     )
@@ -655,15 +626,13 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
     expression: &ContractExpression,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(crate::kernel::IntegerTerm, Vec<Proposition>), String> {
     let states = FixedStateLowering::for_expression(
         expression,
-        values,
-        array_refs,
+        contract_environment,
         fixed_state.pre_state,
         fixed_state.state,
         fixed_state.result,
@@ -689,7 +658,8 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
         assumptions,
     )
     .map_err(|refusal| {
-        let (names, arguments) = crate::surface::diagnostics::value_naming_tables(values);
+        let (names, arguments) =
+            crate::surface::diagnostics::value_naming_tables(contract_environment.values);
         let mut labels = crate::surface::proof_diagnostics::render::SnapshotLabels::naming(
             ParameterBinding::new(&names, &arguments),
         );
@@ -705,15 +675,13 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
 /// the theorem clause that consumes it.
 pub(in crate::surface) fn capture_fixed_state_algebraic_expression(
     expression: &ContractExpression,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<SpecAlgebraicExpression, String> {
     capture_fixed_state_algebraic_expression_with_values(
         expression,
-        values,
-        array_refs,
+        contract_environment,
         BTreeMap::new(),
         fixed_state,
         spec_definitions,
@@ -722,15 +690,13 @@ pub(in crate::surface) fn capture_fixed_state_algebraic_expression(
 
 pub(in crate::surface) fn capture_fixed_state_algebraic_expression_with_values(
     expression: &ContractExpression,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<SpecAlgebraicExpression, String> {
     let states = FixedStateLowering::new(
-        values,
-        array_refs,
+        contract_environment,
         fixed_state.pre_state,
         fixed_state.state,
         fixed_state.result,
@@ -754,15 +720,14 @@ pub(in crate::surface) fn capture_fixed_state_algebraic_expression_with_values(
 pub(in crate::surface::proof) fn capture_fixed_state_algebraic_value(
     expression: &ContractExpression,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
     pre_state: &CState,
     state: &CState,
     snapshots: &RecordedSnapshots,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<crate::kernel::AlgebraicTerm, String> {
-    let states = FixedStateLowering::new(values, array_refs, pre_state, state, None);
+    let states = FixedStateLowering::new(contract_environment, pre_state, state, None);
     let spec = crate::surface::lowering::elaborate_fixed_state_algebraic_expression(
         expression,
         states.element_types,
@@ -791,14 +756,13 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
     expression: &ContractExpression,
     ty: &crate::kernel::ResourceFieldType,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     pre_state: &CState,
     state: &CState,
     snapshots: &RecordedSnapshots,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<crate::kernel::AlgebraicValue, String> {
-    let states = FixedStateLowering::new(values, array_refs, pre_state, state, None);
+    let states = FixedStateLowering::new(contract_environment, pre_state, state, None);
     match ty {
         crate::kernel::ResourceFieldType::C(expected) => {
             let spec = crate::surface::lowering::elaborate_fixed_state_expression(
@@ -890,16 +854,14 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
 pub(in crate::surface) fn evaluate_c_fragment_through_kernel(
     expression: &CExpression,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     state: &CState,
     result: Option<&CValue>,
 ) -> Result<CValue, String> {
     evaluate_c_fragment_with_binding_policy(
         expression,
         assumptions,
-        values,
-        array_refs,
+        contract_environment,
         state,
         result,
         false,
@@ -912,16 +874,14 @@ pub(in crate::surface) fn evaluate_c_fragment_through_kernel(
 pub(in crate::surface) fn evaluate_resource_fragment_through_kernel(
     expression: &CExpression,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     state: &CState,
     result: Option<&CValue>,
 ) -> Result<CValue, String> {
     evaluate_c_fragment_with_binding_policy(
         expression,
         assumptions,
-        values,
-        array_refs,
+        contract_environment,
         state,
         result,
         true,
@@ -933,8 +893,7 @@ pub(in crate::surface) fn evaluate_resource_argument_through_kernel(
     original: &ContractExpression,
     lowered: &CExpression,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     state: &CState,
     result: Option<&CValue>,
 ) -> Result<CValue, String> {
@@ -953,8 +912,7 @@ pub(in crate::surface) fn evaluate_resource_argument_through_kernel(
     evaluate_c_fragment_with_binding_policy(
         lowered,
         assumptions,
-        values,
-        array_refs,
+        contract_environment,
         state,
         result,
         true,
@@ -966,8 +924,7 @@ pub(in crate::surface) fn evaluate_resource_argument_through_kernel(
 fn evaluate_c_fragment_with_binding_policy(
     expression: &CExpression,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     state: &CState,
     result: Option<&CValue>,
     logical_arguments: bool,
@@ -979,10 +936,10 @@ fn evaluate_c_fragment_with_binding_policy(
     // fragment per clause, and binding every value in scope for each would
     // make a contract with many parameters quadratic.
     let mut states =
-        FixedStateLowering::for_expression(elaborated, values, array_refs, state, state, result);
+        FixedStateLowering::for_expression(elaborated, contract_environment, state, state, result);
     if logical_arguments {
         for name in crate::surface::lowering::contract_expression_referenced_names(elaborated) {
-            if let Some(value) = values.get(&name) {
+            if let Some(value) = contract_environment.values.get(&name) {
                 states.entry_values.insert(name.clone(), value.clone());
                 states.current_values.insert(name, value.clone());
             }
@@ -1013,7 +970,11 @@ fn evaluate_c_fragment_with_binding_policy(
     refuse_unproved_conversion_bounds(
         &obligations,
         assumptions,
-        &StatedSite::new(StatedForm::CFragment(expression), state, values),
+        &StatedSite::new(
+            StatedForm::CFragment(expression),
+            state,
+            contract_environment.values,
+        ),
     )?;
     let obligations = obligations
         .iter()
@@ -1048,23 +1009,21 @@ fn evaluate_c_fragment_with_binding_policy(
 pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     expression: &ContractExpression,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<ClickArrayRef, String> {
     if let ContractExpression::Binding(name)
     | ContractExpression::CFragment(CExpression::Variable(name))
     | ContractExpression::CBinding(name) = expression
-        && let Some(array_ref) = array_refs.get(name)
+        && let Some(array_ref) = contract_environment.array_refs.get(name)
     {
         return Ok(array_ref.clone());
     }
     let value = evaluate_fixed_state_expression_through_kernel(
         expression,
         assumptions,
-        values,
-        array_refs,
+        contract_environment,
         fixed_state,
         spec_definitions,
         &std::collections::BTreeSet::new(),
@@ -1086,7 +1045,7 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
         .clone(),
         _ => fixed_state.state.memory().clone(),
     };
-    let element_type = contract_array_ref_element_type(array_refs, expression)
+    let element_type = contract_array_ref_element_type(contract_environment.array_refs, expression)
         .or_else(|| pointer.c_type().pointee_type())
         .ok_or_else(|| "array reference pointer has no modeled element type".to_string())?;
     Ok(ClickArrayRef {
@@ -1138,16 +1097,14 @@ impl FixedStateLowering {
     // work proportional to unrelated caller bindings.
     fn for_expression(
         expression: &ContractExpression,
-        values: &BTreeMap<String, CValue>,
-        array_refs: &ClickArrayRefs,
+        contract_environment: ContractEnvironment<'_>,
         pre_state: &CState,
         state: &CState,
         result: Option<&CValue>,
     ) -> Self {
         Self::for_names(
             crate::surface::lowering::contract_expression_referenced_names(expression),
-            values,
-            array_refs,
+            contract_environment,
             pre_state,
             state,
             result,
@@ -1157,8 +1114,7 @@ impl FixedStateLowering {
 
     fn for_proposition(
         proposition: &ClickProposition,
-        values: &BTreeMap<String, CValue>,
-        array_refs: &ClickArrayRefs,
+        contract_environment: ContractEnvironment<'_>,
         pre_state: &CState,
         state: &CState,
         result: Option<&CValue>,
@@ -1171,13 +1127,12 @@ impl FixedStateLowering {
         // The full proposition path installs supplied argument values even
         // over array/aggregate places. Integer capture preserves those places;
         // sharing the name selection must not change either binding policy.
-        Self::for_names(names, values, array_refs, pre_state, state, result, false)
+        Self::for_names(names, contract_environment, pre_state, state, result, false)
     }
 
     fn for_names(
         names: BTreeSet<String>,
-        values: &BTreeMap<String, CValue>,
-        array_refs: &ClickArrayRefs,
+        contract_environment: ContractEnvironment<'_>,
         pre_state: &CState,
         state: &CState,
         result: Option<&CValue>,
@@ -1190,7 +1145,7 @@ impl FixedStateLowering {
         let mut current_values = BTreeMap::new();
         for name in names {
             crate::instrumentation::record_deterministic_work(1);
-            if let Some(value) = values.get(&name) {
+            if let Some(value) = contract_environment.values.get(&name) {
                 if entry_state.locals().get(&name).is_none()
                     && (!preserve_place_bindings || !entry_state.locals().contains_name(&name))
                 {
@@ -1205,7 +1160,12 @@ impl FixedStateLowering {
             if let Some(element_type) = lowering_state
                 .locals()
                 .array_object_element_type(&name)
-                .or_else(|| array_refs.get(&name).map(|array| array.element_type))
+                .or_else(|| {
+                    contract_environment
+                        .array_refs
+                        .get(&name)
+                        .map(|array| array.element_type)
+                })
             {
                 element_types.insert(name.clone(), element_type);
             }
@@ -1230,15 +1190,14 @@ impl FixedStateLowering {
     }
 
     pub(in crate::surface::proof) fn new(
-        values: &BTreeMap<String, CValue>,
-        array_refs: &ClickArrayRefs,
+        contract_environment: ContractEnvironment<'_>,
         pre_state: &CState,
         state: &CState,
         result: Option<&CValue>,
     ) -> Self {
         let bound = |state: &CState| {
             let mut bound = state.clone();
-            for (name, value) in values {
+            for (name, value) in contract_environment.values {
                 if bound.locals().get(name).is_none() {
                     bound = bound.with_local(name.clone(), value.clone());
                 }
@@ -1251,7 +1210,8 @@ impl FixedStateLowering {
             lowering_state =
                 lowering_state.with_local(crate::kernel::C_CONTRACT_RESULT_NAME, result.clone());
         }
-        let mut element_types = array_refs
+        let mut element_types = contract_environment
+            .array_refs
             .iter()
             .map(|(name, array_ref)| (name.clone(), array_ref.element_type))
             .collect::<BTreeMap<_, _>>();
@@ -1572,8 +1532,7 @@ mod integer_capture_scaling_tests {
             let (selected, work) = crate::persistent::measure_persistent_work(|| {
                 FixedStateLowering::for_expression(
                     &expression,
-                    &values,
-                    &ClickArrayRefs::new(),
+                    ContractEnvironment::new(&values, &ClickArrayRefs::new()),
                     &state,
                     &state,
                     None,
@@ -1614,8 +1573,7 @@ mod integer_capture_scaling_tests {
             let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
                 FixedStateLowering::for_proposition(
                     &proposition,
-                    &values,
-                    &ClickArrayRefs::new(),
+                    ContractEnvironment::new(&values, &ClickArrayRefs::new()),
                     &state,
                     &state,
                     None,

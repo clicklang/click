@@ -207,6 +207,21 @@ impl PureFactContext {
                 (i128::from(i32::MIN) <= lower && upper <= i128::from(i32::MAX)).then_some(false)
             }
             ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
+                // An established definedness fact follows the same typed
+                // operand classes as other checked predicates. No interval
+                // reconstruction is needed to reuse that evidence.
+                let reversed = ConditionTerm::signed_add_overflows(
+                    right.as_ref().clone(),
+                    left.as_ref().clone(),
+                );
+                for value in [false, true] {
+                    if self.equality_graph.knows_condition(condition, value)
+                        || self.equality_graph.knows_condition(&reversed, value)
+                    {
+                        return Some(value);
+                    }
+                }
+
                 if right.as_ref() == &Bitvector32Term::Constant(1) {
                     let int_max = Bitvector32Term::Constant(i32::MAX as u32);
                     let left = left.as_ref().clone();

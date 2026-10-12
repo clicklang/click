@@ -904,8 +904,7 @@ fn check_segment_base_loadability(
     let Ok(CValue::Pointer(cell)) = crate::surface::proof::evaluate_c_fragment_through_kernel(
         pointer,
         assumptions,
-        &values,
-        &array_refs,
+        ContractEnvironment::new(&values, &array_refs),
         state,
         None,
     ) else {
@@ -1842,8 +1841,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 &quantity,
                 quantity_snapshot,
                 &assumptions,
-                values,
-                &array_refs,
+                ContractEnvironment::new(values, &array_refs),
                 entry_state,
                 state,
                 result,
@@ -1879,8 +1877,10 @@ fn lower_resource_clause_with_values_mode_at_entry(
             let range = lower_resource_segment_with_values(
                 "read",
                 segment,
-                values,
-                &array_refs_for_parameters(parameters, values, state.memory()),
+                ContractEnvironment::new(
+                    values,
+                    &array_refs_for_parameters(parameters, values, state.memory()),
+                ),
                 state,
                 result,
                 contract_segment_element_width_for_result_type(
@@ -1898,8 +1898,10 @@ fn lower_resource_clause_with_values_mode_at_entry(
             let range = lower_resource_segment_with_values(
                 "write",
                 segment,
-                values,
-                &array_refs_for_parameters(parameters, values, state.memory()),
+                ContractEnvironment::new(
+                    values,
+                    &array_refs_for_parameters(parameters, values, state.memory()),
+                ),
                 state,
                 result,
                 contract_segment_element_width_for_result_type(
@@ -1960,8 +1962,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                     &argument,
                     argument_snapshot,
                     &assumptions,
-                    values,
-                    &array_refs,
+                    ContractEnvironment::new(values, &array_refs),
                     entry_state,
                     state,
                     result,
@@ -2211,8 +2212,7 @@ fn evaluate_resource_argument_with_snapshot(
     lowered: &CExpression,
     snapshot: crate::kernel::CResourceSnapshot,
     assumptions: &PureFactContext,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     entry_state: &CState,
     state: &CState,
     result: Option<&CValue>,
@@ -2221,8 +2221,7 @@ fn evaluate_resource_argument_with_snapshot(
         let direct = crate::surface::proof::evaluate_fixed_state_expression_through_kernel(
             original,
             assumptions,
-            values,
-            array_refs,
+            contract_environment,
             FixedStateFrame::new(entry_state, state, result, &RecordedSnapshots::new()),
             SpecDefinitions::new(
                 &PredicateEnvironment::new(&[]),
@@ -2248,8 +2247,7 @@ fn evaluate_resource_argument_with_snapshot(
             crate::surface::proof::evaluate_resource_fragment_through_kernel(
                 pointer_expression,
                 assumptions,
-                values,
-                array_refs,
+                contract_environment,
                 entry_state,
                 result,
             )?
@@ -2269,8 +2267,7 @@ fn evaluate_resource_argument_with_snapshot(
             let value = crate::surface::proof::evaluate_fixed_state_expression_through_kernel(
                 original,
                 assumptions,
-                values,
-                array_refs,
+                contract_environment,
                 FixedStateFrame::new(&candidate_entry, state, result, &RecordedSnapshots::new()),
                 SpecDefinitions::new(
                     &PredicateEnvironment::new(&[]),
@@ -2292,8 +2289,7 @@ fn evaluate_resource_argument_with_snapshot(
         original,
         lowered,
         assumptions,
-        values,
-        array_refs,
+        contract_environment,
         state,
         result,
     )
@@ -2381,8 +2377,7 @@ fn lower_resource_clause_facts_with_values_mode_at_entry(
                 &quantity,
                 quantity_snapshot,
                 &assumptions,
-                values,
-                &array_refs,
+                ContractEnvironment::new(values, &array_refs),
                 entry_state,
                 state,
                 result,
@@ -2612,8 +2607,7 @@ pub(in crate::surface) fn resource_argument_to_c_expression(
 fn lower_resource_segment_with_values(
     resource_name: &str,
     segment: &ContractSegment,
-    values: &BTreeMap<String, CValue>,
-    array_refs: &ClickArrayRefs,
+    contract_environment: ContractEnvironment<'_>,
     state: &CState,
     result: Option<&CValue>,
     element_width: u32,
@@ -2642,16 +2636,14 @@ fn lower_resource_segment_with_values(
             original,
             expression,
             &assumptions,
-            values,
-            array_refs,
+            contract_environment,
             state,
             result,
         ),
         None => crate::surface::proof::evaluate_resource_fragment_through_kernel(
             expression,
             &assumptions,
-            values,
-            array_refs,
+            contract_environment,
             state,
             result,
         ),
@@ -2733,8 +2725,10 @@ fn loadable_requirement_props(
         let range = lower_resource_segment_with_values(
             "viewable",
             segment,
-            &values,
-            &array_refs_for_parameters(parameter_binding.parameters, &values, memory),
+            ContractEnvironment::new(
+                &values,
+                &array_refs_for_parameters(parameter_binding.parameters, &values, memory),
+            ),
             &state,
             None,
             contract_segment_element_width(parameter_binding.parameters, segment),

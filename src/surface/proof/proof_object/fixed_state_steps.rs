@@ -1547,8 +1547,7 @@ impl<'a> Proof<'a> {
             let value = capture_fixed_state_algebraic_value(
                 checked_witness.value(),
                 self.facts().assumptions(),
-                &values,
-                &array_refs,
+                ContractEnvironment::new(&values, &array_refs),
                 algebraic_values,
                 view.fixed_state.pre_state,
                 view.fixed_state.state,
@@ -1596,8 +1595,7 @@ impl<'a> Proof<'a> {
             view.claim_label,
             0,
             view.tactic_index,
-            &values,
-            &array_refs,
+            ContractEnvironment::new(&values, &array_refs),
             view.fixed_state.pre_state,
             view.fixed_state.state,
             view.fixed_state.result,
@@ -1779,8 +1777,7 @@ impl<'a> Proof<'a> {
         let value = evaluate_fixed_state_expression_through_kernel_with_algebraic_values(
             checked_witness.value(),
             self.facts().assumptions(),
-            &values,
-            &arrays,
+            ContractEnvironment::new(&values, &arrays),
             algebraic_values,
             FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
             context.spec_definitions,
@@ -1994,8 +1991,7 @@ impl<'a> Proof<'a> {
         capture_fixed_state_algebraic_value(
             &expression,
             self.facts().assumptions(),
-            &values,
-            &arrays,
+            ContractEnvironment::new(&values, &arrays),
             algebraic_values,
             &state,
             &state,
@@ -2067,7 +2063,10 @@ impl<'a> Proof<'a> {
             .collect();
         let state = CState::new().with_memory(context.theorem_context.memory.clone());
         let states = crate::surface::proof::fixed_state_proofs::FixedStateLowering::new(
-            &values, &arrays, &state, &state, None,
+            ContractEnvironment::new(&values, &arrays),
+            &state,
+            &state,
+            None,
         );
         let spec = crate::surface::lowering::elaborate_fixed_state_proposition_with_algebraic_and_integer_values(
             &ClickProposition::Comparison { left: promoted, operator: ComparisonOperator::Equal, right: ContractExpression::IntegerLiteral("0".into()) },
@@ -2151,8 +2150,7 @@ impl<'a> Proof<'a> {
             evaluate_fixed_state_expression_through_kernel_with_algebraic_values(
                 &argument,
                 self.facts().assumptions(),
-                &values,
-                &arrays,
+                ContractEnvironment::new(&values, &arrays),
                 algebraic_values,
                 FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
                 context.spec_definitions,
@@ -2208,8 +2206,7 @@ impl<'a> Proof<'a> {
             evaluate_fixed_state_expression_through_kernel_with_algebraic_values(
                 &argument,
                 self.facts().assumptions(),
-                &values,
-                &array_refs,
+                ContractEnvironment::new(&values, &array_refs),
                 algebraic_values,
                 view.fixed_state,
                 view.spec_definitions,

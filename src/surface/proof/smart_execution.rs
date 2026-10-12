@@ -1128,8 +1128,7 @@ impl<'a> Proof<'a> {
                 argument,
                 context.integer_values,
                 self.facts().assumptions(),
-                context.values,
-                context.array_refs,
+                ContractEnvironment::new(context.values, context.array_refs),
                 FixedStateFrame::new(
                     context.pre_state,
                     context.post_state,
@@ -1161,8 +1160,7 @@ impl<'a> Proof<'a> {
                 argument,
                 context.integer_values,
                 &explicit,
-                context.values,
-                context.array_refs,
+                ContractEnvironment::new(context.values, context.array_refs),
                 FixedStateFrame::new(
                     context.pre_state,
                     context.post_state,
