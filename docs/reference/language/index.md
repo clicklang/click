@@ -50,6 +50,10 @@ currently scalar-only: pointers, arrays, and struct fields of that type remain
 unsupported. `void` is not an object or parameter type. A `void` contract has
 no `result` binding; it may still state resource transfer and return-state
 propositions that do not mention a result.
+Unsigned `uint32` literals retain their nonnegative decimal value and `u32`
+suffix in failed claim labels, including values at and above `2147483648u32`;
+see [`failed_uint32_claim_preserves_the_high_bit.md`](https://github.com/clicklang/click/blob/master/mdtests/failed_uint32_claim_preserves_the_high_bit.md).
+
 Character literals such as `'x'`, `'\n'`, and `'\0'` are `uint8` values.
 
 Inside C fragments and pure Click expressions over C values, `uint8` rvalues

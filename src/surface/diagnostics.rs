@@ -4601,6 +4601,7 @@ pub(super) fn describe_c_value(value: &CValue, parameter_binding: ParameterBindi
             describe_bitvector_with_context(value, parameter_binding),
             "u8",
         ),
+        CValue::UInt32(Bitvector32Term::Constant(value)) => format!("{value}u32"),
         CValue::UInt32(value) => typed_literal_spelling(
             describe_bitvector_with_context(value, parameter_binding),
             "u32",
