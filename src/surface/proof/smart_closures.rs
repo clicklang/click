@@ -8756,7 +8756,28 @@ fn source_backed_call_requirement_surface(
             (parameter.clone(), argument)
         })
         .collect::<BTreeMap<_, _>>();
-    let proposition = substitute_click_proposition(&source_proposition, &substitutions).ok()?;
+    // Match contract lowering: adapt a signed character argument to the
+    // predicate's byte parameter before substituting the call arguments.
+    // Keep the original source clause for source-ID and parameter selection.
+    let elaborated = crate::surface::lowering::elaborate_character_byte_views(
+        &source_proposition,
+        context.spec_definitions.predicates,
+        &|name| {
+            let slot = source_parameter_names
+                .iter()
+                .position(|parameter| parameter == name)?;
+            match source_parameter_types[slot]? {
+                crate::kernel::CType::Int8Pointer => Some(C0Type::Int8Pointer),
+                crate::kernel::CType::Int8Array(size) => Some(C0Type::Int8Array(size)),
+                _ => None,
+            }
+        },
+    );
+    let proposition = substitute_click_proposition(
+        elaborated.as_ref().unwrap_or(&source_proposition),
+        &substitutions,
+    )
+    .ok()?;
     Some(SourceBackedCallSurface {
         arguments,
         source_proposition,
@@ -8854,7 +8875,7 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
 }
 
 /// A caller parameter passed where a value of kernel type `expected` is read:
-/// the parameter itself, or, for a signed plain `char` pointer read as
+/// the parameter itself, or, for a signed character pointer read as
 /// `uint8` bytes, its explicit byte view.
 fn caller_parameter_as_argument(
     parameter: &syntax::C0Parameter,

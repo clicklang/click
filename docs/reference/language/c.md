@@ -1005,9 +1005,9 @@ Supported C surface includes:
   standard-library contracts and the allocation model
   (`mdtests/c_builtin_string_and_stdlib_headers.md`,
   `mdtests/c_builtin_string_header_declares_strlen.md`). A specification may
-  pass a `char` pointer where a predicate or pure function takes `uint8`
-  bytes, as in `requires cstr_readable(s);` for a `const char *s`. Where plain
-  `char` is signed, the argument is elaborated to the explicit byte view
+  pass a `char` or `signed char` pointer where a predicate or pure function
+  takes `uint8` bytes, as in `requires cstr_readable(s);` for a `const char *s`.
+  For a signed character type, the argument is elaborated to the explicit byte view
   `(uint8*)s`: the predicate reads the string's bytes as unsigned values,
   and since a signed read of a byte is the conversion of its unsigned read,
   `s[k] == '\0'` holds exactly when `((uint8*)s)[k] == '\0'` does. A library
