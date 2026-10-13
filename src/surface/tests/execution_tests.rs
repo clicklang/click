@@ -1903,6 +1903,33 @@ fn branch_continuation_tactics_are_timed_as_source_operations() {
     );
 }
 
+#[test]
+fn implicit_contract_closer_is_not_a_profile_source_site() {
+    let c_source = "int32 value(void) { return 7; }";
+    let click_source = r#"
+        verifying "value.c";
+        int32 value() { ensures result == 7; } by { execute(); }
+    "#;
+    let (verified, events) = crate::instrumentation::collect(|| {
+        verify_c0_sources(click_source, &[("value.c", c_source)])
+    });
+    verified.expect("the implicit contract closer must still verify");
+    let timed = events
+        .iter()
+        .filter_map(|event| match event {
+            crate::instrumentation::VerificationEvent::TacticFinished { tactic, .. } => {
+                Some(tactic)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(timed.iter().any(|tactic| tactic.tactic_name == "execute"));
+    assert!(
+        timed.iter().all(|tactic| tactic.source_index != usize::MAX),
+        "generated closers cannot be selected in the written source: {timed:?}"
+    );
+}
+
 /// `execute()` runs a symbolic `switch` on the checked `Proof` itself: the
 /// statement's arms are path cases, split on the condition that tells them
 /// apart.
