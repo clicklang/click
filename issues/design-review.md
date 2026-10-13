@@ -226,26 +226,33 @@ keeps its typed notation by design.
 
 Today: a loop-carried value inside the body prints as the iteration's entry
 value, `at(statement(N).entry, i)`, and a refused C operation names an address
-a local holds through that local (`alias->mu`, `*shared`, `p[i].y`). What
-remains:
+a local holds through that local (`alias->mu`, `*shared`, `p[i].y`). An
+`ensures` refusal names the returned value `result`, a value or allocation a
+local held at a recorded statement boundary as that local there
+(`at(statement(1).exit, r)`, `at(statement(2).exit, buf)`), and a read of a
+recorded snapshot's memory through that snapshot's locals. A pure theorem's
+`Integer` binder prints as its name in a conversion-condition refusal, and a
+memory-history sentence names a struct-typed global's field (`g.b`) where
+exactly one scalar field occupies exactly the bytes accessed. What remains:
 
-- A callee's result no local holds prints as `<unnamed A>` (`pure facts:
-  [<unnamed A> == -56]`); its only spelling is a translation temporary.
-- A pure theorem's `Integer` binder prints as `<unnamed A>` in a
-  conversion-condition refusal (`<unnamed A> + 1`): that refusal's names come
-  from the machine-typed values only.
-- A heap allocation no live local holds prints as `<pointer A>`, mostly in an
-  `ensures` check after the function returned: the outcome state has no
-  locals, and the execution's recorded snapshots that held the pointer are not
-  part of that check's names.
-- A store at a constant offset into a struct-typed global or local prints as
-  `g+8` in memory-history text: a field name needs the store's width checked
-  against the field, which `SourceCell` does not carry.
+- A callee's result that no local ever held, as in `return value() + 1;`,
+  prints as `<unnamed A>`. Its only spelling is a translation temporary: the
+  C call `value()` is not a Click expression, and re-evaluating it would be
+  another call.
+- An address no local held exactly at a recorded snapshot, such as an
+  element `buf + u` of an allocation, prints as `<pointer A>`; so do the
+  `recent premises` lines, which are rendered without the execution's
+  snapshot names.
+- A store at a constant offset into a struct-typed local prints as `s+8`:
+  the function's table of local struct types is keyed by source spelling,
+  while a local's block carries its kernel name, so a shadowing declaration
+  of another type could hold the block that spelling would find. Union
+  members sharing an offset and width keep the offset by design
+  (`mdtests/global_union_members_sharing_bytes_keep_the_offset.md`).
 
-Proposed fix: name a callee's result through the snapshot after its call and
-an allocation through the snapshot that last held it, where the outcome check
-can cite that snapshot; spell constant offsets as fields where the width
-matches.
+Proposed fix: carry each struct-typed local's layout with its kernel block
+name; spell an address inside an allocation as an offset from the local that
+held its base; give the `recent premises` lines the report's snapshot names.
 
 Decision: in progress.
 
