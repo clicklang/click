@@ -1644,33 +1644,27 @@ impl C0VerificationSession {
     ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
         instrumentation::with_default_tactic_limits(|| {
             let sources = CSourceContext::of(inputs)?;
-            let (sources, verified, verified_function_environment, baseline_file) = match project {
+            // Parse the file once: verification starts from it and the
+            // session keeps it as the baseline for later rewrite checks.
+            let (sources, baseline_file) = match project {
                 Some(project) => {
                     let sources = sources.with_click_project(project);
                     let baseline_file = resolve_click_project_context(project, &sources)?;
-                    let (verified, environment) = verify_c0_sources_with_context(
-                        click_source,
-                        &sources,
-                        None,
-                        None,
-                        None,
-                        Some(baseline_file.clone()),
-                    )?;
-                    (sources, verified, environment, baseline_file)
+                    (sources, baseline_file)
                 }
                 None => {
-                    let (verified, environment) = verify_c0_sources_with_context(
-                        click_source,
-                        &sources,
-                        None,
-                        None,
-                        None,
-                        None,
-                    )?;
                     let baseline_file = parse_c0_click_file_context(click_source, &sources)?;
-                    (sources, verified, environment, baseline_file)
+                    (sources, baseline_file)
                 }
             };
+            let (verified, verified_function_environment) = verify_c0_sources_with_context(
+                click_source,
+                &sources,
+                None,
+                None,
+                None,
+                Some(baseline_file.clone()),
+            )?;
             let environment_identity = sources.environment_identity_with_runtime(
                 baseline_file.selected_c_target(),
                 baseline_file.selected_thread_runtime(),
