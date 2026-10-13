@@ -5189,10 +5189,10 @@ fn drain_with_expression_measure() -> CFunction {
         vec![CFunctionContractClaim::ensure_proposition(0, 0)],
         true,
     )
-    .with_recursion_measure(CRankingComponent::Pure {
+    .with_recursion_measure(vec![CRankingComponent::Pure {
         source: "level(n)".to_string(),
         expression: SpecExpression::CExpression(c_variable("n")),
-    })
+    }])
 }
 
 fn opaque_rule_environment(function: CFunction) -> CExecutionEnvironment {

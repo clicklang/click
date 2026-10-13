@@ -2762,7 +2762,7 @@ pub(super) fn c_function_recursion_anchor(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> Result<Option<CRecursionAnchor>, String> {
-    let Some(component) = function.contract_interface().recursion_measure() else {
+    let Some(components) = function.contract_interface().recursion_measure() else {
         return Ok(None);
     };
     let mut reader = CRankingMeasureReader {
@@ -2770,14 +2770,19 @@ pub(super) fn c_function_recursion_anchor(
         budget,
         reads: Default::default(),
     };
-    let measure = c_ranking_measure_term(component, entry_state, &mut reader).map_err(|error| {
-        format!(
-            "the `decreases` measure `{}` of `{}` could not be read at its own entry state: \
-             {error}",
-            c_ranking_measure_display(component),
-            function.name()
-        )
-    })?;
+    let measure = components
+        .iter()
+        .map(|component| {
+            c_ranking_measure_term(component, entry_state, &mut reader).map_err(|error| {
+                format!(
+                    "the `decreases` measure `{}` of `{}` could not be read at its own entry \
+                     state: {error}",
+                    c_ranking_measure_display(component),
+                    function.name()
+                )
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let reads = reader.reads;
     let read_assumptions = assumptions_with_path_context(assumptions, &reads.facts, &[]);
     let mut entry_obligations = Vec::new();
@@ -2792,7 +2797,7 @@ pub(super) fn c_function_recursion_anchor(
     }
     Ok(Some(CRecursionAnchor {
         function: function.name().to_string(),
-        component: component.clone(),
+        components: components.to_vec(),
         measure,
         entry_obligations,
     }))
@@ -2803,30 +2808,36 @@ pub(super) fn c_function_recursion_anchor(
 /// The callee's declared measure is read at `state`, the same state the
 /// callee's preconditions are read at, so the parameters it names hold the
 /// arguments this call passes and a read it performs sees the memory the
-/// callee will see. The two members are the function-level form of the loop's
-/// back-edge bundle: the callee's measure is nonnegative, and it is strictly
-/// below the value the caller's own entry gave. A recursion whose every step
-/// satisfies both cannot be infinite, whatever the measure counts.
+/// callee will see. The members are the function-level form of the loop's
+/// back-edge bundle: each component of the callee's measure is nonnegative,
+/// and the tuple is lexicographically below the value the caller's own entry
+/// gave. A recursion whose every step satisfies both cannot be infinite,
+/// whatever the measure counts.
 pub(super) fn collect_recursion_descent_obligations(
     anchor: &CRecursionAnchor,
     state: &CState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> Result<Vec<ProofObligation>, String> {
-    let component = anchor.component();
+    let components = anchor.components();
     let mut reader = CRankingMeasureReader {
         assumptions,
         budget,
         reads: Default::default(),
     };
-    let called = c_ranking_measure_term(component, state, &mut reader).map_err(|error| {
-        format!(
-            "the `decreases` measure `{}` of `{}` could not be read at the recursive call: \
-             {error}",
-            c_ranking_measure_display(component),
-            anchor.function()
-        )
-    })?;
+    let called = components
+        .iter()
+        .map(|component| {
+            c_ranking_measure_term(component, state, &mut reader).map_err(|error| {
+                format!(
+                    "the `decreases` measure `{}` of `{}` could not be read at the recursive \
+                     call: {error}",
+                    c_ranking_measure_display(component),
+                    anchor.function()
+                )
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let reads = reader.reads;
     let read_assumptions = assumptions_with_path_context(assumptions, &reads.facts, &[]);
     let context = format!("{} recursion measure", anchor.function());
@@ -2844,26 +2855,67 @@ pub(super) fn collect_recursion_descent_obligations(
             None,
         );
     }
-    let display = c_ranking_measure_display(component);
+    for (component, called) in components.iter().zip(&called) {
+        obligations.push(
+            ProofObligation::verification_condition(ranking_nonnegative_proposition(called))
+                .with_introductions(LoweringIntroductions::new())
+                .with_context(format!(
+                    "{context}: `{}` is nonnegative at the recursive call",
+                    c_ranking_measure_display(component)
+                )),
+        );
+    }
     obligations.push(
-        ProofObligation::verification_condition(ranking_nonnegative_proposition(&called))
-            .with_introductions(LoweringIntroductions::new())
-            .with_context(format!(
-                "{context}: `{display}` is nonnegative at the recursive call"
-            )),
-    );
-    obligations.push(
-        ProofObligation::verification_condition(ranking_decrease_proposition(
+        ProofObligation::verification_condition(ranking_lexicographic_decrease_proposition(
             &called,
             anchor.measure(),
-            component,
+            components,
         )?)
         .with_introductions(LoweringIntroductions::new())
         .with_context(format!(
-            "{context}: `{display}` decreases at the recursive call"
+            "{context}: `{}` decreases at the recursive call",
+            c_ranking_measures_display(components)
         )),
     );
     Ok(obligations)
+}
+
+/// `post <lex pre` for two readings of one declared tuple: some pivot
+/// component is strictly smaller and every earlier component is tied. It is
+/// the right-nested disjunction over pivots, so a one-component measure is
+/// exactly that component's `post < pre`.
+///
+/// A pivot arm compares one component's two readings, never two different
+/// components, so a tuple whose components chose different carriers needs
+/// no coercion: each arm is built in its own component's carrier. Work is
+/// quadratic in the declared tuple's length, which the source fixes.
+pub(super) fn ranking_lexicographic_decrease_proposition(
+    post: &[CRankingMeasureValue],
+    pre: &[CRankingMeasureValue],
+    components: &[CRankingComponent],
+) -> Result<Proposition, String> {
+    let arm = |pivot: usize| -> Result<Proposition, String> {
+        let strict = ranking_decrease_proposition(&post[pivot], &pre[pivot], &components[pivot])?;
+        (0..pivot).rev().try_fold(strict, |rest, index| {
+            Ok(Proposition::And(
+                Box::new(ranking_tie_proposition(
+                    &post[index],
+                    &pre[index],
+                    &components[index],
+                )?),
+                Box::new(rest),
+            ))
+        })
+    };
+    (0..components.len())
+        .rev()
+        .try_fold(None, |rest: Option<Proposition>, pivot| {
+            Ok::<_, String>(match rest {
+                None => Some(arm(pivot)?),
+                Some(rest) => Some(Proposition::Or(Box::new(arm(pivot)?), Box::new(rest))),
+            })
+        })?
+        .ok_or_else(|| "a `decreases` measure declares at least one component".to_string())
 }
 
 /// The display form of one `decreases` component, for bundle member contexts.
@@ -6508,10 +6560,10 @@ mod local_descent_tests {
         }
         let mut function = CFunction::new(CType::Void, name, Vec::new(), body);
         if measure {
-            function = function.with_recursion_measure(CRankingComponent::Pure {
+            function = function.with_recursion_measure(vec![CRankingComponent::Pure {
                 source: "level(n)".to_string(),
                 expression: SpecExpression::CExpression(CExpression::Variable("n".to_string())),
-            });
+            }]);
         }
         if inline {
             function = function.with_inline_body();
@@ -6544,10 +6596,10 @@ mod local_descent_tests {
             CStatement::Return(CExpression::Value(CValue::Void)),
         );
         if measure {
-            function = function.with_recursion_measure(CRankingComponent::Pure {
+            function = function.with_recursion_measure(vec![CRankingComponent::Pure {
                 source: "level(n)".to_string(),
                 expression: SpecExpression::CExpression(CExpression::Variable("n".to_string())),
-            });
+            }]);
         }
         CVerifiedFunctionRule {
             function,
@@ -6704,7 +6756,7 @@ mod local_descent_tests {
         );
         CVerifiedFunctionRule {
             function: CFunction::new(CType::Void, name, Vec::new(), body)
-                .with_recursion_measure(declared_component()),
+                .with_recursion_measure(vec![declared_component()]),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -6746,8 +6798,8 @@ mod local_descent_tests {
     fn anchor_for(name: &str) -> CRecursionAnchor {
         CRecursionAnchor {
             function: name.to_string(),
-            component: declared_component(),
-            measure: CRankingMeasureValue::Machine(Bitvector32Term::Constant(7)),
+            components: vec![declared_component()],
+            measure: vec![CRankingMeasureValue::Machine(Bitvector32Term::Constant(7))],
             entry_obligations: Vec::new(),
         }
     }

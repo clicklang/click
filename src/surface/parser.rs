@@ -3012,15 +3012,45 @@ impl Parser {
                     // `decreases n;`, `decreases list(node);`, and
                     // `decreases sub;` are the same syntax here; declared
                     // resource expansion decides which measure each one is.
-                    let measure = self.parse_contract_expression()?;
-                    self.expect(Token::Semicolon)?;
-                    decreases = Some(CFunctionDecrease::Unresolved(
-                        substitute_contract_expression(
-                            &measure,
-                            &contract_let_substitutions(&contract_lets),
-                        )
-                        .map_err(|message| self.error(message))?,
-                    ));
+                    // A parenthesized list of two or more components is a
+                    // lexicographic tuple, the loop slot's syntax; a single
+                    // parenthesized expression stays one expression.
+                    let substitutions = contract_let_substitutions(&contract_lets);
+                    let mut components = Vec::new();
+                    if self.peek() == Some(&Token::LParen) {
+                        let start = self.position;
+                        self.position += 1;
+                        let first = self.parse_contract_expression()?;
+                        if self.peek() == Some(&Token::Comma) {
+                            components.push(first);
+                            while self.peek() == Some(&Token::Comma) {
+                                self.position += 1;
+                                components.push(self.parse_contract_expression()?);
+                            }
+                            self.expect(Token::RParen)?;
+                        } else {
+                            self.position = start;
+                        }
+                    }
+                    if components.is_empty() {
+                        let measure = self.parse_contract_expression()?;
+                        self.expect(Token::Semicolon)?;
+                        decreases = Some(CFunctionDecrease::Unresolved(
+                            substitute_contract_expression(&measure, &substitutions)
+                                .map_err(|message| self.error(message))?,
+                        ));
+                    } else {
+                        self.expect(Token::Semicolon)?;
+                        decreases = Some(CFunctionDecrease::Lexicographic(
+                            components
+                                .iter()
+                                .map(|component| {
+                                    substitute_contract_expression(component, &substitutions)
+                                })
+                                .collect::<Result<Vec<_>, _>>()
+                                .map_err(|message| self.error(message))?,
+                        ));
+                    }
                 }
                 Some("owns") => {
                     self.position += 1;
