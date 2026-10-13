@@ -21,9 +21,10 @@ less than 32 for any readable C string. The import passes the `Makefile`'s
 checked against Click's library contract. The call to `label_fit` applies
 `label_fit`'s verified contract.
 
-`label_copy` is not specified yet. Its `memcpy(dst, src, n)` call with a
-`const char *` source is refused
-(`bugs/memcpy-refuses-a-const-source-pointer.md`); the C stays as written.
+`label_copy` also verifies: for a readable source string and a separate
+32-byte destination buffer, it copies the bounded prefix, appends a terminator,
+and returns an index below 32. The standard library model accepts its
+`const char *` source without changing the C.
 
 From this directory:
 

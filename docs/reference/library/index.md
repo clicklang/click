@@ -2846,7 +2846,7 @@ about the result beyond its being 0 or 1, and a proof covers both.
 ### `memcpy`
 
 ```click
-extern uint8* memcpy(uint8 destination[], uint8 source[], uint64 bytes) {
+extern uint8* memcpy(uint8 destination[], const uint8 source[], uint64 bytes) {
     requires viewable(source[0..bytes]);
     owns destination[0..bytes];
     requires separate(memory(destination[0..bytes]), memory(source[0..bytes]));
@@ -2871,7 +2871,7 @@ effect is bound to this declaration, not to the name `memcpy`.
 ### `memcmp`
 
 ```click
-extern int32 memcmp(uint8 left[], uint8 right[], uint64 bytes) {
+extern int32 memcmp(const uint8 left[], const uint8 right[], uint64 bytes) {
     requires viewable(left[0..bytes]);
     requires viewable(right[0..bytes]);
     requires forall (k: uint64) { k < bytes implies defined(left[k]) and defined(right[k]) };

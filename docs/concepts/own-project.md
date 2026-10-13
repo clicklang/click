@@ -477,6 +477,27 @@ uint64 label_fit(uint64 length) {
     simp();
 }
 
+theorem label_source_prefix_viewable(bytes: uint8[], length: uint64, taken: uint64) {
+    requires length < 18446744073709551615u64;
+    requires length + 1u64 <= 9223372036854775807u64;
+    requires viewable(bytes[0u64..length + 1u64]);
+    requires taken <= length;
+    ensures viewable(bytes[0u64..taken]) by {
+        apply(uint64_less_than_to_integer(length, 18446744073709551615u64));
+        apply(uint64_less_equal_to_integer(taken, length));
+        have to_integer(length) + 1 <= 18446744073709551615 by { auto; }
+        apply(uint64_add_to_integer(length, 1u64));
+        have to_integer(taken) <= to_integer(length + 1u64) by { auto; }
+        apply(uint64_to_integer_less_equal_implies_less_equal(taken, length + 1u64));
+        apply(uint64_less_equal_transitive(taken, length + 1u64, 9223372036854775807u64));
+        simp() using {
+            taken <= length + 1u64;
+            taken <= 9223372036854775807u64;
+            viewable(bytes[0u64..length + 1u64]);
+        };
+    }
+}
+
 uint64 label_measure(const char* src) {
     requires cstr_readable(src);
     ensures result < 32;
@@ -487,35 +508,70 @@ uint64 label_measure(const char* src) {
 
 uint64 label_copy(char* dst, const char* src) {
     requires cstr_readable(src);
-    owns dst[0..32];
+    owns dst[0u64..32u64];
+    requires separate(memory(dst[0u64..32u64]), memory(src[0u64..32u64]));
     ensures result < 32;
     ensures dst[result] == '\0';
 } by {
+    step();
+    unfold(cstr_readable);
+    have exists (len: uint64) {
+        len < 18446744073709551615u64 and
+        viewable(((uint8*)src)[0..len + 1u64]) and
+        forall (k: uint64) { k < len implies ((uint8*)src)[k] != 0u8 } and
+        ((uint8*)src)[len] == 0u8 and
+        forall (k: uint64) { k < len + 1u64 implies defined(((uint8*)src)[k]) }
+    } by {
+        obtain (len: uint64) { at(function.entry,
+            len < 18446744073709551615u64 and
+            viewable(((uint8*)src)[0..len + 1u64]) and
+            forall (k: uint64) { k < len implies ((uint8*)src)[k] != 0u8 } and
+            ((uint8*)src)[len] == 0u8 and
+            forall (k: uint64) { k < len + 1u64 implies defined(((uint8*)src)[k]) }
+        ) }
+        witness { len: len }
+        extract(at(function.entry, len) < at(function.entry, 18446744073709551615u64));
+        transport(at(function.entry, viewable(((uint8*)src)[0..len + 1u64])),
+                  viewable(((uint8*)src)[0..len + 1u64])) using {
+            at(function.entry, viewable(((uint8*)src)[0..len + 1u64]));
+        }
+        have forall (k: uint64) { k < len + 1u64 implies defined(((uint8*)src)[k]) } by {
+            extract(at(function.entry, forall (k: uint64) {
+                k < len + 1u64 implies defined(((uint8*)src)[k])
+            }));
+            intro();
+            intro();
+            instantiate(at(function.entry, forall (k: uint64) {
+                k < len + 1u64 implies defined(((uint8*)src)[k])
+            }), k) using { k < len + 1u64; }
+            transport(at(function.entry, defined(((uint8*)src)[k])),
+                      defined(((uint8*)src)[k])) using {
+                at(function.entry, defined(((uint8*)src)[k]));
+            }
+        }
+        extract(at(function.entry, forall (k: uint64) { k < len implies ((uint8*)src)[k] != 0u8 }));
+        extract(at(function.entry, ((uint8*)src)[len] == 0u8));
+        simp();
+    }
+    let length = step(strlen(src), {});
+    let taken = step(label_fit(length), {});
+    have viewable(((uint8*)src)[0u64..length + 1u64]) by {
+        transport(at(statement(2).entry, viewable(((uint8*)src)[0u64..length + 1u64])),
+                  viewable(((uint8*)src)[0u64..length + 1u64])) using {
+            at(statement(2).entry, viewable(((uint8*)src)[0u64..length + 1u64]));
+        }
+    }
+    apply(label_source_prefix_viewable(((uint8*)src), length, taken));
     execute();
     simp();
 }
 ```
 
-```console
-$ click verify label.click
-proof error:
-  `label_copy.contract` tactic 0
-  `execute()` could not verify C operation
-  function contract could not be applied
-  could not bind arguments for memcpy
-  C operation
-  memcpy(dst, src, n)
-  call bindings
-  destination = dst, source = src, bytes = n
-  C statement at label_copy.c:15:2
-  `memcpy(dst, src, n);`
-
-tactic@27:
-  execute();
-
-To get a trace:
-  click verify --trace-proof label_copy label.click
-```
+The copy needs a separate destination and source prefix, because `memcpy`
+requires its accessed ranges not to overlap. Its source may be `const`, as
+in the existing C. The destination's 32-byte ownership and `label_fit`'s bound
+also cover the terminator store. Verify this complete sidecar with
+`click verify label.click`.
 
 Three kinds of report look different:
 
@@ -525,8 +581,7 @@ Three kinds of report look different:
   hits it fails at `click import lock` or when the locked source is loaded.
 - **Click can't apply its model to an operation.** `execute()` reports that it
   `could not verify C operation` and names the C statement. No contract change
-  helps when the operation itself is refused, as here, where the arguments are
-  not bound to the `memcpy` contract at all.
+  helps when the operation itself is outside the modeled subset.
 - **A proof failure.** An `unclosed goal`, or `execute()` reporting a `missing
   prerequisite` or `undefined behavior`, names a claim or requirement that the
   facts did not establish. Change the contract or the proof.
@@ -545,13 +600,11 @@ names common gaps. Then:
   adaptations go in contracts, proofs, or Click itself, and the C changes only
   for a real bug or an independently wanted change.
 - **Verify what you can.** Leave the refused function out of the sidecar,
-  as `examples/label-build-flags/label.click` does, and keep the rest
-  verified.
+  and keep the supported functions verified.
 - **Report the gap with the original source.** A construct the documentation
   says is supported, or an `execute()` refusal like this one for a modeled
-  function, is a Click bug; this one is filed as
-  [`memcpy` refuses a `const` source pointer](https://github.com/clicklang/click/blob/master/bugs/memcpy-refuses-a-const-source-pointer.md).
-  An unsupported construct outside the documented subset is missing
+  function, is a Click bug. An unsupported construct outside the documented
+  subset is missing
   functionality. Either way, include the smallest C that shows it, unchanged
   in shape, as [What to put in an issue](proof-failure-triage.md#what-to-put-in-an-issue)
   describes.
