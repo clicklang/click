@@ -1916,6 +1916,104 @@ pub fn take_artifact_reuse_rejection_census() -> ArtifactReuseRejectionCensus {
     std::mem::take(&mut *artifact_reuse_rejection_census())
 }
 
+/// Where simple statement checking derived a prerequisite that no fact states
+/// exactly, by a search whose result the proof does not retain. The
+/// simplify-step plan (`issues/simplify-step.md`) moves each of these to an
+/// exact check or an expandable `auto`; this census is its ratchet.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum HiddenPrerequisiteRoute {
+    /// A call or access obligation of a `step()`, derived by
+    /// `derive_proposition` over the whole proof context.
+    StepObligation,
+    /// The same, under the contextual policy loop phases and their re-runs use.
+    ContextualObligation,
+    /// A condition-transition obligation of a `step()`, decided by a boolean
+    /// search over the whole proof context.
+    StepCondition,
+    /// The same, under the contextual policy.
+    ContextualCondition,
+    /// The same, under the explicit policy.
+    ExplicitCondition,
+    /// A refused `step()` re-run contextually over retained `have` facts.
+    RetainedHaveRerun,
+}
+
+/// The count of hidden prerequisite derivations by route and by the top rule
+/// of the derivation (or `"proves"` where the search records none).
+pub type HiddenPrerequisiteCensus =
+    std::collections::BTreeMap<(HiddenPrerequisiteRoute, &'static str), usize>;
+
+static HIDDEN_PREREQUISITE_CENSUS: std::sync::Mutex<HiddenPrerequisiteCensus> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+#[cfg(test)]
+thread_local! {
+    static HIDDEN_PREREQUISITES_ON_THREAD: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+pub(crate) fn record_hidden_prerequisite(route: HiddenPrerequisiteRoute, rule: &'static str) {
+    #[cfg(test)]
+    HIDDEN_PREREQUISITES_ON_THREAD.with(|count| count.set(count.get() + 1));
+    *HIDDEN_PREREQUISITE_CENSUS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .entry((route, rule))
+        .or_default() += 1;
+}
+
+/// Hidden prerequisite derivations recorded on this thread so far. A caller
+/// compares two readings to attribute derivations to one operation.
+#[cfg(test)]
+pub(crate) fn hidden_prerequisites_on_thread() -> usize {
+    HIDDEN_PREREQUISITES_ON_THREAD.with(std::cell::Cell::get)
+}
+
+/// Takes and clears the census.
+pub fn take_hidden_prerequisite_census() -> HiddenPrerequisiteCensus {
+    std::mem::take(
+        &mut *HIDDEN_PREREQUISITE_CENSUS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+    )
+}
+
+/// The ratchet: `None` when no route and rule rose above its pin, otherwise a
+/// message naming each that rose (a new hidden derivation, which must not
+/// land) or fell (lower its pin).
+pub fn hidden_prerequisite_census_mismatch(
+    census: &HiddenPrerequisiteCensus,
+    expected: &[((HiddenPrerequisiteRoute, &'static str), usize)],
+) -> Option<String> {
+    let expected = expected
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let keys = census
+        .keys()
+        .chain(expected.keys())
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut report = Vec::new();
+    for key in keys {
+        let was = expected.get(&key).copied().unwrap_or(0);
+        let now = census.get(&key).copied().unwrap_or(0);
+        if now > was {
+            report.push(format!(
+                "hidden prerequisite {key:?} rose from {was} to {now}: simple checking derived a prerequisite it does not retain"
+            ));
+        } else if now < was {
+            report.push(format!(
+                "hidden prerequisite {key:?} fell from {was} to {now}: lower its pin to {now}"
+            ));
+        }
+    }
+    if report.is_empty() {
+        return None;
+    }
+    report.push(format!("hidden prerequisite census now: {census:?}"));
+    Some(report.join("\n"))
+}
+
 /// How many derivation edges were dropped for pointing at a snapshot that is
 /// not younger than their result, by edge kind and by whether the result was
 /// its own base.

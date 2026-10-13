@@ -111,15 +111,31 @@ Earlier work toward the previous design is landed and reusable:
 
 Each step is its own pull request.
 
-### 1. Census
+### 1. Census (landed)
 
-Count every hidden derivation in simple checking, by route and by shape
-(exact, conjunction, disjunction arm, implication, `forall` instance, case
-split, arithmetic leaf, load transport), with its work and whether a faithful
-Surface spelling of the obligation exists today. Include loop-phase checking
-under `Contextual` so its share is known. Report it from the mdtest and
-example harnesses with a baseline that may only shrink, as the artifact-reuse
-census does.
+`instrumentation::HiddenPrerequisiteRoute` counts each hidden derivation by
+route and top derivation rule, and both fixture harnesses ratchet it
+(`docs/internals/testing.md`). Library tests read the same events per step
+through `collect_planning_statement_transitions`, which had recorded nothing
+since the old `Planning` policy was removed.
+
+Baseline on the unfiltered corpus, all under `StepObligation`:
+
+| Rule | mdtests | examples |
+| --- | --- | --- |
+| `And` | 22 | 4 |
+| `Implies` | 12 | 0 |
+| `ContextualAtomic` | 12 | 0 |
+| `FiniteForAll` | 1 | 0 |
+
+The 47 mdtest derivations come from 24 files, nearly all
+`authority_*`/`population_*` counting and `shared_heap_*` lifecycle tests, plus
+`strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts`. Condition
+prerequisites, loop-phase `Contextual` checking, and the retained-`have`
+re-run record none. Still uncounted: the kernel's own condition evaluation
+under `Retained`, which does not defer non-exact condition reasoning
+(`certified_condition_transitions`), and the spellability and work of each
+derivation. Add those before cutting over the routes they affect.
 
 ### 2. Requirement driver and syntax
 
