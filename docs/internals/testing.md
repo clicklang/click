@@ -81,6 +81,15 @@ compiler-import fixtures. Do not use it for `mdtests/` changes: those Markdown
 files are executable proof fixtures, not prose documentation. Code, scripts,
 configuration, and example implementation changes also require the full gate.
 
+The rendered site also serves `llms.txt` and `click-reference.md`, a bundle of
+the "Using Click" pages, generated from `docs/SUMMARY.md` and the pages it
+lists; they are not committed. The documentation test
+`ai_reference_site_files_generate` generates them in memory, so a page whose
+opening sentence is missing or ends in a colon, or a link the bundle can't
+resolve, fails the gate with the page named. The docs-only gate writes them
+into `target/click-docs/`; after a plain `scripts/mdbook-build.sh`, run
+`scripts/build-ai-reference.sh`.
+
 Run the markdown proof fixtures with:
 
 ```sh

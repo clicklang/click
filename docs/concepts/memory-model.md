@@ -1,5 +1,9 @@
 # Memory model
 
+This page describes how Click models C memory: blocks and pointers, the byte
+view of integer cells, heap lifetimes, argument aliasing, viewable ranges, old
+memory, write footprints, stack memory, and Click array refs.
+
 The memory model is central to Click. Many proof failures are aliasing or frame
 failures, not arithmetic failures.
 
