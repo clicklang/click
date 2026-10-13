@@ -677,6 +677,60 @@ fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
 }
 
 #[test]
+#[ignore = "nightly: original short loop, expansion, and authority mutations"]
+fn pinned_zlib_short_loop_preserves_input_and_terminates_offline() {
+    let root = tempfile::tempdir().expect("isolated offline zlib short-loop fixture");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
+    for name in [
+        "adler32.c",
+        "zutil.h",
+        "zlib.h",
+        "zconf.h",
+        "adler32.i",
+        "short-memory.click.import.json",
+        "short-memory.click.import.lock.json",
+    ] {
+        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
+    }
+    let imports = load_imports(&root.path().join("short-memory.click.import.json"))
+        .expect("offline locked unchanged zlib source");
+    let proof = include_str!("../design/charon-trial/zlib/short-memory.click");
+    let checked = verify_c0_prepared_sources(proof, &imports)
+        .expect("short-loop termination and input preservation");
+    assert_eq!(checked.len(), 2, "both original final-reduction paths");
+    for claim in &checked {
+        assert_eq!(claim.function_block.signature().name(), "adler32_z");
+        assert_eq!(
+            claim.import_identity.as_deref(),
+            Some(imports[0].identity())
+        );
+    }
+    let offset = proof.find("execute_until(loop(0));").unwrap();
+    let line = proof[..offset]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1;
+    let column = offset - proof[..offset].rfind('\n').unwrap();
+    let expanded = expand_c0_prepared_tactic_source_at(proof, &imports, line, column)
+        .expect("checked original loop-entry expansion");
+    verify_c0_prepared_sources(&expanded, &imports).expect("expanded short-loop memory proof");
+    for invalid in [
+        proof.replace("views buf[0u64..len];", "views buf[0u64..len - 1u64];"),
+        proof.replacen("views buf[0u64..len];", "", 1),
+        proof.replace(
+            "ensures forall (k: uint64)",
+            "ensures result == 0u64;\n ensures forall (k: uint64)",
+        ),
+    ] {
+        assert_ne!(proof, invalid);
+        assert!(
+            verify_sources_at(&invalid, &ProgramInputs::Prepared(&imports), line, column).is_err()
+        );
+    }
+}
+
+#[test]
 fn pinned_zlib_null_reset_is_independent_of_seed_and_nonunit_length() {
     let root = tempfile::tempdir().expect("isolated offline zlib reset fixture");
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
