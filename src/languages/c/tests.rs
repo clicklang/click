@@ -593,6 +593,7 @@ fn c0_wide_static_initializers_use_checked_wide_values() {
         static unsigned int shifted = 0xffffffffU << 1;
         static unsigned long zero;
         static long promoted = 4294967295U;
+        static long converted = 9223372036854775808UL;
     "#,
         "wide.c",
         &source::ExpandedLineMap::empty(),
@@ -625,23 +626,24 @@ fn c0_wide_static_initializers_use_checked_wide_values() {
             "promoted",
             CValue::Int64(Bitvector32Term::Int64Constant(i64::from(u32::MAX))),
         ),
+        // GCC converts an out-of-range constant modulo 2^64.
+        (
+            "converted",
+            CValue::Int64(Bitvector32Term::Int64Constant(i64::MIN)),
+        ),
     ] {
         let global = unit.globals[name].to_kernel_global().unwrap();
         assert_eq!(global.initial_value(), &expected, "{name}");
     }
-    for source in [
-        "static long bad = 9223372036854775808UL;",
-        "static long bad = 9223372036854775807L + 1;",
-    ] {
-        assert!(
-            syntax::parse_translation_unit_for_source(
-                source,
-                "bad.c",
-                &source::ExpandedLineMap::empty()
-            )
-            .is_err()
-        );
-    }
+    // Signed overflow inside the expression is undefined, not a conversion.
+    assert!(
+        syntax::parse_translation_unit_for_source(
+            "static long bad = 9223372036854775807L + 1;",
+            "bad.c",
+            &source::ExpandedLineMap::empty()
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -3368,10 +3370,6 @@ fn c0_rejects_invalid_static_integer_constant_initializers() {
         (
             "int32 value = 2147483647 + 1; int32 read() { return value; }",
             "overflows",
-        ),
-        (
-            "int32 value = (uint8) 256; int32 read() { return value; }",
-            "out of range",
         ),
     ] {
         let error = syntax::parse_functions(source)
@@ -12865,11 +12863,64 @@ fn signed_byte_storage_and_pointer_identity() {
         "void f(signed char **p, unsigned char **q) { p = q; }",
         "void f(signed char *p); void f(unsigned char *p);",
         "void f(int (*cb)(signed char)); void f(int (*cb)(unsigned char));",
-        "signed char invalid = 128; int f(void) { return invalid; }",
-        "signed char invalid = -129; int f(void) { return invalid; }",
     ] {
         assert!(syntax::parse_functions(source).is_err(), "{source}");
     }
+}
+
+/// An integer constant converted to an integer type that cannot represent
+/// it takes the value GCC and Clang give it, modulo 2^N, in a static or
+/// automatic initializer, an assignment, a cast, a return, and an argument.
+#[test]
+fn c0_out_of_range_integer_constants_convert_modulo_the_destination_width() {
+    use crate::kernel::{Bitvector32Term, CValue};
+    let unit = syntax::parse_translation_unit_for_source(
+        "signed char high = 128; signed char low = -129; unsigned char negative = -56;\n\
+         unsigned char wide = 300; short big = 40000; int value = (unsigned char) 256;",
+        "convert.c",
+        &source::ExpandedLineMap::empty(),
+    )
+    .unwrap();
+    for (name, expected) in [
+        (
+            "high",
+            CValue::Int8(Bitvector32Term::Constant(-128i32 as u32)),
+        ),
+        ("low", CValue::Int8(Bitvector32Term::Constant(127))),
+        ("negative", CValue::UInt8(Bitvector32Term::Constant(200))),
+        ("wide", CValue::UInt8(Bitvector32Term::Constant(44))),
+        (
+            "big",
+            CValue::Int16(Bitvector32Term::Constant(-25536i32 as u32)),
+        ),
+        ("value", CValue::Int32(Bitvector32Term::Constant(0))),
+    ] {
+        let global = unit.globals[name].to_kernel_global().unwrap();
+        assert_eq!(global.initial_value(), &expected, "{name}");
+    }
+
+    let functions = syntax::parse_functions(
+        "unsigned char take(unsigned char c) { return c; }\n\
+         unsigned char f(signed char *p) {\n\
+             unsigned char c = -56;\n\
+             c = 300;\n\
+             *p = 200;\n\
+             take(-1);\n\
+             return (unsigned char) -2;\n\
+         }",
+    )
+    .unwrap();
+    let body = format!("{:?}", functions[1].body());
+    for literal in [
+        "UInt32Literal(200)",
+        "UInt32Literal(44)",
+        "Int32Literal(4294967240)",
+        "UInt32Literal(255)",
+        "UInt32Literal(254)",
+    ] {
+        assert!(body.contains(literal), "{literal} in {body}");
+    }
+    assert!(!body.contains("Int32Literal(300)"), "{body}");
 }
 
 #[test]

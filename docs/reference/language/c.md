@@ -403,7 +403,27 @@ pointers such as `char **` to `unsigned char **`
 (`mdtests/a_char_pointer_pointer_is_not_converted_to_an_unsigned_char_pointer_pointer.md`),
 `?:` arms of different character pointer types, whose common type would be
 `void *`, the subtraction of such pointers, and conversions to or from a
-pointer to a wider integer type.
+pointer to a wider integer type. An uncast or explicit conversion between
+pointers to wider integer types of the same width and different signedness,
+such as `int *` and `unsigned int *`, is also only a `-Wpointer-sign`
+warning in GCC and Clang, but it is not yet supported: the kernel reads a
+wider cell only through its stored type, so the conversion is refused as a
+retyping object-pointer cast.
+
+An integer constant expression converted to an integer type that cannot
+represent it, such as `unsigned char c = -56;` or `signed char c = 200;`, is at
+most a `-Woverflow` or `-Wconstant-conversion` warning in GCC and Clang, which
+reduce the value modulo 2^N into the type's range: C11 6.3.1.3p2 defines this
+for an unsigned type, and GCC defines the implementation-defined signed
+conversion the same way. Click converts such a constant identically in a
+static, automatic, or array initializer, an assignment, a store, an explicit
+cast, a `return`, and a call argument: `unsigned char c = -56` holds 200,
+`short s = 40000` holds -25536, and plain `char c = -56` holds 200 under
+`x86_64-linux-kernel`
+(`mdtests/an_out_of_range_integer_constant_converts_modulo_its_destination_width.md`,
+`mdtests/a_negative_char_constant_is_unsigned_on_the_kernel_target.md`).
+A narrowing of a value that is not an integer constant expression keeps the
+checked range rule of the scalar casts below.
 
 The character pointer types `char *`, `signed char *`, and `unsigned char *`
 convert to one another by an explicit one-level cast, which C11 6.3.2.3p7 and
@@ -585,7 +605,8 @@ Supported C surface includes:
   `(uint64) expression`; supported widening conversions preserve the value,
   while conversion from a signed or unsigned 64-bit integer to `uint32`
   retains the low 32 bits (modulo 2^32), including for symbolic values.
-  Other narrowing requires a concrete representable value or a checked target
+  An integer constant expression out of the target's range converts modulo
+  2^N, as GCC converts it. Other narrowing requires a checked target
   range where the conversion is modeled (`int8`: `-128..127`, `int16`: `-32768..32767`, `uint8`:
   `0..255`, and `uint16`: `0..65535`), while aggregate casts remain outside supported C.
   Narrowing into those four types is modeled from every 16-, 32- and 64-bit
@@ -1123,8 +1144,9 @@ initialized definitions remain rejected. Integer scalar initializers
 may use bounded constant expressions built from supported integer literals and
 arithmetic, bitwise, shift, comparison, logical, and conditional operators,
 plus checked scalar integer casts, with the same usual arithmetic conversions
-and unsigned wrapping as runtime expressions. Signed and narrow target types
-still require a representable final value.
+and unsigned wrapping as runtime expressions. A final value the target type
+cannot represent converts modulo 2^N, as GCC converts it; signed overflow
+within the expression is still refused.
 <!-- verified-example: mdtests/c_expression_typing.md -->
 Logical and conditional expressions evaluate only the branch selected by their
 constant condition. Pointer initializers may use the null pointer constant `0` or the address
