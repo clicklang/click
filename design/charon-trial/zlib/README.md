@@ -58,6 +58,43 @@ the negative regression rejects a claim covering that read. Connecting this
 reset behavior to the Rust constructor and general incremental processing is
 still pending.
 
+The [moving-cursor byte-sum reduction](../../../mdtests/loop_entry_memory_capture_byte_sum.md)
+checks actual `*p++` reads, termination, signed addition bounds, and preservation
+of every byte for counts up to fifteen. The
+[postdecrement reduction](../../../mdtests/loop_entry_memory_capture_postdecrement.md)
+checks `while (n--)` through its wrapping zero exit. These are reduced control
+and memory proofs, not proofs of the original checksum loop.
+
+The current short-loop blocker is narrowing a native 64-bit byte view. The
+following isolated contract is rejected even with `1u64 <= n <= 15u64`:
+
+```c
+void narrow(const unsigned char *p, unsigned long n) {}
+```
+
+```click
+target "x86_64-linux-userspace";
+verifying "narrow.c";
+void narrow(const uint8* p, uint64 n) {
+    requires 1u64 <= n;
+    requires n <= 15u64;
+    views p[0u64..n];
+    ensures viewable(p[0u64..1u64]);
+} by {
+    have viewable(p[0u64..n]) by simp();
+    execute(); simp();
+}
+```
+
+The native liveness checker currently supports exact wide ranges and coverage
+by a constant narrow range. It does not implement wide-to-wide prefix coverage.
+Adding more unsigned extent facts does not resolve this refusal. The proposed
+extension would derive `viewable(p[0u64..requested])` from an available
+`viewable(p[0u64..held])` and checked native `requested <= held`, preserving the
+source range's lifetime and memory-snapshot checks. Moving-base subranges will
+also need checked offset and nonwrapping coverage; the same-base prefix rule
+alone does not finish the zlib proof.
+
 | Original file | SHA-256 |
 | --- | --- |
 | `adler32.c` | `9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211` |
