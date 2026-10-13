@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""How many hand-written `have` statements the proofs no longer need.
+"""How much of the examples' hand-written `have` statements `auto` covers.
 
     evals/auto.py [--jobs N] [--per-file N] [--only SUBSTRING]
                   [--out results.jsonl] [--write-baseline]
@@ -7,10 +7,14 @@
 The corpus is every `.click` sidecar of the projects listed in
 `evals/auto/corpus.txt`. A site is a `have P ...;` statement whose `have` line
 holds the whole proposition: a one-line `have` or one with a `by { ... }`
-block. The eval deletes the whole statement in a scratch copy of the project
-and asks whether the proof unit that contained it still verifies. A deletable
-`have` states a fact the proof's own automation (`auto` at the claims, `simp`,
-the steps after it) already finds, so the proof can be that much shorter.
+block. Each site is measured twice, in a scratch copy of the project:
+
+- deletable: with the whole statement deleted, the proof unit that contained
+  it still verifies. The proof's own automation (`auto` at the claims,
+  `simp`, the steps after it) finds the fact, and no later step names it.
+- by auto: with its justification replaced by `by auto;`, the proof unit
+  still verifies. `auto` proves the fact where it is stated, whether or not
+  later steps cite it.
 
 `click verify FILE:LINE:COLUMN` checks only the proof unit that contains the
 site. The verdict is the exit status. For a failure, the first line naming a
@@ -47,6 +51,8 @@ SITE_TIME_LIMIT = "5m"
 # The unmodified sidecar is verified whole, and the largest take minutes.
 FILE_TIME_LIMIT = "30m"
 HAVE = re.compile(r"^(\s*)have (.+?)( by \{| by [a-z_]+(\(.*\))?;\s*$|;\s*$)")
+# Each measure and the field holding its failure label.
+MEASURES = [("deletable", "reason"), ("by_auto", "auto_reason")]
 REASONS = [
     ("budget", "exhausted"),
     ("timeout", "time limit"),
@@ -145,9 +151,21 @@ def run_unit(click, path, line, column):
     return completed.returncode, completed.stdout + completed.stderr, elapsed
 
 
+def verdict(click, path, edited, line):
+    """Writes `edited` to `path` and verifies the proof unit holding `line`,
+    counted from 1 and given as the line just above the edited statement,
+    which is still inside its proof unit after the edit."""
+    with open(path, "w") as source:
+        source.write(edited)
+    above = edited.split("\n")[line - 1]
+    column = len(above) - len(above.lstrip()) + 1
+    status, output, elapsed = run_unit(click, path, line, column)
+    return status == 0, None if status == 0 else label(output), elapsed
+
+
 def evaluate_file(click, project, relative, chosen):
-    """Verifies `relative` unmodified, then with each chosen site deleted,
-    in a private copy of the examples."""
+    """Verifies `relative` unmodified, then with each chosen site deleted
+    and with each proved by `auto`, in a private copy of the examples."""
     results = []
     with tempfile.TemporaryDirectory(prefix="click-auto-eval-") as scratch:
         # Copy every example, not only this project: a sidecar may import
@@ -163,23 +181,29 @@ def evaluate_file(click, project, relative, chosen):
         if completed.returncode != 0:
             return [{"file": relative, "skipped": "unmodified sidecar does not verify"}]
         for key, (line, column, proposition, by, end) in chosen:
-            edited = text[:by] + text[end:]
-            with open(path, "w") as source:
-                source.write(edited)
-            # The line before the deleted statement is still inside its proof
-            # unit; the statement's own line may now be the unit's last brace.
-            above = edited.split("\n")[line - 2]
-            target_column = len(above) - len(above.lstrip()) + 1
-            status, output, elapsed = run_unit(click, path, line - 1, target_column)
+            # After a deletion the statement's own line may be the unit's
+            # last brace, so both edits target the line above it.
+            deletable, reason, deleted_seconds = verdict(
+                click, path, text[:by] + text[end:], line - 1
+            )
+            indent = " " * (column - 1)
+            by_auto, auto_reason, auto_seconds = verdict(
+                click,
+                path,
+                text[:by] + f"{indent}have {proposition} by auto;\n" + text[end:],
+                line - 1,
+            )
             results.append(
                 {
                     "key": key,
                     "file": relative,
                     "line": line,
                     "proposition": proposition,
-                    "deletable": status == 0,
-                    "reason": None if status == 0 else label(output),
-                    "seconds": round(elapsed, 2),
+                    "deletable": deletable,
+                    "reason": reason,
+                    "by_auto": by_auto,
+                    "auto_reason": auto_reason,
+                    "seconds": round(deleted_seconds + auto_seconds, 2),
                 }
             )
         with open(path, "w") as source:
@@ -235,21 +259,20 @@ def main():
     measured = sorted(
         (result for result in results if "skipped" not in result), key=lambda r: r["key"]
     )
-    deletable = [result for result in measured if result["deletable"]]
-    reasons = {}
-    for result in measured:
-        if not result["deletable"]:
-            reasons[result["reason"]] = reasons.get(result["reason"], 0) + 1
     times = sorted(result["seconds"] for result in measured)
-
     files = len({result["file"] for result in measured})
-    print(f"have-deletion eval: {files} files, {len(measured)} sites, {elapsed / 60:.0f}m")
-    if measured:
-        share = 100 * len(deletable) / len(measured)
-        print(f"deletable {len(deletable):5} / {len(measured)}  {share:.1f}%")
-        print(f"needed    {len(measured) - len(deletable):5}")
+    print(f"auto eval: {files} files, {len(measured)} sites, {elapsed / 60:.0f}m")
+    for measure, reason_field in MEASURES:
+        held = [result for result in measured if result[measure]]
+        reasons = {}
+        for result in measured:
+            if not result[measure]:
+                reasons[result[reason_field]] = reasons.get(result[reason_field], 0) + 1
+        share = 100 * len(held) / len(measured) if measured else 0
+        print(f"{measure:<10} {len(held):5} / {len(measured)}  {share:.1f}%")
         for reason, count in sorted(reasons.items(), key=lambda item: -item[1]):
             print(f"  {reason:<12} {count}")
+    if measured:
         print(
             f"seconds per site  median {times[len(times) // 2]:.1f}, "
             f"p95 {times[min(len(times) - 1, len(times) * 95 // 100)]:.1f}"
@@ -257,18 +280,30 @@ def main():
     for result in skipped:
         print(f"skipped  {result['file']}: {result['skipped']}")
 
-    current = {result["key"]: result["deletable"] for result in measured}
+    current = {
+        result["key"]: {measure: result[measure] for measure, _ in MEASURES}
+        for result in measured
+    }
     if os.path.exists(BASELINE):
         with open(BASELINE) as source:
             baseline = json.load(source)
-        gained = sorted(key for key, ok in current.items() if ok and baseline.get(key) is False)
-        lost = sorted(key for key, ok in current.items() if not ok and baseline.get(key) is True)
         new = sorted(key for key in current if key not in baseline)
-        print(f"vs baseline  +{len(gained)} deletable, -{len(lost)} lost, {len(new)} new sites")
-        for key in lost:
-            print(f"  lost   {key}")
-        for key in gained:
-            print(f"  gained {key}")
+        print(f"vs baseline  {len(new)} new sites")
+        for measure, _ in MEASURES:
+            was = {
+                key: entry.get(measure) for key, entry in baseline.items()
+            }
+            gained = sorted(
+                key for key, entry in current.items() if entry[measure] and was.get(key) is False
+            )
+            lost = sorted(
+                key for key, entry in current.items() if not entry[measure] and was.get(key) is True
+            )
+            print(f"  {measure:<10} +{len(gained)} gained, -{len(lost)} lost")
+            for key in lost:
+                print(f"    lost   {key}")
+            for key in gained:
+                print(f"    gained {key}")
     if arguments.write_baseline:
         with open(BASELINE, "w") as target:
             json.dump(current, target, indent=1, sort_keys=True)

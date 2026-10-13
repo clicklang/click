@@ -728,8 +728,9 @@ example, wall time, so its number moves with the corpus.
 
 ### The `auto` eval
 
-`evals/auto.py` measures how many hand-written `have` statements in the
-examples can be deleted with the proof still verifying, against a committed
+`evals/auto.py` measures, for a sample of the hand-written `have`
+statements in the examples, how many `auto` proves where they stand and how
+many can be deleted with the proof still verifying, against a committed
 baseline. A change to `auto`, `simp` or what they rely on quotes its result,
 sites gained and lost, in the pull request. `evals/README.md`
 describes the corpus, the sampling and the baseline.
