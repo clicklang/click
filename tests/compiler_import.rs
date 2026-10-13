@@ -395,7 +395,7 @@ fn compiler_import_preserves_explicit_external_assumption_reporting() {
         "int external_identity(int x);\nint caller(int x) { return external_identity(x); }\n",
     )
     .unwrap();
-    let proof = "verifying \"main.c\";\nextern int32 external_identity(int32 x) { requires x >= 0; ensures result == x; }\nint32 caller(int32 x) { requires x >= 0; ensures result == x; }\n";
+    let proof = "target \"x86_64-linux-kernel\";\nverifying \"main.c\";\nextern int32 external_identity(int32 x) { requires x >= 0; ensures result == x; }\nint32 caller(int32 x) { requires x >= 0; ensures result == x; }\n";
     create_lock(&project.config()).unwrap();
     let imports = load_imports(&project.config()).unwrap();
     let assumptions = click::surface::c0_prepared_external_dependencies(proof, &imports).unwrap();
@@ -807,4 +807,283 @@ fn pinned_zlib_null_reset_is_independent_of_seed_and_nonunit_length() {
         )
         .is_err()
     );
+}
+
+/// A user-space compiler import in a fresh directory, with the given files
+/// and arguments for `main.c`.
+fn userspace_import(files: &[(&str, &str)], args: &[&str]) -> tempfile::TempDir {
+    assert!(
+        Path::new("/usr/bin/gcc").is_file(),
+        "compiler fixture requires GCC at /usr/bin/gcc; provision it before scripts/check.sh"
+    );
+    let root = tempfile::tempdir().expect("isolated compiler fixture");
+    for (path, contents) in files {
+        let path = root.path().join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, contents).unwrap();
+    }
+    write_userspace_config(root.path(), args);
+    root
+}
+
+fn write_userspace_config(root: &Path, args: &[&str]) {
+    let config = json!({
+        "schema": 1,
+        "target": "x86_64-linux-userspace",
+        "compiler": "/usr/bin/gcc",
+        "working_directory": ".",
+        "environment": {"allow": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}},
+        "sources": [{"logical_source": "main.c", "path": "main.c", "args": args, "artifact": "main.i"}]
+    });
+    fs::write(
+        root.join("main.click.import.json"),
+        serde_json::to_vec_pretty(&config).unwrap(),
+    )
+    .unwrap();
+}
+
+const LABEL_SOURCE: &str = r#"#include <stdint.h>
+#include <string.h>
+#include <limits.h>
+#include "label.h"
+
+int32_t label_fits(const char *label) {
+    size_t length = strlen(label);
+    if (length <= LABEL_LIMIT && LABEL_LIMIT < INT_MAX) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+
+const LABEL_PROOF: &str = r#"target "x86_64-linux-userspace";
+verifying "main.c";
+
+int32 label_fits(const char* label) {
+    requires cstr_readable(label);
+    ensures result == 0 or result == 1;
+} by {
+    execute();
+    simp();
+}
+"#;
+
+#[test]
+#[ignore = "nightly: 6s serial; the examples gate locks a modeled-header import"]
+fn compiler_import_supplies_clicks_modeled_headers_beside_project_flags() {
+    let project = userspace_import(
+        &[
+            ("main.c", LABEL_SOURCE),
+            ("include/label.h", "#define LABEL_LIMIT LIMIT_FROM_BUILD\n"),
+        ],
+        &["-I", "include", "-DLIMIT_FROM_BUILD=16"],
+    );
+    let config = project.path().join("main.click.import.json");
+    create_lock(&config).expect("lock a user-space import that includes libc headers");
+    let artifact = fs::read_to_string(project.path().join("main.i")).unwrap();
+    // The artifact names Click's headers, not the private directory GCC
+    // read them from, so a refresh reproduces it byte for byte.
+    assert!(artifact.contains("# 1 \"<string.h>\" 1 3 4"), "{artifact}");
+    assert!(!artifact.contains("click-import-headers"), "{artifact}");
+    assert!(artifact.contains("size_t strlen(const char *s);"));
+    let lock: serde_json::Value = serde_json::from_slice(
+        &fs::read(project.path().join("main.click.import.lock.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(lock["schema"], 3);
+    let opened = lock["sources"][0]["click_headers"].as_object().unwrap();
+    assert_eq!(
+        opened.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["limits.h", "stdint.h", "string.h"]
+    );
+    assert!(
+        lock["sources"][0]["dependencies"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .all(|path| path.ends_with("include/label.h")),
+        "{lock}"
+    );
+    let imports = load_imports(&config).expect("offline import");
+    verify_c0_prepared_sources(LABEL_PROOF, &imports).expect("strlen binds to Click's contract");
+    // The call is checked against the contract: without its precondition
+    // the proof fails, and so does a claim the length does not decide.
+    let unreadable = LABEL_PROOF.replace("    requires cstr_readable(label);\n", "");
+    assert!(verify_c0_prepared_sources(&unreadable, &imports).is_err());
+    let false_claim = LABEL_PROOF.replace("result == 0 or result == 1", "result == 1");
+    assert!(verify_c0_prepared_sources(&false_claim, &imports).is_err());
+    create_lock(&config).unwrap();
+    assert_eq!(
+        artifact,
+        fs::read_to_string(project.path().join("main.i")).unwrap(),
+        "a refresh reproduces the artifact"
+    );
+}
+
+#[test]
+#[ignore = "nightly: 9s serial; the examples gate locks a modeled-header import"]
+fn compiler_import_refuses_unmodeled_system_headers_by_name() {
+    let project = userspace_import(&[("main.c", "#include <stdio.h>\nint x;\n")], &[]);
+    let config = project.path().join("main.click.import.json");
+    let error = create_lock(&config).unwrap_err();
+    assert!(
+        error.contains("<stdio.h> is not one of Click's modeled system headers")
+            && error.contains("docs/reference/language/c.md#system-headers")
+            && !error.contains("click-import-headers"),
+        "{error}"
+    );
+    assert!(!project.path().join("main.i").exists());
+
+    // `__has_include` finds a hosted header Click refuses, as it finds the C
+    // library's, so the program cannot silently take the other branch.
+    fs::write(
+        project.path().join("main.c"),
+        "#if __has_include(<time.h>)\n#include <time.h>\n#endif\nint x;\n",
+    )
+    .unwrap();
+    let error = create_lock(&config).unwrap_err();
+    assert!(error.contains("<time.h> is not one of"), "{error}");
+
+    fs::write(
+        project.path().join("main.c"),
+        "#include <openssl/ssl.h>\nint x;\n",
+    )
+    .unwrap();
+    let error = create_lock(&config).unwrap_err();
+    assert!(
+        error.contains("openssl/ssl.h: No such file or directory")
+            && error.contains("the system headers Click supplies for x86_64-linux-userspace are <inttypes.h>, <limits.h>"),
+        "{error}"
+    );
+
+    fs::write(
+        project.path().join("main.c"),
+        "#include <pthread.h>\nint x;\n",
+    )
+    .unwrap();
+    let error = create_lock(&config).unwrap_err();
+    assert!(error.contains("modeled-pthread runtime"), "{error}");
+
+    // The kernel target has only the freestanding headers Click models.
+    let mut kernel: serde_json::Value =
+        serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+    kernel["target"] = json!("x86_64-linux-kernel");
+    fs::write(&config, serde_json::to_vec_pretty(&kernel).unwrap()).unwrap();
+    fs::write(
+        project.path().join("main.c"),
+        "#include <string.h>\nint x;\n",
+    )
+    .unwrap();
+    let error = create_lock(&config).unwrap_err();
+    assert!(
+        error.contains("string.h: No such file or directory")
+            && error.contains(
+                "for x86_64-linux-kernel are <inttypes.h>, <limits.h>, <stdbool.h>, <stdint.h>;"
+            ),
+        "{error}"
+    );
+    fs::write(
+        project.path().join("main.c"),
+        "#include <limits.h>\nint big(void) { return INT_MAX; }\n",
+    )
+    .unwrap();
+    create_lock(&config).expect("kernel target models <limits.h>");
+}
+
+#[test]
+#[ignore = "nightly: 10s serial; the examples gate locks a modeled-header import"]
+fn compiler_import_project_headers_precede_clicks_in_gcc_search_order() {
+    let source = "#include <limits.h>\n#ifdef PROJECT_LIMITS\nint which(void) { return PROJECT_LIMITS; }\n#else\nint which(void) { return CHAR_MAX; }\n#endif\n";
+    let project = userspace_import(
+        &[
+            ("main.c", source),
+            ("quoted/limits.h", "#define PROJECT_LIMITS 1\n"),
+            ("angled/limits.h", "#define PROJECT_LIMITS 2\n"),
+        ],
+        &["-iquote", "quoted"],
+    );
+    let config = project.path().join("main.click.import.json");
+    let which = |args: &[&str]| {
+        write_userspace_config(project.path(), args);
+        create_lock(&config).unwrap();
+        let imports = load_imports(&config).unwrap();
+        let lock = fs::read_to_string(project.path().join("main.click.import.lock.json")).unwrap();
+        // GCC splits an expansion from a system header across line markers,
+        // so compare the C without whitespace.
+        let source = imports[0].source().split_whitespace().collect::<String>();
+        (source, lock)
+    };
+    // `-iquote` serves only `#include "..."`, so `<limits.h>` is Click's.
+    let (source, lock) = which(&["-iquote", "quoted"]);
+    assert!(source.contains("return127;"), "{source}");
+    assert!(lock.contains("\"limits.h\""));
+    // A project `-I` or `-isystem` directory precedes the C library's place
+    // in GCC's search, so its header is used, as GCC would use it, and Click's
+    // is not opened.
+    for args in [["-I", "angled"], ["-isystem", "angled"]] {
+        let (source, lock) = which(&args);
+        assert!(source.contains("return2;"), "{args:?}: {source}");
+        assert!(!lock.contains("\"click_headers\""), "{args:?}: {lock}");
+    }
+    // A project header can still continue the search into Click's.
+    fs::write(
+        project.path().join("angled/limits.h"),
+        "#include_next <limits.h>\n#define PROJECT_LIMITS (CHAR_MAX - 125)\n",
+    )
+    .unwrap();
+    let (source, lock) = which(&["-I", "angled"]);
+    assert!(source.contains("return(127-125);"), "{source}");
+    assert!(lock.contains("\"limits.h\""));
+}
+
+#[test]
+#[ignore = "nightly: 3s serial; the examples gate locks a modeled-header import"]
+fn compiler_import_lock_binds_clicks_header_text_and_catalog() {
+    let project = userspace_import(
+        &[
+            ("main.c", LABEL_SOURCE),
+            ("include/label.h", "#define LABEL_LIMIT 16\n"),
+        ],
+        &["-Iinclude"],
+    );
+    let config = project.path().join("main.click.import.json");
+    let lock_path = project.path().join("main.click.import.lock.json");
+    create_lock(&config).unwrap();
+    let original = fs::read_to_string(&lock_path).unwrap();
+    load_imports(&config).unwrap();
+    let mut lock: serde_json::Value = serde_json::from_str(&original).unwrap();
+    // A lock prepared against a different `<string.h>` text, as after a
+    // Click upgrade that changes the model, must be refreshed.
+    lock["sources"][0]["click_headers"]["string.h"] = json!("0".repeat(64));
+    fs::write(&lock_path, serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
+    let error = load_imports(&config).unwrap_err();
+    assert!(
+        error.contains("Click's <string.h> changed since the import lock"),
+        "{error}"
+    );
+    // So must one prepared against a different header set.
+    let mut lock: serde_json::Value = serde_json::from_str(&original).unwrap();
+    lock["click_header_catalog_sha256"] = json!("0".repeat(64));
+    fs::write(&lock_path, serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
+    let error = load_imports(&config).unwrap_err();
+    assert!(
+        error.contains("Click's system headers for x86_64-linux-userspace changed"),
+        "{error}"
+    );
+    // Dropping the record does not turn the lock into a legacy one.
+    let mut lock: serde_json::Value = serde_json::from_str(&original).unwrap();
+    lock.as_object_mut()
+        .unwrap()
+        .remove("click_header_catalog_sha256");
+    fs::write(&lock_path, serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
+    assert!(load_imports(&config).is_err());
+    let mut lock: serde_json::Value = serde_json::from_str(&original).unwrap();
+    lock["schema"] = json!(2);
+    lock.as_object_mut()
+        .unwrap()
+        .remove("click_header_catalog_sha256");
+    fs::write(&lock_path, serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
+    assert!(load_imports(&config).is_err());
+    fs::write(&lock_path, &original).unwrap();
+    load_imports(&config).unwrap();
 }

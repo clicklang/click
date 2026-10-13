@@ -110,10 +110,10 @@ fixtures still fail for the reasons above (rechecked 2026-10-13). Their
 initializer syntax and layout can have parser coverage while their caller
 proofs remain incomplete.
 
-[linked-initializer-private-names.md](linked-initializer-private-names.md)
-retains the defining-translation-unit initializer-resolution gap.
+Linked pointer initializers resolve in their defining translation unit
+(`mdtests/a_linked_pointer_initializer_names_a_private_object_of_its_defining_file.md`).
 [private-static-helper-ownership.md](private-static-helper-ownership.md)
-retains the unchanged upstream PCG wrapper/client acceptance work. Neither is
+retains the unchanged upstream PCG wrapper/client acceptance work. It is not
 an additional global-storage implementation milestone or a demonstrated
 rbtree dependency.
 

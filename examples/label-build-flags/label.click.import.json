@@ -15,6 +15,12 @@
       "path": "label_fit.c",
       "args": ["-Iinclude", "-DLABEL_CAPACITY=32"],
       "artifact": "label_fit.i"
+    },
+    {
+      "logical_source": "label_copy.c",
+      "path": "label_copy.c",
+      "args": ["-Iinclude", "-DLABEL_CAPACITY=32"],
+      "artifact": "label_copy.i"
     }
   ]
 }

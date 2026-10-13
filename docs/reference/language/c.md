@@ -189,6 +189,14 @@ does. Verifying plain C needs no compiler or system headers; see the
 Any other system include is refused. The kernel target refuses the hosted
 headers, since kernel code uses its own.
 
+A [compiler import](../cli/import.md#clicks-system-headers) searches the same
+headers, with the same text, in the place of the C library's: after the
+project's `-iquote`, `-I`, and `-isystem` directories, as GCC orders them. It
+refuses `<pthread.h>` and `<stdatomic.h>`, whose runtime does not accept
+compiler-imported sources, and names any other standard C or POSIX header it
+refuses. The headers carry no contracts: a call is checked against Click's
+contract for the function's name, whichever declaration the compiler selected.
+
 ## Program-entry static ownership
 
 A definition of parameterless `main` in the selected C sources is verified
@@ -810,10 +818,18 @@ Supported C surface includes:
   runtime values. Literals, `sizeof`, function addresses, direct object
   addresses, fixed-array decay, direct scalar reads of `const` objects, and
   automatic scalar values whose addresses are never formed in the function
-  are stable under this rule. Reads of mutable static-storage scalars,
-  address-exposed automatic scalars, pointer loads, field loads, and indexed
-  loads are conservatively rejected because Click does not infer a callee's
-  effects. The same check covers a loaded indirect-call designator versus an
+  are stable under this rule. In a binary operator, the other operand may
+  also read named non-volatile integer or object-pointer globals and static
+  locals, through casts and integer arithmetic. C may run the call or the
+  read first, so Click checks both orders rather than choosing one: it reads
+  each such object before the call and requires the call to leave it with
+  the same value, so the read is defined in both orders and gives one result
+  (`mdtests/a_call_that_keeps_a_global_read_in_the_other_operand_verifies_in_either_order.md`,
+  `mdtests/a_call_that_changes_a_global_read_in_the_other_operand_is_refused.md`).
+  Reads of volatile or floating-point objects, address-exposed automatic
+  scalars, pointer loads, field loads, and indexed loads, and any such read
+  between function arguments, are still conservatively rejected because
+  Click does not infer a callee's effects. The same check covers a loaded indirect-call designator versus an
   argument call. Statement boundaries and the existing left-to-right
   sequencing of a short-circuit left operand or conditional condition may be
   used when the source already specifies the order. Rejection diagnostics
@@ -2255,7 +2271,8 @@ These are not general C features yet:
   iteration guards that preserve reevaluation and `continue`; calls in
   conditional-expression branches are lowered through a lazy statement-level
   `if`; multiple calls, or a call combined with a potentially aliased mutable
-  read, in one unsequenced expression are rejected rather than choosing a C
+  read other than the named static-storage reads checked in both orders
+  above, in one unsequenced expression are rejected rather than choosing a C
   evaluation order; the same conservative boundary applies between function
   arguments and through a surrounding assignment expression
 - expression-valued updates of memory lvalues, such as `j = p[i]++`
