@@ -108,16 +108,18 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_va
     );
     let (values, array_refs) =
         contract_environment_at_state(&values, &array_refs, fixed_state.state);
-    lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_algebraic_values(
+    lower_fixed_state_proposition_through_kernel_with(
         proposition,
         assumptions,
         ContractEnvironment::new(&values, &array_refs),
-        algebraic_values,
-        integer_values,
         fixed_state,
         spec_definitions,
-        &BTreeSet::new(),
-        parameter_pointer_element_widths(parameter_binding.parameters),
+        FixedStateLoweringOptions {
+            algebraic_values: Some(algebraic_values),
+            integer_values: Some(integer_values),
+            pointer_element_widths: parameter_pointer_element_widths(parameter_binding.parameters),
+            ..Default::default()
+        },
     )
 }
 
@@ -141,15 +143,17 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_integer_valu
     );
     let (values, array_refs) =
         contract_environment_at_state(&values, &array_refs, fixed_state.state);
-    lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_integer_values(
+    lower_fixed_state_proposition_through_kernel_with(
         proposition,
         assumptions,
         ContractEnvironment::new(&values, &array_refs),
-        integer_values,
         fixed_state,
         spec_definitions,
-        &BTreeSet::new(),
-        parameter_pointer_element_widths(parameter_binding.parameters),
+        FixedStateLoweringOptions {
+            integer_values: Some(integer_values),
+            pointer_element_widths: parameter_pointer_element_widths(parameter_binding.parameters),
+            ..Default::default()
+        },
     )
 }
 
@@ -170,17 +174,16 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions_
     );
     let (values, array_refs) =
         contract_environment_at_state(&values, &array_refs, fixed_state.state);
-    lower_fixed_state_proposition_through_kernel_recording_introductions(
+    lower_fixed_state_proposition_through_kernel_with_introductions(
         proposition,
         assumptions,
-        assumptions,
         ContractEnvironment::new(&values, &array_refs),
-        &BTreeMap::new(),
-        &crate::persistent::PersistentMap::default(),
         fixed_state,
         spec_definitions,
-        &std::collections::BTreeSet::new(),
-        parameter_pointer_element_widths(parameter_binding.parameters),
+        FixedStateLoweringOptions {
+            pointer_element_widths: parameter_pointer_element_widths(parameter_binding.parameters),
+            ..Default::default()
+        },
     )
 }
 
@@ -196,179 +199,92 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel(
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
-    lower_fixed_state_proposition_through_kernel_with_algebraic_values(
+    lower_fixed_state_proposition_through_kernel_with(
         proposition,
         assumptions,
         contract_environment,
-        &BTreeMap::new(),
         fixed_state,
         spec_definitions,
+        FixedStateLoweringOptions::default(),
     )
 }
 
-pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_algebraic_values(
+/// What a fixed-state lowering reads beyond the state, the facts, and the
+/// contract environment. Every field defaults to empty.
+#[derive(Default)]
+pub(in crate::surface) struct FixedStateLoweringOptions<'a> {
+    /// Algebraic proof locals the written proposition names.
+    pub(in crate::surface) algebraic_values: Option<&'a BTreeMap<String, SpecAlgebraicExpression>>,
+    /// Checked mathematical Integer bindings of the surrounding scope.
+    pub(in crate::surface) integer_values:
+        Option<&'a crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>>,
+    /// Array-valued names bound to array references of their own, as a theorem
+    /// application binds its parameters. An argument that names another state
+    /// (`old(a)`, `at(mark, a)`) binds the parameter to that state's memory;
+    /// one read at the lowering state is absent and reads through it.
+    pub(in crate::surface) bound_array_memories: Option<&'a BTreeMap<String, SpecMemory>>,
+    /// Click functions that stay applications: the proof unfolds them itself.
+    pub(in crate::surface) opaque_click_functions: Option<&'a BTreeSet<String>>,
+    pub(in crate::surface) pointer_element_widths: BTreeMap<String, u32>,
+    /// The facts the lowering's obligations are checked against, when they
+    /// differ from the facts it lowers under.
+    pub(in crate::surface) obligation_assumptions: Option<&'a PureFactContext>,
+}
+
+/// [`lower_fixed_state_proposition_through_kernel_with_facts`], keeping only
+/// the lowered proposition.
+pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with(
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
+    options: FixedStateLoweringOptions<'_>,
 ) -> Result<Proposition, String> {
-    lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_algebraic_values(
+    lower_fixed_state_proposition_through_kernel_with_facts(
         proposition,
         assumptions,
         contract_environment,
-        algebraic_values,
-        &crate::persistent::PersistentMap::default(),
         fixed_state,
         spec_definitions,
-        &std::collections::BTreeSet::new(),
-        BTreeMap::new(),
+        options,
     )
+    .map(|(proposition, _, _)| proposition)
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_algebraic_values(
+/// [`lower_fixed_state_proposition_through_kernel_with_facts`], also keeping
+/// the head chain the kernel recorded for the proposition it produced. A
+/// newly stated goal keeps that record so an introduction knows which of its
+/// outermost nodes lowering inserted and which written binder each universal
+/// bound.
+pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_introductions(
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
-    opaque_click_functions: &std::collections::BTreeSet<String>,
-    pointer_element_widths: BTreeMap<String, u32>,
-) -> Result<Proposition, String> {
-    lower_fixed_state_proposition_through_kernel_with_bound_array_memories(
-        proposition,
-        assumptions,
-        contract_environment,
-        algebraic_values,
-        integer_values,
-        &BTreeMap::new(),
-        fixed_state,
-        spec_definitions,
-        opaque_click_functions,
-        pointer_element_widths,
-    )
-}
-
-/// The same lowering for a clause whose array-valued names are bound to array
-/// references of their own, as a theorem application binds its parameters.
-///
-/// An array reference is a memory together with a pointer, so an argument that
-/// names another state (`old(a)`, `at(mark, a)`) binds the parameter to that
-/// state's memory. `bound_array_memories` carries exactly those bindings; an
-/// argument read at the application's own state is absent from it and keeps
-/// reading through the lowering state, so no snapshot is attached to an
-/// ordinary clause.
-#[allow(clippy::too_many_arguments)]
-pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_bound_array_memories(
-    proposition: &ClickProposition,
-    assumptions: &PureFactContext,
-    contract_environment: ContractEnvironment<'_>,
-    algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-    bound_array_memories: &BTreeMap<String, SpecMemory>,
-    fixed_state: FixedStateFrame<'_>,
-    spec_definitions: SpecDefinitions<'_>,
-    opaque_click_functions: &std::collections::BTreeSet<String>,
-    pointer_element_widths: BTreeMap<String, u32>,
-) -> Result<Proposition, String> {
-    lower_fixed_state_proposition_through_kernel_recording_introductions_with_bound_array_memories(
-        proposition,
-        assumptions,
-        assumptions,
-        contract_environment,
-        algebraic_values,
-        integer_values,
-        bound_array_memories,
-        fixed_state,
-        spec_definitions,
-        opaque_click_functions,
-        pointer_element_widths,
-    )
-    .map(|(proposition, _)| proposition)
-}
-
-/// The same lowering, also returning the head chain the kernel recorded for
-/// the proposition it produced. A newly stated goal keeps that record so an
-/// introduction knows which of its outermost nodes lowering inserted and
-/// which written binder each universal bound.
-#[allow(clippy::too_many_arguments)]
-pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording_introductions(
-    proposition: &ClickProposition,
-    assumptions: &PureFactContext,
-    obligation_assumptions: &PureFactContext,
-    contract_environment: ContractEnvironment<'_>,
-    algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-    fixed_state: FixedStateFrame<'_>,
-    spec_definitions: SpecDefinitions<'_>,
-    opaque_click_functions: &std::collections::BTreeSet<String>,
-    pointer_element_widths: BTreeMap<String, u32>,
+    options: FixedStateLoweringOptions<'_>,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
-    lower_fixed_state_proposition_through_kernel_recording_introductions_with_bound_array_memories(
+    lower_fixed_state_proposition_through_kernel_with_facts(
         proposition,
         assumptions,
-        obligation_assumptions,
         contract_environment,
-        algebraic_values,
-        integer_values,
-        &BTreeMap::new(),
         fixed_state,
         spec_definitions,
-        opaque_click_functions,
-        pointer_element_widths,
-    )
-}
-
-/// [`lower_fixed_state_proposition_through_kernel_recording_introductions`]
-/// for a clause whose array-valued names carry bindings of their own. See
-/// [`lower_fixed_state_proposition_through_kernel_with_bound_array_memories`].
-#[allow(clippy::too_many_arguments)]
-pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording_introductions_with_bound_array_memories(
-    proposition: &ClickProposition,
-    assumptions: &PureFactContext,
-    obligation_assumptions: &PureFactContext,
-    contract_environment: ContractEnvironment<'_>,
-    algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-    bound_array_memories: &BTreeMap<String, SpecMemory>,
-    fixed_state: FixedStateFrame<'_>,
-    spec_definitions: SpecDefinitions<'_>,
-    opaque_click_functions: &std::collections::BTreeSet<String>,
-    pointer_element_widths: BTreeMap<String, u32>,
-) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
-    lower_fixed_state_proposition_through_kernel_recording_introductions_with_bound_array_memories_and_facts(
-        proposition,
-        assumptions,
-        obligation_assumptions,
-        contract_environment,
-        algebraic_values,
-        integer_values,
-        bound_array_memories,
-        fixed_state,
-        spec_definitions,
-        opaque_click_functions,
-        pointer_element_widths,
+        options,
     )
     .map(|(proposition, introductions, _)| (proposition, introductions))
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording_introductions_with_bound_array_memories_and_facts(
+/// The kernel lowering of a proof-side proposition at a fixed state, with the
+/// head chain it recorded and the facts lowering established.
+pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_facts(
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
-    obligation_assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-    bound_array_memories: &BTreeMap<String, SpecMemory>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
-    opaque_click_functions: &std::collections::BTreeSet<String>,
-    pointer_element_widths: BTreeMap<String, u32>,
+    options: FixedStateLoweringOptions<'_>,
 ) -> Result<
     (
         Proposition,
@@ -377,6 +293,17 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording
     ),
     String,
 > {
+    let no_integer_values = crate::persistent::PersistentMap::default();
+    let FixedStateLoweringOptions {
+        algebraic_values,
+        integer_values,
+        bound_array_memories,
+        opaque_click_functions,
+        pointer_element_widths,
+        obligation_assumptions,
+    } = options;
+    let integer_values = integer_values.unwrap_or(&no_integer_values);
+    let obligation_assumptions = obligation_assumptions.unwrap_or(assumptions);
     let mut click_function_calls = BTreeSet::new();
     crate::surface::validation::collect_click_function_calls_in_proposition(
         proposition,
@@ -395,16 +322,16 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording
     let spec = crate::surface::lowering::elaborate_fixed_state_proposition_with_algebraic_and_integer_values(
         proposition,
         states.element_types,
-        bound_array_memories.clone(),
+        bound_array_memories.cloned().unwrap_or_default(),
         &states.entry_state,
         states.entry_values,
         states.current_values,
-        algebraic_values.clone(),
+        algebraic_values.cloned().unwrap_or_default(),
         integer_values,
         fixed_state.result,
         fixed_state.recorded_snapshots,
         spec_definitions,
-        opaque_click_functions.clone(),
+        opaque_click_functions.cloned().unwrap_or_default(),
         pointer_element_widths,)?;
     let spec = IterativeSpecPropositionDrop::new(spec);
     let (lowered, facts, obligations, introductions) =
@@ -446,76 +373,6 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording
         ),
     )?;
     Ok((lowered, introductions, facts))
-}
-
-/// The kernel lowering of a proof-side proposition whose calls named in
-/// `opaque_click_functions` stay applications: the proof unfolds them itself.
-pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_opaque_calls(
-    proposition: &ClickProposition,
-    assumptions: &PureFactContext,
-    contract_environment: ContractEnvironment<'_>,
-    fixed_state: FixedStateFrame<'_>,
-    spec_definitions: SpecDefinitions<'_>,
-    opaque_click_functions: &std::collections::BTreeSet<String>,
-) -> Result<Proposition, String> {
-    lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_pointer_widths(
-        proposition,
-        assumptions,
-        contract_environment,
-        fixed_state,
-        spec_definitions,
-        opaque_click_functions,
-        BTreeMap::new(),
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_pointer_widths(
-    proposition: &ClickProposition,
-    assumptions: &PureFactContext,
-    contract_environment: ContractEnvironment<'_>,
-    fixed_state: FixedStateFrame<'_>,
-    spec_definitions: SpecDefinitions<'_>,
-    opaque_click_functions: &std::collections::BTreeSet<String>,
-    pointer_element_widths: BTreeMap<String, u32>,
-) -> Result<Proposition, String> {
-    lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_algebraic_values(
-        proposition,
-        assumptions,
-        contract_environment,
-        &BTreeMap::new(),
-        &crate::persistent::PersistentMap::default(),
-        fixed_state,
-        spec_definitions,
-        opaque_click_functions,
-        pointer_element_widths,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_integer_values(
-    proposition: &ClickProposition,
-    assumptions: &PureFactContext,
-    contract_environment: ContractEnvironment<'_>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-    fixed_state: FixedStateFrame<'_>,
-    spec_definitions: SpecDefinitions<'_>,
-    opaque_click_functions: &std::collections::BTreeSet<String>,
-    pointer_element_widths: BTreeMap<String, u32>,
-) -> Result<Proposition, String> {
-    lower_fixed_state_proposition_through_kernel_recording_introductions(
-        proposition,
-        assumptions,
-        assumptions,
-        contract_environment,
-        &BTreeMap::new(),
-        integer_values,
-        fixed_state,
-        spec_definitions,
-        opaque_click_functions,
-        pointer_element_widths,
-    )
-    .map(|(proposition, _)| proposition)
 }
 
 /// The one evaluation of a proof-side expression: elaborated into the

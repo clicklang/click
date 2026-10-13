@@ -3366,17 +3366,18 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
     let state = CState::new().with_memory(memory.clone());
-    lower_fixed_state_proposition_through_kernel_recording_introductions(
+    lower_fixed_state_proposition_through_kernel_with_introductions(
         proposition,
         &PureFactContext::new(),
-        assumptions,
         contract_environment,
-        algebraic_values,
-        integer_values,
         FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         spec_definitions,
-        &BTreeSet::new(),
-        BTreeMap::new(),
+        FixedStateLoweringOptions {
+            algebraic_values: Some(algebraic_values),
+            integer_values: Some(integer_values),
+            obligation_assumptions: Some(assumptions),
+            ..Default::default()
+        },
     )
     .map_err(|error| format!("pure theorem `{theorem_name}`: {error}"))
 }
@@ -3412,13 +3413,16 @@ fn lower_pure_theorem_proposition_with_opaque_calls(
     opaque_click_functions: &BTreeSet<String>,
 ) -> Result<Proposition, String> {
     let state = CState::new().with_memory(memory.clone());
-    lower_fixed_state_proposition_through_kernel_with_opaque_calls(
+    lower_fixed_state_proposition_through_kernel_with(
         proposition,
         &PureFactContext::new(),
         contract_environment,
         FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         spec_definitions,
-        opaque_click_functions,
+        FixedStateLoweringOptions {
+            opaque_click_functions: Some(opaque_click_functions),
+            ..Default::default()
+        },
     )
     .map_err(|error| format!("pure theorem `{theorem_name}`: {error}"))
 }
@@ -3438,13 +3442,16 @@ fn lower_pure_theorem_proposition_opaque(
         .cloned()
         .collect::<BTreeSet<_>>();
     let state = CState::new().with_memory(memory.clone());
-    lower_fixed_state_proposition_through_kernel_with_opaque_calls(
+    lower_fixed_state_proposition_through_kernel_with(
         proposition,
         assumptions,
         contract_environment,
         FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         spec_definitions,
-        &opaque,
+        FixedStateLoweringOptions {
+            opaque_click_functions: Some(&opaque),
+            ..Default::default()
+        },
     )
     .map_err(|error| format!("pure theorem `{theorem_name}`: {error}"))
 }

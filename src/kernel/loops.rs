@@ -2362,39 +2362,29 @@ pub(super) fn execute_c_statement_verification_paths(
             paths
         }
         CStatement::While {
-            condition,
-            invariant,
             invariant_checks,
             effect_checks,
-            resource_specs,
             ranking_measures,
             structural_measure,
-            body,
-            do_while,
-            backedge_target,
-            natural_exit_target,
+            ..
         } if !invariant_checks.is_empty()
             || !effect_checks.is_empty()
             || !ranking_measures.is_empty()
             || structural_measure.is_some() =>
         {
-            execute_c_while_verification_paths(
+            execute_c_while_exit_paths(
                 state,
-                condition,
-                invariant,
-                invariant_checks,
-                effect_checks,
-                resource_specs,
-                ranking_measures,
-                structural_measure.as_deref(),
-                body,
+                CWhileLoop::of(statement).expect("matched a while statement"),
                 assumptions,
-                execution_context,
+                execution_context.environment,
+                Some(execution_context.environment),
+                &[],
+                &[],
+                &[],
+                execution_context.semantics,
+                false,
                 budget,
                 variables,
-                *do_while,
-                *backedge_target,
-                *natural_exit_target,
             )?
         }
         _ => {
@@ -2493,50 +2483,6 @@ pub(super) fn execute_c_statement_verification_paths_with_prefix(
     .collect::<Vec<_>>();
     budget.check_path_width(paths.len())?;
     Ok(paths)
-}
-
-pub(super) fn execute_c_while_verification_paths(
-    state: &CState,
-    condition: &CExpression,
-    invariant: &[Proposition],
-    invariant_checks: &[CLoopInvariantCheck],
-    effect_checks: &[CLoopEffectCheck],
-    resource_specs: &[CResourceSpec],
-    ranking_measures: &[CRankingComponent],
-    structural_measure: Option<&str>,
-    body: &CStatement,
-    assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
-    budget: &mut ExecutionBudget,
-    variables: &mut KernelVariableGenerator,
-    do_while: bool,
-    backedge_target: Option<CControlTargetId>,
-    natural_exit_target: Option<CControlTargetId>,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    execute_c_while_exit_paths(
-        state,
-        condition,
-        invariant,
-        invariant_checks,
-        effect_checks,
-        resource_specs,
-        ranking_measures,
-        structural_measure,
-        body,
-        assumptions,
-        execution_context.environment,
-        Some(execution_context.environment),
-        &[],
-        &[],
-        &[],
-        execution_context.semantics,
-        false,
-        do_while,
-        backedge_target,
-        natural_exit_target,
-        budget,
-        variables,
-    )
 }
 
 /// Checks the state components that a loop back edge cannot silently reset.
@@ -2838,16 +2784,61 @@ fn c_loop_state_components_match_at_back_edge_inner(
     }
 }
 
+/// The parts of one `while` statement the loop rule reads, borrowed from it.
+#[derive(Clone, Copy)]
+pub(super) struct CWhileLoop<'a> {
+    pub(super) condition: &'a CExpression,
+    pub(super) invariant: &'a [Proposition],
+    pub(super) invariant_checks: &'a [CLoopInvariantCheck],
+    pub(super) effect_checks: &'a [CLoopEffectCheck],
+    pub(super) resource_specs: &'a [CResourceSpec],
+    pub(super) ranking_measures: &'a [CRankingComponent],
+    pub(super) structural_measure: Option<&'a str>,
+    pub(super) body: &'a CStatement,
+    pub(super) do_while: bool,
+    pub(super) backedge_target: Option<CControlTargetId>,
+    pub(super) natural_exit_target: Option<CControlTargetId>,
+}
+
+impl<'a> CWhileLoop<'a> {
+    /// The loop a `while` statement states, or `None` for any other statement.
+    pub(super) fn of(statement: &'a CStatement) -> Option<Self> {
+        let CStatement::While {
+            condition,
+            invariant,
+            invariant_checks,
+            effect_checks,
+            resource_specs,
+            ranking_measures,
+            structural_measure,
+            body,
+            do_while,
+            backedge_target,
+            natural_exit_target,
+        } = statement
+        else {
+            return None;
+        };
+        Some(Self {
+            condition,
+            invariant,
+            invariant_checks,
+            effect_checks,
+            resource_specs,
+            ranking_measures,
+            structural_measure: structural_measure.as_deref(),
+            body,
+            do_while: *do_while,
+            backedge_target: *backedge_target,
+            natural_exit_target: *natural_exit_target,
+        })
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(super) fn execute_c_while_exit_paths_with_proven_phases(
     state: &CState,
-    condition: &CExpression,
-    invariant: &[Proposition],
-    invariant_checks: &[CLoopInvariantCheck],
-    effect_checks: &[CLoopEffectCheck],
-    resource_specs: &[CResourceSpec],
-    ranking_measures: &[CRankingComponent],
-    structural_measure: Option<&str>,
-    body: &CStatement,
+    while_loop: CWhileLoop<'_>,
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
     initialization_proven: bool,
@@ -2857,20 +2848,10 @@ pub(super) fn execute_c_while_exit_paths_with_proven_phases(
     return_exits: &[CLoopReturnExit],
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
-    do_while: bool,
-    backedge_target: Option<CControlTargetId>,
-    natural_exit_target: Option<CControlTargetId>,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     execute_c_while_exit_paths(
         state,
-        condition,
-        invariant,
-        invariant_checks,
-        effect_checks,
-        resource_specs,
-        ranking_measures,
-        structural_measure,
-        body,
+        while_loop,
         assumptions,
         execution_context.environment,
         (!preservation_proven).then_some(execution_context.environment),
@@ -2879,9 +2860,6 @@ pub(super) fn execute_c_while_exit_paths_with_proven_phases(
         return_exits,
         execution_context.semantics,
         initialization_proven,
-        do_while,
-        backedge_target,
-        natural_exit_target,
         budget,
         variables,
     )
@@ -5347,14 +5325,7 @@ fn loop_exit_state_difference(
 #[allow(clippy::too_many_arguments)]
 fn execute_c_while_exit_paths(
     state: &CState,
-    condition: &CExpression,
-    invariant: &[Proposition],
-    invariant_checks: &[CLoopInvariantCheck],
-    effect_checks: &[CLoopEffectCheck],
-    resource_specs: &[CResourceSpec],
-    ranking_measures: &[CRankingComponent],
-    structural_measure: Option<&str>,
-    body: &CStatement,
+    while_loop: CWhileLoop<'_>,
     assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
     preservation_environment: Option<&CExecutionEnvironment>,
@@ -5363,12 +5334,21 @@ fn execute_c_while_exit_paths(
     return_exits: &[CLoopReturnExit],
     execution_semantics: CExecutionSemantics,
     initialization_proven: bool,
-    do_while: bool,
-    backedge_target: Option<CControlTargetId>,
-    natural_exit_target: Option<CControlTargetId>,
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+    let CWhileLoop {
+        condition,
+        invariant,
+        invariant_checks,
+        effect_checks,
+        resource_specs,
+        body,
+        do_while,
+        backedge_target,
+        natural_exit_target,
+        ..
+    } = while_loop;
     let mut base_obligations = Vec::new();
     for proposition in invariant {
         if add_proof_obligation(&mut base_obligations, assumptions, proposition.clone()).is_none() {
@@ -5418,20 +5398,14 @@ fn execute_c_while_exit_paths(
             let summary = collect_loop_preservation_summary(
                 state,
                 &head,
-                condition,
-                invariant_checks,
-                &head.effect_checks,
-                resource_specs,
-                ranking_measures,
-                structural_measure,
+                CWhileLoop {
+                    effect_checks: &head.effect_checks,
+                    ..while_loop
+                },
                 &composite_resource_definitions,
                 &whole_loop_effect_summaries,
-                body,
                 assumptions,
                 CExecutionContext::new(environment, execution_semantics),
-                do_while,
-                backedge_target,
-                natural_exit_target,
                 budget,
                 variables,
             )?;
@@ -6249,23 +6223,27 @@ pub(super) struct LoopPreservationSummary {
 pub(super) fn collect_loop_preservation_summary(
     loop_entry_state: &CState,
     head: &CLoopHead,
-    condition: &CExpression,
-    invariant_checks: &[CLoopInvariantCheck],
-    effect_checks: &[CLoopEffectCheck],
-    resource_specs: &[CResourceSpec],
-    ranking_measures: &[CRankingComponent],
-    structural_measure: Option<&str>,
+    while_loop: CWhileLoop<'_>,
     composite_resource_definitions: &[CCompositeResourceDefinition],
     whole_loop_effect_summaries: &[Proposition],
-    body: &CStatement,
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
-    do_while: bool,
-    backedge_target: Option<CControlTargetId>,
-    natural_exit_target: Option<CControlTargetId>,
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<LoopPreservationSummary> {
+    let CWhileLoop {
+        condition,
+        invariant_checks,
+        effect_checks,
+        resource_specs,
+        ranking_measures,
+        structural_measure,
+        body,
+        do_while,
+        backedge_target,
+        natural_exit_target,
+        ..
+    } = while_loop;
     let mut obligations = Vec::new();
     let mut final_exit_paths = Vec::new();
     let mut break_exits = Vec::new();

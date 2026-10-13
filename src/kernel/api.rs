@@ -4467,21 +4467,7 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
     return_exits: Vec<CLoopReturnExit>,
     budget: &mut ExecutionBudget,
 ) -> (SymbolicCExecution, Option<CVerifiedLoopRule>) {
-    let CStatement::While {
-        condition,
-        invariant,
-        invariant_checks,
-        effect_checks,
-        resource_specs,
-        ranking_measures,
-        structural_measure,
-        body,
-        do_while,
-        backedge_target,
-        natural_exit_target,
-        ..
-    } = &statement
-    else {
+    let Some(while_loop) = crate::kernel::loops::CWhileLoop::of(&statement) else {
         return (
             SymbolicCExecution {
                 paths: Vec::new(),
@@ -4493,14 +4479,7 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
     let mut variables = statement_kernel_variables(&state, &statement, &assumptions, &environment);
     let execution = execute_c_while_exit_paths_with_proven_phases(
         &state,
-        condition,
-        invariant,
-        invariant_checks,
-        effect_checks,
-        resource_specs,
-        ranking_measures,
-        structural_measure.as_deref(),
-        body,
+        while_loop,
         &assumptions,
         CExecutionContext::apply_verified_rules(&environment),
         initialization_proven,
@@ -4510,9 +4489,6 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
         &return_exits,
         budget,
         &mut variables,
-        *do_while,
-        *backedge_target,
-        *natural_exit_target,
     );
     let paths = match execution {
         Ok(paths) => paths,
@@ -6946,10 +6922,7 @@ pub fn prove_int32_increment_upper_bound(
         ),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(conclusion),
-    ))
+    implication([premise], conclusion)
 }
 
 /// A signed int32 increment is strictly greater than its input when a strict
@@ -6967,10 +6940,7 @@ pub fn prove_int32_increment_strictly_increases(
         ),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(conclusion),
-    ))
+    implication([premise], conclusion)
 }
 
 /// Signed int32 increment preserves a non-strict lower bound when a strict
@@ -6993,13 +6963,7 @@ pub fn prove_int32_increment_lower_bound(
         ),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(lower_premise),
-        Box::new(Proposition::Implies(
-            Box::new(upper_premise),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([lower_premise, upper_premise], conclusion)
 }
 
 /// Increment preserves a signed lower bound, in greater-equal surface order.
@@ -7021,13 +6985,7 @@ pub fn prove_int32_increment_greater_equal_lower_bound(
         ),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(lower_premise),
-        Box::new(Proposition::Implies(
-            Box::new(upper_premise),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([lower_premise, upper_premise], conclusion)
 }
 
 /// Increment makes a nonnegative signed gap strictly positive.
@@ -7049,13 +7007,7 @@ pub fn prove_int32_increment_strict_greater_lower_bound(
         ),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(lower_premise),
-        Box::new(Proposition::Implies(
-            Box::new(upper_premise),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([lower_premise, upper_premise], conclusion)
 }
 
 /// Signed int32 increment preserves non-strict order when a strict upper
@@ -7079,13 +7031,7 @@ pub fn prove_int32_increment_preserves_order(
         ),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(order_premise),
-        Box::new(Proposition::Implies(
-            Box::new(upper_premise),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([order_premise, upper_premise], conclusion)
 }
 
 /// A value at least one greater than `lower` is strictly greater than
@@ -7105,13 +7051,7 @@ pub fn prove_int32_successor_le_implies_lt(
         true,
     );
     let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_than(lower, value), true);
-    Theorem::new(Proposition::Implies(
-        Box::new(no_overflow_premise),
-        Box::new(Proposition::Implies(
-            Box::new(bound_premise),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([no_overflow_premise, bound_premise], conclusion)
 }
 
 /// A signed int32 value strictly below another value's successor is no
@@ -7127,10 +7067,7 @@ pub fn prove_int32_lt_successor_implies_le(
         true,
     );
     let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_equal(value, upper), true);
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(conclusion),
-    ))
+    implication([premise], conclusion)
 }
 
 /// Two signed int32 values are equal when the first is no greater than the
@@ -7148,13 +7085,7 @@ pub fn prove_int32_le_antisymmetric(left: Bitvector32Term, right: Bitvector32Ter
         ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(le_premise),
-        Box::new(Proposition::Implies(
-            Box::new(reverse_le_premise),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([le_premise, reverse_le_premise], conclusion)
 }
 
 /// A signed int32 value at most another is equal to it when it is not
@@ -7175,13 +7106,7 @@ pub fn prove_int32_le_and_not_lt_implies_eq(
         ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(le_premise),
-        Box::new(Proposition::Implies(
-            Box::new(not_lt_premise),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([le_premise, not_lt_premise], conclusion)
 }
 
 /// A signed int32 value no greater than another and unequal to it is strictly
@@ -7197,13 +7122,7 @@ pub fn prove_int32_le_and_neq_implies_lt(left: Bitvector32Term, right: Bitvector
         false,
     );
     let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_than(left, right), true);
-    Theorem::new(Proposition::Implies(
-        Box::new(le_premise),
-        Box::new(Proposition::Implies(
-            Box::new(neq_premise),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([le_premise, neq_premise], conclusion)
 }
 
 /// A signed int32 value at least another is equal to it when it is not
@@ -7224,13 +7143,7 @@ pub fn prove_int32_ge_and_not_gt_implies_eq(
         ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(ge_premise),
-        Box::new(Proposition::Implies(
-            Box::new(not_gt_premise),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([ge_premise, not_gt_premise], conclusion)
 }
 
 /// Any positive signed int32 value is nonnegative.
@@ -7243,10 +7156,7 @@ pub fn prove_int32_positive_is_nonnegative(value: Bitvector32Term) -> Theorem {
         ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), value),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(conclusion),
-    ))
+    implication([premise], conclusion)
 }
 
 /// Signed strict order implies signed non-strict order.
@@ -7256,10 +7166,7 @@ pub fn prove_int32_lt_implies_le(left: Bitvector32Term, right: Bitvector32Term) 
         true,
     );
     let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_equal(left, right), true);
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(conclusion),
-    ))
+    implication([premise], conclusion)
 }
 
 /// Strict signed int32 order implies disequality.
@@ -7272,10 +7179,7 @@ pub fn prove_int32_lt_implies_neq(left: Bitvector32Term, right: Bitvector32Term)
         ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
         false,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(conclusion),
-    ))
+    implication([premise], conclusion)
 }
 
 /// The negation of signed strict order implies the reverse non-strict order.
@@ -7286,10 +7190,7 @@ pub fn prove_int32_not_lt_implies_ge(left: Bitvector32Term, right: Bitvector32Te
     );
     let conclusion =
         Proposition::ConditionIs(ConditionTerm::signed_greater_equal(left, right), true);
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(conclusion),
-    ))
+    implication([premise], conclusion)
 }
 
 /// The empty Integer fold law, guarded by the endpoint ordering.
@@ -7312,13 +7213,13 @@ pub fn prove_integer_range_fold_empty(
         }
     };
     let fold = IntegerTerm::range_fold(index, initial.clone(), accumulator, item, body);
-    Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(guard, true)),
-        Box::new(Proposition::ConditionIs(
+    implication(
+        [Proposition::ConditionIs(guard, true)],
+        Proposition::ConditionIs(
             ConditionTerm::IntegerEqual(fold.into(), initial.into()),
             true,
-        )),
-    ))
+        ),
+    )
 }
 
 /// The append-one Integer fold law.  The Int32 carrier includes the checked
@@ -7416,13 +7317,13 @@ pub fn prove_integer_range_fold_append(
     .ok()?;
     let extended_fold =
         IntegerTerm::range_fold(extended, original_initial, accumulator, item, body);
-    Some(Theorem::new(Proposition::Implies(
-        Box::new(guard),
-        Box::new(Proposition::ConditionIs(
+    Some(implication(
+        [guard],
+        Proposition::ConditionIs(
             ConditionTerm::IntegerEqual(extended_fold.into(), stepped.into()),
             true,
-        )),
-    )))
+        ),
+    ))
 }
 
 /// The predecessor of a range fold's end endpoint, in the endpoint's own
@@ -7698,16 +7599,16 @@ pub fn prove_integer_range_fold_over_equal_terms(
         let Proposition::Implies(guard, _) = empty.proposition() else {
             return Err("the Integer fold empty law is not a guarded theorem");
         };
-        return Ok(Theorem::new(Proposition::Implies(
-            Box::new(Proposition::And(
+        return Ok(implication(
+            [Proposition::And(
                 Box::new(whole_is_fold),
                 Box::new(guard.as_ref().clone()),
-            )),
-            Box::new(Proposition::ConditionIs(
+            )],
+            Proposition::ConditionIs(
                 ConditionTerm::IntegerEqual(whole.into(), initial.into()),
                 true,
-            )),
-        )));
+            ),
+        ));
     };
 
     let (predecessor_index, item_value) = integer_range_fold_predecessor_index(&index)
@@ -7755,19 +7656,19 @@ pub fn prove_integer_range_fold_over_equal_terms(
     .map_err(|_| {
         "the fold body could not take the previous accumulator and the last item; a fold whose item indexes a pure call is not yet supported"
     })?;
-    Ok(Theorem::new(Proposition::Implies(
-        Box::new(Proposition::And(
+    Ok(implication(
+        [Proposition::And(
             Box::new(Proposition::And(
                 Box::new(whole_is_fold),
                 Box::new(prior_is_fold),
             )),
             Box::new(guard.as_ref().clone()),
-        )),
-        Box::new(Proposition::ConditionIs(
+        )],
+        Proposition::ConditionIs(
             ConditionTerm::IntegerEqual(whole.into(), stepped.into()),
             true,
-        )),
-    )))
+        ),
+    ))
 }
 
 /// Incrementing a signed int32 value below `INT_MAX` is defined.
@@ -7783,10 +7684,7 @@ pub fn prove_int32_increment_below_max_is_defined(value: Bitvector32Term) -> The
         ),
         false,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(conclusion),
-    ))
+    implication([premise], conclusion)
 }
 
 /// Universally closes a pure int32 implication that a checked proof already
@@ -8395,10 +8293,7 @@ pub fn prove_int32_one_plus_below_max_is_defined(value: Bitvector32Term) -> Theo
         ConditionTerm::signed_add_overflows(Bitvector32Term::Constant(1), value),
         false,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(conclusion),
-    ))
+    implication([premise], conclusion)
 }
 
 /// Adding one on the left strictly increases a signed int32 value below the
@@ -8415,10 +8310,7 @@ pub fn prove_int32_one_plus_strictly_increases(value: Bitvector32Term) -> Theore
         ),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(conclusion),
-    ))
+    implication([premise], conclusion)
 }
 
 /// Adding a nonnegative signed int32 amount within the remaining positive
@@ -8443,13 +8335,7 @@ pub fn prove_int32_nonnegative_add_within_max_is_defined(
     );
     let conclusion =
         Proposition::ConditionIs(ConditionTerm::signed_add_overflows(value, amount), false);
-    Theorem::new(Proposition::Implies(
-        Box::new(amount_is_nonnegative),
-        Box::new(Proposition::Implies(
-            Box::new(within_headroom),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([amount_is_nonnegative, within_headroom], conclusion)
 }
 
 /// Subtracting a nonnegative signed int32 amount no larger than the value is
@@ -8470,13 +8356,7 @@ pub fn prove_int32_nonnegative_subtract_within_value_is_defined(
         ConditionTerm::signed_subtract_overflows(value, amount),
         false,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(amount_is_nonnegative),
-        Box::new(Proposition::Implies(
-            Box::new(amount_within_value),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([amount_is_nonnegative, amount_within_value], conclusion)
 }
 
 /// Moving one unit between nonnegative summands preserves their signed int32
@@ -8511,16 +8391,14 @@ pub fn prove_int32_move_one_from_right_to_left_preserves_sum(
         ConditionTerm::Bitvector32Equal(Box::new(total), Box::new(adjusted_sum)),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(left_is_nonnegative),
-        Box::new(Proposition::Implies(
-            Box::new(right_is_positive),
-            Box::new(Proposition::Implies(
-                Box::new(total_is_original_sum),
-                Box::new(conclusion),
-            )),
-        )),
-    ))
+    implication(
+        [
+            left_is_nonnegative,
+            right_is_positive,
+            total_is_original_sum,
+        ],
+        conclusion,
+    )
 }
 
 /// Kernel-issued universally quantified authority for the unit-transfer sum rule.
@@ -8631,22 +8509,22 @@ fn prove_signed_operation_defined_by_integer_bounds(
         ),
         _ => unreachable!("definedness by Integer bounds admits only int32 and int64"),
     };
-    Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::IntegerGreaterEqual(
-                exact.clone(),
-                IntegerTerm::constant_i64(minimum).into(),
+    implication(
+        [
+            Proposition::ConditionIs(
+                ConditionTerm::IntegerGreaterEqual(
+                    exact.clone(),
+                    IntegerTerm::constant_i64(minimum).into(),
+                ),
+                true,
             ),
-            true,
-        )),
-        Box::new(Proposition::Implies(
-            Box::new(Proposition::ConditionIs(
+            Proposition::ConditionIs(
                 ConditionTerm::IntegerLessEqual(exact, IntegerTerm::constant_i64(maximum).into()),
                 true,
-            )),
-            Box::new(Proposition::ConditionIs(overflows, false)),
-        )),
-    ))
+            ),
+        ],
+        Proposition::ConditionIs(overflows, false),
+    )
 }
 
 /// Strict order of the exact Integer observations implies strict native
@@ -8663,13 +8541,10 @@ pub fn prove_int64_less_than_of_to_integer(
             .unwrap()
             .into(),
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(integer, true)),
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::int64_signed_less_than(left, right),
-            true,
-        )),
-    ))
+    implication(
+        [Proposition::ConditionIs(integer, true)],
+        Proposition::ConditionIs(ConditionTerm::int64_signed_less_than(left, right), true),
+    )
 }
 
 /// A checked round trip through a machine carrier preserves an Integer
@@ -8685,22 +8560,22 @@ pub fn prove_integer_machine_round_trip(
     };
     let observed = IntegerTerm::from_machine(destination, converted)
         .expect("machine observation has an integral carrier");
-    Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::IntegerGreaterEqual(value.clone().into(), lower.into()),
-            true,
-        )),
-        Box::new(Proposition::Implies(
-            Box::new(Proposition::ConditionIs(
+    implication(
+        [
+            Proposition::ConditionIs(
+                ConditionTerm::IntegerGreaterEqual(value.clone().into(), lower.into()),
+                true,
+            ),
+            Proposition::ConditionIs(
                 ConditionTerm::IntegerLessEqual(value.clone().into(), upper.into()),
                 true,
-            )),
-            Box::new(Proposition::ConditionIs(
-                ConditionTerm::IntegerEqual(observed.into(), value.into()),
-                true,
-            )),
-        )),
-    ))
+            ),
+        ],
+        Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(observed.into(), value.into()),
+            true,
+        ),
+    )
 }
 
 /// Exact unsigned observations of both summands must fit the u32 range.
@@ -8715,16 +8590,16 @@ pub fn prove_uint32_widened_add_guard_by_integer_bound(
         Bitvector32Term::int64_from_uint32(left),
         Bitvector32Term::int64_from_uint32(right),
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(Proposition::ConditionIs(
+    implication(
+        [premise],
+        Proposition::ConditionIs(
             ConditionTerm::int64_signed_less_equal(
                 sum,
                 Bitvector32Term::Int64Constant(i64::from(u32::MAX)),
             ),
             true,
-        )),
-    ))
+        ),
+    )
 }
 
 fn uint32_exact_sum_bound(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
@@ -8751,13 +8626,13 @@ pub fn prove_uint32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term
     };
     let observed_sum = observe(Bitvector32Term::add(left.clone(), right.clone()));
     let exact = IntegerTerm::Add(observe(left).into(), observe(right).into());
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(Proposition::ConditionIs(
+    implication(
+        [premise],
+        Proposition::ConditionIs(
             ConditionTerm::IntegerEqual(observed_sum.into(), exact.into()),
             true,
-        )),
-    ))
+        ),
+    )
 }
 
 /// Exact mathematical observation of unsigned subtraction without underflow.
@@ -8769,16 +8644,16 @@ pub fn prove_uint32_subtract_to_integer(left: Bitvector32Term, right: Bitvector3
     };
     let difference = observe(Bitvector32Term::subtract(left.clone(), right.clone()));
     let exact = IntegerTerm::Subtract(observe(left.clone()).into(), observe(right.clone()).into());
-    Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(
+    implication(
+        [Proposition::ConditionIs(
             ConditionTerm::unsigned_less_equal(right, left),
             true,
-        )),
-        Box::new(Proposition::ConditionIs(
+        )],
+        Proposition::ConditionIs(
             ConditionTerm::IntegerEqual(difference.into(), exact.into()),
             true,
-        )),
-    ))
+        ),
+    )
 }
 
 /// Unsigned multiplication has its exact mathematical value under the native
@@ -8792,13 +8667,13 @@ pub fn prove_uint32_mul_to_integer(left: Bitvector32Term, right: Bitvector32Term
     };
     let product = observe(Bitvector32Term::multiply(left.clone(), right.clone()));
     let exact = IntegerTerm::Multiply(observe(left).into(), observe(right).into());
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(Proposition::ConditionIs(
+    implication(
+        [premise],
+        Proposition::ConditionIs(
             ConditionTerm::IntegerEqual(product.into(), exact.into()),
             true,
-        )),
-    ))
+        ),
+    )
 }
 
 fn uint32_mul_guard(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
@@ -8837,10 +8712,7 @@ pub fn prove_uint32_mul_guard_by_integer_bound(
         ),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(uint32_mul_guard(left, right)),
-    ))
+    implication([premise], uint32_mul_guard(left, right))
 }
 
 /// Observe unsigned machine division in Integer arithmetic. Both domains
@@ -8888,10 +8760,7 @@ fn prove_uint32_integer_division_bridge(
         ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        native_nonzero.into(),
-        Proposition::Implies(integer_nonzero.into(), conclusion.into()).into(),
-    ))
+    implication([native_nonzero, integer_nonzero], conclusion)
 }
 
 /// An unsigned remainder is strictly below its nonzero divisor.
@@ -8900,37 +8769,37 @@ pub fn prove_uint32_remainder_less_than_divisor(
     value: Bitvector32Term,
     divisor: Bitvector32Term,
 ) -> Theorem {
-    Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(
+    implication(
+        [Proposition::ConditionIs(
             ConditionTerm::equal(divisor.clone(), Bitvector32Term::Constant(0)),
             false,
-        )),
-        Box::new(Proposition::ConditionIs(
+        )],
+        Proposition::ConditionIs(
             ConditionTerm::unsigned_less_than(
                 Bitvector32Term::unsigned_remainder(value, divisor.clone()),
                 divisor,
             ),
             true,
-        )),
-    ))
+        ),
+    )
 }
 
 /// A dividend strictly below an unsigned divisor is already its remainder.
 /// The strict unsigned premise also excludes division by zero.
 pub fn prove_uint32_remainder_of_lt(value: Bitvector32Term, divisor: Bitvector32Term) -> Theorem {
-    Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(
+    implication(
+        [Proposition::ConditionIs(
             ConditionTerm::unsigned_less_than(value.clone(), divisor.clone()),
             true,
-        )),
-        Box::new(Proposition::ConditionIs(
+        )],
+        Proposition::ConditionIs(
             ConditionTerm::equal(
                 Bitvector32Term::unsigned_remainder(value.clone(), divisor),
                 value,
             ),
             true,
-        )),
-    ))
+        ),
+    )
 }
 
 /// Preserve native unsigned u32 order in exact mathematical observations.
@@ -9044,16 +8913,13 @@ fn prove_unsigned_pack_u16_in_order_to_integer(
         )
         .into(),
     );
-    Some(Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(low_bound, true)),
-        Box::new(Proposition::Implies(
-            Box::new(Proposition::ConditionIs(high_bound, true)),
-            Box::new(Proposition::ConditionIs(
-                ConditionTerm::integer_equal(observe(packed)?, exact),
-                true,
-            )),
-        )),
-    )))
+    Some(implication(
+        [
+            Proposition::ConditionIs(low_bound, true),
+            Proposition::ConditionIs(high_bound, true),
+        ],
+        Proposition::ConditionIs(ConditionTerm::integer_equal(observe(packed)?, exact), true),
+    ))
 }
 
 /// Recover the low word of `(high << 16) | low` for two bounded uint16 fields.
@@ -9089,22 +8955,19 @@ fn prove_uint32_unpack_uint16_word(
     let extracted =
         Bitvector32Term::BitwiseAnd(selected.into(), Bitvector32Term::Constant(65535).into());
     let exact = if high_word { high.clone() } else { low.clone() };
-    Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::unsigned_less_equal(low, Bitvector32Term::Constant(65535)),
-            true,
-        )),
-        Box::new(Proposition::Implies(
-            Box::new(Proposition::ConditionIs(
+    implication(
+        [
+            Proposition::ConditionIs(
+                ConditionTerm::unsigned_less_equal(low, Bitvector32Term::Constant(65535)),
+                true,
+            ),
+            Proposition::ConditionIs(
                 ConditionTerm::unsigned_less_equal(high, Bitvector32Term::Constant(65535)),
                 true,
-            )),
-            Box::new(Proposition::ConditionIs(
-                ConditionTerm::equal(extracted, exact),
-                true,
-            )),
-        )),
-    ))
+            ),
+        ],
+        Proposition::ConditionIs(ConditionTerm::equal(extracted, exact), true),
+    )
 }
 
 pub fn prove_uint64_integer_bridge(
@@ -9155,24 +9018,21 @@ pub fn prove_uint64_integer_bridge(
         } else {
             (native, integer)
         };
-        return Some(Theorem::new(Proposition::Implies(
-            Box::new(premise),
-            Box::new(conclusion),
-        )));
+        return Some(implication([premise], conclusion));
     }
     // Unsigned total order: strict less and greater-or-equal are
     // complementary evaluations of the same two 64-bit patterns.
     if name == "uint64_less_than_implies_not_greater_equal" {
-        return Some(Theorem::new(Proposition::Implies(
-            Box::new(Proposition::ConditionIs(
+        return Some(implication(
+            [Proposition::ConditionIs(
                 ConditionTerm::uint64_less_than(left.clone(), right.clone()),
                 true,
-            )),
-            Box::new(Proposition::ConditionIs(
+            )],
+            Proposition::ConditionIs(
                 ConditionTerm::Bitvector64UnsignedGreaterEqual(left.into(), right.into()),
                 false,
-            )),
-        )));
+            ),
+        ));
     }
     let maximum = IntegerTerm::constant(num_bigint::BigInt::from(u64::MAX));
     let (machine, exact, guard) = match name {
@@ -9235,21 +9095,17 @@ pub fn prove_uint64_integer_bridge(
                 ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
                 true,
             );
-            return Some(Theorem::new(Proposition::Implies(
-                native_nonzero.into(),
-                Proposition::Implies(integer_nonzero.into(), conclusion.into()).into(),
-            )));
+            return Some(implication([native_nonzero, integer_nonzero], conclusion));
         }
         _ => return None,
     };
-    Some(Theorem::new(Proposition::Implies(
-        guard.into(),
+    Some(implication(
+        [guard],
         Proposition::ConditionIs(
             ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
             true,
-        )
-        .into(),
-    )))
+        ),
+    ))
 }
 
 /// Signed int32 order is preserved by its exact mathematical observation.
@@ -9282,13 +9138,13 @@ pub fn prove_int64_less_than_to_integer(left: Bitvector32Term, right: Bitvector3
             .unwrap()
             .into(),
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(
+    implication(
+        [Proposition::ConditionIs(
             ConditionTerm::int64_signed_less_than(left, right),
             true,
-        )),
-        Box::new(Proposition::ConditionIs(integer, true)),
-    ))
+        )],
+        Proposition::ConditionIs(integer, true),
+    )
 }
 
 /// Preserve the source's signed greater-or-equal comparison without changing its operands.
@@ -9304,13 +9160,13 @@ pub fn prove_int64_greater_equal_to_integer(
             .unwrap()
             .into(),
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(
+    implication(
+        [Proposition::ConditionIs(
             ConditionTerm::int64_signed_greater_equal(left, right),
             true,
-        )),
-        Box::new(Proposition::ConditionIs(integer, true)),
-    ))
+        )],
+        Proposition::ConditionIs(integer, true),
+    )
 }
 
 /// Reflect mathematical order into native signed int64 order.
@@ -9352,10 +9208,7 @@ fn prove_machine_integer_order_bridge(
     } else {
         (native, integer)
     };
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(conclusion),
-    ))
+    implication([premise], conclusion)
 }
 
 /// Signed int32 observation is injective: two equal mathematical values
@@ -9398,10 +9251,7 @@ fn prove_integer_equality_bridge(
         MachineIntegerType::UInt64 => ConditionTerm::uint64_equal(left, right),
         _ => unreachable!("integer equality bridges admit only int32/int64/uint32/uint64"),
     };
-    Theorem::new(Proposition::Implies(
-        Box::new(integer),
-        Box::new(Proposition::ConditionIs(native, true)),
-    ))
+    implication([integer], Proposition::ConditionIs(native, true))
 }
 
 /// Exact mathematical observation of a defined signed 32-bit subtraction.
@@ -9433,18 +9283,13 @@ pub fn prove_int32_remainder_to_integer(left: Bitvector32Term, right: Bitvector3
     );
     let exact = IntegerTerm::truncating_remainder(observe(left.clone()), observe(right.clone()));
     let machine = Bitvector32Term::Remainder(left.into(), right.into());
-    Theorem::new(Proposition::Implies(
-        native_defined.into(),
-        Proposition::Implies(
-            integer_nonzero.into(),
-            Proposition::ConditionIs(
-                ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
-                true,
-            )
-            .into(),
-        )
-        .into(),
-    ))
+    implication(
+        [native_defined, integer_nonzero],
+        Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
+            true,
+        ),
+    )
 }
 
 /// Exact mathematical observation of a defined signed 64-bit addition.
@@ -9491,13 +9336,13 @@ fn prove_signed_operation_to_integer(
     } else {
         IntegerTerm::Add(observe(left).into(), observe(right).into())
     };
-    Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(overflow, false)),
-        Box::new(Proposition::ConditionIs(
+    implication(
+        [Proposition::ConditionIs(overflow, false)],
+        Proposition::ConditionIs(
             ConditionTerm::IntegerEqual(observe(machine).into(), mathematical.into()),
             true,
-        )),
-    ))
+        ),
+    )
 }
 
 /// A defined signed addition with a nonnegative right operand is at least its
@@ -9518,13 +9363,7 @@ pub fn prove_int32_add_nonnegative_right_is_at_least_left(
         ConditionTerm::signed_less_equal(left.clone(), Bitvector32Term::add(left, right)),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(right_is_nonnegative),
-        Box::new(Proposition::Implies(
-            Box::new(addition_is_defined),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([right_is_nonnegative, addition_is_defined], conclusion)
 }
 
 /// A defined signed addition with a nonnegative left operand is at least its
@@ -9545,13 +9384,7 @@ pub fn prove_int32_add_nonnegative_left_is_at_least_right(
         ConditionTerm::signed_less_equal(right.clone(), Bitvector32Term::add(left, right)),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(left_is_nonnegative),
-        Box::new(Proposition::Implies(
-            Box::new(addition_is_defined),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([left_is_nonnegative, addition_is_defined], conclusion)
 }
 
 /// Decrementing a positive signed int32 value produces a nonnegative value.
@@ -9567,10 +9400,7 @@ pub fn prove_int32_positive_predecessor_is_nonnegative(value: Bitvector32Term) -
         ),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(conclusion),
-    ))
+    implication([premise], conclusion)
 }
 
 /// Decrementing a signed int32 value strictly above one leaves at least one.
@@ -9589,10 +9419,7 @@ pub fn prove_int32_above_one_predecessor_is_at_least_one(value: Bitvector32Term)
         ),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(conclusion),
-    ))
+    implication([premise], conclusion)
 }
 
 /// Kernel-issued authority for the fixed predecessor bound used by independent
@@ -9633,13 +9460,7 @@ pub fn prove_int32_nonnegative_predecessor_upper_bound(
         ),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(nonnegative_premise),
-        Box::new(Proposition::Implies(
-            Box::new(bound_premise),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([nonnegative_premise, bound_premise], conclusion)
 }
 
 /// Decrementing a positive signed int32 value strictly decreases it.
@@ -9658,17 +9479,26 @@ pub fn prove_int32_positive_predecessor_strictly_decreases(value: Bitvector32Ter
         ),
         true,
     );
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(conclusion),
-    ))
+    implication([premise], conclusion)
+}
+
+/// The theorem `premises[0] implies (premises[1] implies (... conclusion))`.
+fn implication<const N: usize>(premises: [Proposition; N], conclusion: Proposition) -> Theorem {
+    Theorem::new(
+        premises
+            .into_iter()
+            .rev()
+            .fold(conclusion, |body, premise| {
+                Proposition::Implies(Box::new(premise), Box::new(body))
+            }),
+    )
 }
 
 fn uint32_implication(premise: ConditionTerm, conclusion: ConditionTerm) -> Theorem {
-    Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(premise, true)),
-        Box::new(Proposition::ConditionIs(conclusion, true)),
-    ))
+    implication(
+        [Proposition::ConditionIs(premise, true)],
+        Proposition::ConditionIs(conclusion, true),
+    )
 }
 
 /// Decrementing a nonzero uint32 value strictly decreases it. A nonzero
@@ -9767,13 +9597,13 @@ fn uint32_transitivity(
     second: ConditionTerm,
     conclusion: ConditionTerm,
 ) -> Theorem {
-    Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(first, true)),
-        Box::new(Proposition::Implies(
-            Box::new(Proposition::ConditionIs(second, true)),
-            Box::new(Proposition::ConditionIs(conclusion, true)),
-        )),
-    ))
+    implication(
+        [
+            Proposition::ConditionIs(first, true),
+            Proposition::ConditionIs(second, true),
+        ],
+        Proposition::ConditionIs(conclusion, true),
+    )
 }
 
 /// Unsigned strict order followed by non-strict order is strict order.
@@ -9919,13 +9749,13 @@ pub fn prove_wide_order_transitive(
             true,
         )
     };
-    Some(Theorem::new(Proposition::Implies(
-        Box::new(order(first.clone(), middle.clone(), first_strict)),
-        Box::new(Proposition::Implies(
-            Box::new(order(middle, last.clone(), second_strict)),
-            Box::new(order(first, last, first_strict || second_strict)),
-        )),
-    )))
+    Some(implication(
+        [
+            order(first.clone(), middle.clone(), first_strict),
+            order(middle, last.clone(), second_strict),
+        ],
+        order(first, last, first_strict || second_strict),
+    ))
 }
 
 /// An unsigned 64-bit value at most another is equal to it when it is not
@@ -9934,22 +9764,22 @@ pub fn prove_uint64_le_and_not_lt_implies_eq(
     left: Bitvector32Term,
     right: Bitvector32Term,
 ) -> Theorem {
-    Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::uint64_less_equal(left.clone(), right.clone()),
-            true,
-        )),
-        Box::new(Proposition::Implies(
-            Box::new(Proposition::ConditionIs(
+    implication(
+        [
+            Proposition::ConditionIs(
+                ConditionTerm::uint64_less_equal(left.clone(), right.clone()),
+                true,
+            ),
+            Proposition::ConditionIs(
                 ConditionTerm::uint64_less_than(left.clone(), right.clone()),
                 false,
-            )),
-            Box::new(Proposition::ConditionIs(
-                ConditionTerm::Bitvector64Equal(Box::new(left), Box::new(right)),
-                true,
-            )),
-        )),
-    ))
+            ),
+        ],
+        Proposition::ConditionIs(
+            ConditionTerm::Bitvector64Equal(Box::new(left), Box::new(right)),
+            true,
+        ),
+    )
 }
 
 /// Signed non-strict order followed by strict order is strict order.
@@ -9965,13 +9795,7 @@ pub fn prove_int32_le_lt_transitive(
     let second_premise =
         Proposition::ConditionIs(ConditionTerm::signed_less_than(middle, last.clone()), true);
     let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_than(first, last), true);
-    Theorem::new(Proposition::Implies(
-        Box::new(first_premise),
-        Box::new(Proposition::Implies(
-            Box::new(second_premise),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([first_premise, second_premise], conclusion)
 }
 
 /// Signed strict order absorbs a non-strict upper extension.
@@ -9987,13 +9811,7 @@ pub fn prove_int32_lt_le_transitive(
     let second_premise =
         Proposition::ConditionIs(ConditionTerm::signed_less_equal(middle, last.clone()), true);
     let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_than(first, last), true);
-    Theorem::new(Proposition::Implies(
-        Box::new(first_premise),
-        Box::new(Proposition::Implies(
-            Box::new(second_premise),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([first_premise, second_premise], conclusion)
 }
 
 /// Signed strict order is transitive.
@@ -10009,13 +9827,7 @@ pub fn prove_int32_lt_transitive(
     let second_premise =
         Proposition::ConditionIs(ConditionTerm::signed_less_than(middle, last.clone()), true);
     let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_than(first, last), true);
-    Theorem::new(Proposition::Implies(
-        Box::new(first_premise),
-        Box::new(Proposition::Implies(
-            Box::new(second_premise),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([first_premise, second_premise], conclusion)
 }
 
 /// Signed non-strict order is transitive.
@@ -10031,13 +9843,7 @@ pub fn prove_int32_le_transitive(
     let second_premise =
         Proposition::ConditionIs(ConditionTerm::signed_less_equal(middle, last.clone()), true);
     let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_equal(first, last), true);
-    Theorem::new(Proposition::Implies(
-        Box::new(first_premise),
-        Box::new(Proposition::Implies(
-            Box::new(second_premise),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([first_premise, second_premise], conclusion)
 }
 
 /// Signed non-strict greater-than order is transitive.
@@ -10056,13 +9862,7 @@ pub fn prove_int32_ge_transitive(
     );
     let conclusion =
         Proposition::ConditionIs(ConditionTerm::signed_greater_equal(last, first), true);
-    Theorem::new(Proposition::Implies(
-        Box::new(first_premise),
-        Box::new(Proposition::Implies(
-            Box::new(second_premise),
-            Box::new(conclusion),
-        )),
-    ))
+    implication([first_premise, second_premise], conclusion)
 }
 
 /// Signed greater-equal is the reversed form of signed less-equal.
@@ -10076,10 +9876,7 @@ pub fn prove_int32_ge_implies_reversed_le(
     );
     let conclusion =
         Proposition::ConditionIs(ConditionTerm::signed_less_equal(lower, greater), true);
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(conclusion),
-    ))
+    implication([premise], conclusion)
 }
 
 /// Signed non-strict order is preserved when written in reversed greater-or-equal form.
@@ -10093,10 +9890,7 @@ pub fn prove_int32_le_implies_reversed_ge(
     );
     let conclusion =
         Proposition::ConditionIs(ConditionTerm::signed_greater_equal(greater, lower), true);
-    Theorem::new(Proposition::Implies(
-        Box::new(premise),
-        Box::new(conclusion),
-    ))
+    implication([premise], conclusion)
 }
 
 pub fn prove_memory_load(memory: CMemory, pointer: Pointer) -> Theorem {
