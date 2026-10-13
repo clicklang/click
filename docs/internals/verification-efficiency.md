@@ -54,6 +54,22 @@ Regressions cover siblings, long lines, deep nesting, and unrelated source text.
 
 ## Proof size and speed targets
 
+Direct int32 constant lookup follows only exact written equality edges filed
+under the queried endpoint. The adjacency map and its fact-ordered buckets
+are persistent; inserting an equality touches its two endpoints. Query work
+is the reached component, including repeated edges, rather than all ambient
+condition facts at each hop. The existing constant-class index declines a
+walk when the component has no constant; its folded values never supply a
+positive answer to this exact-equality query. It deliberately does not import pointer-offset
+equalities, memory canonicalization, or arithmetic folding. Replacement,
+withdrawal and premise restriction keep the derived index consistent with
+the retained facts. Identity memo keys omit this query index.
+`direct_constant_lookup_ignores_unrelated_condition_facts` measures three
+edge visits and six work units beside 16, 64, 256 and 1,024 unrelated
+entries. A separate multi-size chain regression bounds work by the connected
+input, and premise-lifecycle coverage checks cycles, reversed edges, forks,
+conflicting constants and distinct wide judgments.
+
 The complexity contract says how verification must scale. These working
 targets say what a finished example should look like. They are for judging a
 proof and deciding where to look when one is slow, not gates.

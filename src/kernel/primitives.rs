@@ -10202,6 +10202,13 @@ pub struct PureFactContext {
     /// normalization is a class lookup rather than a walk over every fact
     /// the term is connected to.
     pub(super) constant_classes: super::assumptions::ConstantClasses,
+    /// True int32 equalities filed under their exact written endpoints.
+    /// Fact order preserves the direct constant walk's deterministic choice;
+    /// no memory canonicalization, pointer-offset edges, or arithmetic folding.
+    pub(super) direct_bitvector_equalities: crate::persistent::PersistentMap<
+        Bitvector32Term,
+        crate::persistent::PersistentMap<ConditionTerm, Bitvector32Term>,
+    >,
     pub(super) exact_constant_equalities: crate::persistent::PersistentMap<
         Bitvector32Term,
         crate::persistent::PersistentMap<ConditionTerm, i64>,
