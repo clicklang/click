@@ -1977,12 +1977,15 @@ pub fn take_hidden_prerequisite_census() -> HiddenPrerequisiteCensus {
     )
 }
 
-/// The ratchet: `None` when no route and rule rose above its pin, otherwise a
+/// The ratchet: `None` when every route and rule matches its pin, otherwise a
 /// message naming each that rose (a new hidden derivation, which must not
-/// land) or fell (lower its pin).
+/// land) or fell (lower its pin). A `partial` census, from one shard of a
+/// partitioned corpus, can only show a rise: a shard above the whole
+/// corpus's pin has one, while a shard below it says nothing about the total.
 pub fn hidden_prerequisite_census_mismatch(
     census: &HiddenPrerequisiteCensus,
     expected: &[((HiddenPrerequisiteRoute, &'static str), usize)],
+    partial: bool,
 ) -> Option<String> {
     let expected = expected
         .iter()
@@ -2001,7 +2004,7 @@ pub fn hidden_prerequisite_census_mismatch(
             report.push(format!(
                 "hidden prerequisite {key:?} rose from {was} to {now}: simple checking derived a prerequisite it does not retain"
             ));
-        } else if now < was {
+        } else if now < was && !partial {
             report.push(format!(
                 "hidden prerequisite {key:?} fell from {was} to {now}: lower its pin to {now}"
             ));
@@ -2134,5 +2137,24 @@ mod artifact_reuse_rejection_census_tests {
         )
         .expect("a fall is reported");
         assert!(fall.contains("EntryStateDelta fell from 3 to 1"), "{fall}");
+    }
+}
+
+#[cfg(test)]
+mod hidden_prerequisite_census_tests {
+    use super::*;
+
+    #[test]
+    fn a_shard_reports_only_rises_and_a_whole_run_reports_both() {
+        let key = (HiddenPrerequisiteRoute::StepObligation, "And");
+        let census = HiddenPrerequisiteCensus::from([(key, 3)]);
+        assert!(hidden_prerequisite_census_mismatch(&census, &[(key, 3)], false).is_none());
+        assert!(hidden_prerequisite_census_mismatch(&census, &[(key, 4)], true).is_none());
+        let fell = hidden_prerequisite_census_mismatch(&census, &[(key, 4)], false)
+            .expect("a whole run below its pin must lower the pin");
+        assert!(fell.contains("fell from 4 to 3"), "{fell}");
+        let rose = hidden_prerequisite_census_mismatch(&census, &[(key, 2)], true)
+            .expect("a shard above the whole-corpus pin is a rise");
+        assert!(rose.contains("rose from 2 to 3"), "{rose}");
     }
 }

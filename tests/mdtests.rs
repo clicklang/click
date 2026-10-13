@@ -136,6 +136,7 @@ fn mdtests() {
     } else {
         false
     };
+    let filtered_by_name = filtered;
     let filtered = filtered || partitioned;
 
     assert!(
@@ -176,11 +177,12 @@ fn mdtests() {
         {
             panic!("artifact reuse rejection ratchet (tests/mdtests.rs baselines):\n{mismatch}");
         }
-        if !filtered
+        if !filtered_by_name
             && std::env::var_os(RUN_QUARANTINED).is_none()
             && let Some(mismatch) = instrumentation::hidden_prerequisite_census_mismatch(
                 &hidden_prerequisites,
                 HIDDEN_PREREQUISITE_BASELINE,
+                partitioned,
             )
         {
             panic!("hidden prerequisite ratchet (tests/mdtests.rs baselines):\n{mismatch}");

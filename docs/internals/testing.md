@@ -802,7 +802,10 @@ rule (`instrumentation::HiddenPrerequisiteRoute`). The fixture harnesses take
 that census after an unfiltered run and compare it with
 `HIDDEN_PREREQUISITE_BASELINE` in `tests/mdtests.rs` and `tests/examples.rs`,
 exactly as the artifact reuse ratchet does: a count that rose must not land,
-and a count that fell lowers its pin in the same change. Library tests read
+and a count that fell lowers its pin in the same change. A partitioned CI
+shard (`MDTEST_PARTITION`, `EXAMPLE_PARTITION`) sees part of the corpus, so it
+fails only when its own count exceeds a whole-corpus pin; an unpartitioned
+run, such as a local `scripts/check.sh`, checks both directions. Library tests read
 the same events per step through `collect_planning_statement_transitions`,
 which records the claim and step of each hidden derivation.
 

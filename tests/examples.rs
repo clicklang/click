@@ -210,6 +210,7 @@ fn example_projects() {
     // CI splits the examples across jobs to stay inside the gate's time
     // budget: `EXAMPLE_PARTITION=k/n` keeps every n-th project from the k-th,
     // over the sorted names, so the shards cover them exactly once.
+    let partitioned = std::env::var_os("EXAMPLE_PARTITION").is_some();
     if let Ok(partition) = std::env::var("EXAMPLE_PARTITION") {
         let (shard, total) = partition
             .split_once('/')
@@ -306,6 +307,7 @@ fn example_projects() {
         && let Some(mismatch) = instrumentation::hidden_prerequisite_census_mismatch(
             &hidden_prerequisites,
             HIDDEN_PREREQUISITE_BASELINE,
+            partitioned,
         )
     {
         panic!("hidden prerequisite ratchet (tests/examples.rs baselines):\n{mismatch}");
