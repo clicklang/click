@@ -41,6 +41,11 @@ impl<'a> Proof<'a> {
             for (width, left, right) in outermost_overflow_conjuncts(goal) {
                 let operands = [(left, surface_left), (right, surface_right)];
                 if let Some(closed) =
+                    self.try_signed_definedness_with_operand_definedness(width, operands)?
+                {
+                    return Ok(Some(closed));
+                }
+                if let Some(closed) =
                     self.try_signed_definedness_after_operand_substitution(width, operands)?
                 {
                     return Ok(Some(closed));
@@ -48,13 +53,27 @@ impl<'a> Proof<'a> {
             }
             return Ok(None);
         };
+        let premises = self
+            .signed_operand_bound_premises(width, [(left, surface_left), (right, surface_right)]);
+        if let Some(closed) = self.apply_signed_definedness_certificate(width, premises)? {
+            return Ok(Some(closed));
+        }
+        self.try_signed_definedness_after_operand_substitution(
+            width,
+            [(left, surface_left), (right, surface_right)],
+        )
+    }
+
+    /// The constant bounds the context indexes under each operand, spelled
+    /// through the operand's spelling in the goal.
+    fn signed_operand_bound_premises(
+        &self,
+        width: SignedDefinedWidth,
+        operands: [(&Bitvector32Term, &ContractExpression); 2],
+    ) -> Vec<ClickProposition> {
         let assumptions = self.facts().assumptions();
         let mut premises = Vec::new();
-        let mut operands = vec![(left, surface_left)];
-        if right != left {
-            operands.push((right, surface_right));
-        }
-        for (term, surface) in &operands {
+        for (term, surface) in operands {
             for fact in assumptions.signed_constant_bound_facts(width, term) {
                 let Some(spelled) = spell_signed_bound(width, &fact, term, surface) else {
                     continue;
@@ -64,13 +83,45 @@ impl<'a> Proof<'a> {
                 }
             }
         }
-        if let Some(closed) = self.apply_signed_definedness_certificate(width, premises)? {
-            return Ok(Some(closed));
+        premises
+    }
+
+    /// A definedness goal that lowers to a conjunction with its operands'
+    /// own definedness, such as `defined(pool->capacity - 1)` over a read
+    /// through a resource view: each written operand's `defined(..)` is
+    /// proved as a `have` by `simp` and cited beside the operands' bounds,
+    /// which the `int32_defined` / `int64_defined` rule accepts for the
+    /// conjuncts beyond the operation's overflow.
+    fn try_signed_definedness_with_operand_definedness(
+        &self,
+        width: SignedDefinedWidth,
+        operands: [(&Bitvector32Term, &ContractExpression); 2],
+    ) -> Result<Option<Self>, ClickError> {
+        let mut premises = self.signed_operand_bound_premises(width, operands);
+        if premises.is_empty() {
+            return Ok(None);
         }
-        self.try_signed_definedness_after_operand_substitution(
-            width,
-            [(left, surface_left), (right, surface_right)],
-        )
+        let mut proof = self.clone();
+        for (term, surface) in operands {
+            if signed_width_constant(width, term).is_some() {
+                continue;
+            }
+            let defined = ClickProposition::Defined {
+                expression: surface.clone(),
+            };
+            if premises.contains(&defined) {
+                continue;
+            }
+            let Ok(scope) = proof.begin_have(defined.clone()) else {
+                return Ok(None);
+            };
+            let Some(scope) = scope.try_simp_closure()? else {
+                return Ok(None);
+            };
+            proof = scope.join()?;
+            premises.push(defined);
+        }
+        proof.apply_signed_definedness_certificate(width, premises)
     }
 
     /// An operand whose summands are fixed by exact constant equalities,

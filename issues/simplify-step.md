@@ -225,12 +225,11 @@ move; the step census reaches zero.
 
 Progress: `simp` proves a constructor disequality over
 a call-produced field, and a count's definedness once a zero summand is
-removed. The remaining cases are 3 `ContextualAtomic` mdtests (`shared_heap_*`
-after `parent_read_payload`, whose constructor argument is an entry-snapshot
-value synthesis cannot yet spell) and 2 example `And`s (`bounded-pool`,
-`owned-string`), where `defined(e)` over a read reached through a predicate
-view lowers with a read-definedness conjunct the `int32_defined` rule does not
-accept.
+removed, and a `defined(..)` that carries a read's definedness. The remaining
+cases are 3 `ContextualAtomic` mdtests (`shared_heap_*` after
+`parent_read_payload`, whose constructor argument is an entry-snapshot value
+synthesis cannot yet spell) and 1 example `And` (`owned-string`), whose
+add-overflow-and-read requirement has no spelling yet.
 
 ### 4. Check expansion cold
 
