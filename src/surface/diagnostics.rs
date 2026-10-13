@@ -1215,7 +1215,9 @@ pub(super) fn describe_runtime_error(
             )
         }
         crate::kernel::CRuntimeError::UnknownFunction(name) => {
-            format!("unknown function `{name}`")
+            format!(
+                "unknown function `{name}`: no verified source defines it and the sidecar declares no contract for it; describe an implementation outside the verified sources with an `extern` contract in the sidecar (docs/reference/language/c.md#external-function-contracts)"
+            )
         }
         crate::kernel::CRuntimeError::TypeMismatch => "type mismatch".to_string(),
         crate::kernel::CRuntimeError::LoadTypeMismatch {
