@@ -341,7 +341,7 @@ pub(super) fn contracts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::languages::c::syntax::C0Type;
+    use crate::languages::c::syntax::{C0Type, LongRank};
 
     fn record(fields: &[(&str, C0Type, Option<&str>, u32, u32)]) -> C0StructLayout {
         C0StructLayout::from_explicit_fields_with_structs(
@@ -362,7 +362,12 @@ mod tests {
             &BTreeMap::from([(
                 "__extent_storage".to_string(),
                 C0StructLayout::from_explicit_fields(
-                    vec![("_M_extent_value".to_string(), C0Type::UInt64, 0, 8)],
+                    vec![(
+                        "_M_extent_value".to_string(),
+                        C0Type::UInt64(LongRank::Long),
+                        0,
+                        8,
+                    )],
                     8,
                     8,
                 )
@@ -377,7 +382,12 @@ mod tests {
         layouts.insert(
             "__extent_storage".to_string(),
             C0StructLayout::from_explicit_fields(
-                vec![("_M_extent_value".to_string(), C0Type::UInt64, 0, 8)],
+                vec![(
+                    "_M_extent_value".to_string(),
+                    C0Type::UInt64(LongRank::Long),
+                    0,
+                    8,
+                )],
                 8,
                 8,
             )
@@ -399,7 +409,7 @@ mod tests {
         );
         let libcxx = accessors(record(&[
             ("__data_", C0Type::UInt8Pointer, None, 0, 8),
-            ("__size_", C0Type::UInt64, None, 8, 8),
+            ("__size_", C0Type::UInt64(LongRank::Long), None, 8, 8),
         ]));
         assert_eq!(libcxx["std_span_data"], &["__data_"]);
         assert_eq!(libcxx["std_span_size"], &["__size_"]);
@@ -409,7 +419,7 @@ mod tests {
     fn an_unknown_or_ambiguous_span_layout_binds_no_accessor() {
         let unknown = accessors(record(&[
             ("pointer", C0Type::UInt8Pointer, None, 0, 8),
-            ("length", C0Type::UInt64, None, 8, 8),
+            ("length", C0Type::UInt64(LongRank::Long), None, 8, 8),
         ]));
         assert!(unknown.is_empty(), "{unknown:?}");
         let ambiguous = accessors(record(&[
