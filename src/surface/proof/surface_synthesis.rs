@@ -1631,6 +1631,13 @@ fn synthesize_surface_atomic_proposition(
             bound_variables,
         );
     }
+    if let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = proposition {
+        return Some(ClickProposition::Comparison {
+            left: synthesize_surface_algebraic(left, parameter_binding, state, bound_variables)?,
+            operator: ComparisonOperator::Equal,
+            right: synthesize_surface_algebraic(right, parameter_binding, state, bound_variables)?,
+        });
+    }
     if let Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) = proposition {
         fn sequence(
             value: &crate::kernel::SequenceTerm,
@@ -3819,4 +3826,93 @@ fn synthesize_surface_pointer_expression(
         return None;
     }
     synthesize_surface_pointer_offset(&pointer.offset, parameter_binding, state, bound_variables)
+}
+
+/// The source spelling of an algebraic value: a held instance's model field
+/// as `instance.field`, from the kernel's model-field registry and the
+/// instance the state holds under that identity, and a constructor as
+/// `Type::Variant(fields)`. Only datatypes without type arguments are
+/// spelled; a candidate is still admitted only after it re-lowers exactly.
+fn synthesize_surface_algebraic(
+    term: &crate::kernel::AlgebraicTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ContractExpression> {
+    let _frame = SurfaceSynthesisFrame::enter("algebraic")?;
+    match &term.node {
+        crate::kernel::AlgebraicTermNode::Variable(variable) => {
+            let origin = crate::kernel::model_fields::registered_model_field_origin(*variable)?;
+            if !matches!(
+                origin.minted_by,
+                crate::kernel::model_fields::ModelMint::ContractEntry
+            ) {
+                let owner =
+                    crate::kernel::model_fields::registered_instance_spelling(origin.identity)?;
+                let instance = state.resource_instance_at_path(origin.identity, &[])?;
+                return Some(ContractExpression::ResourceField(ResourceFieldAccess {
+                    owner: owner.to_string(),
+                    resource_name: instance.name().to_string(),
+                    identity: origin.identity,
+                    children: vec![],
+                    field: origin.field.to_string(),
+                    field_index: origin.field_index,
+                    click_type: Some(ClickType::Algebraic(surface_algebraic_type(
+                        &term.algebraic_type,
+                    )?)),
+                }));
+            }
+            None
+        }
+        crate::kernel::AlgebraicTermNode::Constructor { variant, fields } => {
+            let arguments = fields
+                .iter()
+                .map(|field| match field {
+                    crate::kernel::AlgebraicValue::Algebraic(term) => synthesize_surface_algebraic(
+                        term,
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    ),
+                    crate::kernel::AlgebraicValue::C(CValue::Pointer(pointer)) => {
+                        synthesize_surface_pointer_expression(
+                            pointer,
+                            parameter_binding,
+                            state,
+                            bound_variables,
+                        )
+                    }
+                    crate::kernel::AlgebraicValue::C(CValue::Int32(value)) => {
+                        synthesize_surface_bitvector(
+                            value,
+                            parameter_binding,
+                            state,
+                            bound_variables,
+                        )
+                    }
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(ContractExpression::AlgebraicConstructor {
+                algebraic_type: surface_algebraic_type(&term.algebraic_type)?,
+                variant: variant.clone(),
+                arguments,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// The Surface application of a kernel datatype without type arguments.
+fn surface_algebraic_type(
+    algebraic_type: &crate::kernel::AlgebraicType,
+) -> Option<AlgebraicTypeApplication> {
+    algebraic_type
+        .arguments
+        .is_empty()
+        .then(|| AlgebraicTypeApplication {
+            rigid: algebraic_type.rigid,
+            name: algebraic_type.name.clone(),
+            arguments: vec![],
+        })
 }
