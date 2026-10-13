@@ -319,18 +319,6 @@ sugar.
 
 Decision: open.
 
-### L8. The language reference is not yet a good AI reference
-
-Today: `docs/reference/language/index.md` is about 3,000 lines with "this
-slice", "not yet" and mdtest citations throughout; core and edge cases are
-mixed.
-
-Proposed fix: make the language reference a good AI reference: core forms and
-edge cases are each easy to find, and the text states current behavior
-without changelog phrasing such as "this slice" or "not yet".
-
-Decision: open.
-
 ## M. Memory model, semantics and trust
 
 ### M1. There is no independent proof checker
