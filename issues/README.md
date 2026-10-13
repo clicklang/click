@@ -141,7 +141,6 @@ C language coverage:
 Additional languages:
 
 - [Extend C++ support toward Bitcoin Core](cpp-support.md)
-- [Extend the C++ standard-library contract catalog](cpp-standard-library-contracts.md)
 
 Semantics and reasoning:
 

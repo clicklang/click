@@ -22,6 +22,7 @@ use num_traits::{One, Signed, ToPrimitive, Zero};
 use proof_object::{collect_surface_conjunct_leaves, frontier_premise_anchor};
 
 const MAX_DIRECT_CALLER_BINDING_NAMES: usize = 4096;
+const MAX_SIMP_SOURCE_PREMISES: usize = 64;
 
 /// Goal-changing rewrites kept per link of an equality chain: the first
 /// continues the chain, the others get a one-link closing probe.
@@ -3939,16 +3940,24 @@ impl<'a> Proof<'a> {
         let derivation = if exclude_exact_goal {
             self.facts()
                 .assumptions()
-                .derive_simp_proposition_without_exact_goal(&goal)?
+                .derive_simp_proposition_without_exact_goal(&goal)
         } else {
             match plan_simp_certificate(&goal, self.facts().assumptions()) {
-                Some(SimpEvidence::Derivation(derivation)) => derivation,
-                _ if matches!(self.context.as_ref(), ProofContext::Pure(_)) => self
-                    .facts()
-                    .assumptions()
-                    .derive_atomic_proposition(&goal)?,
-                _ => return None,
+                Some(SimpEvidence::Derivation(derivation)) => Some(derivation),
+                _ if matches!(self.context.as_ref(), ProofContext::Pure(_)) => {
+                    self.facts().assumptions().derive_atomic_proposition(&goal)
+                }
+                _ => None,
             }
+        };
+        let Some(derivation) = derivation else {
+            if matches!(goal, Proposition::CMemoryLoadable { .. }) {
+                attempt::record_search_note(
+                    "simp view derivation selection",
+                    "no retained-premise derivation was produced for the requested view",
+                );
+            }
+            return None;
         };
         Some((goal, derivation, theorem_application_closes_goal))
     }
@@ -3965,7 +3974,16 @@ impl<'a> Proof<'a> {
         // render an unbounded component speculatively. The recorded-path
         // candidate is tried first, and explicit `using` lists have their
         // own presentation/checking path.
-        if premises.len() > 64 {
+        if premises.len() > MAX_SIMP_SOURCE_PREMISES {
+            if matches!(self.goal(), Some(Proposition::CMemoryLoadable { .. })) {
+                attempt::record_search_note(
+                    "simp view premise spelling",
+                    format!(
+                        "budget exhausted: the selected view derivation contains {} premises; source spelling permits at most {MAX_SIMP_SOURCE_PREMISES}",
+                        premises.len()
+                    ),
+                );
+            }
             return None;
         }
         crate::instrumentation::measure_operation(
@@ -4075,6 +4093,20 @@ impl<'a> Proof<'a> {
             if anchored_pairs.len() >= premise_pairs.len() {
                 premise_pairs = anchored_pairs;
             }
+        }
+        if !crate::instrumentation::deadline_exceeded()
+            && matches!(self.goal(), Some(Proposition::CMemoryLoadable { .. }))
+            && premise_pairs.len() < premises.len()
+        {
+            attempt::record_search_note(
+                "simp view premise spelling",
+                format!(
+                    "{} of {} selected derivation premises have checked source spellings; {} were omitted",
+                    premise_pairs.len(),
+                    premises.len(),
+                    premises.len() - premise_pairs.len()
+                ),
+            );
         }
         (!crate::instrumentation::deadline_exceeded()).then_some(premise_pairs)
     }
@@ -5031,7 +5063,17 @@ impl<'a> Proof<'a> {
                                 .ok()
                                 .flatten()
                                 .or_else(|| rewritten.try_typed_atomic_simp_closure())
-                        };
+                        }
+                        // A rewrite can leave a goal over constructors only,
+                        // such as `ParentLink::Linked(kid) != ParentLink::Empty`
+                        // after rewriting by `link.link == ParentLink::Linked(kid)`;
+                        // normalization decides it without consulting context.
+                        .or_else(|| {
+                            rewritten
+                                .apply_step(ProofStep::Normalize)
+                                .ok()
+                                .filter(Proof::is_complete)
+                        });
                         if let Some(closed) = closed {
                             return Some(closed);
                         }
@@ -7176,12 +7218,27 @@ impl<'a> Proof<'a> {
                         surface_goal,
                     ),
                 )])
-            })?;
+            });
+        let Some(tactics) = tactics else {
+            if matches!(goal, Proposition::CMemoryLoadable { .. }) {
+                attempt::record_search_note(
+                    "simp view certificate planning",
+                    "no source certificate plan was produced from the resolved derivation premises",
+                );
+            }
+            return None;
+        };
         // The planner selects only Surface-expressible explicit operations.
         // Apply those through the same recursive Proof driver used by
         // authoritative source scripts; the plan is provenance input, not an
         // independently interpreted semantic certificate.
-        let proof = attempt::candidate_outcome(self.try_generated_linear_script(&tactics))
+        let checked = self.try_generated_linear_script(&tactics);
+        if matches!(goal, Proposition::CMemoryLoadable { .. })
+            && let Err(error) = &checked
+        {
+            attempt::record_search_note("simp view certificate checking", error.raw_summary());
+        }
+        let proof = attempt::candidate_outcome(checked)
             .ok()
             .flatten()
             .flatten()?;
@@ -7563,16 +7620,23 @@ impl<'a> Proof<'a> {
                     proof = proof.apply_theorem_application(application)?;
                 }
                 ProofTactic::Simp => {
-                    let Some(closed) = proof.try_simp_closure()? else {
+                    let mut search = attempt::search_scope("written simp");
+                    let selected = proof.try_simp_closure();
+                    let selected = match selected {
+                        Ok(selected) => selected,
+                        Err(error) => return Err(error.with_search_failures(search.finish())),
+                    };
+                    let Some(closed) = selected else {
                         if tactics[..index].iter().any(|previous| {
                             matches!(previous, ProofTactic::Witness(_) | ProofTactic::Choose(_))
                         }) {
                             return Err(proof.step_error(
                                 "checked `simp` after witness/choose could not close the remaining witness obligations; split conjunctions and discharge each definedness condition explicitly",
-                            ));
+                            ).with_search_failures(search.finish()));
                         }
-                        return Err(proof.simp_failure());
+                        return Err(proof.simp_failure().with_search_failures(search.finish()));
                     };
+                    search.succeed();
                     proof = closed;
                 }
                 ProofTactic::SimpUsing(simp) => {
@@ -8063,7 +8127,7 @@ impl<'a> Proof<'a> {
                                 &next_requirement,
                                 &execution_memory,
                             )? {
-                                return proof.apply_step(step.clone());
+                                return Err(next_error);
                             }
                             let Some(next_identity) =
                                 proposition_identity_key(&next_requirement.proposition)
@@ -8912,9 +8976,31 @@ fn source_backed_call_requirement_surface(
             }
         },
     );
-    let proposition = substitute_click_proposition(
+    // A call step's binder map names the caller instance each callee binder
+    // is: the callee's field reads become reads of that caller instance.
+    let instance_renames = match step {
+        ProofStep::StepCall(transport) => transport
+            .binders()
+            .iter()
+            .map(|binding| {
+                (
+                    binding.binder().to_string(),
+                    crate::surface::lowering::InstanceRename {
+                        name: binding.instance().to_string(),
+                        identity: binding.binder_identity(),
+                        target_identity: Some(binding.identity()),
+                    },
+                )
+            })
+            .collect::<BTreeMap<_, _>>(),
+        _ => BTreeMap::new(),
+    };
+    let proposition = crate::surface::lowering::substitute_click_proposition_in(
         elaborated.as_ref().unwrap_or(&source_proposition),
-        &substitutions,
+        &crate::surface::lowering::ContractSubstitutions::with_instance_renames(
+            &substitutions,
+            &instance_renames,
+        ),
     )
     .ok()?;
     Some(SourceBackedCallSurface {

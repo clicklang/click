@@ -766,10 +766,23 @@ impl<'a> Proof<'a> {
         }
         let goal = self.goal()?;
         let (parameters, arguments) = self.diagnostic_naming_tables();
-        let lowered = crate::surface::diagnostics::describe_stated_fact(
-            goal,
+        let mut labels = crate::surface::proof_diagnostics::render::SnapshotLabels::naming(
             ParameterBinding::new(&parameters, &arguments),
         );
+        // A value the back-edge locals no longer hold, such as the
+        // iteration's entry value of a counter, reads at the snapshot that
+        // recorded it.
+        if let Some(execution) = self.execution() {
+            super::register_recorded_snapshot_names(
+                &mut labels,
+                &execution.presentation.recorded_snapshots,
+            );
+        }
+        let mut lowered = crate::surface::proof_diagnostics::render::render_proposition_labeled(
+            goal,
+            &mut labels,
+        );
+        lowered.push_str(&labels.trace_legend());
         // The back-edge locals do not name a value read at an earlier
         // snapshot, which the lowered spelling elides. The synthesized form
         // names that snapshot even where it does not lower back exactly, as
@@ -1409,8 +1422,13 @@ impl<'a> Proof<'a> {
                 StatementPrerequisitePolicy::Fast,
             )
         });
-        // A refusal the probe could not record is the step's own failure.
-        probe?;
+        // A rejected call can still expose the preconditions its recovery
+        // needs proved first. As for a bare step, discard that probe, prove
+        // its recorded requirements at the pre-state, and retry below. The
+        // retry must succeed before any successor or certificate is kept.
+        if recorded.recorded.is_empty() {
+            probe?;
+        }
         let open = distinct_requirements(recorded.recorded);
         let spelling = |requirement: &UnresolvedRequirement| -> Result<String, ClickError> {
             Ok(match self.requirement_surface(requirement, &step)? {

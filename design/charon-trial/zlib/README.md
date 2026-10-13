@@ -128,6 +128,34 @@ DO16 iteration; repeated blocks and nonempty tails require further proofs.
 The count-presentation rendering regression is retained in
 [the native-count rewrite fixture](../../../mdtests/integer_rewrite_preserves_folded_count_presentation.md).
 
+`window.click` checks symbolic prefix advance after decrementing the actual
+remaining count, DO16 lane bounds and byte identities, and complete native
+read bounds for one batch below 5552 bytes. The prefix observation and pointer
+bridges in `short-prefix.click` now accept the existing checked count ceiling
+of 22208 instead of restricting those reusable observations to fifteen.
+The nightly window regression checks every dependency body as well.
+
+The [repeated-block draft](repeated-proof.click.draft) targets canonical seed 1,
+nonnull input, and lengths 16–5551. All sixteen addition pairs check at a
+symbolic prefix, and the DO16 loop closes its component, cursor, view, and
+ranking invariants. Bounds for each lane are stated explicitly in the original
+buffer's native coordinates; they supply read authority without a generated
+processed counter or verifier changes.
+
+**This draft does not verify and adds no C checksum result.** Its scalar tail
+stops at the first-byte `viewable(buf[0u64..1u64])` construction. The kernel's
+native view checker accepts that goal in the live proof context. `simp`
+selects a derivation containing 71 premises, then its source-spelling stage
+refuses the selection at the existing 64-premise limit, before generating a
+transport proof. Reduce the selected dependencies or use a checked explicit
+transport with the relevant premises; do not increase the presentation limit.
+
+To reproduce in a throwaway copy retaining this directory's relative imports,
+copy the draft to `repeated.click`, copy `short-memory.click.import.json` and its
+`.import.lock.json` to the corresponding `repeated.click` names, and run
+`click verify --trace-proof adler32_z repeated.click`. The C, headers, prepared
+input, and existing locks stay unchanged.
+
 | Original file | SHA-256 |
 | --- | --- |
 | `adler32.c` | `9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211` |

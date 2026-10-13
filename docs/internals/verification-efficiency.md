@@ -877,14 +877,14 @@ entry, a non-recursive representation may still be rebased only after checking
 that locals, memory, and population observations are exact and that the bounded
 resource-equality relation proves the two ghost contexts definitionally equal.
 Recursive resource representations do not enter that relation as a cache
-probe: until they have stable shallow identities they fall back immediately to
-fresh execution.
+probe: until they have stable shallow identities they are never rebased, and
+certification reports why the artifact was not reused.
 
 Likewise, two complete artifacts checked under exactly opposite polarities of
 one entry condition may be composed into one exhaustive frontier. All other
 premises must follow from the reconstructed contract context and every
 retained execution input must match. One side alone, two unrelated conditions, or any
-additional unproved premise forces fresh execution.
+additional unproved premise leaves the artifacts unreusable.
 
 Grouped claims retain the same artifact, so adding claims does not multiply
 whole-function execution. Tests count checked body executions directly and

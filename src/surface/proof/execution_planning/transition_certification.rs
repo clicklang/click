@@ -785,6 +785,15 @@ fn certified_transitions_from_execution(
                 None => successor_facts.context(),
             };
             let mut prerequisite_derivations = Vec::new();
+            let rejected_contract_call = matches!(
+                implication_body(path.theorem().proposition()),
+                Proposition::CStatementVerifies {
+                    outcome: CStatementOutcome::RuntimeError(
+                        crate::kernel::CRuntimeError::FunctionContract(_)
+                    ),
+                    ..
+                }
+            );
             for obligation in path.obligations() {
                 let proposition = obligation.proposition();
                 let derivation = match prerequisite_policy {
@@ -958,7 +967,15 @@ fn certified_transitions_from_execution(
                             )
                             || directly_matching_separation_fact(proposition, pure_facts).is_some()
                             || directly_covering_loadability_fact(proposition, pure_facts).is_some()
-                            || matches!(normalize_proposition(proposition), SimpProposition::True)
+                            // Stable-view recovery requires the kernel to see
+                            // the precondition already proved. A probe must
+                            // retain even a trivially true pending clause so
+                            // implicit auto proves it at the pre-state, then
+                            // retries the call with that checked evidence.
+                            || (matches!(normalize_proposition(proposition), SimpProposition::True)
+                                && !(matches!(prerequisite_policy, StatementPrerequisitePolicy::Fast)
+                                    && obligation.call_requirement_site().is_some()
+                                    && rejected_contract_call))
                             || (matches!(
                                 proposition,
                                 Proposition::CResourceContains { .. }
