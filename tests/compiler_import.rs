@@ -638,10 +638,15 @@ fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
     let imports = load_imports(&config).expect("offline locked unchanged C source");
     // Imported pure theorem interfaces are backed by their checked bodies in
     // this verification unit; no library result summary supplies the checksum.
-    let proof = include_str!("../design/charon-trial/zlib/one-byte.click").replace(
-        "import \"../../adler32-spec.click\";",
-        include_str!("../design/adler32-spec.click"),
-    );
+    let proof = include_str!("../design/charon-trial/zlib/one-byte.click")
+        .replace(
+            "import \"../../adler32-spec.click\";",
+            include_str!("../design/adler32-spec.click"),
+        )
+        .replace(
+            "import \"byte.click\";",
+            include_str!("../design/charon-trial/zlib/byte.click"),
+        );
     let verified = verify_c0_prepared_sources(&proof, &imports).expect("shared one-byte checksum");
     let implementation = verified
         .iter()
@@ -678,7 +683,7 @@ fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
 
 #[test]
 #[ignore = "nightly: original short loop, expansion, and authority mutations"]
-fn pinned_zlib_short_loop_preserves_input_and_terminates_offline() {
+fn pinned_zlib_short_loop_matches_checked_shared_specification_offline() {
     let root = tempfile::tempdir().expect("isolated offline zlib short-loop fixture");
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
     for name in [
@@ -694,12 +699,41 @@ fn pinned_zlib_short_loop_preserves_input_and_terminates_offline() {
     }
     let imports = load_imports(&root.path().join("short-memory.click.import.json"))
         .expect("offline locked unchanged zlib source");
-    let proof = include_str!("../design/charon-trial/zlib/short-memory.click");
-    let checked = verify_c0_prepared_sources(proof, &imports)
-        .expect("short-loop termination and input preservation");
-    assert_eq!(checked.len(), 2, "both original final-reduction paths");
+    let proof = include_str!("../design/charon-trial/zlib/short-memory.click")
+        .replace(
+            "import \"byte.click\";",
+            include_str!("../design/charon-trial/zlib/byte.click"),
+        )
+        .replace(
+            "import \"short-prefix.click\";",
+            include_str!("../design/charon-trial/zlib/short-prefix.click"),
+        )
+        .replace(
+            "import \"../adler2/count-bridge.click\";",
+            include_str!("../design/charon-trial/adler2/count-bridge.click"),
+        )
+        // Both the sidecar and prefix library import the shared specification.
+        // Check each theorem body once, rather than assuming its interface.
+        .replacen(
+            "import \"../../adler32-spec.click\";",
+            include_str!("../design/adler32-spec.click"),
+            1,
+        )
+        .replace("import \"../../adler32-spec.click\";", "");
+    let checked = verify_c0_prepared_sources(&proof, &imports)
+        .expect("short-loop shared checksum, termination, and input preservation");
+    assert_eq!(
+        checked
+            .iter()
+            .filter(|claim| claim.function_block.signature().name() == "adler32_z")
+            .count(),
+        3,
+        "checksum, packed bound, and byte preservation on one final path"
+    );
     for claim in &checked {
-        assert_eq!(claim.function_block.signature().name(), "adler32_z");
+        if claim.function_block.signature().name() != "adler32_z" {
+            continue;
+        }
         assert_eq!(
             claim.import_identity.as_deref(),
             Some(imports[0].identity())
@@ -712,12 +746,24 @@ fn pinned_zlib_short_loop_preserves_input_and_terminates_offline() {
         .count()
         + 1;
     let column = offset - proof[..offset].rfind('\n').unwrap();
-    let expanded = expand_c0_prepared_tactic_source_at(proof, &imports, line, column)
+    let expanded = expand_c0_prepared_tactic_source_at(&proof, &imports, line, column)
         .expect("checked original loop-entry expansion");
-    verify_c0_prepared_sources(&expanded, &imports).expect("expanded short-loop memory proof");
+    verify_c0_prepared_sources(&expanded, &imports).expect("expanded short-loop checksum proof");
     for invalid in [
         proof.replace("views buf[0u64..len];", "views buf[0u64..len - 1u64];"),
         proof.replacen("views buf[0u64..len];", "", 1),
+        proof.replace(
+            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), 1, 0);",
+            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), 1, 0) + 1;",
+        ),
+        proof.replace(
+            "invariant to_integer(adler) == 1 + adler_byte_sum(old(buf), zlib_prefix_count(old(len), len));",
+            "invariant to_integer(adler) == 2 + adler_byte_sum(old(buf), zlib_prefix_count(old(len), len));",
+        ),
+        proof.replace(
+            "invariant to_integer(sum2) == to_integer(zlib_prefix_count(old(len), len)) + adler_weighted_sum(old(buf), zlib_prefix_count(old(len), len), zlib_prefix_count(old(len), len));",
+            "invariant to_integer(sum2) == adler_weighted_sum(old(buf), zlib_prefix_count(old(len), len), zlib_prefix_count(old(len), len));",
+        ),
         proof.replace(
             "ensures forall (k: uint64)",
             "ensures result == 0u64;\n ensures forall (k: uint64)",

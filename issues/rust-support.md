@@ -73,9 +73,10 @@ any canonical initial state and returns canonical fields satisfying the common
 A/B specification. Logical byte-index guards are bridged explicitly to native
 64-bit range membership. The specialized empty call needs no byte authority.
 
-The independently locked, unchanged zlib one-byte path proves its packed result
-equal the same specification and preserves its input byte; its empty path also
-verifies. General-length C correctness and C/Rust result equality remain pending.
+The independently locked, unchanged zlib one-byte and short-loop paths prove
+their packed results equal the same specification and preserve every input byte
+for canonical seed 1 and lengths 1–15; its empty path also verifies.
+General-length C correctness and C/Rust result equality remain pending.
 
 Full original-computation smart audits exhaust the standard ten-minute run
 bound before completing a site, while ordinary verification succeeds. Continue
@@ -117,9 +118,11 @@ counter. Checked native 64-bit same-base prefixes now retain full-width
 coverage bounds and lifetime evidence; symbolic prefixes have explicit
 selected-premise proofs. Native byte subranges also retain a checked offset,
 nonwrapping remaining capacity, and lifetime evidence. The unchanged C short
-loop now proves termination and preservation of every input byte for canonical
-seed 1, nonnull input, and lengths 2–15. Add its component-sum invariants and
-packed-result theorem, then cover the original larger batched computation.
+loop now proves the shared packed checksum, termination, and preservation of
+every input byte for canonical seed 1, nonnull input, and lengths 2–15. Exact
+component-sum invariants follow the actual remaining count, with checked byte
+promotion and native addition bounds. Cover the original larger batched
+computation next.
 
 Connect the original nonempty computation to the common specification, then
 prove compatible seed/reset/null-buffer behavior and incremental processing.
