@@ -32,6 +32,7 @@ commands:\n  \
   versions list installed versions";
 
 fn main() {
+    click::cli::enable_process_crash_containment();
     let arguments = env::args().skip(1).collect::<Vec<_>>();
     match version_dispatch::maybe_dispatch("click", &arguments) {
         Ok(Some(status)) => std::process::exit(status),
