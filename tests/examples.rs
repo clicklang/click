@@ -2521,9 +2521,8 @@ fn own_project_guide_sessions_match_the_label_example() {
         "label.h",
         "label_fit.c",
         "label_copy.c",
-        "label_fit.click",
-        "label_fit.click.import.json",
-        "label_copy.click",
+        "label.click",
+        "label.click.import.json",
     ] {
         let checked_in = fs::read_to_string(example.join(name)).unwrap();
         assert!(
