@@ -47,7 +47,7 @@ reproduced. To move a file off `unsound`, the reproduction must stop
 verifying. Narrowing the documented claim does not count. Re-check the label
 whenever the file's reproduction or scope changes.
 
-## P1: before launch (4)
+## P1: before launch (5)
 
 The launch strategy is to complete P1, deliver the minimum viable rbtree
 (MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
@@ -117,11 +117,10 @@ Specification and proof:
 
 - [Verify the Linux rbtree example on the recursive structure models](rbtree-example.md)
 - [SMT-backed automation with kernel-checked certificates](smt-auto.md)
-- [Launch design review: open critiques, each to be fixed or ruled wontfix](design-review.md) (depends on smt-auto.md)
-
-## P2: after launch (17)
-
 - [Make `step` simple across a call precondition](simplify-step.md)
+- [Launch design review: open critiques, each to be fixed or ruled wontfix](design-review.md) (depends on smt-auto.md and simplify-step.md)
+
+## P2: after launch (16)
 
 Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
 it turns out to block that claim: if P1 work exposes one of the tooling
