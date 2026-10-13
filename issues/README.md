@@ -119,10 +119,9 @@ Specification and proof:
 - [SMT-backed automation with kernel-checked certificates](smt-auto.md)
 - [Launch design review: open critiques, each to be fixed or ruled wontfix](design-review.md) (depends on smt-auto.md)
 
-## P2: after launch (18)
+## P2: after launch (17)
 
 - [Make `step` simple across a call precondition](simplify-step.md)
-- [Reject `result` inside entry snapshots](result-accepted-in-entry-snapshots.md)
 
 Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
 it turns out to block that claim: if P1 work exposes one of the tooling

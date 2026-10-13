@@ -2075,7 +2075,10 @@ impl ClickProposition {
     }
 }
 
-fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet<String>) {
+pub(crate) fn collect_c_expression_variables(
+    expression: &CExpression,
+    names: &mut BTreeSet<String>,
+) {
     match expression {
         CExpression::Value(_) | CExpression::FunctionAddress(_) => {}
         CExpression::Variable(name) => {
@@ -2188,7 +2191,7 @@ fn collect_current_resource_subject_variables(
     }
 }
 
-fn collect_current_contract_expression_variables(
+pub(crate) fn collect_current_contract_expression_variables(
     expression: &ContractExpression,
     names: &mut BTreeSet<String>,
 ) {
@@ -5894,6 +5897,27 @@ impl From<ProgramPointRef> for SnapshotSelector {
     fn from(point: ProgramPointRef) -> Self {
         Self::ProgramPoint(point)
     }
+}
+
+/// Whether a snapshot can name the contract `result`. `result` is the return
+/// value, which exists only once the function returns, so `old(...)` (`None`)
+/// and every program point but `function.exit` precede it. A proof mark is
+/// placed by the proof itself and may follow the return.
+pub(crate) fn snapshot_can_name_result(selector: Option<&SnapshotSelector>) -> bool {
+    match selector {
+        None => false,
+        Some(SnapshotSelector::Mark(_)) => true,
+        Some(SnapshotSelector::ProgramPoint(point)) => {
+            point.region == CodeRegionRef::Function && point.kind == ProgramPointKind::Exit
+        }
+    }
+}
+
+/// Whether `result` occurs in a proposition outside any nested snapshot.
+pub(crate) fn proposition_names_result(proposition: &ClickProposition) -> bool {
+    let mut names = BTreeSet::new();
+    collect_current_proposition_variables(proposition, &mut names);
+    names.contains("result")
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]

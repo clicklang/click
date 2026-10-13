@@ -928,7 +928,7 @@ impl ProofExecutionView<'_> {
             .unwrap_or(&self.execution.presentation.branch_decisions)
             .iter();
         let mut path = Vec::new();
-        let mut current = steps;
+        let mut current = super::execution_state::through_single_arm_matches(steps);
         while let Some(ProofStep::If {
             condition,
             then_proof,
@@ -940,11 +940,11 @@ impl ProofExecutionView<'_> {
                 .find(|decision| decision.condition == *condition)?
                 .value;
             path.push(selected_then);
-            current = if selected_then {
+            current = super::execution_state::through_single_arm_matches(if selected_then {
                 then_proof.steps()
             } else {
                 else_proof.steps()
-            };
+            });
         }
         Some(path)
     }
