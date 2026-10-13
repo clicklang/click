@@ -2609,3 +2609,44 @@ fn loop_have_budget_refusal_retains_checked_store_trace() {
         assert!(!trace.contains("adds: cell[0] == value + 1"), "{trace}");
     });
 }
+
+#[test]
+fn ordinary_concise_diagnostics_bound_late_requirement_context() {
+    let error = ClickError::new("required fact unavailable")
+        .with_missing_tactic_requirement("資源".repeat(DEFAULT_DIAGNOSTIC_BYTE_LIMIT));
+    let (summary, context) = error.concise_report_parts();
+    assert!(
+        summary.len() + context.iter().map(String::len).sum::<usize>()
+            > DEFAULT_DIAGNOSTIC_BYTE_LIMIT
+    );
+    let report = error.concise_report();
+    assert!(report.len() <= DEFAULT_DIAGNOSTIC_BYTE_LIMIT);
+    assert!(report.starts_with("proof error:"));
+    assert!(report.contains("requirement"));
+    assert!(report.contains("diagnostic truncated"));
+}
+
+#[test]
+fn ordinary_legacy_diagnostics_bound_late_context_but_traces_remain_full() {
+    let error = ClickError::with_diagnostic(
+        "required fact unavailable",
+        proof_diagnostics::ProofFailureDiagnostic {
+            origin: proof_diagnostics::ProofDiagnosticOrigin {
+                stage: "simple checking".into(),
+                location: "資源".repeat(DEFAULT_DIAGNOSTIC_BYTE_LIMIT),
+                source_tactic_path: None,
+            },
+            claim_label: "late_context.ensures_0".into(),
+            reason: "required fact unavailable".into(),
+            state: None,
+        },
+    );
+    assert!(error.message().len() <= DEFAULT_DIAGNOSTIC_BYTE_LIMIT);
+    assert!(error.message().contains("diagnostic truncated"));
+    assert!(error.report().len() <= DEFAULT_DIAGNOSTIC_BYTE_LIMIT);
+    assert!(error.report().starts_with("required fact unavailable"));
+    assert!(error.report().contains("diagnostic truncated"));
+    with_proof_trace("late_context", || {
+        assert!(error.report().len() > DEFAULT_DIAGNOSTIC_BYTE_LIMIT);
+    });
+}

@@ -217,6 +217,12 @@ const POINTER_ARGUMENT_VARIABLE_BASE: u64 = 100_000;
 pub const DEFAULT_DIAGNOSTIC_BYTE_LIMIT: usize = 16 * 1024;
 pub const FULL_DIAGNOSTICS_ENV: &str = "CLICK_FULL_DIAGNOSTICS";
 
+/// Apply the ordinary diagnostic byte limit after all context is assembled.
+/// Explicit proof traces must be appended separately, after this boundary.
+pub fn bound_diagnostic_message(message: String) -> String {
+    diagnostics::bound_error_message(message)
+}
+
 /// User-visible word spellings recognized by Surface Click, including
 /// contextual syntax words and compatibility-only spellings. Documentation
 /// coverage compares this registry bidirectionally with its public inventory.
@@ -8287,18 +8293,22 @@ impl ClickError {
     pub fn message(&self) -> &str {
         if let Some(diagnostic) = &self.diagnostic {
             self.rendered.get_or_init(|| {
-                proof_diagnostics::render_terminal_message(
+                bound_diagnostic_message(proof_diagnostics::render_terminal_message(
                     &self.message,
                     diagnostic,
                     self.search_failures
                         .as_deref()
                         .map_or(&[][..], Vec::as_slice),
-                )
+                ))
                 .into_boxed_str()
             })
         } else if let Some(failures) = &self.search_failures {
             self.rendered.get_or_init(|| {
-                proof_diagnostics::render_search_failures(&self.message, failures).into_boxed_str()
+                bound_diagnostic_message(proof_diagnostics::render_search_failures(
+                    &self.message,
+                    failures,
+                ))
+                .into_boxed_str()
             })
         } else {
             &self.message
@@ -8365,7 +8375,11 @@ impl ClickError {
             report.push('\n');
             report.push_str(&trace);
         }
-        report
+        if traced_message.is_some() {
+            report
+        } else {
+            bound_diagnostic_message(report)
+        }
     }
 
     /// The failure and its supporting context for an ordinary CLI report.
@@ -8489,7 +8503,7 @@ impl ClickError {
             report.push_str("\n\n");
             report.push_str(&context.join("\n"));
         }
-        report
+        bound_diagnostic_message(report)
     }
 
     /// Trace context to append after the same source-facing error header used

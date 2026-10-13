@@ -98,6 +98,28 @@ unproved.** The offline short-loop regression checks all helper bodies together,
 rechecks an expansion, and rejects missing byte authority, false component
 invariants, and false checksum results. These larger checks run in nightly.
 
+`block.click` checks a mathematical scalar recurrence, its native uint64
+addition pair for prefixes below 5552 bytes, and recombination after both
+original reductions. The addition-pair theorem requires the promoted byte to
+match the specification byte and exact accumulator equations and bounds; it
+provides no C memory authority or assumed callee result.
+
+The unfinished [16-byte proof draft](sixteen-proof.click.draft) follows the
+original remaining-length DO16 loop. Its sixteen addition pairs and final
+component equations reach the invariant-closing step, where the guarded bundle
+still exhausts the smart work limit. **This draft does not verify and establishes
+no new C checksum result.** Proof variations paused after the three-strikes
+investigation; the retained failure is at `close_invariants()`. The focused
+closure trace reports no checked simple steps for that bundle. Investigate the
+bundle's facts and source presentation before trying further proof variations.
+
+To reproduce in a throwaway copy of this trial, copy the draft to
+`sixteen.click`, copy `short-memory.click.import.json` and its `.import.lock.json`
+to the corresponding `sixteen.click` names, then run `click verify sixteen.click`.
+The original source and prepared input stay unchanged. The count-presentation
+rendering defect encountered earlier in the draft has a checked regression in
+[the native-count rewrite fixture](../../../mdtests/integer_rewrite_preserves_folded_count_presentation.md).
+
 | Original file | SHA-256 |
 | --- | --- |
 | `adler32.c` | `9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211` |
