@@ -158,8 +158,7 @@ fn missing_condition_prerequisite_error(
     missing_prerequisite_error(
         format!(
             "{context_label} is missing condition prerequisite{}: `{}`",
-            obligation
-                .context()
+            crate::surface::diagnostics::describe_proof_obligation_context(obligation)
                 .map(|context| format!(" ({context})"))
                 .unwrap_or_default(),
             crate::surface::diagnostics::describe_stated_fact_over_locals(
@@ -843,8 +842,7 @@ fn certified_transitions_from_execution(
                             exact_derivation.ok_or_else(|| {
                                     ClickError::new(format!(
                                         "{context_label} is missing exact prerequisite{}: {}",
-                                        obligation
-                                            .context()
+                                        crate::surface::diagnostics::describe_proof_obligation_context(obligation)
                                             .map(|context| format!(" ({context})"))
                                             .unwrap_or_default(),
                                         describe_statement_prerequisite_failure(
@@ -863,8 +861,7 @@ fn certified_transitions_from_execution(
                             return Err(missing_prerequisite_error(
                                 format!(
                                     "{context_label} is missing certified prerequisite{}: {}",
-                                    obligation
-                                        .context()
+                                    crate::surface::diagnostics::describe_proof_obligation_context(obligation)
                                         .map(|context| format!(" ({context})"))
                                         .unwrap_or_default(),
                                     describe_statement_prerequisite_failure(
@@ -931,8 +928,7 @@ fn certified_transitions_from_execution(
                             return Err(missing_prerequisite_error(
                                 format!(
                                     "{context_label} is missing prerequisite{}: {}",
-                                    obligation
-                                        .context()
+                                    crate::surface::diagnostics::describe_proof_obligation_context(obligation)
                                         .map(|context| format!(" ({context})"))
                                         .unwrap_or_default(),
                                     describe_statement_prerequisite_failure(
@@ -992,8 +988,7 @@ fn certified_transitions_from_execution(
                                 missing_prerequisite_error(
                                     format!(
                                         "{context_label} is missing prerequisite{}: {}",
-                                        obligation
-                                            .context()
+                                        crate::surface::diagnostics::describe_proof_obligation_context(obligation)
                                             .map(|context| format!(" ({context})"))
                                             .unwrap_or_default(),
                                         describe_statement_prerequisite_failure(

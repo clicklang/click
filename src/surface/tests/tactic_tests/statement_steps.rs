@@ -347,7 +347,7 @@ fn failed_call_step_reports_its_unresolved_required_precondition() {
         .expect("the refused call requirement should survive proof error wrapping");
     assert_eq!(
         requirement.context.as_deref(),
-        Some("either_positive precondition")
+        Some("precondition clause 1 of `either_positive`")
     );
     assert!(matches!(requirement.proposition, Proposition::Or(_, _)));
     let call_site = requirement
