@@ -3167,8 +3167,8 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
 #[test]
 fn axiomatic_span_refuses_an_uncatalogued_standard_function() {
     let (root, import) = axiomatic_span_fixture(
-        "axiomatic-size-bytes",
-        "#include <span>\nunsigned long probe(std::span<int>& span) { return span.size_bytes(); }\n",
+        "axiomatic-empty",
+        "#include <span>\nbool probe(std::span<int>& span) { return span.empty(); }\n",
         &[
             "sysroot/usr/include/c++/12/span",
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
@@ -3182,10 +3182,10 @@ fn axiomatic_span_refuses_an_uncatalogued_standard_function() {
         .unwrap();
     assert_eq!(
         axiom.axiom.as_ref().unwrap().qualified_name,
-        "std::span<int>::size_bytes"
+        "std::span<int>::empty"
     );
     let source = r#"verifying "span-probe.cpp";
-uint64 probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
+bool probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
     views std_span_size(span);
     ensures result == result;
 } by {
@@ -3198,6 +3198,235 @@ uint64 probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
     let parsed = read_click_project(&sidecar, source).unwrap();
     let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
     assert!(error.message().contains(&axiom.name), "{}", error.message());
+}
+
+const SPAN_DEPENDENCIES: &[&str] = &[
+    "sysroot/usr/include/c++/12/span",
+    "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
+];
+const BYTE_SPAN_DEPENDENCIES: &[&str] = &[
+    "sysroot/usr/include/c++/12/cstddef",
+    "sysroot/usr/include/c++/12/span",
+    "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
+];
+const UCHAR_SPAN: &str = "struct span__unsigned_char__value_unsigned_long_18446744073709551615";
+
+/// One caller of a generic `std::span` catalog entry: the C++ harness, the
+/// sidecar that proves it, and edits of that sidecar that must be refused,
+/// each with a fragment of the refusal.
+struct GenericSpanCase {
+    name: &'static str,
+    dependencies: &'static [&'static str],
+    harness: &'static str,
+    sidecar: String,
+    refusals: Vec<(String, &'static str)>,
+}
+
+/// Verifies each case against the catalog, then expands its proof and
+/// checks that the expansion names the span only through model accessors and
+/// verifies too, and that each edit is refused.
+fn check_generic_span_cases(cases: Vec<GenericSpanCase>) {
+    for case in cases {
+        let (root, import) = axiomatic_span_fixture(
+            case.name,
+            &format!("#include <span>\n{}\n", case.harness),
+            case.dependencies,
+        );
+        let source = format!("verifying \"span-probe.cpp\";\n{}\n", case.sidecar);
+        let sidecar = root.join("span.click");
+        fs::write(&sidecar, &source).unwrap();
+        let parsed = read_click_project(&sidecar, &source).unwrap();
+        verify_program_prepared_project(&parsed, &import)
+            .unwrap_or_else(|error| panic!("{}: {}\n{source}", case.name, error.message()));
+        let expanded = expand_project_claim_source_by_label(
+            &parsed,
+            &ProgramInputs::program(&import),
+            "probe.contract",
+        )
+        .unwrap_or_else(|error| panic!("{}: {}", case.name, error.message()));
+        assert!(!expanded.contains("extern"), "{expanded}");
+        assert!(!expanded.contains("_M_"), "{expanded}");
+        verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
+            .unwrap_or_else(|error| panic!("{}: {}\n{expanded}", case.name, error.message()));
+        for (edited, expected) in case.refusals {
+            assert_ne!(
+                edited, case.sidecar,
+                "{}: the edit must change the sidecar",
+                case.name
+            );
+            let edited = format!("verifying \"span-probe.cpp\";\n{edited}\n");
+            let parsed = read_click_project(&sidecar, &edited).unwrap();
+            let error = verify_program_prepared_project(&parsed, &import)
+                .expect_err("an unsupported claim must not verify");
+            assert!(
+                error.message().contains(expected),
+                "{}: {}\n{edited}",
+                case.name,
+                error.message()
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+// `subspan`, `last` and `size_bytes` are catalog entries generic over the
+// span's element, so `std::span<unsigned char>` and `std::span<unsigned int>`
+// callers verify against the same contracts as `std::span<int>`.
+#[test]
+fn axiomatic_span_subviews_and_byte_size_verify_for_other_elements() {
+    let window = format!(
+        r#"theorem uint64_window_bounds(n: uint64) {{
+    requires 3u64 <= n;
+    ensures 2u64 <= n - 1u64 by {{
+        apply(uint64_less_equal_to_integer(3u64, n));
+        have to_integer(1u64) <= to_integer(n) by {{
+            arithmetic() using {{ to_integer(3u64) <= to_integer(n); }}
+        }}
+        apply(uint64_subtract_to_integer(n, 1u64));
+        have to_integer(2u64) <= to_integer(n - 1u64) by {{
+            arithmetic() using {{ to_integer(n - 1u64) == to_integer(n) - 1; to_integer(3u64) <= to_integer(n); }}
+        }}
+        apply(uint64_to_integer_less_equal_implies_less_equal(2u64, n - 1u64));
+    }}
+}}
+{UCHAR_SPAN} probe({UCHAR_SPAN}& s) {{
+    views std_span_data(s);
+    views std_span_size(s);
+    requires 3u64 <= std_span_size(s);
+    ensures std_span_data(result) == std_span_data(s) + 1u64;
+    ensures std_span_size(result) == 2u64;
+}} by {{
+    apply(uint64_window_bounds(std_span_size(s)));
+    execute();
+    simp();
+}}"#
+    );
+    let last = format!(
+        r#"{UCHAR_SPAN} probe({UCHAR_SPAN}& s) {{
+    views std_span_data(s);
+    views std_span_size(s);
+    requires 1u64 <= std_span_size(s);
+    ensures std_span_data(result) == std_span_data(s) + (std_span_size(s) - 1u64);
+    ensures std_span_size(result) == 1u64;
+}} by {{
+    execute();
+    simp();
+}}"#
+    );
+    let size_bytes =
+        r#"uint64 probe(struct span__unsigned_int__value_unsigned_long_18446744073709551615& s) {
+    views std_span_size(s);
+    ensures result == std_span_size(s) * 4u64;
+} by {
+    execute();
+    simp();
+}"#
+        .to_string();
+    check_generic_span_cases(vec![
+        GenericSpanCase {
+            name: "generic-subspan",
+            dependencies: SPAN_DEPENDENCIES,
+            harness: "std::span<unsigned char> probe(std::span<unsigned char>& s) noexcept { return s.subspan(1, 2); }",
+            refusals: vec![
+                // Without room for the window, the call's precondition fails,
+                // and the refusal names it.
+                (
+                    window
+                        .replace("    requires 3u64 <= std_span_size(s);\n", "")
+                        .replace("    apply(uint64_window_bounds(std_span_size(s)));\n", ""),
+                    "subspan precondition",
+                ),
+                // The window starts at the offset, not at the view's start.
+                (
+                    window.replace(
+                        "ensures std_span_data(result) == std_span_data(s) + 1u64;",
+                        "ensures std_span_data(result) == std_span_data(s);",
+                    ),
+                    "ensures",
+                ),
+            ],
+            sidecar: window,
+        },
+        GenericSpanCase {
+            name: "generic-last",
+            dependencies: SPAN_DEPENDENCIES,
+            harness: "std::span<unsigned char> probe(std::span<unsigned char>& s) noexcept { return s.last(1); }",
+            refusals: vec![(
+                last.replace("    requires 1u64 <= std_span_size(s);\n", ""),
+                "last precondition",
+            )],
+            sidecar: last,
+        },
+        GenericSpanCase {
+            name: "generic-size-bytes",
+            dependencies: SPAN_DEPENDENCIES,
+            harness: "unsigned long probe(std::span<unsigned int>& s) noexcept { return s.size_bytes(); }",
+            // An `unsigned int` is four bytes, not one.
+            refusals: vec![(size_bytes.replace("* 4u64", "* 1u64"), "ensures")],
+            sidecar: size_bytes,
+        },
+    ]);
+}
+
+// The remaining generic entries for byte-sized elements: `data` and `first`
+// on `std::span<unsigned char>`, and a `std::span<std::byte>` subview.
+#[test]
+#[ignore = "nightly: three more pinned C++ exports"]
+fn axiomatic_span_byte_element_entries_verify() {
+    let byte_span = "struct span__std_byte__value_unsigned_long_18446744073709551615";
+    check_generic_span_cases(vec![
+        GenericSpanCase {
+            name: "generic-data",
+            dependencies: SPAN_DEPENDENCIES,
+            harness: "unsigned char* probe(std::span<unsigned char>& s) noexcept { return s.data(); }",
+            sidecar: format!(
+                "uint8* probe({UCHAR_SPAN}& s) {{ views std_span_data(s); ensures result == std_span_data(s); }} by {{ execute(); simp(); }}"
+            ),
+            refusals: vec![],
+        },
+        GenericSpanCase {
+            name: "generic-first",
+            dependencies: SPAN_DEPENDENCIES,
+            harness: "std::span<unsigned char> probe(std::span<unsigned char>& s) noexcept { return s.first(1); }",
+            sidecar: format!(
+                "{UCHAR_SPAN} probe({UCHAR_SPAN}& s) {{ views std_span_data(s); views std_span_size(s); requires 1u64 <= std_span_size(s); ensures std_span_data(result) == std_span_data(s); ensures std_span_size(result) == 1u64; }} by {{ execute(); simp(); }}"
+            ),
+            refusals: vec![],
+        },
+        GenericSpanCase {
+            name: "generic-byte-window",
+            dependencies: BYTE_SPAN_DEPENDENCIES,
+            harness: "std::span<std::byte> probe(std::span<std::byte>& s) noexcept { return s.subspan(1, 1); }",
+            sidecar: format!(
+                r#"theorem uint64_byte_window_bounds(n: uint64) {{
+    requires 2u64 <= n;
+    ensures 1u64 <= n - 1u64 by {{
+        apply(uint64_less_equal_to_integer(2u64, n));
+        have to_integer(1u64) <= to_integer(n) by {{
+            arithmetic() using {{ to_integer(2u64) <= to_integer(n); }}
+        }}
+        apply(uint64_subtract_to_integer(n, 1u64));
+        have to_integer(1u64) <= to_integer(n - 1u64) by {{
+            arithmetic() using {{ to_integer(n - 1u64) == to_integer(n) - 1; to_integer(2u64) <= to_integer(n); }}
+        }}
+        apply(uint64_to_integer_less_equal_implies_less_equal(1u64, n - 1u64));
+    }}
+}}
+{byte_span} probe({byte_span}& s) {{
+    views std_span_data(s);
+    views std_span_size(s);
+    requires 2u64 <= std_span_size(s);
+    ensures std_span_data(result) == std_span_data(s) + 1u64;
+    ensures std_span_size(result) == 1u64;
+}} by {{
+    apply(uint64_byte_window_bounds(std_span_size(s)));
+    execute();
+    simp();
+}}"#
+            ),
+            refusals: vec![],
+        },
+    ]);
 }
 
 // A caller writes through the reference `SpanPopBack` returns. The write
