@@ -260,6 +260,7 @@ pub fn expand_c0_claim_source(
     function_name: &str,
     claim: CProofClaim,
 ) -> Result<String, ClickError> {
+    let sources = CSourceContext::bundle(c_sources);
     let tokens = scan_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
     let file = parse_source_with_c_layouts(click_source, c_sources)?;
@@ -291,7 +292,13 @@ pub fn expand_c0_claim_source(
             unreachable!("function claim edits are never loop phases")
         }
     };
-    Ok(splice_source(click_source, &tokens, span, &replacement))
+    let expanded = splice_source(click_source, &tokens, span, &replacement);
+    checked_expanded_source(click_source, &sources, &replacement, expanded).map_err(|error| {
+        error.with_context(format!(
+            "expanding `{function_name}` {} at {target}",
+            claim.describe()
+        ))
+    })
 }
 
 /// Formats a function claim's already-checked certificate into its source.
@@ -382,7 +389,13 @@ fn expand_project_claim_source(
         }
         ProofSourceEdit::OmittedLoopPhase { .. } => unreachable!(),
     };
-    Ok(splice_source(click_source, &tokens, span, &replacement))
+    let expanded = splice_source(click_source, &tokens, span, &replacement);
+    checked_expanded_source(click_source, &sources, &replacement, expanded).map_err(|error| {
+        error.with_context(format!(
+            "expanding `{function_name}` {} at {target}",
+            claim.describe()
+        ))
+    })
 }
 
 fn expand_c0_prepared_claim_source(
@@ -426,7 +439,13 @@ fn expand_c0_prepared_claim_source(
         }
         ProofSourceEdit::OmittedLoopPhase { .. } => unreachable!(),
     };
-    Ok(splice_source(click_source, &tokens, span, &replacement))
+    let expanded = splice_source(click_source, &tokens, span, &replacement);
+    checked_expanded_source(click_source, &sources, &replacement, expanded).map_err(|error| {
+        error.with_context(format!(
+            "expanding `{function_name}` {} at {target}",
+            claim.describe()
+        ))
+    })
 }
 
 /// Use the same claim labels for every source/import route. A selected
@@ -663,7 +682,13 @@ fn expand_program_prepared_claim_source_context(
         }
         ProofSourceEdit::OmittedLoopPhase { .. } => unreachable!(),
     };
-    Ok(splice_source(click_source, &tokens, span, &replacement))
+    let expanded = splice_source(click_source, &tokens, span, &replacement);
+    checked_expanded_source(click_source, &sources, &replacement, expanded).map_err(|error| {
+        error.with_context(format!(
+            "expanding `{function_name}` {} at {target}",
+            claim.describe()
+        ))
+    })
 }
 
 /// What `click expand --claim` rewrote: the source, and the label of the
