@@ -7945,37 +7945,7 @@ impl<'a> Proof<'a> {
                                 }
                             }
                         }
-                        None => {
-                            let mut surfaces = vec![surface.clone()];
-                            surfaces.extend(collect_bounded_surface_conjunct_leaves(&surface)?);
-                            let closed = have.try_simp_closure_with_surfaces(&surfaces)?;
-                            if closed.is_some() {
-                                closed
-                            } else if let ClickProposition::Exists {
-                                click_type: ClickType::C(syntax::C0Type::Int32),
-                                name,
-                                written_name,
-                                ..
-                            } = &surface
-                            {
-                                let witnessed = attempt::candidate_outcome(have.apply_step(
-                                    ProofStep::Witness(ProofWitness::single(
-                                        written_name.as_ref().unwrap_or(name).clone(),
-                                        ContractExpression::CFragment(CExpression::Value(
-                                            CValue::Int32(Bitvector32Term::Constant(0)),
-                                        )),
-                                    )),
-                                ))?;
-                                match witnessed {
-                                    Some(witnessed) => {
-                                        witnessed.try_simp_closure_with_surfaces(&surfaces)?
-                                    }
-                                    None => None,
-                                }
-                            } else {
-                                None
-                            }
-                        }
+                        None => close_requirement_have_by_auto(have, &surface)?,
                     };
                     let Some(closed) = closed else {
                         return Err(error);
@@ -9356,4 +9326,40 @@ fn unsigned_order_parts(
         return None;
     }
     Some((order, unflipped(left)?, unflipped(right)?))
+}
+
+/// Closes a `have` of a step requirement the way smart execution does: the
+/// bounded simp closure over the requirement and its conjunct leaves, and for
+/// an `int32` existential a witness of 0 first. This is the implicit `auto`
+/// a step runs for an obligation nothing written proves.
+pub(in crate::surface::proof) fn close_requirement_have_by_auto<'a>(
+    have: ProofScope<'a>,
+    surface: &ClickProposition,
+) -> Result<Option<ProofScope<'a>>, ClickError> {
+    let mut surfaces = vec![surface.clone()];
+    surfaces.extend(collect_bounded_surface_conjunct_leaves(surface)?);
+    let closed = have.try_simp_closure_with_surfaces(&surfaces)?;
+    if closed.is_some() {
+        return Ok(closed);
+    }
+    let ClickProposition::Exists {
+        click_type: ClickType::C(syntax::C0Type::Int32),
+        name,
+        written_name,
+        ..
+    } = surface
+    else {
+        return Ok(None);
+    };
+    let witnessed =
+        attempt::candidate_outcome(have.apply_step(ProofStep::Witness(ProofWitness::single(
+            written_name.as_ref().unwrap_or(name).clone(),
+            ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+                Bitvector32Term::Constant(0),
+            ))),
+        ))))?;
+    match witnessed {
+        Some(witnessed) => witnessed.try_simp_closure_with_surfaces(&surfaces),
+        None => Ok(None),
+    }
 }

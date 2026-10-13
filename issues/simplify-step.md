@@ -189,7 +189,21 @@ Expansion keeps the forms and prints each body's checked steps
 forms inside `branch` and other structured drivers, and labels beyond
 documentation.
 
-**2b, the driver.** One shared driver per simple tactic: build each obligation with its Surface
+**2b, implicit `auto` for `step` (landed).** A bare step, and every
+obligation a `requires` block leaves unwritten, now goes fast path then
+implicit `auto`: each open obligation is spelled with `requirement_surface`
+and proved as a `have` by `close_requirement_have_by_auto`, the closure smart
+execution's retry already used, and the step records it so expansion prints
+`step() by { ... }` or `step() { requires P by ...; }`. When the probe meets a
+refusal it cannot record, or `auto` cannot spell or prove an obligation, the
+step falls back to its former checking, so diagnostics are unchanged; the
+census counts what remains. Tests check expanded proofs cold with
+`without_implicit_auto`, under which a step gets only its fast path and
+written proofs. The mdtest census fell from 47 to 26 (`And` 22 to 2,
+`FiniteForAll` 1 to 0, `Implies` 12 to 11, `ContextualAtomic` unchanged at
+12); the examples' 4 `And` are unchanged.
+
+**2c, the driver.** One shared driver per simple tactic: build each obligation with its Surface
 spelling where the obligation is created (a callee clause with the call's
 argument expressions substituted, an access expression at its program point),
 try the fast path, then implicit `auto`, and record the expandable proof.

@@ -77,36 +77,46 @@ fn missing_prerequisite_error(
     }
 }
 
+/// What a probing `Fast` step met while [`probe_open_obligations`] ran.
+#[derive(Default)]
+pub(in crate::surface) struct OpenObligationProbe {
+    /// The open obligations that carry a structured requirement, in order.
+    pub(in crate::surface) recorded: Vec<UnresolvedRequirement>,
+    /// Whether the step was refused at a search site for an obligation with
+    /// no structured requirement. Only then can the former search-backed
+    /// checking succeed where the probe failed.
+    pub(in crate::surface) refused_where_search_ran: bool,
+}
+
 thread_local! {
-    /// The open obligations a probing `Fast` step has met, in order, while
-    /// [`probe_open_obligations`] runs.
-    static OPEN_OBLIGATION_PROBE: std::cell::RefCell<Option<Vec<UnresolvedRequirement>>> =
+    static OPEN_OBLIGATION_PROBE: std::cell::RefCell<Option<OpenObligationProbe>> =
         const { std::cell::RefCell::new(None) };
 }
 
 /// Runs `operation` with every `Fast` refusal that carries a structured
-/// requirement recorded instead of returned, and returns those requirements in
-/// the order the step met them. What `operation` produces is not a checked
-/// step: it skipped the recorded obligations, so callers discard it and use
-/// only the list.
+/// requirement recorded instead of returned, and returns what the step met.
+/// What `operation` produces is a checked step only when nothing was
+/// recorded: otherwise it skipped the recorded obligations, so callers
+/// discard it and use only the list.
 pub(in crate::surface) fn probe_open_obligations<R>(
     operation: impl FnOnce() -> R,
-) -> (R, Vec<UnresolvedRequirement>) {
-    struct Restore(Option<Vec<UnresolvedRequirement>>);
+) -> (R, OpenObligationProbe) {
+    struct Restore(Option<OpenObligationProbe>);
     impl Drop for Restore {
         fn drop(&mut self) {
             let previous = self.0.take();
             OPEN_OBLIGATION_PROBE.with(|probe| *probe.borrow_mut() = previous);
         }
     }
-    let previous = OPEN_OBLIGATION_PROBE.with(|probe| probe.borrow_mut().replace(Vec::new()));
+    let previous = OPEN_OBLIGATION_PROBE
+        .with(|probe| probe.borrow_mut().replace(OpenObligationProbe::default()));
     let restore = Restore(previous);
     let result = operation();
-    let recorded = OPEN_OBLIGATION_PROBE
+    let met = OPEN_OBLIGATION_PROBE
         .with(|probe| probe.borrow_mut().take())
         .unwrap_or_default();
     drop(restore);
-    (result, recorded)
+    (result, met)
 }
 
 /// Returns `error`, or, while a `Fast` step is being probed, records its
@@ -115,17 +125,25 @@ fn refuse_or_probe(
     policy: StatementPrerequisitePolicy,
     error: ClickError,
 ) -> Result<(), ClickError> {
-    if matches!(policy, StatementPrerequisitePolicy::Fast)
-        && let Some(requirement) = error.unresolved_requirement()
-    {
-        let recorded = OPEN_OBLIGATION_PROBE.with(|probe| {
-            probe.borrow_mut().as_mut().map(|recorded| {
-                recorded.push(requirement.clone());
-            })
-        });
-        if recorded.is_some() {
-            return Ok(());
+    if !matches!(policy, StatementPrerequisitePolicy::Fast) {
+        return Err(error);
+    }
+    let recorded = OPEN_OBLIGATION_PROBE.with(|probe| {
+        let mut probe = probe.borrow_mut();
+        let probe = probe.as_mut()?;
+        match error.unresolved_requirement() {
+            Some(requirement) => {
+                probe.recorded.push(requirement.clone());
+                Some(true)
+            }
+            None => {
+                probe.refused_where_search_ran = true;
+                Some(false)
+            }
         }
+    });
+    if recorded == Some(true) {
+        return Ok(());
     }
     Err(error)
 }

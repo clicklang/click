@@ -898,10 +898,7 @@ impl<'a> Proof<'a> {
     ) -> Result<Self, ClickError> {
         #[cfg(test)]
         let hidden_before = crate::instrumentation::hidden_prerequisites_on_thread();
-        let result = self.apply_execution_statement_step_with_policy(
-            step,
-            StatementPrerequisitePolicy::Retained,
-        );
+        let result = self.apply_bare_statement_step(step);
         #[cfg(test)]
         if crate::instrumentation::hidden_prerequisites_on_thread() > hidden_before {
             crate::surface::proof::cursor_execution::record_planning_statement_transition(
@@ -1374,17 +1371,7 @@ impl<'a> Proof<'a> {
         });
         // A refusal the probe could not record is the step's own failure.
         probe?;
-        let mut open: Vec<UnresolvedRequirement> = Vec::new();
-        for requirement in recorded {
-            if !open.iter().any(|seen| {
-                crate::kernel::proof::propositions_are_alpha_equal(
-                    &seen.proposition,
-                    &requirement.proposition,
-                )
-            }) {
-                open.push(requirement);
-            }
-        }
+        let open = distinct_requirements(recorded.recorded);
         let spelling = |requirement: &UnresolvedRequirement| -> Result<String, ClickError> {
             Ok(match self.requirement_surface(requirement, &step)? {
                 Some(surface) => crate::surface::printing::source_click_proposition(&surface),
@@ -1409,6 +1396,7 @@ impl<'a> Proof<'a> {
                 .join(", "))
         };
         let mut current = self.clone();
+        let mut all_open_proved = true;
         let proof = match entries {
             None => {
                 let [requirement] = open.as_slice() else {
@@ -1478,19 +1466,138 @@ impl<'a> Proof<'a> {
                         proof: retained_have_body(&current.certificate_since(&checkpoint)?)?,
                     });
                 }
+                // The obligations no entry writes go to the implicit `auto`;
+                // expansion prints each one it proves as an entry.
+                let unwritten = open
+                    .iter()
+                    .zip(&claimed)
+                    .filter(|(_, claimed)| claimed.is_none())
+                    .map(|(requirement, _)| requirement)
+                    .collect::<Vec<_>>();
+                match (!implicit_auto_disabled())
+                    .then(|| current.prove_obligations_by_auto(&step, &unwritten))
+                    .transpose()?
+                    .flatten()
+                {
+                    Some((proved_by_auto, entries)) => {
+                        current = proved_by_auto;
+                        proved.extend(entries);
+                    }
+                    None => all_open_proved = false,
+                }
                 StepProofCertificate::Requires(proved)
             }
         };
-        // With a plain `by`, the one open obligation is now proved, so the
-        // fast path closes every obligation. Unwritten `requires`
-        // obligations keep the ordinary step's checking for now.
-        let policy = if entries.is_none() {
+        // Every open obligation is now proved, so the fast path closes the
+        // step. An obligation the implicit `auto` could not prove keeps the
+        // bare step's former checking until the cut-over removes it.
+        let policy = if all_open_proved || implicit_auto_disabled() {
             StatementPrerequisitePolicy::Fast
         } else {
             StatementPrerequisitePolicy::Retained
         };
         let stepped = current.apply_execution_statement_step_with_policy(step.clone(), policy)?;
-        Ok(Self {
+        Ok(self.step_proved_successor(stepped, step, proof))
+    }
+
+    /// A bare step (`issues/simplify-step.md`): the fast path, then the
+    /// implicit `auto` for each obligation it leaves open, recorded so that
+    /// expansion prints the step with a `by` or `requires` entries. When the
+    /// probe meets a refusal it cannot record, or the implicit `auto` cannot
+    /// spell or prove an obligation, the step is checked as it was before the
+    /// implicit `auto`, so its diagnostics are unchanged.
+    fn apply_bare_statement_step(&self, step: ProofStep) -> Result<Self, ClickError> {
+        if implicit_auto_disabled() {
+            return self.apply_execution_statement_step_with_policy(
+                step,
+                StatementPrerequisitePolicy::Fast,
+            );
+        }
+        let former = || {
+            self.apply_execution_statement_step_with_policy(
+                step.clone(),
+                StatementPrerequisitePolicy::Retained,
+            )
+        };
+        let (probe, recorded) = probe_open_obligations(|| {
+            self.apply_execution_statement_step_with_policy(
+                step.clone(),
+                StatementPrerequisitePolicy::Fast,
+            )
+        });
+        if recorded.recorded.is_empty() {
+            // With nothing recorded, the probe ran the ordinary checked step.
+            // Its refusal is the former checking's too, unless it came from a
+            // site where that checking would have searched.
+            return match probe {
+                Ok(stepped) => Ok(stepped),
+                Err(_) if recorded.refused_where_search_ran => former(),
+                Err(error) => Err(error),
+            };
+        }
+        let open = distinct_requirements(recorded.recorded);
+        let open = open.iter().collect::<Vec<_>>();
+        let Some((proved, mut entries)) = self.prove_obligations_by_auto(&step, &open)? else {
+            return former();
+        };
+        let Ok(stepped) = proved.apply_execution_statement_step_with_policy(
+            step.clone(),
+            StatementPrerequisitePolicy::Fast,
+        ) else {
+            return former();
+        };
+        let proof = if entries.len() == 1 {
+            StepProofCertificate::By(Box::new(entries.pop().expect("one entry").proof))
+        } else {
+            StepProofCertificate::Requires(entries)
+        };
+        Ok(self.step_proved_successor(stepped, step, proof))
+    }
+
+    /// Proves each requirement by the implicit `auto` at this pre-state, as a
+    /// `have` of its Surface spelling. `None` when one has no spelling or
+    /// `auto` does not prove it.
+    pub(in crate::surface::proof) fn prove_obligations_by_auto(
+        &self,
+        step: &ProofStep,
+        requirements: &[&UnresolvedRequirement],
+    ) -> Result<Option<(Self, Vec<StepRequirementCertificate>)>, ClickError> {
+        let mut current = self.clone();
+        let mut entries = Vec::with_capacity(requirements.len());
+        for requirement in requirements {
+            let Some(surface) = current.requirement_surface(requirement, step)? else {
+                return Ok(None);
+            };
+            let checkpoint = current.checkpoint();
+            let Ok(have) = current.begin_have(surface.clone()) else {
+                return Ok(None);
+            };
+            let Some(closed) =
+                crate::surface::proof::smart_closures::close_requirement_have_by_auto(
+                    have, &surface,
+                )?
+            else {
+                return Ok(None);
+            };
+            current = closed.join()?;
+            entries.push(StepRequirementCertificate {
+                label: None,
+                proposition: surface,
+                proof: retained_have_body(&current.certificate_since(&checkpoint)?)?,
+            });
+        }
+        Ok(Some((current, entries)))
+    }
+
+    /// This Proof advanced by `stepped`'s checked step, recorded as one
+    /// `StepProved` node so the obligation proofs expand with the step.
+    fn step_proved_successor(
+        &self,
+        stepped: Self,
+        step: ProofStep,
+        proof: StepProofCertificate,
+    ) -> Self {
+        Self {
             site: self.site.clone(),
             context: self.context.clone(),
             state: stepped.state,
@@ -1502,7 +1609,7 @@ impl<'a> Proof<'a> {
                     proof,
                 }),
             ),
-        })
+        }
     }
 
     pub(in crate::surface::proof) fn apply_close_invariants_body(
@@ -2437,4 +2544,44 @@ fn retained_have_body(certificate: &ProofCertificate) -> Result<ProofCertificate
             _ => None,
         })
         .ok_or_else(|| ClickError::new("a step obligation proof retained no `have`"))
+}
+
+/// Requirements up to alpha-equivalence, in the order first met.
+fn distinct_requirements(recorded: Vec<UnresolvedRequirement>) -> Vec<UnresolvedRequirement> {
+    let mut distinct: Vec<UnresolvedRequirement> = Vec::new();
+    for requirement in recorded {
+        if !distinct.iter().any(|seen| {
+            crate::kernel::proof::propositions_are_alpha_equal(
+                &seen.proposition,
+                &requirement.proposition,
+            )
+        }) {
+            distinct.push(requirement);
+        }
+    }
+    distinct
+}
+
+thread_local! {
+    static IMPLICIT_AUTO_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn implicit_auto_disabled() -> bool {
+    IMPLICIT_AUTO_DISABLED.with(std::cell::Cell::get)
+}
+
+/// Runs `operation` with the implicit `auto` off: a step gets only its fast
+/// path and its written obligation proofs, with no search, so an obligation
+/// nothing written proves is refused with its structured requirement. This
+/// is how an expanded proof is checked cold (`issues/simplify-step.md`).
+#[cfg(test)]
+pub(crate) fn without_implicit_auto<R>(operation: impl FnOnce() -> R) -> R {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            IMPLICIT_AUTO_DISABLED.with(|disabled| disabled.set(self.0));
+        }
+    }
+    let _restore = Restore(IMPLICIT_AUTO_DISABLED.with(|disabled| disabled.replace(true)));
+    operation()
 }
