@@ -5504,10 +5504,21 @@ pub(in crate::surface) fn build_function_environment(
             environment.with_function_contract(contract.with_proof_parameters(proof_parameters));
     }
     for (source_path, function) in parsed_sources.values() {
-        let function = match function_blocks
+        let mut function_block = function_blocks
             .iter()
-            .find(|block| block.signature().name() == function.source_name())
+            .find(|block| block.signature().name() == function.source_name());
+        // A program's internal-linkage function is never the C library's
+        // function of the same name, whose contract the standard library
+        // declares. The C parser refuses an external-linkage definition of
+        // a library function Click specifies.
+        if let Some(block) = function_block
+            && block.is_external()
+            && function.name() != function.source_name()
+            && standard_library_function_block(block.signature().name())?.as_ref() == Some(block)
         {
+            function_block = None;
+        }
+        let function = match function_block {
             Some(function_block) => {
                 check_signature(function_block.signature(), function, source_path)?;
                 let (resource_requires, resource_ensures) = function_resource_summary(
