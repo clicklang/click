@@ -318,18 +318,55 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         if c(grown) == 0 {
             step();
             step();
-            have result == 0 by auto;
-            have result == 0 implies owner->len == old(owner->len) by auto;
-            have result == 0 implies owner->cap == old(owner->cap) by auto;
-            have result == 0 implies owner->data == old(owner->data) by auto;
-            have result == 1 implies owner->len == (old(owner->len) + 1) by auto;
-            have result == 1 implies owner->data[old(owner->len)] == value by auto;
+            have not old(owner->len) < old(owner->cap) by {
+                rewrite(at(function.entry, owner->len == owner->cap));
+                normalize();
+            }
+            have result == 0 by {
+                normalize();
+            }
+            have result == 0 or result == 1 by {
+                assumption();
+            }
+            have result == 0 implies owner->len == old(owner->len) by {
+                intro();
+                transport(old(owner->len) == old(owner->len), owner->len == old(owner->len)) using {
+                }
+                assumption();
+            }
+            have result == 0 implies owner->cap == old(owner->cap) by {
+                intro();
+                extract(at(statement(4).entry, owner->cap) == at(statement(3).entry, owner->cap));
+                assumption();
+            }
+            have result == 0 implies owner->data == old(owner->data) by {
+                intro();
+                extract(at(statement(4).entry, owner->data) == at(statement(3).entry, owner->data));
+                assumption();
+            }
+            have result == 1 implies owner->len == (old(owner->len) + 1) by {
+                intro();
+                contradiction(result == 1);
+            }
+            have result == 1 implies owner->data[old(owner->len)] == value by {
+                intro();
+                contradiction(result == 1);
+            }
             have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
                 assumption();
             }
-            have old(owner->len) < old(owner->cap) implies result == 1 by auto;
-            have old(owner->len) < old(owner->cap) implies owner->cap == old(owner->cap) by auto;
-            have old(owner->len) < old(owner->cap) implies owner->data == old(owner->data) by auto;
+            have old(owner->len) < old(owner->cap) implies result == 1 by {
+                intro();
+                contradiction(old(owner->len) < old(owner->cap));
+            }
+            have old(owner->len) < old(owner->cap) implies owner->cap == old(owner->cap) by {
+                intro();
+                contradiction(old(owner->len) < old(owner->cap));
+            }
+            have old(owner->len) < old(owner->cap) implies owner->data == old(owner->data) by {
+                intro();
+                contradiction(old(owner->len) < old(owner->cap));
+            }
             assumption();
             assumption();
             assumption();
@@ -345,7 +382,29 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             step();
             step();
             unfold(allocated_vector(owner));
-            have 536870911 < 2147483647 by auto;
+            have c(grown) == 1 by {
+                cases {
+                    c(grown) == 0 => {
+                        contradiction(c(grown) == 0);
+                    }
+                    c(grown) == 1 => {
+                        assumption();
+                    }
+                }
+            }
+            have owner->len == old(owner->len) by {
+                assumption();
+            }
+            have owner->cap == (old(owner->cap) + 1) by {
+                extract(owner->cap == (old(owner->cap) + 1));
+                assumption();
+            }
+            have at(function.entry, owner->cap) <= 536870911 by {
+                assumption();
+            }
+            have 536870911 < 2147483647 by {
+                normalize();
+            }
             apply(int32_less_equal_less_than_transitive(at(function.entry, owner->cap), 536870911, 2147483647)) using {
                 at(function.entry, owner->cap) <= 536870911;
                 536870911 < 2147483647;
@@ -353,16 +412,97 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             apply(int32_increment_strictly_increases(at(function.entry, owner->cap), 2147483647)) using {
                 at(function.entry, owner->cap) < 2147483647;
             }
+            have owner->len < owner->cap by {
+                rewrite(owner->len == old(owner->len));
+                rewrite(owner->cap == (old(owner->cap) + 1));
+                rewrite(at(function.entry, owner->len == owner->cap));
+                assumption();
+            }
             fold(vector_storage(owner));
             step();
+            have at(statement(8).exit, owner->data[at(statement(8).entry, owner->len)]) == at(statement(8).exit, value) by {
+                assumption();
+            }
             unfold(vector_storage(owner));
+            have 0 <= owner->len by {
+                assumption();
+            }
+            have owner->len <= owner->cap by {
+                assumption();
+            }
+            have owner->cap == at(statement(8).entry, owner->cap) by {
+                assumption();
+            }
+            have 1 <= at(statement(8).entry, owner->cap) by {
+                assumption();
+            }
+            have at(statement(8).entry, owner->cap) <= 536870911 by {
+                assumption();
+            }
+            have 1 <= owner->cap by {
+                rewrite(owner->cap == at(statement(8).entry, owner->cap));
+                assumption();
+            }
+            have owner->cap <= 536870911 by {
+                rewrite(owner->cap == at(statement(8).entry, owner->cap));
+                assumption();
+            }
             fold(allocated_vector(owner));
             step();
-     have result == 0 implies owner->len == old(owner->len) by auto;
-            have result == 0 implies owner->cap == old(owner->cap) by auto;
-            have result == 0 implies owner->data == old(owner->data) by auto;
-            have result == 1 implies owner->len == (old(owner->len) + 1) by auto;
-            have result == 1 implies owner->data[old(owner->len)] == value by auto;
+            have not old(owner->len) < old(owner->cap) by {
+                rewrite(at(function.entry, owner->len == owner->cap));
+                normalize();
+            }
+            have result == 0 or result == 1 by {
+                have result == 1 by normalize();
+                assumption();
+            }
+            have result == 0 implies owner->len == old(owner->len) by {
+                simp();
+            }
+            have result == 0 implies owner->cap == old(owner->cap) by {
+                simp();
+            }
+            have result == 0 implies owner->data == old(owner->data) by {
+                simp();
+            }
+            have at(statement(8).entry, owner->len) == old(owner->len) by {
+                assumption();
+            }
+            have owner->len == (old(owner->len) + 1) by {
+                rewrite(owner->len == (at(statement(8).entry, owner->len) + 1));
+                rewrite(at(statement(8).entry, owner->len) == old(owner->len));
+                normalize();
+            }
+            have result == 1 implies owner->len == (old(owner->len) + 1) by {
+                intro();
+                assumption();
+            }
+            have at(statement(8).entry, owner->len) < at(statement(8).entry, owner->cap) by {
+                assumption();
+            }
+            have at(statement(8).entry, owner->len) == old(owner->len) by {
+                assumption();
+            }
+            have owner->cap == at(statement(8).entry, owner->cap) by {
+                assumption();
+            }
+            have old(owner->len) < owner->cap by {
+                transport(at(statement(8).entry, owner->len) < at(statement(8).entry, owner->cap), old(owner->len) < owner->cap) using {
+                    at(statement(8).entry, owner->len) < at(statement(8).entry, owner->cap);
+                    at(statement(8).entry, owner->len) == old(owner->len);
+                    owner->cap == at(statement(8).entry, owner->cap);
+                }
+                assumption();
+            }
+            have owner->data[old(owner->len)] == value by {
+                rewrite(old(owner->len) == at(statement(8).entry, owner->len));
+                assumption();
+            }
+            have result == 1 implies owner->data[old(owner->len)] == value by {
+                intro();
+                assumption();
+            }
             have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
                 intro();
                 intro();
@@ -376,9 +516,18 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 }
                 assumption();
             }
-            have old(owner->len) < old(owner->cap) implies result == 1 by auto;
-            have old(owner->len) < old(owner->cap) implies owner->cap == old(owner->cap) by auto;
-            have old(owner->len) < old(owner->cap) implies owner->data == old(owner->data) by auto;
+            have old(owner->len) < old(owner->cap) implies result == 1 by {
+                intro();
+                contradiction(old(owner->len) < old(owner->cap));
+            }
+            have old(owner->len) < old(owner->cap) implies owner->cap == old(owner->cap) by {
+                intro();
+                contradiction(old(owner->len) < old(owner->cap));
+            }
+            have old(owner->len) < old(owner->cap) implies owner->data == old(owner->data) by {
+                intro();
+                contradiction(old(owner->len) < old(owner->cap));
+            }
             assumption();
             assumption();
             assumption();
@@ -393,7 +542,22 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         }
     } else {
         observe(allocated_vector(owner));
-        have owner->len < owner->cap by auto;
+        have owner->len <= owner->cap by {
+            assumption();
+        }
+        have not owner->len == owner->cap by {
+            assumption();
+        }
+        have owner->len < owner->cap by {
+            apply(int32_less_equal_and_not_equal_implies_less_than(owner->len, owner->cap)) using {
+                owner->len <= owner->cap;
+                not owner->len == owner->cap;
+            }
+            assumption();
+        }
+        have old(owner->len) < old(owner->cap) by {
+            assumption();
+        }
         step();
         step();
         step();
@@ -402,25 +566,87 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         fold(vector_storage(owner));
         step();
         unfold(vector_storage(owner));
+        have 0 <= owner->len by {
+            assumption();
+        }
+        have owner->len <= owner->cap by {
+            assumption();
+        }
+        have 1 <= owner->cap by {
+            rewrite(owner->cap == at(statement(0).entry, owner->cap));
+            assumption();
+        }
+        have owner->cap <= 536870911 by {
+            rewrite(owner->cap == at(statement(0).entry, owner->cap));
+            assumption();
+        }
         fold(allocated_vector(owner));
         step();
+        have 0 == 0 by {
+            normalize();
+        }
+        have at(statement(0).entry, 0) <= at(statement(0).entry, owner->len) by {
+            assumption();
+        }
         have at(statement(0).entry, (owner->len + 1)) <= at(statement(0).entry, owner->cap) by {
+            have at(statement(0).entry, owner->len) < at(statement(0).entry, owner->cap) by {
+                transport(owner->len < owner->cap, at(statement(0).entry, owner->len) < at(statement(0).entry, owner->cap)) using {
+                    owner->len < owner->cap;
+                }
+                assumption();
+            }
             apply(int32_increment_upper_bound(at(statement(0).entry, owner->len), at(statement(0).entry, owner->cap))) using {
                 at(statement(0).entry, owner->len) < at(statement(0).entry, owner->cap);
             }
             assumption();
         }
-        have result == 0 implies owner->len == old(owner->len) by auto;
-        have result == 0 implies owner->cap == old(owner->cap) by auto;
-        have result == 0 implies owner->data == old(owner->data) by auto;
-        have result == 1 implies owner->len == (old(owner->len) + 1) by auto;
-        have result == 1 implies owner->data[old(owner->len)] == value by auto;
+        have result == 1 by {
+            normalize();
+        }
+        have result == 0 or result == 1 by {
+            assumption();
+        }
+        have result == 0 implies owner->len == old(owner->len) by {
+            simp();
+        }
+        have result == 0 implies owner->cap == old(owner->cap) by {
+            simp();
+        }
+        have result == 0 implies owner->data == old(owner->data) by {
+            simp();
+        }
+        have result == 1 implies owner->len == (old(owner->len) + 1) by {
+            intro();
+            assumption();
+        }
+        have owner->data[old(owner->len)] == value by {
+            assumption();
+        }
+        have result == 1 implies owner->data[old(owner->len)] == value by {
+            intro();
+            assumption();
+        }
         have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
             assumption();
         }
-        have old(owner->len) < old(owner->cap) implies result == 1 by auto;
-        have old(owner->len) < old(owner->cap) implies owner->cap == old(owner->cap) by auto;
-        have old(owner->len) < old(owner->cap) implies owner->data == old(owner->data) by auto;
+        have owner->cap == old(owner->cap) by {
+            assumption();
+        }
+        have owner->data == old(owner->data) by {
+            assumption();
+        }
+        have old(owner->len) < old(owner->cap) implies result == 1 by {
+            intro();
+            assumption();
+        }
+        have old(owner->len) < old(owner->cap) implies owner->cap == old(owner->cap) by {
+            intro();
+            assumption();
+        }
+        have old(owner->len) < old(owner->cap) implies owner->data == old(owner->data) by {
+            intro();
+            assumption();
+        }
         assumption();
         assumption();
         assumption();

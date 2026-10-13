@@ -52,7 +52,16 @@ fn sum(bytes: &[u8]) -> i32 {
             close_invariants();
         }
     }
-    have i == bytes.len() by auto;
+    have i == bytes.len() by {
+        apply(uint64_less_equal_and_not_less_than_implies_equal(i, bytes.len())) using {
+            i <= bytes.len();
+            not i < bytes.len();
+        }
+    }
+    have prefix(bytes, i) == prefix(bytes, bytes.len()) by {
+        rewrite(i == bytes.len());
+        simp();
+    }
     have to_integer(total) == prefix(bytes, bytes.len()) by auto;
     execute();
     simp();

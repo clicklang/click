@@ -118,8 +118,12 @@ int32 owned_string_init(
     step();
     step();
     step();
-    have terminated_at(owner->data, owner->len) by auto;
+    have terminated_at(owner->data, owner->len) by {
+        unfold(terminated_at);
+        simp();
+    }
     have 0 <= owner->len;
+    have owner->len < owner->cap;
     have separate(
         memory(*owner),
         memory(owner->data[0..owner->cap])
@@ -131,6 +135,21 @@ int32 owned_string_init(
         }
     }
     fold(owned_string(owner));
+    have result == 0 by {
+        normalize();
+    }
+    have owner->len == 0 by {
+        normalize();
+    }
+    have owner->cap == capacity by {
+        normalize();
+    }
+    have owner->data == data by {
+        normalize();
+    }
+    have data[0] == 0 by {
+        normalize();
+    }
     assumption();
     assumption();
     assumption();
@@ -339,21 +358,79 @@ int32 owned_string_pipeline(
     step();
     step();
     step();
+    have ignored == 0 by {
+        assumption();
+    }
+    have owner->len == 0 by {
+        assumption();
+    }
+    have owner->cap == capacity by {
+        assumption();
+    }
+    have (owner->len + 1) < owner->cap by {
+        rewrite(owner->cap == capacity);
+        rewrite(owner->len == 0);
+        apply(int32_increment_less_equal_implies_less_than(1, at(statement(2).entry, capacity))) using {
+            at(statement(2).entry, 2) <= at(statement(2).entry, capacity);
+        }
+        assumption();
+    }
     step();
+    have owner->len == 1 by {
+        rewrite(owner->len == at(statement(3).entry, owner->len + 1));
+        rewrite(at(statement(3).entry, owner->len) == at(statement(3).entry, 0));
+        normalize();
+    }
+    have 0 < owner->len by {
+        rewrite(owner->len == 1);
+        normalize();
+    }
+    have owner->data[at(statement(3).entry, owner->len)] == first by {
+        assumption();
+    }
     have owner->data[0] == first by {
         rewrite(first == owner->data[at(statement(3).entry, owner->len)]);
         rewrite(at(statement(3).entry, owner->len) == at(statement(3).entry, 0));
         normalize();
     }
     step();
+    have 1 <= owner->len by {
+        rewrite(owner->len == 1);
+        normalize();
+    }
+    have observed == first by {
+        rewrite(first == owner->data[0]);
+        assumption();
+    }
     step();
+    have owner->len == at(statement(5).entry, owner->len) - 1 by {
+        assumption();
+    }
+    have at(statement(5).entry, owner->len) == 1 by {
+        assumption();
+    }
     apply(decremented_one_is_zero(at(statement(5).entry, owner->len), owner->len)) using {
         at(statement(5).entry, owner->len) == 1;
         owner->len == (at(statement(5).entry, owner->len) - 1);
     }
+    have owner->len == 0 by {
+        assumption();
+    }
     unfold(owned_string(owner));
     fold(empty_owned_string(owner));
+    have observed == first by {
+        assumption();
+    }
     step();
+    have result == at(statement(6).entry, observed) by {
+        normalize();
+    }
+    have at(statement(6).entry, observed) == first by {
+        assumption();
+    }
+    have result == first by {
+        assumption();
+    }
     assumption();
     assumption();
 }

@@ -147,10 +147,40 @@ int32 input_cursor_shared_pipeline(
     ensures result == data[0];
 } by {
     execute_until(statement(4));
-    have left->pos < left->len by auto;
+    have separate(memory(*right), memory(left->data[0..left->len])) by {
+        simp() using {
+            left->len == length;
+            left->data == data;
+            separate(memory(*right), memory(data[0..length]));
+        }
+    }
+    have left->pos == 0;
+    have left->pos < left->len by {
+        simp() using {
+            1 <= length;
+            left->len == length;
+            left->pos == 0;
+        }
+    }
+    have left->data == data;
     step();
     transport(at(statement(4).entry, left->pos) < at(statement(4).entry, left->len), left->pos < left->len) using {
         at(statement(4).entry, left->pos) < at(statement(4).entry, left->len);
+    }
+    have right->pos < right->len by {
+        simp() using {
+            1 <= length;
+            right->len == length;
+            right->pos == 0;
+        }
+    }
+    have right->pos == 0;
+    have right->data == data;
+    have left->data == data by {
+        transport(at(statement(4).entry, left->data) == data, left->data == data) using {
+            at(statement(4).entry, left->data) == data;
+        }
+        assumption();
     }
     transport(at(statement(4).entry, left->len) == length, left->len == length) using {
         at(statement(4).entry, left->len) == length;
@@ -162,11 +192,43 @@ int32 input_cursor_shared_pipeline(
     transport(at(statement(5).entry, left->len) == length, left->len == length) using {
         at(statement(5).entry, left->len) == length;
     }
+    have right->pos == 0 by {
+        transport(at(statement(5).entry, right->pos) == 0, right->pos == 0) using {
+            at(statement(5).entry, right->pos) == 0;
+        }
+        assumption();
+    }
+    have 0 < right->len by {
+        simp() using {
+            right->len == length;
+            1 <= length;
+        }
+    }
+    have right->pos < right->len by {
+        simp() using {
+            right->pos == 0;
+            0 < right->len;
+        }
+    }
+    have right->data == data by {
+        transport(at(statement(5).entry, right->data) == data, right->data == data) using {
+            at(statement(5).entry, right->data) == data;
+        }
+        assumption();
+    }
+    have at(statement(5).entry, left->pos) == 0;
+    have left->pos == at(statement(5).entry, left->pos) + 1;
     apply(incremented_zero_is_one(
         at(statement(5).entry, left->pos),
         left->pos
     ));
     step();
+    have right_value == right->data[right->pos] by {
+        assumption();
+    }
+    have right->pos == 0;
+    have right->data == data;
+    have right_value == right->data[right->pos];
     have right->data[right->pos] == data[0] by {
         simp() using {
             right->pos == 0;
