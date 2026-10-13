@@ -274,7 +274,7 @@ fn charon_adler2_helpers_from_rejects_false_lanes_and_short_reads() {
 }
 
 // The audit's retained formatter must also recognize lowered Rust method names,
-// so native claims do not fall back to replaying their original verification.
+// so native claims do not fall back to repeating their original verification.
 #[test]
 fn charon_adler2_helper_expansion_uses_retained_native_certificate() {
     let p = adler2_helpers_project();
