@@ -240,9 +240,9 @@ pub(in crate::surface) fn initial_call_state(
             | C0Type::UInt8Pointer
             | C0Type::UInt32Pointer
             | C0Type::Int128Pointer
-            | C0Type::Int64Pointer
+            | C0Type::Int64Pointer(_)
             | C0Type::UInt128Pointer
-            | C0Type::UInt64Pointer
+            | C0Type::UInt64Pointer(_)
             | C0Type::Int16PointerPointer
             | C0Type::UInt16PointerPointer
             | C0Type::Int32PointerPointer
@@ -250,9 +250,9 @@ pub(in crate::surface) fn initial_call_state(
             | C0Type::UInt8PointerPointer
             | C0Type::UInt32PointerPointer
             | C0Type::Int128PointerPointer
-            | C0Type::Int64PointerPointer
+            | C0Type::Int64PointerPointer(_)
             | C0Type::UInt128PointerPointer
-            | C0Type::UInt64PointerPointer
+            | C0Type::UInt64PointerPointer(_)
             | C0Type::Float32Pointer
             | C0Type::Float64Pointer
             | C0Type::Float32PointerPointer
@@ -320,12 +320,12 @@ pub(in crate::surface) fn initial_call_state(
                     Bitvector32Term::Variable(Variable(arguments.len() as u64)),
                 )));
             }
-            C0Type::Int64 => {
+            C0Type::Int64(_) => {
                 arguments.push(CExpression::Value(CValue::Int64(
                     Bitvector32Term::Variable(Variable(arguments.len() as u64)),
                 )));
             }
-            C0Type::UInt64 => {
+            C0Type::UInt64(_) => {
                 arguments.push(CExpression::Value(CValue::UInt64(
                     Bitvector32Term::Variable(Variable(arguments.len() as u64)),
                 )));
@@ -353,9 +353,9 @@ pub(in crate::surface) fn initial_call_state(
             | C0Type::UInt16Array(_)
             | C0Type::UInt32Array(_)
             | C0Type::Int128Array(_)
-            | C0Type::Int64Array(_)
+            | C0Type::Int64Array(_, _)
             | C0Type::UInt128Array(_)
-            | C0Type::UInt64Array(_)
+            | C0Type::UInt64Array(_, _)
             | C0Type::Float32Array(_)
             | C0Type::Float64Array(_) => {
                 return Err(ClickError::new(format!(
@@ -363,7 +363,7 @@ pub(in crate::surface) fn initial_call_state(
                     parameter.name()
                 )));
             }
-            C0Type::PointerArray(_, _) => {
+            C0Type::PointerArray(_, _, _) => {
                 return Err(ClickError::new(format!(
                     "array parameter `{}` should have lowered to a pointer",
                     parameter.name()
@@ -3324,7 +3324,7 @@ pub(in crate::surface) fn contract_expression_element_width(
                             C0Type::Int8Array(_) => Some(1),
                             C0Type::Int16Array(_) | C0Type::UInt16Array(_) => Some(2),
                             C0Type::UInt32Array(_) => Some(4),
-                            C0Type::Int64Array(_) | C0Type::UInt64Array(_) => Some(8),
+                            C0Type::Int64Array(_, _) | C0Type::UInt64Array(_, _) => Some(8),
                             C0Type::Int128Array(_) | C0Type::UInt128Array(_) => Some(16),
                             _ => None,
                         })

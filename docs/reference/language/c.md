@@ -262,7 +262,17 @@ through two calls to a pointer-taking helper without resetting the state.
 - `int8`/`signed char`/`int8_t`, a signed byte with range `-128..127`
 - `int16`/`short` and `uint16`/`unsigned short`
 - `uint32`
-- `int64`/`long`/`long long` and `uint64`/`unsigned long`/`unsigned long long`
+- `int64`/`long`/`long long` and `uint64`/`unsigned long`/`unsigned long long`.
+  `long` and `long long` share the 64-bit representation but, as in GCC and
+  Clang, are distinct, incompatible C types: their values convert implicitly,
+  but `long *` and `long long *` (of either signedness) do not convert without
+  a cast, a cast between them retypes the pointee and is refused, pointers to
+  them compare after only a warning in GCC and Clang and so compare in Click
+  (`mdtests/long_and_long_long_pointers_compare_after_a_warning.md`), and
+  declarations, function pointer types, and library prototypes that differ only
+  in rank conflict. A Click `int64` or `uint64` in a sidecar specifies either.
+  See `mdtests/long_and_long_long_values_convert_implicitly.md` and
+  `mdtests/a_long_pointer_does_not_initialize_a_long_long_pointer.md`.
 - C `_Bool` and the modeled `stdbool.h` spelling `bool`; both use one-byte
   storage and normalize values to `0` or `1`
 - `float` (IEEE-754 binary32) and `double` (IEEE-754 binary64) as typed value
@@ -273,7 +283,12 @@ through two calls to a pointer-taking helper without resetting the state.
   `uint8`; `unsigned short` and `uint16_t` map to `uint16`; `unsigned int` and
   `uint32_t` map to `uint32`; `long`, `long long`, and `int64_t` map to
   `int64`; `ssize_t` also maps to `int64`; `unsigned long`, `unsigned long
-  long`, `uint64_t`, and `size_t` map to `uint64`.
+  long`, `uint64_t`, and `size_t` map to `uint64`. As C types, `size_t` and
+  `ssize_t` are `unsigned long` and `long` on both targets; `int64_t` and
+  `uint64_t` are `long` and `unsigned long` in user space (glibc) and `long
+  long` and `unsigned long long` on the kernel target, whose `s64`/`u64` they
+  follow. See `mdtests/size_t_and_int64_t_are_long_types_in_user_space.md`
+  and `mdtests/int64_t_is_long_long_on_the_kernel_target.md`.
   C and Click accept valid contiguous standard integer specifiers in any
   order: `long unsigned int` and `int unsigned long` both mean `uint64`.
   `short`, `long`, and `long long` accept an optional `int`; bare `signed`
@@ -476,9 +491,9 @@ stay refused as in GCC and Clang
 (`mdtests/an_int_pointer_pointer_does_not_convert_to_an_unsigned_int_pointer_pointer.md`),
 and a conversion between integer pointers of different widths, such as `int *`
 to `short *`, is a retyping object-pointer cast, which Click does not support
-(`mdtests/a_short_pointer_is_not_a_view_of_an_int.md`). Click does not yet
-distinguish `long` from `long long`, so it also accepts a conversion between
-their pointers, which GCC 14 rejects.
+(`mdtests/a_short_pointer_is_not_a_view_of_an_int.md`). `long` and
+`long long` are distinct types of one width, so `long *` and
+`unsigned long long *` differ in more than signedness and do not convert.
 
 An integer constant expression converted to an integer type that cannot
 represent it, such as `unsigned char c = -56;` or `signed char c = 200;`, is at
@@ -1148,7 +1163,9 @@ Supported C surface includes:
   exact C identity is unavailable are rejected: these include expression
   `typeof` of scalars, pointers, or arrays, pointers derived from expression
   `typeof`, nested const typedefs, enum/function types, GNU mode typedefs,
-  array typedefs, and width-only 64-bit aliases. Array declarators
+  and array typedefs. The built-in names `size_t`, `ssize_t`, `int64_t`,
+  and `uint64_t` have the target's `long` or `long long` identity. Array
+  declarators
   are outside this slice. See `mdtests/c_builtin_types_compatible.md` and
   `mdtests/c_builtin_types_compatible_rejects_false_equality.md`.
 - the GNU builtin `__builtin_constant_p(operand)`. Whether the compiler folds

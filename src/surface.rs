@@ -76,7 +76,7 @@ use crate::kernel::{
     prove_universally_quantified_pure_implication_by_int32_rewrites,
     substitute_int32_variable_in_proposition,
 };
-use crate::languages::c::syntax::{self, C0Expression, C0Type};
+use crate::languages::c::syntax::{self, C0Expression, C0Type, LongRank};
 use crate::persistent::PersistentMap;
 
 fn contract_expression_function_address(expression: &ContractExpression) -> Option<&str> {

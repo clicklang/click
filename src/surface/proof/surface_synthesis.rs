@@ -277,7 +277,7 @@ fn synthesize_struct_loadable_segment(
             let width = match field.c_type() {
                 C0Type::Char(_) | C0Type::UInt8 | C0Type::Int8 => 1,
                 C0Type::Int16 | C0Type::UInt16 => 2,
-                C0Type::Int64 | C0Type::UInt64 | C0Type::Float64 => 8,
+                C0Type::Int64(_) | C0Type::UInt64(_) | C0Type::Float64 => 8,
                 _ => 4,
             };
             if !start.is_multiple_of(width) || !end.is_multiple_of(width) {
