@@ -72,6 +72,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     to_integer(zlib_prefix_count(16u64, len)) == 0;
    };
    have viewable(buf[0u64..16u64]) by simp();
+   have to_integer(len) == 16 by simp() using { len == 16u64; };
    mark before_block;
    step();
    have len == 0u64 by simp();
@@ -495,6 +496,9 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(adler) <= 1 + 255 * to_integer(zlib_prefix_count(16u64, len)) by { rewrite(zlib_prefix_count(16u64, len) == 16); arithmetic() using { to_integer(adler) <= 1 + 255 * to_integer(16); }; }
    have to_integer(sum2) <= 1415761 * to_integer(zlib_prefix_count(16u64, len)) by { rewrite(zlib_prefix_count(16u64, len) == 16); arithmetic() using { to_integer(sum2) <= 1415761 * to_integer(16); }; }
    have len <= 9223372036854775807u64 by simp() using { len == 0u64; };
+   have 0 <= to_integer(len) by arithmetic() using { to_integer(len) == 0; };
+   have at(before_block, to_integer(len)) == 16 by assumption();
+   have to_integer(len) < at(before_block, to_integer(len)) by arithmetic() using { to_integer(len) == 0; at(before_block, to_integer(len)) == 16; };
    close_invariants();
   }
  }
