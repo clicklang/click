@@ -2,6 +2,7 @@ use super::prelude::*;
 use super::{ResourceDescription, ResourceFieldSchema};
 
 pub(in crate::kernel) mod predicate_dependencies;
+pub(in crate::kernel) mod walk;
 
 type EvaluatedSpecResource = (CResource, ExecutionFacts, Vec<ProofObligation>);
 type SpecResourceBuilder = Box<dyn Fn(Vec<CValue>) -> Option<CResource>>;
