@@ -359,17 +359,19 @@ C fragments use C-like precedence. From lowest to highest:
 
 | Precedence | Operators | Associativity |
 | --- | --- | --- |
-| 1 | `||` | Left |
-| 2 | `&&` | Left |
-| 3 | `\|` | Left |
-| 4 | `^` | Left |
-| 5 | `&` | Left |
-| 6 | `<`, `<=`, `>`, `>=`, `==`, `!=` | Left |
-| 7 | `<<`, `>>` | Left |
-| 8 | `+`, `-` | Left |
-| 9 | `*`, `/`, `%` | Left |
-| 10 | supported unary operators | Prefix |
-| 11 | calls, indexing, member access | Left, postfix |
+| 1 | `\|` | Left |
+| 2 | `^` | Left |
+| 3 | `&` | Left |
+| 4 | `<`, `<=`, `>`, `>=`, `==`, `!=` | Left |
+| 5 | `<<`, `>>` | Left |
+| 6 | `+`, `-` | Left |
+| 7 | `*`, `/`, `%` | Left |
+| 8 | supported unary operators | Prefix |
+| 9 | calls, indexing, member access | Left, postfix |
+
+A sidecar has no `&&` or `||`: conjunction and disjunction are the
+proposition connectives `and` and `or`, and a sidecar that writes `&&` or
+`||` is refused with that spelling.
 
 This table describes the parser, not all of ISO C. The normative set of types,
 statements, and operators that Click accepts is in [Supported C](c.md).

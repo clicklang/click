@@ -223,19 +223,16 @@ the proof context now print in Click or C syntax (`old(g[0]) < 100`,
 `(uint32)n <= 1073741823u32`, `viewable(p[1..2])`), with reads of other
 memories as `at(<state A>, ...)` defined after the report.
 
-Today: the `C operation:` and `call bindings:` lines still print lowered C
-(`first(load_int32_pointer(byte_offset(s, 8)), load_uint64(s))`,
-`mdtests/a_refused_wide_range_names_its_bound_field.md`); the echoed claim
-keeps full parentheses and `||` (`(((result == 0 || u == 0) || v == 0) ||
-result == 3)`); a value with no source name prints as `<unnamed A>` (a
-loop-head value, a callee's result) and an address as `<pointer A>` (a heap
-allocation once no live local holds it); byte offsets into an object print as
-`g+8` in the memory-history text and resource ranges over an unnamed base as
-`…[0..40]`. `--trace-proof` keeps its typed notation by design.
+Today: a value with no source name prints as `<unnamed A>` (a loop-head
+value, a callee's result) and an address as `<pointer A>` (a heap allocation
+once no live local holds it); byte offsets into an object print as `g+8` in
+the memory-history text and resource ranges over an unnamed base as
+`…[0..40]`. `--trace-proof` keeps its typed notation by design. The
+`C operation:` and `call bindings:` lines and the echoed claim now print in
+source syntax (`first(s->data, s->len)`, `result == 0 or u == 0`).
 
-Proposed fix: render the C operation from its source statement, echo the claim
-through the same printer, and name loop-head values and allocations from the
-state that holds them.
+Proposed fix: name loop-head values as `at(statement(N).entry, x)` and
+allocations from the state that holds them.
 
 Decision: in progress.
 
