@@ -167,6 +167,7 @@ fn smart_step_starts_each_source_tactic_with_an_empty_step_delta() {
 }
 
 #[test]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn clone_field_stores_with_observed_source_resource_verify() {
     let c_source = r#"
         struct cursor {
@@ -1210,6 +1211,7 @@ fn bare_step_proves_an_open_obligation_by_implicit_auto() {
 /// records the hidden derivation `issues/simplify-step.md` removes. This
 /// keeps the counter's zero assertions elsewhere meaningful.
 #[test]
+#[ignore = "nightly: 3.5s in the parallel gate"]
 fn bare_step_fallback_records_a_hidden_prerequisite_derivation() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/shared_heap_population_lifecycles.md");

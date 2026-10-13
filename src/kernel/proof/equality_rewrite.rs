@@ -1974,6 +1974,7 @@ mod tests {
     /// loaded value's legacy storage-relative offset. Exercise cold reads
     /// with growing unrelated snapshots and premises, plus ordinary indexing.
     #[test]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn pointer_read_rewrite_preserves_value_snapshot_and_scales() {
         let mut samples = Vec::new();
         for size in [16u64, 64, 256, 1024] {
@@ -2101,6 +2102,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn native_equality_rewrite_preserves_wide_order_and_truth_value() {
         let x = Bitvector32Term::Variable(Variable(193_020));
         let y = Bitvector32Term::Variable(Variable(193_021));
@@ -2326,6 +2328,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "nightly: 1.9s in the parallel gate"]
     fn native_integer_bound_rewrite_is_dag_linear_and_budget_checked() {
         let x = Bitvector32Term::Variable(Variable(193_028));
         let y = Bitvector32Term::Variable(Variable(193_029));
@@ -2852,6 +2855,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer {
@@ -2910,6 +2914,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn same_block_pointer_view_rewrite_preserves_extent_and_selected_work() {
         let _session = crate::kernel::VerificationSession::enter();
         let source =
@@ -3111,6 +3116,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn checked_rewrite_does_not_scan_or_rebuild_ambient_facts() {
         let x = Bitvector32Term::Variable(Variable(921));
         let cited = equality(x.clone(), Bitvector32Term::Constant(7));

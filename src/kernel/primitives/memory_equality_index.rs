@@ -2024,6 +2024,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "nightly: 1.7s in the parallel gate"]
     fn constant_base_interior_lookup_scales_with_selected_range() {
         let mut samples = Vec::new();
         for count in [16_u32, 64, 256, 1024] {
@@ -2168,6 +2169,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "nightly: 2.4s in the parallel gate"]
     fn modeled_pointer_alias_field_lookup_scales_with_selected_addresses() {
         let mut previous = None;
         for count in [16_u32, 64, 256, 1024] {
@@ -2414,6 +2416,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn mixed_extent_read_hits_and_misses_do_not_scan_unrelated_ranges() {
         let mut samples = Vec::new();
         for size in [16_u32, 64, 256, 1024] {

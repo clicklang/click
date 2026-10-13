@@ -55,6 +55,7 @@ fn frozen_shared_heap_lifecycles_verify() {
 }
 
 #[test]
+#[ignore = "nightly: 1.9s in the parallel gate"]
 fn frozen_mutex_parity_verifies() {
     let project = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/concurrency-probes");
     run_example_in_thread(&project).unwrap_or_else(|error| panic!("{error}"));
@@ -80,6 +81,7 @@ fn concurrency_mutex_composition_source_is_frozen() {
 }
 
 #[test]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn frozen_publication_verifies() {
     let project = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/concurrency-publication");
     run_example_in_thread(&project).unwrap_or_else(|error| panic!("{error}"));
@@ -1253,6 +1255,7 @@ fn rbtree_erase_deep_black_leaf_requires_right_parent_update() {
 }
 
 #[test]
+#[ignore = "nightly: 2.3s in the parallel gate"]
 fn rbtree_change_child_requires_left_link() {
     erase_source_refuses_mutation(
         "rbtree_change_child.click",
@@ -1263,6 +1266,7 @@ fn rbtree_change_child_requires_left_link() {
 }
 
 #[test]
+#[ignore = "nightly: 2.5s in the parallel gate"]
 fn rbtree_change_child_requires_right_link() {
     erase_source_refuses_mutation(
         "rbtree_change_child.click",
@@ -1273,6 +1277,7 @@ fn rbtree_change_child_requires_right_link() {
 }
 
 #[test]
+#[ignore = "nightly: 2.2s in the parallel gate"]
 fn rbtree_change_child_requires_root_link() {
     erase_source_refuses_mutation(
         "rbtree_change_child.click",
@@ -2354,6 +2359,7 @@ fn rbtree_augmented_wrappers_keep_the_pinned_c() {
 }
 
 #[test]
+#[ignore = "nightly: 13.9s in the parallel gate"]
 fn rbtree_augmented_wrappers_reject_missing_or_wrong_calls() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for (sidecar, input, before, after, expected) in [
@@ -2505,6 +2511,7 @@ fn readme_quick_start_is_the_clamp_example() {
 /// builds up are those of `examples/label-build-flags`, which the examples
 /// gate verifies.
 #[test]
+#[ignore = "nightly: 6.7s in the parallel gate"]
 fn own_project_guide_sessions_match_the_label_example() {
     let files = run_documented_session_versions("docs/concepts/own-project.md");
     let example = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/label-build-flags");

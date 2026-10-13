@@ -1297,6 +1297,7 @@ mod source_execution_layout_tests {
     }
 
     #[test]
+    #[ignore = "nightly: 0.9s in the parallel gate"]
     fn read_frontiers_have_linear_expression_work_and_indexed_lookups() {
         for count in [8, 128, 1024] {
             let mut source = String::from("int32 f(const int32* p) {int32 x; int32 other;");
@@ -1341,6 +1342,7 @@ mod source_execution_layout_tests {
     }
 
     #[test]
+    #[ignore = "nightly: 1.2s in the parallel gate"]
     fn assignment_frontiers_build_and_resolve_without_scanning_unrelated_stores() {
         for count in [8, 128, 1024] {
             let mut source = String::from("int32 f() {int32 marker; int32 unrelated;");

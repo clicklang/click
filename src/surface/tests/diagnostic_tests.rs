@@ -1731,6 +1731,7 @@ int32 last(int32* data, uint64 length) {
 }
 
 #[test]
+#[ignore = "nightly: 4.3s in the parallel gate"]
 fn unfinished_callback_scripts_report_the_missing_authority_to_continue() {
     for (fixture_name, expected) in [
         (
@@ -1795,6 +1796,7 @@ fn unfinished_callback_scripts_report_the_missing_authority_to_continue() {
 }
 
 #[test]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn unfinished_callback_scripts_keep_a_bounded_diagnostic_preview() {
     for fixture_name in [
         "rb_augment_callbacks_helper_owns.md",
@@ -1956,6 +1958,7 @@ fn pure_theorem_arithmetic_obeys_its_tactic_budget() {
 }
 
 #[test]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn wide_conjunction_expansion_stays_parseable_and_checked() {
     let conjuncts: Vec<_> = (1..=40).map(|i| format!("x <= {i}")).collect();
     let source = format!(
@@ -2851,6 +2854,7 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
 /// Exercise the presentation boundary and retain its exact stage and counts
 /// in both ordinary CLI reports and traces, including a nested written simp.
 #[test]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn native_view_simp_reports_the_actual_premise_spelling_limit() {
     let source = |extra_bounds: usize, body: &str| {
         let mut source = String::from(

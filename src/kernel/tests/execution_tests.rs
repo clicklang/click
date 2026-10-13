@@ -3216,6 +3216,7 @@ fn execute_declaration(state: &CState, statement: &CStatement) -> CState {
 /// an array declared without an initializer holds no cell, so reading one
 /// of its elements stays an uninitialized read.
 #[test]
+#[ignore = "nightly: 2.3s in the parallel gate"]
 fn a_zero_filled_automatic_array_holds_exactly_the_per_element_stores() {
     for length in [1u32, 2, 5, 64, 65] {
         let written = [

@@ -3205,6 +3205,7 @@ mod slice_index_tests {
     }
 
     #[test]
+    #[ignore = "nightly: 1.0s in the parallel gate"]
     fn wide_order_chain_work_follows_the_chain_and_not_unrelated_facts() {
         let v = |n: u64| Bitvector32Term::Variable(Variable(996000 + n));
         let lt = ConditionTerm::uint64_less_than;
@@ -3355,6 +3356,7 @@ mod slice_index_tests {
     }
 
     #[test]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn uint64_slice_remainder_bounds_ignore_unrelated_facts() {
         let length = Bitvector32Term::Variable(Variable(993001));
         let midpoint = Bitvector32Term::Variable(Variable(993002));
@@ -3394,6 +3396,7 @@ mod slice_index_tests {
     }
 
     #[test]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn uint64_slice_index_transport_is_sound_and_ignores_unrelated_bounds() {
         let index = Bitvector32Term::Variable(Variable(991001));
         let length = Bitvector32Term::Variable(Variable(991002));

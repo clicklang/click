@@ -5103,6 +5103,7 @@ mod tests {
     /// file-scope array of a thousand elements overflowed the main thread's
     /// stack; a few hundred cells do the same on this small one.
     #[test]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn a_symbolic_load_over_many_undecided_cells_splits_without_recursing() {
         const CELLS: u32 = 400;
         let paths = std::thread::Builder::new()
@@ -5308,6 +5309,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "nightly: 1.9s in the parallel gate"]
     fn logical_read_address_uses_class_index_without_scanning_aliases_or_frames() {
         let _session = crate::kernel::VerificationSession::enter();
         let owner = Pointer {
