@@ -1,7 +1,7 @@
 # Unchanged zlib Adler-32 adapter trial
 
 The unchanged zlib 1.3.1 computation imports and proves its empty-input result
-and its checksums for every length 1 through 15 against the shared mathematical
+and its checksums for every length 1 through 16 against the shared mathematical
 specification for the canonical seed 1 and a nonnull buffer. The nonempty proofs
 also preserve every input byte. **The arbitrary-length checksum postcondition
 and C/Rust result equality remain unproved.** This is the C
@@ -31,6 +31,7 @@ target/debug/click verify design/charon-trial/zlib/empty.click
 target/debug/click verify design/charon-trial/zlib/one-byte.click
 target/debug/click verify design/charon-trial/zlib/reset.click
 target/debug/click verify design/charon-trial/zlib/short-memory.click
+target/debug/click verify design/charon-trial/zlib/sixteen.click
 ```
 
 To reproduce preparation on a machine with the compiler and include paths in
@@ -93,8 +94,9 @@ The bounds A <= 3826 and B <= 57390 establish that the native additions do not
 wrap. The final reduction and shift/OR packing satisfy the shared specification.
 `byte.click` supplies the same checked promotion theorem to both C proofs.
 
-**The original 5552-byte batches, 16-byte blocks, and scalar tail remain
-unproved.** The offline short-loop regression checks all helper bodies together,
+**The original 5552-byte batches, repeated 16-byte blocks, and nonempty
+scalar tail on the larger path remain unproved.** The offline short-loop
+regression checks all helper bodies together,
 rechecks an expansion, and rejects missing byte authority, false component
 invariants, and false checksum results. These larger checks run in nightly.
 
@@ -104,26 +106,26 @@ original reductions. The addition-pair theorem requires the promoted byte to
 match the specification byte and exact accumulator equations and bounds; it
 provides no C memory authority or assumed callee result.
 
-The unfinished [16-byte proof draft](sixteen-proof.click.draft) follows the
-original remaining-length DO16 loop. Its sixteen addition pairs, final
-component equations, and invariant closure check. The proof explicitly
-establishes the generated ranking obligations: the remaining count is
-nonnegative and decreases from 16 to 0. These facts survive the closure scope;
-the automatic closer's selected arithmetic premises do not include the
-body's derived count equations.
+[sixteen.click](sixteen.click) proves the unchanged remaining-length DO16 path
+for canonical seed 1, a nonnull buffer, and exactly 16 bytes. It establishes
+the shared checksum, termination, and preservation of every input byte.
+Its sixteen original addition pairs use checked native recurrence lemmas;
+the loop invariant follows the actual remaining count and input snapshot,
+without a generated processed counter. Explicit ranking facts establish
+nonnegativity and the decrease from 16 to 0.
 
-**This draft does not verify and establishes no new C checksum result.** It
-now stops at the post-loop B accumulator equality. Compare its count
-conversion and input-snapshot identities with the exported invariant before
-widening the C proof range. Failed closure traces retain the checked body
-prefix, including the count equations and the original accumulator updates;
-a focused trace can select a successful body fact before the failed closure.
+At loop exit, the proof converts the native prefix count to an integer
+separately from rewriting the weighted sum's native arguments. This preserves
+the exact B invariant while deriving the final component equation. The
+subsequent zero-length scalar loop preserves both component equations, and
+the original reductions and packing establish the shared result.
 
-To reproduce in a throwaway copy of this trial, copy the draft to
-`sixteen.click`, copy `short-memory.click.import.json` and its `.import.lock.json`
-to the corresponding `sixteen.click` names, then run `click verify sixteen.click`.
-The original source and prepared input stay unchanged. The count-presentation
-rendering defect encountered earlier in the draft has a checked regression in
+The manifest and lock reuse the unchanged prepared C input and source closure.
+The nightly offline regression relocates the fixture, checks all imported
+helper bodies and an expansion, and rejects missing or insufficient read
+authority, false A/B invariants, and a false checksum. This establishes one
+DO16 iteration; repeated blocks and nonempty tails require further proofs.
+The count-presentation rendering regression is retained in
 [the native-count rewrite fixture](../../../mdtests/integer_rewrite_preserves_folded_count_presentation.md).
 
 | Original file | SHA-256 |
