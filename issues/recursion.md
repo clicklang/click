@@ -17,10 +17,11 @@ Click currently supports:
 - partial-correctness contracts for direct and mutual C recursion;
 - numeric recursive components whose functions use one unchanged `int32`
   parameter and pass a smaller value by a positive constant decrement;
-- direct self-recursion ranked by an expression measure: any pure `int32`,
-  unsigned, 64-bit, or `Integer` expression, a bare non-`int32` parameter,
-  or a lexicographic tuple of them, each call owing nonnegativity and
-  lexicographic descent against the entry reading;
+- direct and mutual recursion ranked by expression measures: any pure
+  `int32`, unsigned, 64-bit, or `Integer` expression, a bare non-`int32`
+  parameter, or a lexicographic tuple of them, each call within the
+  component owing the callee's measure nonnegative and lexicographically
+  below the caller's entry reading;
 - guarded direct structural recursion over a recursive composite resource,
   including consuming or mutating the resource during an ordinary recursive
   traversal and postorder deallocation;
@@ -57,16 +58,6 @@ loop measure is currently rejected. Supporting it requires composing the
 caller phase and callee descent without treating either measure as unchanged
 across the other transition.
 
-### Expression measures across mutual recursion
-
-Expression and tuple measures rank direct self-recursion: the descent is owed
-at a call to the function that declared the measure. A recursive component
-with more than one function is refused by name, and `decreases <int32
-parameter>` remains the only measure for it. Supporting it requires a
-measure on every member, compared across members on each cross-function
-edge (one shared carrier and tuple shape), with the same nonnegativity,
-descent, and address-escape checks.
-
 ## Intended regressions
 
 Use unchanged C fixtures and checked sidecars for each slice:
@@ -80,9 +71,6 @@ Use unchanged C fixtures and checked sidecars for each slice:
 3. A recursive call inside a loop descends using a changing caller tuple. The
    combined ranking must be checked on every recursive edge and loop back edge;
    a non-decreasing edge must fail.
-4. Mutually recursive C functions each declare an expression or tuple
-   measure, and every cross-function edge is checked for nonnegativity and
-   strict descent; a deliberately non-decreasing edge is rejected.
 
 ## Acceptance criteria
 

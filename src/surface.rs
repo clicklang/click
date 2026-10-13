@@ -1177,6 +1177,9 @@ pub struct FunctionBlock {
     /// case each requirement counts as its own clause.
     requirement_source_clauses: Vec<usize>,
     decreases: Option<CFunctionDecrease>,
+    /// The other members of this function's recursive C component, supplied
+    /// by the source frontend; empty outside a component of two or more.
+    recursion_peers: Vec<String>,
     structural_clauses: Vec<StructuralClause>,
     constructs: Vec<ResourceClause>,
     ensures: Vec<EnsureClause>,
@@ -7515,6 +7518,10 @@ impl FunctionBlock {
 
     pub fn decreases(&self) -> Option<&CFunctionDecrease> {
         self.decreases.as_ref()
+    }
+
+    pub fn recursion_peers(&self) -> &[String] {
+        &self.recursion_peers
     }
 
     pub fn structural_clauses(&self) -> &[StructuralClause] {

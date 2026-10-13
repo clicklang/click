@@ -8359,26 +8359,46 @@ fn prepare_verified_function_call<'a>(
     // not discharge them does not get past the step, and an undischarged one
     // is a premise of the path theorem.
     //
-    // The anchor names one function and is installed only for the function
-    // being certified, so an ordinary call to another verified function is
-    // untouched, and so is every function that declares no measure. It is
-    // placed after the applicability gate above so a callback candidate is
-    // still selected by its preconditions alone.
+    // The anchor names the function being certified and the other members
+    // of its recursive component, and is installed only for that function,
+    // so an ordinary call to another verified function is untouched, and so
+    // is every function that declares no measure. It is placed after the
+    // applicability gate above so a callback candidate is still selected by
+    // its preconditions alone.
     if let Some(anchor) = environment.recursion_anchor()
-        && anchor.function() == application.name
+        && anchor.ranks_call_to(application.name)
     {
-        // The measure ranked here is the one the anchor was derived from, so
-        // the two states being compared are readings of one declared object.
-        // An interface applied under this name that declares a different
-        // measure is refused rather than ranked by the wrong one.
-        if contract_interface.recursion_measure() != Some(anchor.components()) {
+        // A self-call ranks the measure the anchor was derived from, so the
+        // two states being compared are readings of one declared object. An
+        // interface applied under this name that declares a different
+        // measure is refused rather than ranked by the wrong one. A call to a
+        // peer reads the peer's own declared measure, so the peer must
+        // declare one; the descent below checks that its shape matches.
+        let called_measure = contract_interface.recursion_measure();
+        let mismatch = if anchor.function() == application.name {
+            called_measure != Some(anchor.components())
+        } else {
+            called_measure.is_none()
+        };
+        if mismatch {
+            let message = if anchor.function() == application.name {
+                format!(
+                    "the contract applied for the recursive call to `{}` declares a different \
+                     `decreases` measure than the one being certified",
+                    application.name
+                )
+            } else {
+                format!(
+                    "`{}` is in `{}`'s recursive component but declares no expression \
+                     `decreases` measure; every member of a component ranked by expression \
+                     measures must declare one, of the same shape",
+                    application.name,
+                    anchor.function()
+                )
+            };
             obligations.push(
                 ProofObligation::verification_condition(false_equals_true_proposition())
-                    .with_context(format!(
-                        "the contract applied for the recursive call to `{}` declares a different \
-                         `decreases` measure than the one being certified",
-                        application.name
-                    )),
+                    .with_context(message),
             );
         } else {
             // Stable-view recovery cannot use pending obligations as return
@@ -8392,6 +8412,8 @@ fn prepare_verified_function_call<'a>(
                 assumptions_with_path_context(&path_assumptions, &facts, &obligations);
             match crate::kernel::termination::collect_recursion_descent_obligations(
                 anchor,
+                application.name,
+                called_measure.unwrap_or_default(),
                 &precondition_state,
                 &descent_assumptions,
                 budget,

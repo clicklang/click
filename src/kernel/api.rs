@@ -1124,6 +1124,53 @@ pub fn c_ranking_measures_source(measures: &[CRankingComponent]) -> String {
     crate::kernel::termination::c_ranking_measures_display(measures)
 }
 
+/// The other members of each function's recursive component, for the
+/// functions in a component of two or more, from a call graph keyed by
+/// function name. Callees that are not keys are ignored.
+///
+/// This is untrusted input to the contract interface: a function's peers
+/// decide which of its calls owe descent, and the termination check refuses
+/// a component whose certified interfaces leave a member out. Work is linear
+/// in the graph.
+pub fn recursive_component_peers(
+    calls: &BTreeMap<String, BTreeSet<String>>,
+) -> BTreeMap<String, Vec<String>> {
+    let names = calls.keys().collect::<Vec<_>>();
+    let index = names
+        .iter()
+        .enumerate()
+        .map(|(position, name)| (name.as_str(), position))
+        .collect::<BTreeMap<_, _>>();
+    let edges = calls
+        .values()
+        .map(|callees| {
+            callees
+                .iter()
+                .filter_map(|callee| index.get(callee.as_str()).copied())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut peers = BTreeMap::new();
+    for component in super::owned_footprint_reach::strongly_connected_components(&edges) {
+        if component.len() < 2 {
+            continue;
+        }
+        for &member in &component {
+            peers.insert(
+                names[member].clone(),
+                component
+                    .iter()
+                    .filter(|&&other| other != member)
+                    .map(|&other| names[other].clone())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
+            );
+        }
+    }
+    peers
+}
+
 /// The environment one C function is certified under, carrying its recursion
 /// anchor when it declares an expression `decreases` measure.
 ///

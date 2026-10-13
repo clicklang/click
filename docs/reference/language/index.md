@@ -295,7 +295,6 @@ The order of the components is part of the measure
 (`mdtests/c_decreases_lexicographic_recursion_rejects_swapped_order.md`), and
 a later component must stay nonnegative even when an earlier one decreases
 (`mdtests/c_decreases_lexicographic_recursion_rejects_negative_component.md`).
-A tuple, like any expression measure, ranks direct self-recursion only.
 
 The same rule about fixed states applies: a function-level component may not
 mention `old(...)` or `at(...)`, because Click reads each declared component
@@ -317,13 +316,22 @@ A loop whose verified rule was certified without the anchor is refused by
 name rather than summarized past: the summary would answer for a call that
 owed nothing.
 
-An expression measure ranks **direct self-recursion only**. The
-descent is owed at a call to the function that declared the measure, so a
-recursive component with more than one function would leave its other edges
-ranked by nothing; Click refuses such a declaration by name
-(`mdtests/c_decreases_pure_expression_rejects_mutual_recursion.md`).
+An expression measure also ranks a **mutually recursive component**. Every
+member declares an expression measure, all of one shape: the same number of
+components, each read in the same carrier position by position. While one
+member is certified, a call to any other member of its component owes that
+member's own measure, read at the call, nonnegative and lexicographically
+below the caller's entry reading, exactly as a self-call does. Every call in
+the cycle then descends in one order
+(`mdtests/c_decreases_pure_expression_mutual_recursion.md`, and the negative
+`mdtests/c_decreases_pure_expression_mutual_recursion_must_descend.md`). A
+member that declares no expression measure, or one of another shape, is
+refused at the call that reaches it
+(`mdtests/c_decreases_pure_expression_mutual_recursion_requires_every_measure.md`,
+`mdtests/c_decreases_pure_expression_mutual_recursion_rejects_mixed_shapes.md`).
+Click finds the component from the C call graph of the verified sources.
 `decreases <int32 parameter>`, whose analysis reads the body rather than the
-call steps, still ranks that shape. A self-recursive `static inline` helper
+call steps, also ranks that shape. A self-recursive `static inline` helper
 with a contract is called through its contract, so an expression measure
 ranks it like any function
 (`mdtests/inline_helper_expression_measure_recursion.md`).
@@ -536,7 +544,7 @@ The function-level `decreases <int32 parameter>` analysis still requires the
 parameter to be unchanged, and each recursive edge to pass `measure - K` for
 a positive constant `K`. Mutually recursive functions all declare their
 corresponding numeric parameter. Any other descent, such as `gcd(b, a % b)`,
-is written as an expression or tuple measure on a self-recursive function. Every variable mentioned by a numeric measure must also remain
+is written as an expression or tuple measure. Every variable mentioned by a numeric measure must also remain
 unaddressed: if its address is taken anywhere (`&measure`), a store through
 that pointer, directly or inside a callee, could change the measure without a
 ranked update, so the plan is rejected. Structural measures do not support
