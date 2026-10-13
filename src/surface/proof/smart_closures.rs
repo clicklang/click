@@ -1743,6 +1743,14 @@ impl<'a> Proof<'a> {
         &self,
         quantified: &mut dyn FnMut(&Self) -> Result<Option<Self>, ClickError>,
     ) -> Result<Option<Self>, ClickError> {
+        self.try_direct_structural_closure_inner_impl(quantified)
+            .map_err(|error| self.attach_step_diagnostic(error))
+    }
+
+    fn try_direct_structural_closure_inner_impl(
+        &self,
+        quantified: &mut dyn FnMut(&Self) -> Result<Option<Self>, ClickError>,
+    ) -> Result<Option<Self>, ClickError> {
         check_verification_deadline()?;
         let mut budget = attempt::AttemptBudget::unbounded();
         if let Some(closed) =
