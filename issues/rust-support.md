@@ -115,8 +115,11 @@ cursors are havocked. Ranked reductions now cover a moving-cursor byte sum
 and `while (n--)`, including its wrapping zero exit, without a processed
 counter. Checked native 64-bit same-base prefixes now retain full-width
 coverage bounds and lifetime evidence; symbolic prefixes have explicit
-selected-premise proofs. Complete checked alias and moving-base subrange
-transport, then integrate these reductions into the unchanged short-input loop.
+selected-premise proofs. Native byte subranges also retain a checked offset,
+nonwrapping remaining capacity, and lifetime evidence. The unchanged C short
+loop now proves termination and preservation of every input byte for canonical
+seed 1, nonnull input, and lengths 2–15. Add its component-sum invariants and
+packed-result theorem, then cover the original larger batched computation.
 
 Connect the original nonempty computation to the common specification, then
 prove compatible seed/reset/null-buffer behavior and incremental processing.

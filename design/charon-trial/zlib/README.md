@@ -30,6 +30,7 @@ cargo build --bins
 target/debug/click verify design/charon-trial/zlib/empty.click
 target/debug/click verify design/charon-trial/zlib/one-byte.click
 target/debug/click verify design/charon-trial/zlib/reset.click
+target/debug/click verify design/charon-trial/zlib/short-memory.click
 ```
 
 To reproduce preparation on a machine with the compiler and include paths in
@@ -72,10 +73,21 @@ selected premises; low-word bounds, missing bounds, larger prefixes, and
 unrelated bases are rejected. This removes the short-loop refusal when
 narrowing a positive remaining count to its first byte.
 
-The remaining short-loop memory work is checked transport through the saved
-pointer used by `*buf++`, followed by moving-base subrange coverage for the
-next head. Both require actual address and nonwrapping coverage evidence;
-same-base prefixes alone do not finish the original checksum loop.
+`short-memory.click` checks the original `while (len--)` and `*buf++` loop
+for canonical seed 1, a nonnull buffer, and every length from 2 through 15.
+It proves termination and preservation of every input byte. The final
+zero guard decrements the counter to UINT64_MAX before breaking; that exit
+owes no back-edge decrease. The proof uses the actual remaining count and
+saved pointer, with no generated processed counter. It records the whole
+remaining view at the pre-decrement checkpoint, then derives the next head's
+view from the checked byte offset and remaining capacity. Its import manifest
+and lock reuse the same unchanged prepared C source and source closure.
+
+**This short-loop proof does not establish the checksum result.** Component-sum
+invariants and packing against the shared specification remain to be proved,
+followed by the original 5552-byte batches, 16-byte blocks, and scalar tail.
+The offline short-loop regression, expansion recheck, and authority/result
+mutations run in nightly.
 
 | Original file | SHA-256 |
 | --- | --- |
