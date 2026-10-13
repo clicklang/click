@@ -379,10 +379,13 @@ fn wide_cast_runtime_preserves_modulo_policy_and_operand_definedness() {
         evaluated(c_cast(c_int128_literal(-1), CType::UInt64)),
         evaluated(c_uint64_literal(u64::MAX))
     );
-    assert!(matches!(
-        evaluated(c_cast(c_uint128_literal(u128::MAX), CType::Int64)),
-        CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
-    ));
+    assert!(
+        prove_c_expression_evaluation(
+            CState::new(),
+            c_cast(c_uint128_literal(u128::MAX), CType::Int64),
+        )
+        .is_none()
+    );
     assert!(matches!(
         evaluated(c_integer_cast_modulo(
             c_divide(c_int64_literal(1), c_int64_literal(0)),
@@ -623,10 +626,14 @@ fn uint64_to_int64_ordinary_cast_requires_exact_representable_range() {
         );
     }
     for value in [(i64::MAX as u64) + 1, u64::MAX] {
-        assert!(matches!(
-            evaluated(c_cast(c_uint64_literal(value), CType::Int64)),
-            CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
-        ));
+        assert!(
+            prove_c_expression_evaluation(
+                CState::new(),
+                c_cast(c_uint64_literal(value), CType::Int64),
+            )
+            .is_none(),
+            "an out-of-range checked cast cannot discharge its range obligation"
+        );
         assert_eq!(
             evaluated(c_integer_cast_modulo(c_uint64_literal(value), CType::Int64)),
             evaluated(c_int64_literal(value as i64))
