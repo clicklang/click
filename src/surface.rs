@@ -5677,6 +5677,14 @@ pub enum SignedArithmeticStep {
         operand: usize,
         result: SignedInt32Interval,
     },
+    /// A C conversion of the operand into a one- or two-byte type, with the
+    /// operand's interval inside the destination range.
+    IntervalNarrowedCast {
+        operand: usize,
+        source: crate::kernel::MachineIntegerType,
+        destination: crate::kernel::MachineIntegerType,
+        result: SignedInt32Interval,
+    },
     IntervalCompare {
         left: usize,
         right: usize,

@@ -394,7 +394,29 @@ except that plain `char` retains its distinct C type identity. `signed char`
 is modeled separately as `int8`. Where plain `char` is signed it has `int8`'s
 values and representation without becoming `signed char`.
 
-Click accepts what GCC and Clang accept by default, not the letter of C11.
+Click accepts what GCC and Clang accept by default, not the letter of C11,
+with the meaning they give it. Integer conversions follow that rule. A
+conversion to an unsigned type reduces the value modulo 2^N (C11 6.3.1.3p2),
+and a conversion to a signed type that cannot represent the value reduces it
+modulo 2^N into the type's range, GCC's documented implementation-defined
+result: `(signed char)200` is -56, `(unsigned char)300` is 44, `(int)` of a
+`long` keeps the low 32 bits, and `(long)` of an `unsigned long` reads the same
+64 bits as signed. Initializations, assignments, returns, call arguments, and
+casts all convert this way and owe no range
+(`mdtests/int8_conversion_wraps_modulo_256.md`,
+`mdtests/uint8_conversion_wraps_modulo_256.md`,
+`mdtests/int16_conversion_wraps_modulo_65536.md`,
+`mdtests/uint16_conversion_wraps_modulo_65536.md`,
+`mdtests/int32_conversion_from_a_long_wraps_modulo_2_to_the_32.md`,
+`mdtests/int32_conversion_from_an_unsigned_long_wraps_modulo_2_to_the_32.md`,
+`mdtests/int64_conversion_from_an_unsigned_long_wraps_modulo_2_to_the_64.md`).
+Signed overflow in arithmetic remains undefined behavior and is refused.
+A conversion is its operand when the operand is inside the destination range;
+see [Supported expressions and statements](#supported-expressions-and-statements)
+for how proofs use that.
+Casts written in a Click specification keep their checked meaning: a narrowing
+cast in a contract owes the destination range in the source's type.
+
 An uncast conversion between pointers to distinct one-byte character types,
 `char *`, `signed char *` (`int8 *`), and `unsigned char *` (`uint8 *`), with
 otherwise allowed qualifiers, is only a `-Wpointer-sign` warning there, so
@@ -611,15 +633,28 @@ Supported C surface includes:
 - scalar casts `(int8) expression`, `(int16) expression`, `(int32) expression`, `(uint8) expression`,
   `(uint16) expression`, `(uint32) expression`, `(int64) expression`, and
   `(uint64) expression`; supported widening conversions preserve the value,
-  while conversion from a signed or unsigned 64-bit integer to `uint32`
-  retains the low 32 bits (modulo 2^32), including for symbolic values.
-  An integer constant expression out of the target's range converts modulo
-  2^N, as GCC converts it. Other narrowing requires a checked target
-  range where the conversion is modeled (`int8`: `-128..127`, `int16`: `-32768..32767`, `uint8`:
-  `0..255`, and `uint16`: `0..65535`), while aggregate casts remain outside supported C.
-  Narrowing into those four types is modeled from every 16-, 32- and 64-bit
-  integer source, explicitly or implicitly; the range is stated in the
-  source's own type, and a 64-bit source keeps its low word. Relating such a
+  and every narrowing or signedness-changing integer conversion in C source,
+  explicit or implicit, constant or symbolic, is GCC's modulo 2^N conversion
+  described above and owes no range, while aggregate casts remain outside supported C. Into
+  `int32` and `uint32` a 64-bit source keeps its low word, and into `int64` an
+  `unsigned long` keeps its 64 bits. Into `int8`, `uint8`, `int16` and
+  `uint16` from a 16-, 32- or 64-bit source the result is a typed conversion
+  of the source, in the destination's range. Where the operand is provably
+  inside that range (`int8`: `-128..127`, `int16`: `-32768..32767`, `uint8`:
+  `0..255`, `uint16`: `0..65535`, stated in the source's own type), the
+  conversion is the operand. The conversion term itself never depends on what
+  the proof knows; the identity is reasoning: `normalize using` the two
+  bounds, a decision that decides them, and the `signed_int32` certificate
+  step `interval_narrowed_cast` (planned by `simp` and `arithmetic`) apply
+  it, and the conversion of a known constant folds to its residue. A fact
+  equating a value with a conversion whose operand the context already places
+  in range, such as a callee's guarantee about a narrowed argument, also
+  relates the value to the operand
+  (`mdtests/an_in_range_argument_to_a_narrow_parameter_is_its_value_at_the_caller.md`,
+  `mdtests/an_argument_past_the_range_of_a_narrow_parameter_is_not_its_value.md`)
+  (`mdtests/uint8_narrowing.md`,
+  `mdtests/a_conversion_in_range_is_its_operand_in_a_signed_certificate.md`,
+  `mdtests/a_false_claim_about_a_wrapped_value_is_refused.md`). Relating a
   narrowed 64-bit value back to its source uses the range-checked
   `integer_cast_identity` rule
   (`mdtests/narrowing_from_wide_sources_into_bytes_and_shorts.md`)
@@ -2232,8 +2267,8 @@ These are not general C features yet:
 - integer widths and signedness combinations outside the modeled scalar types
 - casts beyond the current checked scalar conversions;
   the contextual null-pointer conversion for integer constant `0` is supported
-- fully general symbolic narrowing between unlike 64-bit and narrower integer
-  types
+- `interval_narrowed_cast` evidence for a conversion from a 64-bit source;
+  relate such a narrowed value to its source with `integer_cast_identity`
 - pointer comparisons beyond the supported equality/range patterns
 - zero-size allocation, allocators returning `void *` without a contract,
   and reallocation of pointer types outside the `realloc` list in

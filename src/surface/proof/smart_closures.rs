@@ -1501,6 +1501,17 @@ impl<'a> Proof<'a> {
                         result: interval(result.clone()),
                     }
                 }
+                SignedArithmeticNode::IntervalNarrowedCast {
+                    operand,
+                    source,
+                    destination,
+                    result,
+                } => SignedArithmeticStep::IntervalNarrowedCast {
+                    operand: r(*operand),
+                    source: *source,
+                    destination: *destination,
+                    result: interval(result.clone()),
+                },
                 SignedArithmeticNode::IntervalCompare {
                     left,
                     right,
