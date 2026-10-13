@@ -8073,7 +8073,7 @@ impl<'a> Proof<'a> {
                                 &next_requirement,
                                 &execution_memory,
                             )? {
-                                return proof.apply_step(step.clone());
+                                return Err(next_error);
                             }
                             let Some(next_identity) =
                                 proposition_identity_key(&next_requirement.proposition)
