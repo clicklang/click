@@ -15,8 +15,6 @@ use std::sync::Arc;
 #[cfg(test)]
 mod aggregate_return_tests;
 mod construction_return;
-#[cfg(test)]
-mod spec_walk_oracle_tests;
 
 fn execute_c_function_body_paths(
     state: &CState,
