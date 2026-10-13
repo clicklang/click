@@ -112,6 +112,12 @@ access, not an equality about the current memory contents.
 
 Only the new facts at each checked step are printed, not the accumulated set.
 
+A loop-closure search error names its unresolved obligation from the member
+planner or the retained focused goal, including when that search exhausted its work budget.
+If no individual obligation was retained, the diagnostic says that the failure
+applies to the bundle search. A budget refusal reports an unfinished proof
+attempt; it does not establish that the named obligation is false.
+
 A failed pointer-valued resource child argument comparison reports the exact
 supplied and required values and the argument position. Up to four explicit
 equalities sharing the supplied value may be shown as potentially relevant

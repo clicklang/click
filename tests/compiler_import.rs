@@ -809,6 +809,30 @@ fn pinned_zlib_null_reset_is_independent_of_seed_and_nonunit_length() {
     );
 }
 
+#[test]
+#[ignore = "nightly: shared checksum library and native block recurrence bodies"]
+fn pinned_zlib_block_lemmas_have_checked_bodies() {
+    let source = include_str!("../design/charon-trial/zlib/block.click")
+        .replace(
+            "import \"short-prefix.click\";",
+            include_str!("../design/charon-trial/zlib/short-prefix.click"),
+        )
+        .replace(
+            "import \"byte.click\";",
+            include_str!("../design/charon-trial/zlib/byte.click"),
+        )
+        .replace(
+            "import \"../adler2/count-bridge.click\";",
+            include_str!("../design/charon-trial/adler2/count-bridge.click"),
+        )
+        .replace(
+            "import \"../../adler32-spec.click\";",
+            include_str!("../design/adler32-spec.click"),
+        );
+    click::surface::verify_click_theorems(&source)
+        .expect("all shared and native recurrence bodies");
+}
+
 /// A user-space compiler import in a fresh directory, with the given files
 /// and arguments for `main.c`.
 fn userspace_import(files: &[(&str, &str)], args: &[&str]) -> tempfile::TempDir {

@@ -18,8 +18,29 @@ fn record_unclosed_bundle_member(spelling: Option<String>) {
     }
 }
 
-fn take_unclosed_bundle_member() -> Option<String> {
+pub(super) fn take_unclosed_bundle_member() -> Option<String> {
     UNCLOSED_BUNDLE_MEMBER.with(|member| member.borrow_mut().take())
+}
+
+pub(super) fn describe_invariant_closure_error(error: ClickError) -> ClickError {
+    let member = take_unclosed_bundle_member().or_else(|| {
+        // The direct structural strategy can stop before the member planner
+        // runs. Its error retains the focused goal, not an enclosing bundle.
+        let goal = error.diagnostic()?.kernel_goal()?;
+        (!matches!(goal, Proposition::And(_, _))).then(|| {
+            crate::surface::proof_diagnostics::render::render_proposition_labeled(
+                goal,
+                &mut crate::surface::proof_diagnostics::render::SnapshotLabels::ambient(),
+            )
+        })
+    });
+    let obligation = member
+        .map(|member| format!("loop closure stopped with unresolved obligation: `{member}`"))
+        .unwrap_or_else(|| "loop closure stopped without retaining an individual obligation; the failure applies to the bundle search".to_owned());
+    // Concise reports read the diagnostic's reason, while legacy reports
+    // read the summary. Restate both places, retaining the original goal,
+    // checked state, budget attribution, and trace.
+    error.with_rewritten_place(|reason| Some(format!("{obligation}: {reason}")))
 }
 
 /// Names the ranking members a ranked loop's bundle carries, so an explicit
@@ -344,7 +365,18 @@ impl<'a> Proof<'a> {
         premises: &[NamedArithmeticPremise],
         loop_head_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
-        let result = self.plan_invariant_bundle_member_closure(premises, loop_head_surfaces)?;
+        let result = self.plan_invariant_bundle_member_closure(premises, loop_head_surfaces);
+        // A search refusal must retain the member it was checking, too. Keep
+        // the innermost member: enclosing implication/quantifier scopes must
+        // not replace it with the entire guarded bundle.
+        if result.is_err() && !matches!(self.goal(), Some(Proposition::And(_, _))) {
+            UNCLOSED_BUNDLE_MEMBER.with(|member| {
+                if member.borrow().is_none() {
+                    *member.borrow_mut() = self.bundle_member_spelling();
+                }
+            });
+        }
+        let result = result?;
         // A conjunction passes its open child's record up unchanged; any
         // other member that stays open is the one a refusal names, replacing
         // whatever leaf inside it was recorded first.
@@ -724,7 +756,7 @@ impl<'a> Proof<'a> {
     /// facts, proof topology, or checked proposition.
     /// The focused bundle member as a refusal names it: its source spelling,
     /// else the lowered member spelled over the back-edge locals.
-    fn bundle_member_spelling(&self) -> Option<String> {
+    pub(super) fn bundle_member_spelling(&self) -> Option<String> {
         let presented = self.with_synthesized_bundle_member_surface();
         if let Some(surface) = presented.surface_goal() {
             let spelled = crate::surface::printing::source_click_proposition(surface);
@@ -1653,95 +1685,104 @@ impl<'a> Proof<'a> {
         // ordinary simplification, then the loop-specific member planner.
         // Explicit source bodies use the source driver exactly once.
         let _ = take_unclosed_bundle_member();
-        let attempted = if body == [ProofTactic::Simp] {
-            let direct = crate::instrumentation::measure_operation(
-                "surface",
-                "close invariants",
-                "close invariants: direct members",
-                || {
-                    root.try_direct_bundle_closure(
-                        bundle,
-                        context.function_block.requires(),
-                        &path_branch_premises,
-                    )
-                },
-            )?;
-            if let Some(completed) = direct {
-                Ok(Some(completed))
-            } else {
-                // A single atomic invariant retains the ordinary small-bundle
-                // simplifier. Compound and repeated declarations use selected
-                // members before any ambient arithmetic search.
-                let small = if bundle.declared_invariant_surfaces.len() == 1
-                    && !matches!(
-                        bundle.declared_invariant_surfaces.first(),
-                        Some(ClickProposition::And(_, _))
-                    ) {
-                    let _named =
-                        crate::surface::proof::smart_closures::NamedPremiseClosureScope::enter();
-                    root.try_simp_closure()?
-                } else {
-                    None
-                };
-                if let Some(completed) = small {
+        // Catch errors from preparation and every strategy as well as the
+        // final fallback; `?` must not skip the obligation diagnostic below.
+        let attempted = (|| -> Result<Option<Self>, ClickError> {
+            if body == [ProofTactic::Simp] {
+                let direct = crate::instrumentation::measure_operation(
+                    "surface",
+                    "close invariants",
+                    "close invariants: direct members",
+                    || {
+                        root.try_direct_bundle_closure(
+                            bundle,
+                            context.function_block.requires(),
+                            &path_branch_premises,
+                        )
+                    },
+                )?;
+                if let Some(completed) = direct {
                     Ok(Some(completed))
                 } else {
-                    // Prefer the loop's selected, named premises before generic
-                    // whole-bundle simplification. The member planner still offers
-                    // ordinary simplification at a leaf its arithmetic cannot close.
-                    let (candidate, premises) = crate::instrumentation::measure_operation(
-                        "surface",
-                        "close invariants",
-                        "close invariants: named premises",
-                        || {
-                            root.named_arithmetic_premises(
-                                bundle,
-                                context.function_block.requires(),
-                                &path_branch_premises,
-                            )
-                        },
-                    )?;
-                    match crate::instrumentation::measure_operation(
-                        "surface",
-                        "close invariants",
-                        "close invariants: member planner",
-                        || candidate.plan_invariant_bundle_closure(&premises, &named_loop_surfaces),
-                    )? {
-                        Some(completed) => Ok(Some(completed)),
-                        None => crate::instrumentation::measure_operation(
+                    // A single atomic invariant retains the ordinary small-bundle
+                    // simplifier. Compound and repeated declarations use selected
+                    // members before any ambient arithmetic search.
+                    let small = if bundle.declared_invariant_surfaces.len() == 1
+                        && !matches!(
+                            bundle.declared_invariant_surfaces.first(),
+                            Some(ClickProposition::And(_, _))
+                        ) {
+                        let _named =
+                            crate::surface::proof::smart_closures::NamedPremiseClosureScope::enter(
+                            );
+                        root.try_simp_closure()?
+                    } else {
+                        None
+                    };
+                    if let Some(completed) = small {
+                        Ok(Some(completed))
+                    } else {
+                        // Prefer the loop's selected, named premises before generic
+                        // whole-bundle simplification. The member planner still offers
+                        // ordinary simplification at a leaf its arithmetic cannot close.
+                        let (candidate, premises) = crate::instrumentation::measure_operation(
                             "surface",
                             "close invariants",
-                            "close invariants: simp closure",
+                            "close invariants: named premises",
                             || {
-                                let _named_premises =
-                                crate::surface::proof::smart_closures::NamedPremiseClosureScope::enter();
-                                root.try_simp_closure()
+                                root.named_arithmetic_premises(
+                                    bundle,
+                                    context.function_block.requires(),
+                                    &path_branch_premises,
+                                )
                             },
-                        ),
+                        )?;
+                        match crate::instrumentation::measure_operation(
+                            "surface",
+                            "close invariants",
+                            "close invariants: member planner",
+                            || {
+                                candidate
+                                    .plan_invariant_bundle_closure(&premises, &named_loop_surfaces)
+                            },
+                        )? {
+                            Some(completed) => Ok(Some(completed)),
+                            None => crate::instrumentation::measure_operation(
+                                "surface",
+                                "close invariants",
+                                "close invariants: simp closure",
+                                || {
+                                    let _named_premises =
+                                crate::surface::proof::smart_closures::NamedPremiseClosureScope::enter();
+                                    root.try_simp_closure()
+                                },
+                            ),
+                        }
                     }
                 }
+            } else {
+                // A written body that ran every step and still left a goal open
+                // names that goal, as the member planner names the member it
+                // stopped at.
+                let mut unfinished = None;
+                let attempted = crate::instrumentation::measure_operation(
+                    "surface",
+                    "close invariants",
+                    "close invariants: explicit body",
+                    || root.try_authoritative_linear_script_leaving_open(body, &mut unfinished),
+                );
+                if matches!(attempted, Ok(None))
+                    && let Some(unfinished) = unfinished
+                {
+                    record_unclosed_bundle_member(unfinished.bundle_member_spelling());
+                }
+                attempted
             }
-        } else {
-            // A written body that ran every step and still left a goal open
-            // names that goal, as the member planner names the member it
-            // stopped at.
-            let mut unfinished = None;
-            let attempted = crate::instrumentation::measure_operation(
-                "surface",
-                "close invariants",
-                "close invariants: explicit body",
-                || root.try_authoritative_linear_script_leaving_open(body, &mut unfinished),
-            );
-            if matches!(attempted, Ok(None))
-                && let Some(unfinished) = unfinished
-            {
-                record_unclosed_bundle_member(unfinished.bundle_member_spelling());
-            }
-            attempted
-        };
+        })();
         let attempted = match attempted {
             Ok(attempted) => attempted,
             Err(error) => {
+                let error = describe_invariant_closure_error(error);
                 let detail = ranking_member_diagnostic(&bundle.ranking_measures);
                 let error = if detail.is_empty() {
                     error
