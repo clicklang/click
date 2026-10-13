@@ -24,6 +24,7 @@ use std::cell::{Cell, RefCell};
 mod condition_reasoning;
 pub(in crate::kernel) mod variable_chains;
 pub(in crate::kernel) use condition_reasoning::cancel_common_offset_addends;
+pub(in crate::kernel) use condition_reasoning::narrowed_cast_identity;
 #[cfg(test)]
 pub(in crate::kernel) use condition_reasoning::with_order_walk_full_scan;
 mod constant_classes;

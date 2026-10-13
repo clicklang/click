@@ -5084,7 +5084,27 @@ impl C0Statement {
     }
 }
 
+thread_local! {
+    /// Set while a Click specification's C expression is lowered, so its
+    /// integer casts keep the specification's checked rule.
+    static SPECIFICATION_LOWERING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 impl C0Expression {
+    /// Lowers an expression a Click specification wrote in C syntax. Its
+    /// integer casts owe the destination range, as every specification cast
+    /// does; the same cast in C source converts modulo 2^N.
+    pub fn to_kernel_specification_expression(&self) -> crate::kernel::CExpression {
+        struct Restore(bool);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                SPECIFICATION_LOWERING.with(|flag| flag.set(self.0));
+            }
+        }
+        let _restore = Restore(SPECIFICATION_LOWERING.with(|flag| flag.replace(true)));
+        self.to_kernel_expression()
+    }
+
     pub fn to_kernel_expression(&self) -> crate::kernel::CExpression {
         match self {
             Self::Void => crate::kernel::c_void_value(),
@@ -5115,13 +5135,18 @@ impl C0Expression {
                 } else {
                     crate::kernel::c_cast_with_pointee_qualifiers_and_struct
                 };
-                cast(
+                let lowered = cast(
                     expression.to_kernel_expression(),
                     c_type.to_kernel_type(),
                     *pointee_volatile,
                     *pointee_constant,
                     struct_name.clone(),
-                )
+                );
+                if SPECIFICATION_LOWERING.with(std::cell::Cell::get) {
+                    lowered
+                } else {
+                    crate::kernel::c_source_integer_conversion(lowered)
+                }
             }
             Self::Conditional {
                 condition,

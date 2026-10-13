@@ -1168,7 +1168,8 @@ fn expand_declared_resource_signed_step(
         | SignedArithmeticStep::IntervalShiftLeft { .. }
         | SignedArithmeticStep::IntervalArithmeticShiftRight { .. }
         | SignedArithmeticStep::IntervalBitwiseAnd { .. }
-        | SignedArithmeticStep::IntervalSignBitFlip { .. }) => step,
+        | SignedArithmeticStep::IntervalSignBitFlip { .. }
+        | SignedArithmeticStep::IntervalNarrowedCast { .. }) => step,
     })
 }
 

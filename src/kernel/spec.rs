@@ -7234,10 +7234,15 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             assumptions,
             budget,
             |value, facts, mut obligations| {
-                let outcome =
-                    cast_c_value_to_type(value, *target_type, &mut obligations, assumptions)
-                        .map(CExpressionOutcome::Value)
-                        .unwrap_or_else(CExpressionOutcome::RuntimeError);
+                let outcome = cast_c_value_to_type(
+                    value,
+                    *target_type,
+                    crate::kernel::eval::IntegerConversion::Checked,
+                    &mut obligations,
+                    assumptions,
+                )
+                .map(CExpressionOutcome::Value)
+                .unwrap_or_else(CExpressionOutcome::RuntimeError);
                 vec![CExpressionPath {
                     outcome,
                     facts,

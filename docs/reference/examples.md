@@ -252,10 +252,12 @@ authorities.
 - `mdtests/uint8_buffer_read.md`: `uint8[]` parameter indexing with
   byte-sized `viewable`.
 - `mdtests/uint8_local_array.md`: local byte arrays and byte stores/loads.
-- `mdtests/uint8_narrowing.md`: checked `int32`-to-`uint8` narrowing with
-  range requirements.
-- `mdtests/uint8_narrowing_requires_range.md`: missing byte-range proof for
-  narrowing fails.
+- `mdtests/uint8_narrowing.md`: `int32`-to-`uint8` narrowing is the value
+  itself under range requirements.
+- `mdtests/uint8_narrowing_equals_its_source_only_in_range.md`: without the
+  range, the narrowed value is not claimed equal to its source.
+- `mdtests/uint8_conversion_wraps_modulo_256.md`: out-of-range conversions to
+  `uint8` wrap modulo 256, as in GCC and Clang.
 - `mdtests/uint8_widening.md`: `uint8` values widen through `int32` assignments
   and returns.
 - `mdtests/uint8_loop_invariant_pure_function.md`: `uint8[]` pure function
