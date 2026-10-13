@@ -98,22 +98,30 @@ impl DeclaredResourceScope {
 
 // Only immutable surface syntax is shared. Lowered environments, authorities,
 // and certificates must still be constructed in each verification session.
-static STANDARD_LIBRARY: std::sync::OnceLock<Result<ClickFile, ClickError>> =
-    std::sync::OnceLock::new();
+// Only a successful parse is shared: the parse charges the run that performs
+// it, so a run whose budget or containment bound expires mid-parse fails that
+// run alone instead of every later run in the process.
+static STANDARD_LIBRARY: std::sync::OnceLock<ClickFile> = std::sync::OnceLock::new();
+static STANDARD_LIBRARY_INITIALIZATION: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(test)]
 static STANDARD_LIBRARY_PARSES: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
 fn standard_library() -> Result<&'static ClickFile, ClickError> {
-    STANDARD_LIBRARY
-        .get_or_init(|| {
-            #[cfg(test)]
-            STANDARD_LIBRARY_PARSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            load_standard_library(CLICK_STANDARD_LIBRARY)
-        })
-        .as_ref()
-        .map_err(Clone::clone)
+    if let Some(file) = STANDARD_LIBRARY.get() {
+        return Ok(file);
+    }
+    let _initializing = STANDARD_LIBRARY_INITIALIZATION
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(file) = STANDARD_LIBRARY.get() {
+        return Ok(file);
+    }
+    #[cfg(test)]
+    STANDARD_LIBRARY_PARSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let file = load_standard_library(CLICK_STANDARD_LIBRARY)?;
+    Ok(STANDARD_LIBRARY.get_or_init(|| file))
 }
 
 fn load_standard_library(source: &str) -> Result<ClickFile, ClickError> {
@@ -800,6 +808,38 @@ fn expand_declared_resource_tactic(
         tactic @ (ProofTactic::Both(_) | ProofTactic::CloseInvariantsBy(_)) => {
             expand_declared_resource_tactic_with_plain_scripts(tactic, resource_definitions)
         }
+        ProofTactic::StepProved { step, proof } => {
+            let step = Box::new(expand_declared_resource_tactic(
+                *step,
+                resource_definitions,
+            )?);
+            let proof = match proof {
+                StepProof::By(body) => StepProof::By(
+                    body.into_iter()
+                        .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
+                        .collect::<Result<_, _>>()?,
+                ),
+                StepProof::Requires(entries) => StepProof::Requires(
+                    entries
+                        .into_iter()
+                        .map(|entry| {
+                            let ProofTactic::Have(have) = expand_declared_resource_tactic(
+                                ProofTactic::Have(entry.have),
+                                resource_definitions,
+                            )?
+                            else {
+                                unreachable!("a `have` expands to a `have`")
+                            };
+                            Ok(StepRequirement {
+                                label: entry.label,
+                                have,
+                            })
+                        })
+                        .collect::<Result<_, ClickError>>()?,
+                ),
+            };
+            Ok(ProofTactic::StepProved { step, proof })
+        }
         ProofTactic::StepCall(transport) => {
             Ok(ProofTactic::StepCall(transport.try_map_type_arguments(
                 |resource| expand_declared_resource_clause(resource, resource_definitions),
@@ -1160,7 +1200,8 @@ fn expand_declared_resource_signed_step(
         | SignedArithmeticStep::IntervalShiftLeft { .. }
         | SignedArithmeticStep::IntervalArithmeticShiftRight { .. }
         | SignedArithmeticStep::IntervalBitwiseAnd { .. }
-        | SignedArithmeticStep::IntervalSignBitFlip { .. }) => step,
+        | SignedArithmeticStep::IntervalSignBitFlip { .. }
+        | SignedArithmeticStep::IntervalNarrowedCast { .. }) => step,
     })
 }
 

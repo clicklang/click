@@ -189,6 +189,39 @@ does. Verifying plain C needs no compiler or system headers; see the
 Any other system include is refused. The kernel target refuses the hosted
 headers, since kernel code uses its own.
 
+A call to one of these library functions is checked against Click's
+specification of the function, which binds by its name. A program may also
+declare the function itself (C11 7.1.4p2), as in `void *malloc(unsigned long
+size);`, but only with a type compatible with the library's prototype (C11
+6.7.6.3p15): a parameter's own qualifiers do not matter, a pointee's
+qualifiers and plain `char` do, and `unsigned long f();` without a prototype
+needs only the library's result type. Click refuses an incompatible
+declaration such as `int strlen(int s);` and names both types; GCC and Clang
+reject it when the header is included and Clang warns otherwise
+(`mdtests/a_library_function_redeclared_with_an_int_parameter_is_refused.md`,
+`mdtests/a_compatible_redeclaration_of_strlen_binds_its_contract.md`).
+Click also refuses a program's definition of one of these functions with
+external linkage: the name is reserved for the library (C11 7.1.3), and GCC
+and Clang compile calls to it as calls to the library's function, folding
+`strlen("abc")` to 3 whatever the program's body says. Both targets compile
+hosted, without `-ffreestanding` or `-fno-builtin`, so the same holds for
+kernel code: Linux builds its own `lib/string.c` freestanding, which no Click
+target models
+(`mdtests/a_kernel_target_definition_of_strlen_is_refused.md`,
+`mdtests/a_kernel_target_incompatible_declaration_of_strlen_is_refused.md`).
+A `static` function of the same name is the program's own, and its calls
+execute its body (`mdtests/a_program_definition_of_strlen_is_refused.md`,
+`mdtests/a_static_function_named_strlen_is_the_programs_own.md`).
+
+A [compiler import](../cli/import.md#clicks-system-headers) searches the same
+headers, with the same text, in the place of the C library's: after the
+project's `-iquote`, `-I`, and `-isystem` directories, as GCC orders them. It
+refuses `<pthread.h>` and `<stdatomic.h>`, whose runtime does not accept
+compiler-imported sources, and names any other standard C or POSIX header it
+refuses. The headers carry no contracts: a call is checked against Click's
+contract for the function's name, whichever declaration the compiler selected,
+and that declaration must be compatible with the library's, as above.
+
 ## Program-entry static ownership
 
 A definition of parameterless `main` in the selected C sources is verified
@@ -386,7 +419,29 @@ except that plain `char` retains its distinct C type identity. `signed char`
 is modeled separately as `int8`. Where plain `char` is signed it has `int8`'s
 values and representation without becoming `signed char`.
 
-Click accepts what GCC and Clang accept by default, not the letter of C11.
+Click accepts what GCC and Clang accept by default, not the letter of C11,
+with the meaning they give it. Integer conversions follow that rule. A
+conversion to an unsigned type reduces the value modulo 2^N (C11 6.3.1.3p2),
+and a conversion to a signed type that cannot represent the value reduces it
+modulo 2^N into the type's range, GCC's documented implementation-defined
+result: `(signed char)200` is -56, `(unsigned char)300` is 44, `(int)` of a
+`long` keeps the low 32 bits, and `(long)` of an `unsigned long` reads the same
+64 bits as signed. Initializations, assignments, returns, call arguments, and
+casts all convert this way and owe no range
+(`mdtests/int8_conversion_wraps_modulo_256.md`,
+`mdtests/uint8_conversion_wraps_modulo_256.md`,
+`mdtests/int16_conversion_wraps_modulo_65536.md`,
+`mdtests/uint16_conversion_wraps_modulo_65536.md`,
+`mdtests/int32_conversion_from_a_long_wraps_modulo_2_to_the_32.md`,
+`mdtests/int32_conversion_from_an_unsigned_long_wraps_modulo_2_to_the_32.md`,
+`mdtests/int64_conversion_from_an_unsigned_long_wraps_modulo_2_to_the_64.md`).
+Signed overflow in arithmetic remains undefined behavior and is refused.
+A conversion is its operand when the operand is inside the destination range;
+see [Supported expressions and statements](#supported-expressions-and-statements)
+for how proofs use that.
+Casts written in a Click specification keep their checked meaning: a narrowing
+cast in a contract owes the destination range in the source's type.
+
 An uncast conversion between pointers to distinct one-byte character types,
 `char *`, `signed char *` (`int8 *`), and `unsigned char *` (`uint8 *`), with
 otherwise allowed qualifiers, is only a `-Wpointer-sign` warning there, so
@@ -603,15 +658,28 @@ Supported C surface includes:
 - scalar casts `(int8) expression`, `(int16) expression`, `(int32) expression`, `(uint8) expression`,
   `(uint16) expression`, `(uint32) expression`, `(int64) expression`, and
   `(uint64) expression`; supported widening conversions preserve the value,
-  while conversion from a signed or unsigned 64-bit integer to `uint32`
-  retains the low 32 bits (modulo 2^32), including for symbolic values.
-  An integer constant expression out of the target's range converts modulo
-  2^N, as GCC converts it. Other narrowing requires a checked target
-  range where the conversion is modeled (`int8`: `-128..127`, `int16`: `-32768..32767`, `uint8`:
-  `0..255`, and `uint16`: `0..65535`), while aggregate casts remain outside supported C.
-  Narrowing into those four types is modeled from every 16-, 32- and 64-bit
-  integer source, explicitly or implicitly; the range is stated in the
-  source's own type, and a 64-bit source keeps its low word. Relating such a
+  and every narrowing or signedness-changing integer conversion in C source,
+  explicit or implicit, constant or symbolic, is GCC's modulo 2^N conversion
+  described above and owes no range, while aggregate casts remain outside supported C. Into
+  `int32` and `uint32` a 64-bit source keeps its low word, and into `int64` an
+  `unsigned long` keeps its 64 bits. Into `int8`, `uint8`, `int16` and
+  `uint16` from a 16-, 32- or 64-bit source the result is a typed conversion
+  of the source, in the destination's range. Where the operand is provably
+  inside that range (`int8`: `-128..127`, `int16`: `-32768..32767`, `uint8`:
+  `0..255`, `uint16`: `0..65535`, stated in the source's own type), the
+  conversion is the operand. The conversion term itself never depends on what
+  the proof knows; the identity is reasoning: `normalize using` the two
+  bounds, a decision that decides them, and the `signed_int32` certificate
+  step `interval_narrowed_cast` (planned by `simp` and `arithmetic`) apply
+  it, and the conversion of a known constant folds to its residue. A fact
+  equating a value with a conversion whose operand the context already places
+  in range, such as a callee's guarantee about a narrowed argument, also
+  relates the value to the operand
+  (`mdtests/an_in_range_argument_to_a_narrow_parameter_is_its_value_at_the_caller.md`,
+  `mdtests/an_argument_past_the_range_of_a_narrow_parameter_is_not_its_value.md`)
+  (`mdtests/uint8_narrowing.md`,
+  `mdtests/a_conversion_in_range_is_its_operand_in_a_signed_certificate.md`,
+  `mdtests/a_false_claim_about_a_wrapped_value_is_refused.md`). Relating a
   narrowed 64-bit value back to its source uses the range-checked
   `integer_cast_identity` rule
   (`mdtests/narrowing_from_wide_sources_into_bytes_and_shorts.md`)
@@ -810,10 +878,18 @@ Supported C surface includes:
   runtime values. Literals, `sizeof`, function addresses, direct object
   addresses, fixed-array decay, direct scalar reads of `const` objects, and
   automatic scalar values whose addresses are never formed in the function
-  are stable under this rule. Reads of mutable static-storage scalars,
-  address-exposed automatic scalars, pointer loads, field loads, and indexed
-  loads are conservatively rejected because Click does not infer a callee's
-  effects. The same check covers a loaded indirect-call designator versus an
+  are stable under this rule. In a binary operator, the other operand may
+  also read named non-volatile integer or object-pointer globals and static
+  locals, through casts and integer arithmetic. C may run the call or the
+  read first, so Click checks both orders rather than choosing one: it reads
+  each such object before the call and requires the call to leave it with
+  the same value, so the read is defined in both orders and gives one result
+  (`mdtests/a_call_that_keeps_a_global_read_in_the_other_operand_verifies_in_either_order.md`,
+  `mdtests/a_call_that_changes_a_global_read_in_the_other_operand_is_refused.md`).
+  Reads of volatile or floating-point objects, address-exposed automatic
+  scalars, pointer loads, field loads, and indexed loads, and any such read
+  between function arguments, are still conservatively rejected because
+  Click does not infer a callee's effects. The same check covers a loaded indirect-call designator versus an
   argument call. Statement boundaries and the existing left-to-right
   sequencing of a short-circuit left operand or conditional condition may be
   used when the source already specifies the order. Rejection diagnostics
@@ -988,10 +1064,13 @@ Supported C surface includes:
   `realloc`, and `free`, and defines `NULL`; calls are checked against the
   standard-library contracts and the allocation model
   (`mdtests/c_builtin_string_and_stdlib_headers.md`,
-  `mdtests/c_builtin_string_header_declares_strlen.md`). A specification may
-  pass a `char` pointer where a predicate or pure function takes `uint8`
-  bytes, as in `requires cstr_readable(s);` for a `const char *s`. Where plain
-  `char` is signed, the argument is elaborated to the explicit byte view
+  `mdtests/c_builtin_string_header_declares_strlen.md`). A program's own
+  declaration of one of these functions must be compatible with the
+  library's, and a program may not define one with external linkage; see
+  [System headers](#system-headers). A specification may
+  pass a `char` or `signed char` pointer where a predicate or pure function
+  takes `uint8` bytes, as in `requires cstr_readable(s);` for a `const char *s`.
+  For a signed character type, the argument is elaborated to the explicit byte view
   `(uint8*)s`: the predicate reads the string's bytes as unsigned values,
   and since a signed read of a byte is the conversion of its unsigned read,
   `s[k] == '\0'` holds exactly when `((uint8*)s)[k] == '\0'` does. A library
@@ -2216,8 +2295,8 @@ These are not general C features yet:
 - integer widths and signedness combinations outside the modeled scalar types
 - casts beyond the current checked scalar conversions;
   the contextual null-pointer conversion for integer constant `0` is supported
-- fully general symbolic narrowing between unlike 64-bit and narrower integer
-  types
+- `interval_narrowed_cast` evidence for a conversion from a 64-bit source;
+  relate such a narrowed value to its source with `integer_cast_identity`
 - pointer comparisons beyond the supported equality/range patterns
 - zero-size allocation, allocators returning `void *` without a contract,
   and reallocation of pointer types outside the `realloc` list in
@@ -2255,7 +2334,8 @@ These are not general C features yet:
   iteration guards that preserve reevaluation and `continue`; calls in
   conditional-expression branches are lowered through a lazy statement-level
   `if`; multiple calls, or a call combined with a potentially aliased mutable
-  read, in one unsequenced expression are rejected rather than choosing a C
+  read other than the named static-storage reads checked in both orders
+  above, in one unsequenced expression are rejected rather than choosing a C
   evaluation order; the same conservative boundary applies between function
   arguments and through a surrounding assignment expression
 - expression-valued updates of memory lvalues, such as `j = p[i]++`

@@ -81,7 +81,7 @@ documentation inventory keep the following accepted words synchronized.
 | `divide` | Divides a non-strict `Integer` bound by a positive common factor of its coefficients and rounds its constant to the integer bound. |
 | `int32_range` | States one opaque `int32` term's own range as an affine bound, `t <= 2147483647` or `-2147483648 <= t`. |
 | `interval_from_affine`, `interval_from_affine_direct`, `interval_atom`, `interval_intersect` | Introduce, import, or intersect, checked signed-machine intervals. `interval_from_affine_direct` is required when the cited affine premise already contains a compound machine operation; it does not silently decompose that operation. |
-| `defined`, `interval_add`, `interval_add_bounded`, `interval_subtract`, `interval_multiply`, `interval_remainder`, `interval_shift_left`, `interval_arithmetic_shift_right`, `interval_bitwise_and`, `interval_sign_bit_flip`, `interval_compare` | Record exact definedness premises and bounded interval-operation evidence for signed-machine expressions. |
+| `defined`, `interval_add`, `interval_add_bounded`, `interval_subtract`, `interval_multiply`, `interval_remainder`, `interval_shift_left`, `interval_arithmetic_shift_right`, `interval_bitwise_and`, `interval_sign_bit_flip`, `interval_narrowed_cast`, `interval_compare` | Record exact definedness premises and bounded interval-operation evidence for signed-machine expressions. `interval_narrowed_cast N source destination (lo) (hi);` relates a C conversion into a one- or two-byte type to its operand when interval `N` lies inside the destination range. |
 | `affine_conclusion`, `affine_conclusion_pair` | Bridge an affine claim to a machine proposition using one, or separately named left and right, interval/definedness evidence. The pair form is required when both comparison sides contain compound operations. |
 | `conclusion` | Selects the final node of an arithmetic certificate. In the mathematical `Integer` family, a conclusion node that is a contradiction, such as `1 <= 0`, also proves the goal. |
 | `reverse` | Selects the reverse equality direction for `less_equal_from_equal`. |
@@ -404,15 +404,21 @@ tactic statements. Tactic arguments use the expression and proposition forms
 documented for that tactic. The exhaustive surface-spelling inventory is in
 [Tactics](../tactics/index.md).
 
-One tactic carries syntax beyond an argument list: a `step` on an ordinary C
+One tactic carries syntax beyond an argument list. A `step` on an ordinary C
 call writes the call as it appears in the source, maps the callee's instance
 binders to the caller's instances, and introduces a produced instance with
-`let`.
+`let`. Any `step` form may end with proofs of the obligations its fast path
+leaves open: a plain `by` for exactly one, or a block of `requires` entries.
 
 ```text
-call-step  := ("let" identifier "=")? "step" "(" c-call "," binder-map ")" ";"
-binder-map := "{" (identifier ":" identifier
-               ("," identifier ":" identifier)* ","?)? "}"
+step-tactic    := step-head step-proof
+step-head      := ("let" output-pattern "=")? "step" "(" step-args? ")"
+step-args      := contract-name ("(" resource-args ")")? | c-call "," binder-map
+binder-map     := "{" (identifier ":" identifier
+                   ("," identifier ":" identifier)* ","?)? "}"
+step-proof     := ";" | "by" proof-body | "{" requires-entry+ "}"
+requires-entry := "requires" (identifier ":")? proposition "by" proof-body
+proof-body     := tactic-call ";" | "simp" ";" | "{" tactic-statement+ "}"
 ```
 
 Omitting a proof and writing `by auto` request smart proof construction. Smart

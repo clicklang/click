@@ -13916,12 +13916,12 @@ fn private_state_narrowing_call_expands() {
     check_private_state_expansion("private_state_narrowing_call.md", "main");
 }
 #[test]
-fn private_state_signed_bounds_expand() {
-    check_private_state_expansion("private_state_narrowing_bounds.md", "signed_value");
+fn wide_signed_low_word_narrowing_expands() {
+    check_private_state_expansion("wide_values_narrow_to_their_low_word.md", "signed_value");
 }
 #[test]
-fn private_state_unsigned_bounds_expand() {
-    check_private_state_expansion("private_state_narrowing_bounds.md", "unsigned_value");
+fn wide_unsigned_low_word_narrowing_expands() {
+    check_private_state_expansion("wide_values_narrow_to_their_low_word.md", "unsigned_value");
 }
 
 #[test]
@@ -13966,8 +13966,8 @@ fn private_state_wrappers_reject_invalid_ownership_and_effects() {
 }
 
 #[test]
-fn private_state_narrowing_rejects_unproved_bounds() {
-    let fixture_name = "private_state_narrowing_bounds.md";
+fn wide_values_narrow_to_their_low_word_without_bounds() {
+    let fixture_name = "wide_values_narrow_to_their_low_word.md";
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests")
         .join(fixture_name);
@@ -13979,14 +13979,17 @@ fn private_state_narrowing_rejects_unproved_bounds() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     verify_c0_sources(source, &sources).unwrap();
-    for bound in [
-        "requires value >= -2147483648i64;",
-        "requires value <= 2147483647i64;",
-        "requires value <= 2147483647u64;",
+    for claim in [
+        "ensures result == 0;",
+        "ensures result == (uint32)value + 1u32;",
     ] {
         assert!(
-            verify_c0_sources(&source.replace(bound, ""), &sources).is_err(),
-            "missing bound accepted: {bound}"
+            verify_c0_sources(
+                &source.replacen("ensures result == (uint32)value;", claim, 1),
+                &sources
+            )
+            .is_err(),
+            "wrong low word accepted: {claim}"
         );
     }
 }
@@ -17588,4 +17591,76 @@ fn unfolding_proof_bound_integer_arguments_expands_and_rechecks() {
         let expanded = expand_c0_claim_source_by_label(&source, &[], label).unwrap();
         verify_c0_sources(&expanded, &[]).unwrap();
     }
+}
+
+/// A step's written obligation proofs expand in place: each `requires` entry
+/// keeps its proposition and prints its body's checked steps, the expansion
+/// reverifies, and deleting an entry leaves its obligation unproved.
+#[test]
+fn step_requires_entries_expand_in_place_and_are_needed() {
+    let c_source = r#"
+        int32 first(int32 x, int32 y) {
+            return x;
+        }
+
+        int32 caller(int32 a, int32 b) {
+            return first(a, b);
+        }
+    "#;
+    let click_source = r#"
+verifying "pair.c";
+
+int32 first(int32 x, int32 y) {
+    requires x > 0 or y > 0;
+    requires y > 0 or x > 0;
+    ensures 1 == 1 by auto;
+}
+
+int32 caller(int32 a, int32 b) {
+    requires a > 0;
+    ensures 1 == 1 by {
+        step() {
+            requires a > 0 or b > 0 by simp;
+            requires b > 0 or a > 0 by simp;
+        }
+        step();
+        simp();
+    }
+}
+"#;
+    let c_sources = [("pair.c", c_source)];
+    verify_c0_sources(click_source, &c_sources).expect("the written entries should verify");
+    let expanded =
+        expand_c0_claim_source(click_source, &c_sources, "caller", CProofClaim::Ensure(0))
+            .expect("the step's entries should expand");
+    assert!(
+        expanded.contains("step() {")
+            && expanded.contains("requires a > 0 or b > 0 by {")
+            && expanded.contains("requires b > 0 or a > 0 by {")
+            && !expanded.contains("by simp"),
+        "the expansion should keep both entries with checked bodies: {expanded}"
+    );
+    verify_c0_sources(&expanded, &c_sources).expect("the expansion should reverify");
+
+    let second = expanded
+        .find("requires b > 0 or a > 0 by {")
+        .expect("the expansion keeps the second entry");
+    let second_end = expanded[second..]
+        .find("\n            }\n")
+        .map(|offset| second + offset + "\n            }\n".len())
+        .expect("the second entry's body closes");
+    let mut without_second = expanded.clone();
+    without_second.replace_range(second..second_end, "");
+    let error = verify_c0_sources(&without_second, &c_sources)
+        .expect_err("deleting an entry must leave its obligation unproved");
+    // Compare without grouping parentheses, which the diagnostic renderer may
+    // or may not print around each disjunct.
+    assert!(
+        error
+            .message()
+            .replace(['(', ')'], "")
+            .contains("b > 0 or a > 0"),
+        "the refusal should name the unproved obligation: {}",
+        error.message()
+    );
 }

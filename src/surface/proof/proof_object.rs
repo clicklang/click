@@ -1173,6 +1173,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         have_body_contains: &dyn Fn(&[usize], &crate::source::SourcePosition) -> bool,
         target: Option<&crate::source::SourcePosition>,
     ) -> Option<String> {
+        let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
         if !crate::surface::proof_trace::enabled_for(claim) {
             return None;
         }
@@ -2726,7 +2727,8 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::Step
         | ProofStep::StepBind(_)
         | ProofStep::StepContract(_)
-        | ProofStep::StepCall(_) => "step",
+        | ProofStep::StepCall(_)
+        | ProofStep::StepProved { .. } => "step",
         ProofStep::UserTactic(_) => "tactic application",
         ProofStep::ApplyTheoremUsing { .. } => "apply",
         ProofStep::ApplyInduction { .. } => "apply",

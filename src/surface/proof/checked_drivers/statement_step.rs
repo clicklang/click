@@ -156,7 +156,12 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
         )
     };
     let successor = match apply(prerequisite_policy, context) {
-        Err(error) if matches!(prerequisite_policy, StatementPrerequisitePolicy::Retained) => {
+        Err(error)
+            if matches!(
+                prerequisite_policy,
+                StatementPrerequisitePolicy::Retained | StatementPrerequisitePolicy::Fast
+            ) =>
+        {
             let exact_retained_requirement =
                 error.unresolved_requirement().is_some_and(|requirement| {
                     // The execution obligation is an implication from the
@@ -190,10 +195,15 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
                     .clone(),
                 |context, fact| context.assume_proposition(fact.clone()),
             );
-            apply(
+            let successor = apply(
                 StatementPrerequisitePolicy::Contextual,
                 Some(&retained_context),
-            )?
+            )?;
+            crate::instrumentation::record_hidden_prerequisite(
+                crate::instrumentation::HiddenPrerequisiteRoute::RetainedHaveRerun,
+                "rerun",
+            );
+            successor
         }
         result => result?,
     };

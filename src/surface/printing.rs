@@ -165,10 +165,39 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::Synthetic(inner) => write_tactic(output, inner, indent),
         ProofTactic::Mark(name) => line(output, &prefix, &format!("mark {name};")),
         ProofTactic::Sorry => line(output, &prefix, "sorry();"),
-        ProofTactic::Step => line(output, &prefix, "step();"),
-        ProofTactic::StepContract(name) => line(output, &prefix, &format!("step({name});")),
-        ProofTactic::StepBind(name) => line(output, &prefix, &format!("let {name} = step();")),
-        ProofTactic::StepCall(transport) => line(output, &prefix, &format!("{transport};")),
+        ProofTactic::Step
+        | ProofTactic::StepContract(_)
+        | ProofTactic::StepBind(_)
+        | ProofTactic::StepCall(_) => {
+            line(output, &prefix, &format!("{};", step_head_spelling(tactic)))
+        }
+        ProofTactic::StepProved { step, proof } => {
+            let head = step_head_spelling(step);
+            match proof {
+                StepProof::By(body) => {
+                    line(output, &prefix, &format!("{head} by {{"));
+                    write_tactics(output, body, indent + 1);
+                    line(output, &prefix, "}");
+                }
+                StepProof::Requires(entries) => {
+                    line(output, &prefix, &format!("{head} {{"));
+                    let entry_prefix = "    ".repeat(indent + 1);
+                    for entry in entries {
+                        output.push_str(&entry_prefix);
+                        output.push_str("requires ");
+                        if let Some(label) = &entry.label {
+                            output.push_str(label);
+                            output.push_str(": ");
+                        }
+                        output.push_str(&source_click_proposition(&entry.have.proposition));
+                        output.push(' ');
+                        write_proof(output, &entry.have.proof, indent + 1);
+                        output.push('\n');
+                    }
+                    line(output, &prefix, "}");
+                }
+            }
+        }
         ProofTactic::UserTactic(application) => line(
             output,
             &prefix,
@@ -1182,6 +1211,18 @@ fn write_signed_int32_certificate(
                 "interval_sign_bit_flip {operand} ({}) ({});",
                 result.lower, result.upper
             ),
+            SignedArithmeticStep::IntervalNarrowedCast {
+                operand,
+                source,
+                destination,
+                result,
+            } => format!(
+                "interval_narrowed_cast {operand} {} {} ({}) ({});",
+                machine_integer_type_name(*source),
+                machine_integer_type_name(*destination),
+                result.lower,
+                result.upper
+            ),
             SignedArithmeticStep::IntervalCompare {
                 left,
                 right,
@@ -1229,12 +1270,62 @@ fn write_signed_int32_certificate(
     line(output, &prefix, "}");
 }
 
+/// The Click spelling of an integer type in certificate text.
+pub(in crate::surface) fn machine_integer_type_name(
+    ty: crate::kernel::MachineIntegerType,
+) -> &'static str {
+    use crate::kernel::MachineIntegerType as Ty;
+    match ty {
+        Ty::Int8 => "int8",
+        Ty::UInt8 => "uint8",
+        Ty::Int16 => "int16",
+        Ty::UInt16 => "uint16",
+        Ty::Int32 => "int32",
+        Ty::UInt32 => "uint32",
+        Ty::Int64 => "int64",
+        Ty::UInt64 => "uint64",
+        Ty::Int128 => "int128",
+        Ty::UInt128 => "uint128",
+    }
+}
+
+pub(in crate::surface) fn machine_integer_type_from_name(
+    name: &str,
+) -> Option<crate::kernel::MachineIntegerType> {
+    use crate::kernel::MachineIntegerType as Ty;
+    [
+        Ty::Int8,
+        Ty::UInt8,
+        Ty::Int16,
+        Ty::UInt16,
+        Ty::Int32,
+        Ty::UInt32,
+        Ty::Int64,
+        Ty::UInt64,
+        Ty::Int128,
+        Ty::UInt128,
+    ]
+    .into_iter()
+    .find(|ty| machine_integer_type_name(*ty) == name)
+}
+
 fn signed_comparison_name(comparison: SignedInt32Comparison) -> &'static str {
     match comparison {
         SignedInt32Comparison::LessThan => "lt",
         SignedInt32Comparison::LessEqual => "le",
         SignedInt32Comparison::Equal => "eq",
         SignedInt32Comparison::Disequal => "ne",
+    }
+}
+
+/// The spelling of a `step` form without its terminating `;`.
+fn step_head_spelling(step: &ProofTactic) -> String {
+    match step {
+        ProofTactic::Step => "step()".to_string(),
+        ProofTactic::StepContract(name) => format!("step({name})"),
+        ProofTactic::StepBind(name) => format!("let {name} = step()"),
+        ProofTactic::StepCall(transport) => transport.to_string(),
+        _ => unreachable!("a step proof wraps a `step` form"),
     }
 }
 

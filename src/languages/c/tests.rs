@@ -6524,7 +6524,7 @@ fn c0_syntax_accepts_sizeof_for_scalar_and_pointer_types() {
     let kernel_expression = expression.to_kernel_expression();
     assert_eq!(
         kernel_expression,
-        crate::kernel::c_cast(
+        crate::kernel::c_source_integer_conversion(crate::kernel::c_cast(
             crate::kernel::c_add(
                 crate::kernel::c_add(
                     crate::kernel::c_add(
@@ -6536,7 +6536,7 @@ fn c0_syntax_accepts_sizeof_for_scalar_and_pointer_types() {
                 crate::kernel::c_uint64_literal(8),
             ),
             crate::kernel::CType::Int32,
-        )
+        ))
     );
 }
 
@@ -14298,4 +14298,108 @@ fn returned_expression(statement: &syntax::C0Statement) -> Option<&syntax::C0Exp
         syntax::C0Statement::Return(expression, _) => Some(expression),
         _ => None,
     }
+}
+
+/// A declaration of a library function Click specifies must have a type
+/// compatible with the library's prototype: a pointee's qualifiers and plain
+/// `char` count, a parameter's own qualifiers do not, and a declaration
+/// without a prototype need only agree on the result. A program definition
+/// with external linkage is refused, and one with internal linkage is the
+/// program's own. A compiler-prepared source follows the same rule.
+#[test]
+fn library_function_declarations_must_match_the_library_prototype() {
+    let caller = "unsigned long last_index(const char *s) { return 0; }\n";
+    let compatible = [
+        "unsigned long strlen(const char *s);",
+        "unsigned long strlen(const char *const s);",
+        "unsigned long strlen(const char s[]);",
+        "extern unsigned long strlen(const char *);",
+        "unsigned long strlen();",
+        "void *memcpy(void *restrict d, const void *restrict s, unsigned long n);",
+        "int memcmp(const void *a, const void *b, unsigned long n);",
+        "void *memset(void *s, int c, unsigned long n);",
+        "void *malloc(unsigned long n);",
+        "void *calloc(unsigned long count, unsigned long size);",
+        "void *realloc(void *p, unsigned long n);",
+        "void free(void *const p);",
+        "static unsigned long strlen(const char *s) { return 0; }",
+        "static void *malloc(int n) { return 0; }",
+    ];
+    for declaration in compatible {
+        let source = format!("{declaration}\n{caller}");
+        syntax::parse_functions(&source)
+            .unwrap_or_else(|error| panic!("`{declaration}` is compatible: {error}"));
+    }
+    let incompatible = [
+        ("int strlen(int s);", "`int32 (int32)`"),
+        ("int strlen(const char *s);", "`int32 (const char *)`"),
+        ("int strlen();", "`int32 ()`"),
+        ("unsigned long strlen(char *s);", "`uint64 (char *)`"),
+        (
+            "unsigned long strlen(const unsigned char *s);",
+            "`uint64 (const uint8 *)`",
+        ),
+        (
+            "unsigned long strlen(const volatile char *s);",
+            "`uint64 (const volatile char *)`",
+        ),
+        (
+            "unsigned long strlen(const char *s, ...);",
+            "`uint64 (const char *, ...)`",
+        ),
+        (
+            "unsigned long strlen(const char *s, int n);",
+            "`uint64 (const char *, int32)`",
+        ),
+        (
+            "void *memcpy(void *d, void *s, unsigned long n);",
+            "`void * (void *, void *, uint64)`",
+        ),
+        (
+            "const void *memset(void *s, int c, unsigned long n);",
+            "`const void * (void *, int32, uint64)`",
+        ),
+        ("void free(int *p);", "`void (int32 *)`"),
+        ("void *malloc(int n);", "`void * (int32)`"),
+    ];
+    for (declaration, described) in incompatible {
+        let source = format!("{declaration}\n{caller}");
+        let error = syntax::parse_functions(&source)
+            .expect_err(&format!("`{declaration}` is incompatible"))
+            .to_string();
+        assert!(
+            error.contains(&format!("has type {described}, which is incompatible"))
+                && error.contains("C library's")
+                && error.starts_with("line 1, column "),
+            "{declaration}: {error}"
+        );
+    }
+    let definition = format!("void *malloc(unsigned long n) {{ return 0; }}\n{caller}");
+    let error = syntax::parse_functions(&definition)
+        .expect_err("a program definition of a library function")
+        .to_string();
+    assert!(
+        error.contains(
+            "definition of the C library function `malloc` is not supported: the name is reserved"
+        ),
+        "{error}"
+    );
+
+    let (source, map) = provenance::CSourceMap::decode(
+        "# 1 \"main.c\"\nint strlen(int s);\nunsigned long last_index(const char *s) { return 0; }\n",
+    )
+    .unwrap();
+    let error = match syntax::parse_translation_unit_for_import(
+        &source,
+        "main.c",
+        &map,
+        syntax::PromiseAttributes::Accept,
+    ) {
+        Ok(_) => panic!("an imported incompatible declaration is refused"),
+        Err(error) => error.to_string(),
+    };
+    assert!(
+        error.starts_with("main.c:1:") && error.contains("`int32 (int32)`, which is incompatible"),
+        "{error}"
+    );
 }

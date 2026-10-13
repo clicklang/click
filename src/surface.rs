@@ -192,6 +192,7 @@ pub fn accepted_proof_trace(
     have_body_contains: &dyn Fn(&str, &[usize], &crate::source::SourcePosition) -> bool,
     target: Option<&crate::source::SourcePosition>,
 ) -> Option<String> {
+    let _typed = proof_diagnostics::render::TypedNotationScope::enter();
     let mut labels = proof_diagnostics::render::SnapshotLabels::ambient();
     proof_trace::render_accepted(
         &mut labels,
@@ -3426,6 +3427,12 @@ pub(crate) struct PlannedStatementTransition {
 pub enum ProofTactic {
     CloseInvariantsBy(Vec<ProofTactic>),
     Mark(String),
+    /// A `step` form followed by proofs of the obligations its fast path
+    /// leaves open: `step() by { ... }` or `step() { requires P by ...; }`.
+    StepProved {
+        step: Box<ProofTactic>,
+        proof: StepProof,
+    },
     Step,
     StepContract(ContractApplication),
     /// Name the scalar value assigned by this checked statement.
@@ -3604,6 +3611,16 @@ fn tactic_sorry_outside_have(tactic: &ProofTactic, in_have: bool) -> bool {
             .iter()
             .any(|arm| tactic_sorry_outside_have_in(&arm.tactics, in_have)),
         ProofTactic::CloseInvariantsBy(body) => tactic_sorry_outside_have_in(body, in_have),
+        // Each body proves an obligation as a `have` does.
+        ProofTactic::StepProved { step, proof } => {
+            tactic_sorry_outside_have(step, in_have)
+                || match proof {
+                    StepProof::By(body) => tactic_sorry_outside_have_in(body, true),
+                    StepProof::Requires(entries) => entries
+                        .iter()
+                        .any(|entry| source_proof_sorry_outside_have(&entry.have.proof, true)),
+                }
+        }
         _ => false,
     }
 }
@@ -3669,6 +3686,8 @@ pub enum SmartTacticKind {
 pub enum ControlTactic {
     Match,
     CloseInvariants,
+    /// A `step` with proofs of its open obligations.
+    StepProofs,
     Both,
     Have,
     Open,
@@ -3730,6 +3749,16 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         id: "step-call",
         syntax: "step(callee(...), { binder: instance })",
         class: "simple",
+    },
+    PublicTacticForm {
+        id: "step-by",
+        syntax: "step(...) by { ... }",
+        class: "control",
+    },
+    PublicTacticForm {
+        id: "step-requires",
+        syntax: "step(...) { requires P by ...; }",
+        class: "control",
     },
     PublicTacticForm {
         id: "user-tactic",
@@ -4038,6 +4067,11 @@ pub enum ProofStep {
         right_proof: Box<ProofCertificate>,
     },
     Mark(String),
+    /// A checked step and the explicit proofs of its open obligations.
+    StepProved {
+        step: Box<ProofStep>,
+        proof: StepProofCertificate,
+    },
     Step,
     StepContract(ContractApplication),
     /// Name the scalar value assigned by this checked statement.
@@ -4171,6 +4205,8 @@ pub enum CertificatePathSegment {
     LoopInitialize,
     LoopPreserve,
     LoopItem(usize),
+    StepBody,
+    StepRequirement(usize),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -4305,6 +4341,17 @@ pub(crate) fn proof_step_contains_arithmetic_using(step: &ProofStep) -> bool {
                 ProofStep::CloseInvariantsBy(proof)
                 | ProofStep::Have { proof, .. }
                 | ProofStep::Open { proof, .. } => pending.extend(proof.steps.iter()),
+                ProofStep::StepProved { step, proof } => {
+                    pending.push(step);
+                    match proof {
+                        StepProofCertificate::By(body) => pending.extend(body.steps.iter()),
+                        StepProofCertificate::Requires(entries) => {
+                            for entry in entries {
+                                pending.extend(entry.proof.steps.iter());
+                            }
+                        }
+                    }
+                }
                 ProofStep::Both {
                     left_proof,
                     right_proof,
@@ -4390,6 +4437,28 @@ impl ProofStep {
                 )),
             },
             ProofTactic::Mark(name) => Self::Mark(name.clone()),
+            ProofTactic::StepProved { step, proof } => Self::StepProved {
+                step: Box::new(Self::from_validated_tactic(step)),
+                proof: match proof {
+                    StepProof::By(body) => {
+                        StepProofCertificate::By(Box::new(ProofCertificate::from_validated_steps(
+                            body.iter().map(Self::from_validated_tactic).collect(),
+                        )))
+                    }
+                    StepProof::Requires(entries) => StepProofCertificate::Requires(
+                        entries
+                            .iter()
+                            .map(|entry| StepRequirementCertificate {
+                                label: entry.label.clone(),
+                                proposition: entry.have.proposition.clone(),
+                                proof: ProofCertificate::from_validated_proof(
+                                    &entry.have.checking_proof(),
+                                ),
+                            })
+                            .collect(),
+                    ),
+                },
+            },
             ProofTactic::Step => Self::Step,
             ProofTactic::StepBind(name) => Self::StepBind(name.clone()),
             ProofTactic::StepContract(name) => Self::StepContract(name.clone()),
@@ -4630,6 +4699,24 @@ impl ProofStep {
                 right_tactics: right_proof.to_proof_tactics(),
             }),
             Self::Mark(name) => ProofTactic::Mark(name.clone()),
+            Self::StepProved { step, proof } => ProofTactic::StepProved {
+                step: Box::new(step.to_proof_tactic()),
+                proof: match proof {
+                    StepProofCertificate::By(body) => StepProof::By(body.to_proof_tactics()),
+                    StepProofCertificate::Requires(entries) => StepProof::Requires(
+                        entries
+                            .iter()
+                            .map(|entry| StepRequirement {
+                                label: entry.label.clone(),
+                                have: ProofHave {
+                                    proposition: entry.proposition.clone(),
+                                    proof: entry.proof.to_source_proof(),
+                                },
+                            })
+                            .collect(),
+                    ),
+                },
+            },
             Self::Step => ProofTactic::Step,
             Self::StepBind(name) => ProofTactic::StepBind(name.clone()),
             Self::StepContract(name) => ProofTactic::StepContract(name.clone()),
@@ -4852,6 +4939,10 @@ impl CertificateError {
                 CertificatePathSegment::LoopInitialize => "loop `initialize`".to_string(),
                 CertificatePathSegment::LoopPreserve => "loop `preserve`".to_string(),
                 CertificatePathSegment::LoopItem(index) => format!("loop item {index}"),
+                CertificatePathSegment::StepBody => "step `by` body".to_string(),
+                CertificatePathSegment::StepRequirement(index) => {
+                    format!("step `requires` entry {index}")
+                }
             };
             if !place.is_empty() {
                 place.push_str(" > ");
@@ -4924,6 +5015,7 @@ fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::TransportUsing { .. } => TacticClass::Simple(SimpleTactic::FactTransport),
         ProofStep::InstantiateUsing { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
         ProofStep::CloseInvariantsBy(_) => TacticClass::Control(ControlTactic::CloseInvariants),
+        ProofStep::StepProved { .. } => TacticClass::Control(ControlTactic::StepProofs),
         ProofStep::Both { .. } => TacticClass::Control(ControlTactic::Both),
         ProofStep::Have { .. } => TacticClass::Control(ControlTactic::Have),
         ProofStep::Open { .. } => TacticClass::Control(ControlTactic::Open),
@@ -5026,6 +5118,31 @@ fn validate_certificate_tactics(
                     result
                 }
                 TacticClass::Simple(_) => Ok(()),
+                TacticClass::Control(ControlTactic::StepProofs) => {
+                    let ProofTactic::StepProved { proof, .. } = tactic else {
+                        unreachable!("tactic class and variant must agree")
+                    };
+                    match proof {
+                        StepProof::By(body) => {
+                            path.push(CertificatePathSegment::StepBody);
+                            let result = validate_certificate_tactics(body, path);
+                            path.pop();
+                            result
+                        }
+                        StepProof::Requires(entries) => {
+                            let mut result = Ok(());
+                            for (index, entry) in entries.iter().enumerate() {
+                                path.push(CertificatePathSegment::StepRequirement(index));
+                                result = validate_certificate_proof(&entry.have.proof, path);
+                                path.pop();
+                                if result.is_err() {
+                                    break;
+                                }
+                            }
+                            result
+                        }
+                    }
+                }
                 TacticClass::Control(ControlTactic::Both) => {
                     let ProofTactic::Both(both) = tactic else {
                         unreachable!()
@@ -5249,6 +5366,7 @@ impl ProofTactic {
             Self::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
             Self::CloseInvariants => TacticClass::Smart(SmartTacticKind::CloseInvariants),
             Self::CloseInvariantsBy(_) => TacticClass::Control(ControlTactic::CloseInvariants),
+            Self::StepProved { .. } => TacticClass::Control(ControlTactic::StepProofs),
             Self::Rewrite(_) => TacticClass::Simple(SimpleTactic::Rewrite),
             Self::Transport { .. } => TacticClass::Smart(SmartTacticKind::FactTransport),
             Self::TransportUsing { .. } => TacticClass::Simple(SimpleTactic::FactTransport),
@@ -5281,6 +5399,39 @@ impl SmartTactic {
             Self::Simp => SmartTacticKind::Simp,
         }
     }
+}
+
+/// The proofs written on a `step` for the obligations its fast path leaves
+/// open (`issues/simplify-step.md`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StepProof {
+    /// `step() by ...`: the body proves the one remaining obligation.
+    By(Vec<ProofTactic>),
+    /// `step() { requires P by ...; }`: each entry proves the obligation `P`
+    /// states.
+    Requires(Vec<StepRequirement>),
+}
+
+/// One `requires [label:] P by ...` entry of a `step`. Its proposition and
+/// proof are checked as a `have` at the step's pre-state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StepRequirement {
+    pub(crate) label: Option<String>,
+    pub(crate) have: ProofHave,
+}
+
+/// The checked form of [`StepProof`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StepProofCertificate {
+    By(Box<ProofCertificate>),
+    Requires(Vec<StepRequirementCertificate>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StepRequirementCertificate {
+    pub(crate) label: Option<String>,
+    pub(crate) proposition: ClickProposition,
+    pub(crate) proof: ProofCertificate,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -5680,6 +5831,14 @@ pub enum SignedArithmeticStep {
     },
     IntervalSignBitFlip {
         operand: usize,
+        result: SignedInt32Interval,
+    },
+    /// A C conversion of the operand into a one- or two-byte type, with the
+    /// operand's interval inside the destination range.
+    IntervalNarrowedCast {
+        operand: usize,
+        source: crate::kernel::MachineIntegerType,
+        destination: crate::kernel::MachineIntegerType,
         result: SignedInt32Interval,
     },
     IntervalCompare {
@@ -8319,6 +8478,12 @@ impl ClickError {
     /// was attempted. `message()` stays the stable cause text used by tools
     /// that compare or aggregate diagnostics.
     pub fn report(&self) -> String {
+        // A requested proof trace keeps its typed notation throughout.
+        let _typed = self
+            .diagnostic
+            .as_ref()
+            .is_some_and(|diagnostic| proof_trace::enabled_for(&diagnostic.claim_label))
+            .then(proof_diagnostics::render::TypedNotationScope::enter);
         let mut snapshot_labels = proof_diagnostics::render::SnapshotLabels::ambient();
         let traced_message = self.diagnostic.as_ref().and_then(|diagnostic| {
             (self.kind == ClickErrorKind::Proof
@@ -8532,6 +8697,7 @@ impl ClickError {
         {
             return None;
         }
+        let _typed = proof_diagnostics::render::TypedNotationScope::enter();
         let mut labels = proof_diagnostics::render::SnapshotLabels::ambient();
         let context = proof_diagnostics::render_trace_context_labeled(
             diagnostic,

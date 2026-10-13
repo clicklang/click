@@ -77,6 +77,59 @@ fn missing_prerequisite_error(
     }
 }
 
+thread_local! {
+    /// The open obligations a probing `Fast` step has met, in order, while
+    /// [`probe_open_obligations`] runs.
+    static OPEN_OBLIGATION_PROBE: std::cell::RefCell<Option<Vec<UnresolvedRequirement>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `operation` with every `Fast` refusal that carries a structured
+/// requirement recorded instead of returned, and returns those requirements in
+/// the order the step met them. What `operation` produces is not a checked
+/// step: it skipped the recorded obligations, so callers discard it and use
+/// only the list.
+pub(in crate::surface) fn probe_open_obligations<R>(
+    operation: impl FnOnce() -> R,
+) -> (R, Vec<UnresolvedRequirement>) {
+    struct Restore(Option<Vec<UnresolvedRequirement>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = self.0.take();
+            OPEN_OBLIGATION_PROBE.with(|probe| *probe.borrow_mut() = previous);
+        }
+    }
+    let previous = OPEN_OBLIGATION_PROBE.with(|probe| probe.borrow_mut().replace(Vec::new()));
+    let restore = Restore(previous);
+    let result = operation();
+    let recorded = OPEN_OBLIGATION_PROBE
+        .with(|probe| probe.borrow_mut().take())
+        .unwrap_or_default();
+    drop(restore);
+    (result, recorded)
+}
+
+/// Returns `error`, or, while a `Fast` step is being probed, records its
+/// structured requirement and lets checking continue past it.
+fn refuse_or_probe(
+    policy: StatementPrerequisitePolicy,
+    error: ClickError,
+) -> Result<(), ClickError> {
+    if matches!(policy, StatementPrerequisitePolicy::Fast)
+        && let Some(requirement) = error.unresolved_requirement()
+    {
+        let recorded = OPEN_OBLIGATION_PROBE.with(|probe| {
+            probe.borrow_mut().as_mut().map(|recorded| {
+                recorded.push(requirement.clone());
+            })
+        });
+        if recorded.is_some() {
+            return Ok(());
+        }
+    }
+    Err(error)
+}
+
 /// A condition's unmet prerequisite, spelled as a proof would state it over
 /// `state`'s locals rather than as the kernel's term.
 fn missing_condition_prerequisite_error(
@@ -260,7 +313,8 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
         StatementPrerequisitePolicy::Exact
         | StatementPrerequisitePolicy::Explicit
         | StatementPrerequisitePolicy::Contextual
-        | StatementPrerequisitePolicy::Retained => context.cloned().unwrap_or_else(pure_context),
+        | StatementPrerequisitePolicy::Retained
+        | StatementPrerequisitePolicy::Fast => context.cloned().unwrap_or_else(pure_context),
     };
     if matches!(prerequisite_policy, StatementPrerequisitePolicy::Exact) {
         assumptions = assumptions.defer_non_exact_loadability_obligations();
@@ -326,7 +380,8 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                     }
                     StatementPrerequisitePolicy::Explicit
                     | StatementPrerequisitePolicy::Contextual
-                    | StatementPrerequisitePolicy::Retained => {
+                    | StatementPrerequisitePolicy::Retained
+                    | StatementPrerequisitePolicy::Fast => {
                         if matches!(
                             prerequisite_policy,
                             StatementPrerequisitePolicy::Retained
@@ -336,9 +391,21 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                         )? {
                             return Err(missing_condition_prerequisite_error(context_label, obligation, state));
                         }
-                        if prerequisite_assumptions.proves(obligation.proposition()) {
+                        if exact_fact_is_available(obligation.proposition(), pure_facts)
+                            || prerequisite_assumptions.states_required_goal(obligation.proposition())
+                        {
+                        } else if !matches!(prerequisite_policy, StatementPrerequisitePolicy::Fast)
+                            && prerequisite_assumptions.proves(obligation.proposition())
+                        {
+                            crate::instrumentation::record_hidden_prerequisite(
+                                hidden_prerequisite_route(prerequisite_policy, true),
+                                "proves",
+                            );
                         } else {
-                            return Err(missing_condition_prerequisite_error(context_label, obligation, state));
+                            refuse_or_probe(
+                                prerequisite_policy,
+                                missing_condition_prerequisite_error(context_label, obligation, state),
+                            )?;
                         }
                     }
                 }
@@ -381,6 +448,21 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
             }
         })
         .collect()
+}
+
+/// The census route of a prerequisite derived by search under `policy`.
+fn hidden_prerequisite_route(
+    policy: StatementPrerequisitePolicy,
+    condition: bool,
+) -> crate::instrumentation::HiddenPrerequisiteRoute {
+    use crate::instrumentation::HiddenPrerequisiteRoute as Route;
+    match (policy, condition) {
+        (StatementPrerequisitePolicy::Retained, false) => Route::StepObligation,
+        (StatementPrerequisitePolicy::Retained, true) => Route::StepCondition,
+        (StatementPrerequisitePolicy::Explicit, true) => Route::ExplicitCondition,
+        (_, false) => Route::ContextualObligation,
+        (_, true) => Route::ContextualCondition,
+    }
 }
 
 pub(in crate::surface) fn certified_statement_transitions(
@@ -782,7 +864,8 @@ fn certified_transitions_from_execution(
                         }
                     }
                     StatementPrerequisitePolicy::Contextual
-                    | StatementPrerequisitePolicy::Retained => {
+                    | StatementPrerequisitePolicy::Retained
+                    | StatementPrerequisitePolicy::Fast => {
                         // A refusal lists the facts this check consulted.
                         // Over a proof context `pure_facts` is only the
                         // statement-local delta, and the context itself
@@ -872,31 +955,43 @@ fn certified_transitions_from_execution(
                                 .is_some())
                         {
                             None
-                        } else if let Some(derivation) = prerequisite_assumptions
-                            .derive_proposition(proposition)
-                            .filter(|derivation| derivation.check(&prerequisite_assumptions))
+                        } else if let Some(derivation) = (!matches!(
+                            prerequisite_policy,
+                            StatementPrerequisitePolicy::Fast
+                        ))
+                        .then(|| prerequisite_assumptions.derive_proposition(proposition))
+                        .flatten()
+                        .filter(|derivation| derivation.check(&prerequisite_assumptions))
                         {
+                            crate::instrumentation::record_hidden_prerequisite(
+                                hidden_prerequisite_route(prerequisite_policy, false),
+                                derivation.rule_name(),
+                            );
                             Some(derivation)
                         } else {
-                            return Err(missing_prerequisite_error(
-                                format!(
-                                    "{context_label} is missing prerequisite{}: {}",
-                                    obligation
-                                        .context()
-                                        .map(|context| format!(" ({context})"))
-                                        .unwrap_or_default(),
-                                    describe_statement_prerequisite_failure(
-                                proposition,
-                                &consulted_facts(),
-                                &statement_facts,
-                                state,
-                                statement,
-                                environment,
-                                predicate_environment,
-                            ),
+                            refuse_or_probe(
+                                prerequisite_policy,
+                                missing_prerequisite_error(
+                                    format!(
+                                        "{context_label} is missing prerequisite{}: {}",
+                                        obligation
+                                            .context()
+                                            .map(|context| format!(" ({context})"))
+                                            .unwrap_or_default(),
+                                        describe_statement_prerequisite_failure(
+                                            proposition,
+                                            &consulted_facts(),
+                                            &statement_facts,
+                                            state,
+                                            statement,
+                                            environment,
+                                            predicate_environment,
+                                        ),
+                                    ),
+                                    obligation,
                                 ),
-                                obligation,
-                            ));
+                            )?;
+                            None
                         }
                     }
                 };
@@ -1338,7 +1433,12 @@ mod condition_transition_tests {
             Err(error) => error,
         };
 
-        assert!(error.message().contains("missing condition prerequisite: `viewable(memory=snapshot#1, base=p, bytes:uint32=4)"), "{error:?}");
+        assert!(
+            error
+                .message()
+                .contains("missing condition prerequisite: `viewable(p[0..1])`"),
+            "{error:?}"
+        );
     }
 
     #[test]

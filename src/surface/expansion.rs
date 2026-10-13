@@ -4660,7 +4660,11 @@ fn smart_container_alias_entries(
             }
             SourceProof::Default => {}
         },
-        ProofTactic::CloseInvariantsBy(body) => {
+        ProofTactic::CloseInvariantsBy(body)
+        | ProofTactic::StepProved {
+            proof: StepProof::By(body),
+            ..
+        } => {
             if let Some(open) = block_after_by(tactic_tokens) {
                 blocks.push((open, body));
             }
@@ -4725,6 +4729,12 @@ fn tactic_contains_smart_tactic(tactic: &ProofTactic) -> bool {
     }
     match tactic {
         ProofTactic::CloseInvariantsBy(tactics) => any(tactics),
+        ProofTactic::StepProved {
+            proof: step_proof, ..
+        } => match step_proof {
+            StepProof::By(tactics) => any(tactics),
+            StepProof::Requires(entries) => entries.iter().any(|entry| proof(&entry.have.proof)),
+        },
         ProofTactic::StructuralInduct { arms, .. } => arms.iter().any(|arm| any(&arm.tactics)),
         ProofTactic::Have(have) => proof(&have.proof),
         ProofTactic::Open(open) => any(&open.tactics),

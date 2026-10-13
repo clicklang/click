@@ -928,7 +928,21 @@ impl<'a> Proof<'a> {
         &self,
         step: ProofStep,
     ) -> Result<Self, ClickError> {
-        self.apply_execution_statement_step_with_policy(step, StatementPrerequisitePolicy::Retained)
+        #[cfg(test)]
+        let hidden_before = crate::instrumentation::hidden_prerequisites_on_thread();
+        let result = self.apply_execution_statement_step_with_policy(
+            step,
+            StatementPrerequisitePolicy::Retained,
+        );
+        #[cfg(test)]
+        if crate::instrumentation::hidden_prerequisites_on_thread() > hidden_before {
+            crate::surface::proof::cursor_execution::record_planning_statement_transition(
+                self.context.claim_label(),
+                self.node.depth,
+                "step",
+            );
+        }
+        result
     }
 
     pub(in crate::surface::proof) fn apply_execution_statement_step_with_policy(
@@ -1367,6 +1381,162 @@ impl<'a> Proof<'a> {
     /// Check the written proof immediately against the exact lowered goals.
     /// The kernel owns the scope and retains its completed proof as bound
     /// closure evidence; finalization validates it without reproving it.
+    /// Applies `step` with explicit proofs of the obligations its fast path
+    /// leaves open (`issues/simplify-step.md`). A plain `by` (`entries` is
+    /// `None`) proves the one open obligation; `requires` entries each prove
+    /// the open obligation their proposition states. `prove` checks one proof
+    /// as a `have` at this pre-state, through whichever driver reads the
+    /// written body, and returns the joined Proof; `None` as its index means
+    /// the plain `by` body.
+    ///
+    /// Obligations nothing written proves keep today's checking until the
+    /// implicit `auto` lands.
+    pub(in crate::surface::proof) fn apply_step_with_obligation_proofs(
+        &self,
+        step: ProofStep,
+        entries: Option<&[(Option<String>, ClickProposition)]>,
+        prove: &mut dyn FnMut(&Self, ClickProposition, Option<usize>) -> Result<Self, ClickError>,
+    ) -> Result<Self, ClickError> {
+        self.require_execution_frontier("a step's obligation proofs")?;
+        let (probe, recorded) = probe_open_obligations(|| {
+            self.apply_execution_statement_step_with_policy(
+                step.clone(),
+                StatementPrerequisitePolicy::Fast,
+            )
+        });
+        // A refusal the probe could not record is the step's own failure.
+        probe?;
+        let mut open: Vec<UnresolvedRequirement> = Vec::new();
+        for requirement in recorded {
+            if !open.iter().any(|seen| {
+                crate::kernel::proof::propositions_are_alpha_equal(
+                    &seen.proposition,
+                    &requirement.proposition,
+                )
+            }) {
+                open.push(requirement);
+            }
+        }
+        let spelling = |requirement: &UnresolvedRequirement| -> Result<String, ClickError> {
+            Ok(match self.requirement_surface(requirement, &step)? {
+                Some(surface) => crate::surface::printing::source_click_proposition(&surface),
+                None => format!(
+                    "{} (no Surface spelling: report this as a bug)",
+                    self.execution()
+                        .map(|execution| {
+                            crate::surface::diagnostics::describe_stated_fact_over_locals(
+                                &requirement.proposition,
+                                &execution.core.state,
+                            )
+                        })
+                        .unwrap_or_else(|| format!("{:?}", requirement.proposition))
+                ),
+            })
+        };
+        let open_list = || -> Result<String, ClickError> {
+            Ok(open
+                .iter()
+                .map(|requirement| spelling(requirement).map(|spelled| format!("`{spelled}`")))
+                .collect::<Result<Vec<_>, _>>()?
+                .join(", "))
+        };
+        let mut current = self.clone();
+        let proof = match entries {
+            None => {
+                let [requirement] = open.as_slice() else {
+                    if open.is_empty() {
+                        return Err(self.step_error(
+                            "this step's `by` is superfluous: its fast path leaves no obligation open; write the step without `by`",
+                        ));
+                    }
+                    let entries = open
+                        .iter()
+                        .map(|requirement| {
+                            spelling(requirement)
+                                .map(|spelled| format!("    requires {spelled} by auto;"))
+                        })
+                        .collect::<Result<Vec<_>, _>>()?
+                        .join("\n");
+                    return Err(self.step_error(format!(
+                        "a step's `by` proves its one open obligation, but this step leaves {} open; write one `requires` entry for each:\n{{\n{entries}\n}}",
+                        open.len()
+                    )));
+                };
+                let Some(surface) = self.requirement_surface(requirement, &step)? else {
+                    return Err(self.step_error(format!(
+                        "this step's open obligation {} cannot be proved by `by`",
+                        spelling(requirement)?
+                    )));
+                };
+                let checkpoint = current.checkpoint();
+                current = prove(&current, surface, None)?;
+                StepProofCertificate::By(Box::new(retained_have_body(
+                    &current.certificate_since(&checkpoint)?,
+                )?))
+            }
+            Some(entries) => {
+                let mut claimed: Vec<Option<usize>> = vec![None; open.len()];
+                let mut proved = Vec::with_capacity(entries.len());
+                for (index, (label, proposition)) in entries.iter().enumerate() {
+                    let written = crate::surface::printing::source_click_proposition(proposition);
+                    let lowered = self.lower_surface_goal(proposition, "`requires` entry")?;
+                    let Some(slot) = open.iter().position(|requirement| {
+                        crate::surface::proof::smart_closures::lowered_states_requirement(
+                            &lowered,
+                            requirement,
+                        )
+                    }) else {
+                        let open_now = if open.is_empty() {
+                            "it leaves none open".to_string()
+                        } else {
+                            format!("it leaves open {}", open_list()?)
+                        };
+                        return Err(self.step_error(format!(
+                            "`requires {written}` matches no obligation this step leaves open: its fast path already closes it or the step does not require it; {open_now}"
+                        )));
+                    };
+                    if let Some(earlier) = claimed[slot] {
+                        return Err(self.step_error(format!(
+                            "`requires {written}` proves the same obligation as `requires` entry {}",
+                            earlier + 1
+                        )));
+                    }
+                    claimed[slot] = Some(index);
+                    let checkpoint = current.checkpoint();
+                    current = prove(&current, proposition.clone(), Some(index))?;
+                    proved.push(StepRequirementCertificate {
+                        label: label.clone(),
+                        proposition: proposition.clone(),
+                        proof: retained_have_body(&current.certificate_since(&checkpoint)?)?,
+                    });
+                }
+                StepProofCertificate::Requires(proved)
+            }
+        };
+        // With a plain `by`, the one open obligation is now proved, so the
+        // fast path closes every obligation. Unwritten `requires`
+        // obligations keep the ordinary step's checking for now.
+        let policy = if entries.is_none() {
+            StatementPrerequisitePolicy::Fast
+        } else {
+            StatementPrerequisitePolicy::Retained
+        };
+        let stepped = current.apply_execution_statement_step_with_policy(step.clone(), policy)?;
+        Ok(Self {
+            site: self.site.clone(),
+            context: self.context.clone(),
+            state: stepped.state,
+            node: ProofNode::step_child(
+                &self.node,
+                self.focused_branch_id(),
+                Arc::new(ProofStep::StepProved {
+                    step: Box::new(step),
+                    proof,
+                }),
+            ),
+        })
+    }
+
     pub(in crate::surface::proof) fn apply_close_invariants_body(
         &self,
         body: &[ProofTactic],
@@ -2295,4 +2465,17 @@ impl<'a> Proof<'a> {
             }),
         })
     }
+}
+
+/// The body of the one `have` a proof of a step obligation retained.
+fn retained_have_body(certificate: &ProofCertificate) -> Result<ProofCertificate, ClickError> {
+    certificate
+        .steps()
+        .iter()
+        .rev()
+        .find_map(|step| match step {
+            ProofStep::Have { proof, .. } => Some(proof.as_ref().clone()),
+            _ => None,
+        })
+        .ok_or_else(|| ClickError::new("a step obligation proof retained no `have`"))
 }

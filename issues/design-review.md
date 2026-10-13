@@ -26,11 +26,13 @@ is empty.
 Every item starts as **Decision: open**. Record the maintainer's ruling in
 place before work starts.
 
-Documentation has two audiences. The repository and `docs/` are written for
-AI readers: an agent asked to evaluate or use Click reads them, so they must be
-precise, complete and honest about limits. Human-facing material (the top of
-the README and a public website) is written by the maintainer. Items below
-that concern human onboarding apply to the human-facing material.
+Documentation has two audiences. The repository and `docs/`, the AI
+reference, are written for AI readers: an agent asked to evaluate or use Click
+reads them, so they must be precise, complete and honest about limits.
+Human-facing material (the top of the README, the guide in `guide/` and a
+public website) is written by the maintainer, so critiques of human onboarding,
+such as jargon load and positioning against other verifiers, are the
+maintainer's and are not tracked here.
 
 ## Violated invariant
 
@@ -214,17 +216,28 @@ Proposed fix: per-claim incremental caching by default
 
 Decision: open.
 
-### W6. Diagnostics print kernel notation
+### W6. Some diagnostic lines still print kernel notation
 
-Today: refusals print terms such as
-`int32 <(load A=read<Bits32>(snapshot#1, pointer=value#1), 100) is true`
-(`mdtests/a_claim_true_in_one_alias_case_is_refused.md`) and
-`left side evaluated to load(bytes)`. Many messages are good ("the store to
-`a[j]` may have written it ... state `i != j`").
+Facts, goals, rejected requirements, evaluated sides, search candidates and
+the proof context now print in Click or C syntax (`old(g[0]) < 100`,
+`(uint32)n <= 1073741823u32`, `viewable(p[1..2])`), with reads of other
+memories as `at(<state A>, ...)` defined after the report.
 
-Proposed fix: render every fact and term in Click or source syntax.
+Today: the `C operation:` and `call bindings:` lines still print lowered C
+(`first(load_int32_pointer(byte_offset(s, 8)), load_uint64(s))`,
+`mdtests/a_refused_wide_range_names_its_bound_field.md`); the echoed claim
+keeps full parentheses and `||` (`(((result == 0 || u == 0) || v == 0) ||
+result == 3)`); a value with no source name prints as `<unnamed A>` (a
+loop-head value, a callee's result) and an address as `<pointer A>` (a heap
+allocation once no live local holds it); byte offsets into an object print as
+`g+8` in the memory-history text and resource ranges over an unnamed base as
+`…[0..40]`. `--trace-proof` keeps its typed notation by design.
 
-Decision: open.
+Proposed fix: render the C operation from its source statement, echo the claim
+through the same printer, and name loop-head values and allocations from the
+state that holds them.
+
+Decision: in progress.
 
 ## L. Surface language
 
@@ -309,13 +322,15 @@ sugar.
 
 Decision: open.
 
-### L8. The language reference reads like a changelog
+### L8. The language reference is not yet a good AI reference
 
 Today: `docs/reference/language/index.md` is about 3,000 lines with "this
 slice", "not yet" and mdtest citations throughout; core and edge cases are
 mixed.
 
-Proposed fix: a short core reference separate from the full reference.
+Proposed fix: make the language reference a good AI reference: core forms and
+edge cases are each easy to find, and the text states current behavior
+without changelog phrasing such as "this slice" or "not yet".
 
 Decision: open.
 
@@ -400,19 +415,6 @@ essay moves to a design document or the website) and tags the first release.
 
 Decision: fix (maintainer).
 
-### N4. Jargon load, and internal documents in the user book
-
-Today: "smart", "kernel", "frontier", "certificate" and "proof unit" appear
-throughout user docs; the glossary is about 1,200 lines;
-`docs/reference/language/limitations.md` opens with parser nesting budgets
-and addresses "agents"; the book's summary includes the rbtree launch
-roadmap and the worker authority protocol.
-
-Proposed fix: separate a user guide from internals; a ten-term glossary on
-the first-proof page.
-
-Decision: open.
-
 ### N5. C++ and Rust look like research demos
 
 Today: both need a repository checkout and custom importer builds
@@ -425,21 +427,10 @@ the installer; keep migration history out of user docs.
 
 Decision: open.
 
-### N6. No positioning against other tools
-
-Today: `docs/concepts/proof-landscape.md` maps features to Frama-C,
-VeriFast, CBMC and Dafny but does not say when to choose Click; Kani, Verus,
-Prusti and Creusot are not mentioned.
-
-Proposed fix: a "Click and other verifiers" page, honest about weaknesses.
-
-Decision: open.
-
 ### N7. The repository root mixes product and process
 
 Today: `design/`, `issues/`, `bugs/`, `AGENTS.md` and `CLAUDE.md` sit at the
-root; `docs/index.md` says the docs are AI-written and a human-written guide
-will follow.
+root, next to the maintainer's `guide/`.
 
 Proposed fix: move process material under one directory or a separate
 repository; decide what the launch repository presents.

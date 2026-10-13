@@ -814,6 +814,29 @@ impl<'a> Proof<'a> {
         if let ProofStep::Have { proposition, proof } = &step {
             return self.apply_have_step(proposition, proof);
         }
+        if let ProofStep::StepProved { step: inner, proof } = &step {
+            return match proof {
+                StepProofCertificate::By(body) => self.apply_step_with_obligation_proofs(
+                    inner.as_ref().clone(),
+                    None,
+                    &mut |proof, proposition, _| proof.apply_have_step(&proposition, body),
+                ),
+                StepProofCertificate::Requires(certificates) => {
+                    let entries = certificates
+                        .iter()
+                        .map(|entry| (entry.label.clone(), entry.proposition.clone()))
+                        .collect::<Vec<_>>();
+                    self.apply_step_with_obligation_proofs(
+                        inner.as_ref().clone(),
+                        Some(&entries),
+                        &mut |proof, proposition, index| {
+                            let body = &certificates[index.expect("a `requires` entry")].proof;
+                            proof.apply_have_step(&proposition, body)
+                        },
+                    )
+                }
+            };
+        }
         // An unsigned order is the signed order of sign-flipped operands,
         // which the arithmetic certificates treat as opaque atoms. A goal
         // one uint32 lemma away from a listed premise is closed by that
@@ -2159,6 +2182,17 @@ impl<'a> Proof<'a> {
                         result: signed_interval(*result),
                     }
                 }
+                SignedArithmeticStep::IntervalNarrowedCast {
+                    operand,
+                    source,
+                    destination,
+                    result,
+                } => SignedArithmeticNode::IntervalNarrowedCast {
+                    operand: *operand,
+                    source: *source,
+                    destination: *destination,
+                    result: signed_interval(*result),
+                },
                 SignedArithmeticStep::IntervalCompare {
                     left,
                     right,
