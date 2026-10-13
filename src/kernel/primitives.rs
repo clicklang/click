@@ -10677,9 +10677,8 @@ pub struct SymbolicCExecution {
 }
 
 /// One complete path set contract certification may judge a claim over: a
-/// checked execution reused at the contract's entry, the union of two
-/// complementary entry partitions, or the kernel's own execution when no
-/// artifact was supplied. Its paths jointly cover the function from the
+/// checked execution reused at the contract's entry, or the kernel's own
+/// execution when no artifact was supplied. Its paths jointly cover the function from the
 /// entry they name, so a claim that holds on every one of them holds.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CContractPathSet {
