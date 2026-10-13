@@ -195,7 +195,12 @@ simple is paused (`issues/simplify-step.md`).
 
 Proposed fix: finish `issues/simplify-step.md`, or reclassify `step()`.
 
-Decision: open.
+Decision: fix (maintainer, 2026-10-13). `step()` stays simple and `execute()`
+stays a sequence of steps. What a simple tactic owes is speed: it closes each
+requirement by an exact or indexed check, and an implicit `auto` proves the
+rest, printed by expansion as `step() by { ... }` or
+`step() { requires P by ...; }`. Every requirement must have a Surface
+spelling. The plan is [simplify-step.md](simplify-step.md).
 
 ### W4. Expansion output is hard to read and gets committed
 

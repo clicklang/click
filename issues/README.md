@@ -121,7 +121,7 @@ Specification and proof:
 
 ## P2: after launch (17)
 
-- [Make `step` simple across a call precondition](simplify-step.md)
+- [Make simple tactics fast: exact requirements, expandable `auto` for the rest](simplify-step.md)
 
 Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
 it turns out to block that claim: if P1 work exposes one of the tooling
