@@ -301,7 +301,10 @@ The budget is kept by what the gate leaves out, not by a faster machine:
   kills a test still running after 30 seconds.
 - A mutation test, which re-verifies a whole example with one C statement
   changed, is nightly. A family keeps at most one or two in the gate.
-- An example that does is listed in `NIGHTLY` in `tests/examples.rs`.
+- An example that does is listed in `NIGHTLY` in `tests/examples.rs`, and an
+  mdtest fixture that takes half a second or more is listed in `NIGHTLY` in
+  `tests/mdtests.rs`. Shared `.click` lemma libraries stay in the gate.
+  `MDTEST_FILTER` runs a nightly fixture by name.
 - `click audit` re-expands and re-verifies every site of a claim, tens of
   seconds where `verify` takes under one. The import tests run it only under
   `CLICK_NIGHTLY`.
@@ -329,8 +332,11 @@ rbtree erase mutations in the gate. On 2026-10-13 the gate took 19 minutes on
 four cores from a cold build, about 12 warm: the suites had grown sixfold
 since August, and tests between half a second and two seconds held most of
 the unit test time. The rule moved from two seconds to half a second, which
-sent 672 tests, about 860 CPU-seconds of the 1,265 in the unit run, to
-nightly.
+sent 672 tests, about 860 CPU-seconds of the 1,265 in the unit run, and 208
+mdtests, about 340 of the corpus's 710, to nightly. A gate run without the
+nightly fixtures is partial, as a CI partition is: the hidden prerequisite
+ratchet checks only for a rise there, and the nightly run checks both
+ratchets over the whole corpus.
 
 CI uses these internal modes for code-affecting changes:
 
