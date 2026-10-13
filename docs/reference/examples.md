@@ -1,5 +1,8 @@
 # Examples
 
+This catalog maps Click features to the mdtests and example projects that
+exercise them.
+
 Focused regression examples live in `mdtests/`. Each mdtest should be small and
 self-contained, with inline C and `.click` blocks. Prefer copying a nearby
 mdtest instead of inventing syntax from memory.
