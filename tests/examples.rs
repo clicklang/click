@@ -1643,7 +1643,7 @@ fn verify_source_integrity(project: &Path) -> Result<Option<SourceFixtureStatus>
             || !(matches!(
                 path.extension().and_then(|extension| extension.to_str()),
                 Some("c" | "h")
-            ) || name == "COPYING")
+            ) || matches!(name, "COPYING" | "LICENSE" | "LICENSE.txt"))
         {
             return Err(format!(
                 "`{}` line {} names an invalid source fixture path `{name}`",
