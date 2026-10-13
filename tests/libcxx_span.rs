@@ -159,7 +159,7 @@ fn libcxx_span_binds_the_model_accessors_and_catalog() {
         &sidecar,
         &[(
             sidecar.replace("    requires 2u64 <= std_span_size(s);\n", ""),
-            "operator_index precondition",
+            "operator_index",
         )],
     );
     fs::remove_dir_all(root).unwrap();

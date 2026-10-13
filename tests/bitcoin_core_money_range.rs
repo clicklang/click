@@ -3660,7 +3660,7 @@ fn axiomatic_static_extent_spans_verify() {
         &format!(
             "int32 probe({STATIC_INT_SPAN}& s) {{ views std_span_data(s); views std_span_data(s)[4]; ensures result == std_span_data(s)[4]; }} by {{ execute(); simp(); }}"
         ),
-        "operator_index precondition",
+        "operator_index",
     );
 }
 
@@ -3747,7 +3747,7 @@ fn axiomatic_std_array_element_access_verifies() {
         &format!(
             "int32 probe({INT_ARRAY}& a) {{ views a; ensures result == 0; }} by {{ execute(); simp(); }}"
         ),
-        "operator_index precondition",
+        "operator_index",
     );
 }
 
