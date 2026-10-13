@@ -121,7 +121,7 @@ Specification and proof:
 - [Difference logic: the fast path for arithmetic requirements and conditions](difference-logic.md)
 - [Launch design review: open critiques, each to be fixed or ruled wontfix](design-review.md) (depends on smt-auto.md and simplify-step.md)
 
-## P2: after launch (14)
+## P2: after launch (13)
 
 Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
 it turns out to block that claim: if P1 work exposes one of the tooling
@@ -142,7 +142,6 @@ C language coverage:
 Additional languages:
 
 - [Extend C++ support toward Bitcoin Core](cpp-support.md)
-- [Extend the C++ standard-library contract catalog](cpp-standard-library-contracts.md)
 
 Semantics and reasoning:
 
