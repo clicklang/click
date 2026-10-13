@@ -6943,6 +6943,58 @@ fn install_declared_loop_frames(
         .collect())
 }
 
+/// Capture ordinary entry memory footprints before modified locals are
+/// havocked. Named resource binders still read their arguments/models at the
+/// abstract head; their independently derived views are never captured here.
+fn capture_loop_entry_memory_specs(
+    entry: &CState,
+    specs: &[CResourceSpec],
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<(Vec<CResourceSpec>, Vec<CLoopResourceFailure>)> {
+    let mut captured = Vec::with_capacity(specs.len());
+    let mut failures = Vec::new();
+    for spec in specs {
+        let CResourceTerm::Memory(segment) = spec.term() else {
+            captured.push(spec.clone());
+            continue;
+        };
+        if spec.snapshot() != CResourceSnapshot::Entry
+            || spec.guard().is_some()
+            || segment.guard().is_some()
+        {
+            captured.push(spec.clone());
+            continue;
+        }
+        let mut segment = segment.clone();
+        let mut failed = false;
+        for expression in [&mut segment.base, &mut segment.start, &mut segment.end] {
+            match evaluate_loop_effect_segment_value(
+                entry,
+                expression,
+                assumptions,
+                "loop entry memory operand",
+                budget,
+            )? {
+                Ok(value) => *expression = CExpression::Value(value),
+                Err(message) => {
+                    failures.push(CLoopResourceFailure::Message(format!(
+                        "could not capture loop entry memory footprint: {message}"
+                    )));
+                    failed = true;
+                    break;
+                }
+            }
+        }
+        captured.push(if failed {
+            spec.clone()
+        } else {
+            spec.with_captured_memory_segment(segment)
+        });
+    }
+    Ok((captured, failures))
+}
+
 pub(super) fn prepare_loop_top_state(
     entry_state: &CState,
     effect_checks: &[CLoopEffectCheck],
@@ -6954,6 +7006,9 @@ pub(super) fn prepare_loop_top_state(
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<CLoopHead> {
+    let (captured_resource_specs, capture_failures) =
+        capture_loop_entry_memory_specs(entry_state, resource_specs, assumptions, budget)?;
+    let resource_specs = captured_resource_specs.as_slice();
     let effect_checks = install_declared_loop_frames(
         entry_state,
         effect_checks,
@@ -6996,7 +7051,7 @@ pub(super) fn prepare_loop_top_state(
                 .or_else(|| checked_owned_entry_footprint(entry_state.resources()));
             validate_loop_havoc_stable_loans(ledger, validated.as_deref(), assumptions).err()
         });
-    let mut resource_failures: Vec<CLoopResourceFailure> = Vec::new();
+    let mut resource_failures = capture_failures;
     let mut top_state = havoc_loop_modified_locals(
         entry_state,
         body,
