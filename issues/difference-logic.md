@@ -158,7 +158,7 @@ Each step is its own pull request.
      recorded and moves an interval end off `c`; division overflow is
      answered from those. Most of the general decisions were overflow
      checks on such terms (`(x - y) - 1`, `(0 - x) + 1`): the census fell
-     to 260 conditions and 7 path-fact decisions over the mdtests and 235
+     to 260 conditions and 7 path-fact decisions over the mdtests and 231
      over the examples.
    - *Left:* overflow checks whose operands are loads, Click function
      applications, `Multiply` or `Remainder` terms, or `int64` conversions
