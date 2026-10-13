@@ -27,8 +27,12 @@ Click currently supports:
   traversal and postorder deallocation;
 - count-up, lexicographic, and separately ranked nested loop measures;
 - numeric recursive calls inside ranked loops when the loop ranking and the
-  function-level ranking are independently checked; and
-- read-only direct-child structural recursion inside a ranked loop.
+  function-level ranking are independently checked;
+- read-only direct-child structural recursion inside a ranked loop;
+- recursive calls inside ranked loops whose descent depends on the loop's
+  changing counters, ranked by a function-level expression or tuple measure
+  and discharged from the loop invariants
+  (`mdtests/c_decreases_lexicographic_recursion_under_loops.md`).
 
 These behaviors have checked positive and negative regressions. They should
 remain unchanged while the hard cases below are added.
@@ -43,20 +47,16 @@ The next iteration must receive exactly the surviving resource populations,
 allocation authority, and heap lifetime required by its invariant. The proof
 must never recover a consumed child or hide a mutation behind the loop join.
 
-### Mutual structural recursion
+### Mutual structural recursion without a model measure
 
-A structural `decreases` currently supports a guarded directly recursive composite
-and direct self-recursive C calls. Mutually recursive C functions using
-structural resource measures need a checked well-founded family rather than a
-same-function direct-child rule. Mutual resource-definition cycles remain a
-separate resource-algebra concern.
-
-### Recursion under a changing caller measure
-
-A recursive call whose descent depends on a caller's changing lexicographic
-loop measure is currently rejected. Supporting it requires composing the
-caller phase and callee descent without treating either measure as unchanged
-across the other transition.
+A resource with a model already ranks mutual structural recursion through an
+expression measure over the model, such as `decreases links_len(x.model)`
+(`mdtests/c_decreases_model_measure_mutual_recursion.md`). The structural
+`decreases list(node)` and `decreases t` measures, which need no size function,
+still support only a guarded directly recursive composite and direct
+self-recursive C calls: their analysis reads the body for a direct child, not
+the instance a call passes. Mutual resource-definition cycles remain a separate
+resource-algebra concern.
 
 ## Intended regressions
 
@@ -68,9 +68,6 @@ Use unchanged C fixtures and checked sidecars for each slice:
    child cannot be resurrected at the loop join.
 2. Mutually recursive C functions descend through guarded structural resource
    children. Parent, unrelated-child, and unguarded edges remain rejected.
-3. A recursive call inside a loop descends using a changing caller tuple. The
-   combined ranking must be checked on every recursive edge and loop back edge;
-   a non-decreasing edge must fail.
 
 ## Acceptance criteria
 

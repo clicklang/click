@@ -329,7 +329,11 @@ member that declares no expression measure, or one of another shape, is
 refused at the call that reaches it
 (`mdtests/c_decreases_pure_expression_mutual_recursion_requires_every_measure.md`,
 `mdtests/c_decreases_pure_expression_mutual_recursion_rejects_mixed_shapes.md`).
-Click finds the component from the C call graph of the verified sources.
+Click finds the component from the C call graph of the verified sources. A
+measure over a resource binder's model, such as `decreases links_len(x.model)`,
+is an expression measure too, so it ranks mutual structural recursion down a
+data structure
+(`mdtests/c_decreases_model_measure_mutual_recursion.md`).
 `decreases <int32 parameter>`, whose analysis reads the body rather than the
 call steps, also ranks that shape. A self-recursive `static inline` helper
 with a contract is called through its contract, so an expression measure
