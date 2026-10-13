@@ -3,7 +3,9 @@
 `exposed` is defined in the data-only file `data.c` as the address of that
 file's private `value`. `main.c` can name `exposed` but not `value`, so the
 initializer is resolved in `data.c`, and `main` reads the private object
-through the linked pointer, with startup ownership of its pointee.
+through the linked pointer, with startup ownership of its pointee. The C is
+the original program unchanged: the call and the read of `zero` share one
+expression.
 
 ```c filename=data.c
 static int value = 11;
@@ -15,10 +17,7 @@ int zero;
 extern int *exposed;
 extern int zero;
 int read_cell(int *p) { return *p; }
-int main(void) {
-    int cell = read_cell(exposed);
-    return cell + zero;
-}
+int main(void) { return read_cell(exposed) + zero; }
 ```
 
 ```click

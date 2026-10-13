@@ -17496,8 +17496,32 @@ impl Parser {
             .is_some_and(|targets| self.reads_only_locals_other_than(&left, &targets));
         let right_disjoint_from_left_assignment = assignment_chain_targets(&left)
             .is_some_and(|targets| self.reads_only_locals_other_than(&right, &targets));
+        // A call is indeterminately sequenced with a read in the other
+        // operand. When that read is of named non-volatile static storage,
+        // both orders are checked rather than one chosen: see
+        // `sequence_reread_around_call`.
+        let left_rereads = (left_reads && right_position.is_some())
+            .then(|| self.reread_storage_names(&left))
+            .flatten();
+        let right_rereads = (right_reads && left_position.is_some())
+            .then(|| self.reread_storage_names(&right))
+            .flatten();
         let (left_prefix, left) = self.lower_expression_calls(left)?;
         let (right_prefix, right) = self.lower_expression_calls(right)?;
+        if let Some(names) = right_rereads
+            && right_prefix.is_empty()
+            && prefix_has_non_assertion(&left_prefix)
+        {
+            let prefix = self.sequence_reread_around_call(&names, left_prefix);
+            return Ok((prefix, left, right));
+        }
+        if let Some(names) = left_rereads
+            && left_prefix.is_empty()
+            && prefix_has_non_assertion(&right_prefix)
+        {
+            let prefix = self.sequence_reread_around_call(&names, right_prefix);
+            return Ok((prefix, left, right));
+        }
         if prefix_has_non_assertion(&left_prefix) && prefix_has_non_assertion(&right_prefix) {
             if left_position.is_none() || right_position.is_none() {
                 return Err(self.error_at_position(
@@ -17543,6 +17567,126 @@ impl Parser {
         let mut prefix = left_prefix;
         prefix.extend(right_prefix);
         Ok((prefix, left, right))
+    }
+
+    /// The static-storage names an operand reads, when it is safe to read it
+    /// again on the other side of an indeterminately sequenced call: built
+    /// only from integer literals, casts, integer arithmetic and named
+    /// non-volatile, non-floating scalar objects, so a second read has no
+    /// effect and the same value means the same result. Locals the call
+    /// cannot reach need no snapshot. `None` keeps the existing refusal.
+    fn reread_storage_names(&self, expression: &C0Expression) -> Option<Vec<String>> {
+        match expression {
+            C0Expression::Int32Literal(_)
+            | C0Expression::UInt8Literal(_)
+            | C0Expression::UInt32Literal(_)
+            | C0Expression::Int64Literal(_)
+            | C0Expression::UInt64Literal(_) => Some(Vec::new()),
+            C0Expression::Variable(name) => {
+                if self.variable_struct_values.contains_key(name) {
+                    return None;
+                }
+                let c_type = self.variable_types.get(name).copied()?;
+                // Integer and object-pointer values compare exactly; a float
+                // can be NaN, which `==` would refuse spuriously.
+                let integer = matches!(
+                    c_type,
+                    C0Type::Bool
+                        | C0Type::Int8
+                        | C0Type::Int16
+                        | C0Type::Int32
+                        | C0Type::Char(_)
+                        | C0Type::UInt8
+                        | C0Type::UInt16
+                        | C0Type::UInt32
+                        | C0Type::Int64
+                        | C0Type::UInt64
+                );
+                if !(integer || c_type.is_object_pointer()) {
+                    return None;
+                }
+                let volatile = if let Some(global) = self
+                    .globals
+                    .values()
+                    .find(|global| global.kernel_name() == name)
+                {
+                    global.is_volatile()
+                } else if let Some(static_local) = self.static_locals.get(name) {
+                    static_local.is_volatile()
+                } else if self.address_taken_variables.contains(name) {
+                    // An address-taken local's qualifiers are not tracked here.
+                    return None;
+                } else {
+                    return Some(Vec::new());
+                };
+                (!volatile).then(|| vec![name.clone()])
+            }
+            C0Expression::Cast { expression, .. } => self.reread_storage_names(expression),
+            C0Expression::Add(left, right)
+            | C0Expression::Subtract(left, right)
+            | C0Expression::Multiply(left, right)
+            | C0Expression::BitwiseAnd(left, right)
+            | C0Expression::BitwiseOr(left, right)
+            | C0Expression::BitwiseXor(left, right) => {
+                let mut names = self.reread_storage_names(left)?;
+                for name in self.reread_storage_names(right)? {
+                    if !names.contains(&name) {
+                        names.push(name);
+                    }
+                }
+                Some(names)
+            }
+            _ => None,
+        }
+    }
+
+    /// C leaves a call and a read in the other operand indeterminately
+    /// sequenced, so either may happen first. Rather than choose an order,
+    /// read each named object before the call, run the call, and require it
+    /// to hold the same value afterwards: the read must then be defined in
+    /// both orders and give one value. The operand itself is evaluated after
+    /// the call, as the lowering always has.
+    fn sequence_reread_around_call(
+        &mut self,
+        names: &[String],
+        call_prefix: Vec<C0Statement>,
+    ) -> Vec<C0Statement> {
+        let mut prefix = Vec::new();
+        let mut checks = Vec::new();
+        for name in names {
+            let c_type = self.variable_types[name];
+            let snapshot = self.fresh_synthesized_call_name();
+            self.variable_types.insert(snapshot.clone(), c_type);
+            prefix.push(C0Statement::Declare {
+                c_type,
+                name: snapshot.clone(),
+                volatile: false,
+                pointee_volatile: false,
+                constant: false,
+                pointee_constant: self.variable_pointee_constants.contains(name),
+                initializer: None,
+                zero_fill: None,
+                site: C0Site::NONE,
+            });
+            prefix.push(C0Statement::Assign {
+                name: snapshot.clone(),
+                expression: C0Expression::Variable(name.clone()),
+                site: C0Site::NONE,
+            });
+            checks.push(C0Statement::Assert {
+                condition: C0Expression::Equal(
+                    Box::new(C0Expression::Variable(name.clone())),
+                    Box::new(C0Expression::Variable(snapshot)),
+                ),
+                label: format!(
+                    "the call leaves `{name}`, read in the other operand, unchanged, so the read gives one value in either order"
+                ),
+                site: C0Site::NONE,
+            });
+        }
+        prefix.extend(call_prefix);
+        prefix.extend(checks);
+        prefix
     }
 
     fn reject_unsequenced_updated_memory_read(

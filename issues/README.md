@@ -119,7 +119,7 @@ Specification and proof:
 - [SMT-backed automation with kernel-checked certificates](smt-auto.md)
 - [Launch design review: open critiques, each to be fixed or ruled wontfix](design-review.md) (depends on smt-auto.md)
 
-## P2: after launch (18)
+## P2: after launch (17)
 
 - [Make `step` simple across a call precondition](simplify-step.md)
 - [Reject `result` inside entry snapshots](result-accepted-in-entry-snapshots.md)
@@ -139,7 +139,6 @@ C language coverage:
 - [Support multiple C compilers and target ABIs](multiple-compilers.md)
 - [Verify unchanged PCG wrappers that pass private static storage to helpers](private-static-helper-ownership.md)
 - [Extend bounded control flow](control-flow.md)
-- [Resolve linked initializers in their defining file](linked-initializer-private-names.md)
 - [Model concurrency and atomics](concurrency-and-atomics.md)
 
 Additional languages:
