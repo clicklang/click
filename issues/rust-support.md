@@ -130,9 +130,15 @@ native addition pairs, and preserves the component equations through the
 zero-length scalar tail. The offline nightly regression checks helper bodies,
 expansion, and rejection of false results/invariants and missing authority.
 
-Next, extend the larger path to repeated DO16 blocks and nonempty scalar tails,
-then original 5552-byte batches. Maintain exact component equations and native
-bounds across reductions; the arbitrary-length C result remains unproved.
+Checked symbolic count-advance, lane-identity, and native read-bound lemmas
+support repeated DO16 blocks below 5552 bytes. The saved 16–5551-byte draft
+checks all sixteen original addition pairs and closes the repeated-block
+invariants. Its full contract remains unproved: the scalar tail stops at
+first-byte view narrowing. Resolve its native count/view correspondence next.
+
+Complete that scalar tail, then the original 5552-byte batches. Maintain exact
+component equations and native bounds across reductions; the arbitrary-length
+C result remains unproved.
 
 Connect the original nonempty computation to the common specification, then
 prove compatible seed/reset/null-buffer behavior and incremental processing.
