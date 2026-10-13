@@ -29,6 +29,9 @@ const REWRITE_ATTEMPTS: usize = 256;
 /// closers miss: `simp` unfolds and computes what a rewrite exposes.
 const REWRITE_SIMP_CLOSURES: usize = 8;
 
+/// How many connected constructor equations `auto` pairs.
+const CONSTRUCTOR_EQUATIONS: usize = 16;
+
 /// The machine type an order fact compares, with the names its bridges use.
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum MachineOrder {
@@ -304,6 +307,26 @@ fn unanchored_equality(surface: &ClickProposition) -> Option<ClickProposition> {
         }),
         _ => None,
     }
+}
+
+/// The two sides of an algebraic equality fact.
+fn algebraic_sides(
+    fact: &Proposition,
+) -> Option<(&crate::kernel::AlgebraicTerm, &crate::kernel::AlgebraicTerm)> {
+    match fact {
+        Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(left, right), true) => {
+            Some((left, right))
+        }
+        Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => Some((left, right)),
+        _ => None,
+    }
+}
+
+fn is_constructor(term: &crate::kernel::AlgebraicTerm) -> bool {
+    matches!(
+        term.node,
+        crate::kernel::AlgebraicTermNode::Constructor { .. }
+    )
 }
 
 /// An `Integer` literal, negative ones as a negation of their magnitude.
@@ -599,6 +622,9 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_auto_equality_chain_closure()? {
             return Ok(Some(closed));
         }
+        if let Some(closed) = self.try_constructor_join_closure()? {
+            return Ok(Some(closed));
+        }
         self.try_wide_equality_solver_closure()
     }
 
@@ -669,6 +695,103 @@ impl<'a> Proof<'a> {
             &mut seen,
             &mut budget,
         )
+    }
+
+    /// `auto` on a goal about the fields of a value that two connected facts
+    /// equate to constructor applications, `t == Node(c, r)` and
+    /// `t == Node(Black, Empty)`: it states `Node(c, r) == Node(Black, Empty)`,
+    /// proved by rewriting each application to `t`, and `simp` then reads the
+    /// fields' equalities (or the constructors' mismatch) from it. At most
+    /// `CONSTRUCTOR_EQUATIONS` connected equations are paired.
+    pub(in crate::surface::proof) fn try_constructor_join_closure(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        let Some(goal) = self.goal() else {
+            return Ok(None);
+        };
+        let Some(equalities) =
+            crate::surface::planning::proposition_search::solver_connected_equalities(
+                self.facts().assumptions(),
+                goal,
+            )
+        else {
+            return Ok(None);
+        };
+        // Each equation as the value it names, its constructor application,
+        // and the fact oriented `application == value`.
+        let mut equations: Vec<(
+            crate::kernel::AlgebraicTerm,
+            ContractExpression,
+            ClickProposition,
+        )> = Vec::new();
+        for equality in &equalities {
+            check_verification_deadline()?;
+            if equations.len() >= CONSTRUCTOR_EQUATIONS {
+                break;
+            }
+            let Some((left, right)) = algebraic_sides(equality) else {
+                continue;
+            };
+            let (left_built, right_built) = (is_constructor(left), is_constructor(right));
+            if left_built == right_built {
+                continue;
+            }
+            let Some((_, surface)) = self
+                .resolve_simp_premises(std::slice::from_ref(equality), &[])
+                .and_then(|mut spelled| spelled.pop())
+            else {
+                continue;
+            };
+            let ClickProposition::Comparison {
+                left: written_left,
+                operator: ComparisonOperator::Equal,
+                right: written_right,
+            } = surface
+            else {
+                continue;
+            };
+            let (value, application, value_written) = if left_built {
+                (right, written_left, written_right)
+            } else {
+                (left, written_right, written_left)
+            };
+            let oriented = ClickProposition::Comparison {
+                left: application.clone(),
+                operator: ComparisonOperator::Equal,
+                right: value_written,
+            };
+            equations.push((value.clone(), application, oriented));
+        }
+        for (index, (value, first, first_fact)) in equations.iter().enumerate() {
+            for (other, second, second_fact) in &equations[index + 1..] {
+                check_verification_deadline()?;
+                if value != other || first == second {
+                    continue;
+                }
+                let joined = ClickProposition::Comparison {
+                    left: first.clone(),
+                    operator: ComparisonOperator::Equal,
+                    right: second.clone(),
+                };
+                let Ok(next) = self.apply_step(have(
+                    joined,
+                    vec![
+                        ProofStep::Rewrite(first_fact.clone()),
+                        ProofStep::Rewrite(second_fact.clone()),
+                        ProofStep::Normalize,
+                    ],
+                )) else {
+                    continue;
+                };
+                if next.is_complete() {
+                    return Ok(Some(next));
+                }
+                if let Some(closed) = next.try_simp_closure()? {
+                    return Ok(Some(closed));
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// A bounded depth-first search over rewrite sequences: every applicable
