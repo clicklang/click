@@ -315,6 +315,9 @@ The budget is kept by what the gate leaves out, not by a faster machine:
 second job, `scripts/check.sh --audit`, which runs `click audit` over the
 whole repository on a release build: every smart tactic in the examples and
 mdtests must expand to a proof that verifies. It takes about twenty minutes.
+Before inventory, this entry point refreshes the native C import lock and
+preprocessed sources for `examples/label-build-flags`, which are not checked
+in. Rust examples retain their checked-in offline imports.
 A proof container with a known audit failure is left out with `--exclude` in
 that script, each beside the issue that tracks it; remove the exclusion with
 the issue. `examples/basic-cpp` is also left out: its import lock and
