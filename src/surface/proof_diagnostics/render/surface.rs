@@ -1276,6 +1276,9 @@ impl Printer<'_> {
     /// The place `pointer` addresses, without a state qualifier: a source
     /// cell where the naming tables have one, else a dereference.
     fn place_at(&mut self, pointer: &Pointer, depth: usize) -> String {
+        if let Some(referent) = self.reference_referent(pointer) {
+            return referent;
+        }
         let tables = self.labels.naming.clone();
         if let Some((parameters, arguments)) = tables.as_deref()
             && let Some(cell) = crate::surface::diagnostics::diagnostic_source_cell(
@@ -1307,6 +1310,11 @@ impl Printer<'_> {
             .map(|(point, naming)| (point.len() <= 256, std::rc::Rc::new(naming.clone())));
         if !self.source_mode() && context.is_none() {
             return None;
+        }
+        if self.source_mode()
+            && let Some(referent) = self.reference_referent(pointer)
+        {
+            return self.qualify(memory, atom(referent));
         }
         let naming = match &context {
             Some((true, naming)) => Some(naming.clone()),
@@ -1387,7 +1395,9 @@ impl Printer<'_> {
             return Some(atom("0"));
         }
         if let Some(name) = self.labels.pointer_sources.get(pointer) {
-            return Some(atom(name.clone()));
+            // A reference parameter's carrier is spelled `&value`.
+            let precedence = if name.starts_with('&') { UNARY } else { ATOM };
+            return Some(spelled(name.clone(), precedence));
         }
         if !self.source_mode() {
             return None;
@@ -1468,6 +1478,7 @@ impl Printer<'_> {
         wide: bool,
         depth: usize,
     ) -> String {
+        let referent = self.reference_referent(base);
         let address = self.pointer(base, depth).unwrap_or_else(|| atom("…"));
         let hint = if wide {
             Some(Hint::UInt64)
@@ -1519,6 +1530,10 @@ impl Printer<'_> {
             None => None,
         };
         match (count, element) {
+            // The whole referent of a reference parameter is the referent.
+            (Some(count), _) if referent.is_some() && count.text == "1" => {
+                referent.unwrap_or_default()
+            }
             (Some(count), Some((name, index, _))) => {
                 let end = match (index.parse::<i64>(), count.text.parse::<i64>()) {
                     (Ok(index), Ok(count)) => (index + count).to_string(),
@@ -1534,6 +1549,38 @@ impl Printer<'_> {
                 format!("((uint8 *){})[0..{bytes}]", operand(address, UNARY))
             }
         }
+    }
+
+    /// The referent a C++ reference parameter names when `pointer` is the
+    /// address it carries: `value` for `int32& value`, and the field at its
+    /// start for a struct referent. The sidecar writes the referent, never
+    /// the carrier.
+    fn reference_referent(&self, pointer: &Pointer) -> Option<String> {
+        let tables = self.labels.naming.as_deref()?;
+        tables
+            .0
+            .iter()
+            .zip(&tables.1)
+            .find_map(|(parameter, value)| {
+                let crate::kernel::CExpression::Value(crate::kernel::CValue::Pointer(base)) = value
+                else {
+                    return None;
+                };
+                if !parameter.is_reference() || base.pointer() != pointer {
+                    return None;
+                }
+                let referent = crate::languages::c::syntax::referent_of_carrier(parameter.name())?;
+                match parameter
+                    .pointee_struct_layout()
+                    .or_else(|| parameter.struct_layout())
+                {
+                    None => Some(referent.to_owned()),
+                    Some(layout) => layout
+                        .leaf_field_offsets()
+                        .find(|(_, offset)| *offset == 0)
+                        .map(|(field, _)| format!("{referent}.{field}")),
+                }
+            })
     }
 
     /// The element width of the pointer parameter or local called `name`.
