@@ -9,6 +9,8 @@ independent checker), M2 (no written semantics) and M3 (`memcpy` reading under
 
 Depends on [smt-auto.md](smt-auto.md). Items P1–P4, W4 and W5 are expected to
 be fixed by its stages; rule on them after its stage-1 measurements land.
+Also depends on [simplify-step.md](simplify-step.md), which now holds the
+critique that "simple" `step()` is not simple (formerly W3).
 
 On 2026-10-12 Click was reviewed the way an expert launch audience would
 review it, from four sides: the surface language, the proof and tactic
@@ -184,16 +186,6 @@ Today: about 57 forms over 41 tactic words (`docs/reference/tactics/index.md`);
 
 Proposed fix: a documented core of about 15 tactics, with the rest marked as
 expansion output or specialized.
-
-Decision: open.
-
-### W3. "Simple" `step()` is not simple
-
-Today: `step()` is labelled simple yet runs "with every fact in the proof
-context visible" (`docs/reference/tactics/index.md`); the work to make it
-simple is paused (`issues/simplify-step.md`).
-
-Proposed fix: finish `issues/simplify-step.md`, or reclassify `step()`.
 
 Decision: open.
 

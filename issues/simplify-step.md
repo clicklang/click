@@ -1,10 +1,20 @@
 # Make `step` simple across a call precondition
 
-Priority: P2.
+Priority: P1.
 
 Soundness: not soundness. This is the tactic architecture. Every derivation
 that `step()` performs is already kernel-checked. The change is which
 derivations are visible and retained.
+
+## Why this is P1
+
+The 2026-10-12 launch design review (critique W3, moved here) found that
+`step()` is labelled simple yet runs "with every fact in the proof context
+visible" (`docs/reference/tactics/index.md`), while the work to make it simple
+was paused. A launch audience reading the tactic reference would take the
+simple/smart split at its word. The review proposed finishing this issue or
+reclassifying `step()` as smart; [design-review.md](design-review.md) depends on
+this issue for that critique.
 
 ## Objective
 
