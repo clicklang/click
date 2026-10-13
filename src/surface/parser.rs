@@ -120,6 +120,10 @@ pub(in crate::surface) struct FunctionLocals {
 #[derive(Clone, Default)]
 pub(in crate::surface) struct ProgramLayouts {
     pub(in crate::surface) c_object_names: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
+    /// The other members of each function's recursive C component, for the
+    /// functions in a component of two or more. An expression `decreases`
+    /// measure ranks calls to these functions too.
+    pub(in crate::surface) recursion_peers: BTreeMap<String, Vec<String>>,
     pub(in crate::surface) struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
     pub(in crate::surface) union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
     /// Each function's address-backed aggregate objects, with their structs.
@@ -492,6 +496,7 @@ struct ProofLetParserRestore {
 
 struct Parser {
     c_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
+    recursion_peers_by_function: BTreeMap<String, Vec<String>>,
     source_aliases: BTreeMap<String, String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
     pending_contract_name: Option<String>,
@@ -852,6 +857,7 @@ impl Parser {
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
         parser.c_object_names_by_function = layouts.c_object_names;
+        parser.recursion_peers_by_function = layouts.recursion_peers;
         parser.qualified_objects = Some(layouts.qualified_objects);
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.plain_char = layouts.plain_char;
@@ -916,6 +922,7 @@ impl Parser {
             current_struct_params: BTreeMap::new(),
             current_void_pointer_params: BTreeSet::new(),
             c_object_names_by_function: BTreeMap::new(),
+            recursion_peers_by_function: BTreeMap::new(),
             current_c_parameter_types: BTreeMap::new(),
             current_parameter_struct_casts: BTreeMap::new(),
             aggregate_objects_by_function,
@@ -3400,8 +3407,14 @@ impl Parser {
         }
         let pointee_field_places =
             super::pointee_field_places(parameter_field_places.values(), &self.struct_layouts);
+        let recursion_peers = self
+            .recursion_peers_by_function
+            .get(signature.name())
+            .cloned()
+            .unwrap_or_default();
         Ok(FunctionBlock {
             c_object_names,
+            recursion_peers,
             signature,
             external,
             one_call_proof: false,

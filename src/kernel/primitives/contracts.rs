@@ -757,6 +757,7 @@ impl CFunctionContractInterface {
             ordinary_abstract_families: Vec::new(),
             predicate_unfoldings: Vec::new(),
             recursion_measure: Vec::new(),
+            recursion_peers: Vec::new(),
         }
     }
 
@@ -819,6 +820,12 @@ impl CFunctionContractInterface {
     /// The declared expression `decreases` measure, if the function has one.
     pub fn recursion_measure(&self) -> Option<&[CRankingComponent]> {
         (!self.recursion_measure.is_empty()).then_some(self.recursion_measure.as_slice())
+    }
+
+    /// The other members of this function's recursive component that its
+    /// expression measure ranks calls to, sorted.
+    pub fn recursion_peers(&self) -> &[String] {
+        &self.recursion_peers
     }
 
     pub(crate) fn contract_requirement_sources(&self) -> &[Option<usize>] {
@@ -952,6 +959,7 @@ impl CFunctionContractInterface {
             && self.composite_resource_definitions == other.composite_resource_definitions
             && self.predicate_unfoldings == other.predicate_unfoldings
             && self.recursion_measure == other.recursion_measure
+            && self.recursion_peers == other.recursion_peers
     }
 
     /// Compare the signature and resource vocabulary used by automatic
@@ -1214,6 +1222,18 @@ impl CFunction {
     /// that declares none is a different `CFunction`.
     pub fn with_recursion_measure(mut self, measure: Vec<CRankingComponent>) -> Self {
         self.contract_interface.recursion_measure = measure;
+        self
+    }
+
+    /// Declares the other members of this function's recursive component.
+    /// They are part of the interface, and so of this function's identity:
+    /// the anchor a certification builds from the interface ranks calls to
+    /// exactly these functions.
+    pub fn with_recursion_peers(mut self, mut peers: Vec<String>) -> Self {
+        peers.sort();
+        peers.dedup();
+        peers.retain(|peer| peer != &self.name);
+        self.contract_interface.recursion_peers = peers;
         self
     }
 

@@ -3655,6 +3655,14 @@ pub struct CFunctionContractInterface {
     /// A lexicographic measure has several components, ranked as a loop's
     /// tuple is; an empty list declares no expression measure.
     pub(crate) recursion_measure: Vec<CRankingComponent>,
+    /// The other functions of this function's recursive component, sorted,
+    /// when it declares an expression measure. A call to one of them owes the
+    /// same descent a self-call owes, against this function's entry reading,
+    /// so the measures of a mutually recursive component rank one order.
+    /// The termination check refuses a component whose members do not all
+    /// name each other here, so a peer left out is a refusal, never an
+    /// unranked edge.
+    pub(crate) recursion_peers: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -4412,6 +4420,9 @@ pub enum CFunctionTerminationMeasure {
 pub struct CRecursionAnchor {
     pub(super) function: String,
     pub(super) components: Vec<CRankingComponent>,
+    /// The other functions whose calls owe descent against `measure`, read
+    /// off the same interface as `components`.
+    pub(super) peers: Vec<String>,
     pub(super) measure: Vec<CRankingMeasureValue>,
     pub(super) entry_obligations: Vec<ProofObligation>,
 }
@@ -4429,6 +4440,16 @@ impl CRecursionAnchor {
         &self.components
     }
 
+    /// Whether a call to `callee` owes descent against this anchor: a
+    /// self-call, or a call to a declared member of the same component.
+    pub(super) fn ranks_call_to(&self, callee: &str) -> bool {
+        self.function == callee
+            || self
+                .peers
+                .binary_search_by(|peer| peer.as_str().cmp(callee))
+                .is_ok()
+    }
+
     pub(super) fn entry_obligations(&self) -> &[ProofObligation] {
         &self.entry_obligations
     }
@@ -4438,8 +4459,15 @@ impl CRecursionAnchor {
     /// The certified [`CFunction`] is what a judgment has in hand, and its
     /// interface is where the anchor's component was read from, so comparing
     /// both is what binds an anchor to one declared measure of one function.
-    pub(super) fn ranks(&self, function: &str, measure: Option<&[CRankingComponent]>) -> bool {
-        self.function == function && measure == Some(self.components.as_slice())
+    pub(super) fn ranks(
+        &self,
+        function: &str,
+        measure: Option<&[CRankingComponent]>,
+        peers: &[String],
+    ) -> bool {
+        self.function == function
+            && measure == Some(self.components.as_slice())
+            && peers == self.peers.as_slice()
     }
 }
 
