@@ -250,6 +250,7 @@ fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
 
 /// Each returned path reads its guards, but stores only its own suffix.
 #[test]
+#[ignore = "nightly: 3.4s in the parallel gate"]
 fn early_return_paths_share_guard_fact_storage() {
     let mut samples = Vec::new();
     for returns in [8, 16, 32, 64] {

@@ -14302,6 +14302,7 @@ mod tests {
     // Interface re-lowering must use the checked arm's address aliases without
     // acquiring read authority, leaking an arm fact, or scanning its history.
     #[test]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
         use crate::kernel::{CPointerValue, ConditionTerm, SpecMemory};
         let _session = crate::kernel::VerificationSession::enter();

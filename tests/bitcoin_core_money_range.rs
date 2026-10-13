@@ -1004,11 +1004,13 @@ fn pinned_upstream_fee_frac_div_imports_and_retains_native_proof_obligations() {
 }
 
 #[test]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn pinned_upstream_fee_frac_div_consteval_contract_reaches_runtime_string_view_boundary() {
     check_upstream_fee_frac("FeeFrac::Div", "FeeFracDivConstevalRefused", "");
 }
 
 #[test]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn pinned_upstream_fee_frac_div_refuses_unmodelled_library_assume() {
     check_upstream_fee_frac("FeeFrac::Div", "FeeFracDivRefused", "");
 }
@@ -1133,6 +1135,7 @@ fn pinned_span_fixture_with_exact_dependencies(
 }
 
 #[test]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 // The actual archived declaration is an empty scoped enum. Forwarding all of
 // its native values must work without inventing enumerators or backing access.
 fn pinned_std_byte_values_verify_with_native_integer_contracts_offline() {
@@ -1193,6 +1196,7 @@ fn pinned_std_byte_values_verify_with_native_integer_contracts_offline() {
 // A nominal template argument must survive even if its record fields never
 // mention the enum. This closes the offline declaration-authentication gap.
 #[test]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn pinned_std_byte_template_record_keeps_nominal_argument() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
         "byte-template-record",
@@ -1214,6 +1218,7 @@ fn pinned_std_byte_template_record_keeps_nominal_argument() {
 // The selected assumed interface preserves the descriptor's address and
 // length. Reading its fields requires views, but grants no backing authority.
 #[test]
+#[ignore = "nightly: 1.8s in the parallel gate"]
 fn pinned_writable_byte_span_reference_preserves_view_offline() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
         "writable-byte-span-reference",
@@ -2996,6 +3001,7 @@ fn axiomatic_span_fixture(
 }
 
 #[test]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn axiomatic_span_refused_precondition_names_model_accessors_after_execution() {
     let (root, import) = axiomatic_span_fixture(
         "model-precondition-spelling",
@@ -3023,6 +3029,7 @@ struct span__int__value_unsigned_long_18446744073709551615 probe(struct span__in
 }
 
 #[test]
+#[ignore = "nightly: 5.9s in the parallel gate"]
 fn axiomatic_span_dynamic_extent_requirement_is_proved_before_view_recovery() {
     let (root, import) = axiomatic_span_fixture(
         "dynamic-extent-prerequisite",
@@ -3067,6 +3074,7 @@ struct span__std_byte__value_unsigned_long_18446744073709551615 probe(struct spa
 // contracts: libstdc++'s `size`, `back` and `first` are axioms with no
 // exported body, and every contract states the span through model accessors.
 #[test]
+#[ignore = "nightly: 6.4s in the parallel gate"]
 fn axiomatic_span_pop_back_verifies_against_catalog_contracts() {
     let (root, import) = axiomatic_span_fixture(
         "axiomatic-pop-back",
@@ -3191,6 +3199,7 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
 // A standard function without a Click contract is refused by name; nothing
 // about it is assumed.
 #[test]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn axiomatic_span_refuses_an_uncatalogued_standard_function() {
     let (root, import) = axiomatic_span_fixture(
         "axiomatic-empty",
@@ -3303,6 +3312,7 @@ fn check_generic_span_cases(cases: Vec<GenericSpanCase>) {
 // span's element, so `std::span<unsigned char>` and `std::span<unsigned int>`
 // callers verify against the same contracts as `std::span<int>`.
 #[test]
+#[ignore = "nightly: 4.8s in the parallel gate"]
 fn axiomatic_span_subviews_and_byte_size_verify_for_other_elements() {
     let window = format!(
         r#"theorem uint64_window_bounds(n: uint64) {{
@@ -3448,6 +3458,7 @@ const UINT_SPAN: &str = "struct span__unsigned_int__value_unsigned_long_18446744
 // read needs a view of the element and the write needs to own it; the span
 // contracts grant neither.
 #[test]
+#[ignore = "nightly: 8.5s in the parallel gate"]
 fn axiomatic_span_element_references_read_and_write() {
     let read = format!(
         r#"uint8 probe({UCHAR_SPAN}& s) {{
@@ -3607,6 +3618,7 @@ fn check_refused_span_case(
 // `std::span<const T>` names its const element in the record, holds a
 // `const T*`, and uses the same generic entries with const element types.
 #[test]
+#[ignore = "nightly: 6.2s in the parallel gate"]
 fn axiomatic_const_element_spans_verify() {
     let read = r#"uint8 probe(struct span__const_unsigned_char__value_unsigned_long_18446744073709551615& s) {
     views std_span_data(s);
@@ -3680,6 +3692,7 @@ fn axiomatic_const_element_span_subviews_verify() {
 // member is stateless, so the record holds only the data pointer, and the
 // contracts state the size as the literal `N`.
 #[test]
+#[ignore = "nightly: 2.5s in the parallel gate"]
 fn axiomatic_static_extent_spans_verify() {
     check_generic_span_cases(vec![
         GenericSpanCase {
@@ -3733,6 +3746,7 @@ fn axiomatic_static_extent_span_subviews_verify() {
 // passes `std::dynamic_extent` as its count, and verifies as a subview to
 // the end.
 #[test]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn defaulted_span_arguments_import_as_compiler_constants() {
     let (root, import) = axiomatic_span_fixture(
         "default-argument",
@@ -3763,6 +3777,7 @@ fn defaulted_span_arguments_import_as_compiler_constants() {
 // `std_array_data(a)`. Its element accessors have const and mutable
 // overloads; a read needs a view of the array and a write needs to own it.
 #[test]
+#[ignore = "nightly: 2.4s in the parallel gate"]
 fn axiomatic_std_array_element_access_verifies() {
     let write = format!(
         r#"int32 probe({INT_ARRAY}& a, int32 v) {{
@@ -3839,6 +3854,7 @@ fn axiomatic_std_array_size_and_data_verify() {
 // needs ownership of that backing cell, which the span's contracts neither
 // grant nor need; the descriptor itself is all `back` and `first` read.
 #[test]
+#[ignore = "nightly: 1.9s in the parallel gate"]
 fn axiomatic_span_pop_back_write_needs_backing_ownership() {
     let (root, import) = axiomatic_span_fixture(
         "axiomatic-pop-back-write",
@@ -3918,6 +3934,7 @@ int32 probe(struct span__int__value_unsigned_long_18446744073709551615& span, in
 // Actual std::byte pointers retain native one-byte strides, checked nominal
 // identities and ordinary ownership across offline verification and expansion.
 #[test]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn pinned_std_byte_pointer_stores_verify_offline() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
         "byte-pointer",
@@ -3939,6 +3956,7 @@ fn pinned_std_byte_pointer_stores_verify_offline() {
 }
 
 #[test]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn pinned_std_byte_automatic_pointer_store_initializes_offline() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
         "byte-address",
@@ -4080,6 +4098,7 @@ fn pinned_std_byte_pointer_artifacts_reject_forged_declarations_offline() {
 }
 
 #[test]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 // Allocated enum scalars can lend their exact byte owner to an ordinary helper;
 // the returned contract value must refresh the caller binding.
 fn pinned_std_byte_modular_pointer_call_verifies_offline() {
@@ -4097,6 +4116,7 @@ fn pinned_std_byte_modular_pointer_call_verifies_offline() {
 }
 
 #[test]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 // Pointer reinterpretation supplies no initialization. Four concrete byte
 // stores complete the shared uint32 representation on the selected LE target.
 fn pinned_std_byte_reinterpretation_initializes_uint32_offline() {
@@ -4114,6 +4134,7 @@ fn pinned_std_byte_reinterpretation_initializes_uint32_offline() {
 }
 
 #[test]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn pinned_std_byte_reinterpreted_call_result_preserves_pointer_identity_offline() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
         "byte-cast-call",
@@ -4158,6 +4179,7 @@ fn pinned_std_byte_reinterpreted_call_result_preserves_pointer_identity_offline(
 }
 
 #[test]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn pinned_std_byte_reinterpretation_does_not_initialize_partial_storage() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
         "byte-cast-partial",
@@ -4180,6 +4202,7 @@ fn pinned_std_byte_reinterpretation_does_not_initialize_partial_storage() {
 }
 
 #[test]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 // Changing the access type cannot mint write permission over the original word.
 fn pinned_std_byte_reinterpretation_requires_original_storage_ownership() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(

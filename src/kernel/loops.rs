@@ -9587,6 +9587,7 @@ mod v10_tests {
     use super::*;
 
     #[test]
+    #[ignore = "nightly: 1.3s in the parallel gate"]
     fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = Pointer::symbolic(Variable(916_100));

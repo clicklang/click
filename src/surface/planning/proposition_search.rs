@@ -1768,6 +1768,7 @@ mod condition_premise_tests {
     }
 
     #[test]
+    #[ignore = "nightly: 4.8s in the parallel gate"]
     fn connected_condition_selection_scales_linearly_in_chain_and_context() {
         for grow_chain in [false, true] {
             let mut samples = Vec::new();

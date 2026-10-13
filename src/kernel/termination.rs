@@ -6466,6 +6466,7 @@ mod local_descent_tests {
     /// once, so a call chain as long as the project is neither a machine
     /// stack overflow nor a quadratic walk.
     #[test]
+    #[ignore = "nightly: 1.0s in the parallel gate"]
     fn a_long_call_chain_plans_and_checks() {
         const LENGTH: usize = 20_000;
         let name = |index: usize| format!("f{index:05}");
@@ -7108,6 +7109,7 @@ mod termination_scaling_tests {
     /// A layered DAG whose edges outnumber its nodes four to one, so a check
     /// linear in edges and one linear only in nodes are distinguishable.
     #[test]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn a_layered_dag_costs_linear_termination_work() {
         const WIDTH: usize = 8;
         const FAN_OUT: usize = 4;

@@ -1494,6 +1494,7 @@ fn struct_name_signature_mismatch_reports_direct_error() {
 }
 
 #[test]
+#[ignore = "nightly: 2.2s in the parallel gate"]
 fn observed_cursor_facts_produce_checkable_surface_certificates() {
     let c_source = r#"
         struct input_cursor {
@@ -1689,6 +1690,7 @@ fn explicit_store_step_with_unfolded_resource_facts_verifies() {
 }
 
 #[test]
+#[ignore = "nightly: 3.0s in the parallel gate"]
 fn expanded_read_step_uses_contextual_range_separation() {
     let c_source = r#"
         struct owned_string {

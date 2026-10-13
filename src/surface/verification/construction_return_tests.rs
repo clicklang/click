@@ -98,6 +98,7 @@ int32 probe(int32 input) {
 "#;
 
 #[test]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn native_construction_return_contracts_forward_hidden_storage() {
     let sources = context(true);
     let (verified, environment) =

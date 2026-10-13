@@ -8043,6 +8043,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
     /// Consuming the composite releases its hold: the loan ends, the owner
     /// is recovered, and the same write is accepted afterwards.
     #[test]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn consuming_the_composite_recovers_the_owner() {
         let click = format!(
             "{BORROWING_BOX_PRELUDE}
@@ -8064,6 +8065,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
     /// folding it back reuses that hold: the write stays refused while the
     /// piece is out, and one consumption still releases everything.
     #[test]
+    #[ignore = "nightly: 1.3s in the parallel gate"]
     fn unfold_keeps_the_escaped_borrow_held() {
         let refused = format!(
             "{BORROWING_BOX_PRELUDE}
