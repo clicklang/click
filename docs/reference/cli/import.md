@@ -1664,9 +1664,8 @@ An element type outside that list matches no entry, so its calls are refused
 by name. Element accessors (`front`, `back`, `operator[]`) return native
 element references, which a caller may bind, read or write directly.
 A defaulted argument is imported as the constant Clang evaluates for it, so
-`subspan(1)` passes `std::dynamic_extent` as its count. A
-`std::dynamic_extent` count to `subspan` is refused by a kernel defect
-(`bugs/a-view-returning-call-refuses-a-deferred-precondition.md`).
+`subspan(1)` passes `std::dynamic_extent` as its count and verifies as the
+subview to the end.
 
 A static-extent `std::span<T, N>` keeps its extent in its type. libstdc++'s
 extent member is `[[no_unique_address]]` and empty, so the importer leaves it

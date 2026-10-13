@@ -3461,7 +3461,9 @@ private:
     bool has_state = false;
     for (const clang::FieldDecl *field : record->fields())
       has_state = has_state || !stateless_field(field);
-    if (!has_state && record->getNumBases() == 0) {
+    // `field_empty` is kept as the first test: it is what refuses a record
+    // Clang has not completed, as it did before stateless members existed.
+    if ((record->field_empty() || !has_state) && record->getNumBases() == 0) {
       fail(record->getLocation(),
            "the supported C++ record must contain at least one field");
       return false;

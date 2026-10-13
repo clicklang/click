@@ -3730,7 +3730,8 @@ fn axiomatic_static_extent_span_subviews_verify() {
 }
 
 // A defaulted argument is the constant Clang evaluates for it: `subspan(1)`
-// passes `std::dynamic_extent` as its count.
+// passes `std::dynamic_extent` as its count, and verifies as a subview to
+// the end.
 #[test]
 fn defaulted_span_arguments_import_as_compiler_constants() {
     let (root, import) = axiomatic_span_fixture(
@@ -3745,6 +3746,16 @@ fn defaulted_span_arguments_import_as_compiler_constants() {
         arguments[2]["value"]["value"], "18446744073709551615",
         "{body}"
     );
+    // The defaulted count runs to the end of the view.
+    let span = "struct span__int__value_unsigned_long_18446744073709551615";
+    let source = format!(
+        "verifying \"span-probe.cpp\";\n{span} probe({span}& s) {{ views std_span_data(s); views std_span_size(s); requires 1u64 <= std_span_size(s); ensures std_span_data(result) == std_span_data(s) + 1u64; ensures std_span_size(result) == std_span_size(s) - 1u64; }} by {{ execute(); simp(); }}\n"
+    );
+    let path = root.join("span.click");
+    fs::write(&path, &source).unwrap();
+    let parsed = read_click_project(&path, &source).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
     fs::remove_dir_all(root).unwrap();
 }
 
