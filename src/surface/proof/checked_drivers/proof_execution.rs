@@ -1920,6 +1920,26 @@ fn source_have_error(
     goal: Option<&Proposition>,
     cause: Option<ClickError>,
 ) -> ClickError {
+    // Search failures belong to the written auto goal, rather than the last
+    // candidate's nested proof step. Resource exhaustion still takes priority.
+    if matches!(
+        have.checking_proof().as_ref(),
+        SourceProof::Tactic(SmartTactic::Auto)
+    ) {
+        if let Err(error) = check_verification_deadline() {
+            return error;
+        }
+        if cause
+            .as_ref()
+            .is_none_or(|error| error.kind() == crate::surface::ClickErrorKind::Proof)
+        {
+            return ClickError::new(format!(
+                "`{}` tactic {index}: `auto` could not prove `{}`",
+                proof.claim_label(),
+                crate::surface::diagnostics::describe_click_proposition(&have.proposition)
+            ));
+        }
+    }
     if let Some(error) = cause {
         return proof.attach_step_diagnostic(error).with_context(format!(
             "`{}` tactic {index}: `have` failed for `{}`",
