@@ -3355,7 +3355,8 @@ fn charon_adler2_general_compute_rejects_false_b_specification() {
         .split_once("adler_spec_b(bytes, ")
         .unwrap()
         .1
-        .split_once(", to_integer(a),")
+        // The A seed may name a recorded prefix snapshot rather than current a.
+        .split_once(", to_integer(")
         .unwrap()
         .0;
     reject_compute(
