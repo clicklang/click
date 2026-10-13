@@ -1212,7 +1212,7 @@ fn bare_step_proves_an_open_obligation_by_implicit_auto() {
 #[test]
 fn bare_step_fallback_records_a_hidden_prerequisite_derivation() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/shared_heap_two_parent_caller.md");
+        .join("mdtests/shared_heap_population_lifecycles.md");
     let loaded = crate::cli::load_target_inputs(&path, None).unwrap();
     let fixture = loaded.mdtest.as_ref().unwrap();
     let inputs = fixture

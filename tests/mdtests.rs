@@ -43,7 +43,7 @@ const ARTIFACT_REUSE_REJECTION_BASELINE: &[(ArtifactReuseRejection, usize)] = &[
 /// count may only fall; `issues/simplify-step.md` drives it to zero.
 const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] = &[(
     (HiddenPrerequisiteRoute::StepObligation, "ContextualAtomic"),
-    3,
+    2,
 )];
 
 #[test]
