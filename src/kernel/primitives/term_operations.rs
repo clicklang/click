@@ -343,7 +343,12 @@ impl Bitvector32Term {
                 checked_unsigned_remainder_const(left.as_const()?, right.as_const()?)
             }
             Self::ShiftLeft(left, right) => {
-                checked_signed_shift_left_const(left.as_const()?, right.as_const()?)
+                // This untyped term denotes the shifted 32-bit pattern.
+                // Signed C overflow is a separate expression obligation.
+                Some(
+                    left.as_const()?
+                        .wrapping_shl(checked_shift_count_const(right.as_const()?)?),
+                )
             }
             Self::ArithmeticShiftRight(left, right) => {
                 checked_arithmetic_shift_right_const(left.as_const()?, right.as_const()?)

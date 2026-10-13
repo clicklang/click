@@ -1047,7 +1047,7 @@ struct ProofDiagnosticProofState(
     Option<crate::surface::proof_trace::ChildArgumentTrace>,
     Option<(&'static str, Box<Proposition>, Option<String>)>,
     Option<crate::surface::proof_diagnostics::MemoryHistoryDiagnostic>,
-    Option<(Variable, CType)>,
+    Vec<(Variable, CType)>,
 );
 
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
@@ -1103,8 +1103,8 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         if let Some(state) = &self.3 {
             labels.register_current_state(state);
         }
-        if let Some((variable, c_type)) = self.7 {
-            labels.source_type(variable, c_type);
+        for (variable, c_type) in &self.7 {
+            labels.source_type(*variable, *c_type);
         }
         if let Some(branch) = self.0.state().open_branches().get(self.0.focused_branch())
             && let Some(execution) = branch.state.execution.as_deref()
@@ -1448,6 +1448,28 @@ impl Proof<'_> {
 
 impl Proof<'_> {
     fn diagnostic_state(&self) -> ProofDiagnosticProofState {
+        // Pure theorem names have no CState from which the renderer can
+        // recover their signedness. Retain types alongside those names.
+        let mut source_types = match self.context.as_ref() {
+            ProofContext::Pure(context) => context
+                .theorem_context
+                .values
+                .values()
+                .filter_map(|value| {
+                    diagnostic_value_variable(value).map(|variable| (variable, value.c_type()))
+                })
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        };
+        let result = match self.context.as_ref() {
+            ProofContext::FixedState(context) => context.fixed_state.result,
+            _ => self
+                .outcome_fixed_state_view()
+                .and_then(|view| view.fixed_state.result),
+        };
+        source_types.extend(result.and_then(|value| {
+            diagnostic_value_variable(value).map(|variable| (variable, value.c_type()))
+        }));
         let source_names = match self.context.as_ref() {
             ProofContext::Pure(context) => {
                 let mut names: Vec<_> = context
@@ -1528,15 +1550,7 @@ impl Proof<'_> {
             None,
             None,
             history,
-            match self.context.as_ref() {
-                ProofContext::FixedState(context) => context.fixed_state.result,
-                _ => self
-                    .outcome_fixed_state_view()
-                    .and_then(|view| view.fixed_state.result),
-            }
-            .and_then(|value| {
-                diagnostic_value_variable(value).map(|variable| (variable, value.c_type()))
-            }),
+            source_types,
         )
     }
 }
