@@ -22,6 +22,7 @@ pub(in crate::kernel) fn count_condition_fact_visit() {
 use std::cell::{Cell, RefCell};
 
 mod condition_reasoning;
+pub(in crate::kernel) mod variable_chains;
 pub(in crate::kernel) use condition_reasoning::cancel_common_offset_addends;
 #[cfg(test)]
 pub(in crate::kernel) use condition_reasoning::with_order_walk_full_scan;
@@ -2599,6 +2600,7 @@ impl PureFactContext {
     }
 
     fn adjust_signed_order_bound(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
+        self.signed_variable_chains.adjust(condition, value, insert);
         if let Some((left, right, strict)) = condition_as_order_fact(condition, value) {
             let mut index = std::mem::take(&mut self.signed_order_bounds);
             Self::adjust_order_bound_index(&mut index, left, right, strict, insert);
