@@ -305,6 +305,16 @@ Segment forms are half-open `int32` element ranges. For `int32 p[]`,
 four-byte `int32` access. For `uint8 p[]`, the same spelling covers `n`
 one-byte elements.
 
+Native `uint64` element ranges preserve their full counts. A same-base prefix
+can be proved from a held view and an explicitly selected unsigned coverage
+bound. For byte elements, `requested <= held` covers the prefix; for wider
+elements, compare the complete nonwrapping byte extents as well. The source
+view must remain live in the destination memory snapshot. A low-word bound
+supplies no full-width coverage.
+
+See [the native prefix fixtures](https://github.com/clicklang/click/blob/master/mdtests/native_view_prefix_narrowing.md)
+for explicit proofs with `simp() using { ... }`.
+
 Symbolic memory access usually needs:
 
 - a covering viewed or owned memory resource, or a separate viewable range

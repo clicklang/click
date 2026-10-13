@@ -65,35 +65,17 @@ of every byte for counts up to fifteen. The
 checks `while (n--)` through its wrapping zero exit. These are reduced control
 and memory proofs, not proofs of the original checksum loop.
 
-The current short-loop blocker is narrowing a native 64-bit byte view. The
-following isolated contract is rejected even with `1u64 <= n <= 15u64`:
+[Native 64-bit same-base prefix narrowing](../../../mdtests/native_view_prefix_narrowing.md)
+now checks the full unsigned byte-count bound and preserves the source view's
+lifetime and snapshot evidence. Symbolic byte and word prefixes use explicit
+selected premises; low-word bounds, missing bounds, larger prefixes, and
+unrelated bases are rejected. This removes the short-loop refusal when
+narrowing a positive remaining count to its first byte.
 
-```c
-void narrow(const unsigned char *p, unsigned long n) {}
-```
-
-```click
-target "x86_64-linux-userspace";
-verifying "narrow.c";
-void narrow(const uint8* p, uint64 n) {
-    requires 1u64 <= n;
-    requires n <= 15u64;
-    views p[0u64..n];
-    ensures viewable(p[0u64..1u64]);
-} by {
-    have viewable(p[0u64..n]) by simp();
-    execute(); simp();
-}
-```
-
-The native liveness checker currently supports exact wide ranges and coverage
-by a constant narrow range. It does not implement wide-to-wide prefix coverage.
-Adding more unsigned extent facts does not resolve this refusal. The proposed
-extension would derive `viewable(p[0u64..requested])` from an available
-`viewable(p[0u64..held])` and checked native `requested <= held`, preserving the
-source range's lifetime and memory-snapshot checks. Moving-base subranges will
-also need checked offset and nonwrapping coverage; the same-base prefix rule
-alone does not finish the zlib proof.
+The remaining short-loop memory work is checked transport through the saved
+pointer used by `*buf++`, followed by moving-base subrange coverage for the
+next head. Both require actual address and nonwrapping coverage evidence;
+same-base prefixes alone do not finish the original checksum loop.
 
 | Original file | SHA-256 |
 | --- | --- |
