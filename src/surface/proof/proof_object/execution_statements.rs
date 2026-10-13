@@ -766,10 +766,23 @@ impl<'a> Proof<'a> {
         }
         let goal = self.goal()?;
         let (parameters, arguments) = self.diagnostic_naming_tables();
-        let lowered = crate::surface::diagnostics::describe_stated_fact(
-            goal,
+        let mut labels = crate::surface::proof_diagnostics::render::SnapshotLabels::naming(
             ParameterBinding::new(&parameters, &arguments),
         );
+        // A value the back-edge locals no longer hold, such as the
+        // iteration's entry value of a counter, reads at the snapshot that
+        // recorded it.
+        if let Some(execution) = self.execution() {
+            super::register_recorded_snapshot_names(
+                &mut labels,
+                &execution.presentation.recorded_snapshots,
+            );
+        }
+        let mut lowered = crate::surface::proof_diagnostics::render::render_proposition_labeled(
+            goal,
+            &mut labels,
+        );
+        lowered.push_str(&labels.trace_legend());
         // The back-edge locals do not name a value read at an earlier
         // snapshot, which the lowered spelling elides. The synthesized form
         // names that snapshot even where it does not lower back exactly, as

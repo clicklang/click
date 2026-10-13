@@ -1072,6 +1072,56 @@ fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
     }
 }
 
+/// How many recorded snapshots a failure report consults for names.
+const NAMED_SNAPSHOT_LIMIT: usize = 32;
+
+/// A value no current name holds, but a scalar local held at a recorded
+/// snapshot this path can cite, spells as `at(statement(N).entry, x)`:
+/// exactly the value `x` had there. The value a loop havocked for `i` is `i`
+/// at the loop's own entry, so a body goal names it as the iteration's entry
+/// value. Names the current state gives were registered first and win. Among
+/// snapshots, the oldest of the most recent [`NAMED_SNAPSHOT_LIMIT`] wins,
+/// which for a loop-carried value is the head that minted it. Diagnostics
+/// only: this runs when a failure is printed, never while checking.
+pub(in crate::surface::proof) fn register_recorded_snapshot_names(
+    labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
+    snapshots: &crate::surface::RecordedSnapshots,
+) {
+    use crate::surface::{CodeRegionRef, ProgramPointRef, SnapshotSelector};
+    let recent = snapshots.recent(NAMED_SNAPSHOT_LIMIT);
+    for (selector, state) in recent.into_iter().rev() {
+        // Only points `at(...)` resolves from recorded snapshots.
+        let citable = match selector {
+            SnapshotSelector::Mark(_) => true,
+            SnapshotSelector::ProgramPoint(ProgramPointRef { region, .. }) => matches!(
+                region,
+                CodeRegionRef::Statement(_) | CodeRegionRef::Loop(_) | CodeRegionRef::Label(_)
+            ),
+        };
+        if !citable {
+            continue;
+        }
+        let point = crate::surface::diagnostics::describe_snapshot_selector(selector);
+        for (name, value) in state.locals().object_values() {
+            // A pointer's offset variable is not the pointer; only a scalar
+            // local's value is exactly the local.
+            // A temporary the translation introduced has no source spelling.
+            if name.starts_with("__click")
+                || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
+                continue;
+            }
+            if let crate::kernel::arithmetic_c_value!(Bitvector32Term::Variable(variable)) = value {
+                labels.fallback_source_name(
+                    *variable,
+                    format!("at({point}, {name})"),
+                    value.c_type(),
+                );
+            }
+        }
+    }
+}
+
 impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnosticProofState {
     fn register_names(
         &self,
@@ -1115,6 +1165,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
                     labels.source_name(variable, name.to_string());
                 }
             }
+            register_recorded_snapshot_names(labels, &execution.presentation.recorded_snapshots);
         }
     }
 
