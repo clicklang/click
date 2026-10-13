@@ -67,6 +67,6 @@ Acceptance criteria:
   effect bound to the exact standard-library declaration.
 - A `const` destination is still refused
   (`mdtests/byte_representation_const_destination_rejected.md`).
-- `examples/label-build-flags/label_copy.click` specifies and verifies
+- `examples/label-build-flags/label.click` specifies and verifies
   `label_copy`, and the README and the own-project guide
   (`docs/concepts/own-project.md`) no longer show the refusal.

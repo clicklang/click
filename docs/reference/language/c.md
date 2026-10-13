@@ -189,6 +189,14 @@ does. Verifying plain C needs no compiler or system headers; see the
 Any other system include is refused. The kernel target refuses the hosted
 headers, since kernel code uses its own.
 
+A [compiler import](../cli/import.md#clicks-system-headers) searches the same
+headers, with the same text, in the place of the C library's: after the
+project's `-iquote`, `-I`, and `-isystem` directories, as GCC orders them. It
+refuses `<pthread.h>` and `<stdatomic.h>`, whose runtime does not accept
+compiler-imported sources, and names any other standard C or POSIX header it
+refuses. The headers carry no contracts: a call is checked against Click's
+contract for the function's name, whichever declaration the compiler selected.
+
 ## Program-entry static ownership
 
 A definition of parameterless `main` in the selected C sources is verified

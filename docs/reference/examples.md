@@ -539,9 +539,8 @@ sequence:
   over a one-field json-c-shaped object; it is not unchanged json-c source.
 - `examples/label-build-flags/`: a two-file C library with a `Makefile`, the
   worked example of [Verify a function in your own project](../concepts/own-project.md).
-  One sidecar uses a compiler import with the build's `-I` and `-D` flags; the
-  other uses Click's `<string.h>` and an `extern` contract for the first
-  file's function.
+  One sidecar and one compiler import cover both files with the build's `-I`
+  and `-D` flags, and `<string.h>` resolves to Click's modeled header.
 - `examples/jsonc-existing-source/`: byte-preserved upstream json-c source
   with a checked SHA-256 manifest. Proves its numeric version and NUL-terminated
   version-string contents under the explicit unsigned-char kernel target.
