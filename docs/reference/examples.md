@@ -25,12 +25,9 @@ without a generated processed count; chunk reads use the original byte views.
 `examples/multifile-registry/` specifies a registry across four C translation
 units and two headers. It covers shared updates, independent same-named private
 statics, persistent local arrays, const lookup tables, and unchanged fields.
-The data definitions live in a translation unit without functions. It does
-not verify yet, so the examples gate quarantines it: `click verify` and the
-gate both stop at `registry_run`'s entry, which cannot evaluate an owned field
-path into another module's function-local static struct array, and past that
-point the cross-file caller needs static-state caller transport
-(`issues/static-state-caller-transport.md`).
+The data definitions live in a translation unit without functions. The
+cross-file caller states the current static values it relies on, and those
+facts are carried through calls that update other statics.
 
 `examples/heap-object/` is the focused allocation-lifetime project. It shows a
 nullable factory, full initialization, a read-only borrower, ownership transfer

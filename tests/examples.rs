@@ -32,14 +32,7 @@ const SOURCE_METADATA: &str = "SOURCE.md";
 /// suite is a meaningful green gate. Run one with `CLICK_EXAMPLE=<name>`, or
 /// all of them with `CLICK_RUN_QUARANTINED=1`. Each entry names the reason;
 /// remove entries as they are fixed (see docs/internals/testing.md).
-const QUARANTINED: &[(&str, &str)] = &[(
-    "multifile-registry",
-    "`registry_run`'s entry cannot evaluate an owned field path into another module's \
-     function-local static struct array (`owns beta::record_beta::batches[0].value`: \
-     no known pointee type, the gap mdtests/initialized_aggregate_static_arrays.md pins); \
-     past it, ordinary-entry static-state transport does not yet certify its cross-file \
-     caller (issues/static-state-caller-transport.md)",
-)];
+const QUARANTINED: &[(&str, &str)] = &[];
 
 /// The artifact reuse rejection ratchet (`docs/internals/testing.md`) over
 /// every example project; see `tests/mdtests.rs` for the rule.
