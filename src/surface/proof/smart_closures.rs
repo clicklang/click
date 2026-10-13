@@ -8627,9 +8627,10 @@ pub(in crate::surface::proof) fn collect_bounded_surface_conjunct_leaves(
 /// naming law to condition leaves. The lockstep worklist keeps this path
 /// iterative and bounded and never clones an entire proposition tree.
 /// Whether a lowered proposition states `requirement`: exactly, up to
-/// canonical condition loads, or as the consequent left once the generated
-/// arithmetic guards in front of it are discharged. Proving that consequent is
-/// enough for the retried step.
+/// canonical condition loads, or as the consequent left under the guards
+/// lowering put in front of it (generated arithmetic guards and path-fact
+/// guards, which no Surface connective spells). Proving that consequent is
+/// enough for the retried step, whose kernel check still sees the guard.
 pub(super) fn lowered_states_requirement(
     lowered: &Proposition,
     requirement: &UnresolvedRequirement,
@@ -8642,6 +8643,7 @@ pub(super) fn lowered_states_requirement(
         if !matches!(
             introduction,
             crate::kernel::LoweringIntroduction::ObligationGuard
+                | crate::kernel::LoweringIntroduction::PathFactGuard
         ) {
             break;
         }
