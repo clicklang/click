@@ -1632,6 +1632,10 @@ does, as in `owns std_span_data(s);`. Diagnostics and expanded proofs print the
 accessor for its field path, so an expanded proof names no private field
 either.
 
+A refused catalog precondition reached after execution also names reads by
+these accessors. Historical reads keep their snapshot qualification, for
+example `at(<state A>, std_span_size(s))`, rather than a carrier-cell index.
+
 The `std::span<T>` entries are generic over the element type `T`, which may
 be `int`, `unsigned int`, `unsigned char` or `std::byte`, each possibly
 `const`; a `std::span<const T>` holds a `const T*`, and its element accessors

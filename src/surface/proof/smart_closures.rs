@@ -5031,7 +5031,17 @@ impl<'a> Proof<'a> {
                                 .ok()
                                 .flatten()
                                 .or_else(|| rewritten.try_typed_atomic_simp_closure())
-                        };
+                        }
+                        // A rewrite can leave a goal over constructors only,
+                        // such as `ParentLink::Linked(kid) != ParentLink::Empty`
+                        // after rewriting by `link.link == ParentLink::Linked(kid)`;
+                        // normalization decides it without consulting context.
+                        .or_else(|| {
+                            rewritten
+                                .apply_step(ProofStep::Normalize)
+                                .ok()
+                                .filter(Proof::is_complete)
+                        });
                         if let Some(closed) = closed {
                             return Some(closed);
                         }
@@ -8912,9 +8922,31 @@ fn source_backed_call_requirement_surface(
             }
         },
     );
-    let proposition = substitute_click_proposition(
+    // A call step's binder map names the caller instance each callee binder
+    // is: the callee's field reads become reads of that caller instance.
+    let instance_renames = match step {
+        ProofStep::StepCall(transport) => transport
+            .binders()
+            .iter()
+            .map(|binding| {
+                (
+                    binding.binder().to_string(),
+                    crate::surface::lowering::InstanceRename {
+                        name: binding.instance().to_string(),
+                        identity: binding.binder_identity(),
+                        target_identity: Some(binding.identity()),
+                    },
+                )
+            })
+            .collect::<BTreeMap<_, _>>(),
+        _ => BTreeMap::new(),
+    };
+    let proposition = crate::surface::lowering::substitute_click_proposition_in(
         elaborated.as_ref().unwrap_or(&source_proposition),
-        &substitutions,
+        &crate::surface::lowering::ContractSubstitutions::with_instance_renames(
+            &substitutions,
+            &instance_renames,
+        ),
     )
     .ok()?;
     Some(SourceBackedCallSurface {

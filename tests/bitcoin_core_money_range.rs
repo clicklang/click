@@ -2995,6 +2995,33 @@ fn axiomatic_span_fixture(
     pinned_span_fixture_with_exact_dependencies(name, harness, dependencies)
 }
 
+#[test]
+fn axiomatic_span_refused_precondition_names_model_accessors_after_execution() {
+    let (root, import) = axiomatic_span_fixture(
+        "model-precondition-spelling",
+        "#include <span>\nstd::span<int> probe(std::span<int>& s) noexcept { unsigned long n = s.size(); return s.first(n - 1); }\n",
+        SPAN_DEPENDENCIES,
+    );
+    let source = r#"verifying "span-probe.cpp";
+struct span__int__value_unsigned_long_18446744073709551615 probe(struct span__int__value_unsigned_long_18446744073709551615& s) {
+    views std_span_data(s);
+    views std_span_size(s);
+    ensures std_span_data(result) == std_span_data(s);
+} by { execute(); simp(); }
+"#;
+    let sidecar = root.join("span.click");
+    fs::write(&sidecar, source).unwrap();
+    let parsed = read_click_project(&sidecar, source).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import)
+        .expect_err("a possibly empty span does not justify first(n - 1)");
+    let message = error.concise_report();
+    assert!(message.contains("std_span_size(s)"), "{message}");
+    assert!(message.contains("std_span_data(s)"), "{message}");
+    assert!(!message.contains("&s["), "{message}");
+    assert!(!message.contains("_M_"), "{message}");
+    fs::remove_dir_all(root).unwrap();
+}
+
 // Bitcoin's unchanged `SpanPopBack` verifies against Click's `std::span`
 // contracts: libstdc++'s `size`, `back` and `first` are axioms with no
 // exported body, and every contract states the span through model accessors.

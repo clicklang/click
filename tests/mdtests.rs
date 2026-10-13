@@ -45,7 +45,7 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
     ((HiddenPrerequisiteRoute::StepObligation, "And"), 2),
     (
         (HiddenPrerequisiteRoute::StepObligation, "ContextualAtomic"),
-        12,
+        3,
     ),
 ];
 

@@ -895,6 +895,34 @@ fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
 }
 
 #[test]
+#[ignore = "nightly: symbolic DO16 count, lane, and read-bound theorem bodies"]
+fn pinned_zlib_window_lemmas_have_checked_bodies() {
+    let source = include_str!("../design/charon-trial/zlib/window.click")
+        .replace(
+            "import \"block.click\";",
+            include_str!("../design/charon-trial/zlib/block.click"),
+        )
+        .replace(
+            "import \"short-prefix.click\";",
+            include_str!("../design/charon-trial/zlib/short-prefix.click"),
+        )
+        .replace(
+            "import \"byte.click\";",
+            include_str!("../design/charon-trial/zlib/byte.click"),
+        )
+        .replace(
+            "import \"../adler2/count-bridge.click\";",
+            include_str!("../design/charon-trial/adler2/count-bridge.click"),
+        )
+        .replace(
+            "import \"../../adler32-spec.click\";",
+            include_str!("../design/adler32-spec.click"),
+        );
+    click::surface::verify_click_theorems(&source)
+        .expect("all shared, native recurrence, and symbolic window bodies");
+}
+
+#[test]
 #[ignore = "nightly: shared checksum library and native block recurrence bodies"]
 fn pinned_zlib_block_lemmas_have_checked_bodies() {
     let source = include_str!("../design/charon-trial/zlib/block.click")

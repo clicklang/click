@@ -221,18 +221,31 @@ Decision: open.
 Facts, goals, rejected requirements, evaluated sides, search candidates and
 the proof context now print in Click or C syntax (`old(g[0]) < 100`,
 `(uint32)n <= 1073741823u32`, `viewable(p[1..2])`), with reads of other
-memories as `at(<state A>, ...)` defined after the report.
+memories as `at(<state A>, ...)` defined after the report. `--trace-proof`
+keeps its typed notation by design.
 
-Today: a value with no source name prints as `<unnamed A>` (a loop-head
-value, a callee's result) and an address as `<pointer A>` (a heap allocation
-once no live local holds it); byte offsets into an object print as `g+8` in
-the memory-history text and resource ranges over an unnamed base as
-`…[0..40]`. `--trace-proof` keeps its typed notation by design. The
-`C operation:` and `call bindings:` lines and the echoed claim now print in
-source syntax (`first(s->data, s->len)`, `result == 0 or u == 0`).
+Today: a loop-carried value inside the body prints as the iteration's entry
+value, `at(statement(N).entry, i)`, and a refused C operation names an address
+a local holds through that local (`alias->mu`, `*shared`, `p[i].y`). What
+remains:
 
-Proposed fix: name loop-head values as `at(statement(N).entry, x)` and
-allocations from the state that holds them.
+- A callee's result no local holds prints as `<unnamed A>` (`pure facts:
+  [<unnamed A> == -56]`); its only spelling is a translation temporary.
+- A pure theorem's `Integer` binder prints as `<unnamed A>` in a
+  conversion-condition refusal (`<unnamed A> + 1`): that refusal's names come
+  from the machine-typed values only.
+- A heap allocation no live local holds prints as `<pointer A>`, mostly in an
+  `ensures` check after the function returned: the outcome state has no
+  locals, and the execution's recorded snapshots that held the pointer are not
+  part of that check's names.
+- A store at a constant offset into a struct-typed global or local prints as
+  `g+8` in memory-history text: a field name needs the store's width checked
+  against the field, which `SourceCell` does not carry.
+
+Proposed fix: name a callee's result through the snapshot after its call and
+an allocation through the snapshot that last held it, where the outcome check
+can cite that snapshot; spell constant offsets as fields where the width
+matches.
 
 Decision: in progress.
 
