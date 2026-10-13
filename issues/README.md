@@ -121,7 +121,7 @@ Specification and proof:
 - [Difference logic: the fast path for arithmetic requirements and conditions](difference-logic.md)
 - [Launch design review: open critiques, each to be fixed or ruled wontfix](design-review.md) (depends on smt-auto.md and simplify-step.md)
 
-## P2: after launch (14)
+## P2: after launch (13)
 
 Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
 it turns out to block that claim: if P1 work exposes one of the tooling
@@ -135,7 +135,6 @@ C language coverage:
 - [Import kernel-scale preprocessed translation units](kernel-scale-preprocessing.md)
 - [Verify Linux rbtree inline helpers from the pinned headers](linux-rbtree-inline-helpers.md)
 - [Support multiple C compilers and target ABIs](multiple-compilers.md)
-- [Verify unchanged PCG wrappers that pass private static storage to helpers](private-static-helper-ownership.md)
 - [Extend bounded control flow](control-flow.md)
 - [Model concurrency and atomics](concurrency-and-atomics.md)
 
