@@ -250,6 +250,11 @@ pub struct C0Global {
     c_type: C0Type,
     struct_name: Option<String>,
     initializer: Option<C0Expression>,
+    /// The address an externally linked pointer's initializer names,
+    /// resolved in its defining translation unit. Another unit may not see
+    /// the private object the initializer names, so it reads this value and
+    /// never re-evaluates the initializer against its own names.
+    resolved_address: Option<crate::kernel::CValue>,
     tentative: bool,
     file_static: bool,
     volatile: bool,
@@ -266,6 +271,7 @@ impl C0Global {
             c_type,
             struct_name,
             initializer: None,
+            resolved_address: None,
             tentative: false,
             file_static: false,
             volatile: false,
@@ -287,6 +293,7 @@ impl C0Global {
             c_type,
             struct_name,
             initializer: Some(initializer),
+            resolved_address: None,
             tentative: false,
             file_static: false,
             volatile: false,
@@ -309,6 +316,7 @@ impl C0Global {
             c_type,
             struct_name,
             initializer: Some(initializer),
+            resolved_address: None,
             tentative: false,
             file_static: true,
             volatile: false,
@@ -320,6 +328,13 @@ impl C0Global {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// This global with its pointer initializer's address resolved by its
+    /// defining translation unit.
+    pub(crate) fn with_resolved_address(mut self, address: crate::kernel::CValue) -> Self {
+        self.resolved_address = Some(address);
+        self
     }
 
     pub fn kernel_name(&self) -> &str {
@@ -450,6 +465,10 @@ pub struct C0GlobalArray {
     shape: Option<Vec<u32>>,
     incomplete_shape: Option<Vec<u32>>,
     initializer: Option<C0ArrayInitializer>,
+    /// An externally linked pointer array lowered by its defining
+    /// translation unit, whose element initializers may name objects private
+    /// to that unit. Other units read this instead of re-evaluating them.
+    resolved: Option<crate::kernel::CGlobalArray>,
     tentative: bool,
     file_static: bool,
     constant: bool,
@@ -475,6 +494,7 @@ impl C0GlobalArray {
             shape,
             incomplete_shape,
             initializer: None,
+            resolved: None,
             tentative: false,
             file_static,
             constant: false,
@@ -503,6 +523,7 @@ impl C0GlobalArray {
             shape: Some(shape),
             incomplete_shape: None,
             initializer: Some(initializer),
+            resolved: None,
             tentative: false,
             file_static,
             constant: false,
@@ -511,6 +532,12 @@ impl C0GlobalArray {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// This array as lowered by its defining translation unit.
+    pub(crate) fn with_resolved(mut self, resolved: crate::kernel::CGlobalArray) -> Self {
+        self.resolved = Some(resolved);
+        self
     }
 
     pub fn kernel_name(&self) -> &str {
@@ -3595,9 +3622,54 @@ impl C0Function {
     /// replaced translation-unit declarations with their selected
     /// definitions. Parsing checks the declarations visible at each use;
     /// this final pass checks the linked object graph that lowering will use.
+    /// The address an externally linked pointer global's initializer names,
+    /// resolved against this translation unit's own names, where any private
+    /// object it names is visible. Validates the initializer first.
+    pub(crate) fn resolve_linked_pointer_initializer(
+        &self,
+        global: &C0Global,
+    ) -> Result<Option<crate::kernel::CValue>, C0SyntaxError> {
+        let Some(initializer) = global.initializer() else {
+            return Ok(None);
+        };
+        if !global.c_type().is_pointer() {
+            return Ok(None);
+        }
+        self.validate_static_pointer_initializer(
+            global.c_type(),
+            global.pointee_is_constant(),
+            initializer,
+        )?;
+        Ok(self.static_address_initializer_value(
+            global.c_type(),
+            global.pointee_is_constant(),
+            initializer,
+        ))
+    }
+
+    /// An externally linked pointer array lowered against this translation
+    /// unit's own names, as [`Self::resolve_linked_pointer_initializer`] does
+    /// for a scalar. Validates the element initializers first.
+    pub(crate) fn resolve_linked_pointer_array(
+        &self,
+        array: &C0GlobalArray,
+    ) -> Result<Option<crate::kernel::CGlobalArray>, C0SyntaxError> {
+        let Some(initializer) = array.initializer() else {
+            return Ok(None);
+        };
+        if !array.element_type().is_pointer() {
+            return Ok(None);
+        }
+        for value in initializer.values() {
+            self.validate_static_pointer_initializer(array.element_type(), false, value)?;
+        }
+        Ok(self.to_kernel_global_array(array))
+    }
+
     pub(crate) fn validate_static_initializers(&self) -> Result<(), C0SyntaxError> {
         for global in self.globals.values() {
             if global.c_type().is_pointer()
+                && global.resolved_address.is_none()
                 && let Some(initializer) = global.initializer()
             {
                 self.validate_static_pointer_initializer(
@@ -3610,7 +3682,7 @@ impl C0Function {
         for array in self
             .global_arrays
             .values()
-            .filter(|array| array.element_type().is_pointer())
+            .filter(|array| array.element_type().is_pointer() && array.resolved.is_none())
         {
             if let Some(initializer) = array.initializer() {
                 for value in initializer.values() {
@@ -3640,6 +3712,9 @@ impl C0Function {
     }
 
     fn to_kernel_global(&self, global: &C0Global) -> Option<crate::kernel::CGlobal> {
+        if let Some(value) = &global.resolved_address {
+            return Some(global.to_kernel_global_with_value(value.clone()));
+        }
         let initializer = global.initializer()?;
         if let Some(value) = self.static_address_initializer_value(
             global.c_type(),
@@ -3652,6 +3727,9 @@ impl C0Function {
     }
 
     fn to_kernel_global_array(&self, array: &C0GlobalArray) -> Option<crate::kernel::CGlobalArray> {
+        if let Some(resolved) = &array.resolved {
+            return Some(resolved.clone());
+        }
         let values = array.initializer()?.to_kernel_contents(|initializer| {
             self.static_address_initializer_value(array.element_type(), false, initializer)
                 .or_else(|| kernel_integer_literal_value(array.element_type(), initializer))
