@@ -237,9 +237,9 @@ ownership conversion or a module concept. With no explicit effect clause,
 the startup frame permits writes to its writable static storage; explicit
 effect clauses may restrict that frame.
 
-Startup proofs currently require no parameters or preconditions. They are
+Startup proofs require no parameters or preconditions. They are
 not reusable function contracts: an ordinary call to `main` cannot assume
-startup values or receive fresh permissions. This slice does not model
+startup values or receive fresh permissions. Click does not model
 `argc`/`argv`, constructors before main, or separate library-initialization
 proofs. Owned global ranges can be folded into named resources and transferred
 through helper contracts. Resource tactics retain the current function's
@@ -367,8 +367,8 @@ sidecar contract describes the object such a parameter carries by casting the
 parameter, `(struct name *)argument`, in its clauses; see
 [contract pointer casts](index.md#old).
 Function pointers are not object pointers, so a `void *` position does not
-change a callback's signature. Opaque-pointer fields remain outside this
-slice; the new `void **` declaration form does not itself specify what an
+change a callback's signature. Opaque-pointer fields are not supported;
+the `void **` declaration form does not itself specify what an
 external call may write through such a pointer.
 
 <!-- verified-example: mdtests/c_void_pointers.md -->
@@ -406,7 +406,7 @@ its own private identity within its translation unit; aliasing that typedef
 preserves the identity and does not introduce a `struct pair` tag. Separate
 anonymous declarations are not interchangeable. Anonymous unions and inline
 tagged definitions in typedefs also retain their nominal identity and ABI
-layout. Compound union member operations and whole-union values are not yet
+layout. Compound union member operations and whole-union values are not
 supported. Multiple typedef declarators and automatic
 typedef-name lookup in Click sidecars remain unsupported.
 See `mdtests/c_anonymous_struct_typedef.md`.
@@ -572,8 +572,8 @@ Named enums are supported as four-byte `int32`-shaped scalar fields. Click
 preserves the enum name and enumerator values in imported metadata, and named
 enumerators such as `PACKET_READY` lower to their declared integer values in C
 expressions and by-value copies. Enum parameters, return types, local
-declarations, enum arrays, and anonymous enum declarations remain outside this
-slice.
+declarations, enum arrays, and anonymous enum declarations are not
+supported.
 
 ## Floating-point boundary
 
@@ -671,7 +671,7 @@ parameter's entry value carries its range `flag == 0 or flag == 1` as an
 available fact, so a claim such as `result == 0 or result == 1` about the
 promoted value needs no explicit case split; the range does not decide which
 value the parameter holds. Pointers to boolean objects and boolean pointer
-arithmetic are not currently modeled.
+arithmetic are not modeled.
 
 ## Supported expressions and statements
 
@@ -892,7 +892,7 @@ Supported C surface includes:
 - heap arrays of supported structs, allocated with `malloc` or `calloc` using
   `count * sizeof(struct T)` and resized with bounded `realloc`; indexed
   `items[i].field` accesses use the complete ABI struct stride
-- a small struct slice: `struct name { ... };`, `struct name*` and
+- a struct subset: `struct name { ... };`, `struct name*` and
   `struct name**` pointers, chained `p->child->field` loads/stores for scalar
   fields and pointer fields, and address-taking of struct-pointer cells such
   as `&p->child` for `struct name** link; *link = replacement;`
@@ -1166,7 +1166,7 @@ Supported C surface includes:
   and array typedefs. The built-in names `size_t`, `ssize_t`, `int64_t`,
   and `uint64_t` have the target's `long` or `long long` identity. Array
   declarators
-  are outside this slice. See `mdtests/c_builtin_types_compatible.md` and
+  are not supported. See `mdtests/c_builtin_types_compatible.md` and
   `mdtests/c_builtin_types_compatible_rejects_false_equality.md`.
 - the GNU builtin `__builtin_constant_p(operand)`. Whether the compiler folds
   the operand to a constant depends on optimization, so its value is an
@@ -1281,7 +1281,7 @@ scalar arrays expose their array-to-pointer address for indexed expressions and
 contract footprints; contract ranges refer to the flattened storage block.
 Fixed-size one-dimensional arrays of supported scalar-field structs use the
 same stable linkage and ABI-sized element stride; incomplete, non-literal,
-or dynamically initialized arrays remain outside this slice. An external
+or dynamically initialized arrays are not supported. An external
 declaration or external-linkage tentative definition may omit its outer bound,
 as in `extern int32 table[];`, `extern int32 matrix[][3];`,
 `int32 values[];`, or `int32 matrix[][3];`; bundle linking resolves it against
@@ -1340,7 +1340,7 @@ these aggregates also accept `[literal] = {...}` element designators, with
 omitted elements zero-filled. Non-literal designator expressions, designated
 initializers for inline scalar arrays, multidimensional aggregate arrays,
 uninitialized incomplete aggregate definitions, and dynamic or non-literal initialization
-remain outside this slice. An `extern struct state entries[]` declaration is
+are not supported. An `extern struct state entries[]` declaration is
 supported when bundle linking finds a complete fixed-size definition.
 One-dimensional aggregate definitions may infer their bound from non-empty
 positional element groups, such as `struct state entries[] = {{1}, {3, 1}};`.
@@ -1426,7 +1426,7 @@ through `slot_cell`. These qualifiers are tracked independently. Each direct
 or pointer-derived read or write emits a distinct, ordered kernel-certified
 execution fact, so the verifier cannot silently cache the access or erase it
 while checking the surrounding expression or statement. The value still comes
-from the current symbolic memory state; this slice does not model external
+from the current symbolic memory state; Click does not model external
 agents changing memory between accesses.
 
 Taking the address of a supported volatile object and accessing it through
@@ -1576,7 +1576,7 @@ check their resource arguments against the actual C arguments. Returned
 instances keep their identities but get fresh symbolic fields; only explicit
 guarantees relate those fields to the call-entry values. Unselected instances
 remain framed. Concrete function refinement for these parameterized contracts
-and ordinary inline-call instance transport are not yet supported.
+and ordinary inline-call instance transport are not supported.
 
 Empty applications are supported end to end:
 
@@ -1990,7 +1990,7 @@ zero-filled.
 
 ## Struct subset
 
-Click supports a small struct slice:
+Click supports a struct subset:
 
 <!-- verified-example: mdtests/struct_multifield_explicit_permissions.md -->
 ```c
@@ -2117,7 +2117,7 @@ same per-dimension subobject checks, so an index cannot spill into a following
 struct field merely because the containing object is large enough. Pointer and
 array forms now preserve the declared scalar width; unsupported pointer forms
 remain outside the modeled subset.
-Direct whole-union values and union-member writes remain outside this slice;
+Direct whole-union values and union-member writes are not supported;
 union-containing struct copies preserve the overlapping member views. Compiler-dependent layout rules are tracked in
 `issues/multiple-compilers.md`. Fixed multidimensional arrays of embedded
 structs are supported through indexed leaf-field access and retain their
@@ -2155,10 +2155,10 @@ value. Taking the address of a scalar or pointer member preserves that same
 containing allocation and produces the member's typed pointer (`int32*` for an
 `int32` member, or `int32**` for an `int32*` member), so the resulting pointer
 can be used for a read without materializing a whole-union value. The tag check
-remains an ordinary C branch or Click precondition; the
-current slice does not infer a mapping between arbitrary tag values and member
+remains an ordinary C branch or Click precondition; Click
+does not infer a mapping between arbitrary tag values and member
 names. Union member writes, whole-union expressions, union locals or
-parameters, and arrays inside unions remain outside the supported slice.
+parameters, and arrays inside unions are not supported.
 Structs containing supported named unions can be copied by value while
 preserving the overlapping typed member views.
 
@@ -2357,7 +2357,7 @@ These are not general C features yet:
   multidimensional file-scope and function-local static scalar arrays,
   file-scope globals with compatible `extern` declarations, and basic ASCII
   read-only string literals are documented above
-- `switch` case labels currently require integer or character literals, labels
+- `switch` case labels require integer or character literals, labels
   must be direct children of the switch compound body, and duplicate labels are
   rejected; arbitrary constant expressions and nested switch labels remain
   unsupported. The narrow direct forward-`goto` and natural-cycle slices

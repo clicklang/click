@@ -8911,7 +8911,7 @@ impl ClickError {
     ) -> Self {
         self.unresolved_requirement = Some(std::sync::Arc::new(UnresolvedRequirement {
             proposition: obligation.proposition().clone(),
-            context: obligation.context().map(str::to_owned),
+            context: diagnostics::describe_proof_obligation_context(obligation),
             introductions: obligation.introductions().cloned().unwrap_or_default(),
             call_site: obligation.call_requirement_site().cloned(),
         }));

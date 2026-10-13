@@ -347,7 +347,7 @@ fn failed_call_step_reports_its_unresolved_required_precondition() {
         .expect("the refused call requirement should survive proof error wrapping");
     assert_eq!(
         requirement.context.as_deref(),
-        Some("either_positive precondition")
+        Some("precondition clause 1 of `either_positive`")
     );
     assert!(matches!(requirement.proposition, Proposition::Or(_, _)));
     let call_site = requirement
@@ -1212,7 +1212,7 @@ fn bare_step_proves_an_open_obligation_by_implicit_auto() {
 #[test]
 fn bare_step_fallback_records_a_hidden_prerequisite_derivation() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/population_consumption_at_close.md");
+        .join("mdtests/fresh_heap_parent_link_read_through_named_resource.md");
     let loaded = crate::cli::load_target_inputs(&path, None).unwrap();
     let fixture = loaded.mdtest.as_ref().unwrap();
     let inputs = fixture
@@ -1222,7 +1222,7 @@ fn bare_step_fallback_records_a_hidden_prerequisite_derivation() {
         .collect::<Vec<_>>();
     let (verified, planning_transitions) =
         collect_planning_statement_transitions(|| verify_c0_project(&loaded.project, &inputs));
-    verified.expect("the population fixture should verify");
+    verified.expect("the fresh-heap fixture should verify");
     assert!(
         planning_transitions
             .iter()

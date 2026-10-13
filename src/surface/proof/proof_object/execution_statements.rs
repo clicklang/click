@@ -950,6 +950,14 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("`step` requires an execution-frontier proof"));
         };
+        let addressed_context = self
+            .site
+            .tactic_index()
+            // Loop phase drivers already attribute their own local script.
+            // The enclosing proof site still names the outer loop tactic.
+            .filter(|_| context.constants.invariant_body_context.is_none())
+            .map(|index| context.with_tactic_index(index));
+        let context = addressed_context.as_ref().unwrap_or(context);
         // Resolve this statement's result local before checking the step.
         // Only its checked successor value is bound below. The assignment
         // or call is exactly the current frontier; nothing is searched.
