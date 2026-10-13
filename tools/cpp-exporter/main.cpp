@@ -3874,6 +3874,11 @@ private:
           return {};
         }
         const char *name = builtin_template_type_name(type);
+        // A byte-sized element, as in `std::span<unsigned char>`, names a
+        // class template instance; integral template values stay 32/64-bit.
+        if (name == nullptr && allow_tags &&
+            context_.hasSameType(type, context_.UnsignedCharTy))
+          name = "unsigned_char";
         if (name == nullptr && allow_tags && supported_byte_enum(type)) {
           const auto *enumeration = type->getAs<clang::EnumType>()->getDecl();
           if (declaration_id(enumeration) == "c:@N@std@E@byte" &&
