@@ -2868,7 +2868,9 @@ fn native_view_simp_reports_the_actual_premise_spelling_limit() {
         ));
         source
     };
-    for extra_bounds in [29, 30] {
+    // Connected bounds within the bounded reduction now retain just the
+    // source view and its coverage bound, even beyond the spelling limit.
+    for extra_bounds in [29, 30, 31, 62] {
         verify_c0_sources(&source(extra_bounds, "simp();"), &[])
             .expect("a derivation within the 64-premise spelling budget should check");
     }
@@ -2876,7 +2878,9 @@ fn native_view_simp_reports_the_actual_premise_spelling_limit() {
         "simp();",
         "have viewable(p[0u64..1u64]) by { simp(); } assumption();",
     ] {
-        let source = source(31, body);
+        // A selection outside the bounded reduction still obeys the same
+        // 64-premise source-spelling limit and must report it accurately.
+        let source = source(63, body);
         let check = |error: &ClickError| {
             for report in [error.message().to_owned(), error.concise_report()] {
                 assert!(
@@ -2885,7 +2889,7 @@ fn native_view_simp_reports_the_actual_premise_spelling_limit() {
                 );
                 assert!(report.contains("simp view premise spelling"), "{report}");
                 assert!(
-                    report.contains("contains 66 premises; source spelling permits at most 64"),
+                    report.contains("contains 130 premises; source spelling permits at most 64"),
                     "{report}"
                 );
                 assert!(!report.contains("what is left"), "{report}");
@@ -2901,14 +2905,14 @@ fn native_view_simp_reports_the_actual_premise_spelling_limit() {
             check(&error);
             let trace = error.trace_context_report().expect("requested proof trace");
             assert!(
-                trace.contains("contains 66 premises; source spelling permits at most 64"),
+                trace.contains("contains 130 premises; source spelling permits at most 64"),
                 "{trace}"
             );
             assert!(trace.contains("bytes:uint64=1u64"), "{trace}");
         });
     }
     verify_c0_sources(
-        &source(31, "simp() using { 1u64 <= n; viewable(p[0u64..n]); };"),
+        &source(63, "simp() using { 1u64 <= n; viewable(p[0u64..n]); };"),
         &[],
     )
     .expect("the same view checks with its two relevant explicit premises");
