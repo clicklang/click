@@ -274,7 +274,12 @@ provide a small `using { ... }` list, when this bounded search misses. Each
 candidate still has to lower to the exact retained kernel fact.
 The automatic atomic fallback also declines components with more than 64
 premises before rendering them; it first tries the derivation's recorded path.
-This limit does not restrict an explicit `using` list.
+This limit does not restrict an explicit `using` list. A refused written view
+`simp()` retains the failing construction stage, including the actual selected
+premise count when it exceeds this limit, in the ordinary error and trace.
+The native kernel view query and source-certificate construction are distinct:
+a positive kernel query can still lack a printable checked proof. Do not infer
+a missing extent premise from that construction failure.
 
 The result distinguishes three important cases:
 

@@ -143,11 +143,12 @@ buffer's native coordinates; they supply read authority without a generated
 processed counter or verifier changes.
 
 **This draft does not verify and adds no C checksum result.** Its scalar tail
-stops while narrowing `viewable(buf[0u64..len])` to the first byte. The failure
-requests a nonnegative byte extent even after count bounds are stated; moving
-the view capture before the condition temporary also fails. Three targeted
-attempts and a focused trace reached this boundary. Investigate the scalar
-loop's native count and view correspondence before trying more local variants.
+stops at the first-byte `viewable(buf[0u64..1u64])` construction. The kernel's
+native view checker accepts that goal in the live proof context. `simp`
+selects a derivation containing 71 premises, then its source-spelling stage
+refuses the selection at the existing 64-premise limit, before generating a
+transport proof. Reduce the selected dependencies or use a checked explicit
+transport with the relevant premises; do not increase the presentation limit.
 
 To reproduce in a throwaway copy retaining this directory's relative imports,
 copy the draft to `repeated.click`, copy `short-memory.click.import.json` and its

@@ -134,7 +134,10 @@ Checked symbolic count-advance, lane-identity, and native read-bound lemmas
 support repeated DO16 blocks below 5552 bytes. The saved 16–5551-byte draft
 checks all sixteen original addition pairs and closes the repeated-block
 invariants. Its full contract remains unproved: the scalar tail stops at
-first-byte view narrowing. Resolve its native count/view correspondence next.
+first-byte view certificate construction: the kernel accepts the view, but
+`simp` selects 71 premises and stops at its 64-premise source-spelling limit.
+Reduce the retained dependencies or give the checked transport its relevant
+premises before completing the scalar tail.
 
 Complete that scalar tail, then the original 5552-byte batches. Maintain exact
 component equations and native bounds across reductions; the arbitrary-length
