@@ -577,6 +577,21 @@ pub(crate) fn clear_ambient_naming() {
     AMBIENT_ENTRY.with(|slot| *slot.borrow_mut() = None);
 }
 
+/// The source declaration supplies nominal layout metadata even when a
+/// diagnostic's current-state naming table contains only kernel types.
+pub(in crate::surface) fn ambient_source_parameter(
+    name: &str,
+) -> Option<crate::languages::c::syntax::C0Parameter> {
+    AMBIENT_NAMING.with(|slot| {
+        slot.borrow()
+            .as_ref()?
+            .0
+            .iter()
+            .find(|parameter| parameter.name() == name)
+            .cloned()
+    })
+}
+
 /// While alive, propositions render in the typed trace notation.
 pub(crate) struct TypedNotationScope(bool);
 

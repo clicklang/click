@@ -3506,6 +3506,19 @@ pub(in crate::surface) fn diagnostic_source_cell(
     (!matches!(cell.index, CellIndex::Unnamed)).then(|| cell.text())
 }
 
+pub(in crate::surface) fn diagnostic_model_load_cell(
+    pointer: &Pointer,
+    kind: crate::kernel::LoadKind,
+    parameter_binding: ParameterBinding<'_>,
+) -> Option<String> {
+    if let Some((cell, value_type)) = cpp_model::describe_model_field_at(pointer, parameter_binding)
+        && crate::kernel::LoadKind::of_type(value_type) == Some(kind)
+    {
+        return Some(cell);
+    }
+    None
+}
+
 pub(in crate::surface) fn diagnostic_source_load_cell(
     pointer: &Pointer,
     kind: crate::kernel::LoadKind,
@@ -3524,6 +3537,11 @@ pub(in crate::surface) fn diagnostic_source_pointer_cell(
     parameter_binding: ParameterBinding<'_>,
     base_point: Option<&str>,
 ) -> Option<String> {
+    if let Some((cell, value_type)) = cpp_model::describe_model_field_at(pointer, parameter_binding)
+        && value_type.is_pointer()
+    {
+        return Some(base_point.map_or(cell.clone(), |point| format!("at({point}, {cell})")));
+    }
     for (parameter, argument) in parameter_binding
         .parameters
         .iter()
