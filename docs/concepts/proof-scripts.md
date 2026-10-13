@@ -11,10 +11,13 @@ Prefer smart tactics while authoring unless profiling identifies a hotspot.
 Exact `using` blocks are ordinary Click and may be committed after expansion,
 but manually listing every premise is not the normal starting workflow.
 
-An omitted proof means `simp` at the point where the statement holds:
+An omitted proof closes the statement where it holds:
 
 - `ensures P;` on a C function holds at function exit, so Click executes to
-  it first. That is `by auto;`, the script `execute(); simp();`.
+  it first. That is `by auto;`: execute, then close the claim with `auto`,
+  which is `simp` and then, if `simp` misses, the solver and the rewrite
+  search. A script that ends with the claim still open closes it the same
+  way.
 - `have P;` holds where it is written. It is `have P by simp;` and never
   executes C.
 - `have P by auto;` also proves `P` where it is written. With no C to run

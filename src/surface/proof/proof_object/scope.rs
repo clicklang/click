@@ -615,6 +615,20 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
+    /// The searches `auto` runs besides `simp`: the solver and its bridges,
+    /// then a bounded chain of rewrites. A closer that has already tried
+    /// `simp` runs these when it misses.
+    pub(in crate::surface::proof) fn try_auto_closure_after_simp(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        let Some(body) = self.body.try_auto_closure_after_simp()? else {
+            return Ok(None);
+        };
+        let mut next = self.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     pub(in crate::surface::proof) fn try_solver_closure(&self) -> Result<Option<Self>, ClickError> {
         let Some(body) = self.body.try_solver_closure()? else {
             return Ok(None);

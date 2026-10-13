@@ -2077,6 +2077,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::LetSatisfy(_)
             | ProofTactic::Choose(_)
             | ProofTactic::Simp
+            | ProofTactic::AutoClose
             // `transport(P, Q) using { ... }` names its source, its target,
             // and every premise, so it needs no state: the explicit facts
             // decide it. The smart `transport(P, Q)` form still does not
@@ -2200,6 +2201,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Transport { .. } | ProofTactic::TransportUsing { .. } => "transport",
         ProofTactic::InstantiateUsing { .. } => "instantiate",
         ProofTactic::Simp => "simp",
+        ProofTactic::AutoClose => "auto",
         ProofTactic::SimpUsing(_) => "simp",
         ProofTactic::ArithmeticCertificate(_) => "arithmetic_certificate",
     }

@@ -1309,6 +1309,9 @@ pub(super) enum PostExecutionTactic {
         returned_tactics: Vec<DeferredPostExecutionTactic>,
         threw_tactics: Vec<DeferredPostExecutionTactic>,
     },
+    /// `auto` closing the pending claims: `simp`, then the rest of
+    /// `auto`'s search on each claim `simp` leaves open.
+    AutoClose,
     Simp,
     SimpUsing(ProofSimpUsing),
 }
@@ -1644,6 +1647,7 @@ pub(super) fn post_execution_tactic_timing(
             },
         ),
         PostExecutionTactic::Simp | PostExecutionTactic::SimpUsing(_) => ("simp", "smart"),
+        PostExecutionTactic::AutoClose => ("auto", "smart"),
         PostExecutionTactic::Fold(_) => ("fold", "simple"),
         PostExecutionTactic::Unfold(_) => ("unfold", "simple"),
         PostExecutionTactic::Construct(_) => ("construct", "simple"),
