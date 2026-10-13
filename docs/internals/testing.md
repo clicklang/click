@@ -837,9 +837,10 @@ skips the comparison.
 
 A simple tactic must close each requirement by an exact or indexed check
 ([`issues/simplify-step.md`](https://github.com/clicklang/click/blob/master/issues/simplify-step.md)).
-Where statement checking instead derives a prerequisite by a search whose
-result the proof does not retain, it counts the derivation by route and top
-rule (`instrumentation::HiddenPrerequisiteRoute`). The fixture harnesses take
+A `step()` no longer searches; where statement checking under the contextual
+or explicit policies still derives a prerequisite by a search whose result
+the proof does not retain, it counts the derivation by route and top rule
+(`instrumentation::HiddenPrerequisiteRoute`). Both pins are empty. The fixture harnesses take
 that census after an unfiltered run and compare it with
 `HIDDEN_PREREQUISITE_BASELINE` in `tests/mdtests.rs` and `tests/examples.rs`,
 exactly as the artifact reuse ratchet does: a count that rose must not land,

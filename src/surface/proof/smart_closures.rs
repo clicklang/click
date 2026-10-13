@@ -7925,7 +7925,20 @@ impl<'a> Proof<'a> {
             ParameterBinding::new(context.parsed_function.parameters(), context.arguments),
             &execution.core.state,
         )
-        .and_then(admit)
+        .and_then(|surface| {
+            // Synthesis spells a conjunction conjunct by conjunct, but one
+            // conjunct's spelling can already state the whole requirement:
+            // `defined(owner->len + 1)` over a read through a resource lowers
+            // to the sum's overflow condition and the read's definedness, so
+            // spelling the read's definedness again changes the lowering.
+            let conjuncts = match &surface {
+                ClickProposition::And(left, right) => {
+                    vec![left.as_ref().clone(), right.as_ref().clone()]
+                }
+                _ => Vec::new(),
+            };
+            admit(surface).or_else(|| conjuncts.into_iter().find_map(admit))
+        })
         .map(|surface| RequirementSpelling {
             surface,
             direct_caller: None,
@@ -7959,7 +7972,6 @@ impl<'a> Proof<'a> {
                     let Some(execution) = proof.execution() else {
                         return Err(error);
                     };
-                    let execution_memory = execution.core.state.memory().clone();
                     let execution_view = execution.view(context);
                     let _qualified_sources =
                         super::surface_synthesis::QualifiedSynthesisScope::enter(
@@ -8100,12 +8112,6 @@ impl<'a> Proof<'a> {
                             else {
                                 return Err(next_error);
                             };
-                            if requirement_uses_planning_compatibility(
-                                &next_requirement,
-                                &execution_memory,
-                            )? {
-                                return Err(next_error);
-                            }
                             let Some(next_identity) =
                                 proposition_identity_key(&next_requirement.proposition)
                             else {
@@ -9151,29 +9157,6 @@ fn caller_parameter_through_identity_cast(
         }
         _ => Some(slot),
     }
-}
-
-fn requirement_uses_planning_compatibility(
-    requirement: &UnresolvedRequirement,
-    current_memory: &crate::kernel::CMemory,
-) -> Result<bool, ClickError> {
-    let Some(source) = requirement.call_site.as_ref() else {
-        // No carrier means this is not a source-backed call requirement; keep
-        // the established planner route for ordinary statement obligations.
-        return Ok(true);
-    };
-    if source.source_requirement_ordinal.is_none() {
-        return Ok(true);
-    }
-    if crate::kernel::CMemorySnapshotIdentity::of(current_memory) != source.source_snapshot {
-        return Ok(true);
-    }
-    Ok(!source_backed_requirement_is_supported(
-        &requirement.proposition,
-        source.source_requirement_ordinal,
-        source.source_requirement_is_state_independent,
-        source.source_load_snapshot,
-    )?)
 }
 
 /// Candidate spellings of one kernel fact from recorded program-point
