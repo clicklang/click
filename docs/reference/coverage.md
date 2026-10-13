@@ -64,6 +64,9 @@ verification then runs offline.
 > warning, an uncast conversion between `char *`, `signed char *`, and
 > `unsigned char *` is accepted and reads the bytes as the explicit cast
 > would; `mdtests/a_uint8_pointer_passed_as_a_char_pointer_reads_signed_bytes.md`.
+> The same holds between pointers to the signed and unsigned integer types of
+> one wider width, such as `int *` and `unsigned int *`;
+> `mdtests/integer_pointers_of_either_signedness_read_the_same_bits.md`.
 
 ## Scalar types
 

@@ -20711,13 +20711,14 @@ impl Parser {
         {
             return Ok(None);
         }
-        let one_byte_character_pointer = |ty| {
-            matches!(
-                ty,
-                C0Type::CharPointer(_) | C0Type::Int8Pointer | C0Type::UInt8Pointer
-            )
-        };
-        if one_byte_character_pointer(actual) && one_byte_character_pointer(expected) {
+        // GCC and Clang convert between pointers to the two signednesses of
+        // one integer width with at most a `-Wpointer-sign` warning, and the
+        // kernel reads a cell through either as its bits.
+        // A struct or union pointer uses an integer pointer type as its
+        // placeholder, so only a pointer to an actual integer converts.
+        if same_width_integer_pointers(actual, expected)
+            && (one_byte_pointer(actual) || self.struct_pointer_name(expression).is_none())
+        {
             return Ok(Some(expected));
         }
         // `uint8 *` also types the byte pointers lowering makes, so only the
@@ -20731,15 +20732,36 @@ impl Parser {
                     | C0Type::Int8PointerPointer
             )
         };
-        if is_char_pointer(actual) || is_char_pointer(expected) {
+        // GCC 14 rejects a pointer to `int *` converted to a pointer to
+        // `unsigned int *` (`-Wincompatible-pointer-types`): only the first
+        // level may differ in signedness.
+        let signedness_pointer_pointers = actual
+            .pointee_type()
+            .zip(expected.pointee_type())
+            .is_some_and(|(actual, expected)| {
+                actual != expected && same_width_integer_pointers(actual, expected)
+            });
+        if is_char_pointer(actual) || is_char_pointer(expected) || signedness_pointer_pointers {
             return Err(self.incompatible_character_pointers(expected, actual));
         }
         Ok(None)
     }
 
     fn incompatible_character_pointers(&self, expected: C0Type, actual: C0Type) -> C0SyntaxError {
+        let is_character = |ty: C0Type| {
+            let mut ty = ty;
+            while let Some(pointee) = ty.pointee_type() {
+                ty = pointee;
+            }
+            matches!(ty, C0Type::Char(_) | C0Type::Int8 | C0Type::UInt8)
+        };
+        let note = if is_character(expected) || is_character(actual) {
+            "plain char, signed char, and unsigned char are distinct types"
+        } else {
+            "the signed and unsigned integer types of one width are distinct types"
+        };
         self.error_here(format!(
-            "incompatible C pointer types: expected `{}`, got `{}`; plain char, signed char, and unsigned char are distinct types",
+            "incompatible C pointer types: expected `{}`, got `{}`; {note}",
             describe_pointer_cast_type(expected, None),
             describe_pointer_cast_type(actual, None),
         ))
@@ -20779,19 +20801,17 @@ impl Parser {
 
         // An opaque void pointer is the supported way to carry an object
         // pointer through a type-erased interface. A one-level conversion
-        // between character pointer types is the other: C11 6.3.2.3p7 and
-        // 6.5p7 let any character type access an object's bytes, and the
-        // kernel reads a one-byte cell of either signedness through either
-        // character type as the same eight bits. Neither case retypes an
-        // ordinary typed object pointer in the memory model.
-        let is_character_pointer = |ty| {
-            matches!(
-                ty,
-                C0Type::CharPointer(_) | C0Type::Int8Pointer | C0Type::UInt8Pointer
-            )
-        };
-        let byte_pointer_cast = is_character_pointer(expected) && is_character_pointer(actual);
-        if expected == C0Type::VoidPointer || actual == C0Type::VoidPointer || byte_pointer_cast {
+        // between the signednesses of one integer width, or between
+        // character types, is the other: C11 6.5p7 lets the signed or
+        // unsigned type corresponding to an object's type access it, and the
+        // kernel reads a cell of either signedness through either type as
+        // its bits. Neither case retypes an ordinary typed object pointer in
+        // the memory model.
+        let signedness_cast = same_width_integer_pointers(expected, actual)
+            && actual != expected
+            && actual_struct_name.is_none()
+            && expected_struct_name.is_none();
+        if expected == C0Type::VoidPointer || actual == C0Type::VoidPointer || signedness_cast {
             return Ok(());
         }
 
@@ -21625,6 +21645,29 @@ fn function_pointer_type(signature: &C0FunctionPointerSignature) -> C0Type {
 }
 
 /// An array type's element pointer type; any other type unchanged.
+/// Pointers to the two signednesses of one integer width, or to two of the
+/// character types, at one level of indirection: C11 6.5p7 lets either type
+/// access the object, GCC and Clang convert between them with at most a
+/// `-Wpointer-sign` warning, and the kernel reads a cell through either as
+/// its bits (`CType::read_cell`).
+fn one_byte_pointer(ty: C0Type) -> bool {
+    matches!(
+        ty,
+        C0Type::CharPointer(_) | C0Type::Int8Pointer | C0Type::UInt8Pointer
+    )
+}
+
+fn same_width_integer_pointers(left: C0Type, right: C0Type) -> bool {
+    let width = |ty| match ty {
+        C0Type::CharPointer(_) | C0Type::Int8Pointer | C0Type::UInt8Pointer => Some(1),
+        C0Type::Int16Pointer | C0Type::UInt16Pointer => Some(2),
+        C0Type::Int32Pointer | C0Type::UInt32Pointer => Some(4),
+        C0Type::Int64Pointer | C0Type::UInt64Pointer => Some(8),
+        _ => None,
+    };
+    width(left).is_some_and(|width_left| width(right) == Some(width_left))
+}
+
 fn decay_to_pointer(ty: C0Type) -> C0Type {
     if ty.is_pointer() {
         ty
