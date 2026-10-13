@@ -226,12 +226,11 @@ move; the step census reaches zero.
 Progress: `simp` proves a constructor disequality over
 a call-produced field, and a count's definedness once a zero summand is
 removed, and a `defined(..)` that carries a read's definedness; premise
-spelling names a call's `old(..)` value at a recorded statement entry. The
-remaining cases are 2 `ContextualAtomic` mdtests
-(`shared_heap_population_lifecycles`, whose fact a hand-written
-`at(statement(N).entry, ..)` already spells but premise spelling does not yet
-find) and 1 example `And` (`owned-string`), whose add-overflow-and-read
-requirement has no spelling yet.
+spelling names a call's `old(..)` value, including a loaded pointer to a heap
+object, at a recorded statement entry. The mdtest census is zero. The one
+remaining case is the example `And` in `owned-string`: the definedness guard
+of `owned_string_push`'s precondition, left open by `owned_string_pipeline`'s
+call, has no spelling yet.
 
 ### 4. Check expansion cold
 
