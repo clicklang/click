@@ -2742,7 +2742,12 @@ predicate cstr_readable(bytes: uint8[]) {
 
 **Meaning:** States that the byte array has some dynamically viewable,
 null-terminated C-string prefix. The length remains existential; unfold the
-predicate when a proof needs to expose that witness.
+predicate when a proof needs to expose that witness. A caller can pass the same
+unchanged plain-`char` or signed-character pointer to a callee requiring this predicate:
+contract expansion retains the predicate's unsigned byte reads. The caller
+must supply the requirement; it does not cover an offset pointer or survive
+an arbitrary write to the string. See
+[`cstr_plain_char_caller_requirement_reaches_callee.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_plain_char_caller_requirement_reaches_callee.md).
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
