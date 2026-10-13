@@ -7736,6 +7736,47 @@ impl<'a> Proof<'a> {
     /// has reported an unresolved requirement.  Keeping the refused result as
     /// an input makes the retry core directly testable without changing the
     /// production checked-step dispatch.
+    /// A Surface spelling of `requirement` at this frontier that lowers back
+    /// to it, chosen as the smart retry chooses one: the source-backed call
+    /// clause first, then a synthesized spelling. `None` when neither lowers
+    /// to the requirement.
+    pub(in crate::surface::proof) fn requirement_surface(
+        &self,
+        requirement: &UnresolvedRequirement,
+        step: &ProofStep,
+    ) -> Result<Option<ClickProposition>, ClickError> {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Ok(None);
+        };
+        let Some(execution) = self.execution() else {
+            return Ok(None);
+        };
+        let execution_view = execution.view(context);
+        let _qualified_sources = super::surface_synthesis::QualifiedSynthesisScope::enter(
+            execution_view.surface_propositions,
+        );
+        let admit = |candidate: ClickProposition| match self
+            .lower_surface_goal(&candidate, "step obligation")
+        {
+            Ok(lowered) if lowered_states_requirement(&lowered, requirement) => Some(candidate),
+            _ => None,
+        };
+        if requirement.call_site.is_some()
+            && let Some(registry_surface) =
+                source_backed_call_requirement_surface(requirement, step, execution, context)
+            && let Some(surface) = admit(registry_surface.proposition)
+        {
+            return Ok(Some(surface));
+        }
+        check_verification_deadline()?;
+        Ok(synthesize_surface_proposition(
+            &requirement.proposition,
+            ParameterBinding::new(context.parsed_function.parameters(), context.arguments),
+            &execution.core.state,
+        )
+        .and_then(admit))
+    }
+
     pub(in crate::surface::proof) fn retry_statement_after_refusal(
         &self,
         step: ProofStep,
@@ -7783,39 +7824,10 @@ impl<'a> Proof<'a> {
                     let admit_candidate = |candidate: ClickProposition| match proof
                         .lower_surface_goal(&candidate, "smart retained-have requirement")
                     {
-                        Ok(lowered)
-                            if propositions_match_after_canonical_loads(
-                                &lowered,
-                                &requirement.proposition,
-                            ) =>
-                        {
+                        Ok(lowered) if lowered_states_requirement(&lowered, &requirement) => {
                             Ok(Some(candidate))
                         }
-                        Ok(lowered) => {
-                            // The checked call may carry a generated arithmetic
-                            // guard already discharged in this proof scope.
-                            // Proving its exact consequent is sufficient for
-                            // the subsequent ordinary checked-step retry.
-                            let mut target = &requirement.proposition;
-                            for introduction in &requirement.introductions {
-                                if !matches!(
-                                    introduction,
-                                    crate::kernel::LoweringIntroduction::ObligationGuard
-                                ) {
-                                    break;
-                                }
-                                let Proposition::Implies(_, consequent) = target else {
-                                    break;
-                                };
-                                target = consequent;
-                                if propositions_match_after_canonical_loads(&lowered, target) {
-                                    return Ok(Some(candidate));
-                                }
-                            }
-                            check_verification_deadline()?;
-                            Ok(None)
-                        }
-                        Err(_) => {
+                        Ok(_) | Err(_) => {
                             check_verification_deadline()?;
                             Ok(None)
                         }
@@ -8530,6 +8542,36 @@ pub(in crate::surface::proof) fn collect_bounded_surface_conjunct_leaves(
 /// Compare retained-have round-trip forms while applying the kernel's load
 /// naming law to condition leaves. The lockstep worklist keeps this path
 /// iterative and bounded and never clones an entire proposition tree.
+/// Whether a lowered proposition states `requirement`: exactly, up to
+/// canonical condition loads, or as the consequent left once the generated
+/// arithmetic guards in front of it are discharged. Proving that consequent is
+/// enough for the retried step.
+pub(super) fn lowered_states_requirement(
+    lowered: &Proposition,
+    requirement: &UnresolvedRequirement,
+) -> bool {
+    if propositions_match_after_canonical_loads(lowered, &requirement.proposition) {
+        return true;
+    }
+    let mut target = &requirement.proposition;
+    for introduction in &requirement.introductions {
+        if !matches!(
+            introduction,
+            crate::kernel::LoweringIntroduction::ObligationGuard
+        ) {
+            break;
+        }
+        let Proposition::Implies(_, consequent) = target else {
+            break;
+        };
+        target = consequent;
+        if propositions_match_after_canonical_loads(lowered, target) {
+            return true;
+        }
+    }
+    false
+}
+
 fn propositions_match_after_canonical_loads(left: &Proposition, right: &Proposition) -> bool {
     const MAX_NODES: usize = 4096;
     let mut work = vec![(left, right)];
