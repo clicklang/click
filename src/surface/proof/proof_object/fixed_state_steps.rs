@@ -749,7 +749,10 @@ impl<'a> Proof<'a> {
         else {
             return Err(self.step_error("`choose` source is not an existential proposition"));
         };
-        let chosen_variable = Variable(self.state().locals().next_choice_variable);
+        let chosen_variable = self
+            .state
+            .fresh_existential_witness(&body, Variable(self.state().locals().next_choice_variable))
+            .map_err(|_| self.step_error("`choose` could not allocate a fresh witness"))?;
         let chosen = match sort {
             sort if sort.machine_integer_type().is_some() => sort
                 .machine_integer_type()
@@ -779,13 +782,16 @@ impl<'a> Proof<'a> {
             choice.name.clone(),
             ContractExpression::CFragment(CExpression::Value(chosen.clone())),
         );
-        locals.next_choice_variable += 1;
+        locals.next_choice_variable = chosen_variable.0.saturating_add(1);
         let added_facts = if self.facts().contains_top_level(&chosen_fact) {
             Vec::new()
         } else {
             vec![chosen_fact.clone()]
         };
-        let facts = self.facts().with_kernel_checked_fact(chosen_fact.clone());
+        let facts = self
+            .facts()
+            .with_kernel_checked_fact(chosen_fact.clone())
+            .with_reserved_variables([chosen_variable]);
         let mut transition =
             self.checked_fact_transition(locals, facts, false, added_facts, vec![chosen_fact]);
         if let Some(projection) = self.build_chosen_projection(
@@ -927,7 +933,9 @@ impl<'a> Proof<'a> {
             if !facts.contains_top_level(&fact) {
                 added.push(fact.clone());
             }
-            facts = facts.with_kernel_checked_fact(fact.clone());
+            facts = facts
+                .with_kernel_checked_fact(fact.clone())
+                .with_reserved_variables([variable]);
             checked.push(fact);
         }
         // The opened body is spelled as written, under the names just bound,
@@ -1137,7 +1145,10 @@ impl<'a> Proof<'a> {
                 "`choose(... from invariant N)` currently requires an algebraic existential invariant",
             ));
         };
-        let chosen_variable = Variable(self.state().locals().next_choice_variable);
+        let chosen_variable = self
+            .state
+            .fresh_existential_witness(&body, Variable(self.state().locals().next_choice_variable))
+            .map_err(|_| self.step_error("`choose` could not allocate a fresh witness"))?;
         let chosen = crate::kernel::AlgebraicTerm {
             algebraic_type: algebraic_type.clone(),
             node: crate::kernel::AlgebraicTermNode::Variable(chosen_variable),
@@ -1162,7 +1173,10 @@ impl<'a> Proof<'a> {
             .then(|| fact.clone())
             .into_iter()
             .collect();
-        let facts = self.facts().with_kernel_checked_fact(fact.clone());
+        let facts = self
+            .facts()
+            .with_kernel_checked_fact(fact.clone())
+            .with_reserved_variables([chosen_variable]);
         Ok(self.checked_fact_transition(locals, facts, false, added, vec![fact]))
     }
 
@@ -1393,7 +1407,10 @@ impl<'a> Proof<'a> {
             .then(|| fact.clone())
             .into_iter()
             .collect();
-        let facts = self.facts().with_kernel_checked_fact(fact.clone());
+        let facts = self
+            .facts()
+            .with_kernel_checked_fact(fact.clone())
+            .with_reserved_variables([chosen_variable]);
         Ok(self.checked_fact_transition(locals, facts, false, added, vec![fact]))
     }
 
@@ -1454,7 +1471,10 @@ impl<'a> Proof<'a> {
                 "pure algebraic `choose` requires an algebraic existential requirement",
             ));
         };
-        let chosen_variable = Variable(self.state().locals().next_choice_variable);
+        let chosen_variable = self
+            .state
+            .fresh_existential_witness(&body, Variable(self.state().locals().next_choice_variable))
+            .map_err(|_| self.step_error("`choose` could not allocate a fresh witness"))?;
         let chosen = crate::kernel::AlgebraicTerm {
             algebraic_type: algebraic_type.clone(),
             node: crate::kernel::AlgebraicTermNode::Variable(chosen_variable),
@@ -1479,7 +1499,10 @@ impl<'a> Proof<'a> {
             .then(|| fact.clone())
             .into_iter()
             .collect();
-        let facts = self.facts().with_kernel_checked_fact(fact.clone());
+        let facts = self
+            .facts()
+            .with_kernel_checked_fact(fact.clone())
+            .with_reserved_variables([chosen_variable]);
         Ok(self.checked_fact_transition(locals, facts, false, added, vec![fact]))
     }
 
