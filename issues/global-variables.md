@@ -103,12 +103,12 @@ end-to-end evidence. Audit verification reproduced their current failures:
 
 These observations do not prove one common verifier defect: contract permission
 coverage, proof steps, dependent resource evaluation and state transport must
-be distinguished. The related work belongs with
-[static-state-caller-transport.md](static-state-caller-transport.md), and any
-resource-engine defects with their existing owners. That issue also retains
-`examples/multifile-registry`, which remains quarantined in the ordinary gate.
-Their initializer syntax and layout can have parser coverage while their caller
-proofs remain incomplete. No expectation or quarantine is changed by this audit.
+be distinguished. This issue retains them, and any resource-engine defects stay
+with their existing owners. `examples/multifile-registry`, which shared their
+caller-transport gap, now verifies and is no longer quarantined; these five
+fixtures still fail for the reasons above (rechecked 2026-10-13). Their
+initializer syntax and layout can have parser coverage while their caller
+proofs remain incomplete.
 
 [linked-initializer-private-names.md](linked-initializer-private-names.md)
 retains the defining-translation-unit initializer-resolution gap.
