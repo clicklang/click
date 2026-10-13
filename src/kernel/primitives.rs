@@ -8292,6 +8292,13 @@ impl CResourceSpec {
         &self.term
     }
 
+    pub(in crate::kernel) fn with_captured_memory_segment(&self, segment: CMemorySegment) -> Self {
+        debug_assert!(matches!(self.term, CResourceTerm::Memory(_)));
+        let mut captured = self.clone();
+        captured.term = CResourceTerm::Memory(segment);
+        captured
+    }
+
     pub fn with_mutex_authority_binding(
         mut self,
         identity: Variable,

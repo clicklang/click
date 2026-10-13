@@ -3086,6 +3086,13 @@ loop {
 }
 ```
 
+An unconditional plain-memory clause evaluates its pointer and bounds at loop
+entry, before modified locals are havocked. For example, `views p[0..n]`
+continues to describe the original physical range when the body advances `p`
+and decrements `n`. An invariant such as `viewable(p[0..n])` separately owes
+the current cursor and remaining range at each head. Named resource binders
+retain their own argument and model rebinding rules.
+
 A declared resource must be one the enclosing function already holds; a loop
 cannot own what its function does not. The loop then has the shape of a callee:
 its body executes owning exactly what the loop declared, with everything else
