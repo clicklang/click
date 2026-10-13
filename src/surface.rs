@@ -3408,16 +3408,6 @@ pub struct CertifiedFactTransport {
     pub(crate) frame_premises: Vec<Proposition>,
 }
 
-/// Private semantic evidence retained while a smart tactic constructs its
-/// [`ProofCertificate`]. This is planner metadata, not a proof step and cannot
-/// cross the smart/simple boundary.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PlannedStatementTransition {
-    pub(crate) transition: CertifiedStatementTransition,
-    pub(crate) next_opaque_call: u64,
-    pub(crate) next_kernel_variable: u64,
-}
-
 /// A tactic in an explicit `.click` proof script.
 ///
 /// Tactics are classified by [`ProofTactic::class`]. A `SourceProof::Script`

@@ -482,15 +482,6 @@ impl<'a> Proof<'a> {
                 != parent_execution.core.frontier_loop_rules.len() + arm.introduced_loop_rules.len()
             || arm.execution.core.unfolded_predicates.len()
                 != parent_execution.core.unfolded_predicates.len() + arm.introduced_unfolds.len()
-            || arm
-                .execution
-                .presentation
-                .planned_statement_transitions
-                .len()
-                != parent_execution
-                    .presentation
-                    .planned_statement_transitions
-                    .len()
         {
             return Err(self.step_error(format!(
                 "{name} execution arm changed check metadata that the checked {variant} has not migrated"
@@ -2618,15 +2609,6 @@ impl<'a> Proof<'a> {
                 || !arm.introduced_derivations.is_empty()
                 || !arm.introduced_loop_clauses.is_empty()
                 || !arm.introduced_loop_rules.is_empty()
-                || arm
-                    .execution
-                    .presentation
-                    .planned_statement_transitions
-                    .len()
-                    != parent_execution
-                        .presentation
-                        .planned_statement_transitions
-                        .len()
         }) {
             return Ok(None);
         }
