@@ -455,6 +455,16 @@ fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String
                 collect_applied_theorems(&proof_if.else_tactics, names);
             }
             ProofTactic::CloseInvariantsBy(body) => collect_applied_theorems(body, names),
+            ProofTactic::StepProved { proof, .. } => match proof {
+                StepProof::By(body) => collect_applied_theorems(body, names),
+                StepProof::Requires(entries) => {
+                    for entry in entries {
+                        if let SourceProof::Script(tactics) = &entry.have.proof {
+                            collect_applied_theorems(tactics, names);
+                        }
+                    }
+                }
+            },
             ProofTactic::Both(both) => {
                 collect_applied_theorems(&both.left_tactics, names);
                 collect_applied_theorems(&both.right_tactics, names);
@@ -970,7 +980,8 @@ fn first_executing_tactic(tactics: &[ProofTactic]) -> Option<&'static str> {
         ProofTactic::Step
         | ProofTactic::StepBind(_)
         | ProofTactic::StepContract(_)
-        | ProofTactic::StepCall(_) => Some("step"),
+        | ProofTactic::StepCall(_)
+        | ProofTactic::StepProved { .. } => Some("step"),
         ProofTactic::SmartExecute => Some("execute"),
         ProofTactic::ExecuteUntil(_) => Some("execute_until"),
         ProofTactic::Loop(_) => Some("loop"),

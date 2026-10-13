@@ -2127,6 +2127,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::StepContract(_)
             | ProofTactic::StepBind(_)
             | ProofTactic::StepCall(_)
+            | ProofTactic::StepProved { .. }
             | ProofTactic::UserTactic(_)
             | ProofTactic::SmartExecute
             | ProofTactic::ExecuteUntil(_)
@@ -2154,7 +2155,8 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Step
         | ProofTactic::StepBind(_)
         | ProofTactic::StepContract(_)
-        | ProofTactic::StepCall(_) => "step",
+        | ProofTactic::StepCall(_)
+        | ProofTactic::StepProved { .. } => "step",
         ProofTactic::UserTactic(_) => "tactic",
         ProofTactic::SmartExecute => "execute",
         ProofTactic::ExecuteUntil(_) => "execute_until",
