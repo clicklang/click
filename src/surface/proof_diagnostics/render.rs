@@ -371,6 +371,20 @@ impl SnapshotLabels {
         self.source_names.entry(variable).or_insert(name);
     }
 
+    /// Names `variable` with `name` and its C type when nothing named it yet.
+    pub(crate) fn fallback_source_name(
+        &mut self,
+        variable: Variable,
+        name: String,
+        c_type: crate::kernel::CType,
+    ) {
+        if let std::collections::hash_map::Entry::Vacant(entry) = self.source_names.entry(variable)
+        {
+            entry.insert(name);
+            self.source_types.entry(variable).or_insert(c_type);
+        }
+    }
+
     fn source_name_for(&self, variable: Variable) -> Option<&str> {
         self.source_names
             .get(&variable)
