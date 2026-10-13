@@ -1695,35 +1695,47 @@ impl<'a> Proof<'a> {
         if leaves.len() <= 8 {
             return None;
         }
+        // Leaves are checked last first. A loop-invariant bundle guards each
+        // member by every earlier declaration, so its last members are the
+        // largest and the ones that exceed the synthesis bounds. Checking
+        // them first makes a refusal one bounded attempt; checking in order
+        // reified every earlier member first, and the binary descent that
+        // follows a refusal repeated that at each level. The result does not
+        // depend on the order.
         let surfaces = if let Some(surface) = self.surface_goal() {
             let mut pending = vec![surface];
-            let mut leaves = Vec::new();
+            let mut surfaces = Vec::new();
             while let Some(surface) = pending.pop() {
                 if let ClickProposition::And(left, right) = surface {
                     pending.push(right);
                     pending.push(left);
                 } else {
-                    leaves.push(surface.clone());
+                    surfaces.push(surface.clone());
                 }
             }
-            leaves
-        } else {
-            leaves
-                .iter()
-                .map(|goal| self.synthesized_bundle_member_surface(goal))
-                .collect::<Option<Vec<_>>>()?
-        };
-        if surfaces.len() != leaves.len() {
-            return None;
-        }
-        for (surface, goal) in surfaces.iter().zip(leaves) {
-            let lowered = self
-                .lower_surface_goal(surface, "conjunction certificate leaf")
-                .ok()?;
-            if !crate::kernel::proof::propositions_are_alpha_equal(&lowered, goal) {
+            if surfaces.len() != leaves.len() {
                 return None;
             }
-        }
+            for (surface, goal) in surfaces.iter().zip(&leaves).rev() {
+                let lowered = self
+                    .lower_surface_goal(surface, "conjunction certificate leaf")
+                    .ok()?;
+                if !crate::kernel::proof::propositions_are_alpha_equal(&lowered, goal) {
+                    return None;
+                }
+            }
+            surfaces
+        } else {
+            // A synthesized member is kept only when it lowers back to its
+            // leaf, so it needs no second check.
+            let mut surfaces = leaves
+                .iter()
+                .rev()
+                .map(|goal| self.synthesized_bundle_member_surface(goal))
+                .collect::<Option<Vec<_>>>()?;
+            surfaces.reverse();
+            surfaces
+        };
         Some(surfaces)
     }
 
