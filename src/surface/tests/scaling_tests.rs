@@ -7733,3 +7733,57 @@ fn unrelated_call_work_stays_flat_with_kept_pointer_aliases() {
         "call work grew with irrelevant aliases: {calls:?}"
     );
 }
+
+#[test]
+fn symbolic_index_store_work_is_flat_across_recorded_order_chains() {
+    let mut peaks = Vec::new();
+    let mut totals = Vec::new();
+    for size in [8, 16, 32, 64] {
+        let parameters = (0..=size)
+            .map(|i| format!(", int32 x{i}"))
+            .collect::<String>();
+        let stores = (1..=size)
+            .map(|i| format!("data[x{i}] = {i};"))
+            .collect::<String>();
+        let c = format!(
+            "int32 caller(int32* data, int32 len{parameters}) {{ int32 first; data[x0] = 100; {stores} first = data[x0]; return first; }}"
+        );
+        let requirements = (0..size)
+            .map(|i| format!("requires x{i} < x{};", i + 1))
+            .collect::<String>();
+        let steps = "step();".repeat(size + 4);
+        let source = format!(
+            "verifying \"ordered.c\"; int32 caller(int32* data, int32 len{parameters}) {{ owns data[0..len]; requires 0 <= x0; {requirements} requires x{size} < len; ensures result == 100; }} by {{ {steps} simp(); }}"
+        );
+        let ((verified, work), events) = crate::instrumentation::collect(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                verify_c0_sources(&source, &[("ordered.c", c.as_str())])
+            })
+        });
+        verified.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
+        let peak = events
+            .iter()
+            .filter_map(|event| match event {
+                crate::instrumentation::VerificationEvent::TacticFinished {
+                    tactic, work, ..
+                } if tactic.tactic_name == "step"
+                    && tactic.source_index >= 1
+                    && tactic.source_index <= size + 1 =>
+                {
+                    Some(*work)
+                }
+                _ => None,
+            })
+            .max()
+            .unwrap();
+        peaks.push(peak);
+        totals.push(ScalingSample {
+            size,
+            work,
+            named_work: BTreeMap::new(),
+        });
+    }
+    eprintln!("ordered store peaks: {peaks:?}");
+    assert!(peaks.iter().all(|work| *work <= peaks[0] * 2), "{peaks:?}");
+    assert_near_linear_scaling("symbolic ordered stores", &totals);
+}

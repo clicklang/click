@@ -268,25 +268,23 @@ charged to visible semantic output rather than hidden ambient state:
   line of constant-index stores (`a[0] = …; a[1] = …`) costs 477 to 11,339
   units of store work at 4 to 64 stores in a debug build (467 to 8,959 in
   release), where it cost 445 to 46,017
-  (`stores_to_constant_indices_are_near_linear`). Symbolic indices are
-  still asked cell by cell, so that line is still `N^2/2` questions, but a
-  question no longer walks its own order path: when only a chain of order
-  facts separates the cells (`c0 < c1 < …`), each walk used to climb the
-  chain between its two indices and the line cost `N^3` (830 to 1,032,462).
-  The order walk now shares reachability across walks toward one target
-  (`OrderReachMemo` in
-  `src/kernel/assumptions/condition_reasoning/order_paths.rs`): a success
-  files the states on its path, a complete refusal every state it reached,
-  and only over terms that read no memory, where each test the walk applies
-  is a question about the fact set alone. The line now costs 738 to 123,290
-  in order and 900 to 149,372 in reverse order
-  (`stores_to_chain_ordered_indices_are_quadratic_not_cubic`, pinned below
-  the cubic curve), and
-  `memory_resolution_order_walk_memo_agrees_with_the_full_scan` compares the
-  memoized walk with the full scan on generated fact sets. The `N^2/2`
-  questions for symbolic indices remain a known violation of the contract;
-  removing them needs the cells indexed by the index terms the facts order,
-  which no rule has yet. Union views are still visited per candidate on
+  (`stores_to_constant_indices_are_near_linear`). Recorded strict signed
+  variable orders now also form incremental paths, with logical ranks from a
+  weighted union forest rather than variable identifiers. Exact order and
+  endpoint-bound queries use those paths without traversing the intervening
+  facts. Each cell snapshot files matching array cells by logical rank and
+  updates that derived index from persistent-map deltas. A store visits only
+  nearby ranks whose maximum scalar width may overlap, plus cells of other
+  bases, strides, or order paths. Branching edges never imply an order between
+  siblings; withdrawing an edge invalidates the path index. Implicit provenance
+  capture retains the ordinary reasoning and invalidation path.
+  `symbolic_index_store_work_is_flat_across_recorded_order_chains` verifies the
+  original symbolic-index source at 8, 16, 32, and 64 stores: the largest store
+  costs 232, 232, 232, and 241 units, and whole verification is near linear.
+  Scalar reference comparisons also cover shuffled variable identifiers,
+  wide neighboring cells, mixed strides, and removed order facts. General
+  symbolic shapes still use the ordinary order walk and alias checks. Union
+  views are still visited per candidate on
   every store. The initialization record (`InitializedBytes` in
   `src/kernel/primitives/initialized_bytes.rs`) is not visited by a store:
   a store only adds to it, merging constant-offset bytes into one run per
