@@ -134,6 +134,12 @@ step is still checked.
 | `witness { name: value, ... }` | simple | On an existential goal, instantiate each named binder with its value, in the order written, and continue with the instantiated body. One `witness` can supply every binder of `exists (x: T, y: U) { ... }`. | A wrong binder, ill-typed value, or nonexistential goal fails. Click records the exact witness; expansion is unchanged, and profiling charges one instantiation. | [`witness_and_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_and_choose.md) |
 | `obtain (name: Type, ...) { P }` | simple | Open an already established `exists (name: Type, ...) { P }`, introducing the bound values and instantiated body into the proof context. Each name is in scope for every later tactic of the same proof block, whatever its type: a `have` goal, an `instantiate` argument or `using` premise, a `contradiction` fact, a theorem argument, or a `witness`. | An unavailable existential, wrong binder type, or name already in scope fails. Prove the existential with `have` first if needed. Expansion retains this exact step. | [`integer_exists_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_exists_choose.md) |
 
+When `intro` must freshen a universal binder, it uses the reserved logical-witness
+range. Existential choices use that same range, separate from C execution,
+load and binder identities. Issued witnesses remain reserved even when their
+instantiated body does not mention them, so later introductions and choices
+cannot reuse a live proof binding.
+
 `both { ... } and { ... }` proves an `A and B` goal by opening the exact `A`
 and `B` child goals. Both arms inherit the parent assumptions; neither inherits
 facts proved only in the other arm. This differs from `assumption()`, which
