@@ -1176,13 +1176,11 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
     ));
 }
 
-/// The planning counter is live: a bare `step()` whose call precondition no
-/// fact states exactly (`memcmp`'s per-byte `defined` requirement, from the
-/// caller's `viewable` range) records the hidden derivation that
-/// `issues/simplify-step.md` removes. This keeps the counter's zero
-/// assertions elsewhere meaningful.
+/// A bare `step()` whose call precondition no fact states exactly
+/// (`memcmp`'s per-byte `defined` requirement, from the caller's `viewable`
+/// range) proves it by the implicit `auto` and records no hidden derivation.
 #[test]
-fn bare_step_records_a_hidden_prerequisite_derivation() {
+fn bare_step_proves_an_open_obligation_by_implicit_auto() {
     let c_source = r#"
             int32 compare_self(uint8 bytes[]) {
                 return memcmp(bytes, bytes, 2);
@@ -1200,9 +1198,36 @@ fn bare_step_records_a_hidden_prerequisite_derivation() {
         verify_c0_sources(click_source, &[("compare.c", c_source)])
     });
     verified.expect("the catalog memcmp call should verify");
-    assert_eq!(
-        planning_transitions,
-        vec![("compare_self.ensures_0".to_string(), 0, "step".to_string())],
-        "only the call step derives its precondition by search"
+    assert_eq!(planning_transitions, vec![]);
+    crate::surface::proof::without_implicit_auto(|| {
+        verify_c0_sources(click_source, &[("compare.c", c_source)])
+    })
+    .expect_err("with the implicit `auto` off, the open obligation is refused");
+}
+
+/// The planning counter is live: a bare step whose open obligation the
+/// implicit `auto` does not prove falls back to the former search, which
+/// records the hidden derivation `issues/simplify-step.md` removes. This
+/// keeps the counter's zero assertions elsewhere meaningful.
+#[test]
+fn bare_step_fallback_records_a_hidden_prerequisite_derivation() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/population_consumption_at_close.md");
+    let loaded = crate::cli::load_target_inputs(&path, None).unwrap();
+    let fixture = loaded.mdtest.as_ref().unwrap();
+    let inputs = fixture
+        .c_sources
+        .iter()
+        .map(|(name, body)| (name.as_str(), body.as_str()))
+        .collect::<Vec<_>>();
+    let (verified, planning_transitions) =
+        collect_planning_statement_transitions(|| verify_c0_project(&loaded.project, &inputs));
+    verified.expect("the population fixture should verify");
+    assert!(
+        planning_transitions
+            .iter()
+            .all(|(_, _, tactic)| tactic == "step")
+            && !planning_transitions.is_empty(),
+        "the fallback should record its hidden derivations: {planning_transitions:?}"
     );
 }
