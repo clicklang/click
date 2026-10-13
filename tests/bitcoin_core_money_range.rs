@@ -3828,6 +3828,84 @@ fn axiomatic_std_array_element_access_verifies() {
 }
 
 #[test]
+fn axiomatic_std_array_reference_element_resources_verify() {
+    for (name, harness, return_type, parameters, postcondition, clauses, refusals) in [
+        (
+            "array-reference-element-read",
+            "#include <array>\nint probe(std::array<int, 4>& a) noexcept { return a[1]; }\n",
+            "int32",
+            format!("{INT_ARRAY}& a"),
+            "result == std_array_data(a)[1]",
+            vec!["views a._M_elems[1];", "views std_array_data(a)[1];"],
+            vec!["views std_array_data(a)[2];"],
+        ),
+        (
+            "array-reference-element-write",
+            "#include <array>\nint probe(std::array<int, 4>& a, int v) noexcept { a[1] = v; return a[1]; }\n",
+            "int32",
+            format!("{INT_ARRAY}& a, int32 v"),
+            "result == v and std_array_data(a)[1] == v",
+            vec!["owns std_array_data(a)[1];"],
+            vec!["views std_array_data(a)[1];", "owns std_array_data(a)[0];"],
+        ),
+        (
+            "array-reference-byte-element-write",
+            "#include <array>\nunsigned char probe(std::array<unsigned char, 4>& a, unsigned char v) noexcept { a[1] = v; return a[1]; }\n",
+            "uint8",
+            "struct array__unsigned_char__value_unsigned_long_4& a, uint8 v".into(),
+            "result == v and std_array_data(a)[1] == v",
+            vec!["owns std_array_data(a)[1];"],
+            vec!["views std_array_data(a)[1];", "owns std_array_data(a)[0];"],
+        ),
+    ] {
+        let (root, import) = axiomatic_span_fixture(name, harness, ARRAY_DEPENDENCIES);
+        let path = root.join("span.click");
+        let source_for = |clause: &str| {
+            format!(
+                "verifying \"span-probe.cpp\"; {return_type} probe({parameters}) {{ {clause} ensures {postcondition}; }} by {{ execute(); simp(); }}"
+            )
+        };
+        for clause in clauses {
+            let source = source_for(clause);
+            fs::write(&path, &source).unwrap();
+            let parsed = read_click_project(&path, &source).unwrap();
+            verify_program_prepared_project(&parsed, &import)
+                .unwrap_or_else(|error| panic!("{name}: {}\n{source}", error.message()));
+            let expanded = expand_project_claim_source_by_label(
+                &parsed,
+                &ProgramInputs::program(&import),
+                "probe.contract",
+            )
+            .unwrap();
+            verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
+                .unwrap_or_else(|error| panic!("{name}: {}\n{expanded}", error.message()));
+        }
+        for clause in refusals {
+            let source = source_for(clause);
+            let parsed = read_click_project(&path, &source).unwrap();
+            let error = verify_program_prepared_project(&parsed, &import)
+                .expect_err("a different element or a view cannot authorize the access");
+            let report = error.concise_report();
+            assert!(!report.contains("type mismatch"), "{report}");
+            assert!(!report.contains("*&a["), "{report}");
+            if name.ends_with("write") {
+                assert!(report.contains("owns"), "{report}");
+            }
+        }
+        if name == "array-reference-element-read" {
+            let source = source_for("views a._M_elems[2147483647 + 1];");
+            let parsed = read_click_project(&path, &source).unwrap();
+            let error = verify_program_prepared_project(&parsed, &import)
+                .expect_err("overflowing element arithmetic must be refused");
+            let report = error.concise_report();
+            assert!(report.contains("segment std_array_data(a)["), "{report}");
+            assert!(!report.contains("*&a["), "{report}");
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
 #[ignore = "nightly: two more pinned C++ exports"]
 fn axiomatic_std_array_size_and_data_verify() {
     check_generic_span_cases(vec![
