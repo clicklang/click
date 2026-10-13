@@ -214,9 +214,15 @@ fn function_interface(
     layouts: &BTreeMap<String, syntax::C0StructLayout>,
 ) -> Result<syntax::C0Function, String> {
     let return_reference = matches!(source.return_type, CppType::LvalueReference { .. });
-    let return_constant = matches!(&source.return_type, CppType::LvalueReference { pointee } if Scalar::is(pointee, ScalarKind::Int32, true));
+    let return_element = super::scalar::reference_element(&source.return_type);
+    let return_constant = return_element.is_some_and(|element| element.is_const);
     let return_type = if source.return_type == CppType::Void {
         C0Type::Void
+    } else if let Some(element) = return_element {
+        element
+            .kind
+            .pointer_proof_type()
+            .ok_or("unsupported native reference return interface")?
     } else if matches!(source.return_type, CppType::Record { .. }) || return_reference {
         C0Type::Int32Pointer
     } else if let CppType::Pointer { pointee } = &source.return_type {
@@ -256,19 +262,19 @@ fn function_interface(
                 Ok(syntax::C0Parameter::new(C0Type::UInt8Pointer, carried_name.clone(), None)
                     .with_struct_value(name.clone(), layout.clone()))
             }
-            CppType::LvalueReference { pointee }
-                if Scalar::of(pointee).is_some_and(|scalar| scalar.kind == ScalarKind::Int32) =>
+            reference @ CppType::LvalueReference { .. }
+                if super::scalar::reference_element(reference).is_some() =>
             {
-                let CppType::Integer { is_const, .. } = pointee.as_ref()
-                else {
-                    unreachable!("guarded by the supported integer-reference pattern")
-                };
+                let element = super::scalar::reference_element(reference).unwrap();
                 Ok(syntax::C0Parameter::new(
-                    C0Type::Int32Pointer,
+                    element
+                        .kind
+                        .pointer_proof_type()
+                        .ok_or("unsupported native reference parameter interface")?,
                     carried_name.clone(),
                     None,
                 )
-                .with_pointee_constant(*is_const)
+                .with_pointee_constant(element.is_const)
                 .with_reference(is_reference))
             }
             CppType::LvalueReference { pointee }

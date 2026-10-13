@@ -805,6 +805,9 @@ pub enum CppScalarCastKind {
     IntegralToBoolean,
     BooleanToSignedIntegral,
     BytePointerCast,
+    /// Lvalue-to-rvalue conversion of a returned native reference: the call
+    /// yields the referent's address, and the conversion reads it.
+    ReferenceLoad,
 }
 
 impl CppScalarConversion {
@@ -812,6 +815,22 @@ impl CppScalarConversion {
         self.span.validate(logical_source)?;
         if !same_scalar_type(source, &self.source_type) {
             return Err("C++ call conversion chain has a mismatched source type".into());
+        }
+        if self.cast_kind == CppScalarCastKind::ReferenceLoad {
+            let CppType::LvalueReference { pointee } = &self.source_type else {
+                return Err("C++ reference load requires a returned reference".into());
+            };
+            return if !self.explicit
+                && Scalar::pointer_element(pointee, true).is_some()
+                && same_scalar_type(&super::scalar::scalar_value_type(pointee), &self.value_type)
+            {
+                Ok(())
+            } else {
+                Err("C++ reference load must read the referent's native type".into())
+            };
+        }
+        if matches!(source, CppType::LvalueReference { .. }) {
+            return Err("C++ call conversion of a reference must first load it".into());
         }
         if self.cast_kind == CppScalarCastKind::BytePointerCast {
             return if self.explicit
@@ -836,7 +855,9 @@ impl CppScalarConversion {
         let to = Scalar::mutable_kind(&self.value_type)
             .ok_or("unsupported C++ call conversion result")?;
         let valid = match self.cast_kind {
-            CppScalarCastKind::BytePointerCast => unreachable!("checked pointer conversion"),
+            CppScalarCastKind::BytePointerCast | CppScalarCastKind::ReferenceLoad => {
+                unreachable!("checked before scalar conversions")
+            }
             CppScalarCastKind::NoOp => same_scalar_type(&self.source_type, &self.value_type),
             CppScalarCastKind::IntegralCast => {
                 to.is_integer()
@@ -952,6 +973,16 @@ pub enum CppStatement {
     },
     Store {
         pointer: CppExpression,
+        value: CppExpression,
+        span: CppSpan,
+    },
+    /// `call(...) = value` through a returned native reference. C++17
+    /// sequences an assignment's right operand first, so the value is read
+    /// before the call yields the referent's address and is stored there.
+    CallStore {
+        callee: CppFunctionReference,
+        arguments: Vec<CppCallArgument>,
+        value_type: CppType,
         value: CppExpression,
         span: CppSpan,
     },
@@ -1976,7 +2007,9 @@ impl CppFunction {
                     {
                         validate_record_reference(records, declaration_id, name)?;
                     } else {
-                        if require_int32(pointee, true, "reference pointee").is_err() {
+                        if require_native_pointer_element(pointee, true, "reference pointee")
+                            .is_err()
+                        {
                             require_const_signed_int64(pointee, "reference pointee")?;
                         }
                     }
@@ -2218,7 +2251,7 @@ impl CppFunction {
                         )?;
                     }
                     CppType::LvalueReference { pointee } => {
-                        require_int32(pointee, true, "automatic reference local")?;
+                        require_native_pointer_element(pointee, true, "automatic reference local")?;
                     }
                     CppType::Record {
                         declaration_id,
@@ -2660,6 +2693,7 @@ impl CppStatement {
                 pointer.require_pure_context()?;
                 value.require_pure_context()?;
             }
+            Self::CallStore { value, .. } => value.require_pure_context()?,
             _ => {}
         }
         match self {
@@ -2726,7 +2760,7 @@ impl CppStatement {
                 let target_type = validate_place_reference(target, places, logical_source)?;
                 match target_type {
                     CppType::LvalueReference { pointee } => {
-                        require_int32(pointee, false, "assignment target")?;
+                        require_native_pointer_element(pointee, false, "assignment target")?;
                     }
                     CppType::Integer { .. } | CppType::Enumeration { .. } => {
                         require_scalar_integer(target_type, "assignment target")?;
@@ -2766,6 +2800,24 @@ impl CppStatement {
                 let CppType::Pointer { pointee } = pointer.value_type() else { unreachable!("validated native pointer") };
                 if !same_scalar_type(pointee, value.value_type()) {
                     return Err("C++ store must preserve the native pointee type".into());
+                }
+                Ok(())
+            }
+            Self::CallStore {
+                callee,
+                arguments,
+                value_type,
+                value,
+                span,
+            } => {
+                validate_call(callee, arguments, span, places, records, logical_source)?;
+                let CppType::LvalueReference { pointee } = value_type else {
+                    return Err("C++ call store requires a returned reference".into());
+                };
+                require_native_pointer_element(pointee, false, "call store referent")?;
+                value.validate(places, records, logical_source)?;
+                if !same_scalar_type(&super::scalar::scalar_value_type(pointee), value.value_type()) {
+                    return Err("C++ call store must preserve the referent's native type".into());
                 }
                 Ok(())
             }
@@ -3388,7 +3440,7 @@ impl CppCallArgument {
                 }
                 if !place.projections.is_empty() || matches!(root, CppType::LvalueReference { .. })
                 {
-                    require_int32(value_type, true, "call reference argument")
+                    require_native_pointer_element(value_type, true, "call reference argument")
                 } else {
                     Err("C++ reference argument does not name a supported reference".into())
                 }
@@ -3581,8 +3633,17 @@ impl CppExpression {
                 let place_type = validate_place_reference(place, places, logical_source)?;
                 match place_type {
                     CppType::LvalueReference { pointee } => {
-                        if require_int32(pointee, true, "loaded reference pointee").is_ok() {
-                            require_int32(value_type, false, "loaded value type")
+                        if require_native_pointer_element(pointee, true, "loaded reference pointee")
+                            .is_ok()
+                        {
+                            if same_scalar_type(
+                                &super::scalar::scalar_value_type(pointee),
+                                value_type,
+                            ) {
+                                Ok(())
+                            } else {
+                                Err("C++ reference load changed the referent type".into())
+                            }
                         } else {
                             require_signed_int64(pointee, true, "loaded reference pointee")?;
                             require_signed_int64(value_type, false, "loaded value type")
@@ -3668,18 +3729,15 @@ impl CppExpression {
                 let CppType::LvalueReference { pointee } = value_type else {
                     return Err("C++ reference binding requires a reference result type".into());
                 };
-                require_int32(pointee, true, "reference result pointee")?;
+                require_native_pointer_element(pointee, true, "reference result pointee")?;
                 let CppType::Pointer { pointee: source } = address.value_type() else {
                     return Err(
                         "C++ reference binding requires an address, not a scalar value".into(),
                     );
                 };
-                require_int32(source, true, "reference binding address pointee")?;
+                require_native_pointer_element(source, true, "reference binding address pointee")?;
                 // Qualification may be added, never removed; widths remain exact.
-                if !same_scalar_type(source, pointee)
-                    && !(Scalar::is(source, ScalarKind::Int32, false)
-                        && Scalar::is(pointee, ScalarKind::Int32, true))
-                {
+                if !super::scalar::reference_binds(source, pointee) {
                     return Err(
                         "C++ reference binding changed referent type or removed const".into(),
                     );
@@ -4105,6 +4163,7 @@ impl CppStatement {
             Self::Declare { .. }
             | Self::Assign { .. }
             | Self::Store { .. }
+            | Self::CallStore { .. }
             | Self::MemberStore { .. }
             | Self::MemberConstruct { .. }
             | Self::TrivialCopy { .. }
@@ -4596,6 +4655,12 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
             | CppStatement::Store { .. }
             | CppStatement::MemberStore { .. }
             | CppStatement::TrivialCopy { .. } => {}
+            CppStatement::CallStore {
+                callee,
+                arguments,
+                value_type,
+                ..
+            } => collect_scalar_call(callee, arguments, Some(value_type), calls),
         }
         if matches!(statement, CppStatement::Declare { local, .. }
             if Scalar::of(&local.value_type).is_some_and(|scalar| scalar.is_const))
@@ -4639,6 +4704,7 @@ fn collect_statement_expression_calls<'a>(
             collect_expression_calls(pointer, calls);
             collect_expression_calls(value, calls);
         }
+        CppStatement::CallStore { value, .. } => collect_expression_calls(value, calls),
         CppStatement::If {
             condition: CppCondition::Expression(value),
             ..
@@ -4807,22 +4873,18 @@ fn validate_call_arguments(
                 if let Some(root) = caller.place_type(&place.declaration_id) {
                     let (actual, actual_const) = resolve_reference_type(root, place, records)?;
                     match (actual, expected.as_ref()) {
-                        (
-                            CppType::Integer {
-                                bits: 32,
-                                signed: true,
-                                ..
-                            },
-                            CppType::Integer {
-                                bits: 32,
-                                signed: true,
-                                is_const: expected_const,
-                                ..
-                            },
-                        ) => {
+                        (actual, expected)
+                            if Scalar::pointer_element(expected, true).is_some()
+                                && same_scalar_type(
+                                    &super::scalar::scalar_value_type(actual),
+                                    &super::scalar::scalar_value_type(expected),
+                                ) =>
+                        {
+                            let expected_const =
+                                Scalar::of(expected).is_some_and(|scalar| scalar.is_const);
                             (!place.projections.is_empty()
                                 || matches!(root, CppType::LvalueReference { .. }))
-                                && (*expected_const || !actual_const)
+                                && (expected_const || !actual_const)
                         }
                         (
                             CppType::Record {
@@ -5250,6 +5312,22 @@ fn validate_statement_constant_references(
                     )?;
                 }
             }
+            CppStatement::CallStore {
+                arguments, value, ..
+            } => {
+                for argument in arguments {
+                    argument.validate_constant_references(
+                        logical_source,
+                        constants,
+                        referenced_constants,
+                    )?;
+                }
+                value.validate_constant_references(
+                    logical_source,
+                    constants,
+                    referenced_constants,
+                )?;
+            }
         }
     }
     Ok(())
@@ -5665,7 +5743,7 @@ fn require_function_return_type(
 fn require_return_value_type(value: &CppType, label: &str) -> Result<(), String> {
     if require_scalar_integer(value, label).is_ok()
         || require_native_object_pointer(value, label).is_ok()
-        || matches!(value, CppType::LvalueReference { pointee } if require_int32(pointee, true, label).is_ok())
+        || super::scalar::reference_element(value).is_some()
     {
         Ok(())
     } else {
@@ -8062,6 +8140,92 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn reference_loads_read_only_the_returned_referent() {
+        let unsigned_char = |is_const| CppType::Integer {
+            bits: 8,
+            signed: false,
+            is_const,
+            source_aliases: Vec::new(),
+        };
+        let reference = |pointee| CppType::LvalueReference {
+            pointee: Box::new(pointee),
+        };
+        let load = |cast_kind, explicit, source_type: CppType, value_type| CppScalarConversion {
+            cast_kind,
+            explicit,
+            source_type,
+            value_type,
+            span: cleanup_span(),
+        };
+        let returned = reference(unsigned_char(true));
+        load(
+            CppScalarCastKind::ReferenceLoad,
+            false,
+            returned.clone(),
+            unsigned_char(false),
+        )
+        .validate(&returned, "fixture.cpp")
+        .unwrap();
+        for (conversion, source) in [
+            // An explicit cast is not an lvalue-to-rvalue conversion.
+            (
+                load(
+                    CppScalarCastKind::ReferenceLoad,
+                    true,
+                    returned.clone(),
+                    unsigned_char(false),
+                ),
+                returned.clone(),
+            ),
+            // The load yields the referent's own type.
+            (
+                load(
+                    CppScalarCastKind::ReferenceLoad,
+                    false,
+                    returned.clone(),
+                    signed_integer(32, false),
+                ),
+                returned.clone(),
+            ),
+            // Only a returned reference is loaded.
+            (
+                load(
+                    CppScalarCastKind::ReferenceLoad,
+                    false,
+                    unsigned_char(false),
+                    unsigned_char(false),
+                ),
+                unsigned_char(false),
+            ),
+            // Any other conversion of a reference must load it first.
+            (
+                load(
+                    CppScalarCastKind::IntegralCast,
+                    false,
+                    returned.clone(),
+                    signed_integer(32, false),
+                ),
+                returned.clone(),
+            ),
+            // A reference to an unsupported element is not loaded.
+            (
+                load(
+                    CppScalarCastKind::ReferenceLoad,
+                    false,
+                    reference(signed_integer(64, false)),
+                    signed_integer(64, false),
+                ),
+                reference(signed_integer(64, false)),
+            ),
+        ] {
+            assert!(
+                conversion.validate(&source, "fixture.cpp").is_err(),
+                "{conversion:?}"
+            );
+        }
+    }
+
     #[test]
     fn converted_call_chain_validation_has_linear_work() {
         for size in [4, 16, 64, 128] {
