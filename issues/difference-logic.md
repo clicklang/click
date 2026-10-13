@@ -152,6 +152,18 @@ Each step is its own pull request.
 3. **Close the gap.** Range-end tightening, constant shifts, narrow-type
    ranges, load bounds, and routing pointer questions to the equality graph,
    each lowering that count.
+   - *Landed:* compound sums and differences are bounded by interval
+     arithmetic over their operands (`x - y` by the graph's bound on the
+     difference) when the exact result stays in its domain; `x != c` is
+     recorded and moves an interval end off `c`; division overflow is
+     answered from those. Most of the general decisions were overflow
+     checks on such terms (`(x - y) - 1`, `(0 - x) + 1`): the census fell
+     to 260 conditions and 7 path-fact decisions over the mdtests and 235
+     over the examples.
+   - *Left:* overflow checks whose operands are loads, Click function
+     applications, `Multiply` or `Remainder` terms, or `int64` conversions
+     back to `int32`; shifts; pointer questions; and the general decision
+     consulting the graph.
 4. **Remove the general decision from simple checking.** A condition the fast
    path leaves undecided keeps both branches, and an arithmetic requirement it
    leaves open goes to implicit `auto`, as

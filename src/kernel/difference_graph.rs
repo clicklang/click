@@ -66,6 +66,10 @@ pub(crate) struct DifferenceGraph {
     in_edges: PersistentMap<NodeId, PersistentMap<NodeId, i128>>,
     /// `base -> node -> link`: links waiting on `base`'s interval.
     pending: PersistentMap<NodeId, PersistentMap<NodeId, PendingLink>>,
+    /// `node -> {c}`: `node != c`. An interval end landing on an excluded
+    /// value steps past it, so `x != INT_MIN` beside `INT_MIN <= x` is
+    /// `INT_MIN + 1 <= x`.
+    excluded: PersistentMap<NodeId, crate::persistent::PersistentSet<i128>>,
     contradictory: bool,
     next: NodeId,
 }
@@ -119,6 +123,13 @@ impl DifferenceGraph {
         {
             return;
         }
+        if !value
+            && let ConditionTerm::Bitvector32Equal(a, b) | ConditionTerm::Bitvector64Equal(a, b) =
+                condition
+        {
+            self.exclude(condition, a, b);
+            return;
+        }
         for (domain, lower, upper, strict) in condition_orders(condition, value) {
             if self.contradictory {
                 return;
@@ -128,6 +139,39 @@ impl DifferenceGraph {
             // lower - upper <= -strict
             self.constrain(upper, lower, -i128::from(strict));
         }
+    }
+
+    /// Records `a != b` when one side is a constant and the other a node
+    /// plus an offset: the node excludes one value, and its interval steps
+    /// off that value if it is an end.
+    fn exclude(&mut self, condition: &ConditionTerm, a: &Bitvector32Term, b: &Bitvector32Term) {
+        let domains: &[Domain] = if matches!(condition, ConditionTerm::Bitvector32Equal(..)) {
+            &[Domain::Int32]
+        } else {
+            &[Domain::Int64, Domain::UInt64]
+        };
+        for domain in domains {
+            let (term, value) = match (constant(*domain, a), constant(*domain, b)) {
+                (None, Some(value)) => (a, value),
+                (Some(value), None) => (b, value),
+                _ => continue,
+            };
+            let (Some(node), offset) = self.affine(*domain, term) else {
+                continue;
+            };
+            charge();
+            let excluded = self.excluded.get(&node).cloned().unwrap_or_default();
+            self.excluded
+                .insert(node, excluded.with_value(value - offset));
+            self.tighten(node, None, None);
+        }
+    }
+
+    /// Whether `node != value` was recorded.
+    fn excludes(&self, node: NodeId, value: i128) -> bool {
+        self.excluded
+            .get(&node)
+            .is_some_and(|excluded| excluded.contains(&value))
     }
 
     /// Records a true equality between a term the graph has no node for and
@@ -242,8 +286,19 @@ impl DifferenceGraph {
             }
             charge();
             let (old_low, old_high) = self.interval(node);
-            let new_low = low.map_or(old_low, |low| low.max(old_low));
-            let new_high = high.map_or(old_high, |high| high.min(old_high));
+            let mut new_low = low.map_or(old_low, |low| low.max(old_low));
+            let mut new_high = high.map_or(old_high, |high| high.min(old_high));
+            if let Some(excluded) = self.excluded.get(&node) {
+                // Each step passes one recorded disequality.
+                while new_low <= new_high && excluded.contains(&new_low) {
+                    charge();
+                    new_low += 1;
+                }
+                while new_low <= new_high && excluded.contains(&new_high) {
+                    charge();
+                    new_high -= 1;
+                }
+            }
             if (new_low, new_high) == (old_low, old_high) {
                 continue;
             }
@@ -448,6 +503,25 @@ impl DifferenceGraph {
         if let Some((domain, a, b, operation)) = overflow {
             return self.decide_overflow(domain, a, b, operation);
         }
+        if let C::Bitvector32SignedDivideOverflows(a, b)
+        | C::Bitvector64SignedDivideOverflows(a, b) = condition
+        {
+            // `a / b` overflows exactly when `a` is the domain's least value
+            // and `b` is `-1`; as above, only the absence is answered.
+            let domain = if matches!(condition, C::Bitvector32SignedDivideOverflows(..)) {
+                Domain::Int32
+            } else {
+                Domain::Int64
+            };
+            let (a_low, _) = self.term_interval(domain, a);
+            let (b_low, b_high) = self.term_interval(domain, b);
+            let excludes_minus_one = matches!(
+                self.resolve(domain, b),
+                Some((Some(node), offset)) if self.excludes(node, -1 - offset)
+            );
+            return (a_low > domain.range().0 || b_low > -1 || b_high < -1 || excludes_minus_one)
+                .then_some(false);
+        }
         if let C::Bitvector32Equal(a, b) | C::Bitvector64Equal(a, b) = condition {
             let domains: &[Domain] = if matches!(condition, C::Bitvector32Equal(..)) {
                 &[Domain::Int32]
@@ -459,6 +533,15 @@ impl DifferenceGraph {
                 else {
                     continue;
                 };
+                match (a, b) {
+                    ((Some(node), offset), (None, value))
+                    | ((None, value), (Some(node), offset))
+                        if self.excludes(node, value - offset) =>
+                    {
+                        return Some(false);
+                    }
+                    _ => {}
+                }
                 let ab = self.difference_bound(a, b);
                 let ba = self.difference_bound(b, a);
                 if ab <= 0 && ba <= 0 {
@@ -486,6 +569,60 @@ impl DifferenceGraph {
         None
     }
 
+    /// An interval holding `term`'s value in `domain`: a resolved term's
+    /// stored bounds, or for a sum or difference the exact interval of its
+    /// operands' mathematical result when that stays in `domain` (so the
+    /// bitvector operation does not wrap). Anything else ranges over
+    /// `domain`. Work is the term's size, plus the difference reads of
+    /// `difference_interval`.
+    fn term_interval(&self, domain: Domain, term: &Bitvector32Term) -> (i128, i128) {
+        use Bitvector32Term as T;
+        if let Some(affine) = self.resolve(domain, term) {
+            return self.affine_interval(affine);
+        }
+        charge();
+        let (low, high) = match (domain, term) {
+            (Domain::Int32, T::Add(a, b))
+            | (Domain::Int64, T::Int64Add(a, b))
+            | (Domain::UInt64, T::UInt64Add(a, b)) => {
+                let (a_low, a_high) = self.term_interval(domain, a);
+                let (b_low, b_high) = self.term_interval(domain, b);
+                (a_low + b_low, a_high + b_high)
+            }
+            (Domain::Int32, T::Subtract(a, b))
+            | (Domain::Int64, T::Int64Subtract(a, b))
+            | (Domain::UInt64, T::UInt64Subtract(a, b)) => self.difference_interval(domain, a, b),
+            (Domain::Int64, T::Int64From32(inner)) => self.term_interval(Domain::Int32, inner),
+            _ => return domain.range(),
+        };
+        let (min, max) = domain.range();
+        if low >= min && high <= max {
+            (low, high)
+        } else {
+            (min, max)
+        }
+    }
+
+    /// The mathematical interval of `a - b` in `domain`: the operands'
+    /// intervals, narrowed by the graph's bound on their difference when
+    /// both resolve to nodes.
+    fn difference_interval(
+        &self,
+        domain: Domain,
+        a: &Bitvector32Term,
+        b: &Bitvector32Term,
+    ) -> (i128, i128) {
+        let (a_low, a_high) = self.term_interval(domain, a);
+        let (b_low, b_high) = self.term_interval(domain, b);
+        let mut high = a_high - b_low;
+        let mut low = a_low - b_high;
+        if let (Some(a), Some(b)) = (self.resolve(domain, a), self.resolve(domain, b)) {
+            high = high.min(self.difference_bound(b, a));
+            low = low.max(-self.difference_bound(a, b));
+        }
+        (low, high)
+    }
+
     /// Whether `a op b` leaves `domain`, from the operands' intervals and,
     /// for a subtraction of two nodes, the difference between them. An
     /// operand the graph cannot resolve ranges over its domain.
@@ -496,24 +633,11 @@ impl DifferenceGraph {
         b: &Bitvector32Term,
         operation: Operation,
     ) -> Option<bool> {
-        let a = self.resolve(domain, a);
-        let b = self.resolve(domain, b);
-        let interval = |affine: Option<Affine>| {
-            affine.map_or_else(|| domain.range(), |affine| self.affine_interval(affine))
-        };
-        let (a_low, a_high) = interval(a);
-        let (b_low, b_high) = interval(b);
+        let (a_low, a_high) = self.term_interval(domain, a);
+        let (b_low, b_high) = self.term_interval(domain, b);
         let (low, high) = match operation {
             Operation::Add => (a_low + b_low, a_high + b_high),
-            Operation::Subtract => {
-                let mut high = a_high - b_low;
-                let mut low = a_low - b_high;
-                if let (Some(a), Some(b)) = (a, b) {
-                    high = high.min(self.difference_bound(b, a));
-                    low = low.max(-self.difference_bound(a, b));
-                }
-                (low, high)
-            }
+            Operation::Subtract => self.difference_interval(domain, a, b),
             Operation::Multiply => {
                 let products = [
                     a_low * b_low,

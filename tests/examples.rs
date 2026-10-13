@@ -49,7 +49,7 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
             HiddenPrerequisiteRoute::KernelCondition,
             "decide_with_facts",
         ),
-        538,
+        235,
     ),
     ((HiddenPrerequisiteRoute::KernelCondition, "path fact"), 24),
 ];

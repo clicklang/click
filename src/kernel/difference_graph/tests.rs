@@ -383,3 +383,145 @@ fn offsets_of_a_bounded_value_share_its_node() {
         "a bound's work should not grow with the value's offsets: {samples:?}"
     );
 }
+
+/// Generated facts over three variables whose values sit at the ends of the
+/// int32 range and around zero: orders between pool terms and
+/// disequalities with constants. Every overflow, division and equality
+/// question about compound terms (`x - y`, `0 - x`, `x + 1`, ...) the graph
+/// answers holds in every model, with the terms read as wrapping int32
+/// arithmetic.
+#[test]
+fn arithmetic_decisions_hold_in_every_model() {
+    use Bitvector32Term as T;
+    fn value(term: &Bitvector32Term, variables: &[Bitvector32Term], model: &[i32]) -> i32 {
+        match term {
+            T::Constant(value) => *value as i32,
+            T::Add(a, b) => value(a, variables, model).wrapping_add(value(b, variables, model)),
+            T::Subtract(a, b) => {
+                value(a, variables, model).wrapping_sub(value(b, variables, model))
+            }
+            _ => model[variables.iter().position(|v| v == term).unwrap()],
+        }
+    }
+    let values = [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX];
+    let variables = (0..3).map(variable).collect::<Vec<_>>();
+    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let mut pool = variables.clone();
+    pool.push(plus(&variables[0], 1));
+    pool.push(T::Subtract(boxed(&variables[1]), boxed(&constant(1))));
+    pool.push(T::Subtract(boxed(&constant(0)), boxed(&variables[2])));
+    pool.push(T::Subtract(boxed(&variables[0]), boxed(&variables[1])));
+    pool.push(T::Add(boxed(&variables[1]), boxed(&variables[2])));
+    let constants = [i32::MIN, -1, 0, 1, i32::MAX].map(constant);
+    let holds = |condition: &ConditionTerm, model: &[i32]| -> bool {
+        let v = |term: &Bitvector32Term| value(term, &variables, model);
+        match condition {
+            ConditionTerm::Constant(value) => *value,
+            ConditionTerm::Bitvector32SignedLessThan(a, b) => v(a) < v(b),
+            ConditionTerm::Bitvector32SignedLessEqual(a, b) => v(a) <= v(b),
+            ConditionTerm::Bitvector32Equal(a, b) => v(a) == v(b),
+            ConditionTerm::Bitvector32SignedAddOverflows(a, b) => v(a).overflowing_add(v(b)).1,
+            ConditionTerm::Bitvector32SignedSubtractOverflows(a, b) => v(a).overflowing_sub(v(b)).1,
+            ConditionTerm::Bitvector32SignedDivideOverflows(a, b) => v(a) == i32::MIN && v(b) == -1,
+            other => unreachable!("{other:?}"),
+        }
+    };
+    let models = (0..values.len().pow(3))
+        .map(|index| {
+            (0..3)
+                .map(|place| values[(index / values.len().pow(place)) % values.len()])
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut state = 0x2545_f491_4f6c_dd1du64;
+    let mut next = |bound: usize| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state % bound as u64) as usize
+    };
+    let mut decided = 0;
+    for _ in 0..60 {
+        let mut facts = Vec::new();
+        for _ in 0..(1 + next(4)) {
+            let a = &pool[next(pool.len())];
+            let fact = match next(3) {
+                0 => lt(a, &constants[next(constants.len())]),
+                1 => le(&constants[next(constants.len())], a),
+                _ => ConditionTerm::equal(variables[next(3)].clone(), constants[next(5)].clone()),
+            };
+            facts.push((fact, next(3) != 0));
+        }
+        let graph = graph(&facts);
+        let satisfying = models
+            .iter()
+            .filter(|model| {
+                facts
+                    .iter()
+                    .all(|(fact, value)| holds(fact, model) == *value)
+            })
+            .collect::<Vec<_>>();
+        if satisfying.is_empty() {
+            continue;
+        }
+        let operands = pool.iter().chain(&constants).collect::<Vec<_>>();
+        for a in &operands {
+            for b in &operands {
+                let (a, b) = (boxed(a), boxed(b));
+                for query in [
+                    ConditionTerm::Bitvector32SignedAddOverflows(a.clone(), b.clone()),
+                    ConditionTerm::Bitvector32SignedSubtractOverflows(a.clone(), b.clone()),
+                    ConditionTerm::Bitvector32SignedDivideOverflows(a.clone(), b.clone()),
+                    ConditionTerm::Bitvector32Equal(a.clone(), b.clone()),
+                    ConditionTerm::Bitvector32SignedLessThan(a.clone(), b.clone()),
+                ] {
+                    let Some(answer) = graph.decide(&query) else {
+                        continue;
+                    };
+                    decided += 1;
+                    assert!(
+                        satisfying
+                            .iter()
+                            .all(|model| holds(&query, model) == answer),
+                        "{query:?} decided {answer} but a model disagrees under {facts:?}"
+                    );
+                }
+            }
+        }
+    }
+    assert!(decided > 0, "the generated cases should decide something");
+}
+
+/// A disequality at an interval's end moves the end: `x != INT_MIN` rules
+/// out `0 - x` and `x / y` overflowing, and `y != -1` rules out the
+/// division's.
+#[test]
+fn a_disequality_at_a_range_end_tightens_it() {
+    let (x, y) = (variable(0), variable(1));
+    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let divide = ConditionTerm::Bitvector32SignedDivideOverflows(boxed(&x), boxed(&y));
+    let negate = ConditionTerm::Bitvector32SignedSubtractOverflows(boxed(&constant(0)), boxed(&x));
+    assert_eq!(graph(&[]).decide(&divide), None);
+    let not_min = graph(&[(ConditionTerm::equal(x.clone(), constant(i32::MIN)), false)]);
+    assert_eq!(not_min.decide(&negate), Some(false));
+    assert_eq!(not_min.decide(&divide), Some(false));
+    let not_minus_one = graph(&[(ConditionTerm::equal(y.clone(), constant(-1)), false)]);
+    assert_eq!(not_minus_one.decide(&divide), Some(false));
+    assert_eq!(
+        not_minus_one.decide(&ConditionTerm::equal(y.clone(), constant(-1))),
+        Some(false)
+    );
+    // An exclusion recorded inside the interval takes effect once a bound
+    // reaches it.
+    let later = graph(&[
+        (ConditionTerm::equal(x.clone(), constant(3)), false),
+        (le(&constant(3), &x), true),
+    ]);
+    assert_eq!(later.decide(&lt(&constant(3), &x)), Some(true));
+    let pinned = graph(&[
+        (le(&constant(3), &x), true),
+        (le(&x, &constant(3)), true),
+        (ConditionTerm::equal(x.clone(), constant(3)), false),
+    ]);
+    assert!(pinned.is_contradictory());
+}
