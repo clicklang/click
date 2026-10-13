@@ -189,13 +189,38 @@ does. Verifying plain C needs no compiler or system headers; see the
 Any other system include is refused. The kernel target refuses the hosted
 headers, since kernel code uses its own.
 
+A call to one of these library functions is checked against Click's
+specification of the function, which binds by its name. A program may also
+declare the function itself (C11 7.1.4p2), as in `void *malloc(unsigned long
+size);`, but only with a type compatible with the library's prototype (C11
+6.7.6.3p15): a parameter's own qualifiers do not matter, a pointee's
+qualifiers and plain `char` do, and `unsigned long f();` without a prototype
+needs only the library's result type. Click refuses an incompatible
+declaration such as `int strlen(int s);` and names both types; GCC and Clang
+reject it when the header is included and Clang warns otherwise
+(`mdtests/a_library_function_redeclared_with_an_int_parameter_is_refused.md`,
+`mdtests/a_compatible_redeclaration_of_strlen_binds_its_contract.md`).
+Click also refuses a program's definition of one of these functions with
+external linkage: the name is reserved for the library (C11 7.1.3), and GCC
+and Clang compile calls to it as calls to the library's function, folding
+`strlen("abc")` to 3 whatever the program's body says. Both targets compile
+hosted, without `-ffreestanding` or `-fno-builtin`, so the same holds for
+kernel code: Linux builds its own `lib/string.c` freestanding, which no Click
+target models
+(`mdtests/a_kernel_target_definition_of_strlen_is_refused.md`,
+`mdtests/a_kernel_target_incompatible_declaration_of_strlen_is_refused.md`).
+A `static` function of the same name is the program's own, and its calls
+execute its body (`mdtests/a_program_definition_of_strlen_is_refused.md`,
+`mdtests/a_static_function_named_strlen_is_the_programs_own.md`).
+
 A [compiler import](../cli/import.md#clicks-system-headers) searches the same
 headers, with the same text, in the place of the C library's: after the
 project's `-iquote`, `-I`, and `-isystem` directories, as GCC orders them. It
 refuses `<pthread.h>` and `<stdatomic.h>`, whose runtime does not accept
 compiler-imported sources, and names any other standard C or POSIX header it
 refuses. The headers carry no contracts: a call is checked against Click's
-contract for the function's name, whichever declaration the compiler selected.
+contract for the function's name, whichever declaration the compiler selected,
+and that declaration must be compatible with the library's, as above.
 
 ## Program-entry static ownership
 
@@ -1039,10 +1064,13 @@ Supported C surface includes:
   `realloc`, and `free`, and defines `NULL`; calls are checked against the
   standard-library contracts and the allocation model
   (`mdtests/c_builtin_string_and_stdlib_headers.md`,
-  `mdtests/c_builtin_string_header_declares_strlen.md`). A specification may
-  pass a `char` pointer where a predicate or pure function takes `uint8`
-  bytes, as in `requires cstr_readable(s);` for a `const char *s`. Where plain
-  `char` is signed, the argument is elaborated to the explicit byte view
+  `mdtests/c_builtin_string_header_declares_strlen.md`). A program's own
+  declaration of one of these functions must be compatible with the
+  library's, and a program may not define one with external linkage; see
+  [System headers](#system-headers). A specification may
+  pass a `char` or `signed char` pointer where a predicate or pure function
+  takes `uint8` bytes, as in `requires cstr_readable(s);` for a `const char *s`.
+  For a signed character type, the argument is elaborated to the explicit byte view
   `(uint8*)s`: the predicate reads the string's bytes as unsigned values,
   and since a signed read of a byte is the conversion of its unsigned read,
   `s[k] == '\0'` holds exactly when `((uint8*)s)[k] == '\0'` does. A library

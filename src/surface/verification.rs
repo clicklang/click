@@ -455,6 +455,16 @@ fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String
                 collect_applied_theorems(&proof_if.else_tactics, names);
             }
             ProofTactic::CloseInvariantsBy(body) => collect_applied_theorems(body, names),
+            ProofTactic::StepProved { proof, .. } => match proof {
+                StepProof::By(body) => collect_applied_theorems(body, names),
+                StepProof::Requires(entries) => {
+                    for entry in entries {
+                        if let SourceProof::Script(tactics) = &entry.have.proof {
+                            collect_applied_theorems(tactics, names);
+                        }
+                    }
+                }
+            },
             ProofTactic::Both(both) => {
                 collect_applied_theorems(&both.left_tactics, names);
                 collect_applied_theorems(&both.right_tactics, names);
@@ -970,7 +980,8 @@ fn first_executing_tactic(tactics: &[ProofTactic]) -> Option<&'static str> {
         ProofTactic::Step
         | ProofTactic::StepBind(_)
         | ProofTactic::StepContract(_)
-        | ProofTactic::StepCall(_) => Some("step"),
+        | ProofTactic::StepCall(_)
+        | ProofTactic::StepProved { .. } => Some("step"),
         ProofTactic::SmartExecute => Some("execute"),
         ProofTactic::ExecuteUntil(_) => Some("execute_until"),
         ProofTactic::Loop(_) => Some("loop"),
@@ -5493,10 +5504,21 @@ pub(in crate::surface) fn build_function_environment(
             environment.with_function_contract(contract.with_proof_parameters(proof_parameters));
     }
     for (source_path, function) in parsed_sources.values() {
-        let function = match function_blocks
+        let mut function_block = function_blocks
             .iter()
-            .find(|block| block.signature().name() == function.source_name())
+            .find(|block| block.signature().name() == function.source_name());
+        // A program's internal-linkage function is never the C library's
+        // function of the same name, whose contract the standard library
+        // declares. The C parser refuses an external-linkage definition of
+        // a library function Click specifies.
+        if let Some(block) = function_block
+            && block.is_external()
+            && function.name() != function.source_name()
+            && standard_library_function_block(block.signature().name())?.as_ref() == Some(block)
         {
+            function_block = None;
+        }
+        let function = match function_block {
             Some(function_block) => {
                 check_signature(function_block.signature(), function, source_path)?;
                 let (resource_requires, resource_ensures) = function_resource_summary(

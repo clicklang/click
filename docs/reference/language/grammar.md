@@ -404,15 +404,21 @@ tactic statements. Tactic arguments use the expression and proposition forms
 documented for that tactic. The exhaustive surface-spelling inventory is in
 [Tactics](../tactics/index.md).
 
-One tactic carries syntax beyond an argument list: a `step` on an ordinary C
+One tactic carries syntax beyond an argument list. A `step` on an ordinary C
 call writes the call as it appears in the source, maps the callee's instance
 binders to the caller's instances, and introduces a produced instance with
-`let`.
+`let`. Any `step` form may end with proofs of the obligations its fast path
+leaves open: a plain `by` for exactly one, or a block of `requires` entries.
 
 ```text
-call-step  := ("let" identifier "=")? "step" "(" c-call "," binder-map ")" ";"
-binder-map := "{" (identifier ":" identifier
-               ("," identifier ":" identifier)* ","?)? "}"
+step-tactic    := step-head step-proof
+step-head      := ("let" output-pattern "=")? "step" "(" step-args? ")"
+step-args      := contract-name ("(" resource-args ")")? | c-call "," binder-map
+binder-map     := "{" (identifier ":" identifier
+                   ("," identifier ":" identifier)* ","?)? "}"
+step-proof     := ";" | "by" proof-body | "{" requires-entry+ "}"
+requires-entry := "requires" (identifier ":")? proposition "by" proof-body
+proof-body     := tactic-call ";" | "simp" ";" | "{" tactic-statement+ "}"
 ```
 
 Omitting a proof and writing `by auto` request smart proof construction. Smart

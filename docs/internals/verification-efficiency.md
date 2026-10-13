@@ -113,7 +113,9 @@ frame reasoning. The user-facing statement of this rule is
 
 Observable resource compositions retain a persistent filtered storage root.
 After its first projection, resource producers advance only inserted or removed
-entries and affected support metadata. Private-local deltas reuse the exact
+entries and affected support metadata. While nothing is filtered, the view is
+the source root itself, and a producer adopts its new root without mirroring
+the delta into a second copy. Private-local deltas reuse the exact
 observable root. Queries use maintained ownership counts rather than enumerate
 retained owners. The cache checks both the source storage identity and the
 addressability registry revision; a classification change or a whole-input

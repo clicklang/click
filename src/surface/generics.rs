@@ -754,6 +754,38 @@ fn instantiate_proof_tactic(
         ProofTactic::CloseInvariantsBy(body) => ProofTactic::CloseInvariantsBy(
             instantiate_proof_tactics(body, substitution, algebraic_parameters)?,
         ),
+        ProofTactic::StepProved { step, proof } => ProofTactic::StepProved {
+            step: Box::new(instantiate_proof_tactic(
+                step,
+                substitution,
+                algebraic_parameters,
+            )?),
+            proof: match proof {
+                StepProof::By(body) => StepProof::By(instantiate_proof_tactics(
+                    body,
+                    substitution,
+                    algebraic_parameters,
+                )?),
+                StepProof::Requires(entries) => StepProof::Requires(
+                    entries
+                        .iter()
+                        .map(|entry| {
+                            Ok(StepRequirement {
+                                label: entry.label.clone(),
+                                have: ProofHave {
+                                    proposition: proposition(&entry.have.proposition)?,
+                                    proof: instantiate_source_proof(
+                                        &entry.have.proof,
+                                        substitution,
+                                        algebraic_parameters,
+                                    )?,
+                                },
+                            })
+                        })
+                        .collect::<Result<_, String>>()?,
+                ),
+            },
+        },
         ProofTactic::Both(both) => ProofTactic::Both(ProofBoth {
             left_tactics: instantiate_proof_tactics(
                 &both.left_tactics,

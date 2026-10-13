@@ -1695,35 +1695,47 @@ impl<'a> Proof<'a> {
         if leaves.len() <= 8 {
             return None;
         }
+        // Leaves are checked last first. A loop-invariant bundle guards each
+        // member by every earlier declaration, so its last members are the
+        // largest and the ones that exceed the synthesis bounds. Checking
+        // them first makes a refusal one bounded attempt; checking in order
+        // reified every earlier member first, and the binary descent that
+        // follows a refusal repeated that at each level. The result does not
+        // depend on the order.
         let surfaces = if let Some(surface) = self.surface_goal() {
             let mut pending = vec![surface];
-            let mut leaves = Vec::new();
+            let mut surfaces = Vec::new();
             while let Some(surface) = pending.pop() {
                 if let ClickProposition::And(left, right) = surface {
                     pending.push(right);
                     pending.push(left);
                 } else {
-                    leaves.push(surface.clone());
+                    surfaces.push(surface.clone());
                 }
             }
-            leaves
-        } else {
-            leaves
-                .iter()
-                .map(|goal| self.synthesized_bundle_member_surface(goal))
-                .collect::<Option<Vec<_>>>()?
-        };
-        if surfaces.len() != leaves.len() {
-            return None;
-        }
-        for (surface, goal) in surfaces.iter().zip(leaves) {
-            let lowered = self
-                .lower_surface_goal(surface, "conjunction certificate leaf")
-                .ok()?;
-            if !crate::kernel::proof::propositions_are_alpha_equal(&lowered, goal) {
+            if surfaces.len() != leaves.len() {
                 return None;
             }
-        }
+            for (surface, goal) in surfaces.iter().zip(&leaves).rev() {
+                let lowered = self
+                    .lower_surface_goal(surface, "conjunction certificate leaf")
+                    .ok()?;
+                if !crate::kernel::proof::propositions_are_alpha_equal(&lowered, goal) {
+                    return None;
+                }
+            }
+            surfaces
+        } else {
+            // A synthesized member is kept only when it lowers back to its
+            // leaf, so it needs no second check.
+            let mut surfaces = leaves
+                .iter()
+                .rev()
+                .map(|goal| self.synthesized_bundle_member_surface(goal))
+                .collect::<Option<Vec<_>>>()?;
+            surfaces.reverse();
+            surfaces
+        };
         Some(surfaces)
     }
 
@@ -1842,7 +1854,13 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_auto_conjunction_closure()? {
             return Ok(Some(closed));
         }
-        self.try_auto_equality_chain_closure()
+        if let Some(closed) = self.try_auto_equality_chain_closure()? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_constructor_join_closure()? {
+            return Ok(Some(closed));
+        }
+        self.try_wide_equality_solver_closure()
     }
 
     pub(in crate::surface::proof) fn try_solver_closure(&self) -> Result<Option<Self>, ClickError> {
@@ -7736,6 +7754,47 @@ impl<'a> Proof<'a> {
     /// has reported an unresolved requirement.  Keeping the refused result as
     /// an input makes the retry core directly testable without changing the
     /// production checked-step dispatch.
+    /// A Surface spelling of `requirement` at this frontier that lowers back
+    /// to it, chosen as the smart retry chooses one: the source-backed call
+    /// clause first, then a synthesized spelling. `None` when neither lowers
+    /// to the requirement.
+    pub(in crate::surface::proof) fn requirement_surface(
+        &self,
+        requirement: &UnresolvedRequirement,
+        step: &ProofStep,
+    ) -> Result<Option<ClickProposition>, ClickError> {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Ok(None);
+        };
+        let Some(execution) = self.execution() else {
+            return Ok(None);
+        };
+        let execution_view = execution.view(context);
+        let _qualified_sources = super::surface_synthesis::QualifiedSynthesisScope::enter(
+            execution_view.surface_propositions,
+        );
+        let admit = |candidate: ClickProposition| match self
+            .lower_surface_goal(&candidate, "step obligation")
+        {
+            Ok(lowered) if lowered_states_requirement(&lowered, requirement) => Some(candidate),
+            _ => None,
+        };
+        if requirement.call_site.is_some()
+            && let Some(registry_surface) =
+                source_backed_call_requirement_surface(requirement, step, execution, context)
+            && let Some(surface) = admit(registry_surface.proposition)
+        {
+            return Ok(Some(surface));
+        }
+        check_verification_deadline()?;
+        Ok(synthesize_surface_proposition(
+            &requirement.proposition,
+            ParameterBinding::new(context.parsed_function.parameters(), context.arguments),
+            &execution.core.state,
+        )
+        .and_then(admit))
+    }
+
     pub(in crate::surface::proof) fn retry_statement_after_refusal(
         &self,
         step: ProofStep,
@@ -7783,39 +7842,10 @@ impl<'a> Proof<'a> {
                     let admit_candidate = |candidate: ClickProposition| match proof
                         .lower_surface_goal(&candidate, "smart retained-have requirement")
                     {
-                        Ok(lowered)
-                            if propositions_match_after_canonical_loads(
-                                &lowered,
-                                &requirement.proposition,
-                            ) =>
-                        {
+                        Ok(lowered) if lowered_states_requirement(&lowered, &requirement) => {
                             Ok(Some(candidate))
                         }
-                        Ok(lowered) => {
-                            // The checked call may carry a generated arithmetic
-                            // guard already discharged in this proof scope.
-                            // Proving its exact consequent is sufficient for
-                            // the subsequent ordinary checked-step retry.
-                            let mut target = &requirement.proposition;
-                            for introduction in &requirement.introductions {
-                                if !matches!(
-                                    introduction,
-                                    crate::kernel::LoweringIntroduction::ObligationGuard
-                                ) {
-                                    break;
-                                }
-                                let Proposition::Implies(_, consequent) = target else {
-                                    break;
-                                };
-                                target = consequent;
-                                if propositions_match_after_canonical_loads(&lowered, target) {
-                                    return Ok(Some(candidate));
-                                }
-                            }
-                            check_verification_deadline()?;
-                            Ok(None)
-                        }
-                        Err(_) => {
+                        Ok(_) | Err(_) => {
                             check_verification_deadline()?;
                             Ok(None)
                         }
@@ -8530,6 +8560,36 @@ pub(in crate::surface::proof) fn collect_bounded_surface_conjunct_leaves(
 /// Compare retained-have round-trip forms while applying the kernel's load
 /// naming law to condition leaves. The lockstep worklist keeps this path
 /// iterative and bounded and never clones an entire proposition tree.
+/// Whether a lowered proposition states `requirement`: exactly, up to
+/// canonical condition loads, or as the consequent left once the generated
+/// arithmetic guards in front of it are discharged. Proving that consequent is
+/// enough for the retried step.
+pub(super) fn lowered_states_requirement(
+    lowered: &Proposition,
+    requirement: &UnresolvedRequirement,
+) -> bool {
+    if propositions_match_after_canonical_loads(lowered, &requirement.proposition) {
+        return true;
+    }
+    let mut target = &requirement.proposition;
+    for introduction in &requirement.introductions {
+        if !matches!(
+            introduction,
+            crate::kernel::LoweringIntroduction::ObligationGuard
+        ) {
+            break;
+        }
+        let Proposition::Implies(_, consequent) = target else {
+            break;
+        };
+        target = consequent;
+        if propositions_match_after_canonical_loads(lowered, target) {
+            return true;
+        }
+    }
+    false
+}
+
 fn propositions_match_after_canonical_loads(left: &Proposition, right: &Proposition) -> bool {
     const MAX_NODES: usize = 4096;
     let mut work = vec![(left, right)];
@@ -8767,7 +8827,28 @@ fn source_backed_call_requirement_surface(
             (parameter.clone(), argument)
         })
         .collect::<BTreeMap<_, _>>();
-    let proposition = substitute_click_proposition(&source_proposition, &substitutions).ok()?;
+    // Match contract lowering: adapt a signed character argument to the
+    // predicate's byte parameter before substituting the call arguments.
+    // Keep the original source clause for source-ID and parameter selection.
+    let elaborated = crate::surface::lowering::elaborate_character_byte_views(
+        &source_proposition,
+        context.spec_definitions.predicates,
+        &|name| {
+            let slot = source_parameter_names
+                .iter()
+                .position(|parameter| parameter == name)?;
+            match source_parameter_types[slot]? {
+                crate::kernel::CType::Int8Pointer => Some(C0Type::Int8Pointer),
+                crate::kernel::CType::Int8Array(size) => Some(C0Type::Int8Array(size)),
+                _ => None,
+            }
+        },
+    );
+    let proposition = substitute_click_proposition(
+        elaborated.as_ref().unwrap_or(&source_proposition),
+        &substitutions,
+    )
+    .ok()?;
     Some(SourceBackedCallSurface {
         arguments,
         source_proposition,
@@ -8865,7 +8946,7 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
 }
 
 /// A caller parameter passed where a value of kernel type `expected` is read:
-/// the parameter itself, or, for a signed plain `char` pointer read as
+/// the parameter itself, or, for a signed character pointer read as
 /// `uint8` bytes, its explicit byte view.
 fn caller_parameter_as_argument(
     parameter: &syntax::C0Parameter,

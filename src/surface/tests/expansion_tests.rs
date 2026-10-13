@@ -17592,3 +17592,75 @@ fn unfolding_proof_bound_integer_arguments_expands_and_rechecks() {
         verify_c0_sources(&expanded, &[]).unwrap();
     }
 }
+
+/// A step's written obligation proofs expand in place: each `requires` entry
+/// keeps its proposition and prints its body's checked steps, the expansion
+/// reverifies, and deleting an entry leaves its obligation unproved.
+#[test]
+fn step_requires_entries_expand_in_place_and_are_needed() {
+    let c_source = r#"
+        int32 first(int32 x, int32 y) {
+            return x;
+        }
+
+        int32 caller(int32 a, int32 b) {
+            return first(a, b);
+        }
+    "#;
+    let click_source = r#"
+verifying "pair.c";
+
+int32 first(int32 x, int32 y) {
+    requires x > 0 or y > 0;
+    requires y > 0 or x > 0;
+    ensures 1 == 1 by auto;
+}
+
+int32 caller(int32 a, int32 b) {
+    requires a > 0;
+    ensures 1 == 1 by {
+        step() {
+            requires a > 0 or b > 0 by simp;
+            requires b > 0 or a > 0 by simp;
+        }
+        step();
+        simp();
+    }
+}
+"#;
+    let c_sources = [("pair.c", c_source)];
+    verify_c0_sources(click_source, &c_sources).expect("the written entries should verify");
+    let expanded =
+        expand_c0_claim_source(click_source, &c_sources, "caller", CProofClaim::Ensure(0))
+            .expect("the step's entries should expand");
+    assert!(
+        expanded.contains("step() {")
+            && expanded.contains("requires a > 0 or b > 0 by {")
+            && expanded.contains("requires b > 0 or a > 0 by {")
+            && !expanded.contains("by simp"),
+        "the expansion should keep both entries with checked bodies: {expanded}"
+    );
+    verify_c0_sources(&expanded, &c_sources).expect("the expansion should reverify");
+
+    let second = expanded
+        .find("requires b > 0 or a > 0 by {")
+        .expect("the expansion keeps the second entry");
+    let second_end = expanded[second..]
+        .find("\n            }\n")
+        .map(|offset| second + offset + "\n            }\n".len())
+        .expect("the second entry's body closes");
+    let mut without_second = expanded.clone();
+    without_second.replace_range(second..second_end, "");
+    let error = verify_c0_sources(&without_second, &c_sources)
+        .expect_err("deleting an entry must leave its obligation unproved");
+    // Compare without grouping parentheses, which the diagnostic renderer may
+    // or may not print around each disjunct.
+    assert!(
+        error
+            .message()
+            .replace(['(', ')'], "")
+            .contains("b > 0 or a > 0"),
+        "the refusal should name the unproved obligation: {}",
+        error.message()
+    );
+}

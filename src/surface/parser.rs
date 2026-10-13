@@ -6110,8 +6110,7 @@ impl Parser {
                     );
                 }
                 self.position += 1;
-                self.expect(Token::Semicolon)?;
-                return Ok(ProofTactic::StepBind(name));
+                return self.parse_step_proof(ProofTactic::StepBind(name));
             }
             if !self.call_binder_transport_follows() {
                 return Err(self.error(
@@ -6120,8 +6119,7 @@ impl Parser {
             }
             let transport = self.parse_call_binder_transport(Some(output), false)?;
             self.expect(Token::RParen)?;
-            self.expect(Token::Semicolon)?;
-            return Ok(ProofTactic::StepCall(transport));
+            return self.parse_step_proof(ProofTactic::StepCall(transport));
         }
         if let Some(name) = self.peek_ident()
             && self.tactic_names.contains(name)
@@ -6920,7 +6918,7 @@ impl Parser {
                     ProofTactic::StepContract(ContractApplication { name, arguments })
                 };
                 self.expect(Token::RParen)?;
-                step
+                return self.parse_step_proof(step);
             }
             "close_invariants" => {
                 self.expect_empty_tactic_args(&name)?;
@@ -7411,6 +7409,100 @@ impl Parser {
             self.current_proof_let_names = names;
         }
         result
+    }
+
+    /// What follows a `step(...)` head: `;`, `by` and the proof of its one
+    /// open obligation, or a block of `requires P by ...` entries
+    /// (`issues/simplify-step.md`).
+    #[inline(never)]
+    fn parse_step_proof(&mut self, step: ProofTactic) -> Result<ProofTactic, ClickError> {
+        if self.peek_ident() == Some("by") {
+            self.position += 1;
+            if self.peek_ident() == Some("auto") && self.peek_next() == Some(&Token::Semicolon) {
+                return Err(self.error(
+                    "`step() by auto` is `step()`: a step's open obligations already go to `auto`",
+                ));
+            }
+            let body = self.parse_step_proof_body()?;
+            self.skip_redundant_semicolon();
+            return Ok(ProofTactic::StepProved {
+                step: Box::new(step),
+                proof: StepProof::By(body),
+            });
+        }
+        if self.peek() == Some(&Token::LBrace) {
+            self.position += 1;
+            let mut entries = Vec::new();
+            while self.peek() != Some(&Token::RBrace) {
+                match self.peek_ident() {
+                    Some("requires") => self.position += 1,
+                    _ => {
+                        return Err(self.error(
+                            "a `step { ... }` block holds only `requires P by ...;` entries",
+                        ));
+                    }
+                }
+                let label = if let (Some(Token::Ident(label)), Some(Token::Colon)) =
+                    (self.peek(), self.peek_next())
+                {
+                    let label = label.clone();
+                    self.position += 2;
+                    Some(label)
+                } else {
+                    None
+                };
+                let proposition = self.parse_proposition()?;
+                if self.peek_ident() != Some("by") {
+                    return Err(self
+                        .error("a `requires` entry needs its proof: write `requires P by ...;`"));
+                }
+                let proof = self.parse_by_clause()?;
+                self.skip_redundant_semicolon();
+                entries.push(StepRequirement {
+                    label,
+                    have: ProofHave {
+                        proposition,
+                        proof: have_proof_as_written_in_full(proof),
+                    },
+                });
+            }
+            self.expect(Token::RBrace)?;
+            if entries.is_empty() {
+                return Err(
+                    self.error("a `step { ... }` block needs at least one `requires` entry")
+                );
+            }
+            self.skip_redundant_semicolon();
+            return Ok(ProofTactic::StepProved {
+                step: Box::new(step),
+                proof: StepProof::Requires(entries),
+            });
+        }
+        self.expect(Token::Semicolon)?;
+        Ok(step)
+    }
+
+    /// The body after a step's `by`: a block, `simp;`, or one tactic call, as
+    /// after `close_invariants by`.
+    fn parse_step_proof_body(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
+        if self.peek() == Some(&Token::LBrace) {
+            let body = self.parse_possibly_empty_tactic_block()?;
+            if body.is_empty() {
+                return Err(self.error("a step's `by` block must contain at least one tactic"));
+            }
+            return Ok(body);
+        }
+        if self.peek_ident() == Some("simp") && self.peek_next() == Some(&Token::Semicolon) {
+            self.position += 2;
+            return Ok(vec![ProofTactic::Simp]);
+        }
+        match self.peek() {
+            Some(Token::Ident(_)) => Ok(vec![self.parse_proof_tactic()?]),
+            Some(token) => Err(self.error(format!(
+                "expected a proof after a step's `by`, got {token}: write one tactic call or a block `{{ ... }}`"
+            ))),
+            None => Err(self.error("expected a proof after a step's `by`, got end of input")),
+        }
     }
 
     // `close_invariants by T(...);` is the one-step body

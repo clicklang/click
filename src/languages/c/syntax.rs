@@ -7587,6 +7587,9 @@ struct VariableMetadata {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct C0FunctionHeader {
     declaration_line: usize,
+    /// Where the declarator names the function, for a diagnostic about the
+    /// declaration as a whole.
+    name_position: Option<SourcePosition>,
     return_type: C0Type,
     return_pointee_constant: bool,
     return_struct_name: Option<String>,
@@ -7607,6 +7610,10 @@ pub(crate) struct C0FunctionHeader {
     variadic: bool,
     /// A parameter has no name, which only a body-less prototype may do.
     has_unnamed_parameter: bool,
+    /// The declarator's parameter list is empty, `f()`, which before C23
+    /// declares the function without a prototype. Click otherwise reads it
+    /// as `f(void)`.
+    empty_parameter_list: bool,
     /// No callable ABI exists for a retained declaration-only builtin type.
     opaque_signature: bool,
     /// Per-position builtin/extended-precision identities, including the return.
@@ -7637,6 +7644,203 @@ impl C0FunctionHeader {
     pub(crate) fn compatible_with(&self, other: &Self) -> bool {
         function_headers_compatible(self, other)
     }
+}
+
+/// A type in the C prototype of a standard-library function Click specifies.
+/// Every target is LP64, so `size_t` is `unsigned long`, Click's `uint64`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LibraryType {
+    Void,
+    Int,
+    SizeT,
+    VoidPointer,
+    ConstVoidPointer,
+    ConstCharPointer,
+}
+
+impl LibraryType {
+    /// Whether a declared type is this one. Plain `char` is distinct from
+    /// `signed char` and `unsigned char`, and a pointee's qualifiers are part
+    /// of a pointer's type; a parameter's own top-level qualifiers are not
+    /// (C11 6.7.6.3p15).
+    fn matches(
+        self,
+        c_type: C0Type,
+        pointee_constant: bool,
+        pointee_volatile: bool,
+        nominal: bool,
+    ) -> bool {
+        if nominal || pointee_volatile {
+            return false;
+        }
+        match self {
+            Self::Void => c_type == C0Type::Void,
+            Self::Int => c_type == C0Type::Int32,
+            Self::SizeT => c_type == C0Type::UInt64,
+            Self::VoidPointer => c_type == C0Type::VoidPointer && !pointee_constant,
+            Self::ConstVoidPointer => c_type == C0Type::VoidPointer && pointee_constant,
+            Self::ConstCharPointer => matches!(c_type, C0Type::CharPointer(_)) && pointee_constant,
+        }
+    }
+}
+
+/// The standard C prototype of each library function Click specifies: the
+/// `<string.h>` functions with a contract in `stdlib/prelude.click` and the
+/// `<stdlib.h>` functions of the allocation model. A call binds to Click's
+/// specification by the function's name, so a declaration of one of these
+/// names must have the library's type.
+const LIBRARY_PROTOTYPES: &[(&str, &str, LibraryType, &[LibraryType])] = {
+    use LibraryType::*;
+    &[
+        (
+            "memcpy",
+            "void *memcpy(void *dest, const void *src, size_t n)",
+            VoidPointer,
+            &[VoidPointer, ConstVoidPointer, SizeT],
+        ),
+        (
+            "memcmp",
+            "int memcmp(const void *s1, const void *s2, size_t n)",
+            Int,
+            &[ConstVoidPointer, ConstVoidPointer, SizeT],
+        ),
+        (
+            "memset",
+            "void *memset(void *s, int c, size_t n)",
+            VoidPointer,
+            &[VoidPointer, Int, SizeT],
+        ),
+        (
+            "strlen",
+            "size_t strlen(const char *s)",
+            SizeT,
+            &[ConstCharPointer],
+        ),
+        ("malloc", "void *malloc(size_t size)", VoidPointer, &[SizeT]),
+        (
+            "calloc",
+            "void *calloc(size_t count, size_t size)",
+            VoidPointer,
+            &[SizeT, SizeT],
+        ),
+        (
+            "realloc",
+            "void *realloc(void *pointer, size_t size)",
+            VoidPointer,
+            &[VoidPointer, SizeT],
+        ),
+        ("free", "void free(void *pointer)", Void, &[VoidPointer]),
+    ]
+};
+
+/// The library function Click specifies that `header` declares with
+/// external linkage, by its C name or its linked symbol: the function's
+/// name, its standard prototype, and whether the declared type is
+/// compatible with that prototype.
+fn library_function_prototype(
+    header: &C0FunctionHeader,
+) -> Option<(&'static str, &'static str, bool)> {
+    if header.internal_linkage {
+        return None;
+    }
+    let (name, prototype, return_type, parameters) = LIBRARY_PROTOTYPES
+        .iter()
+        .find(|(name, ..)| *name == header.name.as_str() || *name == header.source_name.as_str())?;
+    let compatible = !header.variadic
+        && !header.opaque_signature
+        && return_type.matches(
+            header.return_type,
+            header.return_pointee_constant,
+            false,
+            header.return_struct_name.is_some() || header.return_pointer_struct_name.is_some(),
+        )
+        // A declaration without a prototype is compatible with a prototype
+        // whose parameter types are unchanged by the default argument
+        // promotions, as each library prototype's are (C11 6.7.6.3p15).
+        && (header.empty_parameter_list
+            || header.parameters.len() == parameters.len()
+                && header
+                    .parameters
+            .iter()
+            .zip(parameters.iter())
+            .all(|(parameter, expected)| {
+                !parameter.reference
+                    && expected.matches(
+                        parameter.c_type,
+                        parameter.pointee_constant,
+                        parameter.pointee_volatile,
+                        parameter.struct_name.is_some()
+                            || parameter.union_name.is_some()
+                            || parameter.function_pointer_signature.is_some(),
+                    )
+            }));
+    Some((*name, *prototype, compatible))
+}
+
+/// The declared type of a function, spelled with Click's C type names, for a
+/// diagnostic that compares it with another.
+fn describe_function_header_type(header: &C0FunctionHeader) -> String {
+    let describe = |c_type: C0Type,
+                    struct_name: Option<&str>,
+                    pointee_constant: bool,
+                    pointee_volatile: bool| {
+        let base = match (c_type, struct_name) {
+            (C0Type::FunctionPointer(_), _) => "function pointer".to_string(),
+            (_, Some(name)) if c_type.is_pointer() => format!("struct {name} *"),
+            (_, Some(name)) => format!("struct {name}"),
+            (C0Type::Char(_), None) => "char".to_string(),
+            (C0Type::CharPointer(_), None) => "char *".to_string(),
+            (C0Type::CharPointerPointer(_), None) => "char **".to_string(),
+            _ => {
+                let spelling = crate::kernel::c_type_spelling(c_type.to_kernel_type());
+                let pointee = spelling.trim_end_matches('*');
+                if pointee.len() == spelling.len() {
+                    spelling.to_string()
+                } else {
+                    format!("{pointee} {}", &spelling[pointee.len()..])
+                }
+            }
+        };
+        let mut qualifiers = String::new();
+        if pointee_constant {
+            qualifiers.push_str("const ");
+        }
+        if pointee_volatile {
+            qualifiers.push_str("volatile ");
+        }
+        format!("{qualifiers}{base}")
+    };
+    let return_type = describe(
+        header.return_type,
+        header
+            .return_struct_name
+            .as_deref()
+            .or(header.return_pointer_struct_name.as_deref()),
+        header.return_pointee_constant,
+        false,
+    );
+    let mut parameters = header
+        .parameters
+        .iter()
+        .map(|parameter| {
+            describe(
+                parameter.c_type,
+                parameter
+                    .struct_name
+                    .as_deref()
+                    .or(parameter.union_name.as_deref()),
+                parameter.pointee_constant,
+                parameter.pointee_volatile,
+            )
+        })
+        .collect::<Vec<_>>();
+    if header.variadic {
+        parameters.push("...".to_string());
+    }
+    if parameters.is_empty() && !header.empty_parameter_list {
+        parameters.push("void".to_string());
+    }
+    format!("{return_type} ({})", parameters.join(", "))
 }
 
 fn function_headers_compatible(left: &C0FunctionHeader, right: &C0FunctionHeader) -> bool {
@@ -9265,9 +9469,11 @@ impl Parser {
         if self.peek() == Some(&Token::LParen) {
             return Err(self.error_here("function-pointer declarations are not supported by Click"));
         }
+        let name_position = self.here();
         let source_name = self.expect_ident("function name")?;
         self.expect(Token::LParen)?;
         self.push_scope();
+        let empty_parameter_list = self.peek() == Some(&Token::RParen);
         let unnamed_before = self.unnamed_parameters;
         let parameters = self.parse_parameters()?;
         let has_unnamed_parameter = self.unnamed_parameters != unnamed_before;
@@ -9291,6 +9497,7 @@ impl Parser {
         }
         Ok(C0FunctionHeader {
             declaration_line,
+            name_position,
             opaque_signature,
             opaque_signature_types: std::mem::take(&mut self.opaque_signature_types),
             opaque_attributes: false,
@@ -9305,6 +9512,7 @@ impl Parser {
             returns_twice: false,
             variadic,
             has_unnamed_parameter,
+            empty_parameter_list,
             compile_time_error: false,
             parameters,
         })
@@ -9605,6 +9813,20 @@ impl Parser {
         header: &C0FunctionHeader,
         definition: bool,
     ) -> Result<(), C0SyntaxError> {
+        if let Some((name, prototype, compatible)) = library_function_prototype(header) {
+            if definition {
+                return Err(self.error_at_position(header.name_position.clone(), format!(
+                    "definition of the C library function `{name}` is not supported: the name is reserved for the library (C11 7.1.3), GCC and Clang compile a call to `{name}` as a call to the library's `{prototype}` and may evaluate it by the library's specification rather than this body unless the translation unit is built with `-ffreestanding` or `-fno-builtin`, which no Click target is, and Click checks each call against its specification of `{name}`; rename the function, or give it internal linkage with `static`"
+                )));
+            }
+            if !compatible {
+                return Err(self.error_at_position(header.name_position.clone(), format!(
+                    "declaration of `{}` has type `{}`, which is incompatible with the C library's `{prototype}` (C11 6.7.6.3p15); Clang diagnoses it as an incompatible redeclaration of the library function, GCC and Clang reject it when the library's header is included, and Click specifies `{name}` only with the library's type",
+                    header.source_name,
+                    describe_function_header_type(header),
+                )));
+            }
+        }
         if let Some(previous_source) = self.function_source_names.get(&header.name)
             && previous_source != &header.source_name
         {
