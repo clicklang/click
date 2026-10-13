@@ -110,8 +110,10 @@ component equations reach the invariant-closing step, where the guarded bundle
 still exhausts the smart work limit. **This draft does not verify and establishes
 no new C checksum result.** Proof variations paused after the three-strikes
 investigation; the retained failure is at `close_invariants()`. The focused
-closure trace reports no checked simple steps for that bundle. Investigate the
-bundle's facts and source presentation before trying further proof variations.
+closure trace reports no checked simple steps for that bundle. The closure
+diagnostic identifies `0 <= to_integer(len)`, the generated ranking
+nonnegativity obligation, as unresolved. Investigate how the back-edge count
+facts enter that obligation's scope before trying further proof variations.
 
 To reproduce in a throwaway copy of this trial, copy the draft to
 `sixteen.click`, copy `short-memory.click.import.json` and its `.import.lock.json`

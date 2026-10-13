@@ -124,7 +124,9 @@ component-sum invariants follow the actual remaining count, with checked byte
 promotion and native addition bounds. Checked native addition-pair and
 double-reduction packing lemmas are available for the larger computation.
 The original DO16 proof draft reaches its guarded invariant bundle but does
-not verify; investigate that closure before widening the C proof range.
+not verify. The closer identifies `0 <= to_integer(len)`, the generated ranking
+nonnegativity obligation, as unresolved; investigate its back-edge fact scope
+before widening the C proof range.
 
 Connect the original nonempty computation to the common specification, then
 prove compatible seed/reset/null-buffer behavior and incremental processing.
