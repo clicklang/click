@@ -283,7 +283,17 @@ one-past addresses. This check neither reads nor initializes the referent and
 grants no access authority. Automatic `int&` and `const int&` locals can bind
 existing references, supported pointer dereferences, and direct calls with
 matching native reference results. Assignment through a mutable reference local
-writes its referent; it does not rebind the alias. Ending the local binding does
+writes its referent; it does not rebind the alias.
+
+Native element references are `int&`, `unsigned int&`, `unsigned char&` and
+`std::byte&`, each possibly `const`, written `int32&`, `uint32&` and `uint8&`
+in the sidecar. They are admitted as parameters, results and locals. A call
+that returns one can also be read or written directly, as in `return s[0];`
+and `s[0] = v;`. A read is a typed load of the returned address and needs a
+resource for the referent. A write needs a mutable referent and owns it; its
+value must be free of calls and is read before the call, as C++17 sequences
+an assignment's right operand first. Compound assignment through a returned
+reference remains unsupported. Ending the local binding does
 not end the backing object's lifetime. References to local objects, temporary
 lifetime extension, rvalue references and nested reference declarations remain
 unsupported.
@@ -307,11 +317,11 @@ into C text. The `const-reference-alias` fixture writes through an `int&` and
 reads through an aliased `const int&`, using one explicit `owns` resource.
 C++ `const` restricts access through that reference; it does not create a Click
 `views` resource or imply that aliases cannot write. Supported parameters are
-currently by-value `bool` or signed/unsigned 32/64/128-bit integers, `int&`, `const int&`,
+currently by-value `bool` or signed/unsigned 32/64/128-bit integers, native element references,
 mutable `int*`, `unsigned int*` or `unsigned char*`, one `const` signed-64 reference, and mutable or const references
 to supported simple record types with distinct proof-facing names. Selected functions return `int`,
 signed/unsigned 64/128-bit integers, `unsigned int`, `unsigned char`, `bool`, mutable `int*`, `unsigned int*` or `unsigned char*`,
-`int&`, `const int&`, or `void`.
+native element references, or `void`.
 
 Free and ordinary member functions also admit mutable by-value simple-record
 parameters with trivial copying and destruction, without base subobjects.
@@ -1636,8 +1646,8 @@ dynamic-extent span's `size`, `size_bytes`, `data`, `front`, `back`,
 | `subspan(o, n)` | `o <= size`; `n != std::dynamic_extent implies n <= size - o` | data `+ o`; size `n`, or `size - o` for `std::dynamic_extent` |
 
 An element type outside that list matches no entry, so its calls are refused
-by name. Element accessors (`front`, `back`, `operator[]`) currently import
-only for `int`, because the C++ profile carries references to `int` alone.
+by name. Element accessors (`front`, `back`, `operator[]`) return native
+element references, which a caller may bind, read or write directly.
 A `std::dynamic_extent` count to `subspan` is refused by a kernel defect
 (`bugs/a-view-returning-call-refuses-a-deferred-precondition.md`).
 

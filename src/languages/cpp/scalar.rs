@@ -227,6 +227,23 @@ pub(super) fn scalar_value_type(value: &CppType) -> CppType {
     value
 }
 
+/// A native reference binds an object of its own type, possibly adding const
+/// but never removing it.
+pub(super) fn reference_binds(object: &CppType, referent: &CppType) -> bool {
+    same_scalar_type(&scalar_value_type(object), &scalar_value_type(referent))
+        && (Scalar::of(referent).is_some_and(|scalar| scalar.is_const)
+            || !Scalar::of(object).is_some_and(|scalar| scalar.is_const))
+}
+
+/// The element a native reference refers to: an `int`, `unsigned int`,
+/// `unsigned char` or `std::byte`, possibly const.
+pub(super) fn reference_element(value: &CppType) -> Option<Scalar> {
+    match value {
+        CppType::LvalueReference { pointee } => Scalar::pointer_element(pointee, true),
+        _ => None,
+    }
+}
+
 pub(super) fn same_scalar_type(left: &CppType, right: &CppType) -> bool {
     match (left, right) {
         (CppType::Pointer { pointee: left }, CppType::Pointer { pointee: right })
