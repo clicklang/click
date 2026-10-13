@@ -2589,12 +2589,19 @@ or initialization. Pointer arithmetic after the cast counts bytes;
 origins, and reverse casts from bytes to wider object types are rejected. See
 [`contract_byte_pointer_casts.md`](https://github.com/clicklang/click/blob/master/mdtests/contract_byte_pointer_casts.md).
 
-Contract expressions accept the unsigned narrowing cast `(uint32)x`, including
-`old((uint32)p->value)`. The operand must be
-a current scalar expression, including a pure-function call; put `old(...)`
-or `at(...)` around the whole cast to
-select another snapshot. A 64-to-`uint32` cast retains the low 32 bits, rather
-than requiring the source value to fit. Casts retain their selected memory
+Contract expressions accept integer casts such as `(uint32)x` and `(int8)x`,
+including `old((uint32)p->value)`. A cast is C's conversion, as GCC and Clang
+compute it: the value modulo 2^N of the destination type, defined for every
+operand, so a 64-to-`uint32` cast keeps the low 32 bits
+(`mdtests/a_narrow_specification_cast_is_always_defined.md`). The checked
+conversion, which owes the destination range, is written `to_T(...)` over an
+`Integer` (see [Mathematical integers](#mathematical-integers)). An argument
+to a pure function's machine-integer parameter converts the same way C
+converts a call argument
+(`mdtests/a_pure_function_argument_converts_modulo_its_parameter_type.md`).
+The operand must be a current scalar expression, including a pure-function
+call; put `old(...)` or `at(...)` around the whole cast to select another
+snapshot. Casts retain their selected memory
 snapshot even when the underlying field is subsequently updated.
 
 A contract may also cast an opaque `void *` parameter of the function under
@@ -2683,9 +2690,8 @@ unsigned long left() {
 Here `left_file` aliases the C file containing `state`; its unchanged C wrapper
 calls `bump(&state)`. Ownership is transferred, not recreated on each call.
 The fixture covers repeated calls, reset, and another file's independent
-`state`. An implicit 64-bit integer return conversion to `int` requires proof
-that the value is representable: signed sources need both bounds, unsigned
-sources need the upper bound. This differs from the low-bit `uint32` cast.
+`state`. An implicit 64-bit integer return conversion to `int` converts modulo
+2^32, as GCC and Clang compile it, like the explicit `(int32)` cast.
 
 For a function-local static, include the function name:
 
