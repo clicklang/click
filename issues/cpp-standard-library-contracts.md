@@ -24,7 +24,11 @@ The `std::span<T>` entries are generic over the element type. `T` may be
 bind for libstdc++ and for libc++'s `__data_` and `__size_` layout.
 `tests/bitcoin_core_money_range.rs` covers `subspan`, `last` and `size_bytes`
 on `std::span<unsigned char>` and `std::span<unsigned int>` in the gate, and
-`data`, `first` and a `std::span<std::byte>` subview nightly. Each has an
+`data`, `first` and a `std::span<std::byte>` subview nightly. The C++ profile
+admits native element references (`int`, `unsigned int`, `unsigned char`,
+`std::byte`, possibly `const`) as parameters, results and locals, and reads
+and writes a returned element reference directly, so `s[0]`, `s.front()` and
+`s.back()` read and `s[i] = v` writes for each element type. Each has an
 expanded proof that names no private field, and refusals for a missing
 precondition and a false claim. An uncatalogued call (`empty`) is refused by
 name.
@@ -37,10 +41,8 @@ function. Ordinary standard-library use should verify against Click
 contracts without the sidecar stating its own `extern` assumption for each
 call. The remaining gaps are mostly in the C++ profile, not the catalog:
 
-- References to element types other than `int` do not import, so
-  `front`, `back` and `operator[]` on `std::span<unsigned char>` are refused
-  before the catalog is consulted ("function return type is outside the
-  supported C++ `bool` slice").
+- Compound assignment through a returned reference (`s[i] += v`) is
+  refused by the exporter.
 - `const`-qualified template arguments (`std::span<const int>`) are refused
   by the exporter.
 - Static-extent spans (`std::span<int, 4>`) are refused: libstdc++'s extent
@@ -57,8 +59,6 @@ call. The remaining gaps are mostly in the C++ profile, not the catalog:
 
 ## Intended regression
 
-- `operator[]`, `front` and `back` on `std::span<unsigned char>` verify
-  against the generic entries.
 - A `std::span<const int>` caller using `size`, `data`, `operator[]`,
   `first` and `last` verifies.
 - One further type family needed by a real program (for example

@@ -215,8 +215,7 @@ Opaque function rules have a narrower boundary:
   Certification reuses a proof's execution when the entry states each of its
   assumptions, which is a lookup;
 - contract execution mode is explicit. `VerifyLoops` checks annotated loop
-  rules, while `ExecuteLoops` independently repeats a bounded concrete
-  execution trace;
+  rules, while `ExecuteLoops` unrolls loops along a bounded execution;
 - every path verification condition is discharged before any body-safety,
   postcondition, resource, or effect claim is certified;
 - all recorded contract claims must have checked evidence for that same exact

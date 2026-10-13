@@ -123,11 +123,16 @@ every input byte for canonical seed 1, nonnull input, and lengths 2–15. Exact
 component-sum invariants follow the actual remaining count, with checked byte
 promotion and native addition bounds. Checked native addition-pair and
 double-reduction packing lemmas are available for the larger computation.
-The original DO16 proof draft closes its guarded invariant bundle with explicit
-remaining-count nonnegativity and decrease proofs. It does not yet verify:
-the next blocker is the B accumulator equality after leaving the loop.
-Compare its count conversion and input-snapshot identities with the exported
-invariant before widening the C proof range.
+The locked DO16 sidecar now proves the shared checksum, termination, and
+preservation of all input bytes for canonical seed 1, nonnull input, and
+exactly 16 bytes. It follows actual remaining-count state, checks all sixteen
+native addition pairs, and preserves the component equations through the
+zero-length scalar tail. The offline nightly regression checks helper bodies,
+expansion, and rejection of false results/invariants and missing authority.
+
+Next, extend the larger path to repeated DO16 blocks and nonempty scalar tails,
+then original 5552-byte batches. Maintain exact component equations and native
+bounds across reductions; the arbitrary-length C result remains unproved.
 
 Connect the original nonempty computation to the common specification, then
 prove compatible seed/reset/null-buffer behavior and incremental processing.

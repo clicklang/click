@@ -7828,13 +7828,14 @@ impl<'a> Proof<'a> {
     /// production checked-step dispatch.
     /// A Surface spelling of `requirement` at this frontier that lowers back
     /// to it, chosen as the smart retry chooses one: the source-backed call
-    /// clause first, then a synthesized spelling. `None` when neither lowers
-    /// to the requirement.
+    /// clause first, with the caller's own predicate requirement unfolded when
+    /// the call passes it through, then a synthesized spelling. `None` when
+    /// neither lowers to the requirement.
     pub(in crate::surface::proof) fn requirement_surface(
         &self,
         requirement: &UnresolvedRequirement,
         step: &ProofStep,
-    ) -> Result<Option<ClickProposition>, ClickError> {
+    ) -> Result<Option<RequirementSpelling>, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Ok(None);
         };
@@ -7854,9 +7855,28 @@ impl<'a> Proof<'a> {
         if requirement.call_site.is_some()
             && let Some(registry_surface) =
                 source_backed_call_requirement_surface(requirement, step, execution, context)
-            && let Some(surface) = admit(registry_surface.proposition)
         {
-            return Ok(Some(surface));
+            let direct_caller =
+                source_backed_direct_caller_requirement(requirement, step, execution, context);
+            let candidate = match &direct_caller {
+                Some((predicate_name, _)) => {
+                    let mut unfolded = self.active_unfolded_predicates();
+                    unfolded.push(predicate_name.clone());
+                    unfold_structural_invariant_proposition(
+                        context.spec_definitions.predicates,
+                        &registry_surface.proposition,
+                        &unfolded,
+                    )
+                    .map_err(|message| self.step_error(message))?
+                }
+                None => registry_surface.proposition,
+            };
+            if let Some(surface) = admit(candidate) {
+                return Ok(Some(RequirementSpelling {
+                    surface,
+                    direct_caller,
+                }));
+            }
         }
         check_verification_deadline()?;
         Ok(synthesize_surface_proposition(
@@ -7864,7 +7884,11 @@ impl<'a> Proof<'a> {
             ParameterBinding::new(context.parsed_function.parameters(), context.arguments),
             &execution.core.state,
         )
-        .and_then(admit))
+        .and_then(admit)
+        .map(|surface| RequirementSpelling {
+            surface,
+            direct_caller: None,
+        }))
     }
 
     pub(in crate::surface::proof) fn retry_statement_after_refusal(
@@ -9434,4 +9458,32 @@ pub(in crate::surface::proof) fn close_requirement_have_by_auto<'a>(
         Some(witnessed) => witnessed.try_simp_closure_with_surfaces(&surfaces),
         None => Ok(None),
     }
+}
+
+/// A step requirement spelled in Surface syntax.
+pub(in crate::surface::proof) struct RequirementSpelling {
+    pub(in crate::surface::proof) surface: ClickProposition,
+    /// When the requirement is the caller's own predicate requirement passed
+    /// through the call: the predicate to unfold and the requirement to
+    /// project, as smart execution's retry proves it.
+    pub(in crate::surface::proof) direct_caller: Option<(String, CallerRequirementSelection)>,
+}
+
+/// Proves a requirement's `have` by the implicit `auto`: the caller's own
+/// requirement by unfolding its predicate and projecting it, anything else by
+/// [`close_requirement_have_by_auto`].
+pub(in crate::surface::proof) fn close_requirement_spelling_by_auto<'a>(
+    have: ProofScope<'a>,
+    spelling: &RequirementSpelling,
+) -> Result<Option<ProofScope<'a>>, ClickError> {
+    let Some((predicate_name, selection)) = &spelling.direct_caller else {
+        return close_requirement_have_by_auto(have, &spelling.surface);
+    };
+    let Some(unfolded) = attempt::candidate_outcome(
+        have.apply_step(ProofStep::UnfoldPredicate(predicate_name.clone())),
+    )?
+    else {
+        return Ok(None);
+    };
+    unfolded.try_direct_caller_requirement_closure(selection)
 }

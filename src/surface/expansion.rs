@@ -294,6 +294,55 @@ pub fn expand_c0_claim_source(
     Ok(splice_source(click_source, &tokens, span, &replacement))
 }
 
+/// Formats a function claim's already-checked certificate into its source.
+/// Returns `None` for claims not represented in `verified` or not declared in
+/// this source module. The caller must verify the rewritten source, and must
+/// run this on the thread retaining the verification's kernel tables.
+pub fn expand_verified_function_claim_source_by_label(
+    click_source: &str,
+    verified: &[VerifiedCTheorem],
+    claim_label: &str,
+) -> Result<Option<String>, ClickError> {
+    let Some((function_block, claim)) = verified.iter().find_map(|theorem| {
+        function_expansion_claim_by_label(&theorem.function_block, claim_label)
+            .map(|claim| (&theorem.function_block, claim))
+    }) else {
+        return Ok(None);
+    };
+    let function_name = function_block.signature().name();
+    let tokens = scan_source_tokens(click_source)?;
+    let Ok(function) = find_function(&tokens, function_name) else {
+        return Ok(None);
+    };
+    let claim = covering_claim(function_block, claim);
+    let edit = if claim == CProofClaim::Grouped {
+        find_grouped_proof_edit(&tokens, &function, function_block)?
+    } else {
+        find_claim_proof_edit(&tokens, &function, function_block, claim)?
+    };
+    let theorem = select_expansion_theorem(verified, function_name, claim)?;
+    let replacement = claim_expansion_source(theorem)?;
+    let span = edit.span();
+    let replacement = indent_replacement(click_source, span.start, &replacement);
+    let replacement = match edit {
+        ProofSourceEdit::Explicit(_) => replacement,
+        ProofSourceEdit::DefaultTerminator { .. } => {
+            let separator = click_source[..span.start]
+                .chars()
+                .next_back()
+                .is_some_and(|character| !character.is_whitespace());
+            format!("{}{replacement}", if separator { " " } else { "" })
+        }
+        ProofSourceEdit::OmittedLoopPhase { .. } => unreachable!(),
+    };
+    Ok(Some(splice_source(
+        click_source,
+        &tokens,
+        span,
+        &replacement,
+    )))
+}
+
 fn expand_project_claim_source(
     project: &ClickProject,
     inputs: &ProgramInputs<'_>,

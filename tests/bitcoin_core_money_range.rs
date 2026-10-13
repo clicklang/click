@@ -3334,7 +3334,7 @@ fn axiomatic_span_subviews_and_byte_size_verify_for_other_elements() {
                     window
                         .replace("    requires 3u64 <= std_span_size(s);\n", "")
                         .replace("    apply(uint64_window_bounds(std_span_size(s)));\n", ""),
-                    "subspan precondition",
+                    "precondition clause 3 of `span__unsigned_char__value_unsigned_long_18446744073709551615_subspan`",
                 ),
                 // The window starts at the offset, not at the view's start.
                 (
@@ -3353,7 +3353,7 @@ fn axiomatic_span_subviews_and_byte_size_verify_for_other_elements() {
             harness: "std::span<unsigned char> probe(std::span<unsigned char>& s) noexcept { return s.last(1); }",
             refusals: vec![(
                 last.replace("    requires 1u64 <= std_span_size(s);\n", ""),
-                "last precondition",
+                "precondition clause 3 of `span__unsigned_char__value_unsigned_long_18446744073709551615_last`",
             )],
             sidecar: last,
         },
@@ -3423,6 +3423,137 @@ fn axiomatic_span_byte_element_entries_verify() {
     execute();
     simp();
 }}"#
+            ),
+            refusals: vec![],
+        },
+    ]);
+}
+
+const UINT_SPAN: &str = "struct span__unsigned_int__value_unsigned_long_18446744073709551615";
+
+// A returned element reference is read and written directly, as in
+// `return s[0];` and `s[0] = v;`, for element types other than `int`. The
+// read needs a view of the element and the write needs to own it; the span
+// contracts grant neither.
+#[test]
+fn axiomatic_span_element_references_read_and_write() {
+    let read = format!(
+        r#"uint8 probe({UCHAR_SPAN}& s) {{
+    views std_span_data(s);
+    views std_span_size(s);
+    views std_span_data(s)[0];
+    requires 1u64 <= std_span_size(s);
+    ensures result == std_span_data(s)[0];
+}} by {{
+    execute();
+    simp();
+}}"#
+    );
+    let write = format!(
+        r#"void probe({UCHAR_SPAN}& s, uint8 v) {{
+    views std_span_data(s);
+    views std_span_size(s);
+    owns std_span_data(s)[1];
+    requires 2u64 <= std_span_size(s);
+    requires separate(memory(std_span_data(s)[1]), memory(std_span_data(s)));
+    requires separate(memory(std_span_data(s)[1]), memory(std_span_size(s)));
+    ensures std_span_data(s)[1] == v;
+    ensures result == v;
+}} by {{
+    execute();
+    simp();
+}}"#
+    )
+    .replace("void probe", "uint8 probe");
+    let back = format!(
+        r#"uint32 probe({UINT_SPAN}& s) {{
+    views std_span_data(s);
+    views std_span_size(s);
+    views std_span_data(s)[std_span_size(s) - 1u64];
+    requires 1u64 <= std_span_size(s);
+    ensures result == std_span_data(s)[std_span_size(s) - 1u64];
+}} by {{
+    execute();
+    simp();
+}}"#
+    );
+    check_generic_span_cases(vec![
+        GenericSpanCase {
+            name: "element-read",
+            dependencies: SPAN_DEPENDENCIES,
+            harness: "unsigned char probe(std::span<unsigned char>& s) noexcept { return s[0]; }",
+            refusals: vec![
+                // The read needs permission for the element itself.
+                (
+                    read.replace("    views std_span_data(s)[0];\n", ""),
+                    "missing resource fact `views",
+                ),
+                // `s[0]` reads the first element, not the second.
+                (
+                    read.replace(
+                        "ensures result == std_span_data(s)[0];",
+                        "ensures result == std_span_data(s)[1];",
+                    ),
+                    "ensures",
+                ),
+            ],
+            sidecar: read,
+        },
+        GenericSpanCase {
+            name: "element-write",
+            dependencies: SPAN_DEPENDENCIES,
+            harness: "unsigned char probe(std::span<unsigned char>& s, unsigned char v) noexcept { s[1] = v; return s[1]; }",
+            // A view of the element does not permit the write.
+            refusals: vec![(
+                write.replace("owns std_span_data(s)[1];", "views std_span_data(s)[1];"),
+                "missing resource fact `owns",
+            )],
+            sidecar: write,
+        },
+        GenericSpanCase {
+            name: "element-back",
+            dependencies: SPAN_DEPENDENCIES,
+            harness: "unsigned int probe(std::span<unsigned int>& s) noexcept { return s.back(); }",
+            refusals: vec![(
+                back.replace("    requires 1u64 <= std_span_size(s);\n", ""),
+                "precondition clause 3 of `span__unsigned_int__value_unsigned_long_18446744073709551615_back`",
+            )],
+            sidecar: back,
+        },
+    ]);
+}
+
+// Returning an element reference, and `int` element reads and writes, which
+// the profile previously admitted only through a reference local.
+#[test]
+#[ignore = "nightly: three more pinned C++ exports"]
+fn axiomatic_span_element_reference_returns_and_int_access() {
+    let int_span = "struct span__int__value_unsigned_long_18446744073709551615";
+    check_generic_span_cases(vec![
+        GenericSpanCase {
+            name: "element-reference",
+            dependencies: SPAN_DEPENDENCIES,
+            harness: "unsigned char& probe(std::span<unsigned char>& s) noexcept { return s[1]; }",
+            sidecar: format!(
+                "uint8& probe({UCHAR_SPAN}& s) {{ views std_span_data(s); views std_span_size(s); requires 2u64 <= std_span_size(s); ensures &result == std_span_data(s) + 1u64; }} by {{ execute(); simp(); }}"
+            ),
+            refusals: vec![],
+        },
+        GenericSpanCase {
+            name: "int-element-read",
+            dependencies: SPAN_DEPENDENCIES,
+            harness: "int probe(std::span<int>& s) noexcept { return s[0]; }",
+            sidecar: format!(
+                "int32 probe({int_span}& s) {{ views std_span_data(s); views std_span_size(s); views std_span_data(s)[0]; requires 1u64 <= std_span_size(s); ensures result == std_span_data(s)[0]; }} by {{ execute(); simp(); }}"
+            ),
+            refusals: vec![],
+        },
+        GenericSpanCase {
+            name: "int-element-write",
+            dependencies: SPAN_DEPENDENCIES,
+            harness: "void probe(std::span<int>& s, int v) noexcept { s[0] = v; }",
+            sidecar: format!(
+                "void probe({int_span}& s, int32 v) {{ views std_span_data(s); views std_span_size(s); owns std_span_data(s)[0]; requires 1u64 <= std_span_size(s); requires separate(memory(std_span_data(s)[0]), memory(std_span_data(s))); requires separate(memory(std_span_data(s)[0]), memory(std_span_size(s))); ensures std_span_data(s)[0] == v; }} by {{ execute(); simp(); }}"
             ),
             refusals: vec![],
         },

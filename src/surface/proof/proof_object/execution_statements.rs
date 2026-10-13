@@ -953,6 +953,9 @@ impl<'a> Proof<'a> {
         let addressed_context = self
             .site
             .tactic_index()
+            // Loop phase drivers already attribute their own local script.
+            // The enclosing proof site still names the outer loop tactic.
+            .filter(|_| context.constants.invariant_body_context.is_none())
             .map(|index| context.with_tactic_index(index));
         let context = addressed_context.as_ref().unwrap_or(context);
         // Resolve this statement's result local before checking the step.
@@ -1411,7 +1414,9 @@ impl<'a> Proof<'a> {
         let open = distinct_requirements(recorded.recorded);
         let spelling = |requirement: &UnresolvedRequirement| -> Result<String, ClickError> {
             Ok(match self.requirement_surface(requirement, &step)? {
-                Some(surface) => crate::surface::printing::source_click_proposition(&surface),
+                Some(spelling) => {
+                    crate::surface::printing::source_click_proposition(&spelling.surface)
+                }
                 None => format!(
                     "{} (no Surface spelling: report this as a bug)",
                     self.execution()
@@ -1455,7 +1460,10 @@ impl<'a> Proof<'a> {
                         open.len()
                     )));
                 };
-                let Some(surface) = self.requirement_surface(requirement, &step)? else {
+                let Some(surface) = self
+                    .requirement_surface(requirement, &step)?
+                    .map(|spelling| spelling.surface)
+                else {
                     return Err(self.step_error(format!(
                         "this step's open obligation {} cannot be proved by `by`",
                         spelling(requirement)?
@@ -1602,16 +1610,17 @@ impl<'a> Proof<'a> {
         let mut current = self.clone();
         let mut entries = Vec::with_capacity(requirements.len());
         for requirement in requirements {
-            let Some(surface) = current.requirement_surface(requirement, step)? else {
+            let Some(spelling) = current.requirement_surface(requirement, step)? else {
                 return Ok(None);
             };
+            let surface = spelling.surface.clone();
             let checkpoint = current.checkpoint();
             let Ok(have) = current.begin_have(surface.clone()) else {
                 return Ok(None);
             };
             let Some(closed) =
-                crate::surface::proof::smart_closures::close_requirement_have_by_auto(
-                    have, &surface,
+                crate::surface::proof::smart_closures::close_requirement_spelling_by_auto(
+                    have, &spelling,
                 )?
             else {
                 return Ok(None);

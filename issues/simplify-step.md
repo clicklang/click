@@ -172,7 +172,9 @@ prerequisites, loop-phase `Contextual` checking, and the retained-`have`
 re-run record none. Still uncounted: the kernel's own condition evaluation
 under `Retained`, which does not defer non-exact condition reasoning
 (`certified_condition_transitions`), and the spellability and work of each
-derivation. Add those before cutting over the routes they affect.
+derivation. Add those before cutting over the routes they affect. The fast
+path that condition evaluation needs is
+[difference-logic.md](difference-logic.md).
 
 ### 2. Requirement driver and syntax
 
@@ -212,24 +214,33 @@ Implement `Tactic() by { ... }` and `Tactic() { requires P by ...; }` for
 `Contextual` re-run move onto this driver. A debug assertion checks that each
 spelling re-lowers exactly.
 
-### 3. Cut over by shape
+### 3. Remove the step fallback search
 
-Most frequent census shapes first. Each shape that moves to the driver
-lowers the census baseline. A shape without a spelling is a bug fixed as
-described above. Extend the driver to the other simple tactics with
-prerequisites.
+Decided 2026-10-13. Make every remaining census case go through the fast path
+and implicit `auto`, either by teaching `auto` the proof or by building the
+missing Surface spelling (a missing spelling is a bug), then delete the
+fallback: the former `Retained` search, the compatibility escape hatch in
+smart execution's retry, and the in-step re-run. Lower each pin as its cases
+move; the step census reaches zero.
 
-### 4. Remove the hidden search
+### 4. Check expansion cold
 
-Delete the remaining hidden derivation from simple checking, the
-compatibility escape hatch, and the in-step re-run. Add deterministic scaling
-regressions showing simple-tactic cost does not grow with unrelated context
-facts. Cold-check the expanded corpus with implicit `auto` disabled, and run
-`scripts/check.sh` unfiltered.
+`click expand` already checks its output before writing it. Run that check,
+and `click audit`'s, with the implicit `auto` off, so every expansion is
+proven self-contained when it is produced. There is no user-facing
+cold-check option; the check belongs to expansion. Add deterministic scaling
+regressions showing step cost does not grow with unrelated context facts.
 
 Implicit `auto` has its own budget, and profiling attributes its work to
 `auto`, not to the simple tactic, so a slow `auto` is not reported as a slow
 step.
+
+### 5. Other simple tactics
+
+Extend the census to every simple tactic's prerequisite checks, run it on the
+corpus, and give the fast path, implicit `auto`, and `by`/`requires` forms
+only to the tactics it shows searching. Tactics whose premises are already
+cited exactly, with a smart sibling that finds them, need no change.
 
 ## Acceptance criteria
 
