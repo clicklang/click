@@ -522,12 +522,6 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// explicit closer above, this is expansion and timing attribution only;
     /// the kernel-owned invariant-closure flag carries semantic authority.
     pub(in crate::surface::proof) region_simp: Option<(usize, usize)>,
-    /// Semantic transition evidence recorded by planning so the surface step
-    /// constructed for a statement move can consult the certified transition.
-    /// It is deliberately separate from `ProofTactic` so internal execution
-    /// artifacts cannot masquerade as proof steps.
-    pub(in crate::surface::proof) planned_statement_transitions:
-        SharedVec<PlannedStatementTransition>,
     /// Whether this execution lineage has explicitly unfolded a composite
     /// resource. Only that checked operation opts a frontier `have` into
     /// materializing one selected relation from the compact composition;
@@ -739,7 +733,6 @@ impl ExecutionProofState {
                 surface_record: SurfaceRecord::default(),
                 invariant_closer_step: Default::default(),
                 region_simp: None,
-                planned_statement_transitions: Default::default(),
                 resource_unfolded: false,
                 expansion: ExpansionCursor::default(),
                 branch_path,
