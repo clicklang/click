@@ -800,6 +800,23 @@ the same change so the count cannot rise back. A filtered run
 (`MDTEST_FILTER`, `CLICK_EXAMPLE`) or a run with `CLICK_RUN_QUARANTINED=1`
 skips the comparison.
 
+## Hidden prerequisite ratchet
+
+A simple tactic must close each requirement by an exact or indexed check
+([`issues/simplify-step.md`](https://github.com/clicklang/click/blob/master/issues/simplify-step.md)).
+Where statement checking instead derives a prerequisite by a search whose
+result the proof does not retain, it counts the derivation by route and top
+rule (`instrumentation::HiddenPrerequisiteRoute`). The fixture harnesses take
+that census after an unfiltered run and compare it with
+`HIDDEN_PREREQUISITE_BASELINE` in `tests/mdtests.rs` and `tests/examples.rs`,
+exactly as the artifact reuse ratchet does: a count that rose must not land,
+and a count that fell lowers its pin in the same change. A partitioned CI
+shard (`MDTEST_PARTITION`, `EXAMPLE_PARTITION`) sees part of the corpus, so it
+fails only when its own count exceeds a whole-corpus pin; an unpartitioned
+run, such as a local `scripts/check.sh`, checks both directions. Library tests read
+the same events per step through `collect_planning_statement_transitions`,
+which records the claim and step of each hidden derivation.
+
 ## Quarantine
 
 Known-broken and pathologically slow tests are quarantined so the default

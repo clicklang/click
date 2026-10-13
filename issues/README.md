@@ -117,7 +117,7 @@ Specification and proof:
 
 - [Verify the Linux rbtree example on the recursive structure models](rbtree-example.md)
 - [SMT-backed automation with kernel-checked certificates](smt-auto.md)
-- [Make `step` simple across a call precondition](simplify-step.md)
+- [Make simple tactics fast: exact requirements, expandable `auto` for the rest](simplify-step.md)
 - [Launch design review: open critiques, each to be fixed or ruled wontfix](design-review.md) (depends on smt-auto.md and simplify-step.md)
 
 ## P2: after launch (16)

@@ -10,7 +10,7 @@ use click::cli::{
     CInput, files_with_extension, project_sidecars, read_c_inputs_for_project,
     read_click_project_at_root, read_verifying_sources, source_refs,
 };
-use click::instrumentation::{self, ArtifactReuseRejection};
+use click::instrumentation::{self, ArtifactReuseRejection, HiddenPrerequisiteRoute};
 use click::languages::refresh_compiler_import;
 use click::surface::{
     c0_tactic_source_position, project_tactic_source_position, verify_c0_prepared_project,
@@ -44,6 +44,13 @@ const QUARANTINED: &[(&str, &str)] = &[(
 /// The artifact reuse rejection ratchet (`docs/internals/testing.md`) over
 /// every example project; see `tests/mdtests.rs` for the rule.
 const ARTIFACT_REUSE_REJECTION_BASELINE: &[(ArtifactReuseRejection, usize)] = &[];
+
+/// The hidden prerequisite ratchet (`docs/internals/testing.md`): count the
+/// prerequisites simple statement checking derived by a search the proof does
+/// not retain, over the whole unfiltered corpus, by route and top rule. A
+/// count may only fall; `issues/simplify-step.md` drives it to zero.
+const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] =
+    &[((HiddenPrerequisiteRoute::StepObligation, "And"), 4)];
 
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
@@ -203,6 +210,7 @@ fn example_projects() {
     // CI splits the examples across jobs to stay inside the gate's time
     // budget: `EXAMPLE_PARTITION=k/n` keeps every n-th project from the k-th,
     // over the sorted names, so the shards cover them exactly once.
+    let partitioned = std::env::var_os("EXAMPLE_PARTITION").is_some();
     if let Ok(partition) = std::env::var("EXAMPLE_PARTITION") {
         let (shard, total) = partition
             .split_once('/')
@@ -251,6 +259,7 @@ fn example_projects() {
     // correctness, so concurrency cannot change a verdict; the test runner
     // owns hang containment.
     let _ = instrumentation::take_artifact_reuse_rejection_census();
+    let _ = instrumentation::take_hidden_prerequisite_census();
     let workers = std::thread::available_parallelism().map_or(1, usize::from);
     let failures = limits::run_parallel(&projects, workers, |project| {
         // One line as each project starts and one as it finishes, on stderr
@@ -281,6 +290,7 @@ fn example_projects() {
         panic!("{message}");
     }
     let census = instrumentation::take_artifact_reuse_rejection_census();
+    let hidden_prerequisites = instrumentation::take_hidden_prerequisite_census();
     if requested.is_none()
         && !run_quarantined
         && !skipped_cpp
@@ -290,6 +300,17 @@ fn example_projects() {
         )
     {
         panic!("artifact reuse rejection ratchet (tests/examples.rs baselines):\n{mismatch}");
+    }
+    if requested.is_none()
+        && !run_quarantined
+        && !skipped_cpp
+        && let Some(mismatch) = instrumentation::hidden_prerequisite_census_mismatch(
+            &hidden_prerequisites,
+            HIDDEN_PREREQUISITE_BASELINE,
+            partitioned,
+        )
+    {
+        panic!("hidden prerequisite ratchet (tests/examples.rs baselines):\n{mismatch}");
     }
 }
 
