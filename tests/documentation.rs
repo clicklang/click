@@ -1112,7 +1112,7 @@ fn every_tactic_form_has_a_checked_positive_fixture() {
 }
 
 /// Proof-object operations with a canonical name but no surface spelling.
-const INTERNAL_TACTICS: &[&str] = &["choose"];
+const INTERNAL_TACTICS: &[&str] = &["auto", "choose"];
 
 #[test]
 fn cli_inventory_matches_argument_parsers() {

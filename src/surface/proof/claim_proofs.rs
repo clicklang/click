@@ -639,7 +639,7 @@ pub(in crate::surface) fn prove_claims_by_grouped_auto(
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     let mut tactics = vec![ProofTactic::SmartExecute];
     if !claims.is_empty() {
-        tactics.push(ProofTactic::Simp);
+        tactics.push(ProofTactic::AutoClose);
     }
 
     let verified = prove_claims_by_grouped_tactics(
@@ -1185,6 +1185,9 @@ fn close_claim_directly_from_outcome<'a>(
     execution_paths: &[crate::kernel::CFunctionExecutionCandidate],
     parameter_binding: ParameterBinding<'_>,
     spec_definitions: SpecDefinitions<'_>,
+    // The implicit closer is `auto`; a diagnostic for an explicit `simp`
+    // miss runs only what `simp` would.
+    auto_search: bool,
 ) -> Result<Result<Proof<'a>, ClickError>, ClickError> {
     let surface = describe_click_proposition(surface_goal);
     let failure = |reason: String| {
@@ -1243,6 +1246,15 @@ fn close_claim_directly_from_outcome<'a>(
         return Ok(Ok(completed));
     }
     if let Some(completed) = proof.try_simp_closure()?
+        && completed.is_complete()
+    {
+        search.succeed();
+        return Ok(Ok(completed));
+    }
+    check_verification_deadline()?;
+    // An omitted closer is `auto`: after `simp`, the rest of its search.
+    if auto_search
+        && let Some(completed) = proof.try_auto_closure_after_simp()?
         && completed.is_complete()
     {
         search.succeed();
@@ -2055,6 +2067,20 @@ pub(super) fn finish_ordered_proof<'a>(
                                 .checked_outcome_if_value(condition, None)
                                 .ok()
                         });
+                    // The implicit closer follows the script's last tactic,
+                    // and diagnostics number it so.
+                    let implicit_closer_index = post_execution_tactics
+                        .iter()
+                        .map(|deferred| deferred.tactic_index + 1)
+                        .max()
+                        .unwrap_or(0);
+                    let implicit_auto_closer = DeferredPostExecutionTactic {
+                        lexical_bindings: None,
+                        tactic_index: implicit_closer_index,
+                        source_index: usize::MAX,
+                        tactic: PostExecutionTactic::AutoClose,
+                        surface_recorded: false,
+                    };
                     let mut selected_post_execution_tactics = Vec::new();
                     let mut selected_post_choices = Vec::new();
                     if let Some(branch_proof) = outcome_proof.as_ref() {
@@ -2083,6 +2109,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         matches!(
                             deferred.tactic,
                             PostExecutionTactic::Simp
+                                | PostExecutionTactic::AutoClose
                                 | PostExecutionTactic::SimpUsing(_)
                                 | PostExecutionTactic::Fold(_)
                                 | PostExecutionTactic::Unfold(_)
@@ -2113,6 +2140,15 @@ pub(super) fn finish_ordered_proof<'a>(
                             resource_transition_applied = true;
                             outcome_proof = Some(transitioned);
                         }
+                    }
+                    // A whole-contract script that ends without closing every
+                    // claim ends with `auto`, as an omitted proof does: the
+                    // path's last step is the `auto` closer, which does
+                    // nothing when the script's own tactics closed every
+                    // claim. Its checked steps join the path's closers, so an
+                    // expanded proof writes them out.
+                    if require_explicit_closers {
+                        selected_post_execution_tactics.push(&implicit_auto_closer);
                     }
                     let mut selected_post_choices = selected_post_choices.into_iter().peekable();
                     // An expansion replaces one source occurrence. Outcomes
@@ -3711,7 +3747,9 @@ pub(super) fn finish_ordered_proof<'a>(
                             | PostExecutionTactic::CallOutcomes { .. } => unreachable!(
                                 "post-execution branch selection must flatten control nodes before checking leaf tactics"
                             ),
-                            PostExecutionTactic::Simp | PostExecutionTactic::SimpUsing(_) => {
+                            PostExecutionTactic::Simp
+                            | PostExecutionTactic::AutoClose
+                            | PostExecutionTactic::SimpUsing(_) => {
                                 let restricted_premises = match post_tactic {
                                     PostExecutionTactic::SimpUsing(simp) => {
                                         Some(simp.premises.as_slice())
@@ -3720,9 +3758,23 @@ pub(super) fn finish_ordered_proof<'a>(
                                 };
                                 let closer_name = if restricted_premises.is_some() {
                                     "simp() using"
+                                } else if matches!(post_tactic, PostExecutionTactic::AutoClose) {
+                                    "auto"
                                 } else {
                                     "simp"
                                 };
+                                // `auto` tries `simp` first on each pending
+                                // claim, then the rest of its search on a claim
+                                // `simp` leaves open.
+                                let auto_closer =
+                                    matches!(post_tactic, PostExecutionTactic::AutoClose);
+                                // The closer an omitted one stands for has
+                                // nothing to do on a path whose own tactics
+                                // already closed every claim.
+                                if auto_closer && closures.iter().all(|closure| closure.is_closed())
+                                {
+                                    continue;
+                                }
                                 let capturing_this_tactic = path_capture
                                     .is_some_and(|capture| capture.tactic_index == *tactic_index);
                                 // Read the outcome's resources through the
@@ -3783,8 +3835,12 @@ pub(super) fn finish_ordered_proof<'a>(
                                         proof.try_direct_logical_closure()?
                                     {
                                         Some(completed)
+                                    } else if let Some(completed) = proof.try_simp_closure()? {
+                                        Some(completed)
+                                    } else if auto_closer {
+                                        proof.try_auto_closure_after_simp()?
                                     } else {
-                                        proof.try_simp_closure()?
+                                        None
                                     };
                                     let completed = if let Some(completed) = selected {
                                         completed
@@ -3928,7 +3984,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                             );
                                             let checked = required_outcome(&outcome_proof)?.check_outcome_resource_claim(&completed_execution, claims[*claim_index]).map_err(|error| {
                                                 ClickError::new(format!(
-                                                    "`{proof_label}` path {path_index} left `{claim_label}` unproved; use `simp()` after establishing the facts and resources it needs (claim index {claim_index})\nlast closing attempt:\n{}", error.raw_summary()
+                                                    "`{proof_label}` path {path_index} left `{claim_label}` unproved; establish the facts and resources it needs before the end of the proof (claim index {claim_index})\nlast closing attempt:\n{}", error.raw_summary()
                                                 ))
                                             })?;
                                             direct_resource_evidence.insert(*claim_index, checked);
@@ -4069,8 +4125,12 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 selected
                                             } else if let Some(scope) = scope.try_direct_logical_closure()? {
                                                 Some(scope)
+                                            } else if let Some(scope) = scope.try_simp_closure()? {
+                                                Some(scope)
+                                            } else if auto_closer {
+                                                scope.try_auto_closure_after_simp()?
                                             } else {
-                                                scope.try_simp_closure()?
+                                                None
                                             };
                                             let Some(scope) = selected_scope else {
                                                 check_verification_deadline()?;
@@ -4107,6 +4167,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                         execution.paths(),
                                                         parameter_binding,
                                                         spec_definitions,
+                                                        false,
                                                     )?
                                                     .err()
                                                     .map(|reason| format!("\n{}", reason.raw_summary()))
@@ -4355,6 +4416,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                             arguments,
                                         ),
                                         spec_definitions,
+                                        false,
                                     )? {
                                         reasons.push(reason.raw_summary().to_owned());
                                     }
@@ -4570,6 +4632,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     execution.paths(),
                                     parameter_binding,
                                     spec_definitions,
+                                    true,
                                 )? {
                                     Ok(completed) => {
                                         closures[claim_index] =
@@ -4628,9 +4691,8 @@ pub(super) fn finish_ordered_proof<'a>(
                         .find(|(claim_index, _)| !closures[*claim_index].is_closed())
                     {
                         let claim_label = function_claim_label(function_block, claim);
-                        let closer = "`simp()`";
                         let summary = format!(
-                            "`{proof_label}` path {path_index} left `{claim_label}` unproved; use {closer} after establishing the facts and resources it needs (claim index {claim_index})"
+                            "`{proof_label}` path {path_index} left `{claim_label}` unproved: `auto` could not close it at the end of the proof; establish the facts and resources it needs before then (claim index {claim_index})"
                         );
                         if let Some(error) = closures[claim_index].last_error() {
                             return Err(error.clone().with_context(summary));

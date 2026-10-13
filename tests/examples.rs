@@ -14,7 +14,7 @@ use click::instrumentation::{self, ArtifactReuseRejection};
 use click::languages::refresh_compiler_import;
 use click::surface::{
     c0_tactic_source_position, project_tactic_source_position, verify_c0_prepared_project,
-    verify_c0_project, verify_c0_sources, verify_program_prepared_project,
+    verify_c0_project, verify_c0_sources, verify_c0_sources_at, verify_program_prepared_project,
 };
 
 #[path = "support/limits.rs"]
@@ -525,6 +525,47 @@ fn erase_sidecar_refuses_mutation(sidecar: &str, before: &str, after: &str) {
 
 fn erase_source_refuses_mutation(sidecar: &str, file: &str, before: &str, after: &str) {
     erase_source_refuses_replacement(sidecar, file, before, after, 1);
+}
+
+/// `auto` at this `arena` site once deadlocked: the equality graph held its
+/// lock while canonicalizing a cell read, and canonicalization consulted the
+/// same graph's read generation. It must now answer promptly. The original
+/// proof stays in the example; only this test proves the fact by `auto`.
+#[test]
+#[ignore = "nightly: about 16 s in a debug build, most of it loading the whole arena sidecar"]
+fn auto_on_an_arena_cell_read_answers_instead_of_deadlocking() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let path = root.join("examples/arena/arena_cells.click");
+    let source = fs::read_to_string(&path).expect("the arena sidecar exists");
+    let written = "have first->arena->occupied[k] == at(f1, first->arena->occupied[k]) by {";
+    let start = source
+        .find(written)
+        .expect("the arena proof states the cell read");
+    let block_end = start
+        + source[start..]
+            .find("\n                }\n")
+            .expect("the written proof closes")
+        + "\n                }".len();
+    let edited = format!(
+        "{}have first->arena->occupied[k] == at(f1, first->arena->occupied[k]) by auto;{}",
+        &source[..start],
+        &source[block_end..]
+    );
+    let line = edited[..start].matches('\n').count() + 1;
+    let column = start - edited[..start].rfind('\n').map_or(0, |newline| newline + 1) + 1;
+    let c_sources = read_verifying_sources(&path, &edited).expect("the arena C bundle loads");
+    let started = std::time::Instant::now();
+    let _ = limits::spawn(
+        "arena auto verifier",
+        "click-arena-auto".to_string(),
+        move || verify_c0_sources_at(&edited, &source_refs(&c_sources), line, column),
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(120),
+        "`auto` at the arena cell read took {:?}",
+        started.elapsed()
+    );
 }
 
 fn erase_source_replacement_error(

@@ -1807,6 +1807,33 @@ impl<'a> Proof<'a> {
     /// `auto`: refute the goal's negation from the facts connected to it and
     /// apply the resulting certificate as one ordinary checked step. Any
     /// miss leaves the proof unchanged.
+    /// The searches `auto` runs besides `simp`: the solver and its bridges,
+    /// then a bounded chain of rewrites. A closer that has already tried
+    /// `simp` on this goal runs these when it misses.
+    pub(in crate::surface::proof) fn try_auto_closure_after_simp(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        if let Some(closed) = self.try_solver_closure()? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_bridged_solver_closure()? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_machine_goal_solver_closure()? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_solver_equality_closure()? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_definedness_solver_closure()? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_auto_conjunction_closure()? {
+            return Ok(Some(closed));
+        }
+        self.try_auto_equality_chain_closure()
+    }
+
     pub(in crate::surface::proof) fn try_solver_closure(&self) -> Result<Option<Self>, ClickError> {
         let (Some(goal), Some(surface_goal)) = (self.goal(), self.surface_goal()) else {
             return Ok(None);

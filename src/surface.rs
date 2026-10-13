@@ -3514,6 +3514,11 @@ pub enum ProofTactic {
         premises: Option<Vec<ClickProposition>>,
     },
     Simp,
+    /// The closer `auto` ends a proof with: each pending claim is tried by
+    /// `simp`, then by the rest of `auto`'s search. It has no source
+    /// spelling; `by auto;`, an omitted proof, and a script that ends with
+    /// claims still open use it.
+    AutoClose,
     SimpUsing(ProofSimpUsing),
     ArithmeticCertificate(ArithmeticCertificate),
     /// Dev-only proof hole. Closes the enclosing proof unit without checking
@@ -5247,6 +5252,7 @@ impl ProofTactic {
             Self::SmartExecute => TacticClass::Smart(SmartTacticKind::SmartExecute),
             Self::ExecuteUntil(_) => TacticClass::Smart(SmartTacticKind::ExecuteUntil),
             Self::Simp => TacticClass::Smart(SmartTacticKind::Simp),
+            Self::AutoClose => TacticClass::Smart(SmartTacticKind::Auto),
             Self::SimpUsing(_) => TacticClass::Smart(SmartTacticKind::Simp),
             Self::Have(_) => TacticClass::Control(ControlTactic::Have),
             Self::Open(_) => TacticClass::Control(ControlTactic::Open),
