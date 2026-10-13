@@ -609,9 +609,12 @@ impl<'a> ProofScope<'a> {
         }
         let body = match self.body.try_auto_equality_chain_closure()? {
             Some(body) => body,
-            None => match self.body.try_wide_equality_solver_closure()? {
+            None => match self.body.try_constructor_join_closure()? {
                 Some(body) => body,
-                None => return Ok(None),
+                None => match self.body.try_wide_equality_solver_closure()? {
+                    Some(body) => body,
+                    None => return Ok(None),
+                },
             },
         };
         let mut next = self.clone();
