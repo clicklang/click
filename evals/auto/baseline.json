@@ -2788,7 +2788,7 @@
   "deletable": false
  },
  "examples/rust-chunks-exact/chunks.click::(bytes.len() - bytes.len() % 4u64) - iter_remaining == 0u64::0": {
-  "by_auto": false,
+  "by_auto": true,
   "deletable": false
  },
  "examples/rust-chunks-exact/chunks.click::4u64 <= iter_remaining::0": {
@@ -2960,7 +2960,7 @@
   "deletable": false
  },
  "examples/rust-iterators/sum.click::iter_remaining == 0u64::0": {
-  "by_auto": false,
+  "by_auto": true,
   "deletable": false
  },
  "examples/rust-iterators/sum.click::iter_remaining == bytes.len()::0": {
