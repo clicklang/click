@@ -900,6 +900,14 @@ them cannot hand the same identity to two different things. Reserved-set
 probing narrows what an individual stream will issue; it is not the mechanism
 that keeps allocators apart, because several allocators do not probe at all.
 
+Fresh execution reservations include free Integer identities inside every
+specification application argument, whether its result is a machine value,
+an Integer, or an algebraic value. The specification walker visits those
+explicit arguments while keeping execution-memory snapshots opaque. The
+statement-reservation regressions in `src/kernel/tests/execution_tests.rs`
+check that machine-valued and algebraic applications cannot surrender a held
+argument identity to the execution counter.
+
 A rule that abstracts a state therefore both takes the counter and reports
 where it left it. `abstract_c_state_for_join` and its siblings take the
 maximum of the arms' counters — the arms' abstractions are compared for
