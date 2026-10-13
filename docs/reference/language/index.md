@@ -62,6 +62,13 @@ operators, assignments, and returns. `uint32` addition, subtraction, and
 multiplication wrap at 2^32; division and remainder use unsigned arithmetic,
 bitwise operators use the raw 32-bit pattern, and right shifts are logical.
 Equality compares the bit pattern and ordered comparisons use unsigned order.
+Closed unsigned left shifts also evaluate after rewriting their shift count
+through casts, unsigned subtraction, and a bitwise mask. Raw 32-bit shift
+terms fold their bit pattern; signed C overflow and counts outside `0..31`
+remain separate checked obligations. Residual theorem goals retain machine
+parameter types in diagnostics. See
+[`uint32_shift_by_a_folded_mask.md`](https://github.com/clicklang/click/blob/master/mdtests/uint32_shift_by_a_folded_mask.md)
+and its negative and unsigned residual companions.
 Assigning
 or returning an `int32` into `uint8` is checked narrowing: the current pure
 facts must prove `0 <= value <= 255`.

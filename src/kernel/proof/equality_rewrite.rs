@@ -1413,6 +1413,10 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 rewrite_term(left, from, to),
                 rewrite_term(right, from, to),
             ),
+            Bitvector32Term::BitwiseAnd(left, right) => Bitvector32Term::bitwise_and(
+                rewrite_term(left, from, to),
+                rewrite_term(right, from, to),
+            ),
             Bitvector32Term::ShiftLeft(left, right) => {
                 // The term denotes the shifted bits; signed C overflow is
                 // checked separately during expression evaluation. Preserve
