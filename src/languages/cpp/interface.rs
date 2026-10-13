@@ -3,7 +3,7 @@ use super::scalar::{Scalar, ScalarKind};
 use super::{CppStatement, CppType, PreparedCppImport};
 use crate::kernel::CFunction;
 use crate::languages::PreparedExecution;
-use crate::languages::c::syntax::{self, C0Type};
+use crate::languages::c::syntax::{self, C0Type, LongRank};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn prepare(
@@ -275,7 +275,7 @@ fn function_interface(
                 if Scalar::is(pointee, ScalarKind::Int64, true) =>
             {
                 Ok(syntax::C0Parameter::new(
-                    C0Type::Int64Pointer,
+                    C0Type::Int64Pointer(LongRank::Long),
                     carried_name.clone(),
                     None,
                 )

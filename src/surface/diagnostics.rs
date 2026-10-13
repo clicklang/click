@@ -4092,10 +4092,10 @@ fn scalar_element_width(c_type: C0Type) -> Option<i64> {
         | C0Type::UInt32Array(_)
         | C0Type::Float32Pointer
         | C0Type::Float32Array(_) => Some(4),
-        C0Type::Int64Pointer
-        | C0Type::Int64Array(_)
-        | C0Type::UInt64Pointer
-        | C0Type::UInt64Array(_)
+        C0Type::Int64Pointer(_)
+        | C0Type::Int64Array(_, _)
+        | C0Type::UInt64Pointer(_)
+        | C0Type::UInt64Array(_, _)
         | C0Type::Float64Pointer
         | C0Type::Float64Array(_) => Some(8),
         C0Type::Int128Pointer
@@ -4392,7 +4392,7 @@ fn diagnostic_c0_type_byte_width(c_type: C0Type, pointer_width: u32) -> i64 {
         C0Type::Int8 => 1,
         C0Type::Int16 | C0Type::UInt16 => 2,
         C0Type::Int32 | C0Type::UInt32 => 4,
-        C0Type::Int64 | C0Type::UInt64 => 8,
+        C0Type::Int64(_) | C0Type::UInt64(_) => 8,
         _ if c_type.is_pointer() => i64::from(pointer_width),
         _ => i64::from(pointer_width),
     }
@@ -4438,16 +4438,19 @@ pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter
         | C0Type::UInt32Pointer
         | C0Type::Int32Array(_)
         | C0Type::UInt32Array(_) => 4,
-        C0Type::Int64 | C0Type::UInt64 | C0Type::Int64Array(_) | C0Type::UInt64Array(_) => 8,
+        C0Type::Int64(_)
+        | C0Type::UInt64(_)
+        | C0Type::Int64Array(_, _)
+        | C0Type::UInt64Array(_, _) => 8,
         C0Type::Float32 | C0Type::Float32Array(_) => 4,
         C0Type::Float64 | C0Type::Float64Array(_) => 8,
         C0Type::Int8Pointer | C0Type::Int8PointerPointer => 8,
         C0Type::Int16Pointer
         | C0Type::UInt16Pointer
         | C0Type::Int128Pointer
-        | C0Type::Int64Pointer
+        | C0Type::Int64Pointer(_)
         | C0Type::UInt128Pointer
-        | C0Type::UInt64Pointer
+        | C0Type::UInt64Pointer(_)
         | C0Type::Int16PointerPointer
         | C0Type::UInt16PointerPointer
         | C0Type::Int32PointerPointer
@@ -4455,15 +4458,15 @@ pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter
         | C0Type::UInt8PointerPointer
         | C0Type::UInt32PointerPointer
         | C0Type::Int128PointerPointer
-        | C0Type::Int64PointerPointer
+        | C0Type::Int64PointerPointer(_)
         | C0Type::UInt128PointerPointer
-        | C0Type::UInt64PointerPointer
+        | C0Type::UInt64PointerPointer(_)
         | C0Type::Float32Pointer
         | C0Type::Float64Pointer
         | C0Type::Float32PointerPointer
         | C0Type::Float64PointerPointer => 8,
         C0Type::FunctionPointer(_) => 8,
-        C0Type::PointerArray(_, _) => 8,
+        C0Type::PointerArray(_, _, _) => 8,
     }
 }
 
@@ -6268,12 +6271,12 @@ pub(super) fn describe_parameter_bitvector(
                 return Some(parameter.name().to_string());
             }
             CExpression::Value(CValue::Int64(value))
-                if value == term && parameter.c_type() == C0Type::Int64 =>
+                if value == term && matches!(parameter.c_type(), C0Type::Int64(_)) =>
             {
                 return Some(parameter.name().to_string());
             }
             CExpression::Value(CValue::UInt64(value))
-                if value == term && parameter.c_type() == C0Type::UInt64 =>
+                if value == term && matches!(parameter.c_type(), C0Type::UInt64(_)) =>
             {
                 return Some(parameter.name().to_string());
             }
