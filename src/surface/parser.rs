@@ -8801,7 +8801,7 @@ impl Parser {
                 }),
             _ => None,
         };
-        let mut indexed_scalar_field: Option<(String, u32, CType)> = None;
+        let mut indexed_scalar_field: Option<CType> = None;
         let mut scalar_range_offset = None;
         let mut postfixes = 0;
         while matches!(self.peek(), Some(Token::Arrow | Token::Dot))
@@ -8818,12 +8818,15 @@ impl Parser {
                 })?;
                 let surface_base_before_index = surface_base;
                 dereferences_pointer = false;
-                if let Some(element_width) = struct_array_element_width.or_else(|| {
-                    struct_name
-                        .as_ref()
-                        .and_then(|name| self.struct_layouts.get(name))
-                        .map(|layout| layout.size_bytes())
-                }) {
+                if let Some(element_width) = struct_array_element_width
+                    .filter(|_| struct_name.is_some())
+                    .or_else(|| {
+                        struct_name
+                            .as_ref()
+                            .and_then(|name| self.struct_layouts.get(name))
+                            .map(|layout| layout.size_bytes())
+                    })
+                {
                     let mut indexes = vec![index.clone()];
                     let mut surface_indexes = vec![ContractExpression::CFragment(index.clone())];
                     while struct_array_shape.is_some() && self.peek() == Some(&Token::LBracket) {
@@ -9075,8 +9078,7 @@ impl Parser {
                             | C0Type::Int64(_)
                             | C0Type::UInt64(_)
                     );
-                indexed_scalar_field = scalar_array_field_element(&field)
-                    .map(|(width, ty)| (field_name.clone(), width, ty));
+                indexed_scalar_field = scalar_array_field_element(&field).map(|(_, ty)| ty);
                 (
                     lowered_field_expression(pointer, &field),
                     field.struct_name,
@@ -9147,19 +9149,29 @@ impl Parser {
             struct_array_element_width = next_array_element_width;
             struct_array_shape = next_array_shape;
         }
-        if let Some((name, element_width, element_type)) = indexed_scalar_field {
+        if let Some(element_type) = indexed_scalar_field {
+            // The lowered base already addresses the selected scalar element.
+            // Retain the complete written place, including every subscript,
+            // instead of losing it in the field's byte-address arithmetic.
+            let address = CExpression::AddressOf(Box::new(CExpression::TypedLoad {
+                pointer: Box::new(base.clone()),
+                value_type: element_type,
+                volatile: false,
+                pointee_constant: false,
+                source: Default::default(),
+            }));
             return Ok(vec![ContractSegment {
                 state: ContractSegmentState::Current,
                 base,
                 start: CExpression::Value(int32(0)),
                 end: CExpression::Value(int32(1)),
-                surface: ContractSegmentSurface::Field {
-                    // `surface_base` has already absorbed this field name, so
-                    // there is no parent spelling left to print beside it.
-                    base: None,
-                    name,
-                    element_width: Some(element_width),
-                    element_type: Some(element_type),
+                surface: ContractSegmentSurface::Range {
+                    base: ContractExpression::CUnary {
+                        operand: Box::new(surface_base),
+                        lowered: address,
+                    },
+                    start: ContractExpression::CFragment(CExpression::Value(int32(0))),
+                    end: ContractExpression::CFragment(CExpression::Value(int32(1))),
                 },
             }]);
         }

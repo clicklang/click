@@ -4777,6 +4777,15 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
             start: ContractExpression::CFragment(CExpression::Value(start)),
             end: ContractExpression::CFragment(CExpression::Value(end)),
         } if *start == int32(0) && *end == int32(1) => describe_c_expression(place),
+        ContractSegmentSurface::Range {
+            base:
+                ContractExpression::CUnary {
+                    operand,
+                    lowered: CExpression::AddressOf(_),
+                },
+            start: ContractExpression::CFragment(CExpression::Value(start)),
+            end: ContractExpression::CFragment(CExpression::Value(end)),
+        } if *start == int32(0) && *end == int32(1) => describe_contract_expression(operand),
         ContractSegmentSurface::Range { base, start, end }
         | ContractSegmentSurface::StructRange {
             base, start, end, ..
