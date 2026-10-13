@@ -105,15 +105,18 @@ match the specification byte and exact accumulator equations and bounds; it
 provides no C memory authority or assumed callee result.
 
 The unfinished [16-byte proof draft](sixteen-proof.click.draft) follows the
-original remaining-length DO16 loop. Its sixteen addition pairs and final
-component equations reach the invariant-closing step, where the guarded bundle
-still exhausts the smart work limit. **This draft does not verify and establishes
-no new C checksum result.** Proof variations paused after the three-strikes
-investigation; the retained failure is at `close_invariants()`. The focused
-closure trace reports no checked simple steps for that bundle. The closure
-diagnostic identifies `0 <= to_integer(len)`, the generated ranking
-nonnegativity obligation, as unresolved. Investigate how the back-edge count
-facts enter that obligation's scope before trying further proof variations.
+original remaining-length DO16 loop. Its sixteen addition pairs, final
+component equations, and invariant closure check. The proof explicitly
+establishes the generated ranking obligations: the remaining count is
+nonnegative and decreases from 16 to 0. These facts survive the closure scope;
+the automatic closer's selected arithmetic premises do not include the
+body's derived count equations.
+
+**This draft does not verify and establishes no new C checksum result.** It
+now stops at the post-loop B accumulator equality. Compare its count
+conversion and input-snapshot identities with the exported invariant before
+widening the C proof range. The focused closure trace still
+reports no checked body steps, so it does not explain their fact history.
 
 To reproduce in a throwaway copy of this trial, copy the draft to
 `sixteen.click`, copy `short-memory.click.import.json` and its `.import.lock.json`
