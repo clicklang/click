@@ -4091,7 +4091,7 @@ impl<'a> Proof<'a> {
     /// as the same judgment stated in the function body does. A fixed-state
     /// proof whose state is its entry state (the same object) needs no such
     /// anchoring, and keeps its plain spellings.
-    fn premise_fixed_state_view(&self) -> Option<FixedStateOperationView<'_>> {
+    pub(super) fn premise_fixed_state_view(&self) -> Option<FixedStateOperationView<'_>> {
         self.outcome_fixed_state_view()
             .or_else(|| self.execution_proposition_fixed_state_view())
             .or_else(|| match self.context.as_ref() {
