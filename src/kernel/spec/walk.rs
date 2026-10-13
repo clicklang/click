@@ -8,6 +8,9 @@
 
 use super::*;
 
+#[cfg(test)]
+pub(in crate::kernel) mod generated;
+
 /// One spec subtree of any kind.
 #[derive(Clone, Copy)]
 pub(in crate::kernel) enum SpecNode<'a> {
@@ -260,6 +263,25 @@ impl<'a> SpecNode<'a> {
                         .for_each(|argument| visit(N::Expression(argument)));
                 }
             },
+        }
+    }
+}
+
+impl SpecProposition {
+    /// A quantifier's bound variable and body.
+    pub(in crate::kernel) fn quantifier(&self) -> Option<(Variable, &SpecProposition)> {
+        match self {
+            SpecProposition::ForAllMachineInteger { variable, body, .. }
+            | SpecProposition::ForAllInt32 { variable, body, .. }
+            | SpecProposition::ForAllInteger { variable, body, .. }
+            | SpecProposition::ForAllAlgebraic { variable, body, .. }
+            | SpecProposition::ForAllPointer { variable, body, .. }
+            | SpecProposition::ExistsMachineInteger { variable, body, .. }
+            | SpecProposition::ExistsInt32 { variable, body, .. }
+            | SpecProposition::ExistsInteger { variable, body, .. }
+            | SpecProposition::ExistsAlgebraic { variable, body, .. }
+            | SpecProposition::ExistsPointer { variable, body, .. } => Some((*variable, body)),
+            _ => None,
         }
     }
 }

@@ -216,17 +216,28 @@ Proposed fix: per-claim incremental caching by default
 
 Decision: open.
 
-### W6. Diagnostics print kernel notation
+### W6. Some diagnostic lines still print kernel notation
 
-Today: refusals print terms such as
-`int32 <(load A=read<Bits32>(snapshot#1, pointer=value#1), 100) is true`
-(`mdtests/a_claim_true_in_one_alias_case_is_refused.md`) and
-`left side evaluated to load(bytes)`. Many messages are good ("the store to
-`a[j]` may have written it ... state `i != j`").
+Facts, goals, rejected requirements, evaluated sides, search candidates and
+the proof context now print in Click or C syntax (`old(g[0]) < 100`,
+`(uint32)n <= 1073741823u32`, `viewable(p[1..2])`), with reads of other
+memories as `at(<state A>, ...)` defined after the report.
 
-Proposed fix: render every fact and term in Click or source syntax.
+Today: the `C operation:` and `call bindings:` lines still print lowered C
+(`first(load_int32_pointer(byte_offset(s, 8)), load_uint64(s))`,
+`mdtests/a_refused_wide_range_names_its_bound_field.md`); the echoed claim
+keeps full parentheses and `||` (`(((result == 0 || u == 0) || v == 0) ||
+result == 3)`); a value with no source name prints as `<unnamed A>` (a
+loop-head value, a callee's result) and an address as `<pointer A>` (a heap
+allocation once no live local holds it); byte offsets into an object print as
+`g+8` in the memory-history text and resource ranges over an unnamed base as
+`…[0..40]`. `--trace-proof` keeps its typed notation by design.
 
-Decision: open.
+Proposed fix: render the C operation from its source statement, echo the claim
+through the same printer, and name loop-head values and allocations from the
+state that holds them.
+
+Decision: in progress.
 
 ## L. Surface language
 

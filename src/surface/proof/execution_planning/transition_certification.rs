@@ -1433,7 +1433,12 @@ mod condition_transition_tests {
             Err(error) => error,
         };
 
-        assert!(error.message().contains("missing condition prerequisite: `viewable(memory=snapshot#1, base=p, bytes:uint32=4)"), "{error:?}");
+        assert!(
+            error
+                .message()
+                .contains("missing condition prerequisite: `viewable(p[0..1])`"),
+            "{error:?}"
+        );
     }
 
     #[test]
