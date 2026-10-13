@@ -646,10 +646,12 @@ Supported C surface includes:
   the proof knows; the identity is reasoning: `normalize using` the two
   bounds, a decision that decides them, and the `signed_int32` certificate
   step `interval_narrowed_cast` (planned by `simp` and `arithmetic`) apply
-  it, and the conversion of a known constant folds to its residue. A value
-  converted at a call argument and named in the callee's guarantee is that
-  conversion at the caller; `simp` does not yet relate it to an in-range
-  symbolic argument
+  it, and the conversion of a known constant folds to its residue. A fact
+  equating a value with a conversion whose operand the context already places
+  in range, such as a callee's guarantee about a narrowed argument, also
+  relates the value to the operand
+  (`mdtests/an_in_range_argument_to_a_narrow_parameter_is_its_value_at_the_caller.md`,
+  `mdtests/an_argument_past_the_range_of_a_narrow_parameter_is_not_its_value.md`)
   (`mdtests/uint8_narrowing.md`,
   `mdtests/a_conversion_in_range_is_its_operand_in_a_signed_certificate.md`,
   `mdtests/a_false_claim_about_a_wrapped_value_is_refused.md`). Relating a

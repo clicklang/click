@@ -374,6 +374,53 @@ mod tests {
         );
     }
 
+    // An equality naming a conversion whose operand the context already
+    // bounds also relates the name to the operand; an operand bounded only
+    // past the range is not related, and a known constant folds.
+    #[test]
+    fn an_equality_with_an_in_range_conversion_relates_its_operand() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let y = Bitvector32Term::Variable(Variable(170_020));
+        let result = Bitvector32Term::Variable(Variable(170_021));
+        let byte = Bitvector32Term::machine_integer_cast(Ty::Int32, Ty::UInt8, y.clone());
+        let bounded = |upper: u32| {
+            PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), y.clone()),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(y.clone(), Bitvector32Term::Constant(upper)),
+                    true,
+                )
+                .assume_condition(ConditionTerm::equal(result.clone(), byte.clone()), true)
+        };
+        let same = ConditionTerm::equal(result.clone(), y.clone());
+        assert_eq!(bounded(255).decide(&same), Some(true));
+        assert_ne!(bounded(300).decide(&same), Some(true));
+        let known = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::equal(y.clone(), Bitvector32Term::Constant(44)),
+                true,
+            )
+            .assume_condition(ConditionTerm::equal(result.clone(), byte.clone()), true);
+        assert_eq!(known.decide(&same), Some(true));
+        assert_eq!(
+            known.decide(&ConditionTerm::equal(
+                result.clone(),
+                Bitvector32Term::Constant(44)
+            )),
+            Some(true)
+        );
+        let wrapped = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::equal(y.clone(), Bitvector32Term::Constant(300)),
+                true,
+            )
+            .assume_condition(ConditionTerm::equal(result.clone(), byte), true);
+        assert_ne!(wrapped.decide(&same), Some(true));
+    }
+
     #[test]
     fn a_narrowed_cast_interval_moves_one_residue_class_or_covers_the_range() {
         let _session = crate::kernel::VerificationSession::enter();
@@ -462,7 +509,19 @@ mod tests {
                 context.narrowed_cast_carrier(&byte)
             });
             assert_eq!(carrier, Some(x.clone()));
-            work.push(cost);
+            // Filing an equality that names the conversion relates it to
+            // its operand with the same bounded decisions.
+            let name = Bitvector32Term::Variable(Variable(170_005));
+            let (related, filing) = crate::instrumentation::measure_deterministic_work(|| {
+                context
+                    .clone()
+                    .assume_condition(ConditionTerm::equal(name.clone(), byte.clone()), true)
+            });
+            assert_eq!(
+                related.decide(&ConditionTerm::equal(name, x.clone())),
+                Some(true)
+            );
+            work.push(cost.saturating_add(filing));
         }
         assert!(
             work[2] <= work[0] * 2 + 16,
