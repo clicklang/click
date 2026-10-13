@@ -6,7 +6,7 @@
 # compilation are outside the timed interval. The reported rate is nonblank
 # `.click` source lines per wall-clock second.
 #
-#     scripts/benchmark-examples.sh
+#     evals/speed-survey.sh
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
