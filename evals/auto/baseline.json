@@ -280,7 +280,7 @@
   "deletable": true
  },
  "examples/input-cursor/input_cursor.click::left->pos == at(statement(5).entry, left->pos) + 1::0": {
-  "by_auto": false,
+  "by_auto": true,
   "deletable": true
  },
  "examples/input-cursor/input_cursor.click::right->data == data::0": {
@@ -484,7 +484,7 @@
   "deletable": false
  },
  "examples/owned-string/owned_string.click::at(statement(5).entry, owner->len) == 1::0": {
-  "by_auto": false,
+  "by_auto": true,
   "deletable": true
  },
  "examples/owned-string/owned_string.click::data[0] == 0::0": {
@@ -496,7 +496,7 @@
   "deletable": true
  },
  "examples/owned-string/owned_string.click::observed == first::1": {
-  "by_auto": false,
+  "by_auto": true,
   "deletable": true
  },
  "examples/owned-string/owned_string.click::owner->cap == capacity::0": {
@@ -532,7 +532,7 @@
   "deletable": true
  },
  "examples/owned-string/owned_string.click::result == first::0": {
-  "by_auto": false,
+  "by_auto": true,
   "deletable": true
  },
  "examples/owned-string/owned_string.click::terminated_at(owner->data, owner->len)::0": {
