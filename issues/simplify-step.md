@@ -172,7 +172,9 @@ prerequisites, loop-phase `Contextual` checking, and the retained-`have`
 re-run record none. Still uncounted: the kernel's own condition evaluation
 under `Retained`, which does not defer non-exact condition reasoning
 (`certified_condition_transitions`), and the spellability and work of each
-derivation. Add those before cutting over the routes they affect.
+derivation. Add those before cutting over the routes they affect. The fast
+path that condition evaluation needs is
+[difference-logic.md](difference-logic.md).
 
 ### 2. Requirement driver and syntax
 
