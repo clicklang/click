@@ -10261,6 +10261,10 @@ pub struct PureFactContext {
     /// facts instead of every condition fact. Derived incrementally with
     /// the condition-match indexes.
     pub(super) order_condition_facts: crate::persistent::PersistentMap<ConditionTerm, bool>,
+    /// Difference logic over `condition_facts`
+    /// (`issues/difference-logic.md`), the fast path condition evaluation
+    /// asks before the general decision.
+    pub(super) difference_graph: super::difference_graph::ContextDifferenceGraph,
     /// True `Bitvector32Equal` and `Bitvector64Equal` facts that pin a term
     /// to a constant, keyed by that term and carrying, per fact, the constant
     /// it names. Derived incrementally from `condition_facts`; ordered by

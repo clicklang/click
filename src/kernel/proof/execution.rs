@@ -4253,7 +4253,17 @@ fn check_interface_abstraction(
             &successor_access,
             &PureFactContext::new(),
         )
-        .ok_or("an interface fact is not retained at the abstract successor")?;
+        .ok_or_else(|| {
+            // Say which fact the join does not carry, for the refusal's
+            // report; arm 2 is the successor.
+            UNESTABLISHED_INTERFACE_GOAL.with(|unestablished| {
+                if let Some(unestablished) = unestablished.borrow_mut().as_mut() {
+                    unestablished.fact = spec_index;
+                    unestablished.arm = 2;
+                }
+            });
+            "an interface fact is not retained at the abstract successor"
+        })?;
         interface_lowerings.push([then_lowering, else_lowering, successor]);
     }
     let interface_propositions = interface_lowerings

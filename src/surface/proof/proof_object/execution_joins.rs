@@ -1230,8 +1230,8 @@ impl<'a> Proof<'a> {
             // The arm's own check above does not ask for those, so a fact
             // an arm proved can still be refused here. Say which fact, in
             // which arm, and what that arm does not hold.
-            let missing = (message
-                == "an interface fact is not established by both concrete arms")
+            let missing = (message == "an interface fact is not established by both concrete arms"
+                || message == "an interface fact is not retained at the abstract successor")
                 .then(crate::kernel::proof::take_unestablished_interface_goal)
                 .flatten()
                 .map(|missing| {
@@ -1258,7 +1258,15 @@ impl<'a> Proof<'a> {
                         &missing.goal,
                         context.parameter_binding(),
                     );
-                    if missing.side_condition {
+                    if missing.arm == 2 && missing.side_condition {
+                        // Each arm holds it from its own facts, which the
+                        // join does not carry.
+                        format!(
+                            ": the arms hold the interface fact{fact}, but the join does not carry what its terms need to denote a value, `{goal}`. Prove that in each arm as well, for example `have defined(j + 1) by {{ ... }}` for a fact that mentions `j + 1`"
+                        )
+                    } else if missing.arm == 2 {
+                        format!(": the join does not retain the interface fact{fact}")
+                    } else if missing.side_condition {
                         format!(
                             ": the {arm} arm holds the interface fact{fact} but not what its terms need to denote a value, `{goal}`. Prove that in each arm as well, for example `have defined(j + 1) by {{ ... }}` for a fact that mentions `j + 1`"
                         )

@@ -854,13 +854,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     }
                 }
                 close_invariants by {
-                    both { simp(); } and {
-                        both { simp(); } and {
-                            both { simp(); } and {
-                                both { simp(); } and { simp(); }
-                            }
-                        }
-                    }
+                    both { simp(); } and { simp(); }
                 }
             } else {
                 branch then {

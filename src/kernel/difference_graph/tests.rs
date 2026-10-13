@@ -95,14 +95,14 @@ fn a_sum_is_linked_only_when_it_cannot_wrap() {
     assert_eq!(late.decide(&lt(&x, &constant(9))), Some(true));
 }
 
+/// Only the absence of overflow is answered: a certain overflow stays
+/// open, because proof terms that are not C read an undecided overflow as
+/// a value (`DifferenceGraph::decide_overflow`).
 #[test]
 fn overflow_is_decided_at_the_edges_of_the_range() {
     let x = variable(0);
     let near_max = graph(&[(le(&constant(i32::MAX - 1), &x), true)]);
-    assert_eq!(
-        near_max.decide(&add_overflows(&x, &constant(2))),
-        Some(true)
-    );
+    assert_eq!(near_max.decide(&add_overflows(&x, &constant(2))), None);
     assert_eq!(near_max.decide(&add_overflows(&x, &constant(1))), None);
     let below = graph(&[(le(&x, &constant(i32::MAX - 1)), true)]);
     assert_eq!(below.decide(&add_overflows(&x, &constant(1))), Some(false));
@@ -290,5 +290,96 @@ fn work_is_independent_of_unrelated_bounded_values() {
     );
     eprintln!(
         "difference graph (insert, bound query, path query) work at 16/64/256/1024: {samples:?}"
+    );
+}
+
+/// A fact context's graph follows its facts: what it assumes extends the
+/// graph, what it withdraws is gone after the rebuild that withdrawal
+/// forces, and a context restricted to some facts answers from those alone.
+#[test]
+fn a_context_graph_follows_its_facts() {
+    let (i, n) = (variable(0), variable(1));
+    let below = (lt(&i, &n), true);
+    let bounded = (le(&n, &constant(10)), true);
+    let context = PureFactContext::new()
+        .assume_condition(below.0.clone(), below.1)
+        .assume_condition(bounded.0.clone(), bounded.1);
+    let query = lt(&i, &constant(10));
+    assert_eq!(context.difference_decision(&query, &[]), Some(true));
+    // A path's facts not yet in the context are read on top of it.
+    let unconstrained = PureFactContext::new().assume_condition(below.0.clone(), below.1);
+    assert_eq!(unconstrained.difference_decision(&query, &[]), None);
+    assert_eq!(
+        unconstrained.difference_decision(&query, std::slice::from_ref(&bounded)),
+        Some(true)
+    );
+    let withdrawn =
+        context.without_exact_fact(&crate::kernel::Proposition::ConditionIs(below.0, below.1));
+    assert_eq!(withdrawn.difference_decision(&query, &[]), None);
+    let restricted = context.restricted_to_facts(&[bounded], &[]);
+    assert_eq!(restricted.difference_decision(&query, &[]), None);
+    assert_eq!(
+        restricted.difference_decision(&le(&n, &constant(10)), &[]),
+        Some(true)
+    );
+}
+
+/// Equating a fresh name to a value names that value's node, so a value
+/// with 16 to 256 names is still one node: each equality costs the same,
+/// and a bound on the value reaches every name.
+#[test]
+fn many_names_for_one_value_stay_one_node() {
+    let root = variable(0);
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let mut graph = graph(&[
+            (le(&constant(0), &root), true),
+            (le(&root, &constant(100)), true),
+        ]);
+        let mut last = 0;
+        for index in 0..size {
+            let alias = variable(1 + index);
+            let ((), work) = graph_work(|| {
+                graph.assume_condition(&ConditionTerm::equal(root.clone(), alias.clone()), true);
+            });
+            last = work;
+            assert_eq!(graph.decide(&lt(&alias, &constant(101))), Some(true));
+        }
+        samples.push(last);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "an equality's work should not grow with the value's other names: {samples:?}"
+    );
+}
+
+/// Facts about `x + 1`, `x + 2`, ... once `x`'s bounds rule out wrapping
+/// are facts about `x`'s node, so a later bound on `x` does not walk one edge
+/// pair per offset. Publishing a call's ensures charged two units per such
+/// unrelated ambient fact before.
+#[test]
+fn offsets_of_a_bounded_value_share_its_node() {
+    let root = variable(0);
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let mut graph = graph(&[
+            (le(&constant(0), &root), true),
+            (le(&root, &constant(1000)), true),
+        ]);
+        for index in 0..size {
+            graph.assume_condition(&le(&constant(index), &plus(&root, index)), true);
+        }
+        let ((), work) = graph_work(|| {
+            graph.assume_condition(&lt(&constant(0), &root), true);
+        });
+        assert_eq!(
+            graph.decide(&lt(&constant(size), &plus(&root, size))),
+            Some(true)
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "a bound's work should not grow with the value's offsets: {samples:?}"
     );
 }

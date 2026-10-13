@@ -118,11 +118,37 @@ Each step is its own pull request.
    all of them and each entailed order to be answered, and
    `work_is_independent_of_unrelated_bounded_values` pins insertion and
    query work at 2, 0 and 1 units beside 16 to 1,024 unrelated values.
-2. **Fast path in condition evaluation.** Maintain the graph in the fact
-   context as conditions are assumed, keyed by the equality graph's classes,
-   and have the kernel's condition evaluation ask it before the general
-   decision. Count, as [simplify-step.md](simplify-step.md)'s census does,
-   the decisions only the general decision makes.
+2. **Fast path in condition evaluation (landed).** Each fact context keeps
+   its graph (`ContextDifferenceGraph`): assumed condition facts extend it,
+   a withdrawn one clears it, and the next query rebuilds it. The kernel's
+   condition evaluation (`decide_with_facts`, the path-fact consistency
+   check, `condition_is_decided`) asks it after exact lookups and before the
+   general decision. The census route
+   `HiddenPrerequisiteRoute::KernelCondition` counts what the general
+   decision still settles: 2,029 conditions, 96 path facts and 9
+   path-fact decisions over the mdtests, and 538 and 24 over the examples.
+   Two consequences:
+   - The graph answers only the absence of overflow. An arithmetic
+     certificate's intermediate sums (`n + 2147483647` in an `add` step) are
+     lowered through the C evaluator, which reads an undecided overflow as
+     a value; proving such an overflow certain made those lowerings fail.
+     Lowering certificate terms as mathematical integers would lift this.
+   - Deciding more changes some proofs' shape. A loop's invariant bundle can
+     lose conjuncts the graph now settles during evaluation, so a proof that
+     spelled them out must drop them (`examples/arena`), as
+     [simplify-step.md](simplify-step.md) accepts. An `ensuring` join whose
+     arms now prove a term defined from their own bounds is refused at the
+     successor instead, which now says the join does not carry that bound.
+   - A path fact the graph shows implied is not added to the path, as when
+     the general decision showed it. A later reasoner that asks only the
+     general decision cannot rederive it; none in the corpus does yet.
+     Step 3 should have the general decision consult the graph too.
+   Indexing by equality class is partial: a fresh name equated to a value
+   names that value's node (`many_names_for_one_value_stay_one_node`), and
+   an equality between two values that already have nodes is two edges.
+   A sum `x + k` whose base's bounds already rule out wrapping names `x`'s
+   node at offset `k` (`offsets_of_a_bounded_value_share_its_node`); only a
+   sum still waiting on those bounds gets a node of its own.
 3. **Close the gap.** Range-end tightening, constant shifts, narrow-type
    ranges, load bounds, and routing pointer questions to the equality graph,
    each lowering that count.

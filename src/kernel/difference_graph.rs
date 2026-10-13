@@ -83,6 +83,7 @@ impl DifferenceGraph {
     }
 
     /// Whether the inserted facts contradict each other.
+    #[cfg(test)]
     pub(crate) fn is_contradictory(&self) -> bool {
         self.contradictory
     }
@@ -111,6 +112,13 @@ impl DifferenceGraph {
     /// Records a true or false condition fact. A fact difference logic does
     /// not express is ignored.
     pub(crate) fn assume_condition(&mut self, condition: &ConditionTerm, value: bool) {
+        if value
+            && let ConditionTerm::Bitvector32Equal(a, b) | ConditionTerm::Bitvector64Equal(a, b) =
+                condition
+            && self.alias_equality(condition, a, b)
+        {
+            return;
+        }
         for (domain, lower, upper, strict) in condition_orders(condition, value) {
             if self.contradictory {
                 return;
@@ -120,6 +128,57 @@ impl DifferenceGraph {
             // lower - upper <= -strict
             self.constrain(upper, lower, -i128::from(strict));
         }
+    }
+
+    /// Records a true equality between a term the graph has no node for and
+    /// another value by naming that value's node for the new term, instead
+    /// of joining two nodes by a pair of edges. Every term equated to one
+    /// value is then that value's node, so a value with many names stays one
+    /// node and its component does not grow with them. Declines (returns
+    /// `false`) when neither side is such a term, or when the new term is a
+    /// sum or conversion whose own link it would lose.
+    fn alias_equality(
+        &mut self,
+        condition: &ConditionTerm,
+        a: &Bitvector32Term,
+        b: &Bitvector32Term,
+    ) -> bool {
+        let domains: &[Domain] = if matches!(condition, ConditionTerm::Bitvector32Equal(..)) {
+            &[Domain::Int32]
+        } else {
+            &[Domain::Int64, Domain::UInt64]
+        };
+        let fresh = |graph: &Self, term: &Bitvector32Term| {
+            domains.iter().all(|domain| {
+                constant(*domain, term).is_none()
+                    && link_parts(*domain, term).is_none()
+                    && !graph.nodes.contains_key(&(*domain, term.clone()))
+            })
+        };
+        let (new, existing) = if fresh(self, a) {
+            (a, b)
+        } else if fresh(self, b) {
+            (b, a)
+        } else {
+            return false;
+        };
+        let targets = domains
+            .iter()
+            .map(|domain| (*domain, self.affine(*domain, existing)))
+            .collect::<Vec<_>>();
+        if targets
+            .iter()
+            .any(|(_, (node, offset))| node.is_none() || *offset != 0)
+        {
+            // A constant, or an offset from a node: the ordinary edges say it.
+            return false;
+        }
+        for (domain, (node, _)) in targets {
+            charge();
+            self.nodes
+                .insert((domain, new.clone()), node.expect("checked above"));
+        }
+        true
     }
 
     /// `to - from <= weight`.
@@ -222,13 +281,7 @@ impl DifferenceGraph {
         let mut linked = Vec::new();
         for (node, link) in waiting.iter() {
             charge();
-            let (min, max) = link.domain.range();
-            let fits = if link.nonnegative {
-                low >= 0 && high <= max
-            } else {
-                low + link.offset >= min && high + link.offset <= max
-            };
-            if fits {
+            if link_fits((low, high), link.offset, link.domain, link.nonnegative) {
                 remaining = remaining.without_key(node);
                 linked.push((*node, link.offset));
             }
@@ -310,11 +363,26 @@ impl DifferenceGraph {
         node
     }
 
+    /// `term` as a node and offset. A link its base's interval already
+    /// justifies names the base directly rather than a new node, so the
+    /// values `x + 1`, `x + 2`, ... share `x`'s node instead of each
+    /// hanging an edge pair off it that every bound on `x` must walk.
     fn affine(&mut self, domain: Domain, term: &Bitvector32Term) -> Affine {
-        match constant(domain, term) {
-            Some(value) => (None, value),
-            None => (Some(self.node(domain, term)), 0),
+        if let Some(value) = constant(domain, term) {
+            return (None, value);
         }
+        if let Some(node) = self.nodes.get(&(domain, term.clone())) {
+            return (Some(*node), 0);
+        }
+        if let Some((base_domain, base, offset, nonnegative)) = link_parts(domain, term) {
+            let base = self.affine(base_domain, base);
+            if base.0.is_some()
+                && link_fits(self.affine_interval(base), offset, domain, nonnegative)
+            {
+                return (base.0, base.1 + offset);
+            }
+        }
+        (Some(self.node(domain, term)), 0)
     }
 
     /// `term` as known nodes and constants, without adding to the graph.
@@ -329,14 +397,8 @@ impl DifferenceGraph {
         }
         let (base_domain, base, offset, nonnegative) = link_parts(domain, term)?;
         let base = self.resolve(base_domain, base)?;
-        let (low, high) = self.affine_interval(base);
-        let (min, max) = domain.range();
-        let fits = if nonnegative {
-            low >= 0 && high <= max
-        } else {
-            low + offset >= min && high + offset <= max
-        };
-        fits.then_some((base.0, base.1 + offset))
+        link_fits(self.affine_interval(base), offset, domain, nonnegative)
+            .then_some((base.0, base.1 + offset))
     }
 
     /// The least known upper bound on `to - from`, from intervals and from
@@ -463,14 +525,97 @@ impl DifferenceGraph {
             }
         };
         let (min, max) = domain.range();
-        if low >= min && high <= max {
-            Some(false)
-        } else if low > max || high < min {
-            Some(true)
-        } else {
-            None
+        // Only the absence of overflow is answered. Proof terms that are
+        // not C (an arithmetic certificate's intermediate sums) are lowered
+        // through the C evaluator and read an undecided overflow as a value;
+        // see `issues/difference-logic.md`.
+        (low >= min && high <= max).then_some(false)
+    }
+}
+
+/// A fact context's graph: extended as the context assumes condition
+/// facts, cleared when it withdraws one (a graph cannot drop an edge), and
+/// rebuilt from the context's facts by the next query that finds it
+/// cleared. Clones share it, as proof branches share the context.
+#[derive(Clone)]
+pub(crate) struct ContextDifferenceGraph(std::sync::Arc<std::sync::OnceLock<DifferenceGraph>>);
+
+impl Default for ContextDifferenceGraph {
+    fn default() -> Self {
+        Self(std::sync::Arc::new(std::sync::OnceLock::from(
+            DifferenceGraph::new(),
+        )))
+    }
+}
+
+impl std::fmt::Debug for ContextDifferenceGraph {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ContextDifferenceGraph")
+    }
+}
+
+impl ContextDifferenceGraph {
+    /// Follows the context assuming `condition` with `value`; a cleared
+    /// graph stays cleared until its rebuild.
+    pub(crate) fn assume(&mut self, condition: &ConditionTerm, value: bool) {
+        if !expresses(condition) {
+            return;
+        }
+        if let Some(graph) = self.0.get() {
+            let mut graph = graph.clone();
+            graph.assume_condition(condition, value);
+            self.0 = std::sync::Arc::new(std::sync::OnceLock::from(graph));
         }
     }
+
+    /// Follows the context withdrawing `condition`.
+    pub(crate) fn withdraw(&mut self, condition: &ConditionTerm) {
+        if expresses(condition) {
+            self.0 = std::sync::Arc::new(std::sync::OnceLock::new());
+        }
+    }
+
+    /// Restarts from no facts, for a context about to re-assume all of its
+    /// facts.
+    pub(crate) fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    /// The graph of the context's `facts`, rebuilt from them when cleared.
+    pub(crate) fn graph<'a>(
+        &self,
+        facts: impl FnOnce() -> Vec<(&'a ConditionTerm, bool)>,
+    ) -> &DifferenceGraph {
+        self.0.get_or_init(|| {
+            let mut graph = DifferenceGraph::new();
+            for (condition, value) in facts() {
+                graph.assume_condition(condition, value);
+            }
+            graph
+        })
+    }
+}
+
+/// Whether difference logic reads anything from a fact about `condition`.
+fn expresses(condition: &ConditionTerm) -> bool {
+    use ConditionTerm as C;
+    matches!(
+        condition,
+        C::Bitvector32SignedLessThan(..)
+            | C::Bitvector32SignedLessEqual(..)
+            | C::Bitvector32SignedGreaterThan(..)
+            | C::Bitvector32SignedGreaterEqual(..)
+            | C::Bitvector32Equal(..)
+            | C::Bitvector64SignedLessThan(..)
+            | C::Bitvector64SignedLessEqual(..)
+            | C::Bitvector64SignedGreaterThan(..)
+            | C::Bitvector64SignedGreaterEqual(..)
+            | C::Bitvector64UnsignedLessThan(..)
+            | C::Bitvector64UnsignedLessEqual(..)
+            | C::Bitvector64UnsignedGreaterThan(..)
+            | C::Bitvector64UnsignedGreaterEqual(..)
+            | C::Bitvector64Equal(..)
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -481,6 +626,17 @@ enum Operation {
 }
 
 /// `term`'s value in `domain` when it is a constant there.
+/// Whether a value in `(low, high)` plus `offset` stays in `domain` (and,
+/// for a conversion that keeps only non-negative values, is non-negative).
+fn link_fits((low, high): (i128, i128), offset: i128, domain: Domain, nonnegative: bool) -> bool {
+    let (min, max) = domain.range();
+    if nonnegative {
+        low >= 0 && high <= max
+    } else {
+        low + offset >= min && high + offset <= max
+    }
+}
+
 fn constant(domain: Domain, term: &Bitvector32Term) -> Option<i128> {
     use Bitvector32Term as T;
     match (domain, term) {

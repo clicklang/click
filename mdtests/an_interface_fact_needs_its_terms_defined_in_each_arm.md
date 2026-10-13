@@ -3,9 +3,10 @@
 This is `bubble_pass3_max_suffix` without `have defined(j + 1)` in the arms.
 Each arm proves `p[j] <= p[j + 1]`, and the join still refuses the interface:
 a fact holds in an arm only together with what its terms need to denote a
-value, and `p[j + 1]` needs `j + 1` not to overflow. The join proves that
-from facts the arm already holds and does not search for it, so the arm has
-to have stated it. The refusal says so.
+value, and `p[j + 1]` needs `j + 1` not to overflow. Each arm's own bounds
+on `j` give that, but the join carries only the interface's facts, so the
+successor does not hold it and the arms have to state it. The refusal says
+so.
 
 ```c filename=bubble_pass3.c
 int32 bubble_pass3(int32 p[3]) {
@@ -81,5 +82,5 @@ int32 bubble_pass3(int32 p[3]) {
 ```
 
 ```expect
-fail: the then arm holds the interface fact `p[j] <= p[(j + 1)]` but not what its terms need to denote a value
+fail: the arms hold the interface fact `p[j] <= p[(j + 1)]`, but the join does not carry what its terms need to denote a value
 ```
