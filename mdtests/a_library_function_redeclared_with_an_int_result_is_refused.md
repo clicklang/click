@@ -29,5 +29,5 @@ int32 name_length(const char* s) {
 ```
 
 ```expect
-fail: declaration of `strlen` has type `int32 (const char *)`, which is incompatible with the C library's `size_t strlen(const char *s)`
+fail: declaration of `strlen` has type `int32 (const char *)`, which is incompatible with the C library's `size_t strlen(const char *s)` (C11 6.7.6.3p15); Clang diagnoses it as an incompatible redeclaration of the library function, GCC and Clang reject it when the library's header is included, and Click specifies `strlen` only with the library's type; include `<string.h>` instead of declaring `strlen`, or declare it exactly as `size_t strlen(const char *s)`
 ```

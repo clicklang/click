@@ -545,7 +545,7 @@ sequence:
   and `-D` flags, and `<string.h>` resolves to Click's modeled header.
 - `examples/jsonc-existing-source/`: byte-preserved upstream json-c source
   with a checked SHA-256 manifest. Proves its numeric version and NUL-terminated
-  version-string contents under the explicit unsigned-char kernel target.
+  version-string contents under the default user-space target.
 - `examples/detachable-buffer/`: attached metadata and storage split into two
   independently owned resources and later recombined.
 - `examples/borrowed-slice/`: a symbolic middle range leaves its owner as an

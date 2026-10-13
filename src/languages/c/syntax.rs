@@ -9821,9 +9821,14 @@ impl Parser {
             }
             if !compatible {
                 return Err(self.error_at_position(header.name_position.clone(), format!(
-                    "declaration of `{}` has type `{}`, which is incompatible with the C library's `{prototype}` (C11 6.7.6.3p15); Clang diagnoses it as an incompatible redeclaration of the library function, GCC and Clang reject it when the library's header is included, and Click specifies `{name}` only with the library's type",
+                    "declaration of `{}` has type `{}`, which is incompatible with the C library's `{prototype}` (C11 6.7.6.3p15); Clang diagnoses it as an incompatible redeclaration of the library function, GCC and Clang reject it when the library's header is included, and Click specifies `{name}` only with the library's type; include `<{library_header}>` instead of declaring `{name}`, or declare it exactly as `{prototype}`",
                     header.source_name,
                     describe_function_header_type(header),
+                    library_header = if matches!(name, "malloc" | "calloc" | "realloc" | "free") {
+                        "stdlib.h"
+                    } else {
+                        "string.h"
+                    },
                 )));
             }
         }
