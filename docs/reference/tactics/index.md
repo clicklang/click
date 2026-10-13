@@ -29,6 +29,13 @@ rather than an internal search step or subgoal. Exhausted verification
 budgets keep their budget diagnostic. See
 [`auto_failure_names_the_written_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_failure_names_the_written_goal.md).
 
+For a signed `int32` bound, `simp` can use an indexed equality of a goal
+operand to a literal even when that call-derived equality has no recorded
+source spelling. It first proves the equality in a checked nested `have`
+using the operand as written in the goal, then rewrites and closes the bound.
+False bounds and equalities invalidated by a later store remain refused; see
+[`post_call_constant_equality_proves_a_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/post_call_constant_equality_proves_a_bound.md).
+
 For ordinary authoring, start with the omitted default, `by auto;`, or the
 smallest comprehensible smart tactic. Use `click profile` before replacing a
 smart tactic with an exact explicit proof. The simple forms below are public,

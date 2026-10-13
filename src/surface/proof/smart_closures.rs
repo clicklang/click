@@ -4648,7 +4648,11 @@ impl<'a> Proof<'a> {
         // premise spelling and changes the intended transport certificate.
         let scalar_goal = match self.goal()? {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector64SignedLessThan(..)
+                ConditionTerm::Bitvector32SignedLessThan(..)
+                | ConditionTerm::Bitvector32SignedLessEqual(..)
+                | ConditionTerm::Bitvector32SignedGreaterThan(..)
+                | ConditionTerm::Bitvector32SignedGreaterEqual(..)
+                | ConditionTerm::Bitvector64SignedLessThan(..)
                 | ConditionTerm::Bitvector64SignedLessEqual(..)
                 | ConditionTerm::Bitvector64SignedGreaterThan(..)
                 | ConditionTerm::Bitvector64SignedGreaterEqual(..)
@@ -4681,6 +4685,62 @@ impl<'a> Proof<'a> {
             return None;
         }
         self.try_indexed_goal_equality_rewrite_with_options(exclude_goal_fact, false, true)
+    }
+
+    /// A derived call equality need not have a recorded source spelling.
+    /// Use only an operand already written in this goal, and check the
+    /// resulting equality in an ordinary nested proof before citing it.
+    fn try_goal_operand_constant_equality(
+        &self,
+        equality: &Proposition,
+    ) -> Option<(ClickProposition, Self)> {
+        let ClickProposition::Comparison {
+            left: source_left,
+            right: source_right,
+            ..
+        } = self.surface_goal()?
+        else {
+            return None;
+        };
+        let Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedLessThan(left, right)
+            | ConditionTerm::Bitvector32SignedLessEqual(left, right)
+            | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
+            | ConditionTerm::Bitvector32SignedGreaterEqual(left, right),
+            true,
+        ) = self.goal()?
+        else {
+            return None;
+        };
+        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(a, b), true) = equality else {
+            return None;
+        };
+        for (operand, source) in [(left.as_ref(), source_left), (right.as_ref(), source_right)] {
+            let literal = if a.as_ref() == operand {
+                b.as_ref()
+            } else if b.as_ref() == operand {
+                a.as_ref()
+            } else {
+                continue;
+            };
+            let Bitvector32Term::Constant(value) = literal else {
+                continue;
+            };
+            if matches!(operand, Bitvector32Term::Constant(_)) {
+                continue;
+            }
+            let surface = ClickProposition::Comparison {
+                left: source.clone(),
+                operator: ComparisonOperator::Equal,
+                right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+                    Bitvector32Term::Constant(*value),
+                ))),
+            };
+            let scope = self.begin_have(surface.clone()).ok()?;
+            let closed = scope.try_direct_logical_closure().ok()??;
+            return Some((surface, closed.join().ok()?));
+        }
+        None
     }
 
     fn try_indexed_goal_equality_rewrite_with_options(
@@ -4767,11 +4827,15 @@ impl<'a> Proof<'a> {
                 {
                     continue;
                 }
-                let Some(surface) =
-                    proof.available_surface_fact(surface_facts, premise_anchor, &equality)
-                else {
-                    continue;
-                };
+                let (surface, candidate_proof) =
+                    match proof.available_surface_fact(surface_facts, premise_anchor, &equality) {
+                        Some(surface) => (surface, proof.clone()),
+                        None => match proof.try_goal_operand_constant_equality(&equality) {
+                            Some(candidate) => candidate,
+                            None => continue,
+                        },
+                    };
+                let proof = &candidate_proof;
                 // `available_surface_fact` has already resolved the spelling
                 // that still lowers to this fact, anchoring a stale constructor
                 // equality at function entry when the written form stopped
