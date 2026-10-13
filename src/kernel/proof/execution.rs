@@ -12906,9 +12906,9 @@ mod tests {
         );
         for changed in [
             annotated.clone().with_source_body(returned),
-            annotated
-                .clone()
-                .with_recursion_measure(crate::kernel::CRankingComponent::CExpression(condition)),
+            annotated.clone().with_recursion_measure(vec![
+                crate::kernel::CRankingComponent::CExpression(condition),
+            ]),
             annotated.with_global_variables(vec![crate::kernel::CGlobal::new(
                 "g",
                 CType::Int32,
