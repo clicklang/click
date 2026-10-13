@@ -1854,7 +1854,10 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_auto_conjunction_closure()? {
             return Ok(Some(closed));
         }
-        self.try_auto_equality_chain_closure()
+        if let Some(closed) = self.try_auto_equality_chain_closure()? {
+            return Ok(Some(closed));
+        }
+        self.try_wide_equality_solver_closure()
     }
 
     pub(in crate::surface::proof) fn try_solver_closure(&self) -> Result<Option<Self>, ClickError> {
