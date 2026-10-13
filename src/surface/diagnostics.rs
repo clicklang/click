@@ -1,4 +1,19 @@
 use super::*;
+
+pub(in crate::surface) fn describe_proof_obligation_context(
+    obligation: &ProofObligation,
+) -> Option<String> {
+    if let Some(source) = obligation.call_requirement_site()
+        && let Some(ordinal) = source.source_requirement_ordinal
+    {
+        return Some(format!(
+            "precondition clause {} of `{}`",
+            ordinal + 1,
+            source.callee
+        ));
+    }
+    obligation.context().map(str::to_owned)
+}
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::SharedCMemory;
 use crate::kernel::resource_tracker;

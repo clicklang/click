@@ -3334,7 +3334,7 @@ fn axiomatic_span_subviews_and_byte_size_verify_for_other_elements() {
                     window
                         .replace("    requires 3u64 <= std_span_size(s);\n", "")
                         .replace("    apply(uint64_window_bounds(std_span_size(s)));\n", ""),
-                    "subspan precondition",
+                    "precondition clause 3 of `span__unsigned_char__value_unsigned_long_18446744073709551615_subspan`",
                 ),
                 // The window starts at the offset, not at the view's start.
                 (
@@ -3353,7 +3353,7 @@ fn axiomatic_span_subviews_and_byte_size_verify_for_other_elements() {
             harness: "std::span<unsigned char> probe(std::span<unsigned char>& s) noexcept { return s.last(1); }",
             refusals: vec![(
                 last.replace("    requires 1u64 <= std_span_size(s);\n", ""),
-                "last precondition",
+                "precondition clause 3 of `span__unsigned_char__value_unsigned_long_18446744073709551615_last`",
             )],
             sidecar: last,
         },
@@ -3516,7 +3516,7 @@ fn axiomatic_span_element_references_read_and_write() {
             harness: "unsigned int probe(std::span<unsigned int>& s) noexcept { return s.back(); }",
             refusals: vec![(
                 back.replace("    requires 1u64 <= std_span_size(s);\n", ""),
-                "back precondition",
+                "precondition clause 3 of `span__unsigned_int__value_unsigned_long_18446744073709551615_back`",
             )],
             sidecar: back,
         },

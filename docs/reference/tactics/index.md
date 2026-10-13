@@ -36,6 +36,13 @@ using the operand as written in the goal, then rewrites and closes the bound.
 False bounds and equalities invalidated by a later store remain refused; see
 [`post_call_constant_equality_proves_a_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/post_call_constant_equality_proves_a_bound.md).
 
+Refused call prerequisites name the callee and the original required-clause
+position, including clauses already discharged. Statement-step diagnostics
+use the written tactic position in the current block, counting preceding
+`have` steps. See
+[`call_prerequisite_names_the_second_source_clause.md`](https://github.com/clicklang/click/blob/master/mdtests/call_prerequisite_names_the_second_source_clause.md)
+and its first-clause companion.
+
 For ordinary authoring, start with the omitted default, `by auto;`, or the
 smallest comprehensible smart tactic. Use `click profile` before replacing a
 smart tactic with an exact explicit proof. The simple forms below are public,
