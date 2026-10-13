@@ -2520,3 +2520,21 @@ fn first_proof_tutorial_sessions_match_the_verifier() {
     let files = run_documented_session("docs/concepts/first-proof.md");
     assert!(files["increment.click"].contains("requires x < 2147483647;"));
 }
+
+/// The markdown harness uses enlarged verifier-thread stacks. Keep this
+/// reproduction in the real CLI too, where main has the ordinary OS stack.
+#[test]
+fn uint64_successor_auto_answers_on_the_normal_cli_stack() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new(env!("CARGO_BIN_EXE_click"))
+        .arg("verify")
+        .arg(root.join("mdtests/uint64_successor_auto_with_additional_bound.md"))
+        .output()
+        .expect("run the verifier on its ordinary process stack");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("1 selected proof verified"));
+}

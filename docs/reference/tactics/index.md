@@ -322,3 +322,17 @@ the rewritten source. Its purpose is to detect missing or invalid expanded
 proofs, not to promise constant total verification time as a project
 grows.
 
+
+## Arithmetic bridge prerequisites
+
+`auto` carries connected machine comparisons into mathematical `Integer`
+comparisons through checked standard-library theorems. When observing an
+addition or subtraction requires its own definedness or no-wrap bound, a
+nested search does not re-enter the same operation's bridge. Already available
+prerequisites can still justify the observation; a cyclic attempt is a search
+miss. No stack size or work budget is raised.
+
+[UInt64 successor with an additional bound](https://github.com/clicklang/click/blob/master/mdtests/uint64_successor_auto_with_additional_bound.md)
+checks that an extra machine bound does not make an arithmetic proof recurse
+indefinitely. Its false-small-bound companion keeps an unprovable conversion
+bound rejected.
