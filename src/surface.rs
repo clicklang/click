@@ -8639,6 +8639,21 @@ impl ClickError {
         if let Some(required) = self.missing_tactic_requirement() {
             context.push(format!("requires: {required}"));
         }
+        // These are failures recorded at the actual view-certificate stages,
+        // rather than inferred semantic explanations. Keep their bounded
+        // reasons visible in ordinary CLI errors as well as proof traces.
+        if let Some(failures) = &self.search_failures {
+            for failure in failures
+                .iter()
+                .filter(|failure| failure.strategy.starts_with("simp view "))
+                .take(8)
+            {
+                context.push(format!(
+                    "construction failure: {}: {}",
+                    failure.strategy, failure.reason
+                ));
+            }
+        }
         if let Some(diagnostic) = &self.diagnostic
             && let Some(state) = diagnostic.state.as_ref()
         {

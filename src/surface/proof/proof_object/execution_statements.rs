@@ -1422,8 +1422,13 @@ impl<'a> Proof<'a> {
                 StatementPrerequisitePolicy::Fast,
             )
         });
-        // A refusal the probe could not record is the step's own failure.
-        probe?;
+        // A rejected call can still expose the preconditions its recovery
+        // needs proved first. As for a bare step, discard that probe, prove
+        // its recorded requirements at the pre-state, and retry below. The
+        // retry must succeed before any successor or certificate is kept.
+        if recorded.recorded.is_empty() {
+            probe?;
+        }
         let open = distinct_requirements(recorded.recorded);
         let spelling = |requirement: &UnresolvedRequirement| -> Result<String, ClickError> {
             Ok(match self.requirement_surface(requirement, &step)? {

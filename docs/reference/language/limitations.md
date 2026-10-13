@@ -220,8 +220,13 @@ there is still no first-class Click string value and no full libc string model.
 
 ## Aliasing is default
 
-Distinct pointer parameters may alias. Add
-`separate(memory(...), memory(...))` whenever a proof depends on non-overlap.
+Distinct pointer parameters may alias. A contract's `owns` clauses denote
+memory disjoint from one another and from its `views` clauses, so a proof
+needs no `separate(...)` for them
+(`mdtests/a_views_clause_is_separate_from_an_owns_clause.md`). Two `views`
+clauses, or `viewable(...)` facts, may name overlapping memory: add
+`separate(memory(...), memory(...))` when a proof depends on their
+non-overlap.
 
 ## Requirements cannot freely read memory
 
@@ -306,8 +311,9 @@ entry memory snapshots. This supports direct invariants such as
 
 ## Loop invariants need explicit facts
 
-Pointer-writing loops do not implicitly preserve memory. Use invariants,
-`owns` clauses, and `separate(memory(...), memory(...))` requirements. Symbolic loops need invariants
+Pointer-writing loops do not implicitly preserve memory. Use invariants and
+`owns` clauses, and `separate(memory(...), memory(...))` for viewed memory a
+proof needs apart. Symbolic loops need invariants
 for arithmetic bounds, memory safety, and postconditions.
 
 ## `simp` is not a solver

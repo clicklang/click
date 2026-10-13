@@ -1643,6 +1643,12 @@ return `const` references. They cover a
 dynamic-extent span's `size`, `size_bytes`, `data`, `front`, `back`,
 `operator[]`, `first`, `last` and `subspan(offset, count)`:
 
+A dynamic-extent `subspan` retains the catalog's implication-shaped count
+precondition. Before recovering its returned view, implicit `auto` proves
+any pending call requirement at the caller's pre-state, including a count
+implication with a false antecedent. Expansion retains that proof as an
+explicit step requirement; recovery still refuses unproved requirements.
+
 | Member | Requires | Ensures |
 | --- | --- | --- |
 | `size()` | | `result == std_span_size(s)` |

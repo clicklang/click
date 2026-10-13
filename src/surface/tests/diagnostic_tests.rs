@@ -2846,3 +2846,83 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
         assert!(!trace.contains("else arm"), "{trace}");
     });
 }
+
+/// A positive kernel view query must not be reported as a missing extent.
+/// Exercise the presentation boundary and retain its exact stage and counts
+/// in both ordinary CLI reports and traces, including a nested written simp.
+#[test]
+fn native_view_simp_reports_the_actual_premise_spelling_limit() {
+    let source = |extra_bounds: usize, body: &str| {
+        let mut source = String::from(
+            "target \"x86_64-linux-userspace\"; theorem broad_view(p: uint8[], n: uint64) { views p[0u64..n]; requires 1u64 <= n;",
+        );
+        for bound in 2..2 + extra_bounds {
+            source.push_str(&format!(" requires n <= {bound}u64;"));
+        }
+        source.push_str(&format!(
+            " ensures viewable(p[0u64..1u64]) by {{ {body} }} }}"
+        ));
+        source
+    };
+    for extra_bounds in [29, 30] {
+        verify_c0_sources(&source(extra_bounds, "simp();"), &[])
+            .expect("a derivation within the 64-premise spelling budget should check");
+    }
+    for body in [
+        "simp();",
+        "have viewable(p[0u64..1u64]) by { simp(); } assumption();",
+    ] {
+        let source = source(31, body);
+        let check = |error: &ClickError| {
+            for report in [error.message().to_owned(), error.concise_report()] {
+                assert!(
+                    report.contains("accepted by the kernel native view checker"),
+                    "{report}"
+                );
+                assert!(report.contains("simp view premise spelling"), "{report}");
+                assert!(
+                    report.contains("contains 66 premises; source spelling permits at most 64"),
+                    "{report}"
+                );
+                assert!(!report.contains("what is left"), "{report}");
+                assert!(!report.contains("valid 32-bit byte extent"), "{report}");
+                assert!(report.len() <= 16 * 1024, "ordinary report is bounded");
+            }
+        };
+        let error =
+            verify_c0_sources(&source, &[]).expect_err("the existing budget must remain in force");
+        check(&error);
+        with_proof_trace("broad_view", || {
+            let error = verify_c0_sources(&source, &[]).unwrap_err();
+            check(&error);
+            let trace = error.trace_context_report().expect("requested proof trace");
+            assert!(
+                trace.contains("contains 66 premises; source spelling permits at most 64"),
+                "{trace}"
+            );
+            assert!(trace.contains("bytes:uint64=1u64"), "{trace}");
+        });
+    }
+    verify_c0_sources(
+        &source(31, "simp() using { 1u64 <= n; viewable(p[0u64..n]); };"),
+        &[],
+    )
+    .expect("the same view checks with its two relevant explicit premises");
+}
+
+#[test]
+fn native_view_simp_distinguishes_a_rejected_kernel_query() {
+    let source = "target \"x86_64-linux-userspace\"; theorem false_view(p: uint8[], n: uint64) { views p[0u64..n]; requires n == 0u64; ensures viewable(p[0u64..1u64]) by { simp(); } }";
+    let error = verify_c0_sources(source, &[]).expect_err("an empty view cannot cover one byte");
+    let report = error.concise_report();
+    assert!(
+        report.contains("kernel native view checker did not establish"),
+        "{report}"
+    );
+    assert!(
+        report.contains("simp view derivation selection"),
+        "{report}"
+    );
+    assert!(!report.contains("accepted by the kernel"), "{report}");
+    assert!(!report.contains("valid 32-bit byte extent"), "{report}");
+}

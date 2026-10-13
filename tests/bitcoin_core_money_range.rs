@@ -3022,6 +3022,47 @@ struct span__int__value_unsigned_long_18446744073709551615 probe(struct span__in
     fs::remove_dir_all(root).unwrap();
 }
 
+#[test]
+fn axiomatic_span_dynamic_extent_requirement_is_proved_before_view_recovery() {
+    let (root, import) = axiomatic_span_fixture(
+        "dynamic-extent-prerequisite",
+        "#include <span>\nstd::span<std::byte> probe(std::span<std::byte>& s) noexcept { return s.subspan(1, std::dynamic_extent); }\n",
+        BYTE_SPAN_DEPENDENCIES,
+    );
+    let source = r#"verifying "span-probe.cpp";
+struct span__std_byte__value_unsigned_long_18446744073709551615 probe(struct span__std_byte__value_unsigned_long_18446744073709551615& s) {
+    views std_span_data(s);
+    views std_span_size(s);
+    requires 1u64 <= std_span_size(s);
+    ensures std_span_data(result) == std_span_data(s) + 1u64;
+    ensures std_span_size(result) == std_span_size(s) - 1u64;
+} by { execute(); simp(); }
+"#;
+    let sidecar = root.join("span.click");
+    fs::write(&sidecar, source).unwrap();
+    let parsed = read_click_project(&sidecar, source).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+    let expanded = expand_project_claim_source_by_label(
+        &parsed,
+        &ProgramInputs::program(&import),
+        "probe.contract",
+    )
+    .unwrap();
+    verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
+    let hostile = source.replace("1u64 <= std_span_size(s)", "std_span_size(s) == 0u64");
+    let parsed = read_click_project(&sidecar, &hostile).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import)
+        .expect_err("offset one is outside an empty span");
+    let message = error.concise_report();
+    assert!(message.contains("precondition"), "{message}");
+    assert!(
+        !message.contains("undischarged return obligation"),
+        "{message}"
+    );
+    assert!(message.contains("precondition clause 3"), "{message}");
+    fs::remove_dir_all(root).unwrap();
+}
+
 // Bitcoin's unchanged `SpanPopBack` verifies against Click's `std::span`
 // contracts: libstdc++'s `size`, `back` and `first` are axioms with no
 // exported body, and every contract states the span through model accessors.
@@ -3385,33 +3426,15 @@ fn axiomatic_span_byte_element_entries_verify() {
         GenericSpanCase {
             name: "generic-byte-window",
             dependencies: BYTE_SPAN_DEPENDENCIES,
-            harness: "std::span<std::byte> probe(std::span<std::byte>& s) noexcept { return s.subspan(1, 1); }",
+            harness: "std::span<std::byte> probe(std::span<std::byte>& s) noexcept { return s.subspan(1, std::dynamic_extent); }",
             sidecar: format!(
-                r#"theorem uint64_byte_window_bounds(n: uint64) {{
-    requires 2u64 <= n;
-    ensures 1u64 <= n - 1u64 by {{
-        apply(uint64_less_equal_to_integer(2u64, n));
-        have to_integer(1u64) <= to_integer(n) by {{
-            arithmetic() using {{ to_integer(2u64) <= to_integer(n); }}
-        }}
-        apply(uint64_subtract_to_integer(n, 1u64));
-        have to_integer(1u64) <= to_integer(n - 1u64) by {{
-            arithmetic() using {{ to_integer(n - 1u64) == to_integer(n) - 1; to_integer(2u64) <= to_integer(n); }}
-        }}
-        apply(uint64_to_integer_less_equal_implies_less_equal(1u64, n - 1u64));
-    }}
-}}
-{byte_span} probe({byte_span}& s) {{
+                r#"{byte_span} probe({byte_span}& s) {{
     views std_span_data(s);
     views std_span_size(s);
-    requires 2u64 <= std_span_size(s);
+    requires 1u64 <= std_span_size(s);
     ensures std_span_data(result) == std_span_data(s) + 1u64;
-    ensures std_span_size(result) == 1u64;
-}} by {{
-    apply(uint64_byte_window_bounds(std_span_size(s)));
-    execute();
-    simp();
-}}"#
+    ensures std_span_size(result) == std_span_size(s) - 1u64;
+}} by {{ execute(); simp(); }}"#
             ),
             refusals: vec![],
         },

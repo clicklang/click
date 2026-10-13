@@ -302,11 +302,9 @@ Decision: open.
 ### L5. Resource clauses overlap and the docs disagree
 
 Today: `consumes X; produces X;` beside `owns X`; per-field `owns` lists;
-frames restated after `produces`; the docs disagree on whether `owns` grants
-access (`docs/concepts/spec-state.md` vs `docs/reference/language/index.md`).
+frames restated after `produces`.
 
-Proposed fix: reconcile the documents; `owns *s` for whole structs; infer
-frames for produced cells.
+Proposed fix: `owns *s` for whole structs; infer frames for produced cells.
 
 Decision: open.
 
@@ -390,13 +388,13 @@ Decision: open.
 
 ### M5. Aliasing and place syntax are inconsistent
 
-Today: `docs/reference/language/limitations.md` says to add `separate(...)`
-for possibly aliasing pointers; `docs/internals/separation-logic.md` says
-owned ranges are exclusive by composition. `owns a->n` and `owns a->n[0..1]`
-differ (`design/place-based-resource-clauses.md`).
+Today: `owns a->n` and `owns a->n[0..1]` differ
+(`design/place-based-resource-clauses.md`). The docs now agree that a
+contract's `owns` clauses are disjoint from each other and from its `views`
+clauses, and that `separate(...)` is needed only between views and
+`viewable` facts.
 
-Proposed fix: state that `separate` is needed only for views and
-`viewable`; finish the place-based design.
+Proposed fix: finish the place-based design.
 
 Decision: open.
 
@@ -417,11 +415,12 @@ Decision: fix (maintainer).
 
 Today: both need a repository checkout and custom importer builds
 (`examples/basic-cpp/README.md`, `examples/basic-rust/README.md`); the C++
-example is `int increment(int& value)`; `docs/reference/rust.md` opens with
-retired-schema history.
+example is `int increment(int& value)`. The AI reference now labels both
+experimental (`docs/reference/coverage.md`) and keeps migration history out of
+`docs/reference/rust.md`.
 
-Proposed fix: label both alpha up front; ship the exporter and Charon with
-the installer; keep migration history out of user docs.
+Proposed fix: ship the exporter and Charon with the installer; a C++ example
+beyond a scalar reference.
 
 Decision: open.
 
