@@ -683,7 +683,7 @@ gate.
 
 ### The key benchmark
 
-`scripts/benchmark.sh` is Click's headline performance number: nonblank
+`evals/speed.sh` is Click's headline performance number: nonblank
 `.click` lines verified per CPU second over a small fixed set of examples,
 "Click verifies the key benchmark at N lines/s". It is the number to move
 when optimizing for general speed, and the one to report before and after a
@@ -714,8 +714,16 @@ With `--work` the key benchmark charged 15,059,650 units, 1,537 units per
 line (`arena` 1,382, `rbtree-insert` 1,456, `owned-vector` 2,434;
 `rbtree-erase` 4,755).
 
-`scripts/benchmark-examples.sh` remains the whole-corpus survey: every
+`evals/speed-survey.sh` remains the whole-corpus survey: every
 example, wall time, so its number moves with the corpus.
+
+### The `auto` eval
+
+`evals/auto.py` measures how many hand-written `have` statements in the
+examples can be deleted with the proof still verifying, against a committed
+baseline. A change to `auto`, `simp` or what they rely on quotes its result,
+sites gained and lost, in the pull request. `evals/README.md`
+describes the corpus, the sampling and the baseline.
 
 ### Hunting for steps that grow
 

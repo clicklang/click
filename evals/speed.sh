@@ -2,7 +2,7 @@
 # Click's key performance benchmark: nonblank `.click` lines verified per CPU
 # second over a small fixed set of examples.
 #
-#     scripts/benchmark.sh [--work] [--runs N]
+#     evals/speed.sh [--work] [--runs N]
 #
 # The members are chosen to cover the kinds of proof Click is used for, not
 # to be every example: an ordinary benchmark must not drift each time an
@@ -36,7 +36,7 @@ while [[ $# -gt 0 ]]; do
             runs="$1"
             ;;
         *)
-            echo "usage: scripts/benchmark.sh [--work] [--runs N]" >&2
+            echo "usage: evals/speed.sh [--work] [--runs N]" >&2
             exit 2
             ;;
     esac
