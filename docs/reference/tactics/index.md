@@ -14,11 +14,14 @@ either **smart**, **simple**, or **control**:
 - Control tactics contain, scope, split, or join proof scripts. Their descendants, not
   the container itself, determine whether an expanded proof is simple.
 
-`by auto;` and an omitted proof clause run exactly the script
-`execute(); simp();`, per claim or once for a grouped proof. On a stated
-fact, `have P by auto;`, there is no C to execute, and `auto` is the solver,
-then `simp`, then a bounded search for a chain of rewrites. `auto` has no
-script-tactic spelling of its own. Successful smart tactics and `auto` retain the checked
+`by auto;` and an omitted proof clause execute the function, then close its
+claims with `auto`, per claim or once for a grouped proof. Closing with
+`auto` tries `simp` on each open claim, then the solver and a bounded search
+for a chain of rewrites on a claim `simp` leaves open. A proof script that
+ends with a claim still open closes it the same way, so a script needs no
+final closer. On a stated fact, `have P by auto;`, there is no C to execute,
+and `auto` is the solver, then `simp`, then the rewrite search. `auto` has no
+script-tactic spelling of its own: a written `simp()` is `simp` alone. Successful smart tactics and `auto` retain the checked
 surface provenance that `click expand` can render as an explicit proof.
 
 For ordinary authoring, start with the omitted default, `by auto;`, or the
@@ -138,7 +141,8 @@ expansion preserves both bodies with their checked steps.
 
 `by simp;` is sugar for a script containing the same `simp()` operation at the
 same proof state. Neither form implicitly executes a function. Write
-`execute(); simp();` when both operations are intended, or use `by auto;`. A
+`execute(); simp();` when both operations are intended, or use `by auto;`,
+or end the script after `execute();` to close with `auto`. A
 `simp()` written before execution has reached the function exit is refused
 with the frontier it stands at; the end of a body is one `step()` of its own
 (`mdtests/simp_before_exit_in_arm_names_the_frontier.md`).

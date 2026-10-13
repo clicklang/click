@@ -10580,6 +10580,176 @@ fn native_loadability_transport_pins_extent_domain_and_lifetime() {
 }
 
 #[test]
+fn native_loadability_prefix_coverage_retains_full_width_bounds() {
+    let memory = CMemory::new();
+    let base = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let range = |bytes| Proposition::CMemoryLoadable {
+        memory: memory.clone(),
+        base: base.clone(),
+        bytes,
+        wide: true,
+    };
+    for held in [
+        0,
+        1,
+        u64::from(u32::MAX),
+        1u64 << 32,
+        i64::MAX as u64,
+        u64::MAX,
+    ] {
+        let context =
+            PureFactContext::new().assume_proposition(range(Bitvector32Term::UInt64Constant(held)));
+        for requested in [0, 1, held, held.saturating_add(1)] {
+            let goal = range(Bitvector32Term::UInt64Constant(requested));
+            let proof = context.derive_atomic_proposition(&goal);
+            assert_eq!(proof.is_some(), requested <= held, "{requested} <= {held}");
+            if let Some(proof) = proof {
+                assert!(proof.check(&context));
+            }
+        }
+    }
+    let held = Bitvector32Term::Variable(Variable(973_101));
+    let requested = Bitvector32Term::Variable(Variable(973_102));
+    let source = range(held.clone());
+    let goal = range(requested.clone());
+    let context = PureFactContext::new().assume_proposition(source.clone());
+    assert!(context.derive_atomic_proposition(&goal).is_none());
+    let bound = Proposition::ConditionIs(
+        ConditionTerm::uint64_less_equal(requested.clone(), held.clone()),
+        true,
+    );
+    let bounded = context.clone().assume_proposition(bound);
+    let proof = bounded.derive_atomic_proposition(&goal).unwrap();
+    assert!(proof.check(&bounded));
+    assert!(
+        !proof.check(&context),
+        "the coverage bound must remain a premise"
+    );
+    let low_word_bound = Proposition::ConditionIs(
+        ConditionTerm::unsigned_less_equal(
+            Bitvector32Term::UInt32From64(Box::new(requested)),
+            Bitvector32Term::UInt32From64(Box::new(held)),
+        ),
+        true,
+    );
+    assert!(
+        context
+            .assume_proposition(low_word_bound)
+            .derive_atomic_proposition(&goal)
+            .is_none()
+    );
+}
+
+#[test]
+fn native_loadability_prefix_coverage_preserves_lifetime_and_base() {
+    let base = Pointer {
+        block: "native-prefix".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let live = CMemory::new().with_block("native-prefix", 8);
+    let range = |memory: CMemory, base: Pointer, bytes| Proposition::CMemoryLoadable {
+        memory,
+        base,
+        bytes: Bitvector32Term::UInt64Constant(bytes),
+        wide: true,
+    };
+    let context = PureFactContext::new().assume_proposition(range(live.clone(), base.clone(), 8));
+    let written = live
+        .clone()
+        .store(base.clone(), CValue::Int32(Bitvector32Term::Constant(7)));
+    assert!(
+        context
+            .derive_atomic_proposition(&range(written, base.clone(), 4))
+            .unwrap()
+            .check(&context)
+    );
+    for wrong in [
+        range(live.clone().with_block("native-prefix", 2), base.clone(), 4),
+        range(
+            live.clone().without_local_block(&base.block),
+            base.clone(),
+            4,
+        ),
+        range(CMemory::new(), base.offset_by_bytes(8), 1),
+    ] {
+        assert!(context.derive_atomic_proposition(&wrong).is_none());
+    }
+    let external = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let allocated = CMemory::new()
+        .with_heap_allocation_claim(external.clone(), Bitvector32Term::Constant(16))
+        .unwrap();
+    let retired = allocated
+        .clone()
+        .free_heap_block(&external, &PureFactContext::new())
+        .unwrap();
+    let context = PureFactContext::new().assume_proposition(range(allocated, external.clone(), 8));
+    assert!(
+        context
+            .derive_atomic_proposition(&range(retired, external, 4))
+            .is_none()
+    );
+}
+
+#[test]
+fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
+    let memory = CMemory::new();
+    let base = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let requested = Bitvector32Term::Variable(Variable(973_103));
+    let mut expected = None;
+    for count in [16, 64, 256, 1024] {
+        let mut context = PureFactContext::new();
+        for index in 0..count {
+            context = context.assume_proposition(Proposition::CMemoryLoadable {
+                memory: memory.clone(),
+                base: base.offset_by_bytes(4 * (index + 1)),
+                bytes: Bitvector32Term::UInt64Constant(16),
+                wide: true,
+            });
+        }
+        context = context
+            .assume_proposition(Proposition::CMemoryLoadable {
+                memory: memory.clone(),
+                base: base.clone(),
+                bytes: Bitvector32Term::UInt64Constant(16),
+                wide: true,
+            })
+            .assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::uint64_less_equal(
+                    requested.clone(),
+                    Bitvector32Term::UInt64Constant(16),
+                ),
+                true,
+            ));
+        let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+            (
+                context.proves_native_memory_loadable(&memory, &base, &requested),
+                context.proves_native_memory_loadable(
+                    &memory,
+                    &base,
+                    &Bitvector32Term::UInt64Constant(17),
+                ),
+            )
+        });
+        assert_eq!(proved, (true, false));
+        assert!(work > 0);
+        if let Some(expected) = expected {
+            assert_eq!(work, expected);
+        } else {
+            expected = Some(work);
+        }
+    }
+}
+
+#[test]
 fn native_loadability_queries_do_not_visit_unrelated_addresses() {
     let memory = CMemory::new();
     let base = Pointer {

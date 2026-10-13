@@ -3155,7 +3155,7 @@ impl AnnotationLowerer<'_> {
                 if let Some(snapshot) = self.snapshot_environment(selector, environment)? {
                     return self.click_proposition_to_spec_proposition(proposition, &snapshot);
                 }
-                match self.resolve_visit_selector(selector)? {
+                match self.resolve_visit_selector(selector, environment)? {
                     ResolvedProgramPoint::Current => {
                         self.click_proposition_to_spec_proposition(proposition, environment)
                     }
@@ -6057,7 +6057,7 @@ impl AnnotationLowerer<'_> {
                 if let Some(snapshot) = self.snapshot_environment(selector, environment)? {
                     return self.lower_contract_sequence_to_spec(expression, &snapshot);
                 }
-                match self.resolve_visit_selector(selector)? {
+                match self.resolve_visit_selector(selector, environment)? {
                     ResolvedProgramPoint::Current => {
                         self.lower_contract_sequence_to_spec(expression, environment)
                     }
@@ -6261,7 +6261,7 @@ impl AnnotationLowerer<'_> {
                 "proof-local mark `{name}` cannot be used in a loop invariant; use `at(loop({loop_index}).entry, ...)` for that loop's entry state"
             ));
         }
-        match self.resolve_visit_selector(selector)? {
+        match self.resolve_visit_selector(selector, environment)? {
             ResolvedProgramPoint::Current => {
                 self.lower_contract_expression_to_spec(expression, environment)
             }
@@ -6286,6 +6286,7 @@ impl AnnotationLowerer<'_> {
     fn resolve_visit_selector(
         &self,
         selector: &SnapshotSelector,
+        environment: &SpecElaborationContext,
     ) -> Result<ResolvedProgramPoint, String> {
         match selector {
             SnapshotSelector::ProgramPoint(program_point)
@@ -6294,7 +6295,7 @@ impl AnnotationLowerer<'_> {
                 Ok(ResolvedProgramPoint::Current)
             }
             SnapshotSelector::ProgramPoint(program_point) => {
-                self.resolve_program_point_ref(program_point)
+                self.resolve_program_point_ref(program_point, environment)
             }
             SnapshotSelector::Mark(name) if self.snapshots.is_some() => Err(format!(
                 "unknown proof mark `{name}`; add `mark {name};` after the proof reaches that frontier"
@@ -6308,6 +6309,7 @@ impl AnnotationLowerer<'_> {
     fn resolve_program_point_ref(
         &self,
         program_point: &ProgramPointRef,
+        environment: &SpecElaborationContext,
     ) -> Result<ResolvedProgramPoint, String> {
         let region = self.resolve_code_region_ref(&program_point.region)?;
         match (region, program_point.kind) {
@@ -6317,9 +6319,18 @@ impl AnnotationLowerer<'_> {
             (CodeRegion::Loop(index), ProgramPointKind::Entry) => {
                 Ok(ResolvedProgramPoint::LoopEntry(index))
             }
-            (CodeRegion::Function, ProgramPointKind::Exit) => {
-                Err("`at(function.exit, ...)` is not supported yet".to_string())
+            // `result` is in scope only once the function has returned, in a
+            // postcondition or at a returned outcome: the state read there is
+            // the exit state. Before the return there is no exit to read.
+            (CodeRegion::Function, ProgramPointKind::Exit)
+                if environment.contract_result_in_scope =>
+            {
+                Ok(ResolvedProgramPoint::Current)
             }
+            (CodeRegion::Function, ProgramPointKind::Exit) => Err(
+                "`at(function.exit, ...)` is available only once the function has returned"
+                    .to_string(),
+            ),
             (CodeRegion::Loop(_), ProgramPointKind::Exit) | (CodeRegion::Statement(_), _)
                 if self.snapshots.is_some() =>
             {
@@ -6776,7 +6787,7 @@ impl AnnotationLowerer<'_> {
         if let Some(snapshot) = self.snapshot_environment(selector, environment)? {
             return self.lower_array_ref_to_spec(expression, &snapshot);
         }
-        match self.resolve_visit_selector(selector)? {
+        match self.resolve_visit_selector(selector, environment)? {
             ResolvedProgramPoint::Current => self.lower_array_ref_to_spec(expression, environment),
             ResolvedProgramPoint::FunctionEntry => {
                 let old_environment =

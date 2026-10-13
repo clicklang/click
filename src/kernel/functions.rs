@@ -13522,11 +13522,34 @@ fn spec_pure_function_argument_is_state_independent(argument: &SpecPureFunctionA
         SpecPureFunctionArgument::Value(expression) => {
             spec_expression_is_state_independent(expression)
         }
-        SpecPureFunctionArgument::Integer(_) => true,
+        SpecPureFunctionArgument::Integer(expression) => {
+            spec_integer_expression_is_state_independent(expression)
+        }
         SpecPureFunctionArgument::Algebraic(expression) => {
             spec_algebraic_expression_is_state_independent(expression)
         }
         SpecPureFunctionArgument::ArrayRef { .. } => false,
+    }
+}
+
+/// An Integer argument or field reads the state exactly when a machine value
+/// inside it does: `to_integer(*p)` reads `*p`. A `Term` is closed, whether an
+/// Integer binder, a constant, or a value already resolved at lowering.
+fn spec_integer_expression_is_state_independent(expression: &SpecIntegerExpression) -> bool {
+    match expression {
+        SpecIntegerExpression::Term(_) => true,
+        SpecIntegerExpression::FromMachine(value) => spec_expression_is_state_independent(value),
+        SpecIntegerExpression::Negate(value) => spec_integer_expression_is_state_independent(value),
+        crate::kernel::binary_spec_integer_expression!(left, right) => {
+            spec_integer_expression_is_state_independent(left)
+                && spec_integer_expression_is_state_independent(right)
+        }
+        SpecIntegerExpression::PureFunctionApplication { arguments, .. } => arguments
+            .iter()
+            .all(spec_pure_function_argument_is_state_independent),
+        SpecIntegerExpression::ResourceField(_)
+        | SpecIntegerExpression::AlgebraicMatch { .. }
+        | SpecIntegerExpression::RangeFold { .. } => false,
     }
 }
 
@@ -13625,7 +13648,9 @@ pub(super) fn spec_algebraic_expression_is_state_independent(
                 SpecAlgebraicValue::C(expression) => {
                     spec_expression_is_state_independent(expression)
                 }
-                SpecAlgebraicValue::Integer(_) => true,
+                SpecAlgebraicValue::Integer(expression) => {
+                    spec_integer_expression_is_state_independent(expression)
+                }
                 SpecAlgebraicValue::Algebraic(expression) => {
                     spec_algebraic_expression_is_state_independent(expression)
                 }
@@ -13935,7 +13960,9 @@ fn spec_algebraic_expression_reads_current_parameter(
                 SpecAlgebraicValue::C(expression) => {
                     spec_expression_reads_current_parameter(expression, parameter_name)
                 }
-                SpecAlgebraicValue::Integer(_) => false,
+                SpecAlgebraicValue::Integer(expression) => {
+                    spec_integer_expression_reads_current_parameter(expression, parameter_name)
+                }
                 SpecAlgebraicValue::Algebraic(expression) => {
                     spec_algebraic_expression_reads_current_parameter(expression, parameter_name)
                 }
@@ -13963,7 +13990,9 @@ fn spec_pure_function_argument_reads_current_parameter(
         SpecPureFunctionArgument::Value(expression) => {
             spec_expression_reads_current_parameter(expression, parameter_name)
         }
-        SpecPureFunctionArgument::Integer(_) => false,
+        SpecPureFunctionArgument::Integer(expression) => {
+            spec_integer_expression_reads_current_parameter(expression, parameter_name)
+        }
         SpecPureFunctionArgument::Algebraic(expression) => {
             spec_algebraic_expression_reads_current_parameter(expression, parameter_name)
         }
@@ -14469,7 +14498,12 @@ fn spec_proposition_current_parameter_accesses(
     unknown_read: &mut bool,
 ) {
     match proposition {
-        SpecProposition::IntegerComparison { .. } => {}
+        // An Integer read has no precise byte range here, so any read of the
+        // parameter is an unknown read.
+        SpecProposition::IntegerComparison { left, right, .. } => {
+            *unknown_read |= spec_integer_expression_reads_current_parameter(left, parameter_name)
+                || spec_integer_expression_reads_current_parameter(right, parameter_name);
+        }
         SpecProposition::AlgebraicComparison { left, right, .. } => {
             spec_algebraic_expression_current_parameter_accesses(
                 left,
@@ -14651,7 +14685,12 @@ fn spec_algebraic_expression_current_parameter_accesses(
                             unknown_read,
                         );
                     }
-                    SpecAlgebraicValue::Integer(_) => {}
+                    SpecAlgebraicValue::Integer(expression) => {
+                        *unknown_read |= spec_integer_expression_reads_current_parameter(
+                            expression,
+                            parameter_name,
+                        );
+                    }
                     SpecAlgebraicValue::Algebraic(expression) => {
                         spec_algebraic_expression_current_parameter_accesses(
                             expression,
@@ -14707,7 +14746,10 @@ fn spec_pure_function_argument_current_parameter_accesses(
                 unknown_read,
             );
         }
-        SpecPureFunctionArgument::Integer(_) => {}
+        SpecPureFunctionArgument::Integer(expression) => {
+            *unknown_read |=
+                spec_integer_expression_reads_current_parameter(expression, parameter_name);
+        }
         SpecPureFunctionArgument::Algebraic(expression) => {
             spec_algebraic_expression_current_parameter_accesses(
                 expression,

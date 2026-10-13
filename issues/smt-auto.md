@@ -180,6 +180,45 @@ The longer run time is solver search, all within the smart budget.
 solver. The certificate cache
 (stage 3) is what removes this search from ordinary verification.
 
+## Where Click's proofs are longer
+
+Measured 2026-10-13: nonblank annotation or proof lines per nonblank line of
+code. VeriFast files count their `/*@ @*/` and `//@` lines, lemma proofs
+included; CN's tutorial states its recursive lemmas and proves them in Coq,
+so those proofs are not counted; Click counts every `.click` line of the
+project.
+
+| Program | VeriFast | CN | Click |
+|---|---|---|---|
+| Singly linked list | 6.9 (`examples/lists.c`, 15 lines of C) | 1.3 | 1.2–1.5 (`linked-list`, `allocated-linked-list`, `marked-linked-list`) |
+| Queue, stack, doubly linked list | 2.0–3.4 | 1.1–1.8 | 1.9 (`ring-buffer`) |
+| Binary tree against a model | 2.3 (`sorted_bintree.c`), 4.8 (`vstte2012` tree) | — | 3.5 (`binary-tree`), 14 (`modeled-binary-tree`) |
+| Red-black tree | none public | none public | 23 (`rbtree-insert`), 33 (`rbtree-erase`) |
+
+On ownership-only proofs Click is level with both. The gap is in proofs
+against a functional model, and it is the pure reasoning, not resource
+bookkeeping: `tree_rotate_left` in `modeled-binary-tree` spends about 10 of
+its 49 lines on `unfold`/`fold`, which VeriFast also writes as `open`/
+`close`, and most of the rest stating facts as `have`s that SMT tools derive
+without being asked. A one-line `have` proved `by auto` saves nothing; the
+lines go away only when `auto` runs where obligations are discharged and the
+`have` can be deleted.
+
+The next steps, in order:
+
+1. **`auto` closes contracts.** Done: `by auto;`, an omitted proof, and a
+   script that ends with a claim open close with `auto` instead of `simp`
+   alone. In `tree_rotate_left` the two `have`s proving the `ensures` become
+   one `apply` line.
+2. **Spell `apply` conclusions.** A rewrite needs its equality as source
+   text; a fact `apply(...)` adds has none, so `auto` cannot rewrite by a
+   lemma's conclusion. The rbtree erase file has 197 `apply`s.
+3. **Unfold definitions applied to constructors.** `heap_right(Node(...))`
+   and similar facts are stated by hand in every arm of a tree proof.
+
+Each step is judged by deleting `have`s from the examples and checking that
+the proofs still verify.
+
 ## Regression
 
 Prototype stage 1 behind `auto`, then measure the change in

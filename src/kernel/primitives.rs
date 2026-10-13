@@ -8292,6 +8292,13 @@ impl CResourceSpec {
         &self.term
     }
 
+    pub(in crate::kernel) fn with_captured_memory_segment(&self, segment: CMemorySegment) -> Self {
+        debug_assert!(matches!(self.term, CResourceTerm::Memory(_)));
+        let mut captured = self.clone();
+        captured.term = CResourceTerm::Memory(segment);
+        captured
+    }
+
     pub fn with_mutex_authority_binding(
         mut self,
         identity: Variable,
@@ -10122,6 +10129,7 @@ pub struct PureFactContext {
         crate::persistent::PersistentMap<Bitvector32Term, ConditionTerm>,
     >,
     pub(super) condition_facts: crate::persistent::PersistentMap<ConditionTerm, bool>,
+    pub(super) signed_variable_chains: super::assumptions::variable_chains::VariableChains,
     /// Incremental adjacency for conditions whose variables can be read
     /// without inspecting a snapshot.
     pub(super) condition_facts_by_variable: crate::persistent::PersistentMap<

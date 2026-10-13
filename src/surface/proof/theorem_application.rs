@@ -292,17 +292,19 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
     let bound_array_memories =
         theorem_application_bound_array_memories(&theorem, application, &array_refs);
     let lower = |proposition: &ClickProposition| {
-        lower_fixed_state_proposition_through_kernel_with_bound_array_memories(
+        lower_fixed_state_proposition_through_kernel_with(
             proposition,
             lowering_assumptions,
             ContractEnvironment::new(&values, &array_refs),
-            &algebraic_values,
-            &integer_values,
-            &bound_array_memories,
             FixedStateFrame::new(&pre_state, &post_state, None, context.recorded_snapshots),
             spec_definitions,
-            &BTreeSet::new(),
-            pointer_element_widths.clone(),
+            FixedStateLoweringOptions {
+                algebraic_values: Some(&algebraic_values),
+                integer_values: Some(&integer_values),
+                bound_array_memories: Some(&bound_array_memories),
+                pointer_element_widths: pointer_element_widths.clone(),
+                ..Default::default()
+            },
         )
     };
 

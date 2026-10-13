@@ -110,6 +110,14 @@ offline; the one-byte result satisfies the shared specification and preserves
 the byte. Its null reset path verifies for any seed and nonunit length.
 Expression updates preserve consumed values, loop exit-side effects, native
 unsigned wrap, and checked pointer strides; nested `DO16` blocks also import.
+Ordinary loop memory footprints are captured before modified counters and
+cursors are havocked. Ranked reductions now cover a moving-cursor byte sum
+and `while (n--)`, including its wrapping zero exit, without a processed
+counter. Checked native 64-bit same-base prefixes now retain full-width
+coverage bounds and lifetime evidence; symbolic prefixes have explicit
+selected-premise proofs. Complete checked alias and moving-base subrange
+transport, then integrate these reductions into the unchanged short-input loop.
+
 Connect the original nonempty computation to the common specification, then
 prove compatible seed/reset/null-buffer behavior and incremental processing.
 

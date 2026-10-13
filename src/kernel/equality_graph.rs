@@ -1270,9 +1270,14 @@ impl EqualityGraph {
         if left == right {
             return true;
         }
+        // Canonicalize before taking the lock, as the uint64 queries do:
+        // canonicalizing a load can consult this graph's own read
+        // generation, and a std mutex is not reentrant.
+        let left = crate::kernel::canonical_term(left);
+        let right = crate::kernel::canonical_term(right);
         let mut state = self.state.lock().expect("equality graph");
-        self.register_int32_operands(&mut state, left, right);
-        let equal = state.terms.are_int32_equal(left, right);
+        self.register_int32_operands(&mut state, &left, &right);
+        let equal = state.terms.are_int32_equal(&left, &right);
         state.close(Vec::new());
         equal
     }
@@ -1390,8 +1395,10 @@ impl EqualityGraph {
         &self,
         term: &Bitvector32Term,
     ) -> Option<(i64, i64)> {
+        // See `are_int32_equal`: canonicalize outside the lock.
+        let term = crate::kernel::canonical_term(term);
         let mut state = self.state.lock().expect("equality graph");
-        let node = state.terms.int32_class(term);
+        let node = state.terms.int32_class(&term);
         state.close(Vec::new());
         state.terms.signed_int32_interval(node)
     }
@@ -1402,6 +1409,9 @@ impl EqualityGraph {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
+        // See `are_int32_equal`: canonicalize outside the lock.
+        let left = &crate::kernel::canonical_term(left);
+        let right = &crate::kernel::canonical_term(right);
         let mut state = self.state.lock().expect("equality graph");
         self.register_int32_operands(&mut state, left, right);
         let changed = state.terms.add_int32_equality(left, right);

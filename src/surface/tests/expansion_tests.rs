@@ -17495,6 +17495,28 @@ fn a_loop_phase_expands_by_label_over_a_prepared_c_import() {
 }
 
 #[test]
+fn early_return_arms_transport_result_goals_from_function_exit() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/byte_representation_roundtrip.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source(source, &sources, "f", CProofClaim::Grouped).unwrap();
+    // `result` does not exist at function entry. Each failure arm states
+    // its `result` goal at function exit, where the arm has returned.
+    assert!(!expanded.contains("at(function.entry"), "{expanded}");
+    assert!(
+        expanded.contains("transport(at(function.exit, result == 18 or result == -1)"),
+        "{expanded}"
+    );
+    verify_c0_sources(&expanded, &sources).unwrap();
+}
+
+#[test]
 fn guarded_resource_disjoint_store_and_unconditional_control_expand_and_recheck() {
     let c = r#"struct base { struct base* left; struct base* right; uint64 padding; };
 struct cell { struct base base; int32 value; };

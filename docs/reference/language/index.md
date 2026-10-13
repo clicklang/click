@@ -2731,6 +2731,23 @@ together. This matters for propositions such as `viewable(...)`: both the
 address expression and the memory in which it is viewable come from the
 selected state.
 
+The contract `result` exists only once the function returns, so `old(...)` and
+`at(...)` at any program point but `function.exit` cannot name it; both are
+refused where they are written (`mdtests/old_of_result_is_refused.md`,
+`mdtests/an_entry_snapshot_of_result_is_refused.md`). A proof mark can name it,
+since a proof may place the mark after the return. A C binding named `result`
+is still written `c(result)` inside a snapshot.
+
+`at(function.exit, ...)` reads the state the function returns in. It is
+available where `result` is: in a postcondition and in a proof step after
+execution has returned, where it is the current path's state. It is refused
+before the return. Because every returned path has its own `result`, one
+`transport(at(function.exit, P), P) using { }` closes a `result` goal on
+each path that the path's own state proves, and expansion writes that step
+for such goals (`mdtests/a_returned_path_transports_a_result_goal_from_function_exit.md`,
+`mdtests/a_function_exit_snapshot_before_the_return_is_refused.md`,
+`mdtests/a_function_exit_transport_of_a_false_result_claim_is_refused.md`).
+
 The selected snapshot is a complete recorded C state, not only a memory
 snapshot. Inside `at(...)`, reassigned parameters and declared scalar, pointer,
 and array locals resolve to their values in that snapshot. Outside `at(...)`,
@@ -3085,6 +3102,13 @@ loop {
     invariant i <= n;
 }
 ```
+
+An unconditional plain-memory clause evaluates its pointer and bounds at loop
+entry, before modified locals are havocked. For example, `views p[0..n]`
+continues to describe the original physical range when the body advances `p`
+and decrements `n`. An invariant such as `viewable(p[0..n])` separately owes
+the current cursor and remaining range at each head. Named resource binders
+retain their own argument and model rebinding rules.
 
 A declared resource must be one the enclosing function already holds; a loop
 cannot own what its function does not. The loop then has the shape of a callee:

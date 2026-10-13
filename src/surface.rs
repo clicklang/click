@@ -2075,7 +2075,10 @@ impl ClickProposition {
     }
 }
 
-fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet<String>) {
+pub(crate) fn collect_c_expression_variables(
+    expression: &CExpression,
+    names: &mut BTreeSet<String>,
+) {
     match expression {
         CExpression::Value(_) | CExpression::FunctionAddress(_) => {}
         CExpression::Variable(name) => {
@@ -2188,7 +2191,7 @@ fn collect_current_resource_subject_variables(
     }
 }
 
-fn collect_current_contract_expression_variables(
+pub(crate) fn collect_current_contract_expression_variables(
     expression: &ContractExpression,
     names: &mut BTreeSet<String>,
 ) {
@@ -3511,6 +3514,11 @@ pub enum ProofTactic {
         premises: Option<Vec<ClickProposition>>,
     },
     Simp,
+    /// The closer `auto` ends a proof with: each pending claim is tried by
+    /// `simp`, then by the rest of `auto`'s search. It has no source
+    /// spelling; `by auto;`, an omitted proof, and a script that ends with
+    /// claims still open use it.
+    AutoClose,
     SimpUsing(ProofSimpUsing),
     ArithmeticCertificate(ArithmeticCertificate),
     /// Dev-only proof hole. Closes the enclosing proof unit without checking
@@ -5244,6 +5252,7 @@ impl ProofTactic {
             Self::SmartExecute => TacticClass::Smart(SmartTacticKind::SmartExecute),
             Self::ExecuteUntil(_) => TacticClass::Smart(SmartTacticKind::ExecuteUntil),
             Self::Simp => TacticClass::Smart(SmartTacticKind::Simp),
+            Self::AutoClose => TacticClass::Smart(SmartTacticKind::Auto),
             Self::SimpUsing(_) => TacticClass::Smart(SmartTacticKind::Simp),
             Self::Have(_) => TacticClass::Control(ControlTactic::Have),
             Self::Open(_) => TacticClass::Control(ControlTactic::Open),
@@ -5894,6 +5903,27 @@ impl From<ProgramPointRef> for SnapshotSelector {
     fn from(point: ProgramPointRef) -> Self {
         Self::ProgramPoint(point)
     }
+}
+
+/// Whether a snapshot can name the contract `result`. `result` is the return
+/// value, which exists only once the function returns, so `old(...)` (`None`)
+/// and every program point but `function.exit` precede it. A proof mark is
+/// placed by the proof itself and may follow the return.
+pub(crate) fn snapshot_can_name_result(selector: Option<&SnapshotSelector>) -> bool {
+    match selector {
+        None => false,
+        Some(SnapshotSelector::Mark(_)) => true,
+        Some(SnapshotSelector::ProgramPoint(point)) => {
+            point.region == CodeRegionRef::Function && point.kind == ProgramPointKind::Exit
+        }
+    }
+}
+
+/// Whether `result` occurs in a proposition outside any nested snapshot.
+pub(crate) fn proposition_names_result(proposition: &ClickProposition) -> bool {
+    let mut names = BTreeSet::new();
+    collect_current_proposition_variables(proposition, &mut names);
+    names.contains("result")
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]

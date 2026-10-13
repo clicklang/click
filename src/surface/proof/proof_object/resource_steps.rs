@@ -1056,24 +1056,26 @@ impl<'a> Proof<'a> {
             operator: ComparisonOperator::Equal,
             right: checked_body,
         };
-        let equality =
-            lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_algebraic_values(
-                &checked_equality,
-                self.facts().assumptions(),
-                ContractEnvironment::new(&values, &array_refs),
-                &algebraic_values,
-                integer_values,
-                fixed_state,
-                spec_definitions,
-                &BTreeSet::from([application.name.clone()]),
-                parameter_pointer_element_widths.clone(),
-            )
-            .map_err(|message| {
-                self.step_error(format!(
-                    "could not lower defining equation for `{}`: {message}",
-                    application.name
-                ))
-            })?;
+        let equality = lower_fixed_state_proposition_through_kernel_with(
+            &checked_equality,
+            self.facts().assumptions(),
+            ContractEnvironment::new(&values, &array_refs),
+            fixed_state,
+            spec_definitions,
+            FixedStateLoweringOptions {
+                algebraic_values: Some(&algebraic_values),
+                integer_values: Some(integer_values),
+                opaque_click_functions: Some(&BTreeSet::from([application.name.clone()])),
+                pointer_element_widths: parameter_pointer_element_widths.clone(),
+                ..Default::default()
+            },
+        )
+        .map_err(|message| {
+            self.step_error(format!(
+                "could not lower defining equation for `{}`: {message}",
+                application.name
+            ))
+        })?;
 
         // `peel(f(args)) using { ... }` opens one layer too, but the layer
         // it opens is the range-fold law the listed guards select, stated
@@ -1126,23 +1128,28 @@ impl<'a> Proof<'a> {
                     // when it lowers back to exactly this kernel proposition.
                     let surface = goal.surface.as_deref().and_then(|surface_goal| {
                         let lower = |candidate: &ClickProposition| {
-                            let candidate =
-                                self.substitute_fixed_state_locals_in_proposition(candidate).ok()?;
+                            let candidate = self
+                                .substitute_fixed_state_locals_in_proposition(candidate)
+                                .ok()?;
                             let mut opaque_calls = BTreeSet::new();
                             crate::surface::validation::collect_click_function_calls_in_proposition(
                                 &candidate,
                                 &mut opaque_calls,
                             );
-                            lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_algebraic_values(
+                            lower_fixed_state_proposition_through_kernel_with(
                                 &candidate,
                                 facts.assumptions(),
                                 ContractEnvironment::new(&values, &array_refs),
-                                &algebraic_values,
-                                integer_values,
                                 fixed_state,
                                 spec_definitions,
-                                &opaque_calls,
-                                parameter_pointer_element_widths.clone(),
+                                FixedStateLoweringOptions {
+                                    algebraic_values: Some(&algebraic_values),
+                                    integer_values: Some(integer_values),
+                                    opaque_click_functions: Some(&opaque_calls),
+                                    pointer_element_widths: parameter_pointer_element_widths
+                                        .clone(),
+                                    ..Default::default()
+                                },
                             )
                             .ok()
                         };
@@ -1263,16 +1270,19 @@ impl<'a> Proof<'a> {
                         &checked_surface,
                         &mut opaque_calls,
                     );
-                    lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_algebraic_values(
+                    lower_fixed_state_proposition_through_kernel_with(
                         &checked_surface,
                         facts.assumptions(),
                         ContractEnvironment::new(&values, &array_refs),
-                        &algebraic_values,
-                        integer_values,
                         fixed_state,
                         spec_definitions,
-                        &opaque_calls,
-                        parameter_pointer_element_widths,
+                        FixedStateLoweringOptions {
+                            algebraic_values: Some(&algebraic_values),
+                            integer_values: Some(integer_values),
+                            opaque_click_functions: Some(&opaque_calls),
+                            pointer_element_widths: parameter_pointer_element_widths,
+                            ..Default::default()
+                        },
                     )
                     .map_err(|message| {
                         self.step_error(format!(
@@ -1354,16 +1364,19 @@ impl<'a> Proof<'a> {
                     &proposition,
                     &mut opaque_calls,
                 );
-                lower_fixed_state_proposition_through_kernel_with_opaque_calls_and_algebraic_values(
+                lower_fixed_state_proposition_through_kernel_with(
                     &proposition,
                     self.facts().assumptions(),
                     ContractEnvironment::new(values, array_refs),
-                    algebraic_values,
-                    integer_values,
                     fixed_state,
                     spec_definitions,
-                    &opaque_calls,
-                    parameter_pointer_element_widths.clone(),
+                    FixedStateLoweringOptions {
+                        algebraic_values: Some(algebraic_values),
+                        integer_values: Some(integer_values),
+                        opaque_click_functions: Some(&opaque_calls),
+                        pointer_element_widths: parameter_pointer_element_widths.clone(),
+                        ..Default::default()
+                    },
                 )
                 .map_err(|message| self.step_error(format!("could not lower {what}: {message}")))
             };

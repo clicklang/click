@@ -5491,6 +5491,15 @@ impl CMemory {
             let cells = std::sync::Arc::make_mut(&mut self.cells);
             dropped_run_slots = match scope {
                 ForgetScope::Everywhere => cells.retain_by(&mut keep_cell, run_rule),
+                ForgetScope::Ordered {
+                    candidates,
+                    selected,
+                } => cells.retain_selected_concrete_by(
+                    selected,
+                    candidates,
+                    &mut keep_cell,
+                    run_rule,
+                ),
                 ForgetScope::Candidates {
                     candidates,
                     cells_kept,
@@ -5523,7 +5532,8 @@ impl CMemory {
                 // A union view is never skipped by `cells_kept`: those ranges
                 // are what the caller showed its *cell* rule keeps, and a
                 // view is asked by its own width.
-                ForgetScope::Candidates { candidates, .. } => {
+                ForgetScope::Candidates { candidates, .. }
+                | ForgetScope::Ordered { candidates, .. } => {
                     candidates.retain_map(union_cells, &mut keep_view)
                 }
             }
@@ -5898,11 +5908,24 @@ impl CMemory {
                 );
             });
         }
-        let forgot_values = memory.forget_cached_values(
-            ForgetScope::Candidates {
+        let ordered = memory.cells.ordered_store_candidates(
+            &normalized_pointer,
+            bytes,
+            &candidates,
+            assumptions,
+        );
+        let scope = match ordered.as_deref() {
+            Some(selected) => ForgetScope::Ordered {
+                candidates: &candidates,
+                selected,
+            },
+            None => ForgetScope::Candidates {
                 candidates: &candidates,
                 cells_kept: &gap_kept,
             },
+        };
+        let forgot_values = memory.forget_cached_values(
+            scope,
             |pointer, value| match value {
                 CachedValue::Cell(value) => cell_fate(pointer, value),
                 CachedValue::UnionView(c_type, _) => view_fate(pointer, c_type),
@@ -8752,6 +8775,10 @@ pub(super) enum CachedValueFate {
 /// is kept unasked.
 #[derive(Clone, Copy)]
 pub(super) enum ForgetScope<'a> {
+    Ordered {
+        candidates: &'a AliasCandidates,
+        selected: &'a [Pointer],
+    },
     /// Every cached value, for a transition that may have written anywhere.
     Everywhere,
     /// The values in `candidates`' blocks, except the cells inside the key

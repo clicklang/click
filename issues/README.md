@@ -122,7 +122,6 @@ Specification and proof:
 ## P2: after launch (17)
 
 - [Make `step` simple across a call precondition](simplify-step.md)
-- [Reject `result` inside entry snapshots](result-accepted-in-entry-snapshots.md)
 
 Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
 it turns out to block that claim: if P1 work exposes one of the tooling
