@@ -115,8 +115,9 @@ body's derived count equations.
 **This draft does not verify and establishes no new C checksum result.** It
 now stops at the post-loop B accumulator equality. Compare its count
 conversion and input-snapshot identities with the exported invariant before
-widening the C proof range. The focused closure trace still
-reports no checked body steps, so it does not explain their fact history.
+widening the C proof range. Failed closure traces retain the checked body
+prefix, including the count equations and the original accumulator updates;
+a focused trace can select a successful body fact before the failed closure.
 
 To reproduce in a throwaway copy of this trial, copy the draft to
 `sixteen.click`, copy `short-memory.click.import.json` and its `.import.lock.json`

@@ -2678,3 +2678,171 @@ fn ordinary_legacy_diagnostics_bound_late_context_but_traces_remain_full() {
         assert!(error.report().len() > DEFAULT_DIAGNOSTIC_BYTE_LIMIT);
     });
 }
+
+const CLOSURE_TRACE_C: &str = r#"unsigned long drain(unsigned long len) {
+    while (len >= 16) { len -= 16; }
+    return len;
+}
+"#;
+
+const CLOSURE_TRACE_CLICK: &str = r#"target "x86_64-linux-userspace";
+verifying "loop.c";
+uint64 drain(uint64 len) {
+ requires len == 16u64;
+ ensures result == 0u64;
+} by {
+ loop {
+  decreases to_integer(len);
+  invariant len == 0u64 or len == 16u64;
+  initialize by { simp(); }
+  preserve by {
+   have len == 16u64 by {
+    cases {
+     len == 0u64 => {
+      have not (len >= 16u64) by { rewrite(len == 0u64); normalize(); }
+      contradiction(len >= 16u64);
+     }
+     len == 16u64 => { assumption(); }
+    }
+   }
+   step();
+   have len == 0u64 by simp();
+   have to_integer(len) == 0 by simp() using { len == 0u64; };
+   close_invariants by assumption();
+  }
+ }
+ execute(); simp();
+}
+"#;
+
+#[test]
+fn failed_invariant_closure_retains_body_trace_and_focused_fact() {
+    with_proof_trace("drain", || {
+        let error = verify_c0_sources(CLOSURE_TRACE_CLICK, &[("loop.c", CLOSURE_TRACE_C)])
+            .expect_err("the incomplete ranking proof must remain refused");
+        assert!(error.message().contains("assumption"));
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("steps through:"), "{trace}");
+        assert!(trace.contains("have len == 0u64"), "{trace}");
+        assert!(trace.contains("have to_integer(len) == 0"), "{trace}");
+        assert!(!trace.contains("no checked simple steps"), "{trace}");
+        let index = ProofSourceIndex::new(CLOSURE_TRACE_CLICK).unwrap();
+        let project = ClickProject::new(
+            "entry.click",
+            [ClickModuleSource::new(
+                "entry.click",
+                CLOSURE_TRACE_CLICK,
+                [],
+            )],
+        );
+        let positions = index
+            .project_tactic_positions(
+                &project,
+                &ProgramInputs::Bundle(vec![("loop.c", CLOSURE_TRACE_C)]),
+                error.proof_claim_label().unwrap(),
+            )
+            .unwrap();
+        let locate = |path: &[usize]| {
+            let outer = positions.get(*path.first()?)?;
+            let position = if path.len() == 1 {
+                outer.clone()
+            } else {
+                index.nested_position(outer, &path[1..]).ok()?
+            };
+            Some((
+                format!("tactic@{}:{}", position.line, position.column),
+                position,
+            ))
+        };
+        let line = CLOSURE_TRACE_CLICK
+            .lines()
+            .position(|line| line.contains("have to_integer(len) == 0"))
+            .unwrap()
+            + 1;
+        let target = SourcePosition::new(line, 4);
+        let focused = error
+            .trace_context_report_with_tactic_locations(
+                &locate,
+                &|path, target| {
+                    index
+                        .arm_containing(&locate(path)?.1, target)
+                        .ok()
+                        .flatten()
+                },
+                &|path, target| {
+                    locate(path).is_some_and(|(_, at)| {
+                        index.have_body_contains(&at, target).unwrap_or(false)
+                    })
+                },
+                Some(&target),
+            )
+            .unwrap();
+        assert!(focused.contains("have to_integer(len) == 0"), "{focused}");
+        assert!(!focused.contains("no recorded checked step"), "{focused}");
+    });
+}
+
+#[test]
+fn failed_invariant_closure_trace_prefix_is_lazy_and_scales() {
+    for size in [16, 32, 64] {
+        let repeated = "   have len == len by normalize();\n".repeat(size);
+        let source = CLOSURE_TRACE_CLICK.replace(
+            "   close_invariants by assumption();",
+            &format!("{repeated}   close_invariants by assumption();"),
+        );
+        with_proof_trace("drain", || {
+            let error = verify_c0_sources(&source, &[("loop.c", CLOSURE_TRACE_C)])
+                .expect_err("a trace cannot make the ranking proof valid");
+            let before = crate::surface::proof_trace::lineage_visits();
+            assert!(
+                before <= 4 * size + 100,
+                "{size} tactics eagerly walked {before} nodes"
+            );
+            let trace = error.trace_context_report().unwrap();
+            let visits = crate::surface::proof_trace::lineage_visits() - before;
+            assert!(
+                visits <= 8 * size + 200,
+                "{size} tactics walked {visits} nodes"
+            );
+            assert_eq!(trace.matches("have len == len").count(), size, "{trace}");
+            assert!(trace.contains("have len == 0u64"), "{trace}");
+        });
+    }
+}
+
+#[test]
+fn failed_invariant_closure_trace_keeps_its_branch_guard() {
+    let c = "unsigned long branch_drain(unsigned long len, int flag) { while (len >= 16) { if (flag == 0) { len -= 16; } else { len -= 8; } } return len; }";
+    let source = r#"target "x86_64-linux-userspace";
+        verifying "loop.c";
+        uint64 branch_drain(uint64 len, int32 flag) {
+            requires len == 16u64;
+            ensures result <= 16u64;
+        } by {
+            loop {
+                invariant len == 16u64;
+                initialize by assumption();
+                preserve by {
+                    branch then {
+                        step();
+                        have len == 0u64 by simp();
+                        close_invariants by assumption();
+                    } else {
+                        step();
+                        close_invariants by assumption();
+                    }
+                }
+            }
+            execute(); simp();
+        }
+    "#;
+    with_proof_trace("branch_drain", || {
+        let error = verify_c0_sources(source, &[("loop.c", c)])
+            .expect_err("the deliberately invalid invariant must fail in the then arm");
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("then arm"), "{trace}");
+        assert!(trace.contains("flag"), "{trace}");
+        assert!(trace.contains("have len == 0u64"), "{trace}");
+        assert!(!trace.contains("else arm"), "{trace}");
+    });
+}

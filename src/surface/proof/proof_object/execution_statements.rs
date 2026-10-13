@@ -1678,6 +1678,16 @@ impl<'a> Proof<'a> {
                 split_branches: Vec::new(),
             }),
         };
+        if let Some(parent_lineage) = self.trace_lineage(self.claim_label()) {
+            // Diagnostics cross the scope boundary; certificates remain
+            // rooted here. Retain both chains after the lazy lineage is read
+            // so another attempt cannot recycle their pointer identities.
+            crate::surface::proof_trace::register_scope(
+                Arc::as_ptr(&root.node) as usize,
+                parent_lineage,
+                Box::new((root.node.clone(), self.node.clone())),
+            );
+        }
         let mut search = attempt::search_scope("close invariants body");
         let checkpoint = root.checkpoint();
         let named_loop_surfaces = bundle.loop_head_premises.clone();
