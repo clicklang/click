@@ -1,14 +1,25 @@
 # Make simple tactics fast: exact requirements, expandable `auto` for the rest
 
-Priority: P2.
+Priority: P1.
 
 Soundness: not soundness. This is tactic architecture and performance. Every
 derivation a simple tactic performs today is already kernel-checked; the
 change is where the search runs, what it costs, and whether expansion shows it.
 
+## Why this is P1
+
+The 2026-10-12 launch design review (critique W3, moved here) found that
+`step()` is labelled simple yet runs "with every fact in the proof context
+visible" (`docs/reference/tactics/index.md`), while the work to make it simple
+was paused. A launch audience reading the tactic reference would take the
+simple/smart split at its word. The review proposed finishing this issue or
+reclassifying `step()` as smart; [design-review.md](design-review.md) depends on
+this issue for that critique.
+
 ## Decision
 
-Decided 2026-10-13 (design-review W3). `step()` stays a simple tactic and
+Decided 2026-10-13 by the maintainer, ruling on that critique: fix, without
+reclassifying `step()`. `step()` stays a simple tactic and
 `execute()` stays a sequence of steps plus the proof structure a single step
 cannot express (branches, path selectors, loop walks). What a simple tactic
 must be is fast: its checking is bounded by the selected operation, its
