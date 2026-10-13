@@ -17650,8 +17650,13 @@ int32 caller(int32 a, int32 b) {
     without_second.replace_range(second..second_end, "");
     let error = verify_c0_sources(&without_second, &c_sources)
         .expect_err("deleting an entry must leave its obligation unproved");
+    // Compare without grouping parentheses, which the diagnostic renderer may
+    // or may not print around each disjunct.
     assert!(
-        error.message().contains("(b > 0) or (a > 0)"),
+        error
+            .message()
+            .replace(['(', ')'], "")
+            .contains("b > 0 or a > 0"),
         "the refusal should name the unproved obligation: {}",
         error.message()
     );
