@@ -197,7 +197,10 @@ types, and [Supported C](c.md) gives their spellings and operations. Integer
 promotions and the usual arithmetic conversions apply; fully general symbolic
 narrowing between unlike 64-bit and narrower integer types does not. A
 checked narrowing conversion requires the current pure facts to prove the
-value in range. A contract may cast a `void *` parameter to
+value in range. If a bound fails, the diagnostic names the destination type's
+lower or upper bound and the converted value, including a local whose value
+is already constant. An integer constant expression converted by the C front
+end retains its native modulo conversion. A contract may cast a `void *` parameter to
 a struct pointer or convert a current object pointer explicitly through
 `void*` to a struct pointer. Other pointer casts, aggregate casts, and `void`
 objects or parameters remain unsupported.

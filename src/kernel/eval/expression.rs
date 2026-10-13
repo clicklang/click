@@ -650,14 +650,17 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
             let (min, max) = destination.format().bounds();
             for (condition, context) in [
                 (
-                    ConditionTerm::integer_greater_equal(
-                        observed.clone(),
-                        IntegerTerm::constant(min),
+                    ConditionTerm::IntegerGreaterEqual(
+                        observed.clone().into(),
+                        IntegerTerm::constant(min).into(),
                     ),
                     "signed narrowing lower bound",
                 ),
                 (
-                    ConditionTerm::integer_less_equal(observed, IntegerTerm::constant(max)),
+                    ConditionTerm::IntegerLessEqual(
+                        observed.into(),
+                        IntegerTerm::constant(max).into(),
+                    ),
                     "signed narrowing upper bound",
                 ),
             ] {
@@ -744,16 +747,16 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
         (CType::Int32, CValue::Int64(value)) => {
             for (condition, context) in [
                 (
-                    ConditionTerm::int64_signed_greater_equal(
-                        value.clone(),
-                        Bitvector32Term::Int64Constant(i64::from(i32::MIN)),
+                    ConditionTerm::Bitvector64SignedGreaterEqual(
+                        value.clone().into(),
+                        Bitvector32Term::Int64Constant(i64::from(i32::MIN)).into(),
                     ),
                     "int32 narrowing lower bound",
                 ),
                 (
-                    ConditionTerm::int64_signed_less_equal(
-                        value.clone(),
-                        Bitvector32Term::Int64Constant(i64::from(i32::MAX)),
+                    ConditionTerm::Bitvector64SignedLessEqual(
+                        value.clone().into(),
+                        Bitvector32Term::Int64Constant(i64::from(i32::MAX)).into(),
                     ),
                     "int32 narrowing upper bound",
                 ),
@@ -766,9 +769,9 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
             add_narrowing_bound_obligation(
                 obligations,
                 assumptions,
-                ConditionTerm::uint64_less_equal(
-                    value.clone(),
-                    Bitvector32Term::UInt64Constant(i32::MAX as u64),
+                ConditionTerm::Bitvector64UnsignedLessEqual(
+                    value.clone().into(),
+                    Bitvector32Term::UInt64Constant(i32::MAX as u64).into(),
                 ),
                 "int32 narrowing upper bound",
             )?;
@@ -791,7 +794,10 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
             add_narrowing_bound_obligation(
                 obligations,
                 assumptions,
-                ConditionTerm::signed_less_equal(value.clone(), Bitvector32Term::Constant(127)),
+                ConditionTerm::Bitvector32SignedLessEqual(
+                    value.clone().into(),
+                    Bitvector32Term::Constant(127).into(),
+                ),
                 narrowing_context("int8", false),
             )?;
             Some(CValue::Int8(value))
@@ -869,7 +875,10 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
             add_narrowing_bound_obligation(
                 obligations,
                 assumptions,
-                ConditionTerm::signed_greater_equal(value.clone(), Bitvector32Term::Constant(0)),
+                ConditionTerm::Bitvector32SignedGreaterEqual(
+                    value.clone().into(),
+                    Bitvector32Term::Constant(0).into(),
+                ),
                 narrowing_context("uint8", true),
             )?;
             Some(CValue::UInt8(value))
@@ -890,9 +899,9 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
             add_narrowing_bound_obligation(
                 obligations,
                 assumptions,
-                ConditionTerm::uint64_less_equal(
-                    value.clone(),
-                    Bitvector32Term::UInt64Constant(i64::MAX as u64),
+                ConditionTerm::Bitvector64UnsignedLessEqual(
+                    value.clone().into(),
+                    Bitvector32Term::UInt64Constant(i64::MAX as u64).into(),
                 ),
                 "int64 narrowing upper bound",
             )?;
@@ -1026,10 +1035,7 @@ fn narrow_to_subword_value(
             add_narrowing_bound_obligation(
                 obligations,
                 assumptions,
-                ConditionTerm::unsigned_less_equal(
-                    value.clone(),
-                    Bitvector32Term::Constant(upper as u32),
-                ),
+                narrowing_unsigned32_upper_bound(value.clone(), upper as u32),
                 narrowing_context(type_name, false),
             )?;
             value
@@ -1037,16 +1043,16 @@ fn narrow_to_subword_value(
         CValue::Int64(value) => {
             for (condition, is_lower) in [
                 (
-                    ConditionTerm::int64_signed_greater_equal(
-                        value.clone(),
-                        Bitvector32Term::Int64Constant(i64::from(lower)),
+                    ConditionTerm::Bitvector64SignedGreaterEqual(
+                        value.clone().into(),
+                        Bitvector32Term::Int64Constant(i64::from(lower)).into(),
                     ),
                     true,
                 ),
                 (
-                    ConditionTerm::int64_signed_less_equal(
-                        value.clone(),
-                        Bitvector32Term::Int64Constant(i64::from(upper)),
+                    ConditionTerm::Bitvector64SignedLessEqual(
+                        value.clone().into(),
+                        Bitvector32Term::Int64Constant(i64::from(upper)).into(),
                     ),
                     false,
                 ),
@@ -1064,9 +1070,9 @@ fn narrow_to_subword_value(
             add_narrowing_bound_obligation(
                 obligations,
                 assumptions,
-                ConditionTerm::uint64_less_equal(
-                    value.clone(),
-                    Bitvector32Term::UInt64Constant(upper as u64),
+                ConditionTerm::Bitvector64UnsignedLessEqual(
+                    value.clone().into(),
+                    Bitvector32Term::UInt64Constant(upper as u64).into(),
                 ),
                 narrowing_context(type_name, false),
             )?;
@@ -1088,15 +1094,34 @@ fn add_signed_narrowing_obligations(
     add_narrowing_bound_obligation(
         obligations,
         assumptions,
-        ConditionTerm::signed_greater_equal(value.clone(), Bitvector32Term::Constant(lower as u32)),
+        ConditionTerm::Bitvector32SignedGreaterEqual(
+            value.clone().into(),
+            Bitvector32Term::Constant(lower as u32).into(),
+        ),
         narrowing_context(type_name, true),
     )?;
     add_narrowing_bound_obligation(
         obligations,
         assumptions,
-        ConditionTerm::signed_less_equal(value.clone(), Bitvector32Term::Constant(upper as u32)),
+        ConditionTerm::Bitvector32SignedLessEqual(
+            value.clone().into(),
+            Bitvector32Term::Constant(upper as u32).into(),
+        ),
         narrowing_context(type_name, false),
     )
+}
+
+// Keep the established symbolic unsigned-order spelling. For a constant,
+// spell the exact nonnegative value instead of reducing its comparison to
+// `false` or showing its sign-bit-flipped encoding in the diagnostic.
+fn narrowing_unsigned32_upper_bound(value: Bitvector32Term, upper: u32) -> ConditionTerm {
+    match value.as_const() {
+        Some(value) => ConditionTerm::Bitvector64UnsignedLessEqual(
+            Bitvector32Term::UInt64Constant(u64::from(value)).into(),
+            Bitvector32Term::UInt64Constant(u64::from(upper)).into(),
+        ),
+        None => ConditionTerm::unsigned_less_equal(value, Bitvector32Term::Constant(upper)),
+    }
 }
 
 /// Files one bound of an integer narrowing conversion as the obligation the
@@ -1110,8 +1135,11 @@ fn add_signed_narrowing_obligations(
 /// reasons: the surface published the path as refuted while the checked
 /// trace, reasoning only exactly, filed the bound and returned, and the
 /// proof object reported the two outcomes' disagreement instead of either.
-/// A bound a constant fails on its own stays a refusal: that is a defect of
-/// the program text, decided without any fact of the proof.
+/// Narrowing sites construct the comparison without constant folding, so a
+/// failed bound still spells its value and endpoint rather than just `false`.
+/// Constants owe the same obligation. Filing an intrinsically false bound
+/// preserves its range and value in the diagnostic and keeps all conversion
+/// sites on the same checked execution path.
 fn add_narrowing_bound_obligation(
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -1127,9 +1155,6 @@ fn add_narrowing_bound_obligation(
     .is_some()
     {
         return Some(());
-    }
-    if PureFactContext::decide_intrinsically(&condition) == Some(false) {
-        return None;
     }
     obligations.push(ProofObligation::condition(condition, true).with_context(context));
     Some(())

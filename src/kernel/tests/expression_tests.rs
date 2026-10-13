@@ -106,10 +106,17 @@ fn wide_to_int_narrowing_checks_signed_and_unsigned_boundaries() {
             &mut obligations,
             &PureFactContext::new(),
         );
-        assert_eq!(result.is_some(), i32::try_from(value).is_ok());
-        if let Some(result) = result {
-            assert_eq!(result, int32(value as u32));
-            assert!(obligations.is_empty());
+        assert_eq!(result, Some(int32(value as u32)));
+        assert_eq!(obligations.is_empty(), i32::try_from(value).is_ok());
+        for obligation in &obligations {
+            let Proposition::ConditionIs(condition, true) = obligation.proposition() else {
+                panic!("narrowing owes an explicit range comparison");
+            };
+            assert_eq!(
+                PureFactContext::decide_intrinsically(condition),
+                Some(false)
+            );
+            assert!(obligation.context().unwrap().starts_with("int32 narrowing"));
         }
     }
     for value in [
@@ -126,10 +133,17 @@ fn wide_to_int_narrowing_checks_signed_and_unsigned_boundaries() {
             &mut obligations,
             &PureFactContext::new(),
         );
-        assert_eq!(result.is_some(), value <= i32::MAX as u64);
-        if let Some(result) = result {
-            assert_eq!(result, int32(value as u32));
-            assert!(obligations.is_empty());
+        assert_eq!(result, Some(int32(value as u32)));
+        assert_eq!(obligations.is_empty(), value <= i32::MAX as u64);
+        for obligation in &obligations {
+            let Proposition::ConditionIs(condition, true) = obligation.proposition() else {
+                panic!("narrowing owes an explicit range comparison");
+            };
+            assert_eq!(
+                PureFactContext::decide_intrinsically(condition),
+                Some(false)
+            );
+            assert_eq!(obligation.context(), Some("int32 narrowing upper bound"));
         }
     }
 }
@@ -3244,9 +3258,17 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
             &mut obligations,
             &PureFactContext::new(),
         );
-        assert_eq!(result.is_some(), valid, "{input:?}");
-        if valid {
-            assert!(obligations.is_empty());
+        assert_eq!(result.unwrap().c_type(), CType::Int8, "{input:?}");
+        assert_eq!(obligations.is_empty(), valid, "{input:?}");
+        for obligation in &obligations {
+            let Proposition::ConditionIs(condition, true) = obligation.proposition() else {
+                panic!("narrowing owes an explicit range comparison");
+            };
+            assert_eq!(
+                PureFactContext::decide_intrinsically(condition),
+                Some(false)
+            );
+            assert!(obligation.context().unwrap().starts_with("int8 narrowing"));
         }
     }
     let value = Bitvector32Term::Variable(Variable(815));
@@ -3620,7 +3642,7 @@ fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
             };
             assert_eq!(value.int64_as_const(), Some(bits as i64));
         } else {
-            assert_type_mismatch(ordinary);
+            assert!(prove_c_expression_evaluation(CState::new(), ordinary).is_none());
         }
     }
     assert_type_mismatch(c_uint64_bits_to_int64(c_int32_literal(1)));
@@ -3724,10 +3746,13 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
         )),
         CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::Constant(u32::MAX)))
     );
-    assert!(!matches!(
-        outcome(c_cast(c_int64_literal(i64::MAX), CType::Int32)),
-        CExpressionOutcome::Value(_)
-    ));
+    assert!(
+        prove_c_expression_evaluation(
+            CState::new(),
+            c_cast(c_int64_literal(i64::MAX), CType::Int32),
+        )
+        .is_none()
+    );
 }
 
 #[test]
