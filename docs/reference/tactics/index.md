@@ -24,6 +24,11 @@ and `auto` is the solver, then `simp`, then the rewrite search. `auto` has no
 script-tactic spelling of its own: a written `simp()` is `simp` alone. Successful smart tactics and `auto` retain the checked
 surface provenance that `click expand` can render as an explicit proof.
 
+A failed execution `have P by auto;` names `auto` and the written `P`,
+rather than an internal search step or subgoal. Exhausted verification
+budgets keep their budget diagnostic. See
+[`auto_failure_names_the_written_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_failure_names_the_written_goal.md).
+
 For ordinary authoring, start with the omitted default, `by auto;`, or the
 smallest comprehensible smart tactic. Use `click profile` before replacing a
 smart tactic with an exact explicit proof. The simple forms below are public,

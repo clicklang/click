@@ -1,5 +1,38 @@
 use super::*;
 
+#[test]
+fn auto_have_budget_failure_keeps_the_exhaustion_reason() {
+    let source = r#"
+        verifying "bound.c";
+        uint64 bound(uint64 a, uint64 b) { ensures result == a; } by {
+            have a <= b - b % 4u64 by auto;
+            execute(); simp();
+        }
+    "#;
+    let error = crate::instrumentation::with_tactic_work_limits(
+        crate::instrumentation::TacticWorkLimits {
+            simple: 1_000_000,
+            smart: 1,
+            control: 1_000_000,
+        },
+        || {
+            verify_c0_sources(
+                source,
+                &[(
+                    "bound.c",
+                    "unsigned long bound(unsigned long a, unsigned long b) { return a; }",
+                )],
+            )
+        },
+    )
+    .expect_err("auto must report its exhausted budget");
+    assert!(error.message().contains("budget exhausted"), "{error:?}");
+    assert!(
+        !error.message().contains("`auto` could not prove"),
+        "{error:?}"
+    );
+}
+
 /// The uint64 bridge creates nested `have` proofs. A missing listed premise
 /// must return the arithmetic goal's diagnostic, not panic while wrapping
 /// the nested bridge's already-rendered diagnostic inside a new summary.
