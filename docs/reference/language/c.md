@@ -203,9 +203,14 @@ reject it when the header is included and Clang warns otherwise
 Click also refuses a program's definition of one of these functions with
 external linkage: the name is reserved for the library (C11 7.1.3), and GCC
 and Clang compile calls to it as calls to the library's function, folding
-`strlen("abc")` to 3 whatever the program's body says. A `static` function
-of the same name is the program's own, and its calls execute its body
-(`mdtests/a_program_definition_of_strlen_is_refused.md`,
+`strlen("abc")` to 3 whatever the program's body says. Both targets compile
+hosted, without `-ffreestanding` or `-fno-builtin`, so the same holds for
+kernel code: Linux builds its own `lib/string.c` freestanding, which no Click
+target models
+(`mdtests/a_kernel_target_definition_of_strlen_is_refused.md`,
+`mdtests/a_kernel_target_incompatible_declaration_of_strlen_is_refused.md`).
+A `static` function of the same name is the program's own, and its calls
+execute its body (`mdtests/a_program_definition_of_strlen_is_refused.md`,
 `mdtests/a_static_function_named_strlen_is_the_programs_own.md`).
 
 A [compiler import](../cli/import.md#clicks-system-headers) searches the same

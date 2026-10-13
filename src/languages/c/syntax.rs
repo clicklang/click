@@ -9816,7 +9816,7 @@ impl Parser {
         if let Some((name, prototype, compatible)) = library_function_prototype(header) {
             if definition {
                 return Err(self.error_at_position(header.name_position.clone(), format!(
-                    "definition of the C library function `{name}` is not supported: the name is reserved for the library (C11 7.1.3), GCC and Clang compile a call to `{name}` as a call to the library's `{prototype}` and may evaluate it by the library's specification rather than this body, and Click checks each call against its specification of `{name}`; rename the function, or give it internal linkage with `static`"
+                    "definition of the C library function `{name}` is not supported: the name is reserved for the library (C11 7.1.3), GCC and Clang compile a call to `{name}` as a call to the library's `{prototype}` and may evaluate it by the library's specification rather than this body unless the translation unit is built with `-ffreestanding` or `-fno-builtin`, which no Click target is, and Click checks each call against its specification of `{name}`; rename the function, or give it internal linkage with `static`"
                 )));
             }
             if !compatible {
