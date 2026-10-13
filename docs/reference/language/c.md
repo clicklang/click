@@ -457,13 +457,28 @@ refused. Conversions GCC and Clang refuse stay refused: pointers to character
 pointers such as `char **` to `unsigned char **`
 (`mdtests/a_char_pointer_pointer_is_not_converted_to_an_unsigned_char_pointer_pointer.md`),
 `?:` arms of different character pointer types, whose common type would be
-`void *`, the subtraction of such pointers, and conversions to or from a
-pointer to a wider integer type. An uncast or explicit conversion between
-pointers to wider integer types of the same width and different signedness,
-such as `int *` and `unsigned int *`, is also only a `-Wpointer-sign`
-warning in GCC and Clang, but it is not yet supported: the kernel reads a
-wider cell only through its stored type, so the conversion is refused as a
-retyping object-pointer cast.
+`void *`, the subtraction of such pointers, and conversions between a
+character pointer and a pointer to a wider integer type.
+
+The same holds for the signed and unsigned integer types of one wider width:
+`short *` and `unsigned short *`, `int *` and `unsigned int *`, and `long *`
+and `unsigned long *`. GCC and Clang convert between them with only a
+`-Wpointer-sign` warning, and C11 6.5p7 lets the signed or unsigned type
+corresponding to an object's type access it. Click accepts the conversion,
+uncast in the positions above or as an explicit cast, at one level of
+indirection. A load reads the cell's bits in its own signedness, so the `int`
+`-1` reads as `4294967295` through an `unsigned int *`; a store through either
+pointer writes the bits a later read of the object sees; and a contract stated
+over `int32` cells accepts a pointer to `uint32` cells
+(`mdtests/integer_pointers_of_either_signedness_read_the_same_bits.md`).
+Pointers to such pointers, `?:` arms of the two types, and their subtraction
+stay refused as in GCC and Clang
+(`mdtests/an_int_pointer_pointer_does_not_convert_to_an_unsigned_int_pointer_pointer.md`),
+and a conversion between integer pointers of different widths, such as `int *`
+to `short *`, is a retyping object-pointer cast, which Click does not support
+(`mdtests/a_short_pointer_is_not_a_view_of_an_int.md`). Click does not yet
+distinguish `long` from `long long`, so it also accepts a conversion between
+their pointers, which GCC 14 rejects.
 
 An integer constant expression converted to an integer type that cannot
 represent it, such as `unsigned char c = -56;` or `signed char c = 200;`, is at

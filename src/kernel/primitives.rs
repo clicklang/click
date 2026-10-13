@@ -338,9 +338,10 @@ impl LoadKind {
     }
 
     /// The value a read of this kind returns from a cell holding `value`:
-    /// the value itself when the read is of its kind, or, for a one-byte
-    /// character read of a one-byte cell of the other signedness, the same
-    /// eight bits reinterpreted ([`CType::read_cell`]).
+    /// the value itself when the read is of its kind, or, for a one- or
+    /// two-byte read of a cell of the same width and the other signedness,
+    /// the same bits reinterpreted ([`CType::read_cell`]). A 32- or 64-bit
+    /// kind already reads a cell of either signedness as its bits.
     pub(crate) fn read_cell(self, value: &CValue) -> Option<CValue> {
         if self.reads_value(value) {
             return Some(value.clone());
@@ -348,6 +349,8 @@ impl LoadKind {
         match self {
             Self::Int8 => CType::Int8.read_cell(value),
             Self::UInt8 => CType::UInt8.read_cell(value),
+            Self::Int16 => CType::Int16.read_cell(value),
+            Self::UInt16 => CType::UInt16.read_cell(value),
             _ => None,
         }
     }
