@@ -119,7 +119,7 @@ Specification and proof:
 - [SMT-backed automation with kernel-checked certificates](smt-auto.md)
 - [Launch design review: open critiques, each to be fixed or ruled wontfix](design-review.md) (depends on smt-auto.md)
 
-## P2: after launch (17)
+## P2: after launch (16)
 
 - [Make `step` simple across a call precondition](simplify-step.md)
 
