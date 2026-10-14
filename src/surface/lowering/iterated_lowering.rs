@@ -474,15 +474,23 @@ pub(in crate::surface) fn lower_iterated_clause_with_values(
     let pointer = |value: CValue, what: &str| match value {
         CValue::Pointer(pointer) => Ok(pointer.into_pointer()),
         other => Err(ClickError::new(format!(
-            "the {what} of the iterated ownership clause of `{}` evaluated to {other:?}, not a pointer",
-            clause.owner
+            "the {what} of the iterated ownership clause of `{}` evaluated to `{}`, not a pointer",
+            clause.owner,
+            crate::surface::diagnostics::describe_c_value(
+                &other,
+                crate::surface::ParameterBinding::default()
+            )
         ))),
     };
     let int32 = |value: CValue, what: &str| match value {
         CValue::Int32(term) => Ok(term),
         other => Err(ClickError::new(format!(
-            "the {what} of the iterated ownership clause of `{}` evaluated to {other:?}, not an `int32`",
-            clause.owner
+            "the {what} of the iterated ownership clause of `{}` evaluated to `{}`, not an `int32`",
+            clause.owner,
+            crate::surface::diagnostics::describe_c_value(
+                &other,
+                crate::surface::ParameterBinding::default()
+            )
         ))),
     };
     let element_base = pointer(

@@ -218,8 +218,10 @@ pub(in crate::kernel) fn install_entry(
             let loans = protocol.loans(&state)?;
             let (next, hold, _) = loans
                 .hold_mutex_use_with_transition(usage, &protocol.lifetime, protocol.holder)
-                .map_err(|_| {
-                    MutexTransitionError::Refusal("cannot root consumed guard lifetime")
+                .map_err(|error| {
+                    MutexTransitionError::OwnedRefusal(format!(
+                        "cannot root consumed guard lifetime: {error}"
+                    ))
                 })?;
             state.loan_ledger = Some(next);
             let holder = protocol.holder;
@@ -360,10 +362,10 @@ pub(in crate::kernel) fn check_call_access(
             if effect == HelperEffect::Acquire {
                 loans
                     .check_mutex_use_available(binding, holder, &state.resources)
-                    .map_err(|_| {
-                        MutexTransitionError::Refusal(
-                            "mutex_use has an outstanding mutex_guard or reborrow",
-                        )
+                    .map_err(|error| {
+                        MutexTransitionError::OwnedRefusal(format!(
+                            "mutex_use has an outstanding mutex_guard or reborrow: {error}"
+                        ))
                     })?;
             }
             (&usage.mutex, usage.initialization, usage.protected.as_ref())
@@ -559,10 +561,10 @@ pub(in crate::kernel) fn apply_call_effect(
                     [CResourceFact::own(CResource::Instance(fresh))],
                     assumptions,
                 )
-                .map_err(|_| {
-                    MutexTransitionError::Refusal(
-                        "protected helper state conflicts with caller ownership",
-                    )
+                .map_err(|error| {
+                    MutexTransitionError::OwnedRefusal(format!(
+                        "protected helper state conflicts with caller ownership: {error}"
+                    ))
                 })?;
         }
         // Opaque acquisition itself creates the same named fresh instance.
@@ -625,10 +627,10 @@ pub(in crate::kernel) fn apply_call_effect(
                     [CResourceFact::own(CResource::Instance(fresh.clone()))],
                     assumptions,
                 )
-                .map_err(|_| {
-                    MutexTransitionError::Refusal(
-                        "protected helper state conflicts with caller ownership",
-                    )
+                .map_err(|error| {
+                    MutexTransitionError::OwnedRefusal(format!(
+                        "protected helper state conflicts with caller ownership: {error}"
+                    ))
                 })?;
         }
         let ledger = next

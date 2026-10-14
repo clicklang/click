@@ -16285,8 +16285,8 @@ impl Parser {
                     pointee_constant: false,
                     site: C0Site::NONE,
                 }),
-                target => Err(self.error_here(format!(
-                    "expected memory lvalue assignment target in {context}, got {target:?}"
+                _ => Err(self.error_here(format!(
+                    "expected memory lvalue assignment target in {context}, got an expression that does not designate an object"
                 ))),
             };
         }

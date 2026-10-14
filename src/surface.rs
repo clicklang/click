@@ -498,6 +498,22 @@ enum DeclarationIdentity {
     Tactic(String),
 }
 
+impl std::fmt::Display for DeclarationIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (kind, name) = match self {
+            Self::AlgebraicType(name) => ("type", name),
+            Self::Predicate(name) => ("predicate", name),
+            Self::Function(name) => ("function", name),
+            Self::Resource(name) => ("resource", name),
+            Self::Theorem(name) => ("theorem", name),
+            Self::Contract(name) => ("contract", name),
+            Self::CFunction(name) => ("C function", name),
+            Self::Tactic(name) => ("tactic", name),
+        };
+        write!(f, "{kind} `{name}`")
+    }
+}
+
 /// One canonical source file in a resolved local specification graph.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClickModuleSource {

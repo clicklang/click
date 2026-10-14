@@ -647,7 +647,9 @@ fn checks_population_authority_exchange(
             .resources
             .clone()
             .try_compose_with_fact(selected.clone(), assumptions)
-            .map_err(|_| "population authority establishment has invalid ownership")?
+            .map_err(|error| {
+                format!("population authority establishment has invalid ownership: {error}")
+            })?
     } else {
         before
             .resources
@@ -1393,7 +1395,9 @@ impl CheckedResourceRewrite {
                 children.iter().cloned(),
                 assumptions,
             )
-            .map_err(|_| "authority control body overlaps existing ownership")?
+            .map_err(|error| {
+                format!("authority control body overlaps existing ownership: {error}")
+            })?
         } else {
             let mut base = before_state.resources().clone();
             for child in &children {
@@ -1408,7 +1412,9 @@ impl CheckedResourceRewrite {
                     std::iter::once(selected.clone()),
                     assumptions,
                 )
-                .map_err(|_| "authority control duplicates its folded resource")?
+                .map_err(|error| {
+                    format!("authority control duplicates its folded resource: {error}")
+                })?
             }
         };
         if !after_state
@@ -1672,7 +1678,7 @@ impl CheckedResourceRewrite {
                     expanded.facts().iter().cloned(),
                     assumptions,
                 )
-                .map_err(|_| "transfer wrapper overlaps existing children")?
+                .map_err(|error| format!("transfer wrapper overlaps existing children: {error}"))?
         } else {
             let mut resources = before_state.resources().clone();
             for child in expanded.facts() {
@@ -1685,7 +1691,9 @@ impl CheckedResourceRewrite {
                     std::iter::once(selected.clone()),
                     assumptions,
                 )
-                .map_err(|_| "transfer wrapper duplicates its folded resource")?
+                .map_err(|error| {
+                    format!("transfer wrapper duplicates its folded resource: {error}")
+                })?
         };
         if !before_state.loan_bindings_are_consistent()
             || !after_state.loan_bindings_are_consistent()
@@ -2046,7 +2054,9 @@ impl CheckedResourceRewrite {
                             children.iter().cloned(),
                             assumptions,
                         )
-                        .map_err(|_| "member body access duplicates private ownership")?
+                        .map_err(|error| {
+                            format!("member body access duplicates private ownership: {error}")
+                        })?
                 } else {
                     let mut resources = before_state.resources().clone();
                     for child in children {

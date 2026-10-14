@@ -314,7 +314,7 @@ fn assign_local_owners(file: &mut ClickFile, identity: &str) -> Result<(), Click
             .is_some()
         {
             return Err(ClickError::new(format!(
-                "duplicate declaration {declaration:?} in module `{identity}`"
+                "duplicate declaration of {declaration} in module `{identity}`"
             )));
         }
     }
@@ -363,7 +363,7 @@ fn merge_modules(
                 && previous != *owner
             {
                 return Err(ClickError::new(format!(
-                    "conflicting declaration {declaration:?} in modules `{previous}` and `{owner}`"
+                    "conflicting declarations of {declaration} in modules `{previous}` and `{owner}`"
                 )));
             }
         }
