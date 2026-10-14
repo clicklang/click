@@ -2500,8 +2500,9 @@ impl<'a> Proof<'a> {
         };
         // Ordinary macro folds keep their final contract-definition law.
         // Authority wrappers and guarded ownership need an execution exchange.
-        // Named outputs also require the exact published frontier after a scope
-        // closes; contracts with ordinary outputs retain their definition law.
+        // Named outputs also require the exact published frontier after an
+        // ordinary refold, including a static wrapper with no guarded body.
+        // Contracts with only ordinary outputs retain their definition law.
         let operational_exchange = match checked.selected.resource() {
             CResource::Composite { name, .. } => context
                 .function
@@ -2524,12 +2525,11 @@ impl<'a> Proof<'a> {
         if retain_return_exchange
             && *state != *goal.data.core.state
             && (operational_exchange
-                || (matches!(closure, ResourceBodyClosure::CloseOpen { .. })
-                    && context
-                        .function
-                        .resource_ensures()
-                        .iter()
-                        .any(|spec| spec.is_instance()))
+                || context
+                    .function
+                    .resource_ensures()
+                    .iter()
+                    .any(|spec| spec.is_instance())
                 || (self.is_authority_transfer_wrapper(resource) && family_reaches_population))
         {
             let viewed = CResourceFact::View(checked.selected.resource().clone());

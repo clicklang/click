@@ -1,6 +1,31 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: static refold expansion and retained-session checks take 0.9s"]
+fn static_return_refold_before_named_resource_rechecks_in_all_proof_modes() {
+    let (source, sources) = mdtest_sources("mdtests/static_return_refold_before_named_resource.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded =
+        expand_c0_claim_source(&source, &sources, "inspect", CProofClaim::Grouped).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let position =
+        expansion::position_at_offset(&expanded, expanded.find("ensures tag.value").unwrap());
+    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+    session
+        .verify_at(&expanded, position.line, position.column)
+        .unwrap();
+    drop(session);
+    let false_value = source.replace("ensures tag.value == 1;", "ensures tag.value == 2;");
+    assert!(verify_c0_sources(&false_value, &sources).is_err());
+    let unowned = source.replace("owns cell(p);", "views cell(p);");
+    assert!(verify_c0_sources(&unowned, &sources).is_err());
+}
+
+#[test]
 #[ignore = "nightly: checks two post-return unfolds through expansion and retained verification"]
 fn call_produced_instances_unfold_after_return_in_all_proof_modes() {
     for fixture in [
