@@ -424,8 +424,8 @@ The `return-call` fixtures add direct `return helper(...)` for matching signed
 or unsigned 32/64/128-bit and Boolean return types, including concrete function and
 method template instances. The typed `return_call` node retains the callee's
 Clang identity, typed arguments, result type, source span, and cleanup chain.
-Implicit calls on `this` retain the existing checked receiver interface; arbitrary
-pointer dispatch remains outside the slice. Lowering captures the result in a
+Implicit calls on `this` retain the existing checked receiver interface; virtual
+dispatch remains outside the slice. Lowering captures the result in a
 fresh local of its actual type before destroying automatic objects, then returns
 that captured value. The synthetic fee wrappers keep Bitcoin's direct method
 return-call shape and signed fast-path results; the full upstream wide fallback
@@ -439,6 +439,22 @@ graphs, and missing or misordered cleanups. Uncaught return-call cleanup edges
 reuse the existing scalar exception lowering and have structural coverage;
 resource-bearing exceptional contracts and returns from guarded `try` regions
 remain outside the supported surface slice.
+
+A function-pointer parameter is a callback, as in C. Its type is a pointer to a
+`noexcept`, non-variadic function whose parameters and result are bools,
+supported integers or mutable native element pointers, `int (*f)(int) noexcept`;
+a pointer to a function that may throw is refused, since a call through it would
+need an exceptional contract. A call through it, `f(x)` or `(*f)(x)`, is a
+`through_pointer` callee in the artifact naming the variable, and lowers to the
+kernel's indirect call, so the sidecar's `requires Doubling(f)` supplies its
+contract exactly as for C. The call may be a statement, a local's initializer or
+a returned value, with value arguments and no nested call. `&f`, or `f` decayed
+to a pointer, passed for such a parameter is a `function_address` value: the
+importer exports `f` and checks that it is a `noexcept` free or static member
+function of exactly the pointer's type, and the caller's proof shows that `f`
+meets the required contract, from `f`'s own contract or an `executes` theorem.
+Reading a pointer's value, storing it, or forwarding it is refused
+(`tests/cpp_import.rs`, `*function_pointer*`).
 
 A direct free-function return call accepts one nested call argument, including
 chains such as `return echo(echo(echo(value)));`. Other arguments must be stable

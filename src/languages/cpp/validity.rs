@@ -65,6 +65,16 @@ impl CppType {
             | Self::Array {
                 element: pointee, ..
             } => pointee.check_aliases(accepts_source),
+            Self::FunctionPointer {
+                return_type,
+                parameters,
+                ..
+            } => {
+                return_type.check_aliases(accepts_source)?;
+                parameters
+                    .iter()
+                    .try_for_each(|parameter| parameter.check_aliases(accepts_source))
+            }
             Self::Void | Self::Boolean { .. } | Self::Record { .. } => Ok(()),
         }
     }
@@ -235,6 +245,10 @@ impl Metadata<'_> {
             CppExpression::Load { place, span, .. }
             | CppExpression::AddressOf { place, span, .. } => {
                 self.reference(place)?;
+                span
+            }
+            CppExpression::FunctionAddress { function, span, .. } => {
+                self.callee(function)?;
                 span
             }
             CppExpression::Dereference { pointer, span, .. }

@@ -327,6 +327,10 @@ fn function_interface(
                     .with_pointee_constant(*is_const)
                     .with_reference(is_reference))
             }
+            CppType::FunctionPointer { .. } => Ok(syntax::C0Parameter::function_pointer(
+                carried_name.clone(),
+                function_pointer_signature(&parameter.value_type)?,
+            )),
             CppType::Pointer { pointee } if Scalar::pointer_element(pointee, false).is_some() =>
             {
                 Ok(syntax::C0Parameter::new(
@@ -359,4 +363,43 @@ fn function_interface(
             .with_aggregate_return_mode(lowered.contract_interface().aggregate_return_mode());
     }
     Ok(interface)
+}
+
+/// The signature of a function-pointer type in proof types, as a C
+/// function-pointer declarator in a sidecar head spells it.
+pub(super) fn function_pointer_signature(
+    value_type: &CppType,
+) -> Result<syntax::C0FunctionPointerSignature, String> {
+    let CppType::FunctionPointer {
+        return_type,
+        parameters,
+        ..
+    } = value_type
+    else {
+        return Err("C++ function-pointer signature requires a function-pointer type".into());
+    };
+    let proof_type = |value_type: &CppType| match value_type {
+        CppType::Void => Some(C0Type::Void),
+        CppType::Pointer { pointee } => Scalar::pointer_element(pointee, false)
+            .and_then(|element| element.kind.pointer_proof_type()),
+        _ => Scalar::mutable_kind(value_type).map(ScalarKind::proof_type),
+    };
+    let unsupported = || "C++ function-pointer type is outside the proof interface".to_string();
+    let return_type = proof_type(return_type).ok_or_else(unsupported)?;
+    let parameters = parameters
+        .iter()
+        .map(|parameter| {
+            crate::instrumentation::record_deterministic_work(1);
+            proof_type(parameter)
+                .filter(|c_type| *c_type != C0Type::Void)
+                .map(|c_type| syntax::C0FunctionPointerParameter::new(c_type, None, false))
+                .ok_or_else(unsupported)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(syntax::C0FunctionPointerSignature::new(
+        return_type,
+        None,
+        parameters,
+        false,
+    ))
 }
