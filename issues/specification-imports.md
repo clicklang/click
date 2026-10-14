@@ -52,8 +52,9 @@ verifying "rbtree.c";
   and standard library. Importers cannot supply missing names or change an
   imported definition's meaning. Internally retain module-qualified declaration
   identities even though users initially write unqualified names.
-- Qualified surface names, import aliases, selective imports, private
-  declarations, and explicit export lists are deferred.
+- Import aliases, private declarations, and explicit export lists are
+  deferred. Qualified names and selective imports of Click library modules
+  moved to [standard-library.md](standard-library.md).
 
 The first delivery imports algebraic types, pure functions, predicates,
 theorems, and resources. Importing a file containing `verifying` is rejected:

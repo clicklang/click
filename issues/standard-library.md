@@ -137,11 +137,40 @@ paths such as `click::c::string` for documentation and explicit reference.
 A model's own specification dependencies (for example, `strlen` on
 `cstr_readable`) are imported by its model file, not by the sidecar.
 
-### Naming
+### Qualified names (accepted 2026-10-14)
 
-Names stay prefixed (`list_append`, `int32_less_equal_transitive`) while
-every imported name is unqualified. Choose the naming scheme together with
-qualified names, so that each declaration is renamed at most once.
+Qualified names are part of this issue; the user moved them here from the
+deferred scope of [specification-imports](specification-imports.md).
+
+- **Paths.** A library declaration's full name is its module path and its
+  name: `click::list::append`. A full path works without an import, like a
+  Rust path. After `import click::list;`, or for an implicit module, the
+  module name is in scope and `list::append` names it too.
+- **Selective imports.** `import click::list::{append, length};` brings bare
+  names into scope.
+- **Prefixes go.** Library names drop the module prefixes they carry today:
+  `list_append` becomes `list::append`, `nat_add` becomes `nat::add`. Bare
+  library names are no longer in scope by default, since names repeat
+  across modules; a file writes a path or a selective import.
+- **Clashes follow Rust.** A file's own declaration shadows a name from an
+  implicit module, like Rust's prelude. A selectively imported name that
+  clashes with a file declaration or with another selective import is an
+  error, as Rust's explicit `use` is (E0255, E0252). A path never clashes.
+  Click has no glob import.
+- **Tactics and expansion.** Built-in tactics refer to library theorems by
+  qualified identity, so a file theorem never takes a library theorem's
+  place and library theorem names are no longer reserved. `click expand`
+  writes the shortest spelling that resolves to the same declaration in the
+  file: a bare name when a selective import brings it and nothing shadows
+  it, otherwise `module::name` when the module is in scope, otherwise the
+  full `click::` path.
+- **Project files** keep quoted imports and unqualified names for now; an
+  `as` alias for them is not part of this issue.
+
+Delivery: qualified-path resolution while the old names still work; tactics
+and expansion on qualified identities, lifting the reservation; selective
+imports; then the rename, with a scripted migration that removes the old
+names.
 
 ### Delivery order
 
@@ -167,9 +196,12 @@ Each step is a separate PR that leaves every example verifying:
    stay generated rather than becoming `library/cpp/` and `library/rust/`
    files; a templated library file needs a generic mechanism Click does not
    have yet.
-5. Document the primitives in the language reference, and describe the
+5. Qualified names, as described above, in four PRs. The first is done:
+   `click::m::name` and in-scope `m::name` resolve to the library
+   declaration before parsing, and a full path brings its module.
+6. Document the primitives in the language reference, and describe the
    library per module in the reference.
-6. Apply the consistency rules below: generic `count` and `permutation`,
+7. Apply the consistency rules below: generic `count` and `permutation`,
    `size_t` sizes for `allocation`, and the width-lemma families.
 
 ## Design
@@ -206,7 +238,7 @@ Each step is a separate PR that leaves every example verifying:
 - Size and index parameters of library models use the C types the real
   functions use (`size_t`), including `allocation`.
 - Write the naming scheme down in `library/README.md` and apply it to every
-  existing declaration, once qualified names exist (see Naming above).
+  existing declaration, as part of the qualified-name rename above.
   Rename, rather than alias, unless a public example depends on the old
   name.
 
