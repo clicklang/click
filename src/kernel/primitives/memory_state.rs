@@ -1926,13 +1926,12 @@ fn call_havoc_candidates(mutable_ranges: &[CMemoryRange]) -> AliasCandidates {
 /// member holds is disjoint from every byte the callee can own -- and a
 /// callee writes only what it owns. Such a cell keeps its value across the
 /// call whatever the callee's footprint (an over-approximation of what it
-/// owns) covers: the havoc drops its cached value as it drops every candidate
-/// cell, and records the member that holds it on the edge, which is what
-/// names a later load of the cell across the call at its pre-call value.
-/// Retaining the cached value in the map instead made every later load of the
-/// block compare against more cached cells, and the arena pipeline's load
-/// resolution then ran past its time limit. A residual *view* keeps nothing, since the callee may hold its
-/// owner, and a residual instance that cannot be opened contributes nothing.
+/// owns) covers. The edge records the member that holds it, so a later load
+/// can name its pre-call value even when its cached value was dropped.
+/// Atomic parameter cells and runs stay cached through the indexed flat
+/// partition; other cells are resolved across the recorded edge. A residual
+/// view keeps nothing, since the callee may hold its owner, and a residual
+/// instance that cannot be opened contributes nothing.
 /// The body facts hold wherever the instance is held, which is here.
 #[derive(Clone, Debug)]
 pub(in crate::kernel) struct CallKeptOwnership {
@@ -1944,10 +1943,57 @@ pub(in crate::kernel) struct CallKeptOwnership {
 /// The kept memory a call havoc records on its edge: owned ranges, and the
 /// condition premises that place a cell in them. See
 /// [`CMemoryDerivation::CallHavoc`].
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct CallKeptRanges {
     ranges: ResourceContext,
+    residual: Option<ResourceContext>,
+    identity: std::sync::Arc<KeptRangeSet>,
     premises: Vec<(ConditionTerm, bool)>,
+}
+
+#[derive(Debug)]
+struct KeptRangeSet {
+    id: u64,
+    ranges: SnapshotMap<CMemoryRange, ()>,
+}
+
+impl PartialEq for CallKeptRanges {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity.id == other.identity.id && self.premises == other.premises
+    }
+}
+impl Eq for CallKeptRanges {}
+
+fn intern_kept_range_set(ranges: SnapshotMap<CMemoryRange, ()>) -> std::sync::Arc<KeptRangeSet> {
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    std::hash::Hash::hash(&ranges, &mut hash);
+    let hash = std::hash::Hasher::finish(&hash);
+    intern_kept_range_set_with_hash(ranges, hash)
+}
+
+fn intern_kept_range_set_with_hash(
+    ranges: SnapshotMap<CMemoryRange, ()>,
+    hash: u64,
+) -> std::sync::Arc<KeptRangeSet> {
+    type Buckets = std::collections::HashMap<u64, Vec<std::sync::Weak<KeptRangeSet>>>;
+    static SETS: std::sync::OnceLock<std::sync::Mutex<Buckets>> = std::sync::OnceLock::new();
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let mut sets = SETS
+        .get_or_init(Default::default)
+        .lock()
+        .expect("kept range sets");
+    let bucket = sets.entry(hash).or_default();
+    bucket.retain(|candidate| candidate.strong_count() != 0);
+    for candidate in bucket.iter().filter_map(std::sync::Weak::upgrade) {
+        if candidate.ranges.ptr_eq(&ranges) || candidate.ranges.diff(&ranges).next().is_none() {
+            return candidate;
+        }
+    }
+    let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    assert!(id != u64::MAX, "kept range identity space exhausted");
+    let result = std::sync::Arc::new(KeptRangeSet { id, ranges });
+    bucket.push(std::sync::Arc::downgrade(&result));
+    result
 }
 
 impl CallKeptRanges {
@@ -1955,12 +2001,40 @@ impl CallKeptRanges {
         ranges: ResourceContext,
         premises: Vec<(ConditionTerm, bool)>,
     ) -> Self {
-        Self { ranges, premises }
+        let identity = intern_kept_range_set(ranges.flat_owned_memory_ranges().clone());
+        Self {
+            ranges,
+            residual: None,
+            identity,
+            premises,
+        }
+    }
+
+    fn with_residual(&self, residual: &ResourceContext) -> Self {
+        let mut ranges = residual.flat_owned_memory_ranges().clone();
+        for range in self.ranges.flat_owned_memory_ranges().keys() {
+            crate::instrumentation::record_deterministic_work(1);
+            if !ranges.contains_key(range) {
+                ranges.insert(range.clone(), ());
+            }
+        }
+        Self {
+            ranges: self.ranges.clone(),
+            residual: Some(residual.clone()),
+            identity: intern_kept_range_set(ranges),
+            premises: self.premises.clone(),
+        }
     }
 
     /// Recorded caller-owned ranges, for snapshot diagnostics.
-    pub(crate) fn diagnostic_ranges(&self) -> &ResourceContext {
-        &self.ranges
+    pub(crate) fn diagnostic_ranges(&self) -> ResourceContext {
+        ResourceContext::new().unchecked_with_facts(
+            self.identity
+                .ranges
+                .keys()
+                .cloned()
+                .map(CResourceFact::own_memory),
+        )
     }
 
     /// Recorded placement premises, for snapshot diagnostics.
@@ -1969,7 +2043,7 @@ impl CallKeptRanges {
     }
 
     fn is_empty(&self) -> bool {
-        self.ranges.is_pristine_semantically_empty()
+        self.identity.ranges.is_empty()
     }
 
     /// `assumptions` with the premises assumed, charged one unit each.
@@ -2015,8 +2089,7 @@ impl CallKeptRanges {
     }
 
     pub(in crate::kernel) fn contains_range(&self, range: &CMemoryRange) -> bool {
-        self.ranges
-            .contains_exact_representation(&CResourceFact::own_memory(range.clone()))
+        self.identity.ranges.contains_key(range)
     }
 
     /// The kept range holding the access. `placement` is the premises already
@@ -2028,27 +2101,20 @@ impl CallKeptRanges {
         pointer: &Pointer,
         bytes: u32,
     ) -> Option<&'a CMemoryRange> {
-        match placement {
-            Some(placement) => {
-                placement.kept_range_holding_access(&self.ranges, || None, pointer, bytes)
-            }
+        let query = |ranges: &'a ResourceContext| match placement {
+            Some(placement) => placement.kept_range_holding_access(ranges, || None, pointer, bytes),
             None => assumptions.kept_range_holding_access(
-                &self.ranges,
+                ranges,
                 || self.placement(assumptions),
                 pointer,
                 bytes,
             ),
-        }
+        };
+        query(&self.ranges).or_else(|| self.residual.as_ref().and_then(query))
     }
 
     fn identity(&self) -> String {
-        let ranges = self
-            .ranges
-            .facts()
-            .iter()
-            .filter_map(|fact| fact.memory_own_range().cloned())
-            .collect::<Vec<_>>();
-        let mut identity = memory_havoc_write_set_identity(&ranges);
+        let mut identity = format!("kept-range-set:{};", self.identity.id);
         let mut premises = self
             .premises
             .iter()
@@ -2093,9 +2159,10 @@ impl CallKeptOwnership {
         assumptions: &PureFactContext,
     ) -> Option<Self> {
         let kept = CallKeptRanges::recorded_on(after)?;
-        // This residual is permanently empty: recorded authority is carried
-        // only by `kept`, not by facts inserted into this placeholder.
-        Some(Self::new(ResourceContext::new(), kept, assumptions))
+        // Use the exact flat-owner snapshot recorded by the producer;
+        // the opened-body ranges and premises remain in `kept`.
+        let residual = kept.residual.clone().unwrap_or_default();
+        Some(Self::new(residual, kept, assumptions))
     }
 
     /// The owned member that holds every byte of the access, from the opened
@@ -2119,7 +2186,7 @@ enum CallHavocCellRule {
     /// Kept by the separation rule, without the caller's ownership.
     Separate,
     /// Kept because this member of what the caller keeps owning holds it.
-    KeptByCaller(CMemoryRange),
+    KeptByCaller,
     Dropped,
 }
 
@@ -2176,55 +2243,17 @@ fn call_havoc_keeps_cell(
         return CallHavocCellRule::Separate;
     }
     match kept.and_then(|kept| kept.member_holding(pointer, bytes, assumptions)) {
-        Some(range) => CallHavocCellRule::KeptByCaller(range),
+        Some(_) => CallHavocCellRule::KeptByCaller,
         None => CallHavocCellRule::Dropped,
     }
 }
 
-/// The ranges a call havoc records as kept by its caller: every opened
-/// residual body range with the premises that place cells in them, every
-/// flat owned member of the residual based in a block the write set may
-/// alias, and each flat member that kept a cached cell. The edge carries them
-/// so a later load of a cell they hold is named across the call, and the
-/// write-set marker spells them so two paths that keep different memory
-/// never share the resulting snapshot.
-///
-/// The flat members come from the caller's ownership, not from the cache: a
-/// member whose cell an earlier call's havoc already dropped -- and which no
-/// load has cached again since -- is recorded all the same, so a load after
-/// this call is named across it
-/// (`mdtests/call_keeps_an_uncached_flat_field_beside_folded_state.md`). A
-/// member in a block proven distinct from every write-set base is not
-/// recorded: the separation rule keeps its cells without it. The members are
-/// read from the residual's per-block owned-memory index over
-/// `candidates`, the same block ranges the havoc visits, so the cost is the
-/// members that can alias the footprint, never the residual's other
-/// resources. A write set that reaches unnamed memory sits in a symbolic
-/// block, whose candidates are every block.
-fn call_havoc_kept_ranges(
-    kept: Option<&CallKeptOwnership>,
-    flat_hits: Vec<CMemoryRange>,
-    candidates: &AliasCandidates,
-) -> Option<CallKeptRanges> {
+/// Retain all flat residual owners and the opened-body ranges and premises
+/// on the edge, including uncached members. The persistent set's canonical
+/// identity distinguishes paths without enumerating unrelated owners.
+fn call_havoc_kept_ranges(kept: Option<&CallKeptOwnership>) -> Option<CallKeptRanges> {
     let kept = kept?;
-    let mut ranges = kept.opened.ranges.clone();
-    let mut recorded = ranges
-        .facts()
-        .iter()
-        .filter_map(|fact| fact.memory_own_range().cloned())
-        .collect::<BTreeSet<_>>();
-    let residual_members = kept
-        .residual
-        .owned_memory_members_in_candidate_blocks(candidates);
-    for range in flat_hits
-        .into_iter()
-        .chain(residual_members.into_iter().cloned())
-    {
-        if recorded.insert(range.clone()) {
-            ranges = ranges.unchecked_with_fact(CResourceFact::own_memory(range));
-        }
-    }
-    let recorded = CallKeptRanges::new(ranges, kept.opened.premises.clone());
+    let recorded = kept.opened.with_residual(&kept.residual);
     (!recorded.is_empty()).then_some(recorded)
 }
 
@@ -3864,7 +3893,6 @@ impl CMemory {
         preserve_local_slots: bool,
     ) -> Self {
         let base = Some(intern_derivation_base(&mut self));
-        let mut flat_hits = Vec::new();
         let candidates = call_havoc_candidates(mutable_ranges);
         // Cells and typed union views by one rule: a view is the
         // authoritative answer to an exact typed load, so one the callee may
@@ -3872,8 +3900,20 @@ impl CMemory {
         // (`mdtests/call_havoc_drops_a_union_member_view.md`). A callee can
         // only initialize more, so the automatic values that go stay
         // initialized.
+        let selected = kept.map(|kept| {
+            self.cells
+                .call_unowned_candidates(&kept.residual, &candidates)
+        });
+        let scope = match selected.as_ref() {
+            Some((selected, runs)) => ForgetScope::Ordered {
+                candidates: &candidates,
+                selected,
+                runs: Some(runs),
+            },
+            None => ForgetScope::candidates(&candidates),
+        };
         self.forget_cached_values(
-            ForgetScope::candidates(&candidates),
+            scope,
             |pointer, value| match call_havoc_keeps_cell(
                 pointer,
                 value.value(),
@@ -3886,15 +3926,12 @@ impl CMemory {
                 // The cached value is dropped as before; the edge records
                 // the member that holds it, and a load after the call is
                 // named across the edge at its pre-call value.
-                CallHavocCellRule::KeptByCaller(range) => {
-                    flat_hits.push(range);
-                    CachedValueFate::Forgotten
-                }
+                CallHavocCellRule::KeptByCaller => CachedValueFate::Forgotten,
                 CallHavocCellRule::Dropped => CachedValueFate::Forgotten,
             },
             ask_every_slot,
         );
-        let kept_ranges = call_havoc_kept_ranges(kept, flat_hits, &candidates);
+        let kept_ranges = call_havoc_kept_ranges(kept);
         self.forget_zeroed_allocations_written_by(mutable_ranges, assumptions);
         std::sync::Arc::make_mut(&mut self.blocks).insert(
             format!("call-havoc:{}", variable.0).into(),
@@ -3970,15 +4007,23 @@ impl CMemory {
         // walks only the paths the two snapshots do not share.
         let candidates = call_havoc_candidates(mutable_ranges);
         let mut visited = 0usize;
-        let mut flat_hits = Vec::new();
         let mut dropped_cells = Vec::new();
         let mut dropped_initialized = Vec::new();
-        for (pointer, value) in before.cells.candidate_logical_entries(&candidates) {
+        let selected = kept.map(|kept| {
+            before
+                .cells
+                .call_unowned_candidates(&kept.residual, &candidates)
+        });
+        let entries = before.cells.candidate_logical_entries_selected(
+            &candidates,
+            selected.as_ref().map(|(cells, _)| cells.as_slice()),
+            selected.as_ref().map(|(_, runs)| runs.as_slice()),
+        );
+        for (pointer, value) in entries {
             visited += 1;
             match call_havoc_keeps_cell(&pointer, &value, mutable_ranges, assumptions, kept, true) {
                 CallHavocCellRule::Separate => {}
-                CallHavocCellRule::KeptByCaller(range) => {
-                    flat_hits.push(range);
+                CallHavocCellRule::KeptByCaller => {
                     dropped_initialized.push((pointer.clone(), value.byte_width()));
                     dropped_cells.push(pointer);
                 }
@@ -3994,8 +4039,7 @@ impl CMemory {
             visited += 1;
             match call_havoc_keeps_cell(&key.0, value, mutable_ranges, assumptions, kept, true) {
                 CallHavocCellRule::Separate => {}
-                CallHavocCellRule::KeptByCaller(range) => {
-                    flat_hits.push(range);
+                CallHavocCellRule::KeptByCaller => {
                     dropped_initialized.push((key.0.clone(), key.1.byte_width()));
                     dropped_union_cells.push(key);
                 }
@@ -4020,7 +4064,7 @@ impl CMemory {
         if !self.heap.eq_relative_to(&expected.heap, &before.heap) {
             return false;
         }
-        let kept_ranges = call_havoc_kept_ranges(kept, flat_hits, &candidates);
+        let kept_ranges = call_havoc_kept_ranges(kept);
         let write_set_marker =
             call_write_set_marker(variable, mutable_ranges, kept_ranges.as_ref());
         if added_blocks.len() != 2
@@ -5504,9 +5548,11 @@ impl CMemory {
                 ForgetScope::Ordered {
                     candidates,
                     selected,
+                    runs,
                 } => cells.retain_selected_concrete_by(
                     selected,
                     candidates,
+                    runs,
                     &mut keep_cell,
                     run_rule,
                 ),
@@ -5674,6 +5720,7 @@ impl CMemory {
     /// so the first field store pays only for its own cached cells.
     pub(crate) fn prepare_parameter_store_partition(&self, resources: &ResourceContext) {
         self.cells.prepare_parameter_partition(resources);
+        crate::kernel::reasoning::prepare_memory_variable_index(self);
     }
 
     /// Forgets every cell of `self` the write of `bytes` bytes at `pointer`
@@ -5941,6 +5988,7 @@ impl CMemory {
             Some(selected) => ForgetScope::Ordered {
                 candidates: &candidates,
                 selected,
+                runs: None,
             },
             None => ForgetScope::Candidates {
                 candidates: &candidates,
@@ -8815,6 +8863,7 @@ pub(super) enum ForgetScope<'a> {
     Ordered {
         candidates: &'a AliasCandidates,
         selected: &'a [Pointer],
+        runs: Option<&'a [cell_store::RunKey]>,
     },
     /// Every cached value, for a transition that may have written anywhere.
     Everywhere,
@@ -9225,5 +9274,52 @@ mod local_variable_spelling_tests {
                 "depth {depth}: only the slot inspection and budget check participate"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod kept_range_identity_tests {
+    use super::*;
+
+    fn ranges(id: u64) -> SnapshotMap<CMemoryRange, ()> {
+        ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                Pointer::symbolic(Variable(id)),
+                0.into(),
+                4.into(),
+            )))
+            .flat_owned_memory_ranges()
+            .clone()
+    }
+
+    #[test]
+    fn kept_range_hash_collisions_use_exact_sets_across_threads() {
+        let first = intern_kept_range_set_with_hash(ranges(7), 0);
+        let same = intern_kept_range_set_with_hash(ranges(7), 0);
+        let different = intern_kept_range_set_with_hash(ranges(8), 0);
+        assert_eq!(first.id, same.id);
+        assert_ne!(first.id, different.id);
+        let across = std::thread::spawn(|| intern_kept_range_set_with_hash(ranges(7), 0))
+            .join()
+            .unwrap();
+        assert_eq!(first.id, across.id);
+    }
+
+    #[test]
+    fn owned_range_index_keeps_duplicates_until_the_last_withdrawal() {
+        let fact = CResourceFact::own_memory(CMemoryRange::new(
+            Pointer::symbolic(Variable(7)),
+            0.into(),
+            4.into(),
+        ));
+        let resources = ResourceContext::new().unchecked_with_facts([fact.clone(), fact.clone()]);
+        let once = resources
+            .without_fact(&fact, &PureFactContext::new())
+            .unwrap();
+        assert_eq!(once.flat_owned_memory_ranges().len(), 1);
+        assert_eq!(once.memory_input_facts().len(), 1);
+        let empty = once.without_fact(&fact, &PureFactContext::new()).unwrap();
+        assert!(empty.flat_owned_memory_ranges().is_empty());
+        assert!(empty.memory_input_facts().is_empty());
     }
 }

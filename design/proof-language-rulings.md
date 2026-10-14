@@ -58,3 +58,17 @@ only by the tests that read them.
   binding is possible, and never chooses between two.
 - `diverges` stays on the signature and `decreases` stays a clause: one is a
   property of the function, the other a measure with an expression.
+- Frames for owned cells stay explicit: a contract that owns a cell may
+  change it unless an `ensures` says otherwise. Closed 2026-10-14 after
+  three measured prototypes of a default frame (an owned cell unchanged
+  unless an `ensures` or `produces` names it or a `writes` clause lists
+  it), each proved by the callee like a written `ensures`. Over all owned
+  cells about 215 gate mdtests and 9 example sidecars failed, mostly small
+  tests that write an owned range; over struct fields only, about 84
+  contracts needed `writes`; over fields held through a resource, about 40
+  needed `writes` while 7 restated frames in the examples became
+  removable. The default also hid itself from proofs whose claims each
+  carry their own `by`. A frame is short to write and says what the
+  caller may rely on; a default that writers must opt out of cost more
+  than it saved. `owns X` replaced `consumes X; produces X;` and `owns *s`
+  covers a whole struct; a cell a contract only views needs no frame.

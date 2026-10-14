@@ -4699,7 +4699,7 @@ pub(super) fn parameter_alias_bucket(pointer: &Pointer) -> Pointer {
     }
 }
 
-fn parameter_partition_root(pointer: &Pointer) -> Option<Pointer> {
+pub(in crate::kernel) fn parameter_partition_root(pointer: &Pointer) -> Option<Pointer> {
     let mut stem = &pointer.offset;
     while let PointerOffsetTerm::Add(left, right) = stem {
         right.as_const()?;

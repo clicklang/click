@@ -18109,3 +18109,43 @@ fn whole_struct_byte_fields_reassemble_in_all_proof_modes() {
         }
     }
 }
+
+#[test]
+#[ignore = "nightly: callback read across fresh, expanded, and retained proofs"]
+fn callback_reads_keep_the_initialized_target_contract_in_all_proof_modes() {
+    let (source, sources) =
+        mdtest_sources("mdtests/function_pointer_read_uses_checked_address_equality.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded =
+        expand_c0_claim_source(&source, &sources, "symbolic", CProofClaim::Grouped).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let position =
+        expansion::position_at_offset(&expanded, expanded.rfind("ensures true;").unwrap());
+    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+    session
+        .verify_at(&expanded, position.line, position.column)
+        .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: array-bound call across expansion and retained verification"]
+fn call_step_keeps_snapshot_bound_through_expansion_and_retained_check() {
+    let (source, sources) = mdtest_sources("mdtests/call_step_retains_old_array_bound.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c0_claim_source(&source, &sources, "probe", CProofClaim::Grouped).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let position =
+        expansion::position_at_offset(&expanded, expanded.find("ensures result >= 0;").unwrap());
+    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+    session
+        .verify_at(&expanded, position.line, position.column)
+        .unwrap();
+}

@@ -6357,6 +6357,7 @@ pub(crate) fn intern_derivation_base(memory: &mut CMemory) -> SharedCMemory {
 /// one shares storage roots with whatever the arena already holds, so facts
 /// and terms that embed equal snapshots compare by root identity.
 pub(crate) fn record_c_memory_derivation(result: &mut CMemory, derivation: CMemoryDerivation) {
+    let variable_base = derivation.base().clone();
     let derivation = Arc::new(derivation);
     result.construction = Some(Arc::new(CMemoryConstruction {
         roots: result.diagnostic_roots(),
@@ -6428,6 +6429,7 @@ pub(crate) fn record_c_memory_derivation(result: &mut CMemory, derivation: CMemo
             C_MEMORY_DERIVATION_GENERATION.with(|generation| generation.set(generation.get() + 1));
         }
     });
+    crate::kernel::reasoning::advance_memory_variable_index(&variable_base, &derived);
 }
 
 /// The canonical storage of a recorded child of `base` equal to `result`,
@@ -7074,6 +7076,9 @@ pub(super) struct ResourceContextChange {
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct ResourceContextIndex {
+    pub(super) memory_facts: SnapshotMap<CResourceFact, ()>,
+    pub(super) owned_memory_ranges: SnapshotMap<CMemoryRange, ()>,
+    pub(super) owned_memory_range_counts: PersistentMap<CMemoryRange, usize>,
     owned_count: usize,
     owned_composite_count: usize,
     pub(super) instances: PersistentMap<Variable, ResourceEntryIds>,
