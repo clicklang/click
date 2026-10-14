@@ -182,6 +182,7 @@ pub use verification::{
     verify_sources_at, verify_standard_library, with_allow_sorry,
 };
 mod proof_trace;
+pub use proof::without_implicit_auto;
 pub use proof_trace::with_proof_trace;
 
 /// Render one accepted checked path while `with_proof_trace` is active.

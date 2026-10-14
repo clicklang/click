@@ -2637,9 +2637,10 @@ fn implicit_auto_disabled() -> bool {
 /// Runs `operation` with the implicit `auto` off: a step gets only its fast
 /// path and its written obligation proofs, with no search, so an obligation
 /// nothing written proves is refused with its structured requirement. This
-/// is how an expanded proof is checked cold (`issues/simplify-step.md`).
-#[cfg(test)]
-pub(crate) fn without_implicit_auto<R>(operation: impl FnOnce() -> R) -> R {
+/// is how an expanded proof is checked cold (`issues/simplify-step.md`):
+/// `click expand --claim` and `click audit`'s whole-claim expansion check their
+/// output this way.
+pub fn without_implicit_auto<R>(operation: impl FnOnce() -> R) -> R {
     struct Restore(bool);
     impl Drop for Restore {
         fn drop(&mut self) {
