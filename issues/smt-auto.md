@@ -210,9 +210,10 @@ The next steps, in order:
    script that ends with a claim open close with `auto` instead of `simp`
    alone. In `tree_rotate_left` the two `have`s proving the `ensures` become
    one `apply` line.
-2. **Spell `apply` conclusions.** A rewrite needs its equality as source
-   text; a fact `apply(...)` adds has none, so `auto` cannot rewrite by a
-   lemma's conclusion. The rbtree erase file has 197 `apply`s.
+2. **Spell `apply` conclusions.** Done: an `apply` that leaves its goal
+   open records each conclusion the way the caller would write it, so `auto`
+   can rewrite by a lemma's conclusion. On the 715 sampled `have`s, `auto`
+   then proves 24 more (577) and 5 more can be deleted (178).
 3. **Unfold definitions applied to constructors.** `heap_right(Node(...))`
    and similar facts are stated by hand in every arm of a tree proof.
 

@@ -1014,12 +1014,63 @@ impl<'a> Proof<'a> {
         } else {
             state
         };
-        Ok(Self {
+        let application = match &step {
+            ProofStep::ApplyTheoremUsing { application, .. } => Some(application.clone()),
+            _ => None,
+        };
+        let applied = Self {
             site: self.site.clone(),
             context: self.context.clone(),
             state,
             node: ProofNode::step_child(&self.node, self.focused_branch_id(), Arc::new(step)),
+        };
+        Ok(match application {
+            Some(application) => self.spell_applied_conclusions(&application, applied),
+            None => applied,
         })
+    }
+
+    /// An `apply` that leaves its goal open adds its theorem's conclusions
+    /// as facts with no source spelling, so a later rewrite or `auto` could
+    /// not cite them. Spell each conclusion the way the caller would write it
+    /// and record it as a checked `have` closed by `assumption`, which finds
+    /// the fact the application just added. The `apply` keeps its own proof
+    /// node: the spelling is an index entry for later premise lookups, not a
+    /// step of the proof, and an expansion writes the `apply` alone. A
+    /// conclusion that does not spell, or whose spelling does not lower to an
+    /// available fact, is left unspelled.
+    fn spell_applied_conclusions(&self, application: &TheoremApplication, applied: Self) -> Self {
+        if applied.is_complete() || applied.focused_discharged() {
+            return applied;
+        }
+        // An applied fact that is the goal under another spelling of the
+        // same order claim (`0 <= e` for `e >= 0`) is closed next from the
+        // facts this step checked; a spelling step here would hide them.
+        if applied.goal().is_some_and(|goal| {
+            applied.checked_facts().iter().any(|fact| {
+                crate::kernel::proof::fact_reasoning::order_claim_equivalent(fact, goal)
+            })
+        }) {
+            return applied;
+        }
+        let conclusions = self.theorem_application_surface_conclusions(application);
+        let node = applied.node.clone();
+        let mut spelled = applied;
+        for conclusion in conclusions {
+            let Ok(next) = spelled.apply_step(ProofStep::Have {
+                proposition: conclusion,
+                proof: Box::new(ProofCertificate::from_validated_steps(vec![
+                    ProofStep::Assumption,
+                ])),
+            }) else {
+                continue;
+            };
+            spelled = Self {
+                node: node.clone(),
+                ..next
+            };
+        }
+        spelled
     }
 
     /// Applies one explicit `Have` through the same owned scope operations as
