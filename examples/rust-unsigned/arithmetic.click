@@ -23,7 +23,7 @@ fn low_byte(value: u32) -> u8 {
 } by { execute(); simp(); }
 
 fn high_bit(value: u32) -> bool {
-    ensures result == (if value > 2147483647u32 { 1 } else { 0 });
+    ensures result == (value > 2147483647u32);
 } by {
     if value > 2147483647u32 { execute(); simp(); }
     else { execute(); simp(); }

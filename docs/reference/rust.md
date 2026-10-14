@@ -264,25 +264,60 @@ fn write(bytes: &mut [u8], index: usize, value: u8) {
 } by { execute(); simp(); }
 
 fn first(bytes: &[u8]) -> u8 {
-    requires bytes.len() == 4u64;
+    requires bytes.len() == 4;
     views bytes[0..4];
     ensures result == bytes[0];
 } by { execute(); simp(); }
 
 fn increment_first(bytes: &mut [u8]) {
-    requires bytes.len() == 4u64;
+    requires bytes.len() == 4;
     requires bytes[0] < 255;
     owns bytes[0..4];
     ensures bytes[0] == old(bytes[0]) + 1;
 } by { execute(); simp(); }
 
 fn empty(bytes: &[u8]) -> bool {
-    ensures result == (if bytes.len() == 0u64 { 1 } else { 0 });
+    ensures result == (bytes.len() == 0);
 } by {
-    if bytes.len() == 0u64 { execute(); simp(); }
+    if bytes.len() == 0 { execute(); simp(); }
     else { execute(); simp(); }
 }
 ```
+
+A `bool` result is a specification `bool`
+([Booleans](language/index.md#booleans)): `ensures result;` claims it is
+`true`, and, as in Rust, a parenthesized comparison is a `bool` value, so
+`ensures result == (bytes.len() == 0);` states it exactly. Outside a
+parenthesized operand a comparison remains a proposition, and a C or C++
+sidecar keeps every comparison a proposition. A `bool` parameter is a claim
+too: `ensures early implies result == 7;`. Rust has no cast to `bool`, so
+`x as bool` is refused.
+
+An unsuffixed literal takes its type from what it is compared or combined
+with, so `bytes.len() == 4` compares two `usize` values. A suffix may still
+fix a literal's type: `4u64`, `255u8`, `7u32` and `-1i64` are both Rust and
+Click spellings. Click has no `usize`, `i32` or `u16` suffix, and no `_`
+separator; a literal that needs one of those types is written unsuffixed or
+cast with `as`.
+
+### Pure functions, predicates and theorems
+
+A Rust sidecar's pure functions, predicates and theorems, their quantifier
+and `let` binders, and algebraic datatype fields take Rust types too: the
+scalars (`u8`, `i32`, `u32`, `u64`, `usize`, `bool`, ...) and a raw pointer
+to one, `*const T` or `*mut T`. Such a function takes values, not borrows:
+a fn's slice parameter `bytes` passes the pointer to its first element, so a
+function over its bytes takes `bytes: *const u8` and a `usize` length. A
+reference, `&T` or `&[T]`, is refused there. `x as T` casts in a body as in
+a contract. The C spellings (`uint8`, `const uint8*`, `(int32)x`) still read
+the same types. The
+[byte-sum example](https://github.com/clicklang/click/blob/master/examples/rust-byte-sum/sum.click)
+sums a prefix with
+`function prefix(bytes: *const u8, end: usize) -> Integer`, whose body adds
+`to_integer(bytes[k] as i32)`.
+
+A slice parameter of a pure function, with its own `.len()`, is not
+supported yet.
 
 A method's contract is written in an `impl` block, `impl Type { ... }` or
 `impl Trait for Type { ... }`, and its receiver is `self`, `&self` or
@@ -423,10 +458,10 @@ uses variable-length contracts with existing memory ranges, as `read` and
 `write` in "Signatures in Rust syntax" do. A range bounded by a `usize` has 64-bit bounds, so the contract states no
 limit on the length. `.len()` alone needs no byte resource. General slice returns, range subscripts, indexed compound assignment, and
 other slice element types remain unsupported. Supported shared slice splitting
-is described below. Numeric contract casts include `(int32)`, `(uint32)`,
-`(int64)`, and `(uint64)`, and like Rust `as` they convert modulo 2^N.
-Use signed 64-bit widening to state full-width u32 addition guards, for
-example `((int64)x + (int64)y) <= 4294967295i64`.
+is described below. Numeric contract casts are `x as i32`, `x as u32`,
+`x as i64`, `x as u64` and the other scalar types, and like Rust `as` they
+convert modulo 2^N. Use signed 64-bit widening to state full-width u32
+addition guards, for example `(x as i64 + y as i64) <= 4294967295i64`.
 
 ## Shared slice splitting
 
@@ -569,7 +604,7 @@ The [byte-sum example](https://github.com/clicklang/click/blob/master/examples/r
 proves a functional loop over arbitrary input bytes. For slices of length
 `0..=1000`, its unchanged Rust source returns the exact mathematical sum of
 the input at function entry. A prefix fold and the bound
-`0 <= to_integer(total) <= 255 * to_integer((int32)(uint32)i)` establish the
+`0 <= to_integer(total) <= 255 * to_integer(i)` establish the
 result and safety of every intermediate addition. Checked full-width bounds
 connect the `usize` counter to the fold's signed-word endpoint. It covers
 empty input and supports profiling, audit, and expanded-proof reverification.

@@ -4823,9 +4823,10 @@ fn every_return_after_construction_runs_the_checked_destructor() {
         .expect("the expanded early-return cleanup proof must reverify");
 
     let wrong_early_result = EARLY_RETURN_DESTRUCTOR_SIDECAR.replace(
-        "ensures early != 0 implies result == 7;",
-        "ensures early != 0 implies result == 9;",
+        "ensures early implies result == 7;",
+        "ensures early implies result == 9;",
     );
+    assert_ne!(wrong_early_result, EARLY_RETURN_DESTRUCTOR_SIDECAR);
     fs::write(&sidecar, &wrong_early_result).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_early_result).unwrap();
     verify_program_prepared_project(&wrong_project, &import)

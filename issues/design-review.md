@@ -260,16 +260,21 @@ Decision: in progress.
 
 ### L4. Rust and C++ specs still read like C
 
-Today: a Rust sidecar's pure function takes `bytes: const uint8*, end:
-uint64` and casts `(int32)bytes[k]` (`examples/rust-iterators/sum.click`);
-lengths compare with `4u64`, `bool` results are specified as
-`if ... { 1 } else { 0 }` (`docs/reference/rust.md`); a C++ `bool` is
-`early != 0`.
+Today: Rust sidecars write Rust types, `*const u8`, `as` and `bool` in pure
+functions, predicates and theorems, a parenthesized comparison is a `bool`
+value, and a C or C++ `bool` parameter is a claim. What remains: a pure
+function cannot take a slice (`bytes: &[u8]` with its own `.len()`), so it
+takes `*const u8` and a `usize` length; Rust literal spellings without a
+Click equivalent (`4usize`, `4i32`, `1_000`) are refused; the shared lemma
+library is named by C types (`uint64_less_than_to_integer`); and the
+archived Charon-trial sidecars under `design/charon-trial` keep the C
+spellings they were written in.
 
-Proposed fix: Rust types and `as` throughout Rust sidecars, including pure
-functions; `bool` results as `bool`.
+Proposed fix: slice parameters for pure functions, passed as the slice; the
+remaining literal suffixes; Rust-spelled aliases or names for the lemmas a
+Rust proof applies.
 
-Decision: fix (maintainer, 2026-10-13), after L2: Rust types, `as` and `bool` throughout Rust sidecars.
+Decision: fix (maintainer, 2026-10-13), after L2: Rust types, `as` and `bool` throughout Rust sidecars. Types, `as` and `bool` done; the items above remain.
 
 ### L5. Resource clauses overlap
 
