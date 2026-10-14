@@ -72,7 +72,8 @@ rather than a recommended first draft.
 When a call's generated pointer has no source struct layout, expansion spells
 an indexed array field as an explicit typed read at its byte address. This
 retains the field offset and element width when reparsed; it grants no read
-authority. Named struct pointers retain ordinary field access. The Rust
+authority. Named struct pointers and library model accessors retain their
+ordinary spelling. The Rust
 assignment-operator audit checks this through an erased local array pointer.
 
 Smart tactics are deliberately incomplete heuristics. A prompt failure means

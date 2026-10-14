@@ -5645,6 +5645,11 @@ fn describe_untyped_array_field_read(
     base: &ContractExpression,
     index: &ContractExpression,
 ) -> Option<String> {
+    // A registered library accessor already carries its element type and
+    // is the source spelling used in both certificates and diagnostics.
+    if describe_model_accessor(base).is_some() {
+        return None;
+    }
     let ContractExpression::Field {
         base,
         lowered:
