@@ -17884,4 +17884,3 @@ fn whole_global_objects_keep_their_extent_and_field_types() {
         assert!(verify_c0_sources(&source.replace("owns state;", insufficient), &sources).is_err());
     }
 }
-
