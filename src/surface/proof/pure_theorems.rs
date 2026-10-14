@@ -2406,6 +2406,8 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "int64_subtract_to_integer"
                 | "int64_to_integer_equal_implies_equal"
                 | "uint64_pack_uint16_to_integer"
+                | "uint64_unpack_uint16_low"
+                | "uint64_unpack_uint16_high"
                 | "uint32_pack_uint16_to_integer"
                 | "uint32_pack_uint16_high_first_to_integer"
                 | "uint32_unpack_uint16_low"
@@ -2539,6 +2541,8 @@ fn verify_kernel_standard_theorem_axiom(
         | "uint64_less_than_implies_not_greater_equal"
         | "uint64_to_integer_equal_implies_equal" => (2, 1),
         "uint64_pack_uint16_to_integer"
+        | "uint64_unpack_uint16_low"
+        | "uint64_unpack_uint16_high"
         | "uint32_pack_uint16_to_integer"
         | "uint32_pack_uint16_high_first_to_integer"
         | "uint32_unpack_uint16_low"
@@ -4400,33 +4404,50 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
 
     #[test]
     fn unsigned_unpacking_declarations_require_exact_bounds_words_and_unsigned_shift() {
-        for (name, extraction, result) in [
-            ("low", "(((high << 16) | low) & 65535u32)", "low"),
-            ("high", "((((high << 16) | low) >> 16) & 65535u32)", "high"),
+        for (ty, suffix, packed) in [
+            ("uint32", "u32", "(high << 16) | low"),
+            ("uint64", "u64", "low | (high << 16)"),
         ] {
-            let source = format!(
-                "theorem uint32_unpack_uint16_{name}(low: uint32, high: uint32) {{ requires low <= 65535u32; requires high <= 65535u32; ensures {extraction} == {result}; }}"
-            );
-            verify_standard_declaration(&source).unwrap();
-            for invalid in [
-                source.replace("requires low <= 65535u32;", ""),
-                source.replace("requires high <= 65535u32;", ""),
-                source.replace("65535", "65536"),
-                source.replace("high << 16", "high << 15"),
-                source.replace("& 65535u32", "& 32767u32"),
-                source.replace(&format!("== {result};"), "== 0u32;"),
-                source.replace(": uint32", ": int32"),
-                source.replace(": uint32", ": uint64"),
+            for (name, extraction, result) in [
+                ("low", &format!("(({packed}) & 65535{suffix})"), "low"),
+                (
+                    "high",
+                    &format!("((({packed}) >> 16) & 65535{suffix})"),
+                    "high",
+                ),
             ] {
-                assert_ne!(source, invalid);
-                assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
-            }
-            if name == "high" {
-                assert!(verify_standard_declaration(&source.replace(">> 16", ">> 15")).is_err());
+                let source = format!(
+                    "theorem {ty}_unpack_uint16_{name}(low: {ty}, high: {ty}) {{ requires low <= 65535{suffix}; requires high <= 65535{suffix}; ensures {extraction} == {result}; }}"
+                );
+                verify_standard_declaration(&source).unwrap();
+                for invalid in [
+                    source.replace(&format!("requires low <= 65535{suffix};"), ""),
+                    source.replace(&format!("requires high <= 65535{suffix};"), ""),
+                    source.replace("65535", "65536"),
+                    source.replace("high << 16", "high << 15"),
+                    source.replace(&format!("& 65535{suffix}"), &format!("& 32767{suffix}")),
+                    source.replace(&format!("== {result};"), &format!("== 0{suffix};")),
+                    source.replace(&format!(": {ty}"), ": int32"),
+                    source.replace(
+                        &format!(": {ty}"),
+                        if ty == "uint32" {
+                            ": uint64"
+                        } else {
+                            ": uint32"
+                        },
+                    ),
+                ] {
+                    assert_ne!(source, invalid);
+                    assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
+                }
+                if name == "high" {
+                    assert!(
+                        verify_standard_declaration(&source.replace(">> 16", ">> 15")).is_err()
+                    );
+                }
             }
         }
     }
-
     #[test]
     fn unsigned_packing_declarations_require_exact_fields_bounds_and_result() {
         for (ty, suffix, order) in [

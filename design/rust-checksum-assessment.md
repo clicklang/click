@@ -10,15 +10,20 @@ computation and checksum getter over that range. A real client connects two
 actual updates at every valid split to the full-input specification. A second
 client saves the prefix checksum, restores the same canonical state through
 `from_checksum`, then proves the full-input result after updating the suffix.
-C correctness and C/Rust result equality remain unproved.
+The unchanged C implementation now satisfies the same specification for every
+length 0–2147483647 from arbitrary canonical decoded A/B, and its real two-call
+client composes every split under nonnull call-pointer contracts. The
+[checked correspondence demonstration](charon-trial/checksum-correspondence.md)
+derives native C/Rust result equality for matched entry bytes, length and state,
+and connects C's null reset with Rust new/default and the checksum getter.
 
 The checked [common specification](adler32-spec.click) defines the unweighted
 byte sum, the byte-order-sensitive weighted sum, both canonical residues, and
 the packed checksum over a logical byte snapshot. Its lemmas prove the appended
 byte recurrence, weight shifts, nonnegative sums, residue uniqueness and
 addition, canonical output ranges, packing bounds, and empty-input seed
-preservation. The unchanged Rust computation is connected to these sums; the lemmas assume
-no checksum body summary. The C connection remains pending.
+preservation. Both unchanged computations are connected to these sums; the
+lemmas assume no checksum body summary.
 
 ## Immutable inputs and configuration
 
@@ -177,9 +182,9 @@ both residues at each actual byte position. Checked iterator exhaustion, byte
 extensionality, native reductions and 16-bit stores prove both final fields
 equal the specification on the entry input snapshot for all supported lengths.
 
-Follow the [current roadmap](../issues/rust-support.md) for implementation
-saved-checksum restoration, the unchanged C proof, and architecture
-requirements. Deliver coherent green proof and engine increments through pull
+Follow the [current roadmap](../issues/rust-support.md) for experimental Rust
+architecture requirements and the completed checksum proof evidence.
+Deliver coherent green proof and engine increments through pull
 requests. Repair checker and expansion defects before extending the examples;
 retain explicit bounds on intermediate evidence and meaningful negative tests.
 
@@ -190,7 +195,8 @@ retain explicit bounds on intermediate evidence and meaningful negative tests.
   the immutable repository files.
 - Original zlib checksum source passed a host Clang syntax check with its
   pinned headers. The host macro dump confirmed LP64 widths and that
-  `NO_DIVIDE` and `Z_SOLO` were absent. This is not yet a Linux Click import.
+  `NO_DIVIDE` and `Z_SOLO` were absent. Subsequent locked Linux Click imports
+  and offline body/expansion fixtures establish the C contracts described above.
 - 126 host differential checks compared the unchanged implementations with canonical
   seeds and non-null byte buffers around lengths 1, 4, 16, 5,552 and 22,208.
   They are supplementary runtime evidence, not functional verification.

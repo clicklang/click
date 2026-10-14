@@ -760,20 +760,51 @@ fn theorem_application_argument_type(
         )));
     }
 
-    let mut active_functions = BTreeSet::new();
-    evaluate_contract_expression_with_environment(
-        context.values,
-        context.array_refs,
-        context.pre_state,
-        context.post_state,
-        context.result,
-        assumptions,
+    let active_functions = BTreeSet::new();
+    evaluate_native_theorem_argument(
         argument,
+        context,
+        assumptions,
         spec_definitions,
-        context.recorded_snapshots,
-        &mut active_functions,
+        &active_functions,
     )
     .map(|value| Some(ClickType::C(generics::c0_type_from_kernel(value.c_type()))))
+}
+
+// Native arguments can contain checked Integer conversions. Lower them in
+// the caller's scope before binding the resulting C value to the callee.
+fn evaluate_native_theorem_argument(
+    argument: &ContractExpression,
+    context: &TheoremApplicationContext<'_>,
+    assumptions: &PureFactContext,
+    spec_definitions: SpecDefinitions<'_>,
+    opaque_click_functions: &BTreeSet<String>,
+) -> Result<CValue, String> {
+    let algebraic_values = contract_expression_referenced_names(argument)
+        .into_iter()
+        .filter_map(|name| {
+            context
+                .algebraic_values
+                .get(&name)
+                .cloned()
+                .map(|value| (name, value))
+        })
+        .collect();
+    evaluate_fixed_state_expression_through_kernel_with_algebraic_and_integer_values(
+        argument,
+        assumptions,
+        ContractEnvironment::new(context.values, context.array_refs),
+        algebraic_values,
+        context.integer_values,
+        FixedStateFrame::new(
+            context.pre_state,
+            context.post_state,
+            context.result,
+            context.recorded_snapshots,
+        ),
+        spec_definitions,
+        opaque_click_functions,
+    )
 }
 
 pub(super) fn theorem_application_bindings(
@@ -791,7 +822,7 @@ pub(super) fn theorem_application_bindings(
     ),
     String,
 > {
-    let mut active_functions = BTreeSet::new();
+    let active_functions = BTreeSet::new();
     let mut values = BTreeMap::new();
     let mut array_refs = BTreeMap::new();
     let mut algebraic_values = BTreeMap::new();
@@ -973,17 +1004,12 @@ pub(super) fn theorem_application_bindings(
             );
             array_refs.insert(parameter.name().to_string(), array_ref);
         } else {
-            let value = evaluate_contract_expression_with_environment(
-                context.values,
-                context.array_refs,
-                context.pre_state,
-                context.post_state,
-                context.result,
-                assumptions,
+            let value = evaluate_native_theorem_argument(
                 argument,
+                context,
+                assumptions,
                 spec_definitions,
-                context.recorded_snapshots,
-                &mut active_functions,
+                &active_functions,
             )?;
             if !c_value_matches_click_type(&value, parameter_type) {
                 let (naming_parameters, naming_arguments) =

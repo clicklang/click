@@ -218,6 +218,18 @@ theorem use_uint64_pack_u16_to_integer(low: uint64, high: uint64) {
     ensures to_integer(low | (high << 16)) == to_integer(low) + 65536 * to_integer(high) by apply(uint64_pack_uint16_to_integer(low, high));
 }
 
+theorem use_uint64_unpack_u16_low(low: uint64, high: uint64) {
+    requires low <= 65535u64;
+    requires high <= 65535u64;
+    ensures ((low | (high << 16)) & 65535u64) == low by apply(uint64_unpack_uint16_low(low, high));
+}
+
+theorem use_uint64_unpack_u16_high(low: uint64, high: uint64) {
+    requires low <= 65535u64;
+    requires high <= 65535u64;
+    ensures (((low | (high << 16)) >> 16) & 65535u64) == high by apply(uint64_unpack_uint16_high(low, high));
+}
+
 theorem use_uint64_not_greater_equal_of_less_than(left: uint64, right: uint64) {
     requires left < right;
     ensures not (left >= right) by apply(uint64_less_than_implies_not_greater_equal(left, right));

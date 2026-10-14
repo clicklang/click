@@ -8980,6 +8980,40 @@ fn prove_uint32_unpack_uint16_word(
     )
 }
 
+/// Recover a bounded uint16 field from the LP64 C packing expression.
+/// Both bounds are necessary: no operand may overlap the other field.
+fn prove_uint64_unpack_uint16_word(
+    low: Bitvector32Term,
+    high: Bitvector32Term,
+    high_word: bool,
+) -> Theorem {
+    let packed = Bitvector32Term::uint64_bitwise_or(
+        low.clone(),
+        Bitvector32Term::uint64_shift_left(high.clone(), Bitvector32Term::Int64Constant(16)),
+    );
+    let selected = if high_word {
+        Bitvector32Term::uint64_logical_shift_right(packed, Bitvector32Term::Int64Constant(16))
+    } else {
+        packed
+    };
+    let extracted =
+        Bitvector32Term::uint64_bitwise_and(selected, Bitvector32Term::UInt64Constant(65535));
+    let exact = if high_word { high.clone() } else { low.clone() };
+    implication(
+        [
+            Proposition::ConditionIs(
+                ConditionTerm::uint64_less_equal(low, Bitvector32Term::UInt64Constant(65535)),
+                true,
+            ),
+            Proposition::ConditionIs(
+                ConditionTerm::uint64_less_equal(high, Bitvector32Term::UInt64Constant(65535)),
+                true,
+            ),
+        ],
+        Proposition::ConditionIs(ConditionTerm::uint64_equal(extracted, exact), true),
+    )
+}
+
 pub fn prove_uint64_integer_bridge(
     name: &str,
     left: Bitvector32Term,
@@ -9007,6 +9041,16 @@ pub fn prove_uint64_integer_bridge(
     }
     if name == "uint64_pack_uint16_to_integer" {
         return prove_unsigned_pack_u16_to_integer(MachineIntegerType::UInt64, left, right);
+    }
+    if matches!(
+        name,
+        "uint64_unpack_uint16_low" | "uint64_unpack_uint16_high"
+    ) {
+        return Some(prove_uint64_unpack_uint16_word(
+            left,
+            right,
+            name == "uint64_unpack_uint16_high",
+        ));
     }
     let observe = |value| {
         IntegerTerm::from_machine(MachineIntegerType::UInt64, value)
