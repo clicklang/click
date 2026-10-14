@@ -6538,6 +6538,26 @@ impl Parser {
             self.expect(Token::LParen)?;
             let target = self.parse_owned_resource_target()?;
             let target = self.hidden_binder(&target).unwrap_or(target);
+            // A declared resource's unfold names the `let ... where`
+            // witnesses its opened body binds.
+            if matches!(target, ResourceClause::Declared { .. }) {
+                self.expect(Token::RParen)?;
+                self.expect(Token::Semicolon)?;
+                let mut seen = BTreeSet::new();
+                for (slot, name) in &bindings {
+                    if !seen.insert(name.clone()) {
+                        return Err(self.error(format!(
+                            "unfold witness name `{name}` is bound twice; the names in `let {{ ... }} = unfold(...)` must differ"
+                        )));
+                    }
+                    let _ = slot;
+                    self.current_proof_let_names.insert(name.clone());
+                }
+                return Ok(ProofTactic::UnfoldWitnesses {
+                    resource: target,
+                    names: bindings,
+                });
+            }
             let ResourceClause::Named {
                 mut binding,
                 resource,

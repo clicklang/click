@@ -2238,6 +2238,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::Iterated(_)
             | ProofTactic::Transport { .. }
             | ProofTactic::UnfoldResource(_)
+            | ProofTactic::UnfoldWitnesses { .. }
             | ProofTactic::FoldResource(_)
             | ProofTactic::ConstructResource(_)
             | ProofTactic::Sorry => {
@@ -2266,7 +2267,8 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::UnfoldPredicate(_)
         | ProofTactic::UnfoldFunction(_)
         | ProofTactic::PeelFunction { .. }
-        | ProofTactic::UnfoldResource(_) => "unfold",
+        | ProofTactic::UnfoldResource(_)
+        | ProofTactic::UnfoldWitnesses { .. } => "unfold",
         ProofTactic::FoldResource(_) => "fold",
         ProofTactic::ConstructResource(_) => "construct",
         ProofTactic::Induct { .. } => "induct",

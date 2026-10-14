@@ -862,6 +862,18 @@ impl<'a> Proof<'a> {
         if let ProofStep::Have { proposition, proof } = &step {
             return self.apply_have_step(proposition, proof);
         }
+        // A certificate checked step by step, such as an obligation proof in
+        // a `step` or `fold` `by` body, carries `both` as its checked arms.
+        if let ProofStep::Both {
+            left_proof,
+            right_proof,
+        } = &step
+        {
+            return self.apply_both_source(&ProofBoth {
+                left_tactics: left_proof.to_proof_tactics(),
+                right_tactics: right_proof.to_proof_tactics(),
+            });
+        }
         // A bare `fold` is checked as a bare step is: its fast path, then the
         // implicit `auto` for each body fact it leaves open.
         if matches!(step, ProofStep::FoldResource(_))
@@ -1079,16 +1091,39 @@ impl<'a> Proof<'a> {
                     self.apply_execution_resource_unfold(resource)
                 }
             }
+            ProofStep::UnfoldWitnesses { resource, names } => {
+                let resource = &self.resolve_proof_resource_arguments(resource)?;
+                self.apply_execution_resource_unfold_naming_witnesses(resource, names)
+            }
             ProofStep::FoldResource(resource) => {
                 // Resolve proof bindings before either the execution or
                 // outcome path interprets ordinary resource arguments.
                 let source_resource = resource;
                 let resource = &self.resolve_proof_resource_arguments(resource)?;
-                if self.focused_outcome_data().is_some() {
-                    self.apply_outcome_resource_fold(resource)
-                } else {
-                    self.apply_execution_resource_fold(resource, source_resource)
-                }
+                // A body fact over a witness an unfold named is spelled with
+                // that name.
+                let named_values = self
+                    .state()
+                    .locals()
+                    .values
+                    .iter()
+                    .filter_map(|(name, value)| match value {
+                        ContractExpression::CFragment(CExpression::Value(value)) => {
+                            Some((value.clone(), name.clone()))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                crate::surface::proof::surface_synthesis::with_proof_local_value_names(
+                    named_values,
+                    || {
+                        if self.focused_outcome_data().is_some() {
+                            self.apply_outcome_resource_fold(resource)
+                        } else {
+                            self.apply_execution_resource_fold(resource, source_resource)
+                        }
+                    },
+                )
             }
             ProofStep::ConstructResource(resource) => {
                 if self.focused_outcome_data().is_some() {
