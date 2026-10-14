@@ -51,7 +51,6 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
         ),
         81,
     ),
-    ((HiddenPrerequisiteRoute::KernelCondition, "path fact"), 24),
     ((HiddenPrerequisiteRoute::KernelCondition, "path facts"), 10),
     // `issues/simplify-step.md` step 5 drives these to zero.
     (
