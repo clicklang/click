@@ -25,6 +25,9 @@ final closer. On a stated fact, `have P by auto;`, there is no C to execute,
 and `auto` is the solver, then `simp`, then the rewrite search. `auto` has no
 script-tactic spelling of its own: a written `simp()` is `simp` alone. Successful smart tactics and `auto` retain the checked
 surface provenance that `click expand` can render as an explicit proof.
+Source-premise selection skips synthesized candidates whose rendered
+propositions do not tokenize as Click, rather than counting a route through an
+unnamed kernel value as a successful expandable proof.
 
 A failed execution `have P by auto;` names `auto` and the written `P`,
 rather than an internal search step or subgoal. Exhausted verification

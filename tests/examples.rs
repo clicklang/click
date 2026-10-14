@@ -456,10 +456,10 @@ fn bounded_audit_batches_only_claims_that_fit_the_remaining_cap() {
     fs::remove_dir_all(directory).unwrap();
 }
 
-/// Whole-claim expansion must classify unspellable generated values before emitting source.
+/// Auto must choose a spellable certificate for the original recoloring equality.
 #[test]
-#[ignore = "nightly: checks whole rbtree contract expansion"]
-fn rbtree_claim_expansion_reports_unspellable_value() {
+#[ignore = "nightly: rechecks rbtree recoloring expansion"]
+fn rbtree_auto_recolor_expansion_rechecks() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let path = root.join("examples/rbtree-insert/rbtree_insert.click");
     let mut source = fs::read_to_string(&path).unwrap();
@@ -483,13 +483,41 @@ fn rbtree_claim_expansion_reports_unspellable_value() {
     source.replace_range(start..end, "by auto;");
     let c_sources = read_verifying_sources(&path, &source).unwrap();
     let project = read_click_project_at_root(&path, &source, &root.join("examples")).unwrap();
+    let line = source[..start]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1;
+    let column = source[..start].rsplit('\n').next().unwrap().len() + 4;
+    let expanded = click::surface::expand_project_tactic_source_at(
+        &project,
+        &ProgramInputs::Bundle(source_refs(&c_sources)),
+        line,
+        column,
+    )
+    .expect("auto's selected certificate must have source spelling");
+    let rewritten = project.with_entry_source(expanded);
+    click::surface::verify_project_at(
+        &rewritten,
+        &ProgramInputs::Bundle(source_refs(&c_sources)),
+        line,
+        column,
+    )
+    .expect("the expanded original-pattern site must reverify");
     let result = click::surface::expand_project_claim_source_by_label(
         &project,
         &ProgramInputs::Bundle(source_refs(&c_sources)),
         "__rb_insert.contract",
     );
     let error = match result {
-        Ok(_) => panic!("a generated value with no source spelling cannot be emitted"),
+        Ok(expanded) => {
+            click::surface::verify_c0_project(
+                &project.with_entry_source(expanded),
+                &source_refs(&c_sources),
+            )
+            .expect("a whole-claim expansion must not emit unspellable values");
+            return;
+        }
         Err(error) => error,
     };
     assert!(

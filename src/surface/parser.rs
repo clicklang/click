@@ -7,6 +7,14 @@ use rust_syntax::rust_signature_hint;
 use crate::languages::SourceLanguage;
 use tokenizer::tokenize;
 
+/// Smart search may synthesize kernel values that diagnostics can print but
+/// source cannot name. Check the rendered candidate without resolving names
+/// or scanning any ambient declarations. Quoted text remains ordinary syntax.
+pub(super) fn has_valid_source_tokens(source: &str) -> bool {
+    crate::instrumentation::record_deterministic_work(source.len());
+    !crate::instrumentation::deadline_exceeded() && tokenize(source, None).is_ok()
+}
+
 use super::*;
 use claim_labels::{ClaimClauseKind, flattened_claim_ids};
 

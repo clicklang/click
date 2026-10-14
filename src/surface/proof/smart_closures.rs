@@ -4131,11 +4131,18 @@ impl<'a> Proof<'a> {
         kernel: &Proposition,
     ) -> Option<ClickProposition> {
         let surface = self.available_surface_fact_raw(surface_facts, premise_anchor, kernel)?;
-        let Some(view) = self.premise_fixed_state_view() else {
-            return Some(surface);
-        };
+        self.named_returned_pointer_surface_fact(&surface, kernel)
+            .or(Some(surface))
+    }
+
+    fn named_returned_pointer_surface_fact(
+        &self,
+        surface: &ClickProposition,
+        kernel: &Proposition,
+    ) -> Option<ClickProposition> {
+        let view = self.premise_fixed_state_view()?;
         let Some(result @ CValue::Pointer(_)) = view.fixed_state.result else {
-            return Some(surface);
+            return None;
         };
         // Resource witnesses may have no written name but coincide with the
         // checked return value. Name that exact value, then re-lower the
@@ -4145,17 +4152,13 @@ impl<'a> Proof<'a> {
             operator: ComparisonOperator::Equal,
             right: ContractExpression::Binding("result".to_string()),
         };
-        let Some(named) =
-            crate::surface::rewrite_click_proposition_by_surface_equality(&surface, &equality)
-        else {
-            return Some(surface);
-        };
+        let named =
+            crate::surface::rewrite_click_proposition_by_surface_equality(surface, &equality)?;
         self.lower_surface_proposition_direct(&named, "returned pointer premise form")
             .is_ok_and(|lowered| {
                 lowered == *kernel || condition_polarity_equivalent(&lowered, kernel)
             })
             .then_some(named)
-            .or(Some(surface))
     }
 
     fn available_surface_fact_raw(
@@ -4190,6 +4193,17 @@ impl<'a> Proof<'a> {
         );
         let matches_kernel = |candidate: &ClickProposition| {
             if crate::instrumentation::deadline_exceeded() {
+                return None;
+            }
+            // Synthesized kernel literals can lower back to this fact yet
+            // print as diagnostic-only pointer placeholders. Such a form
+            // cannot be cited in an expandable proof; try another spelling.
+            let named = self.named_returned_pointer_surface_fact(candidate, kernel);
+            if !crate::surface::parser::has_valid_source_tokens(
+                &crate::surface::printing::source_click_proposition(
+                    named.as_ref().unwrap_or(candidate),
+                ),
+            ) {
                 return None;
             }
             let lower = |candidate: &ClickProposition| {
