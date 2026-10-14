@@ -17841,6 +17841,50 @@ int32 caller(int32 a, int32 b) {
     );
 }
 
+#[test]
+fn a_bare_fold_expands_its_body_fact_proof_and_needs_it() {
+    let c_source = "void make(int32 x) { }\n";
+    let click_source = r#"
+verifying "make.c";
+resource positive(n: int32) { fact n > 0; }
+void make(int32 x) {
+    requires x >= 1;
+    produces positive(x);
+} by {
+    fold(positive(x));
+    execute();
+    simp();
+}
+"#;
+    let c_sources = [("make.c", c_source)];
+    let expanded = expand_c0_claim_source(click_source, &c_sources, "make", CProofClaim::Grouped)
+        .expect("the bare fold should expand");
+    assert!(
+        expanded.contains("fold(positive(x)) by {"),
+        "the implicit `auto`'s proof of the open body fact should print as the fold's `by`: {expanded}"
+    );
+    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &c_sources))
+        .expect("the expansion should reverify cold");
+    let start = expanded
+        .find("fold(positive(x)) by {")
+        .expect("the expanded fold");
+    let body_end = expanded[start..]
+        .find("\n    }\n")
+        .map(|offset| start + offset + "\n    }\n".len())
+        .expect("the fold's `by` closes");
+    let mut without_proof = expanded.clone();
+    without_proof.replace_range(start..body_end, "fold(positive(x));\n");
+    let error = crate::surface::proof::without_implicit_auto(|| {
+        verify_c0_sources(&without_proof, &c_sources)
+    })
+    .expect_err("with the implicit `auto` off, the fold refuses its unproved body fact");
+    assert!(
+        error.message().contains("x > 0"),
+        "the refusal should name the body fact: {}",
+        error.message()
+    );
+}
+
 /// `expanded` with its first step's obligation proofs removed:
 /// `step() by { ... }` or `step() { requires ... }` becomes `step();`.
 fn without_first_step_obligation_proofs(expanded: &str) -> String {

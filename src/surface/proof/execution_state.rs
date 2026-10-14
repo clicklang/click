@@ -1248,6 +1248,9 @@ pub(super) fn synthesize_surface_paths(
 pub(super) enum PostExecutionTactic {
     Both(ProofBoth),
     Fold(ResourceClause),
+    /// `fold(resource) by { ... }` or with `requires` entries: the fold and
+    /// the proofs of the body facts its fast path leaves open.
+    FoldProved(ProofTactic),
     Unfold(ResourceClause),
     Construct(ResourceClause),
     CloseOpen {
@@ -1649,6 +1652,7 @@ pub(super) fn post_execution_tactic_timing(
         PostExecutionTactic::Simp | PostExecutionTactic::SimpUsing(_) => ("simp", "smart"),
         PostExecutionTactic::AutoClose => ("auto", "smart"),
         PostExecutionTactic::Fold(_) => ("fold", "simple"),
+        PostExecutionTactic::FoldProved(_) => ("fold", "control"),
         PostExecutionTactic::Unfold(_) => ("unfold", "simple"),
         PostExecutionTactic::Construct(_) => ("construct", "simple"),
         PostExecutionTactic::CloseOpen { .. } => ("open", "control"),

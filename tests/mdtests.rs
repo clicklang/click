@@ -271,8 +271,11 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
     ((HiddenPrerequisiteRoute::KernelCondition, "path facts"), 7),
     // `issues/simplify-step.md` step 5 drives these to zero.
     (
-        (HiddenPrerequisiteRoute::TacticSearch, "fold body fact"),
-        61,
+        (
+            HiddenPrerequisiteRoute::TacticSearch,
+            "fold projected body fact",
+        ),
+        26,
     ),
     (
         (
@@ -293,7 +296,7 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
             HiddenPrerequisiteRoute::TacticSearch,
             "transport load-variable chain",
         ),
-        16,
+        17,
     ),
     (
         (

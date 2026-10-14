@@ -3352,6 +3352,9 @@ impl<'a> Proof<'a> {
         &self,
         surface_goal: &ClickProposition,
     ) -> Result<Option<Self>, ClickError> {
+        if let Some(proof) = self.try_cell_frame_transport_closure(surface_goal)? {
+            return Ok(Some(proof));
+        }
         // Outcome transport is a general closure. Extending it to fixed-state
         // and mid-execution proposition scopes is needed specifically for
         // opaque Click applications whose snapshot arguments cannot be
@@ -3433,6 +3436,84 @@ impl<'a> Proof<'a> {
                 Err(_) => {
                     check_verification_deadline()?;
                 }
+            }
+        }
+        Ok(None)
+    }
+
+    /// A goal that reads one cell at two snapshots, such as
+    /// `owner->cell[0] == owner->phase` right after a store wrote the first
+    /// side from the second, holds when nothing in between wrote that cell.
+    /// That is a frame fact: carry the cell's reflexive equality from a
+    /// recorded point to the goal by `transport`, whose checker takes the
+    /// frame evidence (an exact `separate`, say) as its listed premises.
+    fn try_cell_frame_transport_closure(
+        &self,
+        surface_goal: &ClickProposition,
+    ) -> Result<Option<Self>, ClickError> {
+        let Some(Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true)) =
+            self.goal()
+        else {
+            return Ok(None);
+        };
+        let load = |term: &Bitvector32Term| match term {
+            Bitvector32Term::Variable(variable) => {
+                crate::kernel::registered_load_term_for_variable(variable)
+            }
+            Bitvector32Term::MemoryLoad(..) => Some(term.clone()),
+            _ => None,
+        };
+        let (
+            Some(Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind)),
+            Some(Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind)),
+        ) = (load(left), load(right))
+        else {
+            return Ok(None);
+        };
+        if left_pointer != right_pointer || left_kind != right_kind || left_memory == right_memory {
+            return Ok(None);
+        }
+        let Some(view) = self.premise_fixed_state_view() else {
+            return Ok(None);
+        };
+        // The cell as the current state reads it.
+        let current = crate::kernel::intern_c_memory_ref(view.fixed_state.state.memory());
+        let current_side = if right_memory == current {
+            right
+        } else if left_memory == current {
+            left
+        } else {
+            return Ok(None);
+        };
+        let Some(cell) = super::surface_synthesis::synthesize_surface_machine_expression(
+            current_side,
+            view.parameter_binding,
+            view.fixed_state.state,
+        ) else {
+            return Ok(None);
+        };
+        let reflexive = ClickProposition::Comparison {
+            left: cell.clone(),
+            operator: ComparisonOperator::Equal,
+            right: cell,
+        };
+        let selectors = view
+            .fixed_state
+            .recorded_snapshots
+            .recent(MAX_TRANSPORT_SOURCE_POINTS)
+            .into_iter()
+            .map(|(selector, _)| selector.clone())
+            .collect::<Vec<_>>();
+        for selector in selectors {
+            let source = ClickProposition::At {
+                selector,
+                proposition: Box::new(reflexive.clone()),
+            };
+            match self.search_fixed_state_fact_transport(&source, surface_goal, std::iter::empty())
+            {
+                Ok(proof) if proof.is_complete() => return Ok(Some(proof)),
+                Ok(_) => {}
+                Err(_) => check_verification_deadline()?,
             }
         }
         Ok(None)
@@ -7995,6 +8076,17 @@ impl<'a> Proof<'a> {
         requirement: &UnresolvedRequirement,
         step: &ProofStep,
     ) -> Result<Option<RequirementSpelling>, ClickError> {
+        // A tactic that spelled its requirement where it created it is
+        // stated that way, at any frontier.
+        if let Some(surface) = &requirement.surface {
+            return Ok(self
+                .lower_surface_goal(surface, "tactic requirement")
+                .is_ok_and(|lowered| lowered_states_requirement(&lowered, requirement))
+                .then(|| RequirementSpelling {
+                    surface: surface.clone(),
+                    direct_caller: None,
+                }));
+        }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Ok(None);
         };

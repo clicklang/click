@@ -714,6 +714,11 @@ fn checked_linear_continuation_tactic(tactic: &ProofTactic) -> bool {
 fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTactic> {
     match tactic {
         ProofTactic::FoldResource(resource) => Some(PostExecutionTactic::Fold(resource.clone())),
+        ProofTactic::StepProved { step, .. }
+            if matches!(step.as_ref(), ProofTactic::FoldResource(_)) =>
+        {
+            Some(PostExecutionTactic::FoldProved(tactic.clone()))
+        }
         ProofTactic::UnfoldResource(resource) => {
             Some(PostExecutionTactic::Unfold(resource.clone()))
         }

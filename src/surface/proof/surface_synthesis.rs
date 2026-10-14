@@ -722,6 +722,29 @@ pub(in crate::surface) fn synthesize_surface_machine_expression(
     synthesize_surface_bitvector(term, parameter_binding, state, &BTreeMap::new())
 }
 
+/// A source expression for a semantic C value, such as a resource witness
+/// inferred from memory: a pointer or an `int32` as the proof would write it
+/// at `state`.
+pub(in crate::surface) fn synthesize_surface_value(
+    value: &CValue,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+) -> Option<ContractExpression> {
+    let _scope = SurfaceSynthesisScope::enter();
+    match value {
+        CValue::Pointer(pointer) => synthesize_surface_pointer_expression(
+            pointer.pointer(),
+            parameter_binding,
+            state,
+            &BTreeMap::new(),
+        ),
+        CValue::Int32(term) => {
+            synthesize_surface_bitvector(term, parameter_binding, state, &BTreeMap::new())
+        }
+        _ => None,
+    }
+}
+
 pub(in crate::surface) fn synthesize_surface_proposition_with_bound_variable_names(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
