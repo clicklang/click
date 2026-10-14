@@ -1,6 +1,50 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: multi-size quantified frame refusal and positive controls"]
+fn false_quantified_frames_do_not_materialize_the_constant_domain() {
+    use crate::instrumentation::measure_deterministic_work;
+    verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    let program = "int32 untouched_element(int32* a) { unsigned char* b; b = (unsigned char*)(void*) a; b[5] = 7; return a[2]; }";
+    let mut samples = Vec::new();
+    for size in [16, 1024, 1_000_000, 100_000_000] {
+        let mut pair = Vec::new();
+        for false_frame in [false, true] {
+            let frame = if false_frame {
+                format!("ensures (0..{size}).all(|k| {{ a[k] == old(a[k]) }});")
+            } else {
+                String::new()
+            };
+            let source = format!(
+                "verifying \"probe.c\"; int32 untouched_element(int32* a) {{ owns a[0..{size}]; ensures result == old(a[2]); {frame} }} by {{ execute(); simp(); }}"
+            );
+            let (result, work) =
+                measure_deterministic_work(|| verify_c0_sources(&source, &[("probe.c", program)]));
+            if false_frame {
+                let error = result.expect_err("the byte store invalidates the whole-range frame");
+                assert!(error.message().contains(".all"), "{}", error.message());
+                assert!(
+                    !error.message().contains("budget exhausted"),
+                    "{}",
+                    error.message()
+                );
+            } else {
+                result.expect("the untouched element retains its entry value");
+            }
+            pair.push(work);
+        }
+        samples.push((size, pair));
+    }
+    for sample in &samples {
+        assert!(
+            sample.1[1] <= samples[0].1[1] * 2,
+            "domain-dependent refusal: {samples:?}"
+        );
+    }
+    eprintln!("quantified frame work (size, [true, false]): {samples:?}");
+}
+
+#[test]
 #[ignore = "nightly: multi-size reference-call refusal and positive controls"]
 fn refusing_a_false_literal_result_after_calls_scales_with_the_true_result() {
     use crate::instrumentation::{VerificationEvent, collect, measure_deterministic_work};

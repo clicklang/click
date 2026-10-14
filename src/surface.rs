@@ -3464,6 +3464,10 @@ enum ContractSegmentSurface {
         element_type: Option<CType>,
     },
     Object(String),
+    ObjectPlace {
+        name: String,
+        layout: std::sync::Arc<StructRangeLayout>,
+    },
 }
 
 /// The imported ABI retained by one range of whole struct objects. Hash the
@@ -3500,7 +3504,9 @@ impl ContractSegment {
             | ContractSegmentSurface::StructRange {
                 base, start, end, ..
             } => Some((base, start, end)),
-            ContractSegmentSurface::Field { .. } | ContractSegmentSurface::Object(_) => None,
+            ContractSegmentSurface::Field { .. }
+            | ContractSegmentSurface::Object(_)
+            | ContractSegmentSurface::ObjectPlace { .. } => None,
         }
     }
 
@@ -3508,7 +3514,9 @@ impl ContractSegment {
         match &self.surface {
             ContractSegmentSurface::Field { element_width, .. } => *element_width,
             ContractSegmentSurface::StructRange { layout, .. } => Some(layout.layout.size_bytes()),
-            ContractSegmentSurface::Range { .. } | ContractSegmentSurface::Object(_) => None,
+            ContractSegmentSurface::Range { .. }
+            | ContractSegmentSurface::Object(_)
+            | ContractSegmentSurface::ObjectPlace { .. } => None,
         }
     }
 
@@ -3517,7 +3525,8 @@ impl ContractSegment {
             ContractSegmentSurface::Field { element_type, .. } => *element_type,
             ContractSegmentSurface::Range { .. }
             | ContractSegmentSurface::StructRange { .. }
-            | ContractSegmentSurface::Object(_) => None,
+            | ContractSegmentSurface::Object(_)
+            | ContractSegmentSurface::ObjectPlace { .. } => None,
         }
     }
 }

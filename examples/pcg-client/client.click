@@ -8,8 +8,7 @@ verifying "../pcg-basic/pcg_basic.c" as pcg;
 import "../pcg-basic/pcg_basic.click";
 
 int32 first_outputs_repeat() {
-    owns pcg::pcg32_global.state;
-    owns pcg::pcg32_global.inc;
+    owns pcg::pcg32_global;
     ensures result == 1;
 } by {
     // Seeding leaves a known state. Each draw's output is the XSH-RR

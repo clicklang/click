@@ -6224,10 +6224,15 @@ impl PropositionDerivation {
                     && available.checks_exists_loadable_range(&self.conclusion, source, witness)
             }
             PropositionDerivationRule::FiniteForAll { instances } => {
-                let expected = available.finite_forall_instantiations(&self.conclusion);
-                !expected.is_empty()
-                    && derivations_match_propositions(instances, &expected)
-                    && instances.iter().all(|proof| proof.check(available))
+                let mut expected = available.finite_forall_instantiations(&self.conclusion);
+                !instances.is_empty()
+                    && instances.iter().all(|proof| {
+                        expected
+                            .next()
+                            .is_some_and(|conclusion| proof.conclusion == conclusion)
+                            && proof.check(available)
+                    })
+                    && expected.next().is_none()
             }
             PropositionDerivationRule::SingletonSubstitution {
                 variable,
