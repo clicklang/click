@@ -32,6 +32,11 @@ const REWRITE_SIMP_CLOSURES: usize = 8;
 /// How many connected constructor equations `auto` pairs.
 const CONSTRUCTOR_EQUATIONS: usize = 16;
 
+/// How many connected function facts `auto` reads a goal out of, and how
+/// many leaves of one definition's conditional tree it splits down to.
+const DEFINITION_FACTS: usize = 16;
+const DEFINITION_LEAVES: usize = 16;
+
 /// The machine type an order fact compares, with the names its bridges use.
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum MachineOrder {
@@ -618,6 +623,9 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_constructor_join_closure()? {
             return Ok(Some(closed));
         }
+        if let Some(closed) = self.try_definition_condition_closure()? {
+            return Ok(Some(closed));
+        }
         self.try_wide_equality_solver_closure()
     }
 
@@ -785,6 +793,289 @@ impl<'a> Proof<'a> {
             }
         }
         Ok(None)
+    }
+
+    /// `auto` on a goal that is a condition inside a function's definition,
+    /// given a fact `f(args) == k` whose arguments decide the definition's
+    /// `match`es: `is_rb(left) == 1` from `is_rb(Node(.., left, right)) == 1`.
+    /// Where every way through the definition's `if`s that does not take
+    /// the goal's `then` arm ends in a constant other than `k`, the fact
+    /// forces the goal. The proof is the one written by hand: `if` the goal
+    /// holds, `assumption`; otherwise split on each condition met before the
+    /// goal's, and at each end `have f(args) != k` by `unfold` and
+    /// `normalize` using the conditions taken, then `contradiction`.
+    pub(in crate::surface::proof) fn try_definition_condition_closure(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        let (Some(goal), Some(surface_goal)) = (self.goal(), self.surface_goal()) else {
+            return Ok(None);
+        };
+        let Some(equalities) =
+            crate::surface::planning::proposition_search::solver_connected_equalities(
+                self.facts().assumptions(),
+                goal,
+            )
+        else {
+            return Ok(None);
+        };
+        let functions = match self.context.as_ref() {
+            ProofContext::Pure(context) => context.spec_definitions.functions,
+            ProofContext::FixedState(context) => context.spec_definitions.functions,
+            ProofContext::Execution(context) => context.spec_definitions.functions,
+        };
+        let mut tried = 0;
+        for equality in &equalities {
+            check_verification_deadline()?;
+            let Some((_, fact)) = self
+                .resolve_simp_premises(std::slice::from_ref(equality), &[])
+                .and_then(|mut spelled| spelled.pop())
+            else {
+                continue;
+            };
+            let ClickProposition::Comparison {
+                left,
+                operator: ComparisonOperator::Equal,
+                right,
+            } = &fact
+            else {
+                continue;
+            };
+            let (call, value, call_left) = match (left, right) {
+                (ContractExpression::Call { .. }, value) => (left, value, true),
+                (value, ContractExpression::Call { .. }) => (right, value, false),
+                _ => continue,
+            };
+            let (ContractExpression::Call { name, arguments }, Some(value)) =
+                (call, integer_literal_value(value))
+            else {
+                continue;
+            };
+            let Some(definition) = functions.get(name) else {
+                continue;
+            };
+            if !definition.type_parameters().is_empty()
+                || definition.parameters().len() != arguments.len()
+            {
+                continue;
+            }
+            if tried == DEFINITION_FACTS {
+                break;
+            }
+            tried += 1;
+            let environment = definition
+                .parameters()
+                .iter()
+                .zip(arguments)
+                .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
+                .collect::<BTreeMap<_, _>>();
+            let mut leaves = 0;
+            let mut meets_goal = false;
+            let Some(plan) = self.definition_condition_plan(
+                definition.body(),
+                &environment,
+                goal,
+                value,
+                &mut leaves,
+                &mut meets_goal,
+            ) else {
+                continue;
+            };
+            if !meets_goal {
+                continue;
+            }
+            let (left, right) = if call_left {
+                (call.clone(), right.clone())
+            } else {
+                (left.clone(), call.clone())
+            };
+            let refutation = DefinitionRefutation {
+                application: ClickFunctionApplication {
+                    name: name.clone(),
+                    arguments: arguments.clone(),
+                },
+                differs: ClickProposition::Comparison {
+                    left,
+                    operator: ComparisonOperator::NotEqual,
+                    right,
+                },
+                fact: fact.clone(),
+                negated_goal: ClickProposition::Not(Box::new(surface_goal.clone())),
+            };
+            let Ok((split_proof, split, ids)) = self.split_focused_if(surface_goal.clone()) else {
+                return Ok(None);
+            };
+            let marker = split_proof.checkpoint();
+            let Some(then_done) = split_proof
+                .focus_branch(ids[0])
+                .and_then(|branch| branch.apply_step(ProofStep::Assumption))
+                .ok()
+                .filter(Proof::focused_discharged)
+            else {
+                return Ok(None);
+            };
+            let Ok(else_branch) = then_done.focus_branch(ids[1]) else {
+                return Ok(None);
+            };
+            let Some(else_done) = else_branch.refute_definition_ends(&plan, &refutation, &[])?
+            else {
+                continue;
+            };
+            if let Ok(closed) = else_done.join_focused_if(&marker, split, ids, surface_goal.clone())
+            {
+                return Ok(Some(closed));
+            }
+        }
+        Ok(None)
+    }
+
+    /// The conditional tree of a definition body under `environment`, cut
+    /// at the goal's own condition, whose `else` arm alone is followed. A
+    /// `match` must meet a constructor; every end must be an integer
+    /// constant other than `value`. `None` when any of that fails or the
+    /// tree has more than `DEFINITION_LEAVES` ends.
+    fn definition_condition_plan(
+        &self,
+        body: &ContractExpression,
+        environment: &BTreeMap<String, ContractExpression>,
+        goal: &Proposition,
+        value: i128,
+        leaves: &mut usize,
+        meets_goal: &mut bool,
+    ) -> Option<DefinitionPlan> {
+        match body {
+            ContractExpression::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let condition = substitute_click_proposition(condition, environment).ok()?;
+                let lowered = self
+                    .lower_surface_proposition(&condition, "`auto` definition condition")
+                    .ok()?;
+                if &lowered == goal {
+                    *meets_goal = true;
+                    return self.definition_condition_plan(
+                        else_branch,
+                        environment,
+                        goal,
+                        value,
+                        leaves,
+                        meets_goal,
+                    );
+                }
+                let then_plan = self.definition_condition_plan(
+                    then_branch,
+                    environment,
+                    goal,
+                    value,
+                    leaves,
+                    meets_goal,
+                )?;
+                let else_plan = self.definition_condition_plan(
+                    else_branch,
+                    environment,
+                    goal,
+                    value,
+                    leaves,
+                    meets_goal,
+                )?;
+                Some(DefinitionPlan::Split {
+                    condition,
+                    then_plan: Box::new(then_plan),
+                    else_plan: Box::new(else_plan),
+                })
+            }
+            ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+                let ContractExpression::AlgebraicConstructor {
+                    variant, arguments, ..
+                } = substitute_contract_expression(scrutinee, environment).ok()?
+                else {
+                    return None;
+                };
+                let arm = arms.iter().find(|arm| arm.variant == variant)?;
+                if arm.bindings.len() != arguments.len() {
+                    return None;
+                }
+                let mut environment = environment.clone();
+                environment.extend(arm.bindings.iter().cloned().zip(arguments));
+                self.definition_condition_plan(
+                    &arm.body,
+                    &environment,
+                    goal,
+                    value,
+                    leaves,
+                    meets_goal,
+                )
+            }
+            end => {
+                *leaves += 1;
+                (*leaves <= DEFINITION_LEAVES
+                    && integer_literal_value(end).is_some_and(|end| end != value))
+                .then_some(DefinitionPlan::End)
+            }
+        }
+    }
+
+    /// Closes the focused branch, where the goal is false, along `plan`:
+    /// each split is a proof `if`, and each end refutes the fact.
+    fn refute_definition_ends(
+        &self,
+        plan: &DefinitionPlan,
+        refutation: &DefinitionRefutation,
+        taken: &[ClickProposition],
+    ) -> Result<Option<Self>, ClickError> {
+        check_verification_deadline()?;
+        match plan {
+            DefinitionPlan::End => {
+                let mut using = taken.to_vec();
+                using.push(refutation.negated_goal.clone());
+                let refuted = self
+                    .apply_step(have(
+                        refutation.differs.clone(),
+                        vec![
+                            ProofStep::UnfoldFunction(refutation.application.clone()),
+                            ProofStep::NormalizeUsing(using),
+                        ],
+                    ))
+                    .and_then(|next| {
+                        next.apply_step(ProofStep::Contradiction(refutation.fact.clone()))
+                    });
+                Ok(refuted.ok().filter(Proof::focused_discharged))
+            }
+            DefinitionPlan::Split {
+                condition,
+                then_plan,
+                else_plan,
+            } => {
+                let Ok((split_proof, split, ids)) = self.split_focused_if(condition.clone()) else {
+                    return Ok(None);
+                };
+                let marker = split_proof.checkpoint();
+                let mut then_taken = taken.to_vec();
+                then_taken.push(condition.clone());
+                let Ok(then_branch) = split_proof.focus_branch(ids[0]) else {
+                    return Ok(None);
+                };
+                let Some(then_done) =
+                    then_branch.refute_definition_ends(then_plan, refutation, &then_taken)?
+                else {
+                    return Ok(None);
+                };
+                let mut else_taken = taken.to_vec();
+                else_taken.push(ClickProposition::Not(Box::new(condition.clone())));
+                let Ok(else_branch) = then_done.focus_branch(ids[1]) else {
+                    return Ok(None);
+                };
+                let Some(else_done) =
+                    else_branch.refute_definition_ends(else_plan, refutation, &else_taken)?
+                else {
+                    return Ok(None);
+                };
+                Ok(else_done
+                    .join_focused_if(&marker, split, ids, condition.clone())
+                    .ok())
+            }
+        }
     }
 
     /// A bounded depth-first search over rewrite sequences: every applicable
@@ -1214,5 +1505,31 @@ impl<'a> Proof<'a> {
             }
         }
         carried
+    }
+}
+
+/// The proof `if`s `auto` writes through a definition, and their ends.
+enum DefinitionPlan {
+    Split {
+        condition: ClickProposition,
+        then_plan: Box<DefinitionPlan>,
+        else_plan: Box<DefinitionPlan>,
+    },
+    End,
+}
+
+/// What each end of a [`DefinitionPlan`] refutes: the fact `f(args) == k`,
+/// by `f(args) != k` read from the definition with the goal false.
+struct DefinitionRefutation {
+    application: ClickFunctionApplication,
+    differs: ClickProposition,
+    fact: ClickProposition,
+    negated_goal: ClickProposition,
+}
+
+fn integer_literal_value(expression: &ContractExpression) -> Option<i128> {
+    match expression {
+        ContractExpression::IntegerLiteral(text) => text.parse().ok(),
+        _ => None,
     }
 }

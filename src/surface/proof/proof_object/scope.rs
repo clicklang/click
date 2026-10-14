@@ -624,9 +624,12 @@ impl<'a> ProofScope<'a> {
             Some(body) => body,
             None => match self.body.try_constructor_join_closure()? {
                 Some(body) => body,
-                None => match self.body.try_wide_equality_solver_closure()? {
+                None => match self.body.try_definition_condition_closure()? {
                     Some(body) => body,
-                    None => return Ok(None),
+                    None => match self.body.try_wide_equality_solver_closure()? {
+                        Some(body) => body,
+                        None => return Ok(None),
+                    },
                 },
             },
         };

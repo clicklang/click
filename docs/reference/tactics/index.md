@@ -34,6 +34,21 @@ rather than an internal search step or subgoal. Exhausted verification
 budgets keep their budget diagnostic. See
 [`auto_failure_names_the_written_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_failure_names_the_written_goal.md).
 
+`auto` reads a goal that is one of a function's `if` conditions out of a
+connected fact `f(args) == k`, with `k` an integer constant: the arguments
+pick the definition's `match` arms, and when every way through its `if`s
+that fails the goal's condition ends in a constant other than `k`, the fact
+forces the goal, as `is_rb(Node(.., left, right)) == 1` forces
+`is_rb(left) == 1`. The proof is ordinary checked steps: `if` the goal
+holds, `assumption`; otherwise a proof `if` on each condition met before the
+goal's, and at each end `have f(args) != k` by `unfold` and
+`normalize() using` the conditions taken, then `contradiction`. At most 16
+connected function facts are read, each up to 16 ends; a `match` that its
+arguments do not decide, or an end that is not a constant, is a miss. See
+[`auto_reads_a_condition_out_of_a_definition.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_reads_a_condition_out_of_a_definition.md)
+and
+[`auto_does_not_read_an_unforced_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_does_not_read_an_unforced_condition.md).
+
 For a signed `int32` bound, `simp` can use an indexed equality of a goal
 operand to a literal even when that call-derived equality has no recorded
 source spelling. It first proves the equality in a checked nested `have`
