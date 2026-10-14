@@ -633,21 +633,24 @@ impl DifferenceGraph {
         if let C::Bitvector32SignedDivideOverflows(a, b)
         | C::Bitvector64SignedDivideOverflows(a, b) = condition
         {
-            // `a / b` overflows exactly when `a` is the domain's least value
-            // and `b` is `-1`; as above, only the absence is answered.
-            let domain = if matches!(condition, C::Bitvector32SignedDivideOverflows(..)) {
-                Domain::Int32
-            } else {
-                Domain::Int64
-            };
+            // `a / b` overflows when `a` is the domain's least value and `b`
+            // is `-1`. The `int64` condition also holds for a zero divisor
+            // (`ConditionTerm::int64_signed_divide_overflows`); the `int32`
+            // one leaves zero to a separate check. As above, only the
+            // absence is answered.
+            let int64 = matches!(condition, C::Bitvector64SignedDivideOverflows(..));
+            let domain = if int64 { Domain::Int64 } else { Domain::Int32 };
             let (a_low, _) = self.term_interval(domain, a);
             let (b_low, b_high) = self.term_interval(domain, b);
-            let excludes_minus_one = matches!(
-                self.resolve(domain, b),
-                Some((Some(node), offset)) if self.excludes(node, -1 - offset)
-            );
-            return (a_low > domain.range().0 || b_low > -1 || b_high < -1 || excludes_minus_one)
-                .then_some(false);
+            let excludes = |value: i128| {
+                matches!(
+                    self.resolve(domain, b),
+                    Some((Some(node), offset)) if self.excludes(node, value - offset)
+                )
+            };
+            let no_pair = a_low > domain.range().0 || b_low > -1 || b_high < -1 || excludes(-1);
+            let nonzero = b_low > 0 || b_high < 0 || excludes(0);
+            return (no_pair && (!int64 || nonzero)).then_some(false);
         }
         if let C::Bitvector32Equal(a, b) | C::Bitvector64Equal(a, b) = condition {
             let domains: &[Domain] = if matches!(condition, C::Bitvector32Equal(..)) {

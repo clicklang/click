@@ -692,3 +692,43 @@ fn a_remainder_by_a_constant_is_bounded() {
     );
     assert_eq!(graph(&[]).decide(&le(&constant(0), &remainder(4))), None);
 }
+
+/// The `int64` division guard also holds for a zero divisor (its
+/// constructor folds `right == 0` to overflow), so a divisor known only to
+/// be non-negative leaves it open; the `int32` guard leaves zero to a
+/// separate check and is answered.
+#[test]
+fn an_int64_division_guard_needs_a_nonzero_divisor() {
+    let (n, d) = (variable(0), variable(1));
+    let int64 = Bitvector32Term::Int64Constant;
+    let nonnegative = graph(&[(
+        ConditionTerm::int64_signed_less_equal(int64(0), d.clone()),
+        true,
+    )]);
+    let divide =
+        ConditionTerm::Bitvector64SignedDivideOverflows(Box::new(n.clone()), Box::new(d.clone()));
+    assert_eq!(nonnegative.decide(&divide), None);
+    let zero = graph(&[(ConditionTerm::int64_equal(d.clone(), int64(0)), true)]);
+    assert_eq!(zero.decide(&divide), None);
+    let positive = graph(&[(
+        ConditionTerm::int64_signed_less_than(int64(0), d.clone()),
+        true,
+    )]);
+    assert_eq!(positive.decide(&divide), Some(false));
+    let nonzero = graph(&[
+        (
+            ConditionTerm::int64_signed_less_equal(int64(0), d.clone()),
+            true,
+        ),
+        (ConditionTerm::int64_equal(d.clone(), int64(0)), false),
+    ]);
+    assert_eq!(nonzero.decide(&divide), Some(false));
+    let int32 = graph(&[(le(&constant(0), &d), true)]);
+    assert_eq!(
+        int32.decide(&ConditionTerm::Bitvector32SignedDivideOverflows(
+            Box::new(n),
+            Box::new(d)
+        )),
+        Some(false)
+    );
+}
