@@ -780,7 +780,7 @@ default switching and legacy retirement remain separate gates.
 
 The [iterator-proof](iterator-proof/README.md) checkpoint now verifies the
 unchanged `rust-iter-references` source and its full mathematical sum contract.
-`let loaded_byte = step();` binds the value of the checked scalar read,
+`let { result: loaded_byte } = step();` binds the value of the checked scalar read,
 following the existing checked call-result binding model. The proof uses actual
 iterator cursor/remaining state, readable source frontiers, and named snapshots;
 it contains no MIR IDs, compiler statement indices, or synthetic processed

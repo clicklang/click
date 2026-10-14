@@ -624,14 +624,19 @@ private:
         by_value_record->isTriviallyCopyable() &&
         by_value_record->hasTrivialCopyConstructor() &&
         by_value_record->hasTrivialDestructor();
+    const bool function_pointer =
+        !parameter->getType().hasQualifiers() &&
+        function_pointer_prototype(parameter->getType()) != nullptr;
     if (!int_reference && record_reference == nullptr && !mutable_int_pointer &&
-        !by_value_bool && !by_value_integer && !trivial_record_value) {
+        !by_value_bool && !by_value_integer && !trivial_record_value &&
+        !function_pointer) {
       fail(parameter->getLocation(),
            "the supported C++ parameter must be a by-value bool or "
            "signed/unsigned "
            "32/64/128-bit integer or unsigned char, a native element "
            "reference (int, unsigned int, unsigned char or std::byte, possibly const), a const signed-64 reference, or mutable int* parameter, mutable unsigned int*/unsigned char* parameter, or a "
-           "mutable or const simple-record reference parameter, or a trivially copied simple-record value");
+           "mutable or const simple-record reference parameter, a trivially copied simple-record value, "
+           "or a pointer to a noexcept function");
       return std::nullopt;
     }
     if (record_reference != nullptr && !remember_record(record_reference)) {
@@ -732,6 +737,71 @@ private:
     return supported_integer_type(type) || supported_byte_enum(type);
   }
 
+  // The function type a pointer designates, when `type` is a pointer to a
+  // function, as in `int (*)(int) noexcept`.
+  const clang::FunctionProtoType *
+  function_pointer_prototype(clang::QualType type) const {
+    const auto *pointer = type->getAs<clang::PointerType>();
+    return pointer == nullptr
+               ? nullptr
+               : pointer->getPointeeType()->getAs<clang::FunctionProtoType>();
+  }
+
+  // A value a function reached through a pointer takes or returns: a bool,
+  // a supported integer, or a mutable pointer to a native element.
+  bool supported_callback_value(clang::QualType type) const {
+    if (type.hasQualifiers())
+      return false;
+    if (context_.hasSameType(type, context_.BoolTy) ||
+        supported_scalar_value_type(type))
+      return true;
+    const auto *pointer = type->getAs<clang::PointerType>();
+    return pointer != nullptr && !pointer->getPointeeType().hasQualifiers() &&
+           supported_pointer_element(pointer->getPointeeType());
+  }
+
+  // A pointer to a non-throwing, non-variadic function whose parameters and
+  // result are scalars or native element pointers. A call through one
+  // cannot throw, so it needs no exceptional contract.
+  std::optional<Json> lower_function_pointer_type(clang::QualType type,
+                                                  clang::SourceLocation location) {
+    const auto *prototype = function_pointer_prototype(type);
+    if (type.isVolatileQualified() || type.isRestrictQualified() ||
+        prototype->isVariadic() || !prototype->isNothrow() ||
+        prototype->getMethodQuals().hasQualifiers() ||
+        prototype->getRefQualifier() != clang::RQ_None) {
+      fail(location, "a C++ function pointer must point to a noexcept, non-variadic function");
+      return std::nullopt;
+    }
+    if (!prototype->getReturnType()->isVoidType() &&
+        !supported_callback_value(prototype->getReturnType())) {
+      fail(location, "a C++ function pointer's function must return void, bool, a "
+                     "supported integer or a native element pointer");
+      return std::nullopt;
+    }
+    auto return_type = lower_type(prototype->getReturnType(), location);
+    if (!return_type)
+      return std::nullopt;
+    llvm::json::Array parameters;
+    for (clang::QualType parameter : prototype->getParamTypes()) {
+      if (!supported_callback_value(parameter)) {
+        fail(location, "a C++ function pointer's function must take bool, supported "
+                       "integer or native element pointer parameters");
+        return std::nullopt;
+      }
+      auto lowered = lower_type(parameter, location);
+      if (!lowered)
+        return std::nullopt;
+      parameters.push_back(std::move(*lowered));
+    }
+    llvm::json::Object result;
+    result["kind"] = "function_pointer";
+    result["return_type"] = std::move(*return_type);
+    result["parameters"] = std::move(parameters);
+    result["is_const"] = type.isConstQualified();
+    return Json(std::move(result));
+  }
+
   std::optional<Json>
   lower_type(clang::QualType type, clang::SourceLocation location,
              const clang::TypedefNameDecl *source_alias = nullptr) {
@@ -764,6 +834,8 @@ private:
       result["length"] = static_cast<std::int64_t>(array->getSize().getZExtValue());
       return Json(std::move(result));
     }
+    if (function_pointer_prototype(type) != nullptr)
+      return lower_function_pointer_type(type, location);
     if (const auto *pointer = type->getAs<clang::PointerType>()) {
       auto pointee = lower_type(pointer->getPointeeType(), location);
       if (!pointee) {
@@ -1447,10 +1519,8 @@ private:
         if (!scalar_call) return std::nullopt;
         const auto *call = scalar_call->call;
         if (call != nullptr) {
-          const auto *callee = call->getDirectCallee();
-          if (callee == nullptr ||
-              !(reference_return != nullptr
-                  ? context_.hasSameType(callee->getReturnType(), function->getReturnType()) &&
+          if (!(reference_return != nullptr
+                  ? context_.hasSameType(call->getCallReturnType(context_), function->getReturnType()) &&
                     returned->getRetValue()->isLValue() && scalar_call->conversions.empty()
                   : context_.hasSameType(returned->getRetValue()->getType(), function->getReturnType()))) {
             fail(call->getExprLoc(), "C++ return call requires matching final value "
@@ -2036,10 +2106,9 @@ private:
       initializer["span"] = span(source_initializer->getSourceRange());
     } else if (const auto *call = initializer_call;
                call != nullptr && !is_numeric_limits_max_call(call)) {
-      if (call->getDirectCallee() == nullptr ||
-          !(int_reference
+      if (!(int_reference
               ? source_initializer->isLValue() && scalar_call->conversions.empty() &&
-                context_.hasSameType(call->getDirectCallee()->getReturnType(), local->getType())
+                context_.hasSameType(call->getCallReturnType(context_), local->getType())
               : context_.hasSameType(source_initializer->getType().getUnqualifiedType(), local->getType().getUnqualifiedType()))) {
         fail(call->getExprLoc(),
              "C++ call capture requires matching final initializer and local types");
@@ -2369,16 +2438,68 @@ private:
     return Json(std::move(condition));
   }
 
+  // A call through a function-pointer parameter or local, `f(x)` or
+  // `(*f)(x)`. The callee is the variable; the contract its value meets
+  // comes from the sidecar, as for a C callback. Its arguments are values,
+  // never nested calls, so evaluation order needs no further evidence.
+  std::optional<LoweredCall>
+  lower_indirect_call(const clang::CallExpr *call,
+                      const clang::FunctionDecl *caller) {
+    const clang::Expr *target = call->getCallee()->IgnoreParenImpCasts();
+    if (const auto *dereference = llvm::dyn_cast<clang::UnaryOperator>(target);
+        dereference != nullptr && dereference->getOpcode() == clang::UO_Deref)
+      target = dereference->getSubExpr()->IgnoreParenImpCasts();
+    const auto *reference = llvm::dyn_cast<clang::DeclRefExpr>(target);
+    const auto *variable =
+        reference == nullptr ? nullptr : llvm::dyn_cast<clang::VarDecl>(reference->getDecl());
+    if (variable == nullptr || !variable->hasLocalStorage() ||
+        function_pointer_prototype(variable->getType()) == nullptr) {
+      fail(call->getExprLoc(),
+           "the supported C++ slice calls a function directly or through a "
+           "function-pointer parameter or local");
+      return std::nullopt;
+    }
+    const auto *prototype = function_pointer_prototype(variable->getType());
+    if (!lower_type(variable->getType(), variable->getLocation()))
+      return std::nullopt;
+    if (call->getNumArgs() != prototype->getNumParams()) {
+      fail(call->getExprLoc(),
+           "the supported C++ slice requires a call with one argument per parameter");
+      return std::nullopt;
+    }
+    llvm::json::Array arguments;
+    for (unsigned index = 0; index < call->getNumArgs(); ++index) {
+      const auto *argument = call->getArg(index);
+      if (llvm::isa<clang::CallExpr>(argument->IgnoreParenImpCasts())) {
+        fail(argument->getExprLoc(),
+             "a call through a function pointer takes no call as an argument");
+        return std::nullopt;
+      }
+      auto lowered = lower_call_argument(argument, prototype->getParamType(index),
+                                         argument->getExprLoc(), caller);
+      if (!lowered)
+        return std::nullopt;
+      arguments.push_back(std::move(*lowered));
+    }
+    llvm::json::Object callee;
+    callee["declaration_id"] = declaration_id(variable);
+    callee["name"] = variable->getNameAsString();
+    callee["span"] = span(call->getCallee()->getSourceRange());
+    callee["through_pointer"] = true;
+    Json call_span = span(call->getSourceRange());
+    if (!state_.error.empty())
+      return std::nullopt;
+    return LoweredCall{std::move(callee), std::move(arguments),
+                       std::move(call_span)};
+  }
+
   std::optional<LoweredCall>
   lower_call_operation(const clang::CallExpr *call,
                        const clang::FunctionDecl *caller,
                        bool allow_nested = false) {
     const clang::FunctionDecl *callee = call->getDirectCallee();
-    if (callee == nullptr) {
-      fail(call->getExprLoc(),
-           "the supported C++ slice requires a direct free-function call");
-      return std::nullopt;
-    }
+    if (callee == nullptr)
+      return lower_indirect_call(call, caller);
     const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(callee);
     const clang::Expr *receiver = nullptr;
     unsigned argument_offset = 0;
@@ -2441,6 +2562,11 @@ private:
            ++index) {
         const auto *nested = llvm::dyn_cast<clang::CallExpr>(
             call->getArg(index)->IgnoreParens());
+        if (nested != nullptr && nested->getDirectCallee() == nullptr) {
+          fail(nested->getExprLoc(),
+               "a call through a function pointer is not admitted as a call argument");
+          return std::nullopt;
+        }
         if (nested != nullptr && !is_numeric_limits_max_call(nested))
           ++nested_calls;
       }
@@ -2593,21 +2719,29 @@ private:
   lower_call_argument(const clang::Expr *argument,
                       const clang::ParmVarDecl *parameter,
                       const clang::FunctionDecl *caller) {
+    return lower_call_argument(argument, parameter->getType(),
+                               parameter->getLocation(), caller);
+  }
+
+  std::optional<Json>
+  lower_call_argument(const clang::Expr *argument, clang::QualType parameter_type,
+                      clang::SourceLocation parameter_location,
+                      const clang::FunctionDecl *caller) {
     llvm::json::Object result;
-    if (parameter->getType()->getAsCXXRecordDecl() != nullptr) {
+    if (parameter_type->getAsCXXRecordDecl() != nullptr) {
       const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(argument->IgnoreParenImpCasts());
       const auto *constructor = construction == nullptr ? nullptr : construction->getConstructor();
-      const auto *record = parameter->getType()->getAsCXXRecordDecl();
+      const auto *record = parameter_type->getAsCXXRecordDecl();
       if (constructor == nullptr || !constructor->isCopyConstructor() ||
           !constructor->isTrivial() || constructor->isDeleted() ||
           construction->getNumArgs() != 1 || !construction->getArg(0)->isLValue() ||
-          !context_.hasSameUnqualifiedType(construction->getType(), parameter->getType()) ||
+          !context_.hasSameUnqualifiedType(construction->getType(), parameter_type) ||
           !record->isTriviallyCopyable() || !record->hasTrivialDestructor()) {
         fail(argument->getExprLoc(), "C++ by-value record arguments require a resolved trivial copy from a live lvalue");
         return std::nullopt;
       }
       auto place = lower_place_reference(construction->getArg(0)->IgnoreParenImpCasts(), caller);
-      auto value_type = lower_type(parameter->getType(), parameter->getLocation());
+      auto value_type = lower_type(parameter_type, parameter_location);
       if (!place || !value_type) return std::nullopt;
       result["kind"] = "record_copy";
       result["place"] = std::move(*place);
@@ -2615,7 +2749,7 @@ private:
       result["span"] = span(argument->getSourceRange());
       return Json(std::move(result));
     }
-    if (parameter->getType()->getAs<clang::LValueReferenceType>() != nullptr) {
+    if (parameter_type->getAs<clang::LValueReferenceType>() != nullptr) {
       auto place = lower_place_reference(argument, caller);
       if (!place) {
         return std::nullopt;
@@ -2624,7 +2758,7 @@ private:
       result["place"] = std::move(*place);
       return Json(std::move(result));
     }
-    if (parameter->getType()->getAs<clang::PointerType>() != nullptr) {
+    if (parameter_type->getAs<clang::PointerType>() != nullptr) {
       auto value = lower_expression(argument, caller);
       if (!value) {
         return std::nullopt;
@@ -2633,9 +2767,9 @@ private:
       result["value"] = std::move(*value);
       return Json(std::move(result));
     }
-    if (!parameter->getType().hasQualifiers() &&
-        (context_.hasSameType(parameter->getType(), context_.BoolTy) ||
-         supported_scalar_value_type(parameter->getType()))) {
+    if (!parameter_type.hasQualifiers() &&
+        (context_.hasSameType(parameter_type, context_.BoolTy) ||
+         supported_scalar_value_type(parameter_type))) {
       auto value = lower_expression(argument, caller);
       if (!value) {
         return std::nullopt;
@@ -2883,8 +3017,59 @@ private:
                "std::numeric_limits", 0) == 0;
   }
 
+  // The function an expression designates as a pointer value: `&f`, or `f`
+  // decayed to a pointer.
+  const clang::FunctionDecl *designated_function(const clang::Expr *expression) const {
+    expression = expression->IgnoreParens();
+    const clang::Expr *operand = nullptr;
+    if (const auto *cast = llvm::dyn_cast<clang::ImplicitCastExpr>(expression);
+        cast != nullptr && cast->getCastKind() == clang::CK_FunctionToPointerDecay)
+      operand = cast->getSubExpr();
+    else if (const auto *address = llvm::dyn_cast<clang::UnaryOperator>(expression);
+             address != nullptr && address->getOpcode() == clang::UO_AddrOf)
+      operand = address->getSubExpr();
+    const auto *reference =
+        operand == nullptr ? nullptr : llvm::dyn_cast<clang::DeclRefExpr>(operand->IgnoreParens());
+    return reference == nullptr ? nullptr
+                                : llvm::dyn_cast<clang::FunctionDecl>(reference->getDecl());
+  }
+
+  // `&f` as a value: the address of a free function or static member
+  // function of the program, which is exported so its contract can be
+  // checked against the one a callee requires of the pointer.
+  std::optional<Json> lower_function_address(const clang::Expr *expression,
+                                             const clang::FunctionDecl *designated) {
+    const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(designated);
+    const clang::FunctionDecl *definition = designated->getDefinition();
+    if ((method != nullptr && !method->isStatic()) || definition == nullptr ||
+        is_axiom(definition) ||
+        !executable_source(source_manager_.getSpellingLoc(definition->getLocation()))) {
+      fail(expression->getExprLoc(),
+           "a C++ function pointer value must be the address of a free or static "
+           "member function defined in the selected or dependency sources");
+      return std::nullopt;
+    }
+    auto value_type = lower_type(expression->getType(), expression->getExprLoc());
+    if (!value_type || !remember_function(definition))
+      return std::nullopt;
+    llvm::json::Object reference;
+    reference["declaration_id"] = declaration_id(definition);
+    reference["name"] = method != nullptr ? method_name(method) : function_name(definition);
+    reference["span"] = span(expression->getSourceRange());
+    llvm::json::Object result;
+    result["kind"] = "function_address";
+    result["function"] = std::move(reference);
+    result["value_type"] = std::move(*value_type);
+    result["span"] = span(expression->getSourceRange());
+    if (!state_.error.empty())
+      return std::nullopt;
+    return Json(std::move(result));
+  }
+
   std::optional<Json> lower_expression(const clang::Expr *expression,
                                        const clang::FunctionDecl *function) {
+    if (const auto *designated = designated_function(expression))
+      return lower_function_address(expression, designated);
     if (const auto *throw_expression =
             llvm::dyn_cast<clang::CXXThrowExpr>(expression)) {
       fail(throw_expression->getThrowLoc(),

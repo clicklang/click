@@ -809,6 +809,11 @@ pub(super) fn c_layouts(
                 )));
             }
         }
+        tables.library_modules.extend(
+            unit.function_declarations
+                .values()
+                .filter_map(syntax::library_contract_module),
+        );
         for function in unit.functions {
             calls
                 .entry(function.source_name().to_string())
@@ -817,6 +822,15 @@ pub(super) fn c_layouts(
             record_function_tables(&mut tables, function);
         }
     }
+    // A call needs no declaration in Click's C: a call to a library
+    // function the program does not define brings its contract too.
+    tables.library_modules.extend(
+        calls
+            .values()
+            .flatten()
+            .filter(|callee| !calls.contains_key(callee.as_str()))
+            .filter_map(|callee| syntax::library_contract_module_named(callee)),
+    );
     tables.recursion_peers = crate::kernel::recursive_component_peers(&calls);
     Ok(tables)
 }

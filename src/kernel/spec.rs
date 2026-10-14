@@ -265,6 +265,51 @@ pub(in crate::kernel) fn evaluate_spec_expression_paths_with_bindings(
     )
 }
 
+pub(in crate::kernel) fn evaluate_resource_child_argument_paths(
+    state: &CState,
+    expression: &SpecExpression,
+    assumptions: &PureFactContext,
+    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
+    integer_bindings: &BTreeMap<Variable, IntegerTerm>,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<CExpressionPath>> {
+    if let SpecExpression::CExpression(expression) = expression {
+        return evaluate_c_expression_paths(state, expression, assumptions, budget);
+    }
+    let rewritten;
+    let expression = if integer_bindings.is_empty() {
+        expression
+    } else {
+        let c_replacements = BTreeMap::new();
+        let algebraic_replacements = BTreeMap::new();
+        let mut rewrite =
+            crate::kernel::proof::term_rewrite::TermRewrite::for_checked_typed_variables(
+                &c_replacements,
+                integer_bindings,
+                &algebraic_replacements,
+            );
+        rewritten = rewrite
+            .spec_expression(expression)
+            .map_err(|_| ExecutionLimit::ExpressionSteps)?;
+        &rewritten
+    };
+    let paths = evaluate_spec_expression_paths_with_bindings_in(
+        state,
+        expression,
+        assumptions,
+        algebraic_bindings,
+        &mut SpecEvaluation::checked(budget),
+    )?;
+    Ok(paths
+        .into_iter()
+        .map(|path| CExpressionPath {
+            outcome: CExpressionOutcome::Value(path.value),
+            facts: path.facts,
+            obligations: path.obligations,
+        })
+        .collect())
+}
+
 pub(super) fn evaluate_spec_integer_measure_paths(
     state: &CState,
     expression: &SpecIntegerExpression,

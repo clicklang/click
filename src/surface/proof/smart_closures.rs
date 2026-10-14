@@ -1844,6 +1844,9 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn try_auto_closure_after_simp(
         &self,
     ) -> Result<Option<Self>, ClickError> {
+        if self.scalar_equality_goal_is_refuted() {
+            return Ok(None);
+        }
         if let Some(closed) = self.try_solver_closure()? {
             return Ok(Some(closed));
         }
@@ -1872,6 +1875,35 @@ impl<'a> Proof<'a> {
             return Ok(Some(closed));
         }
         self.try_wide_equality_solver_closure()
+    }
+
+    /// A known different scalar value cannot satisfy this literal equality.
+    /// Avoid searching and spelling every historical call equality for it.
+    /// An inconsistent context remains eligible for ordinary contradiction
+    /// closure; this is only a heuristic rejection, never proof evidence.
+    fn scalar_equality_goal_is_refuted(&self) -> bool {
+        let Some(Proposition::ConditionIs(condition, wanted)) = self.goal() else {
+            return false;
+        };
+        let (left, right) = match condition {
+            ConditionTerm::Bitvector32Equal(left, right)
+            | ConditionTerm::Bitvector64Equal(left, right) => (left, right),
+            _ => return false,
+        };
+        let literal = |term: &Bitvector32Term| {
+            matches!(
+                term,
+                Bitvector32Term::Constant(_) | Bitvector32Term::Int64Constant(_)
+            )
+        };
+        if !literal(left) && !literal(right) {
+            return false;
+        }
+        let assumptions = self.facts().assumptions();
+        !assumptions.is_inconsistent()
+            && assumptions
+                .decide(condition)
+                .is_some_and(|known| known != *wanted)
     }
 
     pub(in crate::surface::proof) fn try_solver_closure(&self) -> Result<Option<Self>, ClickError> {
@@ -1951,6 +1983,9 @@ impl<'a> Proof<'a> {
         if let Some(proof) = self.try_direct_logical_closure()? {
             scope.succeed();
             return Ok(Some(proof));
+        }
+        if self.scalar_equality_goal_is_refuted() {
+            return Ok(None);
         }
         if let Some(proof) = self.try_direct_structural_closure_under_binders()? {
             scope.succeed();
@@ -9043,6 +9078,11 @@ fn source_backed_call_requirement_surface(
                 return None;
             }
         }
+        ProofStep::StepCall(transport) if transport.is_named_contract() => {
+            if callee != site.callee && !named_interface_alias {
+                return None;
+            }
+        }
         ProofStep::StepCall(_) => {
             // StepCall is the concrete-call operation: both the C symbol and
             // the selected interface must be the carrier's concrete callee.
@@ -9065,6 +9105,7 @@ fn source_backed_call_requirement_surface(
     }
     let expected_interface = match step {
         ProofStep::StepContract(application) => application.name.as_str(),
+        ProofStep::StepCall(transport) if transport.is_named_contract() => transport.callee(),
         ProofStep::Step | ProofStep::StepCall(_) => site.interface.as_ref(),
         _ => return None,
     };
@@ -9073,6 +9114,7 @@ fn source_backed_call_requirement_surface(
     }
 
     let use_named_interface = matches!(step, ProofStep::StepContract(_))
+        || matches!(step, ProofStep::StepCall(transport) if transport.is_named_contract())
         || site.interface.as_ref() != site.callee.as_str()
         || ordinary_source.is_none();
 

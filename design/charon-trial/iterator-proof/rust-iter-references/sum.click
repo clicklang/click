@@ -96,7 +96,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
             }
             execute_until(read(0));
-            let loaded_byte = step();
+            let { result: loaded_byte } = step();
             mark loaded;
             have 0 <= loaded_byte as i32 and 255 >= loaded_byte as i32;
             have at(iteration, bytes[(bytes.len() - iter_remaining)]) == loaded_byte;

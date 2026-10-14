@@ -116,15 +116,14 @@ static LIBRARY_SELECTIONS: std::sync::Mutex<BTreeMap<u64, &'static LibrarySelect
 static STANDARD_LIBRARY_PARSES: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
-/// The Click library modules every file sees without an import. A module's
-/// own library imports come with it, so `c/string` also brings `bytes` and
-/// `cstr`.
+/// The Click library modules every file sees without an import. A C
+/// program's declarations bring the library models they name, such as
+/// `click::c::string`; see `ProgramLayouts::library_modules`.
 const IMPLICIT_LIBRARY_MODULES: &[&str] = &[
     "library/primitives.click",
     "library/nat.click",
     "library/list.click",
     "library/c/builtins.click",
-    "library/c/string.click",
 ];
 
 /// One parsed Click library module and the mask of the modules it needs: its
@@ -215,20 +214,22 @@ fn library_selection(mask: u64) -> Result<&'static LibrarySelection, ClickError>
         return Ok(selection);
     }
     // Built outside the lock: two runs that race build equal selections, and
-    // the first one stored is kept.
-    let mut file = empty_library_file()?;
-    for (index, module) in modules.iter().enumerate() {
-        if mask & (1 << index) != 0 {
-            append_library_module(&mut file, module.file.clone());
-        }
-    }
-    let file = expand_declared_resource_clauses(file)?;
-    let theorem_index = file
-        .theorem_definitions()
-        .iter()
-        .enumerate()
-        .map(|(index, theorem)| (theorem.name().to_string(), index))
-        .collect();
+    // the first one stored is kept. A selection can first be needed in the
+    // middle of a proof, and expansion resets the thread's ambient proof
+    // source and diagnostic naming, so it is built on its own thread.
+    let (file, theorem_index) = std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .name("click-library-selection".to_string())
+            .stack_size(64 * 1024 * 1024)
+            .spawn_scoped(scope, || build_library_selection(modules, mask))
+            .map_err(|error| {
+                ClickError::new(format!(
+                    "could not build a Click library selection: {error}"
+                ))
+            })?
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })?;
     let mut selections = LIBRARY_SELECTIONS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -264,6 +265,19 @@ fn library_theorem_owners() -> Result<&'static BTreeMap<String, usize>, ClickErr
 pub(in crate::surface) fn reject_unimported_library_citations(
     file: &ClickFile,
 ) -> Result<(), ClickError> {
+    // Built-in tactics apply library theorems by name whatever a file
+    // imports, so no file theorem may take a library theorem's name.
+    let owners = library_theorem_owners()?;
+    if let Some(theorem) = file
+        .theorem_definitions()
+        .iter()
+        .find(|theorem| owners.contains_key(theorem.name()))
+    {
+        return Err(ClickError::new(format!(
+            "theorem `{}` has the name of a Click library theorem, which built-in tactics apply; rename it",
+            theorem.name()
+        )));
+    }
     let mut cited = BTreeSet::new();
     for theorem in file.theorem_definitions() {
         for clause in theorem.ensures() {
@@ -286,7 +300,6 @@ pub(in crate::surface) fn reject_unimported_library_citations(
         .iter()
         .map(|theorem| theorem.name())
         .collect::<BTreeSet<_>>();
-    let owners = library_theorem_owners()?;
     let visible = library_mask(file)?;
     for name in cited.iter().filter(|name| !local.contains(name.as_str())) {
         if let Some(index) = owners.get(name)
@@ -399,6 +412,26 @@ pub(in crate::surface) fn library_import_hint(name: &str) -> String {
     })
 }
 
+fn build_library_selection(
+    modules: &[LibraryModule],
+    mask: u64,
+) -> Result<(ClickFile, BTreeMap<String, usize>), ClickError> {
+    let mut file = empty_library_file()?;
+    for (index, module) in modules.iter().enumerate() {
+        if mask & (1 << index) != 0 {
+            append_library_module(&mut file, module.file.clone());
+        }
+    }
+    let file = expand_declared_resource_clauses(file)?;
+    let theorem_index = file
+        .theorem_definitions()
+        .iter()
+        .enumerate()
+        .map(|(index, theorem)| (theorem.name().to_string(), index))
+        .collect();
+    Ok((file, theorem_index))
+}
+
 /// The whole Click library, for the accessors that are not specific to one
 /// file's library imports.
 fn standard_library() -> Result<&'static ClickFile, ClickError> {
@@ -435,7 +468,17 @@ fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, 
             .iter()
             .map(|function| function.name().to_string())
             .collect();
-        let callees = context.function_blocks().iter().collect::<Vec<_>>();
+        let callees = context
+            .function_blocks()
+            .iter()
+            .map(parser::ImportedCallee::Function)
+            .chain(
+                context
+                    .contract_definitions()
+                    .iter()
+                    .map(parser::ImportedCallee::Contract),
+            )
+            .collect::<Vec<_>>();
         let resources = context.resource_definitions().iter().collect::<Vec<_>>();
         let module = parser::parse_file_items_for_module(
             source,
@@ -3512,9 +3555,19 @@ pub(in crate::surface) fn combined_theorem_definitions(
     file: &ClickFile,
 ) -> Result<CombinedDefinitions<'_, TheoremDefinition>, ClickError> {
     Ok(CombinedDefinitions {
-        // Every library theorem: built-in tactics apply them by name, so a
-        // user theorem can never take a library theorem's name. Imports gate
-        // only the theorems a proof cites; see `reject_unimported_library_citations`.
+        standard_library: file_library(file)?.theorem_definitions(),
+        file: file.theorem_definitions(),
+    })
+}
+
+/// The whole Click library's theorems followed by `file`'s, as proof
+/// checking sees them: built-in tactics apply library theorems whatever a
+/// file imports.
+#[cfg(test)]
+pub(in crate::surface) fn proof_theorem_definitions(
+    file: &ClickFile,
+) -> Result<CombinedDefinitions<'_, TheoremDefinition>, ClickError> {
+    Ok(CombinedDefinitions {
         standard_library: full_library()?.theorem_definitions(),
         file: file.theorem_definitions(),
     })

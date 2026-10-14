@@ -135,10 +135,11 @@ that writes `int32` for such a source already writes the source's spelling.
   head does not yet spell class template arguments. An `extern` head for a
   system-header function is its C++ declaration too,
   `extern int ministd::Box::get() const`. A `contract` head is a free function
-  type in C++ types, `contract int PositiveRead(const State& state)`, and is
-  attached to a function by `PositiveRead(&read)`; the importer does not yet
-  admit a call through a function pointer, so no imported C++ code can use
-  one as a callback. Diagnostics and proof steps (`executes`,
+  type in C++ types, `contract int PositiveRead(const State& state)`. A
+  function-pointer parameter to a `noexcept` function is a callback, as in C:
+  `requires Doubling(f)` gives a call through it a contract, and a caller
+  passing `&twice` shows `Doubling(&twice)`. A pointer is only called, not
+  stored or forwarded, and `std::function` is not imported. Diagnostics and proof steps (`executes`,
   `step(callee(...))`) still name functions by the importer's names.
 - **Rust.** Verified functions in native form, including `impl Drop for Guard`
   and module paths. No `extern` or named contracts.
@@ -156,8 +157,11 @@ that writes `int32` for such a source already writes the source's spelling.
    `std::span<int>`), and C++ names in diagnostics and in proof references to
    functions.
 3. **`extern` and `contract` for C++ and Rust.** Done: native C++ `extern`
-   heads, members included. Remaining: function pointers in both,
-   `std::function` in C++, and closures (`impl Fn`, `&dyn Fn`) in Rust,
+   heads, members included, and calls through C++ function-pointer
+   parameters under a named contract. Remaining: storing and forwarding C++
+   function pointers, function pointers in Rust, `std::function` in C++
+   (whose call operator throws when empty), and closures (`impl Fn`,
+   `&dyn Fn`) in Rust,
    through the C++ exporter and Charon, with the same refinement check as C
    (`Comparator(&f)`).
 4. **Base-class and trait method interfaces.** A contract on a C++ virtual

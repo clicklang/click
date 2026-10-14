@@ -1,9 +1,7 @@
-# instantiate without using names a missing guard
+# Instantiate checks guards through equality closure
 
-Without a list, `instantiate` only looks its guards up; it does not derive
-them. Here `k < n` follows from `k < m` and `m == n` but is not itself a fact,
-so the step is refused and names the guard. Listing those two facts with
-`using`, or proving `k < n` first with `have`, repairs it.
+The guard `k < n` is available through `k < m` and `m == n`. Instantiation
+uses that shared semantic lookup without unfolding or theorem search.
 
 ```click
 theorem bare_instantiate_missing_guard(n: int32, m: int32, k: int32) {
@@ -20,5 +18,5 @@ theorem bare_instantiate_missing_guard(n: int32, m: int32, k: int32) {
 ```
 
 ```expect
-fail: `instantiate` without `using` needs each instantiated guard as an exact fact, and `k < n` is not one
+pass
 ```

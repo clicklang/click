@@ -81,10 +81,12 @@ pub(crate) use memory_state::resource_context_has_symbolic_range_read;
 pub use memory_state::value_independent_click_memory;
 pub(super) use resource_algebra::*;
 pub(in crate::kernel) use term_operations::round_right_to_even;
+pub(crate) use term_operations::{
+    first_unavailable_connective_side, listed_premise_holds, proposition_holds_without_facts,
+};
 pub(in crate::kernel) use term_operations::{
     int64_add_interval_fits, int64_subtract_interval_fits,
 };
-pub(crate) use term_operations::{listed_premise_holds, proposition_holds_without_facts};
 pub(crate) use term_shape::{BitvectorBinaryOp, BitvectorComparisonOp, BitvectorUnaryOp};
 
 pub(super) const C_POINTER_BYTE_WIDTH: u32 = 8;
@@ -3824,7 +3826,7 @@ pub struct CResourceChildSpec {
     /// checks the child's arguments and fields against that definition.
     pub resource: String,
     pub binding: Variable,
-    pub arguments: Vec<CExpression>,
+    pub arguments: Vec<SpecExpression>,
     /// Where each of the child's fields comes from, in the child schema's
     /// order. A same-family child's matched model field must be a proper
     /// submodel: an immediate constructor binding of the same algebraic type.
@@ -4681,6 +4683,9 @@ pub enum CRuntimeError {
     UnsupportedOpaqueFunctionContract(String),
     AbstractFunctionPointerCall(String),
     FunctionContract(String),
+    /// Candidate loan recovery refused while these exact checked path
+    /// obligations remain. Retained for diagnostics, never admitted as facts.
+    PendingCallObligations(Arc<[ProofObligation]>),
     /// Exact operands retained at a rejected contract boundary. Diagnostic
     /// only: these values never establish a fact or grant access.
     ContractResourceDiagnostic {
@@ -8543,6 +8548,41 @@ impl CResourceSpec {
         &self.resource_arguments
     }
 
+    /// Capture entry-bound scalar parameters before loop cursor havoc or rebinding.
+    /// Current arguments remain state-dependent; source spellings remain intact.
+    pub(crate) fn with_captured_entry_parameters(
+        mut self,
+        entry_values: &BTreeMap<String, CValue>,
+    ) -> Self {
+        fn capture(term: &mut CResourceTerm, entry_values: &BTreeMap<String, CValue>) {
+            match term {
+                CResourceTerm::Instance { resource, .. } => capture(resource, entry_values),
+                CResourceTerm::Composite {
+                    arguments,
+                    argument_snapshots,
+                    ..
+                }
+                | CResourceTerm::Token {
+                    arguments,
+                    argument_snapshots,
+                    ..
+                } => {
+                    for (argument, snapshot) in arguments.iter_mut().zip(argument_snapshots) {
+                        if *snapshot == CResourceSnapshot::Entry
+                            && let CExpression::Variable(name) = argument
+                            && let Some(value) = entry_values.get(name)
+                        {
+                            *argument = CExpression::Value(value.clone());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        capture(&mut self.term, entry_values);
+        self
+    }
+
     pub fn with_source_arguments(mut self, arguments: Vec<String>) -> Self {
         self.source_arguments = Some(arguments.into());
         self
@@ -10228,6 +10268,7 @@ impl AtomicConnectedFact<'_> {
 pub(super) struct AtomicConnectionFacts {
     pub conditions: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
     pub propositions: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+    pub disjunctions: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
 }
 
 /// The representation and deferral choices a context reasons under, one bit
@@ -10409,6 +10450,8 @@ pub struct PureFactContext {
     /// terms. Appended on insertion; withdrawal rebuilds from exact equality
     /// indexes, preserving the remaining support in every fragment.
     pub(super) equality_graph: super::equality_graph::EqualityGraph,
+    pub(super) algebraic_graph_equalities:
+        crate::persistent::PersistentMap<(SharedPureApplication, SharedPureApplication), usize>,
     pub(super) congruence_conditions: crate::persistent::PersistentMap<ConditionTerm, bool>,
     /// Exact defining equations for pointer-typed reads issued on this path,
     /// indexed by their load variable. Producer metadata certifies the C
@@ -10555,7 +10598,7 @@ pub struct PureFactContext {
     /// Exact disjunctive proposition facts. This derived index keeps bounded
     /// case search proportional to possible case splits rather than every
     /// unrelated proposition in the context.
-    pub(super) disjunction_facts: std::sync::Arc<BTreeSet<Proposition>>,
+    pub(super) disjunction_facts: crate::persistent::PersistentSet<Proposition>,
     pub(super) resource_compositions: std::sync::Arc<BTreeSet<ResourceContext>>,
     /// Derived provenance-only footprints published with each explicitly
     /// admitted composition. This is not consumable resource authority.

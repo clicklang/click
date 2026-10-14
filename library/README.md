@@ -11,14 +11,16 @@ imports with `import click::...;`, and the modules those import:
 | `list.click` | implicit | `List<T>`, `list_append`, `list_contains`, `list_length` and their laws |
 | `machine_integer.click` | `import click::machine_integer;` | Order, increment and definedness lemmas over native integer widths |
 | `permutation.click` | `import click::permutation;` | `count` and `permutation` over `int32[]` |
-| `bytes.click` | with `c/string` | Byte-range predicates over `uint8[]` |
-| `cstr.click` | with `c/string` | C-string predicates and theorems |
+| `bytes.click` | `import click::bytes;`, or with `c/string` | Byte-range predicates over `uint8[]` |
+| `cstr.click` | `import click::cstr;`, or with `c/string` | C-string predicates and theorems |
 | `c/builtins.click` | implicit | `__click_constant_p_unknown`, the value of `__builtin_constant_p` |
-| `c/string.click` | implicit | `memcpy`, `memcmp`, `memset` and `strlen` contracts |
+| `c/string.click` | when the C declares or calls one of its functions | `memcpy`, `memcmp`, `memset` and `strlen` contracts |
 | `integer.click` | `import click::integer;` | `to_integer` bridges for native arithmetic, and `Integer` division laws |
 
 The implicit set is `IMPLICIT_LIBRARY_MODULES` in
-`src/surface/validation/declaration_expansion.rs`. A module lists the earlier
+`src/surface/validation/declaration_expansion.rs`. The C front end records
+the modules a program's declarations and calls bring
+(`library_contract_module` in `src/languages/c/syntax.rs`). A module lists the earlier
 modules its declarations use with its own `import click::...;` lines.
 Built-in tactics apply library theorems whatever a file imports, so theorem
 names stay reserved; imports gate the declarations a file names. A library

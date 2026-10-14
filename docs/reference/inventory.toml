@@ -1036,7 +1036,8 @@ path = "reference/language/c.md#named-function-contracts"
 
 [[item]]
 id = "language.resource"
-path = "reference/language/index.md#file-shape"
+path = "reference/language/index.md#read-and-write-resources"
+
 
 [[item]]
 id = "language.theorem"
@@ -1442,6 +1443,9 @@ id = "tactic-form.step-contract-application"
 path = "reference/tactics/index.md#execution"
 [[item]]
 id = "tactic-form.step-call"
+path = "reference/tactics/index.md#execution"
+[[item]]
+id = "tactic-form.step-contract-map"
 path = "reference/tactics/index.md#execution"
 
 [[item]]

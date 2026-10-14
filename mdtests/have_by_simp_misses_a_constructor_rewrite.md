@@ -1,7 +1,7 @@
-# `simp` does not rewrite a constructor term back to its model
+# A constructor getter uses the matched model equality
 
-The same goal as `auto_rewrites_a_constructor_term_to_its_model.md`, proved
-with `simp`, which does not rewrite the goal by the arm's equality here.
+The matched constructor and the owned model denote the same value, so the
+shared equality closure supplies the getter fact to `simp`.
 
 ```c filename=have_by_simp_misses_a_constructor_rewrite.c
 void touch(int32 n) {
@@ -43,5 +43,5 @@ void touch(int32 n) {
 ```
 
 ```expect
-fail: could not establish `black(Walk::At(wd, rest)) == 1`
+pass
 ```

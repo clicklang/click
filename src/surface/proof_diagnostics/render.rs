@@ -39,7 +39,7 @@ const MAX_SNAPSHOT_LABELS: usize = 32;
 /// twice means one memory and `snapshot#1`/`snapshot#2` means two. Internal
 /// variable IDs likewise become source names when the checked state provides
 /// one, or distinct alphabetic labels when it does not.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct SnapshotLabels {
     memories: Vec<CMemory>,
     memory_identities: HashMap<(usize, usize, usize, usize, usize), usize>,
@@ -713,7 +713,6 @@ pub(crate) fn render_resource_fact(fact: &CResourceFact) -> String {
     render_resource_fact_labeled(fact, &mut labels)
 }
 
-#[cfg(test)]
 pub(crate) fn render_resource_fact_labeled(
     fact: &CResourceFact,
     labels: &mut SnapshotLabels,
@@ -1532,6 +1531,10 @@ impl Renderer<'_> {
             // and the term carries nothing to recover it from.
             IntegerTerm::Variable(variable) => {
                 match crate::kernel::model_fields::model_field_spelling(*variable) {
+                    Some(spelling) if self.trace_facts => {
+                        let name = self.variable_name(*variable, "integer");
+                        self.fmt(format_args!("{name}={spelling}"));
+                    }
                     Some(spelling) => self.push(&spelling),
                     None => {
                         let name = self.variable_name(*variable, "integer");
@@ -2116,6 +2119,63 @@ mod tests {
 
     fn render_proposition(proposition: &Proposition) -> String {
         render_proposition_labeled(proposition, &mut SnapshotLabels::ambient())
+    }
+
+    #[test]
+    fn shared_printer_distinguishes_successive_model_field_values() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let identity = Variable(988000);
+        crate::kernel::model_fields::register_instance_spelling(identity, "c");
+        for variable in [
+            Variable(988001),
+            Variable(988002),
+            Variable(988003),
+            Variable(988004),
+        ] {
+            crate::kernel::model_fields::register_model_field_variable(
+                variable,
+                crate::kernel::model_fields::ModelFieldOrigin {
+                    identity,
+                    field: "value".into(),
+                    field_index: 0,
+                    minted_by: crate::kernel::model_fields::ModelMint::CallReturn {
+                        callee: "increment".into(),
+                    },
+                },
+            );
+        }
+        let fact = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(
+                Box::new(Bitvector32Term::Variable(Variable(988002))),
+                Box::new(Bitvector32Term::Add(
+                    Box::new(Bitvector32Term::Variable(Variable(988001))),
+                    Box::new(Bitvector32Term::Constant(1)),
+                )),
+            ),
+            true,
+        );
+        let ordinary = super::render_proposition_labeled(&fact, &mut SnapshotLabels::default());
+        assert!(
+            ordinary.contains("<unnamed A>") && ordinary.contains("<unnamed B>"),
+            "{ordinary}"
+        );
+        let _typed = super::TypedNotationScope::enter();
+        let mut labels = SnapshotLabels::default();
+        let rendered = super::render_proposition_labeled(&fact, &mut labels);
+        assert!(rendered.contains("value A=c.value"), "{rendered}");
+        assert!(rendered.contains("value B=c.value"), "{rendered}");
+        assert_eq!(
+            rendered,
+            super::render_proposition_labeled(&fact, &mut labels)
+        );
+        assert!(!rendered.contains("c.value == (c.value + 1)"), "{rendered}");
+        let integer = Proposition::Equal(
+            Term::Integer(IntegerTerm::Variable(Variable(988003))),
+            Term::Integer(IntegerTerm::Variable(Variable(988004))),
+        );
+        let rendered = super::render_proposition_labeled(&integer, &mut labels);
+        assert!(rendered.contains("integer C=c.value"), "{rendered}");
+        assert!(rendered.contains("integer D=c.value"), "{rendered}");
     }
 
     #[test]

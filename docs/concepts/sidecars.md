@@ -108,11 +108,18 @@ the import. A project file is always imported by a quoted path. A module's
 library imports reach the files that import it, like its other declarations.
 
 Without an import a file sees the implicit modules: `click::primitives`,
-`click::nat`, `click::list`, `click::c::builtins` and `click::c::string`,
-together with the modules they import themselves (`click::bytes` and
-`click::cstr`). The other modules—`click::machine_integer`, `click::integer`
-and `click::permutation`—must be imported before a file names one of their
-declarations.
+`click::nat`, `click::list` and `click::c::builtins`. Library contracts come
+with the code instead of an import: when the verified C declares or calls
+`memcpy`, `memcmp`, `memset` or `strlen`, through `<string.h>` or its own
+prototype, the file sees `click::c::string` and the modules its contracts are
+stated in, `click::bytes` and `click::cstr`
+(`mdtests/a_string_function_call_brings_the_c_string_contracts.md`). Every
+other module—`click::bytes` and `click::cstr` without such a call,
+`click::machine_integer`, `click::integer` and `click::permutation`—must be
+imported before a file names one of its declarations
+(`mdtests/string_predicates_need_an_import_without_a_string_function.md`).
+The C++ and Rust library contracts are generated for the calls a program
+makes, so they too arrive with the code.
 
 <!-- verified-example: mdtests/a_cited_library_theorem_is_available_after_its_import.md -->
 ```click

@@ -727,7 +727,9 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
         &sources.with_library_contracts(click_source),
         layouts,
     )?;
+    modules::reject_theorem_justification_cycles(&file)?;
     let parsed_sources = parse_verified_sources_context(&file, sources)?;
+    let (file, parsed_sources) = with_tactic_procedures(file, parsed_sources)?;
     let predicate_definitions = combined_predicate_definitions(&file)?;
     let click_function_definitions = combined_click_function_definitions(&file)?;
     let resource_definitions = combined_resource_definitions(&file)?;
@@ -748,6 +750,7 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
         &resource_environment,
     )?
     .with_byte_order(file.selected_c_target().byte_order());
+    function_environment = with_unselected_tactic_interfaces(&file, function_environment);
     let refinement_targets = file
         .theorem_definitions()
         .iter()
@@ -779,12 +782,14 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
             "theorem `{theorem_name}` is declared by an imported module, not the selected entry module"
         )));
     }
+    modules::reject_theorem_justification_cycles(&file)?;
+    let parsed_sources = parse_verified_sources_context(&file, sources)?;
+    let (file, parsed_sources) = with_tactic_procedures(file, parsed_sources)?;
     let theorem = file
         .theorem_definitions()
         .iter()
         .find(|definition| definition.name() == theorem_name)
         .ok_or_else(|| ClickError::new(format!("unknown theorem `{theorem_name}`")))?;
-    let parsed_sources = parse_verified_sources_context(&file, sources)?;
     let predicate_definitions = combined_predicate_definitions(&file)?;
     let click_function_definitions = combined_click_function_definitions(&file)?;
     let resource_definitions = combined_resource_definitions(&file)?;
@@ -806,6 +811,7 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
         &resource_environment,
     )?
     .with_byte_order(file.selected_c_target().byte_order());
+    function_environment = with_unselected_tactic_interfaces(&file, function_environment);
     for target in contract_refinement_targets(&file, theorem_name) {
         let Some(function) = function_environment
             .get_function(file.c_function_names.get(&target).unwrap_or(&target))
@@ -961,6 +967,27 @@ fn with_tactic_procedures(
         file.function_blocks.push(block);
     }
     Ok((file, parsed_sources))
+}
+
+/// Theorem-only checking selects no tactic body. Its procedure contracts are
+/// the same scoped declaration assumptions used by ordinary selected proofs.
+fn with_unselected_tactic_interfaces(
+    file: &ClickFile,
+    mut environment: CExecutionEnvironment,
+) -> CExecutionEnvironment {
+    for block in file
+        .function_blocks()
+        .iter()
+        .filter(|block| block.is_tactic_procedure())
+    {
+        let Some(function) = environment.get_function(block.signature().name()).cloned() else {
+            continue;
+        };
+        if let Some(rule) = crate::kernel::c_unselected_function_contract_assumption(function) {
+            environment = environment.with_external_function_rule(rule);
+        }
+    }
+    environment
 }
 
 /// Appends `suffix` where every path of `script` ends. A proof `match` must
@@ -1339,6 +1366,12 @@ fn selected_entry_proof_names(file: &ClickFile) -> Vec<String> {
                 .iter()
                 .filter(|function| file.function_is_selected(function.signature().name()))
                 .map(|function| format!("function:{}", function.signature().name())),
+        )
+        .chain(
+            file.tactic_definitions()
+                .iter()
+                .filter(|tactic| file.function_is_selected(tactic.name()))
+                .map(|tactic| format!("tactic:{}", tactic.name())),
         )
         .collect()
 }
@@ -6007,7 +6040,11 @@ pub(in crate::surface) fn composite_resource_definitions(
             spec_definitions,
             resource_environment.struct_layouts(),
         )?;
-        let (facts, fact_source_indices) = lower_composite_resource_facts(
+        let LoweredResourceBody {
+            facts,
+            fact_source_indices,
+            children,
+        } = lower_composite_resource_body(
             definition,
             spec_definitions,
             resource_environment.struct_layouts(),
@@ -6100,7 +6137,9 @@ pub(in crate::surface) fn composite_resource_definitions(
                         resource_clause_to_resource_spec_for_body(resource, &parameters, None)
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                let (facts, _) = lower_composite_resource_facts_with_bindings(
+                let LoweredResourceBody {
+                    facts, children, ..
+                } = lower_composite_resource_body_with_bindings(
                     &arm,
                     spec_definitions,
                     &bindings,
@@ -6115,7 +6154,7 @@ pub(in crate::surface) fn composite_resource_definitions(
                     .fields
                     .clone();
                 arms.push(crate::kernel::CResourceMatchArm {
-                    children: lower_resource_body_children(arm.composite_body().unwrap())?,
+                    children,
                     variant,
                     bindings: bindings.into_iter().map(|(name, _)| name).collect(),
                     binding_types,
@@ -6185,35 +6224,13 @@ pub(in crate::surface) fn composite_resource_definitions(
             )
             .with_liveness_facts(facts_claim_liveness)
             .with_resource_match_body(matched)
-            .with_children(lower_resource_body_children(body)?)
+            .with_children(children)
             .with_matched_recursion(matched_recursive)
             .with_instance_schema(definition.field_schema().cloned()),
         );
     }
     crate::kernel::propagate_population_reach(&mut definitions);
     Ok(definitions)
-}
-
-/// The kernel child specifications of one split resource body.
-fn lower_resource_body_children(
-    body: &CompositeResourceBody,
-) -> Result<Vec<crate::kernel::CResourceChildSpec>, ClickError> {
-    body.children
-        .iter()
-        .map(|child| {
-            Ok(crate::kernel::CResourceChildSpec {
-                name: child.name.clone(),
-                resource: child.resource.clone(),
-                binding: child.identity,
-                arguments: child
-                    .arguments
-                    .iter()
-                    .map(resource_argument_to_c_expression)
-                    .collect::<Result<_, _>>()?,
-                field_bindings: child.field_bindings.clone(),
-            })
-        })
-        .collect()
 }
 
 pub(in crate::surface) fn append_entry_resource_specs(

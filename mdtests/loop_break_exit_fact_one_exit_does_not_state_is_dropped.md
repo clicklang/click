@@ -1,16 +1,13 @@
-# A fact one `break` exit does not state is not kept after the loop
+# A loop join cannot preserve a model that one break exit changes
 
-The loop of
-[`loop_break_exit_keeps_a_fact_every_exit_restates.md`](loop_break_exit_keeps_a_fact_every_exit_restates.md),
-with one change: the `Cell::Black` exit folds its instance back and says
-nothing about how the model it folded relates to the entry model. The other
-two exits state `x.model == old(x.model)` exactly as before.
+Two exits preserve the entry model, while the `Cell::Black` exit deliberately
+refolds its resource with `Cell::Red`. Both variants permit the same owned cell,
+so the refold is valid, but the model-equality postcondition is false on that
+exit. The join must not borrow the equality from its other two exits.
 
-The join keeps a restated fact only when every exit restates it. Two exits out
-of three is not every exit, so the claim is not a fact after the loop and the
-contract's `ensures` is refused. That the claim happens to be true on the
-silent path is beside the point: the join passes along what each exit checked
-and proves nothing itself.
+A missing explicit `have` alone is insufficient for a negative test: when all
+exits refold the same model, checked constructor equalities can establish the
+postcondition through equality closure.
 
 ```c filename=one_cell_one_silent_exit.c
 struct node { int32 shade; };
@@ -102,7 +99,7 @@ int32 inspect(struct node* p) {
                     step();
                     step();
                     step();
-                    let x = fold(cell_at(p), { model: Cell::Black(identity) });
+                    let x = fold(cell_at(p), { model: Cell::Red(identity) });
                     step();
                 },
             }

@@ -1911,6 +1911,15 @@ not already own a resource. `unfold(l)` exposes the child's immediate body;
 an arm with no children needs no bindings (an empty output pattern is also
 accepted).
 
+Owned child indices also accept typed C-valued pure calls. For example,
+`owns left: metadata_at(identity(left_model));` obtains its C pointer from
+logical model data. The ordinary pure-expression evaluator supplies the
+value; the fold/unfold checker still checks the child parameter type and
+requires every read and safety obligation to be established. A pure call
+returning an algebraic or mathematical value cannot serve as a C index.
+See `mdtests/resource_child_pure_arguments.md` and
+`mdtests/resource_child_pure_arguments_recursive.md`.
+
 The third fold argument maps child slots to owned resource names. Folding
 consumes those children and the parent's immediate memory, checking each
 child's family, arguments, and fields against the proposed model. Replacements
@@ -2518,12 +2527,13 @@ consuming/producing primitive helper clauses remain unsupported. The complete
 [mutex contract design](../../internals/mutex-resource-contracts.md) distinguishes
 these supported forms from the planned protected-state and storage outputs.
 
-On a callee that declares no `produces` binder, the same `let` names the
-call's scalar result:
+Every call step has one output bundle. The `result` key names the C value;
+other keys name the contract's produced resources. The pattern selects names
+without changing the call or its resource effects:
 
 <!-- verified-example: mdtests/call_result_in_condition.md -->
 ```click
-let r = step(classify(x), { });
+let { result: r } = step(classify(x), { });
 ```
 
 This is how a proof refers to a result the C never stores, as in
@@ -2535,9 +2545,34 @@ later statements; `result` on a `return f(x);` path is that same value. A
 is already a C local or a proof-local binding. The map is still written, as
 `{ }` when the callee declares no instance binder at all.
 
+A call can bind both kinds of output together:
+
+<!-- verified-example: mdtests/call_result_and_produced_resource.md -->
+```click
+let { result: status, output: checked } = step(set(p), { input: input });
+```
+
+`result` is reserved for the C value in a step output pattern. All produced
+resources must be named; binding the C value is optional. The ambiguous
+single-name form is rejected for both calls and assignment steps. Assignment
+steps use `let { result: value } = step();`. The output bundle is a binding
+interface, not a stored or copyable resource aggregate.
+
 The callee's binder names come from its own sidecar, so that sidecar must be
-declared before the proof that calls it. A named-contract step uses the same
-map after the contract's name, as `step(Exact, { cell: k })`.
+declared before the proof that calls it. A named contract supports the same
+input map and output pattern:
+
+<!-- verified-example: mdtests/named_contract_call_output_bindings.md -->
+```click
+let { result: status, output: done } = step(Repair, { input: dirty });
+```
+
+This selects `Repair` for the current C call. Its C arguments come from that
+call; its resource binder names come from the named contract. The verifier
+requires established contract membership for the actual callee and its call
+signature, checks the preconditions, and performs the contract's ownership
+transition. The output pattern optionally names the C value and names every
+produced resource. Direct and function-pointer calls use the same rule.
 
 ## User-defined tactics
 

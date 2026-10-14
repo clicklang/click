@@ -13,6 +13,145 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 #[cfg(test)]
+mod disjunction_projection_tests {
+    use super::*;
+
+    fn value(id: u64, constant: u32) -> Proposition {
+        Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::Variable(Variable(id)),
+                Bitvector32Term::Constant(constant),
+            ),
+            true,
+        )
+    }
+    fn and(left: Proposition, right: Proposition) -> Proposition {
+        Proposition::And(Box::new(left), Box::new(right))
+    }
+    fn or(left: Proposition, right: Proposition) -> Proposition {
+        Proposition::Or(Box::new(left), Box::new(right))
+    }
+
+    #[test]
+    fn projection_checks_every_arm_and_every_conjunct_of_the_goal() {
+        let source = or(and(value(1, 1), value(3, 3)), and(value(2, 2), value(3, 3)));
+        let facts = ProofFacts::from_ordered(&[source]);
+        let goal = or(value(1, 1), value(2, 2));
+        assert!(facts.contains_disjunction_projection(&goal));
+        assert!(facts.contains_disjunction_projection(&and(goal.clone(), value(3, 3))));
+        assert!(facts.contains_disjunction_projection(&value(3, 3)));
+        assert!(!facts.contains_disjunction_projection(&or(value(1, 1), value(2, 9))));
+        assert!(!facts.contains_disjunction_projection(&and(goal, value(1, 1))));
+    }
+
+    #[test]
+    fn projection_uses_scoped_equalities_and_removes_withdrawn_sources() {
+        let alias = Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::Variable(Variable(1)),
+                Bitvector32Term::Variable(Variable(4)),
+            ),
+            true,
+        );
+        let source = or(value(1, 1), value(2, 2));
+        let goal = or(value(4, 1), value(2, 2));
+        let root = ProofFacts::from_ordered(&[alias]);
+        let child = root.with_fact(source.clone());
+        assert!(child.contains_disjunction_projection(&goal));
+        assert!(!root.contains_disjunction_projection(&goal));
+        let weakened = child.assumptions().without_exact_fact(&source);
+        assert_eq!(
+            weakened
+                .disjunctions_connected_to(&AtomicConnectionKey::Variable(Variable(2)))
+                .count(),
+            0
+        );
+        let wide = Proposition::ConditionIs(
+            ConditionTerm::uint64_equal(
+                Bitvector32Term::Variable(Variable(1)),
+                Bitvector32Term::UInt64Constant(1),
+            ),
+            true,
+        );
+        assert!(!child.contains_disjunction_projection(&or(wide, value(2, 2))));
+    }
+
+    #[test]
+    fn an_impossible_arm_does_not_contaminate_the_other_arm_or_parent() {
+        let facts = ProofFacts::from_ordered(&[value(7, 1), or(value(7, 0), value(8, 1))]);
+        assert!(!facts.assumptions().is_inconsistent());
+        assert!(!facts.contains_disjunction_projection(&or(value(7, 0), value(8, 2))));
+        assert!(facts.contains_disjunction_projection(&value(8, 1)));
+        assert!(!facts.assumptions().is_inconsistent());
+        assert!(!facts.assumptions().contains_known(&value(7, 0)));
+        assert!(!facts.assumptions().contains_known(&value(8, 1)));
+    }
+
+    #[test]
+    fn projection_respects_changed_read_snapshots() {
+        let pointer = Pointer {
+            block: "projection-cell".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let before = CMemory::new().with_block("projection-cell", 4).store(
+            pointer.clone(),
+            CValue::Int32(Bitvector32Term::Variable(Variable(10))),
+        );
+        let after = before.clone().store(
+            pointer.clone(),
+            CValue::Int32(Bitvector32Term::Variable(Variable(11))),
+        );
+        let read = |memory| {
+            Proposition::ConditionIs(
+                ConditionTerm::equal(
+                    Bitvector32Term::MemoryLoad(
+                        crate::kernel::intern_c_memory(memory),
+                        Box::new(pointer.clone()),
+                        LoadKind::Bits32,
+                    ),
+                    Bitvector32Term::Constant(0),
+                ),
+                true,
+            )
+        };
+        let source = or(read(before.clone()), value(2, 2));
+        let facts = ProofFacts::from_ordered(&[source]);
+        assert!(facts.contains_disjunction_projection(&or(read(before), value(2, 2))));
+        assert!(!facts.contains_disjunction_projection(&or(read(after), value(2, 2))));
+    }
+
+    #[test]
+    fn projection_skips_unrelated_disjunctions_and_scalar_facts() {
+        let mut costs = Vec::new();
+        for size in [16u64, 64, 256, 1024] {
+            let mut facts = ProofFacts::from_ordered(&[]);
+            for index in 0..size {
+                facts = facts.with_fact(or(value(100 + index * 2, 0), value(101 + index * 2, 1)));
+                // Even scalar facts on a selected operand are not candidates.
+                facts = facts.with_fact(Proposition::ConditionIs(
+                    ConditionTerm::signed_less_equal(
+                        Bitvector32Term::Variable(Variable(1)),
+                        Bitvector32Term::Constant(10 + index as u32),
+                    ),
+                    true,
+                ));
+            }
+            let nested = or(value(5, 5), value(6, 6));
+            let source = or(and(value(1, 1), nested.clone()), and(value(2, 2), nested));
+            facts = facts.with_fact(source);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                assert!(facts.contains_disjunction_projection(&or(value(1, 1), value(2, 2))));
+            });
+            costs.push(work);
+        }
+        assert!(
+            costs.iter().all(|work| *work <= costs[0] * 2),
+            "projection work: {costs:?}"
+        );
+    }
+}
+
+#[cfg(test)]
 thread_local! {
     static INDEXED_FACT_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static STATEMENT_PRIORITY_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -941,6 +1080,50 @@ impl ProofFacts {
                 .any(|form| self.proper_conjuncts.contains(form))
     }
 
+    /// Project a known disjunction without naming its discarded conjuncts.
+    /// Select only operand-adjacent stated facts, then check every arm using
+    /// the existing direct logical rule and this scope's equality closure.
+    /// No unfolding, implication extraction, or recursive case search.
+    pub(crate) fn contains_disjunction_projection(&self, required: &Proposition) -> bool {
+        let keys =
+            crate::kernel::reasoning::variable_collection::collect_atomic_connection_keys(required);
+        let mut seen = std::collections::HashSet::new();
+        for key in keys {
+            for disjunction in self.assumptions.disjunctions_connected_to(&key) {
+                crate::instrumentation::record_deterministic_work(1);
+                if !seen.insert(disjunction as *const Proposition as usize) {
+                    continue;
+                }
+                let mut cases = vec![disjunction];
+                let mut complete = true;
+                while let Some(case) = cases.pop() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    if let Proposition::Or(left, right) = case {
+                        cases.push(right);
+                        cases.push(left);
+                        continue;
+                    }
+                    let context = self
+                        .assumptions
+                        .clone()
+                        .assume_proposition(crate::kernel::clone_proposition_iteratively(case));
+                    if first_unavailable_connective_side(required, &|side| {
+                        context.contains_known(side)
+                    })
+                    .is_some()
+                    {
+                        complete = false;
+                        break;
+                    }
+                }
+                if complete {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// The available proper conjunct that `required` names up to the
     /// renaming of its quantifier binders, selected by its alpha bucket.
     pub(crate) fn alpha_equivalent_proper_conjunct(
@@ -1095,6 +1278,13 @@ impl ProofFacts {
             return Some(form);
         }
 
+        // A scoped equality derivation can establish this exact requirement
+        // without any one stored proposition spelling the whole chain. The
+        // explicit checker accepts it through the same indexed graph lookup.
+        if self.available(required) {
+            return Some(required.clone());
+        }
+
         // A checked Integer comparison may contain range-fold binders freshly
         // allocated by the preceding rewrite. Return the stored proposition
         // so callers retain the source fact and its certificate provenance;
@@ -1215,11 +1405,12 @@ impl ProofFacts {
     /// A listed premise that holds with no facts at all — a ground constant
     /// that is the value it asserts (`0 <= 0`), or a comparison of a term with
     /// itself (`n <= n`) — needs no fact behind it; every other premise must
-    /// be exactly available, across effects when `across_quantifiers` also
+    /// be available from checked facts or their scoped equality closure,
+    /// across effects when `across_quantifiers` also
     /// admits a binder-equivalent quantified fact. Every `using` list checks
     /// its premises through this one method, so a premise is accepted by one
     /// list exactly when it is accepted by another. Goal-closing tactics such
-    /// as `assumption` do not use it: they remain exact.
+    /// as `assumption` use the same scoped equality knowledge directly.
     pub(crate) fn listed_premise_available(
         &self,
         premise: &Proposition,
@@ -1240,7 +1431,7 @@ impl ProofFacts {
         required: &Proposition,
         framing: &(impl ExecutionFactSource + ?Sized),
     ) -> bool {
-        if self.contains(required)
+        if self.available(required)
             || condition_polarity_forms(required)
                 .iter()
                 .any(|form| self.exact.contains(form))
@@ -3561,7 +3752,9 @@ mod integer_equality_fact_index_tests {
                         block: "same-bucket-facts".into(),
                         offset: PointerOffsetTerm::Constant(0),
                     },
-                    CValue::Int32(Bitvector32Term::Constant(value as u32)),
+                    // Distinct snapshots without contradictory literal
+                    // premises: each read may consistently equal zero.
+                    CValue::Int32(Bitvector32Term::Variable(Variable(986_000 + value as u64))),
                 );
                 memories.push(crate::kernel::intern_c_memory(memory));
             }

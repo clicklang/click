@@ -2274,7 +2274,23 @@ fn execute_step_from_frontier_position_selecting_path(
     // to run has to be that call: one comparison against the statement, not a
     // search for a matching call.
     if let Some(transport) = &function_environment.selected_call_binders {
-        let called = match &step_statement {
+        // A non-void one-call theorem runs its generated call assignment and
+        // return together. Validate the selected binder map against that one
+        // leading call, not against the sequence wrapper. Ordinary C steps
+        // still require a call at the exact frontier.
+        let selected_statement = if function_block.one_call_proof
+            && matches!(
+                execution.core.frontier.position,
+                FrontierPosition::FunctionEntry
+            )
+            && let CStatement::Seq(call, tail) = &step_statement
+            && matches!(tail.as_ref(), CStatement::Return(_))
+        {
+            call.as_ref()
+        } else {
+            &step_statement
+        };
+        let called = match selected_statement {
             CStatement::Call {
                 function_name,
                 arguments,
@@ -2287,7 +2303,11 @@ fn execute_step_from_frontier_position_selecting_path(
             _ => None,
         };
         match called {
-            Some((name, arity)) if transport.names_call_to(name) => {
+            Some((name, arity))
+                if transport.names_call_to(name)
+                    || function_environment.selected_call_contract.as_deref()
+                        == Some(transport.function.as_ref()) =>
+            {
                 if arity != transport.arity {
                     return Err(ClickError::new(format!(
                         "`{name}` is called with {arity} argument(s) here, but the step writes {}",

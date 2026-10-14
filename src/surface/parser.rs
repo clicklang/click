@@ -160,6 +160,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// sidecar's spelling where its `verifying` path does not: a C++ import
     /// may verify a `.h` header.
     pub(in crate::surface) language: Option<SourceLanguage>,
+    /// The Click library modules the program's C declarations bring, such
+    /// as `click::c::string` for a declared `memcpy`.
+    pub(in crate::surface) library_modules: BTreeSet<&'static str>,
 }
 
 pub(super) fn parse_with_layouts_and_aggregate_objects(
@@ -228,6 +231,11 @@ pub(super) fn parse_file_items(source: &str) -> Result<ClickFile, ClickError> {
     parser.parse_file_items()
 }
 
+pub(in crate::surface) enum ImportedCallee<'a> {
+    Function(&'a FunctionBlock),
+    Contract(&'a ContractDefinition),
+}
+
 pub(super) fn parse_file_items_for_module(
     source: &str,
     identity: &str,
@@ -235,7 +243,7 @@ pub(super) fn parse_file_items_for_module(
     imported_algebraic_types: &[AlgebraicTypeDefinition],
     imported_tactic_names: &BTreeSet<String>,
     imported_function_names: &BTreeSet<String>,
-    imported_callees: &[&FunctionBlock],
+    imported_callees: &[ImportedCallee<'_>],
     imported_resources: &[&ResourceDefinition],
     layouts: ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
@@ -250,7 +258,24 @@ pub(super) fn parse_file_items_for_module(
     parser
         .tactic_names
         .extend(imported_tactic_names.iter().cloned());
-    for block in imported_callees {
+    for callee in imported_callees {
+        let (named_contract, block) = match callee {
+            ImportedCallee::Function(block) => (false, *block),
+            ImportedCallee::Contract(definition) => {
+                parser.contract_proof_bindings.insert(
+                    definition.name().to_string(),
+                    definition.proof_parameters.clone().unwrap_or_default(),
+                );
+                (true, definition.function_block())
+            }
+        };
+        parser.in_contract_definition = named_contract;
+        if named_contract {
+            parser
+                .contract_resource_binders
+                .entry(block.signature().name().to_string())
+                .or_default();
+        }
         let parameters = block
             .signature()
             .parameters()
@@ -280,6 +305,7 @@ pub(super) fn parse_file_items_for_module(
             }
         }
     }
+    parser.in_contract_definition = false;
     for definition in imported_resources {
         if let Some(body) = definition.composite_body() {
             parser.declared_resource_child_slots.insert(
@@ -557,6 +583,8 @@ struct ProofLetParserRestore {
 struct Parser {
     c_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
+    /// Click library modules the program's C declarations bring.
+    implied_library_modules: BTreeSet<&'static str>,
     source_aliases: BTreeMap<String, String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
     /// Set while a `tactic` declaration's signature is parsed: the name
@@ -566,7 +594,7 @@ struct Parser {
     /// Every user-defined tactic declared so far in this file, so a proof
     /// can tell `name(args)` applying one from other syntax.
     tactic_names: BTreeSet<String>,
-    contract_proof_bindings: BTreeMap<String, Vec<(String, Variable, String)>>,
+    contract_proof_bindings: BTreeMap<String, Vec<ResourceClause>>,
     next_resource_identity: u64,
     current_resource_bindings: BTreeMap<String, (Variable, String)>,
     /// Instances introduced by `let { slot: name } = unfold(parent)`. The slot's
@@ -695,6 +723,7 @@ struct Parser {
     /// identity, resource family, and `owns`/`produces` kind keyed by callee,
     /// which no lowered spec offers.
     callee_resource_binders: BTreeMap<String, BTreeMap<String, CalleeResourceBinder>>,
+    contract_resource_binders: BTreeMap<String, BTreeMap<String, CalleeResourceBinder>>,
     /// Set while a `contract` block's embedded function block is parsed: its
     /// signature names an interface, not a callable C function.
     in_contract_definition: bool,
@@ -941,6 +970,7 @@ impl Parser {
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
         parser.c_object_names_by_function = layouts.c_object_names;
         parser.recursion_peers_by_function = layouts.recursion_peers;
+        parser.implied_library_modules = layouts.library_modules;
         parser.qualified_objects = Some(layouts.qualified_objects);
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.plain_char = layouts.plain_char;
@@ -1011,6 +1041,7 @@ impl Parser {
             current_void_pointer_params: BTreeSet::new(),
             c_object_names_by_function: BTreeMap::new(),
             recursion_peers_by_function: BTreeMap::new(),
+            implied_library_modules: BTreeSet::new(),
             current_c_parameter_types: BTreeMap::new(),
             current_parameter_struct_casts: BTreeMap::new(),
             aggregate_objects_by_function,
@@ -1035,6 +1066,7 @@ impl Parser {
             current_proof_let_names: BTreeSet::new(),
             proof_let_restores: Vec::new(),
             callee_resource_binders: BTreeMap::new(),
+            contract_resource_binders: BTreeMap::new(),
             in_contract_definition: false,
             in_function_block: false,
             integer_literal_context: false,
@@ -1144,7 +1176,11 @@ impl Parser {
         let mut contract_definitions = Vec::new();
         let mut function_blocks = Vec::new();
         let mut tactic_definitions = Vec::new();
-        let mut library_imports = Vec::new();
+        let mut library_imports = self
+            .implied_library_modules
+            .iter()
+            .map(|identity| (*identity).to_string())
+            .collect::<Vec<_>>();
 
         while self.peek().is_some() {
             if self.peek_ident() == Some("import")
@@ -1419,9 +1455,14 @@ impl Parser {
                 "named contracts cannot carry proofs, `decreases`, or `constructs` clauses",
             ));
         }
+        self.contract_resource_binders
+            .entry(function_block.signature().name().to_string())
+            .or_default();
         // A named `owns` or `consumes` clause declares one of the contract's
         // resource handles. In declaration order they are the contract's
-        // proof parameters, which an application binds by name.
+        // proof parameters, which an application binds by name. Named produced
+        // slots also need typed identities in an execution-certificate proof;
+        // call output patterns introduce their actual returned instances.
         let proof_parameters = function_block
             .requires()
             .iter()
@@ -1431,19 +1472,21 @@ impl Parser {
                 }
                 _ => None,
             })
+            .chain(
+                function_block
+                    .ensures()
+                    .iter()
+                    .filter_map(|clause| match clause.ensure() {
+                        Ensure::Resource(parameter @ ResourceClause::Named { .. })
+                            if !clause.borrowed() =>
+                        {
+                            Some(parameter.clone())
+                        }
+                        _ => None,
+                    }),
+            )
             .collect::<Vec<_>>();
-        let bindings = proof_parameters
-            .iter()
-            .filter_map(|parameter| {
-                let ResourceClause::Named { binding, resource } = parameter else {
-                    return None;
-                };
-                let ResourceClause::Declared { name, .. } = resource.as_ref() else {
-                    return None;
-                };
-                Some((binding.name.clone(), binding.identity, name.clone()))
-            })
-            .collect();
+        let bindings = proof_parameters.clone();
         self.contract_proof_bindings
             .insert(function_block.signature().name().to_string(), bindings);
         Ok(ContractDefinition {
@@ -4651,10 +4694,16 @@ impl Parser {
         // tactic application writes `name(..., { ... })`, where the map is
         // optional when the tactic supplies no binder.
         let form = if tactic { "name(...)" } else { "step(...)" };
-        self.expect(Token::LParen)?;
+        let named_contract = !tactic && self.peek() == Some(&Token::Comma);
+        if named_contract && !self.contract_resource_binders.contains_key(&callee) {
+            return Err(self.error(format!("unknown call contract `{callee}`")));
+        }
+        if !named_contract {
+            self.expect(Token::LParen)?;
+        }
         let mut arguments = Vec::new();
         let mut has_map = !tactic;
-        while self.peek() != Some(&Token::RParen) {
+        while !named_contract && self.peek() != Some(&Token::RParen) {
             if tactic && self.peek() == Some(&Token::LBrace) {
                 has_map = true;
                 break;
@@ -4666,14 +4715,19 @@ impl Parser {
             self.position += 1;
         }
         if !tactic {
-            self.expect(Token::RParen)?;
+            if !named_contract {
+                self.expect(Token::RParen)?;
+            }
             self.expect(Token::Comma)?;
         }
-        let mut declared = self
-            .callee_resource_binders
-            .get(&callee)
-            .cloned()
-            .unwrap_or_default();
+        let mut declared = if named_contract {
+            &self.contract_resource_binders
+        } else {
+            &self.callee_resource_binders
+        }
+        .get(&callee)
+        .cloned()
+        .unwrap_or_default();
         if has_map {
             self.expect(Token::LBrace)?;
         }
@@ -4828,23 +4882,7 @@ impl Parser {
                     "`{callee}` produces named resource instance(s) `{names}`; bind them with `let {{ ... }} = {form}`"
                 )));
             }
-            // The legacy single-name form binds the only produced instance,
-            // or names the call's scalar result when there is no produced
-            // instance. The frontier's call statement decides whether the
-            // latter actually has a result.
-            (Some(CallOutputPattern::Single(name)), []) => {
-                if self.current_contract_bindings.contains(&name)
-                    || self.current_integer_params.contains(&name)
-                    || self.current_integer_lets.contains(&name)
-                    || self.current_resource_bindings.contains_key(&name)
-                {
-                    return Err(self.error(format!(
-                        "call result name `{name}` conflicts with a C, pure, or resource binding"
-                    )));
-                }
-                result = Some(name);
-            }
-            (Some(CallOutputPattern::Single(name)), [(produced_name, declaration)]) => {
+            (Some(CallOutputPattern::Single(name)), [(produced_name, declaration)]) if tactic => {
                 produced.push(self.bind_produced_call_instance(
                     &name,
                     produced_name,
@@ -4853,33 +4891,42 @@ impl Parser {
                 )?);
             }
             (Some(CallOutputPattern::Single(_)), _) => {
-                let names = produced_declarations
-                    .iter()
-                    .map(|(name, _)| name.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                return Err(self.error(format!(
-                    "`{callee}` produces multiple named resource instances ({names}); use `let {{ binder: name, ... }} = step(...)`"
-                )));
+                return Err(self.error(
+                    "step outputs require named bindings: write `let { result: name } = step(...)` for a C value, or `let { binder: name } = step(...)` for a produced resource"
+                ));
             }
             (Some(CallOutputPattern::Named(bindings)), _) => {
-                if produced_declarations.is_empty() {
-                    return Err(self.error(format!(
-                        "`{callee}` produces no named resource instances; use `let name = step(...)` only for a scalar result"
-                    )));
-                }
                 let mut bound = BTreeSet::new();
                 let mut names = BTreeSet::new();
                 for (binder, name) in bindings {
                     if !bound.insert(binder.clone()) {
                         return Err(self.error(format!(
-                            "duplicate produced binder `{binder}` in the call output pattern"
+                            "duplicate output key `{binder}` in the call output pattern"
                         )));
                     }
                     if !names.insert(name.clone()) {
                         return Err(self.error(format!(
-                            "call output pattern introduces resource name `{name}` twice"
+                            "call output pattern introduces name `{name}` twice"
                         )));
+                    }
+                    if binder == "result" && !tactic {
+                        if declared
+                            .get("result")
+                            .is_some_and(|entry| entry.kind == CalleeResourceBinderKind::Produced)
+                        {
+                            return Err(self.error("`result` is reserved for the C value in a step output pattern; rename the produced resource binder"));
+                        }
+                        if self.current_contract_bindings.contains(&name)
+                            || self.current_integer_params.contains(&name)
+                            || self.current_integer_lets.contains(&name)
+                            || self.current_resource_bindings.contains_key(&name)
+                            || self.current_proof_let_names.contains(&name)
+                        {
+                            return Err(self
+                                .error(format!("call result name `{name}` is already in scope")));
+                        }
+                        result = Some(name);
+                        continue;
                     }
                     let Some((_, declaration)) = produced_declarations
                         .iter()
@@ -4896,7 +4943,7 @@ impl Parser {
                         &arguments,
                     )?);
                 }
-                if bound.len() != produced_declarations.len() {
+                if bound.len() != produced_declarations.len() + usize::from(result.is_some()) {
                     let missing = produced_declarations
                         .iter()
                         .filter(|(name, _)| !bound.contains(*name))
@@ -4911,6 +4958,7 @@ impl Parser {
         }
         Ok(CallBinderTransport {
             callee,
+            named_contract,
             arguments,
             binders,
             produced,
@@ -5084,9 +5132,8 @@ impl Parser {
             );
     }
 
-    /// Records one instance binder of the C function block being parsed, so a
-    /// later `step(callee(...), { ... })` can bind it by name. Contract blocks
-    /// name an interface rather than a callable function and are skipped.
+    /// Records an instance binder in the selected function/interface registry.
+    /// Call maps name those declarations, including produced identities.
     fn record_callee_resource_binder(
         &mut self,
         function: &str,
@@ -5094,9 +5141,6 @@ impl Parser {
         parameter_names: &[String],
         kind: CalleeResourceBinderKind,
     ) {
-        if self.in_contract_definition {
-            return;
-        }
         let ResourceClause::Named { binding, resource } = resource else {
             return;
         };
@@ -5104,22 +5148,24 @@ impl Parser {
             return;
         };
         crate::instrumentation::record_deterministic_work(1);
-        self.callee_resource_binders
-            .entry(function.to_string())
-            .or_default()
-            .insert(
-                binding.name.clone(),
-                CalleeResourceBinder {
-                    identity: binding.identity,
-                    family: Some(family.clone()),
-                    resource: Some(ResourceClause::Named {
-                        binding: binding.clone(),
-                        resource: resource.clone(),
-                    }),
-                    parameter_names: parameter_names.to_vec(),
-                    kind,
-                },
-            );
+        let registry = if self.in_contract_definition {
+            &mut self.contract_resource_binders
+        } else {
+            &mut self.callee_resource_binders
+        };
+        registry.entry(function.to_string()).or_default().insert(
+            binding.name.clone(),
+            CalleeResourceBinder {
+                identity: binding.identity,
+                family: Some(family.clone()),
+                resource: Some(ResourceClause::Named {
+                    binding: binding.clone(),
+                    resource: resource.clone(),
+                }),
+                parameter_names: parameter_names.to_vec(),
+                kind,
+            },
+        );
     }
 
     fn parse_owned_resource_binding(&mut self) -> Result<ResourceClause, ClickError> {
@@ -5364,14 +5410,20 @@ impl Parser {
             None
         };
         let ensure = self.parse_ensure_condition()?;
-        let previous = execution_names.map(|_| std::mem::take(&mut self.current_resource_bindings));
+        let previous = execution_names.map(|_| {
+            (
+                std::mem::take(&mut self.current_resource_bindings),
+                std::mem::take(&mut self.current_resource_targets),
+            )
+        });
         let introduced = match execution_names {
             Some(names) => self.introduce_execution_target_instances(&ensure, names)?,
             None => Vec::new(),
         };
         let proof = self.parse_proof_clause_or_default()?;
-        if let Some(previous) = previous {
-            self.current_resource_bindings = previous;
+        if let Some((bindings, targets)) = previous {
+            self.current_resource_bindings = bindings;
+            self.current_resource_targets = targets;
         }
 
         Ok((
@@ -5442,7 +5494,7 @@ impl Parser {
             crate::instrumentation::record_deterministic_work(1);
             if !declared
                 .iter()
-                .any(|(parameter, _, _)| parameter == slot.as_str())
+                .any(|parameter| matches!(parameter, ResourceClause::Named { binding, .. } if binding.name == *slot))
             {
                 return Err(self.error(format!(
                     "contract `{target}` does not declare a proof parameter `{slot}`"
@@ -5464,16 +5516,32 @@ impl Parser {
         }
         let mut bindings = Vec::new();
         let mut ordered = Vec::new();
-        for (parameter, identity, resource) in &declared {
+        for parameter in declared {
             crate::instrumentation::record_deterministic_work(1);
+            let ResourceClause::Named {
+                mut binding,
+                resource,
+            } = parameter
+            else {
+                unreachable!()
+            };
+            let ResourceClause::Declared { name: family, .. } = resource.as_ref() else {
+                unreachable!()
+            };
+            let parameter = binding.name.clone();
             let Some(name) = bound.get(parameter.as_str()) else {
                 return Err(self.error(format!(
                     "contract `{target}` proof parameter `{parameter}` needs an introduced name; \
                      write `ensures {target}(...) as {{ {parameter}: <name> }}`"
                 )));
             };
-            bindings.push(((*name).to_string(), (*identity, resource.clone())));
-            ordered.push((parameter.clone(), (*name).to_string()));
+            bindings.push(((*name).to_string(), (binding.identity, family.clone())));
+            binding.name = (*name).to_string();
+            self.current_resource_targets.insert(
+                binding.name.clone(),
+                ResourceClause::Named { binding, resource },
+            );
+            ordered.push((parameter, (*name).to_string()));
         }
         self.current_resource_bindings.extend(bindings);
         Ok(ordered)
@@ -6294,6 +6362,26 @@ impl Parser {
             if self.current_contract_bindings.contains(&name) {
                 return Err(self.error("child resource name conflicts with a C or pure binding"));
             }
+            // A mixed unfold pattern also names C-valued fields. They are
+            // ordinary proof values, not references to owned resources.
+            let scalar_field = self
+                .declared_resource_fields
+                .get(family)
+                .is_some_and(|fields| {
+                    fields.iter().any(|field| {
+                        field.name == slot && matches!(field.click_type, ClickType::C(_))
+                    })
+                });
+            if introduce && scalar_field {
+                if self.current_resource_bindings.contains_key(&name) {
+                    return Err(self.error("field output conflicts with a resource binding"));
+                }
+                let identity = Variable(self.next_resource_identity);
+                self.next_resource_identity += 1;
+                self.current_proof_let_names.insert(name.clone());
+                result.push((slot, name, identity));
+                continue;
+            }
             let identity = if let Some((identity, _)) = self.current_resource_bindings.get(&name) {
                 // A child slot's resource comes from the parent's matched
                 // arm, which the parser cannot resolve; declaration
@@ -6393,9 +6481,18 @@ impl Parser {
             self.position += 1;
             self.expect(Token::LParen)?;
             if self.peek() == Some(&Token::RParen) {
-                let CallOutputPattern::Single(name) = output else {
-                    return Err(self.error("`let name = step()` requires one scalar result name"));
+                let CallOutputPattern::Named(bindings) = output else {
+                    return Err(self.error("step outputs require named bindings: write `let { result: name } = step()`"));
                 };
+                let [(binder, name)] = bindings.as_slice() else {
+                    return Err(self.error(
+                        "`step()` has one value output: write `let { result: name } = step()`",
+                    ));
+                };
+                if binder != "result" {
+                    return Err(self.error("`step()` has only the `result` output"));
+                }
+                let name = name.clone();
                 if self.current_contract_bindings.contains(&name)
                     || self.current_integer_params.contains(&name)
                     || self.current_integer_lets.contains(&name)
@@ -6409,9 +6506,9 @@ impl Parser {
                 self.position += 1;
                 return self.parse_step_proof(ProofTactic::StepBind(name));
             }
-            if !self.call_binder_transport_follows() {
+            if !self.call_binder_transport_follows() && self.peek_next() != Some(&Token::Comma) {
                 return Err(self.error(
-                            "a call output binding requires a call and binder map: `let name = step(callee(...), { binder: instance })`",
+                            "a call output binding requires a call and binder map: `let { result: name } = step(callee(...), { binder: instance })`",
                         ));
             }
             let transport = self.parse_call_binder_transport(Some(output), false)?;
@@ -7225,7 +7322,9 @@ impl Parser {
                 self.expect(Token::LParen)?;
                 let step = if self.peek() == Some(&Token::RParen) {
                     ProofTactic::Step
-                } else if self.call_binder_transport_follows() {
+                } else if self.call_binder_transport_follows()
+                    || self.peek_next() == Some(&Token::Comma)
+                {
                     ProofTactic::StepCall(self.parse_call_binder_transport(None, false)?)
                 } else {
                     let name = self.expect_ident("call contract name")?;

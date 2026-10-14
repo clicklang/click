@@ -1294,6 +1294,18 @@ written over. One pattern may name child slots and fields together; see
 `mdtests/resource_unfold_binds_scalar_field.md` and
 `mdtests/resource_unfold_binds_children_and_fields.md`.
 
+A named owned child's C arguments may also be pure function calls, such as
+`owns left: metadata_at(identity(left_model));`. The call uses the ordinary
+typed pure-expression evaluator, so a logical model can supply a C pointer or
+scalar index without reading the program's links. Its result must match the
+child's declared C parameter type. Opening and rebuilding the resource use
+the same checked expression; any read or safety conditions must already be
+proved. Computing an address grants no additional memory authority.
+`mdtests/resource_child_pure_arguments.md` exercises a model-derived address
+through both `unfold` and `fold`. A C-valued field named by an unfold output
+remains an ordinary value when passed as a resource argument; see
+`mdtests/resource_unfold_field_used_as_argument.md`.
+
 ### Modeled bodies and arm selection
 
 A body may instead branch on one algebraic field, so which cells the resource

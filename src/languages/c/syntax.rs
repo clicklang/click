@@ -1997,6 +1997,11 @@ impl C0FunctionPointerSignature {
         &self.parameters
     }
 
+    /// The function-pointer type of this signature.
+    pub(crate) fn pointer_type(&self) -> C0Type {
+        function_pointer_type(self)
+    }
+
     /// The same signature with every `long long` rank erased to `long`, for
     /// matching against a Click specification type that does not spell it.
     pub fn erase_long_rank(&self) -> Self {
@@ -4521,6 +4526,13 @@ impl C0Parameter {
         self.struct_layout = Some(layout);
         self
     }
+    /// A function-pointer parameter, typed by its signature.
+    pub(crate) fn function_pointer(name: String, signature: C0FunctionPointerSignature) -> Self {
+        let mut parameter = Self::new(signature.pointer_type(), name, None);
+        parameter.function_pointer_signature = Some(signature);
+        parameter
+    }
+
     pub(crate) fn new(c_type: C0Type, name: String, struct_name: Option<String>) -> Self {
         Self {
             c_type,
@@ -7838,6 +7850,21 @@ const LIBRARY_PROTOTYPES: &[(&str, &str, LibraryType, &[LibraryType])] = {
         ("free", "void free(void *pointer)", Void, &[VoidPointer]),
     ]
 };
+
+/// The Click library module whose contract a C declaration of `header`
+/// brings: `click::c::string` for the `<string.h>` functions Click
+/// specifies. The allocator family is part of the kernel's allocation model
+/// and brings no module.
+pub(crate) fn library_contract_module(header: &C0FunctionHeader) -> Option<&'static str> {
+    let (name, ..) = library_function_prototype(header)?;
+    library_contract_module_named(name)
+}
+
+/// The Click library module whose contract a call to the library function
+/// `name` uses; see [`library_contract_module`].
+pub(crate) fn library_contract_module_named(name: &str) -> Option<&'static str> {
+    matches!(name, "memcpy" | "memcmp" | "memset" | "strlen").then_some("library/c/string.click")
+}
 
 /// The library function Click specifies that `header` declares with
 /// external linkage, by its C name or its linked symbol: the function's

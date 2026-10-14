@@ -441,6 +441,13 @@ pub enum CppType {
         element: Box<CppType>,
         length: u32,
     },
+    /// A pointer to a noexcept function of scalar and native-pointer
+    /// parameters and result, `int (*)(int) noexcept`.
+    FunctionPointer {
+        return_type: Box<CppType>,
+        parameters: Vec<CppType>,
+        is_const: bool,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -586,6 +593,13 @@ pub enum CppExpression {
         value_type: CppType,
         span: CppSpan,
     },
+    /// `&f`, or `f` decayed to a pointer: the address of a reachable
+    /// function, of function-pointer type.
+    FunctionAddress {
+        function: CppFunctionReference,
+        value_type: CppType,
+        span: CppSpan,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -605,6 +619,11 @@ pub struct CppFunctionReference {
     pub declaration_id: String,
     pub name: String,
     pub span: CppSpan,
+    /// A call through a function-pointer parameter or local: the
+    /// declaration and name are that variable's, and the function called is
+    /// whichever one it holds.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub through_pointer: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2035,9 +2054,12 @@ impl CppFunction {
                 CppType::Pointer { pointee } => {
                     require_native_pointer_element(pointee, false, "pointer pointee")?;
                 }
+                CppType::FunctionPointer { .. } => {
+                    require_function_pointer(&parameter.value_type, "function-pointer parameter")?;
+                }
                 _ => {
                     return Err(
-                        "the supported C++ parameters are native scalars, supported references/pointers, and trivial simple-record values"
+                        "the supported C++ parameters are native scalars, supported references/pointers, function pointers, and trivial simple-record values"
                             .into(),
                     );
                 }
@@ -3534,6 +3556,7 @@ impl CppExpression {
             | Self::IntegralCast { value_type, .. }
             | Self::EnumCast { value_type, .. }
             | Self::BytePointerCast { value_type, .. }
+            | Self::FunctionAddress { value_type, .. }
             | Self::Binary { value_type, .. } => value_type,
         }
     }
@@ -3547,6 +3570,7 @@ impl CppExpression {
             | Self::NullPointer { .. }
             | Self::RuntimeConstantEvaluation { .. }
             | Self::CompilerConstant { .. }
+            | Self::FunctionAddress { .. }
             | Self::ConstantReference { .. } => false,
             Self::Load { place, .. } | Self::AddressOf { place, .. } => {
                 place.declaration_id == declaration_id
@@ -3578,6 +3602,23 @@ impl CppExpression {
             Self::RuntimeConstantEvaluation { value_type, span } => {
                 require_bool(value_type, false, "runtime constant-evaluation result")?;
                 span.validate(logical_source)
+            }
+            // The function is resolved, and its signature matched against
+            // this type, with the reachable call graph.
+            Self::FunctionAddress {
+                function,
+                value_type,
+                span,
+            } => {
+                span.validate(logical_source)?;
+                function.span.validate(logical_source)?;
+                if function.declaration_id.is_empty()
+                    || function.name.is_empty()
+                    || function.through_pointer
+                {
+                    return Err("C++ function address is missing its function's identity".into());
+                }
+                require_function_pointer(value_type, "function address")
             }
             Self::LogicalNot {
                 value,
@@ -3650,6 +3691,11 @@ impl CppExpression {
                 span.validate(logical_source)?;
                 let place_type = validate_place_reference(place, places, logical_source)?;
                 match place_type {
+                    CppType::FunctionPointer { .. } => Err(
+                        "a C++ function-pointer variable is only called; reading its value is \
+                         outside the supported profile"
+                            .into(),
+                    ),
                     CppType::LvalueReference { pointee } => {
                         if require_native_pointer_element(pointee, true, "loaded reference pointee")
                             .is_ok()
@@ -4279,6 +4325,13 @@ fn validate_reachable_calls(
             }
         };
         callee.span.validate(&function.span.file)?;
+        for address in function_addresses(arguments) {
+            validate_function_address(address, functions, records, visiting, visited)?;
+        }
+        if callee.through_pointer {
+            validate_pointer_call(&places, function, &call, records)?;
+            continue;
+        }
         let target = functions.get(&callee.declaration_id).ok_or_else(|| {
             format!(
                 "C++ call to `{}` refers to missing reachable definition `{}`",
@@ -4491,6 +4544,9 @@ enum CollectedCall<'a> {
         destination: Option<&'a CppType>,
         observer: bool,
         scalar_initialization: bool,
+        /// A statement call, a local's initializing call, or a returned
+        /// call: the positions a call through a function pointer may take.
+        pointer_admitted: bool,
     },
     Constructor {
         local: &'a CppPlace,
@@ -4581,7 +4637,7 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                         ..
                     },
                 ..
-            } => collect_scalar_call(
+            } => collect_ordinary_call(
                 callee,
                 arguments,
                 Some(
@@ -4589,6 +4645,7 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                         .first()
                         .map_or(&local.value_type, |cast| &cast.source_type),
                 ),
+                true,
                 calls,
             ),
             CppStatement::Declare {
@@ -4606,7 +4663,7 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
             CppStatement::Declare { .. } => {}
             CppStatement::Call {
                 callee, arguments, ..
-            } => collect_scalar_call(callee, arguments, None, calls),
+            } => collect_ordinary_call(callee, arguments, None, true, calls),
             CppStatement::If {
                 condition,
                 then_branch,
@@ -4645,7 +4702,7 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                 cleanups,
                 ..
             } => {
-                collect_scalar_call(
+                collect_ordinary_call(
                     callee,
                     arguments,
                     Some(
@@ -4653,6 +4710,7 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                             .first()
                             .map_or(value_type, |cast| &cast.source_type),
                     ),
+                    true,
                     calls,
                 );
                 for cleanup in cleanups {
@@ -4760,6 +4818,7 @@ fn collect_expression_calls<'a>(value: &'a CppExpression, calls: &mut Vec<Collec
                 destination: Some(value_type),
                 observer: true,
                 scalar_initialization: false,
+                pointer_admitted: false,
             });
             let first = calls.len();
             collect_nested_calls(arguments, calls);
@@ -4810,12 +4869,23 @@ fn collect_scalar_call<'a>(
     destination: Option<&'a CppType>,
     calls: &mut Vec<CollectedCall<'a>>,
 ) {
+    collect_ordinary_call(callee, arguments, destination, false, calls);
+}
+
+fn collect_ordinary_call<'a>(
+    callee: &'a CppFunctionReference,
+    arguments: &'a [CppCallArgument],
+    destination: Option<&'a CppType>,
+    pointer_admitted: bool,
+    calls: &mut Vec<CollectedCall<'a>>,
+) {
     calls.push(CollectedCall::Ordinary {
         callee,
         arguments,
         destination,
         observer: false,
         scalar_initialization: false,
+        pointer_admitted,
     });
     collect_nested_calls(arguments, calls);
 }
@@ -4838,6 +4908,7 @@ fn collect_nested_calls<'a>(arguments: &'a [CppCallArgument], calls: &mut Vec<Co
                 destination: Some(value_type),
                 observer: false,
                 scalar_initialization: false,
+                pointer_admitted: false,
             });
             collect_nested_calls(arguments, calls);
         }
@@ -4851,6 +4922,21 @@ fn validate_call_arguments(
     arguments: &[CppCallArgument],
     records: &RecordIndex<'_>,
 ) -> Result<(), String> {
+    let parameters = parameters
+        .iter()
+        .map(|parameter| (parameter.name.as_str(), &parameter.value_type))
+        .collect::<Vec<_>>();
+    validate_argument_types(caller, callee_name, &parameters, arguments, records)
+}
+
+/// The arguments of a call against its callee's parameter names and types.
+fn validate_argument_types(
+    caller: &FunctionPlaces<'_>,
+    callee_name: &str,
+    parameters: &[(&str, &CppType)],
+    arguments: &[CppCallArgument],
+    records: &RecordIndex<'_>,
+) -> Result<(), String> {
     if arguments.len() != parameters.len() {
         return Err(format!(
             "C++ call from `{}` to `{}` has {} arguments for {} parameters",
@@ -4860,10 +4946,12 @@ fn validate_call_arguments(
             parameters.len()
         ));
     }
-    for (index, (argument, parameter)) in arguments.iter().zip(parameters).enumerate() {
-        let compatible = match (argument, &parameter.value_type) {
+    for (index, (argument, &(parameter_name, parameter_type))) in
+        arguments.iter().zip(parameters).enumerate()
+    {
+        let compatible = match (argument, parameter_type) {
             (CppCallArgument::RecordCopy { value_type, .. }, CppType::Record { .. }) => {
-                value_type == &parameter.value_type
+                value_type == parameter_type
             }
             (CppCallArgument::Call { value_type, .. }, expected) => {
                 same_scalar_type(value_type, expected)
@@ -4884,7 +4972,7 @@ fn validate_call_arguments(
             (
                 CppCallArgument::Value { value },
                 CppType::Integer { .. } | CppType::Enumeration { .. },
-            ) => same_scalar_type(value.value_type(), &parameter.value_type),
+            ) => same_scalar_type(value.value_type(), parameter_type),
             (
                 CppCallArgument::Reference { place },
                 CppType::LvalueReference { pointee: expected },
@@ -4931,8 +5019,14 @@ fn validate_call_arguments(
                 require_native_pointer_element(pointee, false, "call pointer parameter").is_ok()
                     && require_native_object_pointer(value.value_type(), "call pointer argument")
                         .is_ok()
-                    && same_scalar_type(&parameter.value_type, value.value_type())
+                    && same_scalar_type(parameter_type, value.value_type())
             }
+            (
+                CppCallArgument::Value {
+                    value: value @ CppExpression::FunctionAddress { .. },
+                },
+                CppType::FunctionPointer { .. },
+            ) => same_function_pointer_type(value.value_type(), parameter_type),
             _ => false,
         };
         if !compatible {
@@ -4941,7 +5035,7 @@ fn validate_call_arguments(
                 caller.function.name,
                 callee_name,
                 index + 1,
-                parameter.name
+                parameter_name
             ));
         }
     }
@@ -5435,6 +5529,7 @@ impl CppExpression {
         referenced_constants: &mut BTreeSet<String>,
     ) -> Result<(), String> {
         match self {
+            Self::FunctionAddress { .. } => Ok(()),
             Self::ObserverCall { arguments, .. } => {
                 for argument in arguments {
                     argument.validate_constant_references(
@@ -5802,6 +5897,199 @@ fn require_bool(value: &CppType, allow_const: bool, label: &str) -> Result<(), S
     }
 }
 
+/// A pointer to a function whose parameters and result are scalars or
+/// native element pointers, the only function pointers the profile calls.
+pub(super) fn require_function_pointer(value_type: &CppType, context: &str) -> Result<(), String> {
+    let CppType::FunctionPointer {
+        return_type,
+        parameters,
+        is_const: false,
+    } = value_type
+    else {
+        return Err(format!(
+            "C++ {context} requires a mutable function-pointer type"
+        ));
+    };
+    let callback_value = |value_type: &CppType| {
+        Scalar::of(value_type).is_some_and(|scalar| !scalar.is_const)
+            || matches!(value_type, CppType::Pointer { pointee }
+                if require_native_pointer_element(pointee, false, context).is_ok())
+    };
+    if !(matches!(return_type.as_ref(), CppType::Void) || callback_value(return_type))
+        || !parameters.iter().all(callback_value)
+    {
+        return Err(format!(
+            "C++ {context} has a function type outside the scalar and native-pointer profile"
+        ));
+    }
+    Ok(())
+}
+
+/// Two function-pointer types with the same parameter and result types.
+fn same_function_pointer_type(left: &CppType, right: &CppType) -> bool {
+    let (
+        CppType::FunctionPointer {
+            return_type: left_return,
+            parameters: left_parameters,
+            ..
+        },
+        CppType::FunctionPointer {
+            return_type: right_return,
+            parameters: right_parameters,
+            ..
+        },
+    ) = (left, right)
+    else {
+        return false;
+    };
+    let same = |left: &CppType, right: &CppType| {
+        crate::instrumentation::record_deterministic_work(1);
+        matches!((left, right), (CppType::Void, CppType::Void)) || same_scalar_type(left, right)
+    };
+    same(left_return, right_return)
+        && left_parameters.len() == right_parameters.len()
+        && left_parameters
+            .iter()
+            .zip(right_parameters)
+            .all(|(left, right)| same(left, right))
+}
+
+/// The `&f` values a call passes.
+fn function_addresses(arguments: &[CppCallArgument]) -> impl Iterator<Item = &CppExpression> {
+    arguments.iter().filter_map(|argument| match argument {
+        CppCallArgument::Value {
+            value: value @ CppExpression::FunctionAddress { .. },
+        } => Some(value),
+        _ => None,
+    })
+}
+
+/// `&f` names a reachable, non-throwing free or static member function of
+/// exactly the pointer's type. Its body is validated as a root of its own:
+/// the call it will receive is through a pointer, outside the static graph.
+fn validate_function_address(
+    address: &CppExpression,
+    functions: &BTreeMap<String, &CppFunction>,
+    records: &RecordIndex<'_>,
+    visiting: &mut Vec<String>,
+    visited: &mut BTreeMap<String, (usize, bool)>,
+) -> Result<(), String> {
+    let CppExpression::FunctionAddress {
+        function: reference,
+        value_type,
+        ..
+    } = address
+    else {
+        unreachable!("collected function addresses")
+    };
+    let target = functions.get(&reference.declaration_id).ok_or_else(|| {
+        format!(
+            "C++ function address `&{}` refers to missing reachable definition",
+            reference.name
+        )
+    })?;
+    if target.name != reference.name {
+        return Err(format!(
+            "C++ declaration `{}` is named `{}`, not `{}`",
+            reference.declaration_id, target.name, reference.name
+        ));
+    }
+    if !matches!(
+        target.function_kind,
+        CppFunctionKind::Free | CppFunctionKind::StaticMethod { .. }
+    ) || !target.declared_noexcept
+        || target.axiom.is_some()
+    {
+        return Err(format!(
+            "C++ function address `&{}` requires a noexcept free or static member function \
+             of the program",
+            target.name
+        ));
+    }
+    let signature = CppType::FunctionPointer {
+        return_type: Box::new(target.return_type.clone()),
+        parameters: target
+            .parameters
+            .iter()
+            .map(|parameter| parameter.value_type.clone())
+            .collect(),
+        is_const: false,
+    };
+    if !same_function_pointer_type(&signature, value_type) {
+        return Err(format!(
+            "C++ function address `&{}` does not have its function's type",
+            target.name
+        ));
+    }
+    if !visiting.contains(&reference.declaration_id) {
+        validate_reachable_calls(
+            &reference.declaration_id,
+            functions,
+            records,
+            visiting,
+            visited,
+        )?;
+    }
+    Ok(())
+}
+
+/// A call through a function-pointer parameter or local: the variable has a
+/// function-pointer type, its arguments match the pointee's parameters, and
+/// its result, if kept, the pointee's result. Only a statement call, a local
+/// initialized by the call, and a returned call go through a pointer.
+fn validate_pointer_call(
+    places: &FunctionPlaces<'_>,
+    function: &CppFunction,
+    call: &CollectedCall<'_>,
+    records: &RecordIndex<'_>,
+) -> Result<(), String> {
+    let CollectedCall::Ordinary {
+        callee,
+        arguments,
+        destination,
+        observer: false,
+        pointer_admitted: true,
+        ..
+    } = call
+    else {
+        return Err(format!(
+            "a call through a C++ function pointer in `{}` is supported as a statement, an \
+             initializer or a return value only",
+            function.name
+        ));
+    };
+    let Some(
+        pointer @ CppType::FunctionPointer {
+            return_type,
+            parameters,
+            ..
+        },
+    ) = places.place_type(&callee.declaration_id)
+    else {
+        return Err(format!(
+            "C++ call through `{}` requires a function-pointer parameter or local",
+            callee.name
+        ));
+    };
+    require_function_pointer(pointer, "called function pointer")?;
+    if destination.is_some_and(|value| {
+        !same_scalar_type(&super::scalar::scalar_value_type(value), return_type)
+    }) {
+        return Err("C++ call result does not match its capture or return type".into());
+    }
+    // The pointee's parameters are unnamed; a diagnostic names each by its
+    // position.
+    let names = (1..=parameters.len())
+        .map(|position| format!("#{position}"))
+        .collect::<Vec<_>>();
+    let parameters = names
+        .iter()
+        .map(String::as_str)
+        .zip(parameters)
+        .collect::<Vec<_>>();
+    validate_argument_types(places, &callee.name, &parameters, arguments, records)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5870,6 +6158,7 @@ mod tests {
     fn return_call() -> CppStatement {
         CppStatement::ReturnCall {
             callee: CppFunctionReference {
+                through_pointer: false,
                 declaration_id: "callee".into(),
                 name: "callee".into(),
                 span: cleanup_span(),
@@ -6242,6 +6531,7 @@ mod tests {
         };
         arguments.push(CppCallArgument::Call {
             callee: CppFunctionReference {
+                through_pointer: false,
                 declaration_id: "inner".into(),
                 name: "inner".into(),
                 span: cleanup_span(),
@@ -6322,6 +6612,7 @@ mod tests {
             span: cleanup_span(),
         };
         let callee = CppFunctionReference {
+            through_pointer: false,
             declaration_id: "inner".into(),
             name: "inner".into(),
             span: cleanup_span(),
@@ -6390,6 +6681,7 @@ mod tests {
     fn nested_call_artifacts_validate_capture_types_order_and_reachable_graph() {
         let nested = CppCallArgument::Call {
             callee: CppFunctionReference {
+                through_pointer: false,
                 declaration_id: "inner".into(),
                 name: "inner".into(),
                 span: cleanup_span(),
@@ -6497,6 +6789,7 @@ mod tests {
     #[test]
     fn nested_call_graph_validation_is_shared_by_initializers_and_discarded_calls() {
         let reference = |name: &str| CppFunctionReference {
+            through_pointer: false,
             declaration_id: name.into(),
             name: name.into(),
             span: cleanup_span(),
@@ -7370,6 +7663,7 @@ mod tests {
                 });
                 caller.body.push(CppStatement::Call {
                     callee: CppFunctionReference {
+                        through_pointer: false,
                         declaration_id: "read".into(),
                         name: "read".into(),
                         span: cleanup_span(),
@@ -7519,6 +7813,7 @@ mod tests {
     fn call_depth_budget_accounts_for_previously_checked_subgraphs() {
         for size in [8usize, 32, 63, 64] {
             let reference = |index| CppFunctionReference {
+                through_pointer: false,
                 declaration_id: format!("f{index}"),
                 name: format!("f{index}"),
                 span: cleanup_span(),
@@ -8093,6 +8388,7 @@ mod tests {
         };
         let call = |name: String, source: String| CppStatement::Call {
             callee: CppFunctionReference {
+                through_pointer: false,
                 declaration_id: name.clone(),
                 name,
                 span: span_in(source.clone()),
@@ -8260,6 +8556,7 @@ mod tests {
                 .collect();
             let initializer = CppInitializer::Call {
                 callee: CppFunctionReference {
+                    through_pointer: false,
                     declaration_id: "echo".into(),
                     name: "echo".into(),
                     span: cleanup_span(),
@@ -8294,6 +8591,7 @@ mod tests {
                 size
             ];
             let callee = CppFunctionReference {
+                through_pointer: false,
                 declaration_id: "echo".into(),
                 name: "echo".into(),
                 span: cleanup_span(),

@@ -725,6 +725,7 @@ impl<'a> Proof<'a> {
                 instance,
                 facts.assumptions(),
                 &naming_assumptions,
+                rewrite.body_active,
             )
         } else {
             after
@@ -741,7 +742,7 @@ impl<'a> Proof<'a> {
                     unfold,
                     selected_children.clone(),
                 )
-                .map_err(|message| self.step_error(message))?;
+                .map_err(|error| self.step_error_resource_rewrite(error))?;
             execution.core.state = after.clone().into();
             let mut updated = goal.clone();
             let mut data = (*goal.data).clone();
@@ -767,7 +768,7 @@ impl<'a> Proof<'a> {
                     &facts,
                     selected_children,
                 )
-                .map_err(|message| self.step_error(message))?;
+                .map_err(|error| self.step_error_resource_rewrite(error))?;
             execution.core.state = after.into();
             branch.with_state(BranchState {
                 facts,
