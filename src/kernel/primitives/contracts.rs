@@ -758,6 +758,7 @@ impl CFunctionContractInterface {
             predicate_unfoldings: Vec::new(),
             recursion_measure: Vec::new(),
             recursion_peers: Vec::new(),
+            recursion_binder: None,
         }
     }
 
@@ -826,6 +827,31 @@ impl CFunctionContractInterface {
     /// expression measure ranks calls to, sorted.
     pub fn recursion_peers(&self) -> &[String] {
         &self.recursion_peers
+    }
+
+    /// The binder a call-ranked structural `decreases t` measure names.
+    pub fn recursion_binder(&self) -> Option<&str> {
+        self.recursion_binder.as_deref()
+    }
+
+    /// Whether this function's recursion is ranked by obligations at its
+    /// calls: an expression measure, or a call-ranked structural binder.
+    pub fn has_call_ranked_recursion(&self) -> bool {
+        !self.recursion_measure.is_empty() || self.recursion_binder.is_some()
+    }
+
+    /// The identity of a resource requirement's named instance binder.
+    pub(crate) fn resource_binder_identity(&self, binder: &str) -> Option<Variable> {
+        self.resource_requires
+            .iter()
+            .find_map(|requirement| match requirement.term() {
+                CResourceTerm::Instance {
+                    identity,
+                    binder: name,
+                    ..
+                } if name == binder => Some(*identity),
+                _ => None,
+            })
     }
 
     pub(crate) fn contract_requirement_sources(&self) -> &[Option<usize>] {
@@ -960,6 +986,7 @@ impl CFunctionContractInterface {
             && self.predicate_unfoldings == other.predicate_unfoldings
             && self.recursion_measure == other.recursion_measure
             && self.recursion_peers == other.recursion_peers
+            && self.recursion_binder == other.recursion_binder
     }
 
     /// Compare the signature and resource vocabulary used by automatic
@@ -1229,6 +1256,12 @@ impl CFunction {
     /// They are part of the interface, and so of this function's identity:
     /// the anchor a certification builds from the interface ranks calls to
     /// exactly these functions.
+    /// Declares a structural `decreases t` measure ranked at each call.
+    pub fn with_recursion_binder(mut self, binder: Option<String>) -> Self {
+        self.contract_interface.recursion_binder = binder;
+        self
+    }
+
     pub fn with_recursion_peers(mut self, mut peers: Vec<String>) -> Self {
         peers.sort();
         peers.dedup();

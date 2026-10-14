@@ -1191,7 +1191,7 @@ pub fn c_execution_environment_with_recursion_anchor(
     caller_state: &CState,
     arguments: &[CExpression],
 ) -> Result<CExecutionEnvironment, String> {
-    if function.contract_interface().recursion_measure().is_none() {
+    if !function.contract_interface().has_call_ranked_recursion() {
         return Ok(environment);
     }
     let entry_state =

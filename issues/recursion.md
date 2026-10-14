@@ -47,16 +47,17 @@ The next iteration must receive exactly the surviving resource populations,
 allocation authority, and heap lifetime required by its invariant. The proof
 must never recover a consumed child or hide a mutation behind the loop join.
 
-### Mutual structural recursion without a model measure
+### Mutual structural recursion over a model-free resource
 
-A resource with a model already ranks mutual structural recursion through an
-expression measure over the model, such as `decreases links_len(x.model)`
-(`mdtests/c_decreases_model_measure_mutual_recursion.md`). The structural
-`decreases list(node)` and `decreases t` measures, which need no size function,
-still support only a guarded directly recursive composite and direct
-self-recursive C calls: their analysis reads the body for a direct child, not
-the instance a call passes. Mutual resource-definition cycles remain a separate
-resource-algebra concern.
+A resource with a `match model` body ranks mutual structural recursion through
+a `decreases t` binder measure, checked at each call against the entry model
+(`mdtests/c_decreases_binder_measure_mutual_recursion.md`), or through an
+expression measure over the model such as `decreases links_len(x.model)`
+(`mdtests/c_decreases_model_measure_mutual_recursion.md`). An `if`-guarded
+resource without a model, measured by `decreases list(node)`, still supports
+only direct self-recursion: its analysis reads the body for a direct child, and
+there is no model for a call-ranked check to compare. Mutual resource-definition
+cycles remain a separate resource-algebra concern.
 
 ## Intended regressions
 
