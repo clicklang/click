@@ -1126,6 +1126,74 @@ fn pinned_zlib_block_lemmas_have_checked_bodies() {
         .expect("all shared and native recurrence bodies");
 }
 
+#[test]
+#[ignore = "nightly: seeded NMAX arithmetic, reduction, prefix composition, and expansion"]
+fn pinned_zlib_seeded_batch_lemmas_have_checked_bodies() {
+    let source = include_str!("../design/charon-trial/zlib/seeded-batch.click")
+        .replace(
+            "import \"batch-helpers.click\";",
+            include_str!("../design/charon-trial/zlib/batch-helpers.click"),
+        )
+        .replace(
+            "import \"window.click\";",
+            include_str!("../design/charon-trial/zlib/window.click"),
+        )
+        .replace(
+            "import \"block.click\";",
+            include_str!("../design/charon-trial/zlib/block.click"),
+        )
+        .replace(
+            "import \"short-prefix.click\";",
+            include_str!("../design/charon-trial/zlib/short-prefix.click"),
+        )
+        .replace(
+            "import \"byte.click\";",
+            include_str!("../design/charon-trial/zlib/byte.click"),
+        )
+        .replace(
+            "import \"../adler2/count-bridge.click\";",
+            include_str!("../design/charon-trial/adler2/count-bridge.click"),
+        )
+        .replace(
+            "import \"../../adler32-spec.click\";",
+            include_str!("../design/adler32-spec.click"),
+        );
+    click::surface::verify_click_theorems(&source)
+        .expect("seeded native recurrence, reductions, prefix composition, and all dependencies");
+    let mut expanded = source.clone();
+    for label in [
+        "zlib_seeded_component_step.ensures_0",
+        "zlib_seeded_reduced_components.ensures_0",
+        "zlib_seeded_reduced_components.ensures_1",
+        "zlib_seeded_reduced_components.ensures_2",
+        "zlib_seeded_batch_concat.ensures_0",
+        "zlib_seeded_batch_concat.ensures_1",
+    ] {
+        expanded = click::surface::expand_c0_claim_source_by_label(&expanded, &[], label)
+            .expect("checked seeded batch certificate expansion");
+    }
+    click::surface::verify_click_theorems(&expanded)
+        .expect("expanded seeded batch lemmas and every dependency");
+    for (correct, incorrect) in [
+        (
+            "ensures to_integer(a + (uint64)(uint32)value) == to_integer(a0) + adler_byte_sum(bytes, n + 1)",
+            "ensures to_integer(a + (uint64)(uint32)value) == to_integer(a0) + adler_byte_sum(bytes, n + 1) + 1",
+        ),
+        (
+            "and to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b0) + to_integer(n + 1) * to_integer(a0)",
+            "and to_integer(b + (a + (uint64)(uint32)value)) == to_integer(n + 1) * to_integer(a0)",
+        ),
+        (
+            "ensures to_integer(b % 65521u64) == adler_spec_b(bytes, prefix + length, 1, 0)",
+            "ensures to_integer(b % 65521u64) == adler_spec_b(bytes, prefix + length, 1, 0) + 1",
+        ),
+    ] {
+        let invalid = source.replacen(correct, incorrect, 1);
+        assert_ne!(source, invalid);
+        assert!(click::surface::verify_click_theorems(&invalid).is_err());
+    }
+}
+
 /// A user-space compiler import in a fresh directory, with the given files
 /// and arguments for `main.c`.
 fn userspace_import(files: &[(&str, &str)], args: &[&str]) -> tempfile::TempDir {

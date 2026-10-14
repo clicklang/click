@@ -148,6 +148,12 @@ component equations through both original reductions and packing. Checked
 batch helpers and an offline nightly regression cover complete expansion and
 negative result, invariant, and authority cases.
 
+Checked seeded-batch helpers now carry arbitrary reduced entry components
+through one native addition pair, both modulo reductions, and concatenation
+with the previously processed prefix. Their nightly regression checks helper
+bodies and dependencies, complete expansion, and false component/composition
+claims. The original C multiple-batch and post-batch tail paths remain unproved.
+
 Next extend the original batch path to multiple batches and nonempty tails,
 maintaining native bounds and component equations across reductions. The
 arbitrary-length C result remains unproved.

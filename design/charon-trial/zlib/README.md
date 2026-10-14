@@ -94,8 +94,7 @@ The bounds A <= 3826 and B <= 57390 establish that the native additions do not
 wrap. The final reduction and shift/OR packing satisfy the shared specification.
 `byte.click` supplies the same checked promotion theorem to both C proofs.
 
-**The original 5552-byte batches remain unproved.** The offline short-loop
-regression checks all helper bodies together,
+The offline short-loop regression checks all helper bodies together,
 rechecks an expansion, and rejects missing byte authority, false component
 invariants, and false checksum results. These larger checks run in nightly.
 
@@ -178,6 +177,16 @@ expansion, false results and component invariants, and missing or shortened
 read authority. It runs in nightly; the sidecar's import manifest and lock reuse
 the unchanged prepared source and headers. Multiple batches and nonempty tails
 after a full batch remain the next C proof increment.
+
+[Seeded batch helpers](seeded-batch.click) now check the native addition pair
+for any canonical batch-entry components, retain the seed terms in both raw
+component equations, and establish addition bounds through 5552 bytes. They
+check both original reductions and connect the local batch result to the
+shared specification for an arbitrary previously processed prefix. The offline
+seeded-helper regression verifies every dependency, expands all six claims,
+and rejects false component and concatenation results. These lemmas prepare
+the multiple-batch proof; they do not yet prove the original C loop for multiple
+batches or a nonempty tail after a full batch.
 
 | Original file | SHA-256 |
 | --- | --- |
