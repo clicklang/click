@@ -3092,6 +3092,9 @@ pub(in crate::surface) fn object_segment_layout<'a>(
     parameters: &'a [syntax::C0Parameter],
     segment: &'a ContractSegment,
 ) -> Option<&'a syntax::C0StructLayout> {
+    if let ContractSegmentSurface::ObjectPlace { layout, .. } = &segment.surface {
+        return Some(&layout.layout);
+    }
     let ContractSegmentSurface::Object(struct_name) = &segment.surface else {
         return None;
     };
@@ -3141,6 +3144,9 @@ pub(in crate::surface) fn contract_segment_element_width_for_result_type(
     segment: &ContractSegment,
     result_type: Option<CType>,
 ) -> u32 {
+    if matches!(segment.surface, ContractSegmentSurface::ObjectPlace { .. }) {
+        return 4;
+    }
     if let Some(element_width) = segment.field_element_width() {
         return element_width;
     }
