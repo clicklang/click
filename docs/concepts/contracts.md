@@ -142,7 +142,7 @@ imply the named ones. The check is exact rather than a search: it admits a
 documented list of proposition classes, and a contract outside that list is
 refined by an explicit theorem instead. See
 [Automatic formation at `&f`](../reference/language/index.md#automatic-formation-at-f)
-for the list and for the pairing a contract with resource proof parameters
+for the list and for the pairing a contract with resource handles
 needs.
 
 In an `executes` theorem, the executed function's parameters are available in

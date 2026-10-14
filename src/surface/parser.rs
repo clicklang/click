@@ -548,7 +548,6 @@ struct Parser {
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
     source_aliases: BTreeMap<String, String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
-    pending_contract_name: Option<String>,
     /// Set while a `tactic` declaration's signature is parsed: the name
     /// follows directly, the parameters use Click's `name: type` spelling,
     /// and the implicit result is `void`.
@@ -556,7 +555,6 @@ struct Parser {
     /// Every user-defined tactic declared so far in this file, so a proof
     /// can tell `name(args)` applying one from other syntax.
     tactic_names: BTreeSet<String>,
-    contract_resource_parameters: BTreeMap<String, ResourceClause>,
     contract_proof_bindings: BTreeMap<String, Vec<(String, Variable, String)>>,
     next_resource_identity: u64,
     current_resource_bindings: BTreeMap<String, (Variable, String)>,
@@ -955,10 +953,8 @@ impl Parser {
         Ok(Self {
             source_aliases: BTreeMap::new(),
             qualified_objects: None,
-            pending_contract_name: None,
             pending_tactic_signature: false,
             tactic_names: BTreeSet::new(),
-            contract_resource_parameters: BTreeMap::new(),
             contract_proof_bindings: BTreeMap::new(),
             next_resource_identity: 0,
             current_resource_bindings: BTreeMap::new(),
@@ -1323,69 +1319,23 @@ impl Parser {
 
     fn parse_contract_definition(&mut self) -> Result<ContractDefinition, ClickError> {
         self.expect_ident_spelling("contract")?;
-        let proof_parameters = if self.peek_next() == Some(&Token::LParen) {
-            let name = self.expect_ident("contract name")?;
-            self.expect(Token::LParen)?;
-            let mut parameters = Vec::new();
-            while self.peek() != Some(&Token::RParen) {
-                if self.peek_next() != Some(&Token::Colon) {
-                    return Err(
-                        self.error("contract proof parameters require `name: resource(...)`")
-                    );
-                }
-                let parameter = self.parse_owned_resource_binding()?;
-                let ResourceClause::Named { binding, .. } = &parameter else {
-                    return Err(
-                        self.error("contract proof parameters require `name: resource(...)`")
-                    );
-                };
-                self.contract_resource_parameters
-                    .insert(binding.name.clone(), parameter.clone());
-                parameters.push(parameter);
-                if self.peek() != Some(&Token::Comma) {
-                    break;
-                }
-                self.position += 1;
-            }
-            self.expect(Token::RParen)?;
-            self.expect_ident_spelling("for")?;
-            self.current_resource_bindings.clear();
-            self.pending_contract_name = Some(name);
-            Some(parameters)
-        } else {
-            None
-        };
+        // The retired form put proof parameters before the C signature:
+        // `contract Read(cell: marked_cell(p)) for int32(int32* p)`. A name
+        // followed directly by `(` can only be that form, since a C head
+        // starts with its return type.
+        if let Some(name) = self.peek_ident()
+            && self.peek_next() == Some(&Token::LParen)
+        {
+            return Err(self.error(format!(
+                "`contract {name}(...) for ...` is retired; write the C declaration and \
+                 declare each resource handle in the body, as in \
+                 `contract int32 {name}(int32* p) {{ owns cell: marked_cell(p); ... }}`"
+            )));
+        }
         let previous_in_contract = std::mem::replace(&mut self.in_contract_definition, true);
         let function_block = self.parse_function_block(false);
         self.in_contract_definition = previous_in_contract;
         let function_block = function_block?;
-        if let Some(parameters) = &proof_parameters {
-            let identities = parameters
-                .iter()
-                .filter_map(|parameter| match parameter {
-                    ResourceClause::Named { binding, .. } => Some(binding.identity),
-                    _ => None,
-                })
-                .collect::<BTreeSet<_>>();
-            let mut owned_parameters = BTreeSet::new();
-            for requirement in function_block.requires() {
-                if let Requirement::Resource(ResourceClause::Named { binding, .. }) = requirement {
-                    if !identities.contains(&binding.identity) {
-                        return Err(self.error(format!(
-                            "resource `{}` must be declared in the contract proof-parameter list",
-                            binding.name
-                        )));
-                    }
-                    if !owned_parameters.insert(binding.identity) {
-                        return Err(self.error(format!(
-                            "duplicate ownership of proof parameter `{}`",
-                            binding.name
-                        )));
-                    }
-                }
-            }
-        }
-        self.contract_resource_parameters.clear();
         if function_block.decreases().is_some()
             || function_block.grouped_proof().is_some()
             || !function_block.constructs().is_empty()
@@ -1398,9 +1348,20 @@ impl Parser {
                 "named contracts cannot carry proofs, `decreases`, or `constructs` clauses",
             ));
         }
+        // A named `owns` or `consumes` clause declares one of the contract's
+        // resource handles. In declaration order they are the contract's
+        // proof parameters, which an application binds by name.
+        let proof_parameters = function_block
+            .requires()
+            .iter()
+            .filter_map(|requirement| match requirement {
+                Requirement::Resource(parameter @ ResourceClause::Named { .. }) => {
+                    Some(parameter.clone())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
         let bindings = proof_parameters
-            .as_deref()
-            .unwrap_or_default()
             .iter()
             .filter_map(|parameter| {
                 let ResourceClause::Named { binding, resource } = parameter else {
@@ -1415,7 +1376,7 @@ impl Parser {
         self.contract_proof_bindings
             .insert(function_block.signature().name().to_string(), bindings);
         Ok(ContractDefinition {
-            proof_parameters,
+            proof_parameters: (!proof_parameters.is_empty()).then_some(proof_parameters),
             function_block,
         })
     }
@@ -2864,25 +2825,8 @@ impl Parser {
 
     fn parse_function_block(&mut self, external: bool) -> Result<FunctionBlock, ClickError> {
         let previous_function_block = std::mem::replace(&mut self.in_function_block, true);
-        let previous_resource_targets = std::mem::replace(
-            &mut self.current_resource_targets,
-            self.contract_resource_parameters.clone(),
-        );
+        let previous_resource_targets = std::mem::take(&mut self.current_resource_targets);
         let previous_resource_bindings = std::mem::take(&mut self.current_resource_bindings);
-        for (name, parameter) in &self.contract_resource_parameters {
-            let ResourceClause::Named { binding, resource } = parameter else {
-                unreachable!()
-            };
-            let ResourceClause::Declared {
-                name: resource_name,
-                ..
-            } = resource.as_ref()
-            else {
-                unreachable!()
-            };
-            self.current_resource_bindings
-                .insert(name.clone(), (binding.identity, resource_name.clone()));
-        }
         if external {
             self.expect_ident_spelling("extern")?;
         }
@@ -3641,12 +3585,7 @@ impl Parser {
         } else {
             parsed_return_type.c_type
         };
-        let pending_contract_name = self.pending_contract_name.take();
-        let is_named_contract = pending_contract_name.is_some();
-        let name = match pending_contract_name {
-            Some(name) => name,
-            None => self.expect_ident("function name")?,
-        };
+        let name = self.expect_ident("function name")?;
         self.expect(Token::LParen)?;
         let parsed_parameters = self.parse_parameters()?;
         self.expect(Token::RParen)?;
@@ -3659,11 +3598,6 @@ impl Parser {
                 || parsed.c_type != C0Type::Int32
             {
                 return Err(self.error("the exceptional payload type must be `int32`"));
-            }
-            if is_named_contract {
-                return Err(
-                    self.error("named exceptional contracts are not supported in this slice")
-                );
             }
             Some(C0Type::Int32)
         } else {
@@ -5038,13 +4972,6 @@ impl Parser {
         &mut self,
         rebinding: bool,
     ) -> Result<ResourceClause, ClickError> {
-        if let Some(name) = self.peek_ident()
-            && self.peek_next() != Some(&Token::Colon)
-            && let Some(parameter) = self.contract_resource_parameters.get(name).cloned()
-        {
-            self.position += 1;
-            return Ok(parameter);
-        }
         if !matches!(self.peek(), Some(Token::Ident(_))) || self.peek_next() != Some(&Token::Colon)
         {
             let target = self.parse_owned_resource_target()?;
@@ -7136,11 +7063,27 @@ impl Parser {
                     ProofTactic::StepCall(self.parse_call_binder_transport(None, false)?)
                 } else {
                     let name = self.expect_ident("call contract name")?;
-                    let arguments = if self.peek() == Some(&Token::LParen) {
+                    if self.peek() == Some(&Token::LParen) {
+                        return Err(self.error(format!(
+                            "`step({name}(...))` is retired; select a named contract with \
+                             `step({name})`, or `step({name}, {{ handle: instance }})` \
+                             when its body declares resource handles"
+                        )));
+                    }
+                    let mut arguments = Vec::new();
+                    if self.peek() == Some(&Token::Comma) {
                         self.position += 1;
-                        let mut arguments = Vec::new();
-                        while self.peek() != Some(&Token::RParen) {
-                            let name = self.expect_ident("owned resource argument")?;
+                        if self.peek() != Some(&Token::LBrace) {
+                            return Err(self.error(format!(
+                                "`step({name}, ...)` selects one contract; after the comma it \
+                                 takes a handle map, `{{ handle: instance }}`"
+                            )));
+                        }
+                        self.position += 1;
+                        while self.peek() != Some(&Token::RBrace) {
+                            let handle = self.expect_ident("contract resource handle")?;
+                            self.expect(Token::Colon)?;
+                            let name = self.expect_ident("resource instance")?;
                             let (identity, resource_name) = self
                                 .current_resource_bindings
                                 .get(&name)
@@ -7149,6 +7092,7 @@ impl Parser {
                                     self.error(format!("unknown resource instance `{name}`"))
                                 })?;
                             arguments.push(ContractResourceArgument {
+                                handle,
                                 name,
                                 resource_name,
                                 identity,
@@ -7158,11 +7102,8 @@ impl Parser {
                             }
                             self.position += 1;
                         }
-                        self.expect(Token::RParen)?;
-                        Some(arguments)
-                    } else {
-                        None
-                    };
+                        self.expect(Token::RBrace)?;
+                    }
                     ProofTactic::StepContract(ContractApplication { name, arguments })
                 };
                 self.expect(Token::RParen)?;

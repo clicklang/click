@@ -1201,7 +1201,7 @@ introduce names:
 
 - the `executes` parameter list introduces the call's C parameters;
 - `as { parameter: name }` on the conclusion introduces one arbitrary instance
-  per proof parameter of the target contract;
+  per resource handle of the target contract;
 - `let { binder: name, ... } = step(...)` introduces instances a callee
   `produces`.
 
@@ -1214,7 +1214,7 @@ into theorem premises or conclusions. Their names must be distinct from the
 callback and from `result`; a return-valued callback parameter also cannot be
 named `result`.
 
-When the target contract declares resource proof parameters, the conclusion
+When the target contract declares resource handles, the conclusion
 introduces one arbitrary instance per parameter with an `as` map keyed by the
 contract's parameter names:
 
@@ -1223,7 +1223,7 @@ contract's parameter names:
 theorem lift(callback: int32 (*)()) executes callback() {
     requires Exact(callback);
     ensures Progress(callback) as { cell: k } by {
-        step(Exact(k));
+        step(Exact, { cell: k });
         have k.revision == old(k.revision) + 1 by { assumption(); }
         apply(int32_increment_strictly_increases(old(k.revision), 2147483647));
         simp();
@@ -1233,18 +1233,17 @@ theorem lift(callback: int32 (*)()) executes callback() {
 
 `k` is the only name for that instance inside the block, and the theorem proves
 the refinement for an arbitrary such instance. The target's own spelling `cell`
-is not in scope. Every target proof parameter must be named exactly once, and
+is not in scope. Every target handle must be named exactly once, and
 an introduced name cannot shadow the callback, the call arguments, a theorem
 local name, or `result`. The names do not escape the block. A target with no
-proof parameters takes no map, though an empty `as {}` is accepted, and a map
+handles takes no map, though an empty `as {}` is accepted, and a map
 on such a target is an error. Source and target parameter names are unrelated,
 and the target contract may be declared later in the file.
 
-A step passes instances in the spelling the callee's own declaration fixes.
-A named contract has a parameter list, so `step(Exact(k))` passes them
-positionally. A C function's binders live in its `owns`, `consumes`, and
-`produces` clauses rather than in its signature, so
-`step(increment(state), { first: k })` passes them by binder name, as in
+A step passes instances by the binder names the callee's own declaration
+fixes. Both a named contract and a C function declare their binders in
+`owns`, `consumes`, and `produces` clauses, so `step(Exact, { cell: k })` and
+`step(increment(state), { first: k })` use the same map, as in
 [Calls that transport named instances](#calls-that-transport-named-instances).
 
 The [counter refinement tests](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_counter.md)
@@ -1280,7 +1279,7 @@ theorem parameters are refused, and every feasible proof case must
 execute exactly one call, as in the abstract form.
 `apply(increment_is_exact())` then introduces `Exact(&increment)` at a call site
 exactly like a concrete `unfold(Name)` refinement theorem. This is the explicit
-route for a target contract with proof parameters, which `unfold(Name)` refuses.
+route for a target contract with resource handles, which `unfold(Name)` refuses.
 The [modeled-instance variant](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_concrete_model.md)
 carries a tree instance through the same two maps.
 
@@ -1318,7 +1317,7 @@ about, and searches no equality for a rewrite. A clause outside the admitted
 classes, or one needing any of that reasoning, is proved by an explicit theorem
 instead.
 
-When the contract declares proof parameters, formation also requires the
+When the contract declares resource handles, formation also requires the
 pairing between its parameters and the implementation's binders to be forced:
 for each parameter exactly one binder of the same resource family with equal
 arguments, and the reverse. Two binders of one family, or a binder with no
@@ -1656,7 +1655,7 @@ explicit postcondition. Instance identity is distinct from field state, and
 fields are symbolic Click values, not executable C ghost parameters.
 
 Explicit callback applications such as
-`step(Read(first))` transport ownership with fresh post-call fields constrained
+`step(Read, { cell: first })` transport ownership with fresh post-call fields constrained
 by the selected contract. `unfold(cell)` exposes an instance's immediate memory
 body and its facts; field names in the body denote that instance's fields.
 For witness-free memory-only bodies, including guarded and matched bodies, unfolding consumes the named
@@ -2525,9 +2524,8 @@ is already a C local or a proof-local binding. The map is still written, as
 `{ }` when the callee declares no instance binder at all.
 
 The callee's binder names come from its own sidecar, so that sidecar must be
-declared before the proof that calls it. A named contract takes its instances
-positionally instead, as `step(Exact(k))`, because it declares a parameter
-list.
+declared before the proof that calls it. A named-contract step uses the same
+map after the contract's name, as `step(Exact, { cell: k })`.
 
 ## User-defined tactics
 

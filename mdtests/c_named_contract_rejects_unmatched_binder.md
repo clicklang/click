@@ -29,8 +29,8 @@ resource other_at(p: int32*) {
     owns p[0..1];
 }
 
-contract PreserveOne(root: cell_at(p)) for void(int32* p, int32* q) {
-    owns root;
+contract void PreserveOne(int32* p, int32* q) {
+    owns root: cell_at(p);
     ensures root.model == old(root.model);
 }
 

@@ -1,6 +1,7 @@
 # Step accepts one contract name
 
-Contract selection uses an ordinary positional argument, not a list of resource models.
+A step selects one named contract. After a comma it takes a handle map, not
+another contract.
 
 ```c filename=joint.c
 int32 invoke(void (*callback)(int32*, int32), int32* data, int32 count) {
@@ -30,5 +31,5 @@ int32 invoke(void (*callback)(int32*, int32), int32* data, int32 count) {
 ```
 
 ```expect
-fail: expected `)`
+fail: `step(Buffered, ...)` selects one contract
 ```

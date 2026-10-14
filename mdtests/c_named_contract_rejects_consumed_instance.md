@@ -12,8 +12,8 @@ int32 invoke(int32 (*callback)()) { callback(); return callback(); }
 ```click
 resource Counter() { field revision: int32; }
 
-contract Take(first: Counter()) for int32() {
-    consumes first;
+contract int32 Take() {
+    consumes first: Counter();
     ensures result == 0;
 }
 
@@ -24,8 +24,8 @@ int32 invoke(int32 (*callback)()) {
     consumes c: Counter();
     ensures result == 0;
 } by {
-    step(Take(c));
-    step(Take(c));
+    step(Take, { first: c });
+    step(Take, { first: c });
     execute();
     simp();
 }

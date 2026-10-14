@@ -24,11 +24,10 @@ resource cell_at(p: int32*) {
     owns p[0..1];
 }
 
-contract PreservePair(first: cell_at(p), second: cell_at(q))
-    for void(int32* p, int32* q)
+contract void PreservePair(int32* p, int32* q)
 {
-    owns first;
-    owns second;
+    owns first: cell_at(p);
+    owns second: cell_at(q);
     ensures first.model == old(first.model);
     ensures second.model == old(second.model);
 }
