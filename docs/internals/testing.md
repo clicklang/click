@@ -311,7 +311,13 @@ The budget is kept by what the gate leaves out, not by a faster machine:
 - The live Charon re-extraction is nightly.
 
 `scripts/check.sh --nightly` runs all of it, with no budget, and
-`.github/workflows/nightly.yml` runs that every night. The same workflow has a
+`.github/workflows/nightly.yml` runs that every night. It takes hours, so it
+is not a per-PR check: agents and contributors do not run it before opening
+or updating a PR. The gate is the merge bar; a nightly failure is fixed
+forward. To check a change against nightly coverage it plausibly affects,
+run those tests or fixtures by name (`MDTEST_FILTER`, `CLICK_EXAMPLE`, or one
+`cargo nextest run --run-ignored all <name>`), and say in the PR what was not
+run. The same workflow has a
 second job, `scripts/check.sh --audit`, which runs `click audit` over the
 whole repository on a release build: every smart tactic in the examples and
 mdtests must expand to a proof that verifies. It takes about twenty minutes.
