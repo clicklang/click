@@ -3,10 +3,10 @@
 The Click library is the public Surface Click API in the
 [`library/`](https://github.com/clicklang/click/tree/master/library) modules.
 It isn't the Rust crate's internal `pub` API. Every sidecar sees
-`click::primitives`, `click::nat`, `click::list`, `click::c::builtins` and
-`click::c::string`, which brings `click::bytes` and `click::cstr`. The
-declarations of `click::machine_integer`, `click::integer` and
-`click::permutation` need that module's `import click::...;` line; see
+`click::primitives`, `click::nat`, `click::list` and `click::c::builtins`. A
+C program that declares or calls a `<string.h>` function Click specifies
+brings `click::c::string`, with `click::bytes` and `click::cstr`. Any other
+module's declarations need that module's `import click::...;` line; see
 [Click library imports](../../concepts/sidecars.md#click-library-imports).
 
 Every declaration below is copied exactly from the library and checked by the

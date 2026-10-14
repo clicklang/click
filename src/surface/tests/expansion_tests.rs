@@ -615,7 +615,8 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
             return length;
         }
     "#;
-    let click_source = r#"
+    let click_source = r#"import click::cstr;
+
         verifying "source_identity.c";
 
         uint64 read_terminator(uint8 haystack[], uint64 known_len) {
@@ -12887,7 +12888,8 @@ fn outcome_simp_instantiates_an_unfolded_byte_predicate_on_the_checked_proof() {
             return 0;
         }
     "#;
-    let click_source = r#"
+    let click_source = r#"import click::bytes;
+
         verifying "byte_prefix.c";
 
         int32 byte_prefix(uint8 p[], int32 n) {
