@@ -147,7 +147,8 @@ all-target Clippy and selected expansion/fresh/retained rechecks pass before the
 upstream rebase. After rebasing onto `7920aaf0e`, all 52 normal examples, 3,764 Markdown
 fixtures, 37 documentation checks, all-target Clippy and the three selected
 expansion/fresh/retained checks pass. The first attributed archive group is the
-[conditional native-composite output check](../bugs/native-composite-output-requires-decided-body-guard.md):
+conditional native-composite output check, now locked in by the
+[conditional allocated-record regression](../mdtests/conditional_allocated_record_output.md):
 a minimal C producer/caller passes on the fixed baseline and fails on the
 archive. Repair checkpoint `132cb424b` on the preserved recovery branch restores
 allocated-linked-list, heap-object and the reduction. Three targeted kernel
@@ -323,7 +324,7 @@ cause or that each is introduced by this branch:
 | Observed group | Existing reproduction or check |
 | --- | --- |
 | Pointer-field frames and stored values | [C frame bug](https://github.com/lacker/click/blob/e3d84a785792c007da19d2f42d75b9e143372164/bugs/c-pointer-field-postconditions-lose-frame-evidence.md); original owned-vector and owned-string projects |
-| Nullable allocated resource bodies | [Reduced conditional-output defect](../bugs/native-composite-output-requires-decided-body-guard.md); original allocated-linked-list and heap-object projects |
+| Nullable allocated resource bodies | [Conditional allocated-record regression](../mdtests/conditional_allocated_record_output.md); original allocated-linked-list and heap-object projects |
 | Borrowed/owned buffer and cursor transfer | Original arena, detachable-buffer, owned-segmented-buffer, owned-split-buffer, input-cursor, binary-tree, concurrency-fork-join, multifile-registry and ring-buffer projects |
 | Other C proof failures after upstream integration | Original refcount and rbtree-augmented projects |
 | Rust availability/ranges and proof cost | Original rust-chunks-exact and rust-byte-sum projects |
