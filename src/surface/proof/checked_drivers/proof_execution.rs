@@ -661,7 +661,7 @@ fn apply_source_step_proofs<'a>(
         return Err(proof.step_error("obligation proofs follow a `step` form"));
     };
     let solve = |proof: &Proof<'a>, have: &ProofHave| -> Result<Proof<'a>, ClickError> {
-        let nested = proof.begin_have(have.proposition.clone())?;
+        let nested = proof.begin_source_have(have)?;
         let goal = nested.goal().cloned();
         let selected = solve_nested_have(nested, have)
             .map_err(|error| {
@@ -992,7 +992,7 @@ fn advance_checked_linear_continuation<'a>(
                 None => proof.apply_planned_fact_transport(source, target, indexed.index)?,
             }
         } else if let ProofTactic::Have(have) = &indexed.tactic {
-            let nested = proof.begin_have(have.proposition.clone())?;
+            let nested = proof.begin_source_have(have)?;
             let goal = nested.goal().cloned();
             let selected = solve_nested_have(nested, have)
                 .map_err(|error| {
@@ -3129,7 +3129,7 @@ fn advance_focused_execution_arm<'a>(
             };
             next
         } else if let ProofTactic::Have(have) = &indexed.tactic {
-            let nested = proof.begin_have(have.proposition.clone())?;
+            let nested = proof.begin_source_have(have)?;
             let goal = nested.goal().cloned();
             let selected = solve_nested_have(nested, have)
                 .map_err(|error| {
@@ -4653,7 +4653,7 @@ fn advance_linear_open_scope<'a>(
         // here too; without this the site verifies and then reports that the
         // proof has no such source tactic.
         let checkpoint = scope.checkpoint();
-        let nested = scope.begin_have(have.proposition.clone())?;
+        let nested = scope.begin_source_have(have)?;
         let selected = solve_nested_have(nested, have)?;
         let Some(selected) = selected else {
             let fact = crate::surface::diagnostics::describe_click_proposition(&have.proposition);

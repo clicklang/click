@@ -1356,6 +1356,51 @@ fn explicit_transport_scales_near_linearly_with_unrelated_ambient_facts() {
     assert_near_linear_scaling("explicit transport with unrelated facts", &samples);
 }
 
+// A cited separation rewritten through one pointer equality must not inspect
+// unrelated owned cells or facts (the rbtree erase-color transport regression).
+#[test]
+#[ignore = "nightly: multi-size separation transport scaling takes 10s debug"]
+fn explicit_separation_alias_transport_has_constant_selected_work() {
+    let mut work = Vec::new();
+    for size in [4, 16, 64, 128] {
+        let resources = (0..size)
+            .map(|i| {
+                format!(
+                    "owns background[{i}..{}]; requires background[{i}] == {i};\n",
+                    i + 1
+                )
+            })
+            .collect::<String>();
+        let c = "struct node { uint64 word; struct node* left; };\nvoid inspect(struct node* parent, struct node* alias, struct node* child, int32* background) { }";
+        let source = format!(
+            "verifying \"alias.c\";\nvoid inspect(struct node* parent, struct node* alias, struct node* child, int32* background) {{
+ owns parent->left; owns child->word; {resources}
+ requires parent == alias;
+ requires separate(memory(parent->left), memory(child->word));
+}} by {{
+ have separate(memory(alias->left), memory(child->word)) by {{
+  transport(separate(memory(parent->left), memory(child->word)), separate(memory(alias->left), memory(child->word))) using {{
+   separate(memory(parent->left), memory(child->word)); parent == alias;
+  }};
+ }}
+ execute(); simp();
+}}"
+        );
+        let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c0_sources(&source, &[("alias.c", c)])
+        });
+        result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
+        let selected = samples
+            .iter()
+            .filter(|sample| sample.tactic.tactic_name == "have")
+            .collect::<Vec<_>>();
+        assert_eq!(selected.len(), 1);
+        work.push(selected[0].work);
+    }
+    assert!(work.iter().all(|count| *count > 0));
+    assert!(work.windows(2).all(|pair| pair[0] == pair[1]), "{work:?}");
+}
+
 /// A read of a file-scope array at a symbolic index the facts place inside
 /// it is one read of the array's entry run, not a case per element: the
 /// split per element recursed once per cell (a thousand elements overflowed

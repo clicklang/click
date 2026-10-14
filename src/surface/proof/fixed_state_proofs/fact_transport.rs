@@ -349,6 +349,53 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         ordinary_source
     };
     let explicit_assumptions = assumptions_from_propositions(&explicit_premises);
+    // The target form is paired with an already-lowered focused goal, so
+    // the validated ambient context may justify only its expression
+    // definedness (not the transport conclusion). This includes bounds such
+    // as `n >= 1` needed to read one cell from `loadable(p[0..n])`; the
+    // restricted assumptions below still exclusively decide whether the
+    // explicit source and certified effects reach the lowered target.
+    let target_lowering_assumptions = explicit_premises
+        .iter()
+        .cloned()
+        .fold(available.assumptions().clone(), |assumptions, premise| {
+            assumptions.assume_proposition(premise)
+        });
+    // Never resolve the target through the recorded surface map: the same
+    // surface form may deliberately name an older source snapshot.
+    let target = lower_fixed_state_proposition_with_assumptions(
+        surface_target,
+        &target_lowering_assumptions,
+        parameter_binding,
+        fixed_state,
+        spec_definitions,
+    )
+    .map_err(|message| {
+        ClickError::new(format!(
+            "`{claim_label}` tactic {tactic_index}: could not lower `transport` target: {message}"
+        ))
+    })?;
+    // An explicit alias transport needs only its cited source and equality.
+    // Check that selected operation before introducing the live resource
+    // composition or consulting the ambient snapshot/effect context.
+    if matches!(
+        (&source, &target),
+        (
+            Proposition::CResourceSeparate { .. },
+            Proposition::CResourceSeparate { .. }
+        )
+    ) && exact_fact_is_available(&source, &explicit_premises)
+        && certified_fact_transport_reaches(
+            &source,
+            &target,
+            None,
+            &explicit_assumptions
+                .clone()
+                .assume_proposition(source.clone()),
+        )
+    {
+        return Ok(CheckedFixedStateFactTransport { source, target });
+    }
     let resource_facts = fixed_state
         .state
         .resources()
@@ -393,32 +440,6 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         )));
     }
 
-    // The target form is paired with an already-lowered focused goal, so
-    // the validated ambient context may justify only its expression
-    // definedness (not the transport conclusion). This includes bounds such
-    // as `n >= 1` needed to read one cell from `loadable(p[0..n])`; the
-    // restricted assumptions below still exclusively decide whether the
-    // explicit source and certified effects reach the lowered target.
-    let target_lowering_assumptions = explicit_premises
-        .iter()
-        .cloned()
-        .fold(available.assumptions().clone(), |assumptions, premise| {
-            assumptions.assume_proposition(premise)
-        });
-    // Never resolve the target through the recorded surface map: the same
-    // surface form may deliberately name an older source snapshot.
-    let target = lower_fixed_state_proposition_with_assumptions(
-        surface_target,
-        &target_lowering_assumptions,
-        parameter_binding,
-        fixed_state,
-        spec_definitions,
-    )
-    .map_err(|message| {
-        ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: could not lower `transport` target: {message}"
-        ))
-    })?;
     if !available.available_across_effects(&target, effect_facts) {
         let transition_facts = fact_transport_transition_facts(effect_facts, &source);
         // Uncharged, a known violation: the path's effect facts and every

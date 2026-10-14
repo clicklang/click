@@ -1245,7 +1245,10 @@ impl ResourceContext {
     /// New live memory inputs between two retained sibling or ancestor
     /// checkpoints. Work follows their explicit deltas to the common prefix;
     /// it never walks the shared history or enumerates the source's frame.
-    pub(super) fn changed_memory_inputs_from(&self, previous: &Self) -> Option<Vec<CResourceFact>> {
+    pub(in crate::kernel) fn changed_memory_inputs_from(
+        &self,
+        previous: &Self,
+    ) -> Option<Vec<CResourceFact>> {
         if !std::sync::Arc::ptr_eq(&self.storage.origin, &previous.storage.origin) {
             return None;
         }

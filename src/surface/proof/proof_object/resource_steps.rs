@@ -2373,7 +2373,7 @@ impl<'a> Proof<'a> {
         {
             execution
                 .core
-                .record_return_transfer_wrapper_rewrite(
+                .record_return_composite_resource_rewrite(
                     context.function,
                     goal.path_index,
                     self.facts(),
@@ -2491,11 +2491,55 @@ impl<'a> Proof<'a> {
         let CFunctionOutcome::Return { value, state } = checked.outcome else {
             unreachable!("folding a return outcome preserves its outcome kind")
         };
-        if self.is_authority_transfer_wrapper(resource) && family_reaches_population {
-            let selected = &checked.selected;
+        // Ordinary macro folds keep their final contract-definition law.
+        // Authority wrappers and guarded ownership need an execution exchange.
+        // Named outputs also require the exact published frontier after a scope
+        // closes; contracts with ordinary outputs retain their definition law.
+        let operational_exchange = match checked.selected.resource() {
+            CResource::Composite { name, .. } => context
+                .function
+                .composite_resource_definition(name)
+                .is_some_and(|definition| {
+                    definition.contains().iter().any(|spec| {
+                        matches!(
+                            spec.term(),
+                            crate::kernel::CResourceTerm::PopulationAuthority { .. }
+                                | crate::kernel::CResourceTerm::Iterated(_)
+                        )
+                    })
+                }),
+            _ => false,
+        };
+        if *state != *goal.data.core.state
+            && (operational_exchange
+                || (matches!(closure, ResourceBodyClosure::CloseOpen { .. })
+                    && context
+                        .function
+                        .resource_ensures()
+                        .iter()
+                        .any(|spec| spec.is_instance()))
+                || (self.is_authority_transfer_wrapper(resource) && family_reaches_population))
+        {
+            let viewed = CResourceFact::View(checked.selected.resource().clone());
+            let selected = if state
+                .resources()
+                .directly_supporting_fact(&checked.selected, self.facts().assumptions())
+                .is_none()
+                && goal
+                    .data
+                    .core
+                    .state
+                    .resources()
+                    .directly_supporting_fact(&checked.selected, self.facts().assumptions())
+                    .is_none()
+            {
+                &viewed
+            } else {
+                &checked.selected
+            };
             execution
                 .core
-                .record_return_transfer_wrapper_rewrite(
+                .record_return_composite_resource_rewrite(
                     context.function,
                     goal.path_index,
                     self.facts(),

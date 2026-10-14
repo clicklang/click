@@ -574,6 +574,16 @@ pub(crate) struct CheckedResourceRewrite {
     load_equalities: Vec<crate::kernel::CheckedLoadEquality>,
     delta_proofs: Arc<Vec<CheckedResourceDeltaProof>>,
     return_observation: Option<Arc<ReturnResourceObservation>>,
+    return_presentation: Option<Arc<CheckedReturnPresentation>>,
+}
+
+/// A composite exchange independently checked at the published snapshot.
+/// Its facts retain that snapshot rather than pretending to be C-body reads.
+#[derive(Clone)]
+struct CheckedReturnPresentation {
+    context: Arc<CheckedReturnContext>,
+    selected: CResourceFact,
+    rewrite: CheckedResourceRewrite,
 }
 
 /// The same selected resource exchange at the kernel-published return snapshot.
@@ -1650,8 +1660,19 @@ impl CheckedResourceRewrite {
         let allowed_assumptions = allowed.iter().fold(assumptions.clone(), |facts, fact| {
             facts.assume_proposition(fact.clone())
         });
+        let allowed_set = allowed
+            .iter()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut cached_comparisons = HashMap::new();
         if let Some(unchecked) = introduced.iter().find(|fact| {
             !allowed.contains(fact)
+                && !cached_body_loadability(
+                    fact,
+                    before_state.memory(),
+                    &allowed_set,
+                    &mut cached_comparisons,
+                )
                 && !allowed_assumptions.proves_exact(fact)
                 && !resource_composition_is_supported_by(
                     fact,
@@ -1680,6 +1701,7 @@ impl CheckedResourceRewrite {
             )
             .finish(),
             delta_proofs: Arc::new(Vec::new()),
+            return_presentation: None,
             return_observation: None,
         })
     }
@@ -1875,6 +1897,7 @@ impl CheckedResourceRewrite {
             )
             .finish(),
             delta_proofs: Arc::new(Vec::new()),
+            return_presentation: None,
             return_observation: None,
         })
     }
@@ -2315,6 +2338,7 @@ impl CheckedResourceRewrite {
                         )
                         .finish(),
                     delta_proofs: Arc::new(Vec::new()),
+                    return_presentation: None,
                     return_observation: None,
                 });
             }
@@ -2501,6 +2525,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 selected_children,
                 load_equalities: load_equality_capture.finish(),
                 delta_proofs: Arc::new(Vec::new()),
+                return_presentation: None,
                 return_observation,
             });
         }
@@ -2545,6 +2570,13 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
         concrete_after.observed_population_families =
             before_state.observed_population_families.clone();
         concrete_after.population_access = before_state.population_access.clone();
+        // Predicate count permissions are a read-only presentation witness,
+        // not authority to change execution state or resource ownership.
+        Arc::make_mut(&mut concrete_after.population_effects).predicate_count_permissions =
+            before_state
+                .population_effects
+                .predicate_count_permissions
+                .clone();
         if concrete_after != *before_state
             || !crate::kernel::api::contract_certification::c_memories_definitionally_equal(
                 before_state.memory(),
@@ -2729,6 +2761,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             selected_children: None,
             load_equalities,
             delta_proofs: Arc::new(delta_proofs),
+            return_presentation: None,
             return_observation: None,
         })
     }
@@ -7782,6 +7815,33 @@ fn trace_completion_from_entry(
                                 std::mem::take(executed_under).assume_proposition(fact);
                         }
                     }
+                    if let Some(presentation) = &rewrite.return_presentation {
+                        if return_origin.as_ref() != Some(&presentation.context.origin) {
+                            return Err(
+                                "return composite presentation belongs to a different execution path",
+                            );
+                        }
+                        let observed = &presentation.rewrite;
+                        CheckedResourceRewrite::check_with_children(
+                            function,
+                            &observed.before_state,
+                            &observed.before_facts,
+                            &presentation.selected,
+                            &observed.after_state,
+                            &observed.after_facts,
+                            &CheckedCallEvents::default(),
+                            None,
+                        )
+                        .map_err(|_| "return composite presentation has an unchecked exchange")?;
+                        for fact in observed
+                            .after_facts
+                            .introduced_since(&observed.before_facts)
+                            .ok_or("return composite presentation facts have a different lineage")?
+                        {
+                            *executed_under =
+                                std::mem::take(executed_under).assume_proposition(fact);
+                        }
+                    }
                     if let Some(observation) = &rewrite.return_observation {
                         if return_origin.as_ref() != Some(&observation.context.origin) {
                             return Err(
@@ -10566,10 +10626,13 @@ impl ExecutionProofCore {
             let expected = loop {
                 match previous.pop() {
                     Some(CheckedExecutionEvent::ResourceRewrite(rewrite)) => {
-                        break rewrite
-                            .return_observation
-                            .map(|observation| observation.after.clone())
-                            .ok_or("return observation lost its preceding exchange")?;
+                        break match rewrite.return_observation {
+                            Some(observation) => observation.after.clone(),
+                            None => rewrite
+                                .return_presentation
+                                .map(|presentation| presentation.rewrite.after_state.clone())
+                                .ok_or("return observation lost its preceding exchange")?,
+                        };
                     }
                     Some(CheckedExecutionEvent::ReturnProposition(_)) => {}
                     _ => break *published.clone(),
@@ -10666,7 +10729,7 @@ impl ExecutionProofCore {
     }
 
     /// Checks and retains an ordinary wrapper exchange on a completed path.
-    pub(crate) fn record_return_transfer_wrapper_rewrite(
+    pub(crate) fn record_return_composite_resource_rewrite(
         &mut self,
         function: &CFunction,
         path_index: usize,
@@ -10724,9 +10787,63 @@ impl ExecutionProofCore {
                 }
             }
         };
-        // The expression-facing outcome has already projected local bindings.
-        // Validate both representations and retain the C-body snapshot.
-        CheckedResourceRewrite::check_with_children(
+        // An ordinary macro refold may exist only in the visible outcome;
+        // unfolding it again does not change the retained C path's body.
+        if matches!(selected.resource(), CResource::Composite { name, .. }
+            if function.composite_resource_definition(name)
+                .is_some_and(|definition| !definition.reaches_population()))
+            && presented_before_state
+                .resources()
+                .directly_supporting_fact(selected, before_facts.assumptions())
+                .is_some()
+            && before_state
+                .resources()
+                .directly_supporting_fact(selected, before_facts.assumptions())
+                .is_none()
+        {
+            CheckedResourceRewrite::check_with_children(
+                function,
+                presented_before_state,
+                before_facts,
+                selected,
+                after_state,
+                after_facts,
+                &self.checked_call_events,
+                None,
+            )?;
+            return Ok(());
+        }
+        let context = self.return_context_for_path(path_index)?;
+        let CFunctionOutcome::Return {
+            state: published, ..
+        } = &context.published
+        else {
+            return Err("return composite exchange requires a returning path".into());
+        };
+        let mut previous = self
+            .return_resource_rewrites
+            .get(&path_index)
+            .unwrap_or(&self.execution_evidence[path_index])
+            .clone();
+        let expected = loop {
+            match previous.pop() {
+                Some(CheckedExecutionEvent::ResourceRewrite(rewrite)) => {
+                    break if let Some(observation) = rewrite.return_observation {
+                        observation.after.clone()
+                    } else if let Some(presentation) = rewrite.return_presentation {
+                        presentation.rewrite.after_state.clone()
+                    } else {
+                        return Err("return exchange lost its preceding presentation".into());
+                    };
+                }
+                Some(CheckedExecutionEvent::ReturnProposition(_)) => {}
+                _ => break published.as_ref().clone(),
+            }
+        };
+        if *presented_before_state != expected {
+            return Err("return composite exchange has a different published state".into());
+        }
+        let presented = CheckedResourceRewrite::check_with_children(
             function,
             presented_before_state,
             before_facts,
@@ -10736,37 +10853,72 @@ impl ExecutionProofCore {
             &self.checked_call_events,
             None,
         )?;
-        // An ordinary family refolded on the outcome is not retained on the
-        // path, which still holds its body. Unfolding it again leaves the
-        // retained path as it is: the exchange is checked above, and the
-        // path never held the folded head it would remove.
-        if matches!(selected.resource(), CResource::Composite { name, .. }
-                if function
-                    .composite_resource_definition(name)
-                    .is_some_and(|definition| !definition.reaches_population()))
-            && before_state
-                .resources()
-                .directly_supporting_fact(selected, before_facts.assumptions())
-                .is_none()
-        {
-            return Ok(());
-        }
-        let retained_after_state = before_state
+        // Publication ends automatic local lifetimes. Replay only this
+        // logical resource exchange on the C-body state, retaining the local
+        // cells that publication removed from its expression-facing outcome.
+        let frame = before_state
+            .resources()
+            .changed_memory_inputs_from(presented_before_state.resources())
+            .ok_or("return resource exchange has no shared resource frontier")?
+            .into_iter()
+            .filter(|fact| {
+                !presented_before_state
+                    .resources()
+                    .contains_exact_representation(fact)
+            });
+        let resources = after_state
+            .resources()
             .clone()
-            .with_resource_context(after_state.resources().clone());
+            .try_compose_with_facts_delaying_normalization(frame, before_facts.assumptions())
+            .map_err(|error| {
+                format!("return resource exchange changed its retained frame: {error}")
+            })?;
+        let mut retained_after_state = after_state.clone().with_resource_context(resources);
+        retained_after_state.memory = before_state.memory().clone();
+        retained_after_state.locals = before_state.locals().clone();
+        retained_after_state.enclosing_frame_holds_locals =
+            before_state.enclosing_frame_holds_locals;
+        Arc::make_mut(&mut retained_after_state.population_effects).predicate_count_permissions =
+            before_state
+                .population_effects
+                .predicate_count_permissions
+                .clone();
+        Arc::make_mut(&mut retained_after_state.population_effects).creation =
+            before_state.population_effects.creation.clone();
+        if let CResource::Composite { name, .. } = selected.resource()
+            && let Some(definition) = function.composite_resource_definition(name)
+            && definition.contains().iter().any(|spec| {
+                matches!(
+                    spec.term(),
+                    crate::kernel::CResourceTerm::PopulationAuthority { .. }
+                )
+            })
+        {
+            retained_after_state = retained_after_state.with_checked_current_control_wrapper(
+                selected,
+                definition,
+                before_facts.assumptions(),
+            )?;
+        }
         let mut rewrite = CheckedResourceRewrite::check_with_children(
             function,
             &before_state,
             before_facts,
             selected,
             &retained_after_state,
-            after_facts,
+            before_facts,
             &self.checked_call_events,
             None,
         )?;
         if self.frontier.execution().is_some() {
             rewrite.return_context = Some(self.return_context_for_path(path_index)?);
         }
+        rewrite.after_facts = after_facts.clone();
+        rewrite.return_presentation = Some(Arc::new(CheckedReturnPresentation {
+            context,
+            selected: selected.clone(),
+            rewrite: presented,
+        }));
         let mut trace = self
             .return_resource_rewrites
             .get(&path_index)
@@ -12890,6 +13042,68 @@ mod tests {
         assert!(
             samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 8),
             "return proofs rescanned their growing ambient contexts: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn return_composite_presentations_reject_extra_facts_and_other_snapshots() {
+        let before = CState::new();
+        let selected = CResourceFact::own_composite("empty".into(), vec![]);
+        let after = before
+            .clone()
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
+        let facts = ProofFacts::default();
+        let definition =
+            CCompositeResourceDefinition::new("empty", vec![], None, false, vec![], vec![]);
+        let (function, events) = returned_proposition_trace(&before, &facts);
+        let function = function.with_composite_resource_definitions(vec![definition]);
+        let checked = CheckedResourceRewrite::check_with_children(
+            &function,
+            &before,
+            &facts,
+            &selected,
+            &after,
+            &facts,
+            &CheckedCallEvents::default(),
+            None,
+        )
+        .unwrap();
+        let mut rewrite = checked.clone();
+        rewrite.return_presentation = Some(Arc::new(CheckedReturnPresentation {
+            context: returned_proposition_context(&before),
+            selected,
+            rewrite: checked,
+        }));
+        let replay = |rewrite| {
+            let mut trace = events.clone();
+            trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite));
+            trace_completion(&function, &trace, facts.assumptions(), false)
+        };
+        assert!(replay(rewrite.clone()).is_ok());
+        let mut extra = rewrite.clone();
+        Arc::make_mut(extra.return_presentation.as_mut().unwrap())
+            .rewrite
+            .after_facts = facts.with_fact(Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::Constant(false),
+            true,
+        ));
+        assert_eq!(
+            replay(extra).err(),
+            Some("return composite presentation has an unchecked exchange")
+        );
+        let mut changed = rewrite.clone();
+        Arc::make_mut(changed.return_presentation.as_mut().unwrap())
+            .rewrite
+            .after_state
+            .memory = CMemory::new().with_block("other", 4);
+        assert!(replay(changed).is_err());
+        Arc::make_mut(rewrite.return_presentation.as_mut().unwrap()).context =
+            returned_proposition_context(
+                &before.with_memory(CMemory::new().with_block("other", 4)),
+            );
+        assert_eq!(
+            replay(rewrite).err(),
+            Some("return composite presentation belongs to a different execution path")
         );
     }
 
