@@ -262,6 +262,12 @@ return snapshot, where automatic locals have ended. Its input must be that
 path's publication or the preceding observed exchange's output. Certification
 checks the selected resource body at both snapshots and imports only the
 semantic facts those exchanges produce, including exact read validity facts.
+Before a named output exchange, ordinary composite refolds retain the same
+checked return presentation, including wrappers containing only a static owned
+range. The next named fold observes that presentation rather than the resources
+published before the refold. This uses the existing selected-resource exchange;
+it does not rescan unrelated return paths or resource entries. The gate fixture
+`static_return_refold_before_named_resource.md` covers the static case.
 Post-return unfolds do not materialize additional cached cells: no C statement
 follows the return, and naming those loads would change the snapshot used by
 claim completion. Unfolds during execution still name their exposed cells.

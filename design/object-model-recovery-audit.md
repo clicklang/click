@@ -147,7 +147,7 @@ PR [#937](https://github.com/clicklang/click/pull/937) merged the entry-read fol
 repair; final pushed head `2ad128f94` is an ancestor of fetched upstream master.
 This is an independent upstream delivery, separate from native-entry activation.
 
-The [conditional-record reduction](../bugs/native-composite-output-requires-decided-body-guard.md)
+The [conditional-record reduction](../mdtests/conditional_allocated_record_output.md)
 now has a preserved archive-based repair at `132cb424b` on
 `codex/object-model-failure-reduction`. The original allocated-linked-list and
 heap-object projects and the reduced producer/caller pass. Three kernel controls
@@ -434,12 +434,16 @@ fresh, expanded, rewritten and retained checking. Wrong-cell controls reject.
 The reduced C indexed-cell contracts use the existing viewed range; no unmerged
 object-model activation is included.
 
-The [conditional-output reduction](../bugs/native-composite-output-requires-decided-body-guard.md)
+The [conditional-output reduction](../mdtests/conditional_allocated_record_output.md)
 attributes the allocated-list/heap-object error group to a native composite
 formation check demanding a decided guard on a verified conditional output.
 The small producer/caller passes baseline proof modes and fails on `e3d84a785`.
 A setter-shadowing experiment did not fix the original list and was discarded.
-The introducing commit and the sound conditional-admission repair remain open.
+The defect never reached master; the reduction is now a master regression
+fixture, so any object-model activation must keep this producer/caller passing.
+Checkpoint `132cb424b` repairs only conditional heads without native promises;
+a guarded native promise with an undecided guard still needs admission under
+its guard before activation.
 
 ## Backing-range fold reduction after the read-index safeguard
 
@@ -538,3 +542,28 @@ with a regression covering fresh checking, expansion, rewritten checking and a
 retained session. This extraction completes the remaining borrow-frame slice of
 the retained-resource lookup repair; broader object-model activation remains
 separate.
+
+## Full-width explicit-separation integration
+
+While PR #987 was open, upstream `3b0550fbc` independently delivered the bounded
+borrow-frame producer and its actual-loop equality/expansion controls. Reconcile
+#987 with that implementation and keep the upstream boxed borrow certificate and
+its stronger overlap/widened-footprint tests. The remaining delivery changes only
+explicit-separation frames: retain the two selected members and full-width read
+membership in a boxed certificate, authenticate the live fact and full mutable
+footprint when checking, and select candidates through address-indexed buckets.
+
+The previous explicit-separation certificate checked only the starting address.
+The regression rejects a read that starts in the final descriptor cell and extends
+past it, an enlarged mutable footprint, and a withdrawn separation fact. Its
+multi-size witness checks bounded, identical producer work beside 16, 64, 256 and
+1,024 unrelated separation facts. Symbolic ordered-subrange and after-end evidence
+remain separate recovery candidates; this repair uses existing exact arithmetic.
+
+On the rebased implementation, all 149 selected frame/index/borrow kernel controls
+pass (7.85s harness). Both focused explicit-separation controls pass after adding
+a concrete overlap witness: a read [4, 8) is separate from mutable bytes [8, 12),
+while a read [4, 12) must not frame that mutation. The selected upstream
+`descriptor_backing_range_loop_survives_all_proof_modes` test passes (2.12s),
+covering fresh verification, expansion, rewritten checking and retained rechecking
+of the unchanged C/proof. The full nightly suite was not run.
