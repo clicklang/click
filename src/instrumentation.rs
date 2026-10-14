@@ -1930,6 +1930,43 @@ pub enum HiddenPrerequisiteRoute {
     ContextualCondition,
     /// The same, under the explicit policy.
     ExplicitCondition,
+    /// A condition a `step()`'s own C evaluation decided by the kernel's
+    /// general decision procedure over the proof context, where no fact
+    /// states it exactly (rule `decide`), or a pointer alias it resolved the
+    /// same way (rule `alias`). Counted only inside a step's transition.
+    StepConditionDecision,
+}
+
+thread_local! {
+    static STEP_CONDITION_CENSUS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Counts [`HiddenPrerequisiteRoute::StepConditionDecision`] while alive,
+/// when `active`; restores the enclosing setting on drop.
+pub(crate) struct StepConditionCensusScope(bool);
+
+impl StepConditionCensusScope {
+    pub(crate) fn enter(active: bool) -> Self {
+        Self(STEP_CONDITION_CENSUS.with(|flag| flag.replace(active)))
+    }
+}
+
+impl Drop for StepConditionCensusScope {
+    fn drop(&mut self) {
+        STEP_CONDITION_CENSUS.with(|flag| flag.set(self.0));
+    }
+}
+
+/// Records one step condition decision, if a step's transition is counting.
+pub(crate) fn record_step_condition_decision(rule: &'static str) {
+    if STEP_CONDITION_CENSUS.with(std::cell::Cell::get) {
+        record_hidden_prerequisite(HiddenPrerequisiteRoute::StepConditionDecision, rule);
+    }
+}
+
+/// Whether a step's transition is counting condition decisions.
+pub(crate) fn step_condition_census_active() -> bool {
+    STEP_CONDITION_CENSUS.with(std::cell::Cell::get)
 }
 
 /// The count of hidden prerequisite derivations by route and by the top rule
@@ -1946,8 +1983,13 @@ thread_local! {
 }
 
 pub(crate) fn record_hidden_prerequisite(route: HiddenPrerequisiteRoute, rule: &'static str) {
+    // The per-thread reading attributes obligation and condition-prerequisite
+    // searches to one operation; a step's own condition decisions are a
+    // separate, still-open census route that those assertions do not cover.
     #[cfg(test)]
-    HIDDEN_PREREQUISITES_ON_THREAD.with(|count| count.set(count.get() + 1));
+    if route != HiddenPrerequisiteRoute::StepConditionDecision {
+        HIDDEN_PREREQUISITES_ON_THREAD.with(|count| count.set(count.get() + 1));
+    }
     *HIDDEN_PREREQUISITE_CENSUS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)

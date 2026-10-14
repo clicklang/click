@@ -536,7 +536,7 @@ pub(in crate::kernel) fn add_narrow_integer_range_execution_pure_facts(
         // value is read for (a specification read of a loop counter).
         if let Proposition::ConditionIs(condition, true) = &proposition
             && !assumptions.should_defer_non_exact_condition_reasoning()
-            && assumptions.decide(condition) == Some(true)
+            && assumptions.decide_non_exact(condition) == Some(true)
         {
             continue;
         }

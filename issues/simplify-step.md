@@ -233,11 +233,24 @@ a bare step refuses an obligation the implicit `auto` cannot prove, smart
 execution's retry has no compatibility escape hatch, and the in-step re-run
 over retained `have`s is gone. Both census pins are empty.
 
-Still uncounted, and so not yet shown search-free: the kernel's own
-condition evaluation, which `certified_condition_transitions` runs over the
-whole context under every policy but `Exact`. Count it before claiming a
-step decides conditions without search; its fast path is
-[difference-logic.md](difference-logic.md).
+A step's own C evaluation still searches. The census now counts it
+(`StepConditionDecision`): each condition a step decides by the kernel's
+general `decide` where no fact states it exactly, and each pointer alias it
+resolves that way. Measured on the whole corpus, nightly fixtures included,
+after the fallback's removal:
+
+| Rule | mdtests | examples |
+| --- | --- | --- |
+| `decide order` | 1234 | 236 |
+| `decide overflow` | 1215 | 140 |
+| `decide equality` | 51 | 39 |
+| `decide pointer equality` | 11 | 42 |
+| `alias` | 14 | 0 |
+
+About 95% are order comparisons and overflow checks, the linear integer
+bounds [difference-logic.md](difference-logic.md) is the fast path for.
+The Rust and C++ import suites, and the nightly fixtures, are not yet in
+the census.
 
 ### 4. Check expansion cold
 

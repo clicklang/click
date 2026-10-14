@@ -1019,6 +1019,9 @@ fn evaluate_c_memory_load_case(
         // cell and eventually report an uninitialized read.
         let known_equal = !assumptions.should_defer_non_exact_condition_reasoning()
             && alias_cache.equal(&pointer, &stored_pointer, assumptions);
+        if known_equal {
+            crate::instrumentation::record_step_condition_decision("alias");
+        }
 
         let mut equal_facts = facts.clone();
         if known_equal

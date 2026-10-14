@@ -2653,7 +2653,7 @@ pub(super) fn condition_is_decided(
         .or_else(|| PureFactContext::decide_intrinsically(condition))
         .or_else(|| {
             (!assumptions.should_defer_non_exact_condition_reasoning())
-                .then(|| assumptions.decide(condition))
+                .then(|| assumptions.decide_non_exact(condition))
                 .flatten()
         })
 }

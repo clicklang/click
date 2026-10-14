@@ -272,6 +272,22 @@ impl PureFactContext {
     /// matter how the search was pruned. A `None` computed under an ambient
     /// interruption (verification limits or exact cycle cuts — see
     /// [`note_incomplete_reasoning`]) is path-dependent and is not cached.
+    /// [`Self::decide`] where the decision stands in for an exact check: a
+    /// `Some` no fact states exactly is counted in the hidden prerequisite
+    /// census while a step's transition is counting
+    /// (`issues/simplify-step.md`).
+    pub(crate) fn decide_non_exact(&self, condition: &ConditionTerm) -> Option<bool> {
+        let decided = self.decide(condition)?;
+        if crate::instrumentation::step_condition_census_active()
+            && !self.proves_exact(&Proposition::ConditionIs(condition.clone(), decided))
+        {
+            crate::instrumentation::record_step_condition_decision(decided_condition_kind(
+                condition,
+            ));
+        }
+        Some(decided)
+    }
+
     pub(crate) fn decide(&self, condition: &ConditionTerm) -> Option<bool> {
         let result = self.decide_unrecorded(condition);
         if let Some(value) = result {
@@ -2149,5 +2165,45 @@ impl PureFactContext {
         let left = self.signed_constant_known_equal(left)?;
         let right = self.signed_constant_known_equal(right)?;
         Some(compare(left, right))
+    }
+}
+
+/// The census rule of a decided condition: its comparison family.
+fn decided_condition_kind(condition: &ConditionTerm) -> &'static str {
+    use ConditionTerm as C;
+    match condition {
+        C::Bitvector32SignedAddOverflows(..)
+        | C::Bitvector32SignedSubtractOverflows(..)
+        | C::Bitvector32SignedMultiplyOverflows(..)
+        | C::Bitvector32SignedDivideOverflows(..)
+        | C::Bitvector32SignedShiftLeftOverflows(..)
+        | C::Bitvector64SignedAddOverflows(..)
+        | C::Bitvector64SignedSubtractOverflows(..)
+        | C::Bitvector64SignedMultiplyOverflows(..)
+        | C::Bitvector64SignedDivideOverflows(..)
+        | C::Bitvector64SignedShiftLeftOverflows(..) => "decide overflow",
+        C::Bitvector32Equal(..)
+        | C::Bitvector64Equal(..)
+        | C::IntegerEqual(..)
+        | C::IntegerNotEqual(..)
+        | C::AlgebraicEqual(..) => "decide equality",
+        C::PointerEqual(..) | C::PointerOffsetEqual(..) => "decide pointer equality",
+        C::Bitvector32SignedLessThan(..)
+        | C::Bitvector32SignedLessEqual(..)
+        | C::Bitvector32SignedGreaterThan(..)
+        | C::Bitvector32SignedGreaterEqual(..)
+        | C::Bitvector64SignedLessThan(..)
+        | C::Bitvector64SignedLessEqual(..)
+        | C::Bitvector64SignedGreaterThan(..)
+        | C::Bitvector64SignedGreaterEqual(..)
+        | C::Bitvector64UnsignedLessThan(..)
+        | C::Bitvector64UnsignedLessEqual(..)
+        | C::Bitvector64UnsignedGreaterThan(..)
+        | C::Bitvector64UnsignedGreaterEqual(..)
+        | C::IntegerLessThan(..)
+        | C::IntegerLessEqual(..)
+        | C::IntegerGreaterThan(..)
+        | C::IntegerGreaterEqual(..) => "decide order",
+        _ => "decide other",
     }
 }

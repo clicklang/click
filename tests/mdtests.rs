@@ -258,7 +258,40 @@ const ARTIFACT_REUSE_REJECTION_BASELINE: &[(ArtifactReuseRejection, usize)] = &[
 /// prerequisites simple statement checking derived by a search the proof does
 /// not retain, over the whole unfiltered corpus, by route and top rule. A
 /// count may only fall; `issues/simplify-step.md` drives it to zero.
-const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] = &[];
+const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] = &[
+    (
+        (HiddenPrerequisiteRoute::StepConditionDecision, "alias"),
+        14,
+    ),
+    (
+        (
+            HiddenPrerequisiteRoute::StepConditionDecision,
+            "decide equality",
+        ),
+        51,
+    ),
+    (
+        (
+            HiddenPrerequisiteRoute::StepConditionDecision,
+            "decide order",
+        ),
+        1234,
+    ),
+    (
+        (
+            HiddenPrerequisiteRoute::StepConditionDecision,
+            "decide overflow",
+        ),
+        1215,
+    ),
+    (
+        (
+            HiddenPrerequisiteRoute::StepConditionDecision,
+            "decide pointer equality",
+        ),
+        11,
+    ),
+];
 
 #[test]
 fn mdtests() {

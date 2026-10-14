@@ -321,6 +321,10 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
     prerequisite_policy: StatementPrerequisitePolicy,
     context: Option<&PureFactContext>,
 ) -> Result<Vec<CertifiedConditionTransition>, ClickError> {
+    let _census = crate::instrumentation::StepConditionCensusScope::enter(matches!(
+        prerequisite_policy,
+        StatementPrerequisitePolicy::Retained | StatementPrerequisitePolicy::Fast
+    ));
     // The list keeps its context, so consulting it here and on every path
     // below builds it at most once, and extends the one the list carried in.
     let pure_context = || pure_facts.context();
@@ -501,6 +505,10 @@ pub(in crate::surface) fn certified_statement_transitions(
     fact_transport_policy: StatementFactTransportPolicy,
     context: Option<&PureFactContext>,
 ) -> Result<(Vec<CertifiedStatementTransition>, Option<CVerifiedLoopRule>), ClickError> {
+    let _census = crate::instrumentation::StepConditionCensusScope::enter(matches!(
+        prerequisite_policy,
+        StatementPrerequisitePolicy::Retained | StatementPrerequisitePolicy::Fast
+    ));
     // A statement executed in a proof context sees that context as the
     // kernel already keeps it: incrementally indexed, shared by clone. The
     // slice then carries only the statement-local delta bookkeeping.

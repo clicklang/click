@@ -42,7 +42,36 @@ const ARTIFACT_REUSE_REJECTION_BASELINE: &[(ArtifactReuseRejection, usize)] = &[
 /// prerequisites simple statement checking derived by a search the proof does
 /// not retain, over the whole unfiltered corpus, by route and top rule. A
 /// count may only fall; `issues/simplify-step.md` drives it to zero.
-const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] = &[];
+const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] = &[
+    (
+        (
+            HiddenPrerequisiteRoute::StepConditionDecision,
+            "decide equality",
+        ),
+        39,
+    ),
+    (
+        (
+            HiddenPrerequisiteRoute::StepConditionDecision,
+            "decide order",
+        ),
+        236,
+    ),
+    (
+        (
+            HiddenPrerequisiteRoute::StepConditionDecision,
+            "decide overflow",
+        ),
+        140,
+    ),
+    (
+        (
+            HiddenPrerequisiteRoute::StepConditionDecision,
+            "decide pointer equality",
+        ),
+        42,
+    ),
+];
 
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
@@ -173,12 +202,14 @@ fn example_projects() {
     // The gate has a ten-minute budget. An example that takes most of it
     // alone runs in the nightly gate (`scripts/check.sh --nightly`), or on
     // request by name.
+    let mut skipped_nightly = false;
     if requested.is_none() && std::env::var_os("CLICK_NIGHTLY").is_none() {
         projects.retain(|path| {
             let name = path.file_name().and_then(|name| name.to_str());
             match name.and_then(|name| NIGHTLY.iter().find(|(nightly, _)| *nightly == name)) {
                 Some((name, reason)) => {
                     println!("SKIPPING nightly example `{name}`: {reason}");
+                    skipped_nightly = true;
                     false
                 }
                 None => true,
@@ -301,7 +332,9 @@ fn example_projects() {
         && let Some(mismatch) = instrumentation::hidden_prerequisite_census_mismatch(
             &hidden_prerequisites,
             HIDDEN_PREREQUISITE_BASELINE,
-            partitioned,
+            // Without its nightly examples the corpus is partial, as in a
+            // partition: the pins are whole-corpus counts.
+            partitioned || skipped_nightly,
         )
     {
         panic!("hidden prerequisite ratchet (tests/examples.rs baselines):\n{mismatch}");

@@ -973,7 +973,7 @@ fn add_condition_path_fact_with_visibility(
         return (known == value).then_some(());
     }
     if !assumptions.should_defer_non_exact_condition_reasoning()
-        && let Some(known) = assumptions.decide(&condition)
+        && let Some(known) = assumptions.decide_non_exact(&condition)
     {
         if known == value && !certified_after_effect {
             return Some(());
@@ -1153,7 +1153,7 @@ fn bare_condition_is_decided(assumptions: &PureFactContext, proposition: &Propos
         return true;
     }
     !assumptions.should_defer_non_exact_condition_reasoning()
-        && assumptions.decide(condition) == Some(*value)
+        && assumptions.decide_non_exact(condition) == Some(*value)
 }
 
 /// Whether a required verification condition is already discharged by one of
@@ -1388,7 +1388,7 @@ pub(in crate::kernel) fn add_condition_obligation(
         return (known == value).then_some(());
     }
     if !assumptions.should_defer_non_exact_condition_reasoning()
-        && let Some(known) = assumptions.decide(&condition)
+        && let Some(known) = assumptions.decide_non_exact(&condition)
     {
         return (known == value).then_some(());
     }
@@ -1713,7 +1713,7 @@ pub(in crate::kernel) fn decide_with_facts(
         .or_else(|| PureFactContext::decide_intrinsically(condition))
         .or_else(|| {
             (!assumptions.should_defer_non_exact_condition_reasoning())
-                .then(|| assumptions.decide(condition))
+                .then(|| assumptions.decide_non_exact(condition))
                 .flatten()
         })
         .or_else(|| {
