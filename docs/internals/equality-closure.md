@@ -1357,6 +1357,24 @@ prerequisites have been checked. The graph's generation invalidates equality
 misses recorded before publication; persistent sibling contexts retain their
 own admitted unions.
 
+Function-pointer reads use their exact registered load-variable definition;
+they cannot be recovered by treating pointer arithmetic as a read. Nonvolatile
+function reads retain a typed `GeneratedLoadBinding`, including ordinary
+statement reads from borrowed callback tables. Expression-fact composition
+preserves certified producer metadata even when its defining proposition is
+already known. Statement publication retains only the new checked evidence
+suffix in the successor's fact context, rather than reducing it to bare
+propositions. Existing object-pointer observation policy and volatile-read
+behavior are preserved.
+
+[`function_pointer_read_uses_checked_table_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/function_pointer_read_uses_checked_table_alias.md)
+checks a complete callback-field copy through a proved constant-table alias;
+its missing-alias counterpart is refused. Kernel tests cover checked statement
+publication, redundant producer equations, sibling isolation, withdrawal,
+changed sources, and absence of additional read permission. This establishes
+pointer equality; callback-contract predicate lookup still requires its own
+exact fact or supported transport.
+
 The same producer boundary now handles one immediate `Store` edge. It uses
 structural object separation or an exact constant byte gap, after re-expressing
 the selected read in the store's block through established graph equality.
