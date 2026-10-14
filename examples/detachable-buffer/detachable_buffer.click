@@ -1,6 +1,5 @@
 resource detached_buffer(owner: struct detachable_buffer*) {
-    owns owner->len;
-    owns owner->data;
+    owns *owner;
     fact 1 <= owner->len;
     fact separate(
         memory(*owner),
@@ -14,8 +13,7 @@ resource detached_backing(data: int32*, length: int32) {
 }
 
 resource attached_buffer(owner: struct detachable_buffer*) {
-    owns owner->len;
-    owns owner->data;
+    owns *owner;
     owns owner->data[0..owner->len];
     fact 1 <= owner->len;
     fact separate(
@@ -95,8 +93,7 @@ int32 detachable_buffer_attach(
     int32 length
 ) {
     requires 1 <= length;
-    owns owner->len;
-    owns owner->data;
+    owns *owner;
 
     ensures result == length;
     ensures owner->len == length;

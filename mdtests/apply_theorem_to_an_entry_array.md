@@ -29,8 +29,7 @@ theorem head_is_three_is_small(a: int32[]) {
 
 int32 write_box(int32 box[1]) {
     requires box[0] == 3;
-    consumes box[0..1];
-    produces box[0..1];
+    owns box[0..1];
     ensures old_head_small: old(box[0]) < 4 by {
         execute();
         apply(head_is_three_is_small(old(box))) using {

@@ -33,9 +33,8 @@ verifying "close_fd.c";
 verifying "borrow_after_close.c";
 
 int32 borrow_fd(int32 fd) {
-    consumes open_fd(fd);
+    owns open_fd(fd) by auto;
 
-    produces open_fd(fd) by auto;
 }
 
 int32 close_fd(int32 fd) {

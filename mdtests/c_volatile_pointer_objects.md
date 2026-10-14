@@ -21,9 +21,8 @@ struct node *update_pointer_cell(struct node *parent, struct node *replacement) 
 verifying "c_volatile_pointer_objects.c";
 
 struct node *update_pointer_cell(struct node *parent, struct node *replacement) {
-    consumes parent->left;
+    owns parent->left;
     ensures result == replacement;
-    produces parent->left;
 }
 ```
 

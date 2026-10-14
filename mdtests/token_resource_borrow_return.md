@@ -27,15 +27,13 @@ verifying "borrow_fd.c";
 verifying "borrow_fd_twice.c";
 
 int32 borrow_fd(int32 fd) {
-    consumes open_fd(fd);
+    owns open_fd(fd) by auto;
 
-    produces open_fd(fd) by auto;
 }
 
 int32 borrow_fd_twice(int32 fd) {
-    consumes open_fd(fd);
+    owns open_fd(fd) by auto;
 
-    produces open_fd(fd) by auto;
 }
 ```
 

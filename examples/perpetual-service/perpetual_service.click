@@ -1,6 +1,5 @@
 resource service(owner: struct service*) {
-    owns owner->phase;
-    owns owner->cell;
+    owns *owner;
     owns owner->cell[0..1];
     fact 0 <= owner->phase;
     fact owner->phase <= 1;
@@ -42,8 +41,7 @@ int32 service_step(struct service* owner) {
         fact owner->phase <= 1;
         fact owner->cell == old(owner->cell);
         fact separate(memory(*owner), memory(owner->cell[0..1]));
-        owns owner->phase;
-        owns owner->cell;
+        owns *owner;
         owns owner->cell[0..1];
     } then {
         step();

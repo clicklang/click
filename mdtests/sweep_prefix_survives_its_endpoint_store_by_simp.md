@@ -25,8 +25,7 @@ import "unmarked_count_lemmas.click";
 void sweep(int32 visited[], int32 n) {
     requires 0 <= n;
     requires n <= 1073741823;
-    consumes visited[0..n];
-    produces visited[0..n];
+    owns visited[0..n];
 } by {
     step();
     step();

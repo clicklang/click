@@ -29,8 +29,7 @@ verifying "conditional_deallocation_requires_guard.c";
 
 int32 conditional_deallocation_requires_guard(int32* p, int32 error) {
     consumes allocated(p);
-    consumes permit();
-    produces permit();
+    owns permit();
 } by {
     unfold(allocated(p));
     step();

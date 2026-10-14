@@ -737,8 +737,7 @@ fn explicit_call_partition_if_stays_on_one_proof_after_scoped_open() {
             verifying "replace_after_scoped_open.c";
 
             int32 replace_allocated_cell(struct cell_owner* owner) {
-                consumes allocated_cell(owner);
-                produces allocated_cell(owner);
+                owns allocated_cell(owner);
 
                 ensures result == 0 or result == 1;
                 ensures result == 0 implies owner->data == old(owner->data);
@@ -750,8 +749,7 @@ fn explicit_call_partition_if_stays_on_one_proof_after_scoped_open() {
             }
 
             int32 replace_after_scoped_open(struct cell_owner* owner) {
-                consumes allocated_cell(owner);
-                produces allocated_cell(owner);
+                owns allocated_cell(owner);
 
                 ensures result == 0 or result == 1;
             } by {
@@ -829,8 +827,7 @@ pub(super) fn result_case_split_sources() -> (&'static str, &'static str, &'stat
             verifying "replace_then_branch.c";
 
             int32 replace_allocated_cell(struct cell_owner* owner) {
-                consumes allocated_cell(owner);
-                produces allocated_cell(owner);
+                owns allocated_cell(owner);
 
                 ensures result == 0 or result == 1;
                 ensures result == 0 implies owner->data == old(owner->data);
@@ -844,8 +841,7 @@ pub(super) fn result_case_split_sources() -> (&'static str, &'static str, &'stat
             }
 
             int32 replace_then_branch(struct cell_owner* owner) {
-                consumes allocated_cell(owner);
-                produces allocated_cell(owner);
+                owns allocated_cell(owner);
 
                 ensures result == 0 or result == 1;
             } by {
@@ -1090,18 +1086,16 @@ fn callee_subrange_requirement_completes_without_a_body_rerun() {
         int32 write_at(int32 p[], int32 i) {
             requires i >= 0;
             requires i < 2147483647;
-            consumes p[i..i + 1];
+            owns p[i..i + 1] by auto;
 
-            produces p[i..i + 1] by auto;
         }
 
         int32 write_at_symbolic(int32 p[], int32 i, int32 n) {
             requires i >= 0;
             requires i < n;
             requires n <= 2147483647;
-            consumes p[0..n];
+            owns p[0..n] by auto;
 
-            produces p[0..n] by auto;
         }
     "#;
 
@@ -1452,8 +1446,7 @@ fn grouped_opaque_calls_keep_declared_composite_resources_on_proof() {
             verifying "borrow_token_twice.c";
 
             int32 borrow_token(int32 key) {
-                consumes token_bundle(key);
-                produces token_bundle(key);
+                owns token_bundle(key);
                 ensures result == key;
             } by {
                 execute();
@@ -1461,8 +1454,7 @@ fn grouped_opaque_calls_keep_declared_composite_resources_on_proof() {
             }
 
             int32 borrow_token_twice(int32 key) {
-                consumes token_bundle(key);
-                produces token_bundle(key);
+                owns token_bundle(key);
                 ensures result == key;
             } by {
                 execute();
@@ -1539,8 +1531,7 @@ fn grouped_mutable_composite_calls_keep_open_scopes_on_proof() {
             verifying "set_wrapped_seven.c";
 
             int32 set_seven(int32* cell) {
-                consumes owned_cell(cell);
-                produces owned_cell(cell);
+                owns owned_cell(cell);
                 ensures result == 7;
             } by {
                 open(owned_cell(cell)) {
@@ -1550,8 +1541,7 @@ fn grouped_mutable_composite_calls_keep_open_scopes_on_proof() {
             }
 
             int32 set_wrapped_seven(int32* cell) {
-                consumes wrapped_cell(cell);
-                produces wrapped_cell(cell);
+                owns wrapped_cell(cell);
                 ensures result == 7;
             } by {
                 open(wrapped_cell(cell)) {
@@ -1632,8 +1622,7 @@ fn grouped_mutable_composite_calls_continue_on_proof_after_preparatory_scope() {
             verifying "prepare_then_set_seven.c";
 
             int32 set_seven(int32* cell, int32 choose) {
-                consumes owned_cell(cell);
-                produces owned_cell(cell);
+                owns owned_cell(cell);
                 ensures result == 0 or result == 1;
             } by {
                 open(owned_cell(cell)) {
@@ -1643,8 +1632,7 @@ fn grouped_mutable_composite_calls_continue_on_proof_after_preparatory_scope() {
             }
 
             int32 prepare_then_set_seven(int32* cell, int32 choose) {
-                consumes wrapped_cell(cell);
-                produces wrapped_cell(cell);
+                owns wrapped_cell(cell);
                 ensures result == 0 or result == 1;
             } by {
                 open(wrapped_cell(cell)) {
@@ -2142,8 +2130,7 @@ fn post_execution_frame_using_relowers_a_preceding_have_fact() {
             verifying "clear_first.c";
 
             int32 clear_first(int32 data[]) {
-                consumes data[0..1];
-                produces data[0..1];
+                owns data[0..1];
                 ensures data[0] == 0;
             } by {
                 execute();

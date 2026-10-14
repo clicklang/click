@@ -33,8 +33,7 @@ resource block(p: int32*) { owns p[0..1000]; }
 resource pointers(p: int32**) { owns p[0..1000]; }
 
 int32 put(int32 *a) {
-    consumes block(a);
-    produces block(a);
+    owns block(a);
     ensures result == 5;
     ensures a[3] == 5;
     ensures a[4] == old(a[4]);
@@ -46,8 +45,7 @@ int32 put(int32 *a) {
 }
 
 void put_pointer(int32 **p, int32 *q) {
-    consumes pointers(p);
-    produces pointers(p);
+    owns pointers(p);
     ensures p[2] == old(p[2]);
     ensures p[1] == q;
 } by {

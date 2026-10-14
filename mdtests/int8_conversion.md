@@ -69,11 +69,9 @@ signed char maximum() { ensures result == 127 by auto; }
 int widths() { ensures result == 2 by auto; }
 int local_array() { ensures result == -1 by auto; }
 int fields(struct bytes *p) {
-    consumes p->first;
-    consumes p->second;
+    owns p->first;
+    owns p->second;
     ensures result == p->first + p->second by auto;
-    produces p->first;
-    produces p->second;
 }
 int read_byte(signed char *p) {
     views p[0..2];

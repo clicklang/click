@@ -358,6 +358,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
     let mut function_specs = BTreeSet::new();
     for definition in file.contract_definitions() {
         crate::surface::enter_ambient_declaration(definition.name());
+        refuse_a_borrow_spelled_as_two_transfers(definition.function_block())?;
         let variables =
             function_signature_type_environment(definition.function_block().signature(), false);
         for parameter in definition.proof_parameters().unwrap_or(&[]) {
@@ -591,6 +592,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         }
 
         refuse_a_place_returned_twice(&function)?;
+        refuse_a_borrow_spelled_as_two_transfers(&function)?;
 
         if function.ensures().is_empty()
             && !function
@@ -695,6 +697,105 @@ fn refuse_a_place_returned_twice(function: &FunctionBlock) -> Result<(), ClickEr
         }
     }
     Ok(())
+}
+
+/// One spelling per form: `consumes X; produces X;` with the same `X` is the
+/// borrow `owns X;`. Both hand `X` to the callee at entry and give it back at
+/// exit, and both leave every value inside `X` to the contract's `ensures`.
+///
+/// The check is by spelling, on unconditional clauses, and only where the two
+/// clauses certainly name one resource. A `consumes` clause is read at entry
+/// and a `produces` clause at exit, so a place or argument that reads memory
+/// (`consumes list(node->next); produces list(node->next);`) can name another
+/// object at exit; that pair is a real transformation and stays. A pair whose
+/// instances carry different names, or whose produced resource is guarded,
+/// also stays.
+fn refuse_a_borrow_spelled_as_two_transfers(function: &FunctionBlock) -> Result<(), ClickError> {
+    let mut borrowed = function
+        .ensures()
+        .iter()
+        .filter(|clause| clause.borrowed())
+        .filter_map(|clause| match clause.ensure() {
+            Ensure::Resource(resource) => Some(resource),
+            Ensure::Proposition(_) => None,
+        })
+        .collect::<Vec<_>>();
+    // An `owns` clause is a requirement paired with a borrowed return; every
+    // other owned requirement is a `consumes` clause.
+    let mut consumed = Vec::new();
+    for requirement in function.requires() {
+        let Requirement::Resource(resource) = requirement else {
+            continue;
+        };
+        if let Some(index) = borrowed.iter().position(|held| *held == resource) {
+            borrowed.swap_remove(index);
+            continue;
+        }
+        consumed.push(resource);
+    }
+    for clause in function.ensures() {
+        if clause.borrowed() || clause.condition().is_some() {
+            continue;
+        }
+        let Ensure::Resource(produced) = clause.ensure() else {
+            continue;
+        };
+        if !resource_names_one_place_at_entry_and_exit(produced) || !consumed.contains(&produced) {
+            continue;
+        }
+        let target = crate::surface::printing::format_resource_target(produced);
+        let proof = if matches!(clause.proof(), SourceProof::Default) {
+            String::new()
+        } else {
+            ", with the `produces` clause's proof".to_string()
+        };
+        return Err(ClickError::new(format!(
+            "`{}` consumes and produces `{target}`; write the one clause `owns {target};`{proof}",
+            function.signature().name()
+        ))
+        .with_kind(ClickErrorKind::Type));
+    }
+    Ok(())
+}
+
+/// Whether an unconditional resource clause names the same resource read at
+/// a function's entry and at its exit: its places and arguments are built from
+/// parameters and constants alone.
+fn resource_names_one_place_at_entry_and_exit(resource: &ResourceClause) -> bool {
+    let fixed_segment = |segment: &ContractSegment| {
+        [&segment.base, &segment.start, &segment.end]
+            .into_iter()
+            .all(c_expression_reads_no_memory)
+    };
+    let fixed_expression = |expression: &ContractExpression| {
+        contract_expression_as_c_fragment(expression)
+            .is_some_and(|expression| c_expression_reads_no_memory(&expression))
+    };
+    match resource {
+        ResourceClause::OwnMemory(segment) => fixed_segment(segment),
+        ResourceClause::MemoryAggregate {
+            access: ResourceAccessMode::Own,
+            segments,
+        } => segments.iter().all(fixed_segment),
+        ResourceClause::Named { resource, .. } => {
+            resource_names_one_place_at_entry_and_exit(resource)
+        }
+        ResourceClause::Quantified { quantity, resource } => {
+            fixed_expression(quantity) && resource_names_one_place_at_entry_and_exit(resource)
+        }
+        ResourceClause::Declared {
+            access: ResourceAccessMode::Own,
+            arguments,
+            resource_type_arguments,
+            resource_arguments,
+            ..
+        } => {
+            resource_type_arguments.is_empty()
+                && resource_arguments.is_empty()
+                && arguments.iter().all(fixed_expression)
+        }
+        _ => false,
+    }
 }
 
 /// Whether an expression is built from parameters and constants alone, so

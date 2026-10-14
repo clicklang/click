@@ -25,8 +25,7 @@ verifying "data.c";
 verifying "main.c";
 int read_cell(int *p) {
     requires viewable(p[0..1]);
-    consumes p[0..1];
-    produces p[0..1];
+    owns p[0..1];
     ensures result == old(p[0]);
 } by { execute(); simp(); }
 int main() { ensures result == 11; }

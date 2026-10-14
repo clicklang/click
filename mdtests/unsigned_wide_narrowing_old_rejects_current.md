@@ -12,8 +12,7 @@ unsigned int take(struct state *p) {
 ```click
 verifying "old.c";
 unsigned int take(struct state *p) {
-    consumes p->value;
-    produces p->value;
+    owns p->value;
     ensures result == (uint32)p->value;
 } by { execute(); simp(); }
 ```

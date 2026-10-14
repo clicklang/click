@@ -10,8 +10,7 @@ int main(void) { return read_pair(state); }
 resource pair(p: uint32*) { owns p[0..2]; }
 verifying "main.c";
 unsigned int read_pair(unsigned int *p) {
-    consumes pair(p);
-    produces pair(p);
+    owns pair(p);
     ensures result == old(p[0]) + old(p[1]);
 } by { unfold(pair(p)); execute(); fold(pair(p)); simp(); }
 int main() {

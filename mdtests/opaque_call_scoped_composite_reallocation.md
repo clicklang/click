@@ -50,8 +50,7 @@ verifying "replace_allocated_cell.c";
 verifying "replace_after_scoped_open.c";
 
 int32 replace_allocated_cell(struct cell_owner* owner) {
-    consumes allocated_cell(owner);
-    produces allocated_cell(owner);
+    owns allocated_cell(owner);
 
     ensures result == 0 or result == 1;
     ensures result == 0 implies owner->data == old(owner->data);
@@ -63,8 +62,7 @@ int32 replace_allocated_cell(struct cell_owner* owner) {
 }
 
 int32 replace_after_scoped_open(struct cell_owner* owner) {
-    consumes allocated_cell(owner);
-    produces allocated_cell(owner);
+    owns allocated_cell(owner);
 
     ensures result == 0 or result == 1;
 } by {

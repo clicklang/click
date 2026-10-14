@@ -26,8 +26,7 @@ resource marker(obj: struct object*) {
 verifying "resource_scope_preserves_unrelated.c";
 
 int32 preserve_spare(int32 value) {
-    consumes spare(value);
-    produces spare(value);
+    owns spare(value);
     ensures result == value;
 } by {
     execute();
@@ -35,10 +34,8 @@ int32 preserve_spare(int32 value) {
 }
 
 int32 resource_scope_preserves_unrelated(struct object* obj, int32 value) {
-    consumes marker(obj);
-    consumes spare(value);
-    produces marker(obj);
-    produces spare(value);
+    owns marker(obj);
+    owns spare(value);
     ensures result == value;
 } by {
     open(marker(obj)) {

@@ -28,8 +28,7 @@ void wipe(int32 a[], int32 n) {
     requires 0 < n;
     requires n <= 1073741823;
     requires a[0] == 5;
-    consumes a[0..n];
-    produces a[0..n];
+    owns a[0..n];
 } by {
     step();
     have 0 <= 0;

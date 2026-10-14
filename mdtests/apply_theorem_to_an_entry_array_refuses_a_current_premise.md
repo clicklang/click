@@ -34,8 +34,7 @@ theorem head_small_doubles(a: int32[]) {
 int32 clear_head(int32 box[2]) {
     requires box[0] == 7;
     requires box[1] == 0;
-    consumes box[0..2];
-    produces box[0..2];
+    owns box[0..2];
     ensures false_old_head_doubled: old(box[0]) + old(box[0]) < 2 by {
         execute();
         have 0 - 1 < box[0] by {

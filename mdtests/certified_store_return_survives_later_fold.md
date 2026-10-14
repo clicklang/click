@@ -28,8 +28,7 @@ verifying "certified_store_return_survives_later_fold.c";
 
 int32 increment_and_clear(struct pair* pair) {
     requires pair->value < 2147483647;
-    consumes owned_pair(pair);
-    produces owned_pair(pair);
+    owns owned_pair(pair);
 
     ensures result == old(pair->value) + 1;
 } by {

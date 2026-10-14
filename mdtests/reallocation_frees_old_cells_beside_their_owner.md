@@ -43,8 +43,7 @@ resource allocated_cells(owner: struct cell_owner*) {
 verifying "reallocation_frees_old_cells_beside_their_owner.c";
 
 int32 replace_cells(struct cell_owner* owner) {
-    consumes allocated_cells(owner);
-    produces allocated_cells(owner);
+    owns allocated_cells(owner);
     ensures result == 0 implies owner->cap == old(owner->cap);
 } by {
     open(allocated_cells(owner)) {

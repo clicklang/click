@@ -26,18 +26,16 @@ verifying "write_at_symbolic.c";
 int32 write_at(int32 p[], int32 i) {
     requires i >= 0;
     requires i < 2147483647;
-    consumes p[i..i + 1];
+    owns p[i..i + 1] by auto;
 
-    produces p[i..i + 1] by auto;
 }
 
 int32 write_at_symbolic(int32 p[], int32 i, int32 n) {
     requires i >= 0;
     requires i < n;
     requires n <= 2147483647;
-    consumes p[0..n];
+    owns p[0..n] by auto;
 
-    produces p[0..n] by auto;
 }
 ```
 

@@ -179,11 +179,9 @@ uint16_t checked_unsigned_narrow(int32 value) {
 }
 
 int32 read_width_fields(struct width_fields* packet) {
-    consumes packet->signed_value;
-    consumes packet->unsigned_value;
+    owns packet->signed_value;
+    owns packet->unsigned_value;
     ensures fields_promote: result == packet->signed_value + packet->unsigned_value by auto;
-    produces packet->signed_value;
-    produces packet->unsigned_value;
 }
 ```
 

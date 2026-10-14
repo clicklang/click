@@ -24,8 +24,7 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
     requires m < n;
     requires n <= 1073741823;
     requires (if a[m] > 0 { 1 } else { 0 }) == 1;
-    consumes a[0..n];
-    produces a[0..n];
+    owns a[0..n];
     ensures (if a[m] > 0 { 1 } else { 0 }) == 1;
 } by {
     step();

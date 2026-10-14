@@ -2199,9 +2199,18 @@ int32 open(int32 fd) {
 means the function borrows the resource for the call and reads it only.
 `consumes` requires an owned resource and does not return it. `produces`
 returns an owned resource. `requires` and `ensures` accept pure propositions
-only. Prefer `owns X by proof;` over the exactly equivalent pair
-`consumes X;` and `produces X by proof;`; keep the separate verbs for one-way
-transfers and resource transformations.
+only. `consumes X;` beside `produces X;` for the same `X` is exactly
+`owns X;`, and the pair is refused with that one clause to write (with the
+`produces` clause's proof, `owns X by proof;`;
+`mdtests/consumes_and_produces_one_place_is_owns.md`,
+`mdtests/consumes_and_produces_one_resource_is_owns.md`). The refusal applies
+where both clauses certainly name one resource: unconditional clauses whose
+place and arguments are built from parameters and constants. A place reached
+through memory the function may change, such as `consumes p->data[0..1];`
+with `produces p->data[0..1];` or `consumes list(node->next);` with
+`produces list(node->next);`, is read at entry by `consumes` and at exit by
+`produces`, can name a different object, and stays a pair. Keep the separate
+verbs for one-way transfers and resource transformations.
 
 A return-side clause is the caller's view, so its arguments are read that way.
 `result` is the returned value, and a parameter means the value the caller
@@ -3175,6 +3184,27 @@ held as pointer-width words that read back as pointers; the field's source
 spelling is unaffected. Explicit ranges such as
 `p[0..count]` remain the normal spelling for array storage.
 
+`owns *p` and `views *p` cover every field of the object, including the
+padding after each field, an embedded struct's fields and an inline array
+field, so they replace a clause per field (`owns p->len; owns p->cap; owns
+p->data;`) in a contract, a loop header and a resource body. Memory the object
+points at is not part of it: a pointer field's pointee is still its own clause,
+`owns *owner; owns owner->data[0..owner->cap];`. A function holding `*p` lends a
+callee any of its fields and keeps the rest unchanged across the call
+(`mdtests/whole_struct_lends_nested_and_array_fields.md`). Two differences
+from the per-field list remain. A required `*p` carries the generated
+`aligned(p, alignof(struct))` requirement described under
+[Requirements](#requirements); a field clause does not. And the object is
+held as `int32` cells, so a struct whose size is not a multiple of four bytes
+has no `*p` form and is refused by name
+(`mdtests/whole_struct_needs_a_whole_number_of_int32_cells.md`); own its
+fields one by one. A struct with a flexible array member is outside the
+supported C subset. Holding every field separately does not yet stand in for
+`*p` at a call when a field is narrower than an `int32` cell
+(`bugs/whole-struct-ownership-does-not-reassemble-from-a-byte-field.md`), and
+a file-scope struct owned by name does not stand in for `*p` at its address
+(`bugs/a-whole-global-struct-does-not-cover-its-object.md`).
+
 Surface Click also has documented low-level memory reads for addresses that do
 not have a recoverable C source place:
 
@@ -3303,7 +3333,14 @@ owns owned_buffer(owner);
 ensures owner->data[0] == old(owner->data[0]);
 ```
 
-Callers then frame the viewed remainder with no clause and no tactic. A
+Callers then frame the viewed remainder with no clause and no tactic, so a
+contract does not restate `ensures owner->head == old(owner->head);` for a
+cell it only views (`examples/ring-buffer`). A cell the contract owns,
+consumes or produces is in its footprint, and its value after the call is
+what the contract's `ensures` say: a frame for an owned cell the body leaves
+alone, such as `ensures owner->cap == old(owner->cap);` beside a produced
+resource, is still written, because callers rely on the contract and not on
+the body. A
 function that owns no memory must not write memory that was live at entry;
 this is checked when the function contract is certified, so callers preserve
 memory across a read-only callee with nothing to declare. Stack locals and

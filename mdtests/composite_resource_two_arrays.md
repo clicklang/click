@@ -19,9 +19,7 @@ resource first_cell_copy_access(dst: int32*, src: int32*) {
 verifying "copy_first.c";
 
 int32 copy_first(int32 dst[], int32 src[]) {
-    consumes first_cell_copy_access(dst, src);
-
-    produces first_cell_copy_access(dst, src) by {
+    owns first_cell_copy_access(dst, src) by {
         unfold(first_cell_copy_access(dst, src));
         execute();
         fold(first_cell_copy_access(dst, src));

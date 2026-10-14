@@ -27,8 +27,7 @@ function icount(p: int32[], lo: int32, hi: int32) -> Integer {
 
 void scribble(int32 a[], int32 n) {
     requires 0 < n;
-    consumes a[0..n];
-    produces a[0..n];
+    owns a[0..n];
 } by {
     execute();
     simp();
@@ -37,8 +36,7 @@ void scribble(int32 a[], int32 n) {
 void caller(int32 a[], int32 n) {
     requires 0 < n;
     requires a[0] == 5;
-    consumes a[0..n];
-    produces a[0..n];
+    owns a[0..n];
 } by {
     have 0 <= 0;
     have icount(a, 0, 0) == 0 by {

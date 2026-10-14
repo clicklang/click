@@ -34,8 +34,7 @@ verifying "a_return_cannot_produce_two_owners_of_order_equal_pointers.c";
 int32 dup(int32* p, int32* q) {
     requires p <= q;
     requires q <= p;
-    consumes p[0..1];
-    produces p[0..1];
+    owns p[0..1];
     produces q[0..1];
 }
 

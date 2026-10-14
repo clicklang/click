@@ -9,8 +9,7 @@ int main(void) { bump(&counter); return bump(&counter); }
 ```click
 verifying "main.c";
 unsigned int bump(unsigned int *p) {
-    consumes p[0..1];
-    produces p[0..1];
+    owns p[0..1];
     ensures p[0] == old(p[0]) + 1u32;
     ensures result == p[0];
     ensures result == old(p[0]) + 1u32;
