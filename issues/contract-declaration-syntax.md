@@ -138,13 +138,16 @@ that writes `int32` for such a source already writes the source's spelling.
   type in C++ types, `contract int PositiveRead(const State& state)`. A
   function-pointer parameter to a `noexcept` function is a callback, as in C:
   `requires Doubling(f)` gives a call through it a contract, and a caller
-  passing `&twice` shows `Doubling(&twice)`. A pointer is only called, not
-  stored or forwarded, and `std::function` is not imported. Diagnostics and proof steps (`executes`,
+  passing `&twice` shows `Doubling(&twice)`. A function-pointer local holds
+  `&f` or another pointer, and a pointer can be passed on; reassignment and
+  pointers in memory are refused, and `std::function` is not imported. Diagnostics and proof steps (`executes`,
   `step(callee(...))`) still name functions by the importer's names.
 - **Rust.** Verified functions in native form, including `impl Drop for Guard`
   and module paths. A named contract is `contract fn Doubling(x: i32) -> i32`,
   and a `fn(i32) -> i32` parameter is a callback under it, with a crate
-  function item passed for one. No `extern`, closures or `dyn Fn`. A
+  function item passed for one. `extern fn` states the trusted contract of
+  a scalar `safe fn` in an `unsafe extern "C"` block, the head naming its
+  parameters. No functions of other crates, closures or `dyn Fn`. A
   diagnostic's suggested refinement theorem still uses the importer's name
   and C's `&f` spelling.
 
@@ -163,9 +166,10 @@ that writes `int32` for such a source already writes the source's spelling.
 3. **`extern` and `contract` for C++ and Rust.** Done: native C++ `extern`
    heads, members included, and calls through C++ function-pointer
    parameters under a named contract, and Rust `contract fn` with calls
-   through `fn` pointers. Remaining: storing and forwarding C++ function
-   pointers, `std::function` in C++ (whose call operator throws when
-   empty), Rust `extern fn`, and closures (`impl Fn`, `&dyn Fn`) in Rust,
+   through `fn` pointers, Rust `extern fn` for `extern` block items, and
+   C++ function-pointer locals and forwarded pointers. Remaining:
+   `std::function` in C++ (whose call operator throws when empty), and
+   closures (`impl Fn`, `&dyn Fn`) in Rust,
    through the C++ exporter and Charon, with the same refinement check as C
    (`Comparator(&f)`).
 4. **Base-class and trait method interfaces.** A contract on a C++ virtual

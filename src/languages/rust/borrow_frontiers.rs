@@ -670,6 +670,7 @@ mod tests {
                 place("other", reference_type()),
             ],
             body: vec![],
+            external: false,
             span: Span { line: 1, column: 1 },
             mir: Some(MirBody {
                 locals: vec![

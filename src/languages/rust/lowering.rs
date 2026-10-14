@@ -344,6 +344,17 @@ fn lower_function(
         kernel_parameters
             .push(c_parameter(&p.name, c_type.to_kernel_type()).with_pointee_constant(constant));
     }
+    // A declaration in an `extern` block has no body to execute: its calls
+    // are checked against the sidecar's `extern fn` contract.
+    if f.external {
+        if f.mir.is_some() || !f.body.is_empty() {
+            return Err("Rust extern function must not carry a body".into());
+        }
+        return Ok(
+            C0Function::external(return_type, f.name.clone(), parameters)
+                .with_positional_parameters(),
+        );
+    }
     let mut cx = Context {
         shared_array_iterators: BTreeMap::new(),
         shared_array_options: BTreeMap::new(),

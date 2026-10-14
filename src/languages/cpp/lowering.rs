@@ -598,6 +598,20 @@ impl LoweringContext<'_> {
                         c_call(self.callee_name(callee)?, lowered_arguments),
                     ))
                 }
+                // A function-pointer local holds `&f` or another pointer.
+                (CppType::FunctionPointer { .. }, CppInitializer::Value { value }) => {
+                    Ok(c_declare_initialized(
+                        local.name.clone(),
+                        super::interface::function_pointer_signature(&local.value_type)?
+                            .pointer_type()
+                            .to_kernel_type(),
+                        self.lower_expression(value)?,
+                        false,
+                        false,
+                        false,
+                        false,
+                    ))
+                }
                 _ => Err(format!(
                     "C++ local `{}` has an initializer outside direct lowering",
                     local.name
@@ -1488,6 +1502,10 @@ impl LoweringContext<'_> {
                 ) if Scalar::pointer_element(pointee, false).is_some()
                     && scalar::same_scalar_type(pointee, value_pointee) =>
                 {
+                    Ok(c_variable(self.variable_name(place)))
+                }
+                // A function-pointer variable read to pass it on.
+                (CppType::FunctionPointer { .. }, CppType::FunctionPointer { .. }) => {
                     Ok(c_variable(self.variable_name(place)))
                 }
                 (reference @ CppType::LvalueReference { .. }, _)

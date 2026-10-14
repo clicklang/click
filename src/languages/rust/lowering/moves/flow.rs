@@ -382,6 +382,7 @@ mod tests {
             return_type: Type::Unit,
             parameters: vec![],
             body: vec![],
+            external: false,
             span: span.clone(),
             mir: Some(MirBody {
                 locals: vec![Place {

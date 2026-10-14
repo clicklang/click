@@ -17858,6 +17858,105 @@ fn a_cpp_function_pointer_call_needs_its_contract_and_its_refinement() {
     }
 }
 
+const STORED_FUNCTION_POINTER_SOURCE: &str = "int twice(int x) noexcept { return x + x; }\n\
+int stored(int (*f)(int) noexcept, int x) noexcept {\n\
+    int (*g)(int) noexcept = f;\n\
+    return g(x);\n\
+}\n\
+int relay(int (*f)(int) noexcept, int x) noexcept { return stored(f, x); }\n\
+int caller(int x) noexcept {\n\
+    int (*h)(int) noexcept = &twice;\n\
+    return relay(h, x);\n\
+}\n";
+
+const STORED_FUNCTION_POINTER_SIDECAR: &str = r#"verifying "callback.cpp";
+contract int Doubling(int x) {
+    requires 0 <= x and x <= 1000;
+    ensures result == x + x;
+}
+int twice(int x) {
+    requires 0 <= x and x <= 1000;
+    ensures result == x + x;
+} by { execute(); simp(); }
+int stored(int (*f)(int), int x) {
+    requires Doubling(f);
+    requires 0 <= x and x <= 1000;
+    ensures result == x + x;
+} by { execute(); simp(); }
+int relay(int (*f)(int), int x) {
+    requires Doubling(f);
+    requires 0 <= x and x <= 1000;
+    ensures result == x + x;
+} by { execute(); simp(); }
+int caller(int x) {
+    requires 0 <= x and x <= 1000;
+    ensures result == x + x;
+} by { execute(); simp(); }
+"#;
+
+// A function-pointer local holds `&twice` or a parameter's pointer, a call
+// goes through the local, and a parameter or local is passed on. The
+// contract follows the pointer: each function that calls through it or
+// passes it on requires it, and `caller` shows `twice` meets it.
+#[test]
+#[ignore = "nightly: 1.4s in the parallel gate"]
+fn stored_and_forwarded_cpp_function_pointers_keep_their_contract() {
+    let project = Project::with_fixture("callback.cpp", "caller", STORED_FUNCTION_POINTER_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let sidecar = project.directory.join("callback.click");
+    let verify = |source: &str| {
+        fs::write(&sidecar, source).unwrap();
+        let parsed = read_click_project(&sidecar, source).unwrap();
+        verify_program_prepared_project(&parsed, &import).map(|_| parsed)
+    };
+    let parsed = verify(STORED_FUNCTION_POINTER_SIDECAR)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    for label in ["stored.contract", "relay.contract", "caller.contract"] {
+        let expanded =
+            expand_project_claim_source_by_label(&parsed, &ProgramInputs::program(&import), label)
+                .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+        verify_program_prepared_project(&parsed.with_entry_source(expanded), &import)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+    }
+    let requirement = |function: &str| {
+        format!("int {function}(int (*f)(int), int x) {{\n    requires Doubling(f);\n")
+    };
+    for (function, expected) in [
+        ("stored", "cannot verify call through function pointer `g`"),
+        (
+            "relay",
+            "is missing prerequisite (precondition clause 1 of `stored`)",
+        ),
+    ] {
+        let hostile = STORED_FUNCTION_POINTER_SIDECAR.replace(
+            &requirement(function),
+            &format!("int {function}(int (*f)(int), int x) {{\n"),
+        );
+        assert_ne!(hostile, STORED_FUNCTION_POINTER_SIDECAR);
+        let Err(error) = verify(&hostile) else {
+            panic!("accepted:\n{hostile}");
+        };
+        assert!(error.message().contains(expected), "{}", error.message());
+    }
+    let weak_twice = STORED_FUNCTION_POINTER_SIDECAR.replacen(
+        "    ensures result == x + x;\n} by { execute(); simp(); }\nint stored",
+        "    ensures result >= 0;\n} by { execute(); simp(); }\nint stored",
+        1,
+    );
+    assert_ne!(weak_twice, STORED_FUNCTION_POINTER_SIDECAR);
+    let Err(error) = verify(&weak_twice) else {
+        panic!("accepted a `twice` that does not meet `Doubling`");
+    };
+    assert!(
+        error
+            .message()
+            .contains("does not satisfy named contract `Doubling`"),
+        "{}",
+        error.message()
+    );
+}
+
 // The importer admits a call through a pointer to a noexcept function, in
 // a variable, with value arguments; it refuses the rest by name.
 #[test]
@@ -17868,8 +17967,8 @@ fn cpp_function_pointer_shapes_outside_the_profile_are_refused() {
             "noexcept, non-variadic function",
         ),
         (
-            "int twice(int x) noexcept { return x + x; }\nint apply(int (*f)(int) noexcept, int x) noexcept { int (*g)(int) noexcept = f; return g(x); }\nint caller(int x) noexcept { return apply(&twice, x); }\n",
-            "the supported automatic C++ local",
+            "int twice(int x) noexcept { return x + x; }\nint apply(int (*f)(int) noexcept, int x) noexcept { int (*g)(int) noexcept = f; g = f; return g(x); }\nint caller(int x) noexcept { return apply(&twice, x); }\n",
+            "C++ assignment target is not a mutable reference or local",
         ),
         (
             "int twice(int x) noexcept { return x + x; }\nint apply(int (*f)(int) noexcept, int x) noexcept { return f(twice(x)); }\nint caller(int x) noexcept { return apply(&twice, x); }\n",

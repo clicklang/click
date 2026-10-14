@@ -18096,6 +18096,48 @@ fn returned_struct_pointer_lemmas_survive_expansion_and_retained_verification() 
 }
 
 #[test]
+fn claim_expansion_that_adds_a_library_import_rechecks_in_its_session() {
+    // The written-out certificate cites a `machine_integer` theorem, so
+    // expansion adds its import. Only the proof changed; the session must
+    // recheck it rather than report a change outside the proof unit.
+    let source = r#"verifying "caller.c";
+
+int32 clamp(int32 x) {
+    ensures 0 <= result and result <= 100;
+} by { execute(); simp(); }
+
+int32 caller(int32 x) {
+    ensures 1 <= result and result <= 101;
+} by { execute(); simp(); }
+"#;
+    let sources = [(
+        "caller.c",
+        "int32 clamp(int32 x) {\n    if (x < 0) {\n        return 0;\n    }\n    if (x > 100) {\n        return 100;\n    }\n    return x;\n}\n\nint32 caller(int32 x) {\n    return clamp(x) + 1;\n}\n",
+    )];
+    let expanded =
+        expand_c0_claim_source(source, &sources, "caller", CProofClaim::Grouped).unwrap();
+    assert!(
+        expanded.starts_with("import click::machine_integer;\n"),
+        "{expanded}"
+    );
+    let position = expansion::position_at_offset(&expanded, expanded.rfind("ensures").unwrap());
+    let (session, _) = C0VerificationSession::new(source, &sources).unwrap();
+    session
+        .verify_at(&expanded, position.line, position.column)
+        .unwrap();
+    let changed = expanded.replace("result <= 100;", "result <= 99;");
+    let error = session
+        .verify_at(&changed, position.line, position.column)
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("outside the selected proof unit"),
+        "{error}"
+    );
+}
+
+#[test]
 #[ignore = "nightly: checks byte-field ownership through expansion and retained verification"]
 fn whole_struct_byte_fields_reassemble_in_all_proof_modes() {
     for fixture in [
