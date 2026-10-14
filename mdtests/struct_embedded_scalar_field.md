@@ -26,10 +26,9 @@ int32 write_nested(struct outer* packet) {
 verifying "struct_embedded_scalar_field.c";
 
 int32 write_nested(struct outer* packet) {
-    consumes packet->inner.value;
+    owns packet->inner.value;
 
     ensures result == packet->inner.value;
-    produces packet->inner.value;
 } by {
     step();
     step();

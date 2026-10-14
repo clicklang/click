@@ -23,10 +23,9 @@ authorized resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
 verifying "wildcard_create_private_body_duplicate_memory.c";
 void issue(int32* pool, int32* p) {
     owns authority(slot(pool, _));
-    consumes p[0..1];
+    owns p[0..1];
     requires defined(count(slot(pool, _)) + 1);
     produces slot(pool, p);
-    produces p[0..1];
     ensures p[0] == 7;
     ensures count(slot(pool, _)) == old(count(slot(pool, _))) + 1;
 } by {

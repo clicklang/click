@@ -12,13 +12,12 @@ verifying "joint.c";
 int32 invoke(void (*callback)(int32), int32 x) {
     requires First(callback);
     requires Second(callback);
-    consumes Permit(x);
-    produces Permit(x);
+    owns Permit(x);
     produces Permit(x);
     ensures result == 0;
 } by { step(First); execute(); simp(); }
 ```
 
 ```expect
-fail: unverified claims: invoke.produces_1 `produces Permit(x)`
+fail: unverified claims: invoke.produces_0 `produces Permit(x)`
 ```

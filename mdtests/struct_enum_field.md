@@ -27,10 +27,9 @@ int32 mark_ready(struct packet* packet) {
 verifying "struct_enum_field.c";
 
 int32 mark_ready(struct packet* packet) {
-    consumes packet->state;
+    owns packet->state;
 
     ensures result == 1;
-    produces packet->state;
 } by {
     step();
     step();

@@ -36,12 +36,10 @@ verifying "struct_tagged_union.c";
 
 int32 read_number(struct packet* packet) {
     requires packet->tag == 1;
-    consumes packet->tag;
-    consumes packet->payload.number;
+    owns packet->tag;
+    owns packet->payload.number;
 
     ensures result == packet->payload.number;
-    produces packet->tag;
-    produces packet->payload.number;
 } by {
     auto;
 }

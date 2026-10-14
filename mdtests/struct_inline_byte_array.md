@@ -32,10 +32,9 @@ verifying "struct_inline_byte_array.c";
 verifying "struct_inline_byte_array_parameter.c";
 
 uint8 write_packet(struct packet* packet) {
-    consumes packet->buf;
+    owns packet->buf;
 
     ensures result == 7;
-    produces packet->buf;
 } by {
     step();
     step();
@@ -43,10 +42,9 @@ uint8 write_packet(struct packet* packet) {
 }
 
 uint8 write_array_item(struct item items[2]) {
-    consumes items[0..2];
+    owns items[0..2];
 
     ensures result == 7;
-    produces items[0..2];
 } by {
     step();
     step();

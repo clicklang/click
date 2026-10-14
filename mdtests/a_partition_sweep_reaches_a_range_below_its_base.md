@@ -73,11 +73,9 @@ extern int32 lend_below(int32* r, int32 s, int32 e) {
 int32 write_then_read(int32* a, int32* b, int32 s, int32 e, int32 i) {
     requires s <= i;
     requires i < e;
-    consumes a[0..2];
-    consumes a[5..6];
+    owns a[0..2];
+    owns a[5..6];
     consumes b[s..e];
-    produces a[0..2];
-    produces a[5..6];
     ensures result == 1;
 } by {
     execute();

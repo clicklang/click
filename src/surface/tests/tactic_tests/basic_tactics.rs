@@ -15,8 +15,7 @@ fn parses_grouped_function_proof() {
             verifying "set.c";
 
             int32 set(int32 p[], int32 value) {
-                consumes p[0..1];
-                produces p[0..1];
+                owns p[0..1];
                 ensures result == value;
                 ensures p[0] == value;
             } by {
@@ -126,8 +125,7 @@ fn grouped_function_certificates_share_finalized_specification() {
             verifying "set.c";
 
             int32 set(int32 p[], int32 value) {
-                consumes p[0..1];
-                produces p[0..1];
+                owns p[0..1];
                 ensures result == value;
                 ensures p[0] == value;
             } by {
@@ -159,8 +157,7 @@ fn grouped_auto_completes_the_proof_execution_without_a_body_rerun() {
             verifying "set.c";
 
             int32 set(int32 p[], int32 value) {
-                consumes p[0..1];
-                produces p[0..1];
+                owns p[0..1];
                 ensures result == value;
                 ensures p[0] == value;
             } by auto;

@@ -65,8 +65,7 @@ int read_table() { ensures result == -56 + 127 by auto; }
 int array() { ensures result == 255 by auto; }
 void store(uint8 *p) {
     requires viewable(p[0..1]);
-    consumes p[0..1];
-    produces p[0..1];
+    owns p[0..1];
     ensures p[0] == 200 by auto;
 }
 uint8 cast() { ensures result == 254 by auto; }

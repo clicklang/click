@@ -32,13 +32,11 @@ resource boxed(box: struct box*) {
 verifying "opaque_reallocating_call_does_not_carry_an_unstated_value.c";
 
 extern void box_renew(struct box* box) {
-    consumes boxed(box);
-    produces boxed(box);
+    owns boxed(box);
 }
 
 int32 box_cycle(struct box* box) {
-    consumes boxed(box);
-    produces boxed(box);
+    owns boxed(box);
     ensures result == old(box->data[0]);
 } by {
     step();

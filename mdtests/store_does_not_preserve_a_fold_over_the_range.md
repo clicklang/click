@@ -22,8 +22,7 @@ void mark_one(int32 a[], int32 n, int32 i) {
     requires 0 <= i;
     requires i < n;
     requires n <= 1073741823;
-    consumes a[0..n];
-    produces a[0..n];
+    owns a[0..n];
 } by {
     mark entry;
     step();

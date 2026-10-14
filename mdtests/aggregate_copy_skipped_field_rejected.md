@@ -38,13 +38,10 @@ verifying "aggregate_copy_skipped_field_rejected.c";
 int32 aggregate_copy_skipped_field_rejected(struct packet* source) {
     requires source->tag == 2;
     requires source->data == 0;
-    consumes source->tag;
-    consumes source->payload.number;
-    consumes source->data;
+    owns source->tag;
+    owns source->payload.number;
+    owns source->data;
     ensures result == 20;
-    produces source->tag;
-    produces source->payload.number;
-    produces source->data;
 }
 ```
 

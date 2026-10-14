@@ -76,8 +76,7 @@ void erase_mutating(struct node* node, struct node* parent,
     owns parent->left;
     owns parent->right;
     views callback_suite(augment);
-    consumes spare(7);
-    produces spare(7);
+    owns spare(7);
     ensures parent->left == 0;
     ensures parent->right == old(parent->right);
 } by {

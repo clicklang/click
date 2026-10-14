@@ -8,10 +8,8 @@ unsigned long update(struct pair *p) { p->a += 1; return p->b; }
 ```click
 verifying "frame.c";
 unsigned long update(struct pair *p) {
-    consumes p->a;
-    consumes p->b;
-    produces p->a;
-    produces p->b;
+    owns p->a;
+    owns p->b;
     ensures result == old(p->b);
     ensures p->a == old(p->a) + 1u64;
 } by { execute(); simp(); }

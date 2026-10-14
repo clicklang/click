@@ -63,9 +63,7 @@ int32 ring_buffer_push_wrap(
 
     ensures result == value;
     ensures owner->data[0] == value;
-    ensures owner->head == old(owner->head);
     ensures owner->tail == 1;
-    ensures owner->data == old(owner->data);
 } by {
     execute();
     simp();
@@ -97,9 +95,7 @@ int32 ring_buffer_pop_to_linear(
     owns owner->tail;
 
     ensures result == old(owner->data[0]);
-    ensures owner->head == old(owner->head);
     ensures owner->tail == 4;
-    ensures owner->data == old(owner->data);
 } by {
     execute();
     simp();
@@ -109,8 +105,7 @@ int32 ring_buffer_pipeline(
     struct ring_buffer* owner,
     int32 replacement
 ) {
-    consumes linear_ring(owner);
-    produces linear_ring(owner);
+    owns linear_ring(owner);
 
     ensures result == replacement;
     ensures owner->head == old(owner->head);

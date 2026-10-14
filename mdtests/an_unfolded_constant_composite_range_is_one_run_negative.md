@@ -17,10 +17,9 @@ verifying "an_unfolded_constant_composite_range_is_one_run_negative.c";
 resource block(p: int32*) { owns p[0..1000]; }
 
 int32 put_then_read(int32 *a, int32 k) {
-    consumes block(a);
+    owns block(a);
     requires 0 <= k;
     requires k < 1000;
-    produces block(a);
     ensures result == old(a[k]);
 } by {
     unfold(block(a));

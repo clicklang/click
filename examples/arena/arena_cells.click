@@ -24,10 +24,7 @@ resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
 resource arena_state(arena: struct arena*) {
     field live: int32;
     field capacity: int32;
-    owns arena->data;
-    owns arena->occupied;
-    owns arena->capacity;
-    owns arena->live_regions;
+    owns *arena;
     owns arena_initialized_storage(
         arena->data,
         arena->occupied,

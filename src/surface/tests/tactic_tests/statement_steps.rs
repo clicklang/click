@@ -17,8 +17,7 @@ fn proof_step_supports_explicit_fact_transport() {
 
             int32 set_second_return_first(int32 p[2]) {
                 requires first_is_seven(p);
-                consumes p[0..2];
-                produces p[0..2];
+                owns p[0..2];
                 ensures result == 7;
             } by {
                 unfold(first_is_seven);
@@ -68,8 +67,7 @@ fn explicit_fact_transport_can_certify_a_derived_source() {
 
             int32 set_third_return_second(int32 p[3]) {
                 requires ordered(p);
-                consumes p[0..3];
-                produces p[0..3];
+                owns p[0..3];
                 ensures result >= 0;
             } by {
                 unfold(ordered);
@@ -143,8 +141,7 @@ fn smart_step_starts_each_source_tactic_with_an_empty_step_delta() {
 
             int32 set_third_return_second(int32 p[3]) {
                 requires ordered(p);
-                consumes p[0..3];
-                produces p[0..3];
+                owns p[0..3];
                 ensures result >= 0;
             } by {
                 unfold(ordered);
@@ -782,8 +779,7 @@ fn execute_step_omits_materialization_only_transport() {
 
             int32 set_second_return_first(int32 p[2]) {
                 requires first_is_seven(p);
-                consumes p[0..2];
-                produces p[0..2];
+                owns p[0..2];
             } by {
                 unfold(first_is_seven);
                 have p[0] == 7 by {
@@ -860,8 +856,7 @@ fn execute_step_omits_materialized_mixed_snapshot_transport() {
 
             int32 replace_first(int32 p[2]) {
                 requires first_less_than_second(p);
-                consumes p[0..2];
-                produces p[0..2];
+                owns p[0..2];
             } by {
                 unfold(first_less_than_second);
                 step();
@@ -927,10 +922,8 @@ fn execute_step_omits_materialization_transport_across_statements() {
             int32 replace_first_then_touch_other(int32 p[2], int32 q[1]) {
                 requires first_less_than_second(p);
                 requires separate(memory(p[0..2]), memory(q[0..1]));
-                consumes p[0..2];
-                consumes q[0..1];
-                produces p[0..2];
-                produces q[0..1];
+                owns p[0..2];
+                owns q[0..1];
             } by {
                 unfold(first_less_than_second);
                 step();
@@ -1000,8 +993,7 @@ fn execute_step_expands_call_assign_fact_from_internal_snapshot() {
             verifying "call_set_seven.c";
 
             int32 set_seven(int32 p[1]) {
-                consumes p[0..1];
-                produces p[0..1];
+                owns p[0..1];
                 ensures result == 7;
                 ensures p[0] == 7;
             } by {
@@ -1011,8 +1003,7 @@ fn execute_step_expands_call_assign_fact_from_internal_snapshot() {
             }
 
             int32 call_set_seven(int32 p[1]) {
-                consumes p[0..1];
-                produces p[0..1];
+                owns p[0..1];
                 ensures result == 7;
                 ensures p[0] == 7;
             } by {

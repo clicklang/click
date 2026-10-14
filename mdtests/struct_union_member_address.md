@@ -27,10 +27,9 @@ int32 read_number_through_address(struct packet* packet) {
 verifying "struct_union_member_address.c";
 
 int32 read_number_through_address(struct packet* packet) {
-    consumes packet->payload.number;
+    owns packet->payload.number;
 
     ensures result == packet->payload.number;
-    produces packet->payload.number;
 } by {
     auto;
 }

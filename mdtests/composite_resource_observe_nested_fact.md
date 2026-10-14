@@ -22,7 +22,7 @@ resource live_fd(fd: int32) {
 verifying "return_fd.c";
 
 int32 return_fd(int32 fd) {
-    consumes live_fd(fd);
+    owns live_fd(fd) by auto;
 
     ensures result >= 0 by {
         observe(live_fd(fd));
@@ -31,7 +31,6 @@ int32 return_fd(int32 fd) {
         simp();
     }
 
-    produces live_fd(fd) by auto;
 }
 ```
 

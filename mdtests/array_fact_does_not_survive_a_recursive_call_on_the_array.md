@@ -34,8 +34,7 @@ void wipe(int32 a[], int32 n) {
     requires 0 <= n;
     requires a[0] == 5;
     requires n <= 1073741823;
-    consumes a[0..1];
-    produces a[0..1];
+    owns a[0..1];
 } by {
     have 0 <= 0;
     have icount(a, 0, 0) == 0 by {

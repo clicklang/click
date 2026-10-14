@@ -28,19 +28,17 @@ int32 box_cycle(struct box* box) {
 verifying "two_opaque_reallocating_calls_do_not_carry_an_unstated_value.c";
 
 extern void box_renew(struct box* box) {
-    consumes *box;
+    owns *box;
     consumes box->data[0..1];
     requires separate(memory(*box), memory(box->data[0..1]));
-    produces *box;
     produces box->data[0..1];
     ensures separate(memory(*box), memory(box->data[0..1]));
 }
 
 int32 box_cycle(struct box* box) {
-    consumes *box;
+    owns *box;
     consumes box->data[0..1];
     requires separate(memory(*box), memory(box->data[0..1]));
-    produces *box;
     produces box->data[0..1];
     ensures result == old(box->data[0]);
 } by {

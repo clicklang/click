@@ -57,9 +57,8 @@ int32 read_inner(struct outer* packet) {
 }
 
 int32 write_inner(struct outer* packet) {
-    consumes packet->inner;
+    owns packet->inner by auto;
     ensures result == 7 by auto;
-    produces packet->inner by auto;
 }
 
 int32 own_inner(struct outer* packet) {
@@ -68,9 +67,8 @@ int32 own_inner(struct outer* packet) {
 }
 
 int32 write_array(struct array_outer* packet) {
-    consumes packet->items;
+    owns packet->items by auto;
     ensures result == 13 by auto;
-    produces packet->items by auto;
 }
 ```
 

@@ -34,9 +34,8 @@ int32 set_before_terminator(
     requires index < length;
     requires length < 2147483647;
     requires terminated(data, length);
-    consumes data[0..length + 1];
+    owns data[0..length + 1];
 
-    produces data[0..length + 1];
     ensures terminated(data, length);
     ensures result == 0;
 } by {

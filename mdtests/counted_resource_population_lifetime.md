@@ -39,10 +39,8 @@ verifying "counted_resource_init.c";
 verifying "counted_resource_finish.c";
 
 struct object* object_init(struct object* obj) {
-    consumes allocation(obj, sizeof(struct object));
-    consumes *obj;
-    produces allocation(obj, sizeof(struct object));
-    produces *obj;
+    owns allocation(obj, sizeof(struct object));
+    owns *obj;
 
     ensures result == obj;
     ensures obj->refs == 1;

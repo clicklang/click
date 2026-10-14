@@ -74,9 +74,8 @@ verifying "chain_set.c";
 verifying "deep_get.c";
 
 int32 chain_get(struct outer* o) {
-    consumes inner_cell(o);
+    owns inner_cell(o);
     ensures result == (o->in)->value;
-    produces inner_cell(o);
 } by {
     unfold(inner_cell(o));
     execute();
@@ -85,9 +84,8 @@ int32 chain_get(struct outer* o) {
 }
 
 int32 chain_set(struct outer* o) {
-    consumes inner_cell(o);
+    owns inner_cell(o);
     ensures result == 5;
-    produces inner_cell(o);
 } by {
     unfold(inner_cell(o));
     execute();
@@ -96,8 +94,7 @@ int32 chain_set(struct outer* o) {
 }
 
 int32 deep_get(struct root* r) {
-    consumes nested(r);
-    produces nested(r);
+    owns nested(r);
 } by {
     unfold(nested(r));
     unfold(leaf_cell(r->mid));

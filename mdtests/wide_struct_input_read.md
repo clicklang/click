@@ -9,8 +9,7 @@ unsigned long read_state(struct state *p) { unsigned long v = p->value; return v
 ```click
 verifying "read.c";
 unsigned long read_state(struct state *p) {
-    consumes p->value;
-    produces p->value;
+    owns p->value;
     ensures result == old(p->value);
 } by { execute(); simp(); }
 ```

@@ -21,10 +21,9 @@ verifying "write_dst_read_src.c";
 int32 write_dst_read_src(int32* dst, int32* src) {
     consumes dst[0..1];
     views src[0..1];
-    consumes separated_first_cells(dst, src);
+    owns separated_first_cells(dst, src) by auto;
 
     ensures src[0] == old(src[0]) by auto;
-    produces separated_first_cells(dst, src) by auto;
 }
 ```
 

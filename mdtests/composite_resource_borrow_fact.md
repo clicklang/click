@@ -21,9 +21,7 @@ resource live_server(fd: int32, state: int32*) {
 verifying "inspect_server.c";
 
 int32 inspect_server(int32 fd, int32 state[]) {
-    consumes live_server(fd, state);
-
-    produces live_server(fd, state) by {
+    owns live_server(fd, state) by {
         unfold(live_server(fd, state));
         execute();
         fold(live_server(fd, state));

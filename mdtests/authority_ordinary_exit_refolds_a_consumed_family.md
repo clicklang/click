@@ -47,8 +47,7 @@ resource boxed(box: struct box*) {
 verifying "box.c";
 
 void box_renew(struct box* box) {
-    consumes boxed(box);
-    produces boxed(box);
+    owns boxed(box);
     ensures box->data[0] == old(box->data[0]);
     ensures box->tag == old(box->tag);
 } by {
@@ -58,8 +57,7 @@ void box_renew(struct box* box) {
 }
 
 int32 box_cycle(struct box* box) {
-    consumes boxed(box);
-    produces boxed(box);
+    owns boxed(box);
     ensures result == old(box->data[0]);
 } by {
     execute();
