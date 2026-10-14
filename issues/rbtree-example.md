@@ -1198,6 +1198,15 @@ Keep these cases separate from the black-leaf theorem, whose whole spliced
 tree still needs fixup.
 
 **Chunk 11. `__rb_erase_augmented`: C coverage complete.**
+One general contract, `examples/rbtree-erase/rbtree_erase_augmented.click`,
+now covers every exit at every position, and
+`rbtree_erase_general_wrapper.click` verifies `rb_erase` on top of it. The
+per-case sidecars named in this chunk and in the 2026-10-09 handoff were
+retired once those two subsumed them
+([design/proof-reuse.md](../design/proof-reuse.md) R2); they remain in Git
+history, and their mutations now run against the general unlink.
+`rbtree_erase_leaf_wrapper.click` stays because
+`examples/rbtree-augmented/rbtree_erase_leaf.click` imports its leaf unlink.
 The unchanged C verifies zero/one-child deletion and every immediate and deeper
 successor exit, at the root and on either non-root parent link. The deeper
 sidecars verify the terminating descent loop, shared splice continuation, and

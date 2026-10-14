@@ -5539,7 +5539,7 @@ fn imported_named_death_receipts_are_indexed_beside_growing_related_members() {
 
 #[test]
 fn diverged_paths_that_create_the_same_storage_record_the_same_state() {
-    // Reduced from the moved-child `match ... ensuring` of
+    // Reduced from the moved-child `match ... ensuring` of the since-retired
     // `examples/rbtree-erase/rbtree_erase_spine.click`: each arm declares the
     // same call-result local after the arms' ledgers have diverged, so each
     // mints its own anchor for it. The branch join must see one state.

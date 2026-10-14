@@ -49,7 +49,7 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
             HiddenPrerequisiteRoute::KernelCondition,
             "decide_with_facts",
         ),
-        81,
+        66,
     ),
     ((HiddenPrerequisiteRoute::KernelCondition, "path facts"), 10),
     // `issues/simplify-step.md` step 5 drives these to zero.
@@ -172,7 +172,7 @@ const NIGHTLY: &[(&str, &str)] = &[
     ),
     (
         "rbtree-erase",
-        "erase sidecars take minutes; the earlier unlink corpus measured 176 s (2026-10-08)",
+        "the general unlink and color repair take minutes; 347 s in a debug test build (2026-10-14)",
     ),
 ];
 
@@ -638,12 +638,57 @@ fn rbtree_erase_uses_the_unchanged_pinned_unlink() {
     );
 }
 
-fn erase_refuses_mutation(before: &str, after: &str) {
-    erase_sidecar_refuses_mutation("rbtree_erase.click", before, after);
+/// Expanding the last exit's closing `simp` writes explicit closers that
+/// still return the outcome resource; the expansion cold verifies.
+#[test]
+#[ignore = "nightly: 41 s to expand and recheck the general unlink in a release build (2026-10-14)"]
+fn rbtree_erase_general_explicit_closers_preserve_ownership() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let path = root.join("examples/rbtree-erase/rbtree_erase_augmented.click");
+    let source = fs::read_to_string(&path).unwrap();
+    let c_sources = read_verifying_sources(&path, &source).unwrap();
+    let project = read_click_project_at_root(&path, &source, &root.join("examples")).unwrap();
+    let (line, text) = source
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| line.trim() == "simp();")
+        .last()
+        .unwrap();
+    let column = text.find("simp").unwrap() + 1;
+    limits::spawn(
+        "general unlink closer expansion",
+        "click-general-erase-expansion".into(),
+        move || {
+            let expanded = click::surface::expand_project_tactic_source_at(
+                &project,
+                &ProgramInputs::Bundle(source_refs(&c_sources)),
+                line + 1,
+                column,
+            )?;
+            let expanded_project =
+                read_click_project_at_root(&path, &expanded, &root.join("examples"))
+                    .expect("the expanded general unlink resolves its imports");
+            click::surface::verify_c0_project(&expanded_project, &source_refs(&c_sources))
+        },
+    )
+    .unwrap()
+    .unwrap();
 }
 
-fn erase_sidecar_refuses_mutation(sidecar: &str, before: &str, after: &str) {
-    erase_source_refuses_mutation(sidecar, "rb_erase_augmented.c", before, after);
+/// The general unlink against a copy of `rb_erase_augmented.c` with one
+/// statement replaced, refused with `refusal`. Each mutation keeps the C's
+/// statement count, so the proof's `execute_until(statement(...))` positions
+/// still name the same statements and the refusal is the exit that depends
+/// on the replaced statement, not a misaligned frontier.
+fn general_erase_refuses_mutation(before: &str, after: &str, refusal: &str) {
+    let error = erase_source_replacement_error(
+        "rbtree_erase_augmented.click",
+        "rb_erase_augmented.c",
+        before,
+        after,
+        1,
+    );
+    assert!(error.contains(refusal), "unexpected refusal: {error}");
 }
 
 fn erase_source_refuses_mutation(sidecar: &str, file: &str, before: &str, after: &str) {
@@ -762,602 +807,278 @@ fn erase_source_refuses_replacement(
     );
 }
 
+/// The right-only child must take the erased node's parent and color.
 #[test]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_refuses_a_skipped_right_child_parent_color() {
-    erase_refuses_mutation("\t\t\tchild->__rb_parent_color = pc;\n", "");
+    general_erase_refuses_mutation(
+        "\t\t\tchild->__rb_parent_color = pc;\n",
+        "\t\t\tchild = child;\n",
+        "could not establish `er_id->__rb_parent_color == pc`",
+    );
 }
 
+/// The left-only child must take the erased node's parent and color.
 #[test]
-#[ignore = "nightly: 4s in the parallel gate"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_refuses_a_skipped_left_child_parent_color() {
-    erase_refuses_mutation(
+    general_erase_refuses_mutation(
         "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color;\n",
-        "\t\tpc = node->__rb_parent_color;\n",
+        "\t\tpc = pc = node->__rb_parent_color;\n",
+        "could not establish `el_id->__rb_parent_color == pc`",
     );
 }
 
+/// A one-child exit must relink the erased node's parent.
 #[test]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_refuses_a_skipped_root_replacement() {
-    erase_refuses_mutation("\t\t__rb_change_child(node, child, parent, root);\n", "");
+    general_erase_refuses_mutation(
+        "\t\t__rb_change_child(node, child, parent, root);\n",
+        "\t\tchild = child;\n",
+        "requires a call to `__rb_change_child` at the current frontier",
+    );
 }
 
+/// The successor must become its new left subtree's parent.
 #[test]
-#[ignore = "nightly: 13.42 s to expand and recheck the successor claim (2026-10-08)"]
-fn rbtree_erase_successor_explicit_closers_preserve_ownership() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = root.join("examples/rbtree-erase/rbtree_erase_successor.click");
-    let source = fs::read_to_string(&path).unwrap();
-    let c_sources = read_verifying_sources(&path, &source).unwrap();
-    let project = read_click_project_at_root(&path, &source, &root.join("examples")).unwrap();
-    let (line, text) = source
-        .lines()
-        .enumerate()
-        .filter(|(_, line)| line.trim() == "simp();")
-        .last()
-        .unwrap();
-    let column = text.find("simp").unwrap() + 1;
-    limits::spawn(
-        "successor closer expansion",
-        "click-successor-expansion".into(),
-        move || {
-            let expanded = click::surface::expand_project_tactic_source_at(
-                &project,
-                &ProgramInputs::Bundle(source_refs(&c_sources)),
-                line + 1,
-                column,
-            )?;
-            let expanded_project =
-                read_click_project_at_root(&path, &expanded, &root.join("examples"))
-                    .expect("the expanded successor sidecar resolves its imports");
-            click::surface::verify_c0_project(&expanded_project, &source_refs(&c_sources))
-        },
-    )
-    .unwrap()
-    .unwrap();
-}
-
-#[test]
-#[ignore = "nightly: 3s in the parallel gate"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_successor_refuses_a_skipped_left_parent_write() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_successor.click",
+    general_erase_refuses_mutation(
         "\t\trb_set_parent(tmp, successor);\n",
-        "",
+        "\t\ttmp = tmp;\n",
+        "fold requires the instance body facts for the proposed fields",
     );
 }
 
+/// The successor must take the erased node's parent and color.
 #[test]
-#[ignore = "nightly: 3s in the parallel gate"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_successor_refuses_a_skipped_parent_color_write() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_successor.click",
+    general_erase_refuses_mutation(
         "\t\tsuccessor->__rb_parent_color = pc;\n",
-        "",
+        "\t\ttmp = tmp;\n",
+        "fact 5 of 9 of arm `Right` is not established",
     );
 }
 
+/// A black-leaf successor leaves a deficit at its old parent.
 #[test]
-#[ignore = "nightly: 6s in the parallel gate"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_black_successor_requires_the_fixup_parent() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_black_successor.click",
+    general_erase_refuses_mutation(
         "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
         "\t\t\trebalance = NULL;\n",
+        "could not establish `rebalance == mp`",
     );
 }
 
+/// A successor's child that replaces it must be blackened.
 #[test]
-#[ignore = "nightly: 4s in the parallel gate"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_child_successor_requires_blackening() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_child_successor.click",
+    general_erase_refuses_mutation(
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
         "\t\t\trb_set_parent_color(child2, parent, RB_RED);\n",
+        "could not establish `cid->__rb_parent_color == (((uint64)mp) | 1)`",
     );
 }
 
+/// A successor's child that replaces it must take the successor's old parent.
 #[test]
-#[ignore = "nightly: 4s in the parallel gate"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_child_successor_requires_parent_color_write() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_child_successor.click",
+    general_erase_refuses_mutation(
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
-        "",
+        "\t\t\tchild2 = child2;\n",
+        "could not establish `cid->__rb_parent_color == (((uint64)mp) | 1)`",
     );
 }
 
+/// A black leaf leaves a deficit at its parent.
 #[test]
-#[ignore = "nightly: 7s in the parallel gate"]
-fn rbtree_erase_black_leaf_requires_left_parent_link_update() {
-    erase_source_refuses_mutation(
-        "rbtree_erase_black_leaf.click",
-        "rbtree.h",
-        "            WRITE_ONCE(parent->rb_left, new);",
-        "            WRITE_ONCE(parent->rb_left, old);",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 8s in the parallel gate"]
-fn rbtree_erase_black_leaf_requires_right_parent_link_update() {
-    erase_source_refuses_mutation(
-        "rbtree_erase_black_leaf.click",
-        "rbtree.h",
-        "            WRITE_ONCE(parent->rb_right, new);",
-        "            WRITE_ONCE(parent->rb_right, old);",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 7s in the parallel gate"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_black_leaf_requires_the_fixup_parent() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_black_leaf.click",
+    general_erase_refuses_mutation(
         "\t\t\trebalance = __rb_is_black(pc) ? parent : NULL;\n",
         "\t\t\trebalance = NULL;\n",
+        "could not establish `result != 0`",
     );
 }
 
+/// A red leaf leaves no deficit.
 #[test]
-#[ignore = "nightly: 8s in the parallel gate"]
-fn rbtree_erase_red_leaf_requires_left_parent_link_update() {
-    erase_source_refuses_mutation(
-        "rbtree_erase_red_leaf.click",
-        "rbtree.h",
-        "            WRITE_ONCE(parent->rb_left, new);",
-        "            WRITE_ONCE(parent->rb_left, old);",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 9s in the parallel gate"]
-fn rbtree_erase_red_leaf_requires_right_parent_link_update() {
-    erase_source_refuses_mutation(
-        "rbtree_erase_red_leaf.click",
-        "rbtree.h",
-        "            WRITE_ONCE(parent->rb_right, new);",
-        "            WRITE_ONCE(parent->rb_right, old);",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 8s in the parallel gate"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_red_leaf_requires_no_fixup() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_red_leaf.click",
+    general_erase_refuses_mutation(
         "\t\t\trebalance = __rb_is_black(pc) ? parent : NULL;\n",
         "\t\t\trebalance = parent;\n",
+        "could not establish `result == 0`",
     );
 }
 
+/// The right-only child keeps the erased node's black color.
 #[test]
-#[ignore = "nightly: 11s in the parallel gate"]
-fn rbtree_erase_right_child_requires_left_parent_link_update() {
-    erase_source_refuses_mutation(
-        "rbtree_erase_right_child.click",
-        "rbtree.h",
-        "            WRITE_ONCE(parent->rb_left, new);",
-        "            WRITE_ONCE(parent->rb_left, old);",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 13s in the parallel gate"]
-fn rbtree_erase_right_child_requires_right_parent_link_update() {
-    erase_source_refuses_mutation(
-        "rbtree_erase_right_child.click",
-        "rbtree.h",
-        "            WRITE_ONCE(parent->rb_right, new);",
-        "            WRITE_ONCE(parent->rb_right, old);",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 12s in the parallel gate"]
-fn rbtree_erase_right_child_requires_parent_color_write() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_right_child.click",
-        "\t\t\tchild->__rb_parent_color = pc;\n",
-        "",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 11s in the parallel gate"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_right_child_requires_blackening() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_right_child.click",
+    general_erase_refuses_mutation(
         "\t\t\tchild->__rb_parent_color = pc;\n",
         "\t\t\tchild->__rb_parent_color = pc & ~1;\n",
+        "could not establish `er_id->__rb_parent_color == pc`",
     );
 }
 
+/// The left-only child keeps the erased node's black color.
 #[test]
-#[ignore = "nightly: 12s in the parallel gate"]
-fn rbtree_erase_left_child_requires_left_parent_link_update() {
-    erase_source_refuses_mutation(
-        "rbtree_erase_left_child.click",
-        "rbtree.h",
-        "            WRITE_ONCE(parent->rb_left, new);",
-        "            WRITE_ONCE(parent->rb_left, old);",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 12s in the parallel gate"]
-fn rbtree_erase_left_child_requires_right_parent_link_update() {
-    erase_source_refuses_mutation(
-        "rbtree_erase_left_child.click",
-        "rbtree.h",
-        "            WRITE_ONCE(parent->rb_right, new);",
-        "            WRITE_ONCE(parent->rb_right, old);",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 11s in the parallel gate"]
-fn rbtree_erase_left_child_requires_parent_color_write() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_left_child.click",
-        "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color;\n",
-        "\t\tpc = node->__rb_parent_color;\n",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 11s in the parallel gate"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_left_child_requires_blackening() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_left_child.click",
+    general_erase_refuses_mutation(
         "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color;\n",
-        "\t\tpc = node->__rb_parent_color;\n\t\ttmp->__rb_parent_color = pc & ~1;\n",
+        "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color & ~1;\n",
+        "could not establish `el_id->__rb_parent_color == pc`",
     );
 }
 
+/// A one-child exit leaves no deficit.
 #[test]
-#[ignore = "nightly: 12s in the parallel gate"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_right_child_requires_no_fixup() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_right_child.click",
+    general_erase_refuses_mutation(
         "\t\t\tchild->__rb_parent_color = pc;\n\t\t\trebalance = NULL;",
         "\t\t\tchild->__rb_parent_color = pc;\n\t\t\trebalance = parent;",
+        "could not establish `result == 0`",
     );
 }
 
+/// A one-child exit leaves no deficit.
 #[test]
-#[ignore = "nightly: 12s in the parallel gate"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_left_child_requires_no_fixup() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_left_child.click",
+    general_erase_refuses_mutation(
         "\t\t__rb_change_child(node, tmp, parent, root);\n\t\trebalance = NULL;",
         "\t\t__rb_change_child(node, tmp, parent, root);\n\t\trebalance = parent;",
+        "could not establish `result == 0`",
     );
 }
 
+/// The successor must adopt the erased node's left subtree.
 #[test]
-#[ignore = "nightly: 13s in the parallel gate"]
-fn rbtree_erase_nonroot_successor_requires_left_parent_link() {
-    erase_source_refuses_mutation(
-        "rbtree_erase_nonroot_successor.click",
-        "rbtree.h",
-        "            WRITE_ONCE(parent->rb_left, new);",
-        "            WRITE_ONCE(parent->rb_left, old);",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 14s in the parallel gate"]
-fn rbtree_erase_nonroot_successor_requires_right_parent_link() {
-    erase_source_refuses_mutation(
-        "rbtree_erase_nonroot_successor.click",
-        "rbtree.h",
-        "            WRITE_ONCE(parent->rb_right, new);",
-        "            WRITE_ONCE(parent->rb_right, old);",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 13s in the parallel gate"]
-fn rbtree_erase_nonroot_successor_requires_left_subtree_link() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_nonroot_successor.click",
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
+fn rbtree_erase_successor_requires_left_subtree_link() {
+    general_erase_refuses_mutation(
         "\t\tWRITE_ONCE(successor->rb_left, tmp);\n",
-        "",
+        "\t\ttmp = tmp;\n",
+        "could not establish `mid->rb_left == lid`",
     );
 }
 
+/// A red-leaf successor leaves no deficit.
 #[test]
-#[ignore = "nightly: 13s in the parallel gate"]
-fn rbtree_erase_nonroot_successor_requires_left_subtree_parent() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_nonroot_successor.click",
-        "\t\trb_set_parent(tmp, successor);\n",
-        "",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 13s in the parallel gate"]
-fn rbtree_erase_nonroot_successor_requires_successor_parent_color() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_nonroot_successor.click",
-        "\t\tsuccessor->__rb_parent_color = pc;\n",
-        "",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 14s in the parallel gate"]
-fn rbtree_erase_nonroot_successor_requires_no_fixup() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_nonroot_successor.click",
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
+fn rbtree_erase_red_successor_requires_no_fixup() {
+    general_erase_refuses_mutation(
         "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
         "\t\t\trebalance = parent;\n",
+        "could not establish `result == 0`",
     );
 }
 
+/// A successor with a child leaves no deficit.
 #[test]
-#[ignore = "nightly: 22s in the parallel gate"]
-fn rbtree_erase_nonroot_child_successor_requires_left_parent_link() {
-    erase_source_refuses_mutation(
-        "rbtree_erase_nonroot_child_successor.click",
-        "rbtree.h",
-        "            WRITE_ONCE(parent->rb_left, new);",
-        "            WRITE_ONCE(parent->rb_left, old);",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 26s in the parallel gate"]
-fn rbtree_erase_nonroot_child_successor_requires_right_parent_link() {
-    erase_source_refuses_mutation(
-        "rbtree_erase_nonroot_child_successor.click",
-        "rbtree.h",
-        "            WRITE_ONCE(parent->rb_right, new);",
-        "            WRITE_ONCE(parent->rb_right, old);",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 22s in the parallel gate"]
-fn rbtree_erase_nonroot_child_successor_requires_left_subtree_link() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_nonroot_child_successor.click",
-        "\t\tWRITE_ONCE(successor->rb_left, tmp);\n",
-        "",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 22s in the parallel gate"]
-fn rbtree_erase_nonroot_child_successor_requires_left_subtree_parent() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_nonroot_child_successor.click",
-        "\t\trb_set_parent(tmp, successor);\n",
-        "",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 23s in the parallel gate"]
-fn rbtree_erase_nonroot_child_successor_requires_successor_parent_color() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_nonroot_child_successor.click",
-        "\t\tsuccessor->__rb_parent_color = pc;\n",
-        "",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 23s in the parallel gate"]
-fn rbtree_erase_nonroot_child_successor_requires_no_fixup() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_nonroot_child_successor.click",
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
+fn rbtree_erase_child_successor_requires_no_fixup() {
+    general_erase_refuses_mutation(
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n\t\t\trebalance = NULL;",
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n\t\t\trebalance = parent;",
+        "could not establish `result == 0`",
     );
 }
 
+/// The deficit is at the successor's old parent, not its new one.
 #[test]
-#[ignore = "nightly: 22s in the parallel gate"]
-fn rbtree_erase_nonroot_child_successor_requires_child_parent_color_write() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_nonroot_child_successor.click",
-        "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
-        "",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 23s in the parallel gate"]
-fn rbtree_erase_nonroot_child_successor_requires_child_blackening() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_nonroot_child_successor.click",
-        "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
-        "\t\t\trb_set_parent_color(child2, parent, RB_RED);\n",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 11s in the parallel gate"]
-fn rbtree_erase_nonroot_black_successor_requires_left_parent_link() {
-    erase_source_refuses_mutation(
-        "rbtree_erase_nonroot_black_successor.click",
-        "rbtree.h",
-        "            WRITE_ONCE(parent->rb_left, new);",
-        "            WRITE_ONCE(parent->rb_left, old);",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 13s in the parallel gate"]
-fn rbtree_erase_nonroot_black_successor_requires_right_parent_link() {
-    erase_source_refuses_mutation(
-        "rbtree_erase_nonroot_black_successor.click",
-        "rbtree.h",
-        "            WRITE_ONCE(parent->rb_right, new);",
-        "            WRITE_ONCE(parent->rb_right, old);",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 11s in the parallel gate"]
-fn rbtree_erase_nonroot_black_successor_requires_left_subtree_link() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_nonroot_black_successor.click",
-        "\t\tWRITE_ONCE(successor->rb_left, tmp);\n",
-        "",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 11s in the parallel gate"]
-fn rbtree_erase_nonroot_black_successor_requires_left_subtree_parent() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_nonroot_black_successor.click",
-        "\t\trb_set_parent(tmp, successor);\n",
-        "",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 11s in the parallel gate"]
-fn rbtree_erase_nonroot_black_successor_requires_successor_parent_color() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_nonroot_black_successor.click",
-        "\t\tsuccessor->__rb_parent_color = pc;\n",
-        "",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 11s in the parallel gate"]
-fn rbtree_erase_nonroot_black_successor_requires_fixup_parent() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_nonroot_black_successor.click",
-        "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
-        "\t\t\trebalance = NULL;\n",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 12s in the parallel gate"]
-fn rbtree_erase_nonroot_black_successor_requires_successor_as_fixup_parent() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_nonroot_black_successor.click",
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
+fn rbtree_erase_black_successor_requires_its_old_parent_as_fixup_parent() {
+    general_erase_refuses_mutation(
         "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
         "\t\t\trebalance = rb_is_black(successor) ? tmp : NULL;\n",
+        "could not establish `rebalance == mp`",
     );
 }
 
+/// A two-child exit must relink the erased node's parent to the successor.
 #[test]
-#[ignore = "nightly: 4s in the parallel gate"]
-fn rbtree_erase_black_successor_requires_root_replacement() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_black_successor.click",
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
+fn rbtree_erase_successor_requires_root_replacement() {
+    general_erase_refuses_mutation(
         "\t\t__rb_change_child(node, successor, tmp, root);\n",
-        "",
+        "\t\ttmp = tmp;\n",
+        "requires a call to `__rb_change_child` at the current frontier",
     );
 }
 
+/// A deeper successor must be spliced out of its parent.
 #[test]
-#[ignore = "nightly: 10s in the parallel gate"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_deep_successor_refuses_a_skipped_splice() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_spine.click",
+    general_erase_refuses_mutation(
         "\t\t\tWRITE_ONCE(parent->rb_left, child2);\n",
         "\t\t\tWRITE_ONCE(parent->rb_left, successor);\n",
+        "could not establish `parent->rb_left == 0`",
     );
 }
 
+/// A deeper successor's child must take the successor's old parent.
 #[test]
-#[ignore = "nightly: 11s in the parallel gate"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_deep_successor_refuses_the_wrong_replacement_parent() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_spine.click",
+    general_erase_refuses_mutation(
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
         "\t\t\trb_set_parent_color(child2, successor, RB_BLACK);\n",
+        "could not establish `cid->__rb_parent_color == (((uint64)mp) | 1)`",
     );
 }
 
+/// A deeper successor must adopt the erased node's right subtree.
 #[test]
-#[ignore = "nightly: deeper successor attachment mutation takes 10.1s"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_deep_successor_refuses_a_skipped_right_attachment() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_spine.click",
+    general_erase_refuses_mutation(
         "\t\t\tWRITE_ONCE(successor->rb_right, child);\n",
         "\t\t\tWRITE_ONCE(successor->rb_right, successor->rb_right);\n",
+        "could not establish `mid->rb_right == child`",
     );
 }
 
+/// The adopted right subtree must take the successor as parent.
 #[test]
-#[ignore = "nightly: deeper successor parent-update mutation takes 10.2s"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_deep_successor_refuses_a_skipped_right_parent_update() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_spine.click",
+    general_erase_refuses_mutation(
         "\t\t\trb_set_parent(child, successor);\n",
         "\t\t\trb_set_parent(child, node);\n",
+        "could not establish `child->__rb_parent_color ==",
     );
 }
 
+/// A deeper black-leaf successor leaves the deficit at its old parent.
 #[test]
-#[ignore = "nightly: 12s in the parallel gate"]
-fn rbtree_erase_deep_successor_refuses_a_red_replacement() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_spine.click",
-        "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
-        "\t\t\trb_set_parent_color(child2, parent, RB_RED);\n",
-    );
-}
-
-#[test]
-#[ignore = "nightly: deeper red-leaf fixup mutation takes 11s"]
-fn rbtree_erase_deep_red_leaf_refuses_spurious_fixup() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_spine.click",
-        "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
-        "\t\t\trebalance = parent;\n",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 10s in the parallel gate"]
-fn rbtree_erase_deep_black_leaf_refuses_a_skipped_splice() {
-    // Keep the C statement positions stable while leaving the successor linked.
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_black_spine.click",
-        "\t\t\tWRITE_ONCE(parent->rb_left, child2);\n",
-        "\t\t\tWRITE_ONCE(parent->rb_left, successor);\n",
-    );
-}
-
-#[test]
-#[ignore = "nightly: 11s in the parallel gate"]
-fn rbtree_erase_deep_black_leaf_requires_fixup() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_black_spine.click",
-        "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
-        "\t\t\trebalance = NULL;\n",
-    );
-}
-
-#[test]
-#[ignore = "nightly: deeper black-leaf fixup-parent mutation takes 10.2s"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_deep_black_leaf_requires_the_splice_parent() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_black_spine.click",
+    general_erase_refuses_mutation(
         "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
         "\t\t\trebalance = successor;\n",
+        "could not establish `rebalance == mp`",
     );
 }
 
+/// The adopted right subtree's parent must be updated at all.
 #[test]
-#[ignore = "nightly: 10s in the parallel gate"]
+#[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_deep_black_leaf_requires_right_parent_update() {
-    erase_sidecar_refuses_mutation(
-        "rbtree_erase_black_spine.click",
+    general_erase_refuses_mutation(
         "\t\t\trb_set_parent(child, successor);\n",
-        "",
+        "\t\t\tchild = child;\n",
+        "could not establish `child->__rb_parent_color ==",
     );
 }
 
