@@ -1911,7 +1911,7 @@ have C undefined behavior for a zero divisor, and for `INT_MIN / -1` or
 left operand or an unrepresentable result in the selected signed width. Proofs
 involving signed arithmetic usually need requirements such as:
 
-<!-- verified-example: mdtests/increment_requires_no_overflow.md -->
+<!-- verified-example: mdtests/signed_arithmetic_requires_both_bounds.md -->
 ```click
 requires x < 2147483647;
 requires x > -2147483648;
@@ -1974,7 +1974,7 @@ uint8 local_byte_array() {
     uint8 a[2];
     a[0] = 'x';
     a[1] = 'y';
-    return a[0];
+    return a[1];
 }
 ```
 
@@ -2001,14 +2001,14 @@ zero-filled.
 
 Click supports a struct subset:
 
-<!-- verified-example: mdtests/struct_multifield_explicit_permissions.md -->
+<!-- verified-example: mdtests/struct_pointer_field_explicit_permissions.md -->
 ```c
 struct owner {
     int32 len;
     int32* data;
 };
 
-int32 set_first(struct owner* owner, int32 data[]) {
+int32 set_owned_first(struct owner* owner, int32 data[]) {
     int32* current;
     owner->len = 1;
     owner->data = data;
@@ -2138,18 +2138,23 @@ Named tagged unions are supported as embedded, read-only aggregates:
 
 <!-- verified-example: mdtests/struct_tagged_union.md -->
 ```c
+enum packet_kind {
+    PACKET_NUMBER = 1,
+    PACKET_POINTER = 2,
+};
+
 union packet_payload {
     int32 number;
     int32* pointer;
 };
 
 struct packet {
-    int32 tag;
+    enum packet_kind tag;
     union packet_payload payload;
 };
 
 int32 read_number(struct packet* packet) {
-    if (packet->tag != 1) {
+    if (packet->tag != PACKET_NUMBER) {
         return 0;
     }
     return packet->payload.number;
@@ -2216,7 +2221,7 @@ the copied value does not extend their lifetime.
 
 Click recognizes a deliberately small set of allocation patterns:
 
-<!-- verified-example: mdtests/heap_free_owned_allocation_effect.md -->
+<!-- verified-example: mdtests/heap_malloc_struct_null_check_free.md -->
 ```c
 struct item *item = malloc(sizeof(struct item));
 if (item == 0) {

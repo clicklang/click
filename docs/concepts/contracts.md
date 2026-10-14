@@ -4,8 +4,7 @@ A Click contract describes a C function from the outside.
 
 The main clauses are:
 
-<!-- verified-example: mdtests/contract_let_bindings.md -->
-```click
+```text
 let name [: type] = expression;
 let name: type where proposition;
 requires ...
@@ -27,7 +26,7 @@ let max: int32 = 2147483647;
 let expected = x + 1;
 
 requires x < max;
-ensures result == expected by auto;
+ensures result_value: result == expected by auto;
 ```
 
 These `let` bindings are Click-side abbreviations. They do not add runtime C
@@ -36,11 +35,11 @@ when Click can infer the intended value shape from use.
 
 A contract can also bind an immutable witness with `let ... where`:
 
-<!-- verified-example: mdtests/contract_let_bindings.md -->
+<!-- verified-example: mdtests/contract_let_where.md -->
 ```click
 let k: int32 where k == x;
 
-ensures result == k by {
+ensures result_matches_witness: result == k by {
     execute();
     witness { k: x };
     simp();
@@ -55,7 +54,7 @@ required explicitly.
 
 A `requires` clause is a precondition:
 
-<!-- verified-example: mdtests/contract_let_bindings.md -->
+<!-- verified-example: mdtests/contract_clause_forms.md -->
 ```click
 requires x >= 0;
 requires x < 2147483647;
@@ -69,7 +68,7 @@ Requirements are also where simple C safety facts often live. For example,
 
 Resource verbs provide resource facts alongside pure requirements:
 
-<!-- verified-example: mdtests/contract_let_bindings.md -->
+<!-- verified-example: mdtests/contract_clause_forms.md -->
 ```click
 views p[0..1];
 consumes p[1..2];
@@ -86,7 +85,7 @@ function calls and the distinction between viewability and authority.
 
 Requirements are written without fact labels:
 
-<!-- verified-example: mdtests/contract_let_bindings.md -->
+<!-- verified-example: mdtests/contract_clause_forms.md -->
 ```click
 requires x > 0;
 ```
@@ -98,7 +97,7 @@ To use an existential requirement in a proof, state its proposition in
 
 An `ensures` clause is a postcondition:
 
-<!-- verified-example: mdtests/contract_let_bindings.md -->
+<!-- verified-example: mdtests/contract_clause_forms.md -->
 ```click
 ensures result == x + 1 by auto;
 ensures result > x by auto;
@@ -127,7 +126,7 @@ writes must still satisfy the caller's declared effect footprint.
 
 Guarantees can also be labeled:
 
-<!-- verified-example: mdtests/contract_let_bindings.md -->
+<!-- verified-example: mdtests/contract_clause_forms.md -->
 ```click
 ensures incremented: result == x + 1 by auto;
 ```
@@ -154,7 +153,7 @@ proof steps. This scope ends with the guarantee; it grants no memory authority.
 
 Memory-modifying functions declare the memory they own:
 
-<!-- verified-example: mdtests/contract_let_bindings.md -->
+<!-- verified-example: mdtests/copy_n_segment_invariant.md -->
 ```click
 views src[0..n];
 owns dst[0..n];
@@ -176,11 +175,14 @@ declaration inherits the function's.
 
 The `by` clause says how a guarantee is proved:
 
-<!-- verified-example: mdtests/contract_let_bindings.md -->
+<!-- verified-example: mdtests/contract_clause_forms.md -->
 ```click
 ensures result == 0 by auto;
-ensures result == x by simp;
+ensures result == x by { execute(); simp(); }
 ```
+
+`auto` runs the function itself. A tactic script such as `simp()` works on
+the state at function exit, so it starts with `execute();` to reach it.
 
 Omitting the proof clause currently uses the default prover, `auto`, but writing
 the proof explicitly is clearer in examples.

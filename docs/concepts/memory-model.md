@@ -267,7 +267,7 @@ non-aliasing.
 
 If a proof relies on non-overlap, state it:
 
-<!-- verified-example: mdtests/write_second_old_keeps_first.md -->
+<!-- verified-example: mdtests/copy_n_segment_invariant.md -->
 ```click
 requires separate(memory(dst[0..n]), memory(src[0..n]));
 ```
@@ -297,7 +297,7 @@ walk that needs it once per iteration.
 
 Use `viewable` to prove memory safety:
 
-<!-- verified-example: mdtests/write_second_old_keeps_first.md -->
+<!-- verified-example: mdtests/viewable_segment_forms.md -->
 ```click
 requires viewable(p[0..3]);
 requires viewable(p[0..n]);
@@ -357,7 +357,7 @@ to justify loads from that range when the index bounds are known.
 In an explicit proof, use proposition-level `at(...)` to refer to viewability
 at a recorded program point:
 
-<!-- verified-example: mdtests/write_second_old_keeps_first.md -->
+<!-- verified-example: mdtests/viewable_segment_forms.md -->
 ```click
 have at(statement(0).entry, viewable(p[0..n])) by {
     assumption();
@@ -374,16 +374,16 @@ the current memory.
 
 `old(expression)` evaluates in the function-entry state:
 
-<!-- verified-example: mdtests/write_second_old_keeps_first.md -->
+<!-- verified-example: mdtests/c_fragments_in_contracts.md -->
 ```click
 ensures p[0] == old(p[0]) by auto;
 ```
 
 For quantified old-memory postconditions:
 
-<!-- verified-example: mdtests/write_second_old_keeps_first.md -->
+<!-- verified-example: mdtests/forall_array_segment.md -->
 ```click
-ensures forall (k: int32) {
+ensures segment_unchanged: forall (k: int32) {
     0 <= k and k < n implies p[k] == old(p[k])
 } by auto;
 ```
@@ -394,9 +394,9 @@ invariants, loop effect summaries, or separation facts.
 When an array parameter is passed to a pure Click function or predicate,
 `old(p)` means the entry-state array ref, not just the old pointer value:
 
-<!-- verified-example: mdtests/write_second_old_keeps_first.md -->
+<!-- verified-example: mdtests/compare_swap2_permutation.md -->
 ```click
-ensures permutation(p, old(p), 0, 2) by {
+ensures pair_permutation: permutation(p, old(p), 0, 2) by {
     execute();
     unfold(permutation);
     simp();
@@ -416,7 +416,7 @@ load is still rejected as use-after-free.
 
 A function's write footprint is the memory its contract owns:
 
-<!-- verified-example: mdtests/write_second_old_keeps_first.md -->
+<!-- verified-example: mdtests/contract_owns_write_footprint.md -->
 ```click
 owns p[0..n];
 owns dst[0..n];
@@ -456,12 +456,13 @@ is allowed.
 
 Example:
 
-<!-- verified-example: mdtests/write_second_old_keeps_first.md -->
+<!-- verified-example: mdtests/local_array.md -->
 ```c
 int32 local_array_roundtrip() {
     int32 a[3];
-    a[0] = 7;
-    return a[0];
+    a[0] = 5;
+    a[1] = 7;
+    return a[1];
 }
 ```
 
@@ -472,9 +473,11 @@ not count as an external mutation.
 
 A pure Click function or predicate parameter written as an array or pointer:
 
-<!-- verified-example: mdtests/write_second_old_keeps_first.md -->
+<!-- verified-example: mdtests/click_array_refs.md -->
 ```click
-predicate permutation(a: int32[], b: int32[], lo: int32, hi: int32)
+predicate same_first(a: int32[], b: int32[]) {
+    a[0] == b[0]
+}
 ```
 
 receives pure array refs for `a` and `b`. Each ref carries:
@@ -486,8 +489,8 @@ receives pure array refs for `a` and `b`. Each ref carries:
 Indexing `a[k]` inside the predicate loads from `a`'s carried memory, not from
 some global ambient predicate memory. The element type decides pointer scaling
 and whether the load yields an `int32` or `uint8` value. This lets
-`permutation(p, old(p), lo, hi)` compare post-state `p` to entry-state `p`
-without copying a snapshot array.
+`same_first(p, old(p))`, or the standard `permutation(p, old(p), lo, hi)`,
+compare post-state `p` to entry-state `p` without copying a snapshot array.
 
 See [Surface Click and Kernel Click](surface-and-kernel.md) for the full C-pointer versus Click-array-ref
 model.

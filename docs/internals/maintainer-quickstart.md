@@ -21,28 +21,32 @@ cargo test --test mdtests
 ## Mdtest format
 
 Each `mdtests/*.md` file can contain prose, one or more C source blocks, one
-Click block, and one expected-result block:
+Click block, and one expected-result block. A minimal file has these three
+blocks:
 
-````text
-```c filename=example.c
-int32 example(int32* p) {
+<!-- verified-example: mdtests/mdtest_file_format.md -->
+```c
+int32 example() {
     return 0;
 }
-```text
+```
 
-<!-- verified-example: mdtests/scalar.md -->
+<!-- verified-example: mdtests/mdtest_file_format.md -->
 ```click
 verifying "example.c";
 
-int32 example(int32* p) {
+int32 example() {
     ensures result == 0 by auto;
 }
-```text
+```
 
 ```expect
 pass
-```text
-````
+```
+
+In the file itself the C fence's info string also names the source,
+`filename=example.c`, so the Click block's `verifying` clause can refer to it.
+`mdtests/mdtest_file_format.md` is this example as a complete file.
 
 Negative tests use:
 
@@ -59,20 +63,20 @@ so keep examples deterministic and reasonably small.
 
 ## Minimal proof example
 
-<!-- verified-example: mdtests/scalar.md -->
+<!-- verified-example: mdtests/increment_requires_no_overflow.md -->
 ```c
 int32 increment(int32 x) {
     return x + 1;
 }
 ```
 
-<!-- verified-example: mdtests/scalar.md -->
+<!-- verified-example: mdtests/increment_requires_no_overflow.md -->
 ```click
 verifying "increment.c";
 
 int32 increment(int32 x) {
     requires x < 2147483647;
-    ensures result == x + 1 by auto;
+    ensures increments: result == x + 1 by auto;
 }
 ```
 

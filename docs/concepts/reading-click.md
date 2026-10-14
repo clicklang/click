@@ -6,9 +6,9 @@ When you open a `.click` file, read it in this order.
 
 Start at the top:
 
-<!-- verified-example: mdtests/scalar.md -->
+<!-- verified-example: mdtests/max_symbolic.md -->
 ```click
-verifying "file.c";
+verifying "max.c";
 ```
 
 This tells you which C source the sidecar is proving.
@@ -17,7 +17,7 @@ This tells you which C source the sidecar is proving.
 
 Find the function block:
 
-<!-- verified-example: mdtests/scalar.md -->
+<!-- verified-example: mdtests/max_symbolic.md -->
 ```click
 int32 max(int32 a, int32 b) {
     ...
@@ -31,7 +31,7 @@ body and read the C code if you do not know what the implementation does.
 
 Read every `requires` clause:
 
-<!-- verified-example: mdtests/scalar.md -->
+<!-- verified-example: mdtests/sorted_predicate.md -->
 ```click
 requires n >= 0;
 requires viewable(p[0..n]);
@@ -44,7 +44,7 @@ requirements are the first place to look.
 
 Read each `ensures` clause as a separate promised fact:
 
-<!-- verified-example: mdtests/scalar.md -->
+<!-- verified-example: mdtests/max_symbolic.md -->
 ```click
 ensures result >= a by auto;
 ensures result >= b by auto;
@@ -56,7 +56,7 @@ The guarantee says what Click is proving. The `by` clause says how.
 
 For pointer code, check the ownership clauses:
 
-<!-- verified-example: mdtests/scalar.md -->
+<!-- verified-example: mdtests/copy_n_segment_invariant.md -->
 ```click
 views src[0..n];
 owns dst[0..n];
@@ -68,7 +68,7 @@ These describe which memory is preserved and which memory may change.
 
 Only after you understand the claim should you read the proof script:
 
-<!-- verified-example: mdtests/scalar.md -->
+<!-- verified-example: mdtests/sorted_predicate.md -->
 ```click
 by {
     execute();

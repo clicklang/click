@@ -12,7 +12,7 @@ state or a second general-purpose tracking system.
 
 Click currently has two first-layer memory permissions:
 
-<!-- verified-example: mdtests/composite_resource_composes_token.md -->
+<!-- verified-example: mdtests/resource_view_fact_unbound_fold_rejected.md -->
 ```click
 views p[0..1];
 consumes p[0..1];
@@ -84,7 +84,7 @@ that range. It is about permission.
 
 For an external read, `views` is normally enough:
 
-<!-- verified-example: mdtests/composite_resource_composes_token.md -->
+<!-- verified-example: mdtests/array_parameter_first_element_views_one_cell.md -->
 ```click
 int32 first(int32 p[]) {
     views p[0..1];
@@ -111,12 +111,16 @@ integer word; the language reference describes how fold and unfold bind it.
 for as long as the view is active, so repeated reads of the same cell produce
 the same symbolic value: nothing that could change the cell is allowed to run.
 
-<!-- verified-example: mdtests/composite_resource_composes_token.md -->
+<!-- verified-example: mdtests/viewed_cell_reads_stay_equal.md -->
 ```click
 int32 peek(int32 p[]) {
     views p[0..1];
-}
+    ensures reads_agree: result == 1;
+} by { execute(); simp(); }
 ```
+
+Here the C body reads `p[0]` twice and returns `a == b`; the two loads are one
+value.
 
 A `views` clause on a function is a shared borrow that lasts the whole call,
 from the checked entry transition to the checked return transition, not to the
@@ -160,10 +164,11 @@ memory directly and never needs a view of it. Stores update the symbolic memory
 state; later reads of the same cell see the written value unless a later write
 changes it again.
 
-<!-- verified-example: mdtests/composite_resource_composes_token.md -->
+<!-- verified-example: mdtests/resource_summary_splits_write_range.md -->
 ```click
-int32 set_one(int32 p[]) {
+int32 write_first(int32 p[]) {
     owns p[0..1] by auto;
+    ensures writes_first: p[0] == 1 by auto;
 }
 ```
 
@@ -179,13 +184,14 @@ transferred.
 
 Function calls use the callee's verified contract as an opaque summary:
 
-<!-- verified-example: mdtests/composite_resource_composes_token.md -->
+<!-- verified-example: mdtests/permission_call_returns_write.md -->
 ```click
-int32 helper(int32 p[]) {
+int32 write_and_return_permission(int32 p[]) {
     owns p[0..1] by auto;
+    ...
 }
 
-int32 caller(int32 p[]) {
+int32 call_write_and_keep_permission(int32 p[]) {
     owns p[0..1] by auto;
 }
 ```
@@ -308,14 +314,14 @@ ordering error.
 
 You can declare an exact-match abstract resource:
 
-<!-- verified-example: mdtests/composite_resource_composes_token.md -->
+<!-- verified-example: mdtests/token_resource_borrow_return.md -->
 ```click
 abstract resource open_fd(fd: int32);
 ```
 
 Then a contract can require and return instances of that resource:
 
-<!-- verified-example: mdtests/composite_resource_composes_token.md -->
+<!-- verified-example: mdtests/token_resource_borrow_return.md -->
 ```click
 int32 borrow_fd(int32 fd) {
     owns open_fd(fd) by auto;
@@ -830,7 +836,7 @@ and field-bearing members remain future work.
 Equal owned units of a declared token are stored as one canonical fact with a
 quantity:
 
-<!-- verified-example: mdtests/composite_resource_composes_token.md -->
+<!-- verified-example: mdtests/authorized_abstract_token_quantity_borrow.md -->
 ```click
 authorized abstract resource object_ref(object: struct object*);
 ```
@@ -880,7 +886,7 @@ four billion units.
 
 A function spec may exist only to consume a resource:
 
-<!-- verified-example: mdtests/composite_resource_composes_token.md -->
+<!-- verified-example: mdtests/callback_resource_complete_once.md -->
 ```click
 abstract resource can_complete(cb: int32);
 
@@ -899,7 +905,7 @@ Declarations with a body define composite resources. The body is a one-layer
 definition: it names contained resource facts and pure facts that justify the
 abstract resource fact.
 
-<!-- verified-example: mdtests/composite_resource_composes_token.md -->
+<!-- verified-example: mdtests/composite_resource_observe_nested_fact.md -->
 ```click
 resource nonnegative_fd(fd: int32) {
     fact fd >= 0;
@@ -914,7 +920,7 @@ A function that holds `live_fd(fd)` owns the folded abstract resource. It does
 not automatically get every nested fact. `observe(resource)` takes one
 non-consuming view step:
 
-<!-- verified-example: mdtests/composite_resource_composes_token.md -->
+<!-- verified-example: mdtests/composite_resource_observe_nested_fact.md -->
 ```click
 int32 return_fd(int32 fd) {
     owns live_fd(fd) by auto;
@@ -968,7 +974,7 @@ the actual resource the call receives.
 When code needs the contained owned resources, use `unfold(resource)`. When
 the proof has rebuilt the body, use `fold(resource)`:
 
-<!-- verified-example: mdtests/composite_resource_composes_token.md -->
+<!-- verified-example: mdtests/composite_resource_once_flag.md -->
 ```click
 resource uncalled(flag: int32*) {
     owns flag[0..1];
@@ -1009,7 +1015,7 @@ invoke `simp`. The end of the `by { ... }` block checks the overall claim.
 `fold` also builds a composite resource from lower-level resources at a
 function boundary:
 
-<!-- verified-example: mdtests/composite_resource_composes_token.md -->
+<!-- verified-example: mdtests/composite_resource_once_flag.md -->
 ```click
 int32 init_once(int32 flag[]) {
     consumes flag[0..1];
@@ -1174,7 +1180,7 @@ evaluating those arguments; a model pointer without read authority is refused
 
 A composite resource may put its entire body under one load-free `if`:
 
-<!-- verified-example: mdtests/composite_resource_composes_token.md -->
+<!-- verified-example: mdtests/recursive_conditional_resource.md -->
 ```click
 resource list(node: struct node*) {
     if node != 0 {
@@ -1575,7 +1581,7 @@ If a fact reads mutable memory, the composite body must contain a memory
 resource covering that memory. That child is what makes the fact stable while
 the resource is folded:
 
-<!-- verified-example: mdtests/composite_resource_composes_token.md -->
+<!-- verified-example: mdtests/composite_resource_once_flag.md -->
 ```click
 resource uncalled(flag: int32*) {
     owns flag[0..1];
@@ -1585,7 +1591,7 @@ resource uncalled(flag: int32*) {
 
 The coverage check can use scalar facts from the fact itself:
 
-<!-- verified-example: mdtests/composite_resource_composes_token.md -->
+<!-- verified-example: mdtests/composite_resource_symbolic_fact_coverage.md -->
 ```click
 resource indexed_zero(p: int32*, k: int32, n: int32) {
     owns p[0..n];
@@ -1657,14 +1663,16 @@ See `examples/ring-buffer/` for encapsulated storage and
 
 A caller can pass a subrange of a larger owned memory resource:
 
-<!-- verified-example: mdtests/composite_resource_composes_token.md -->
+<!-- verified-example: mdtests/resource_summary_splits_write_range.md -->
 ```click
-int32 helper(int32 p[]) {
+int32 write_first(int32 p[]) {
     owns p[0..1] by auto;
+    ...
 }
 
-int32 caller(int32 p[]) {
+int32 write_first_then_second(int32 p[]) {
     owns p[0..2] by auto;
+    ...
 }
 ```
 

@@ -12,14 +12,14 @@ language features to implement.
 
 ## Resource types in mutex contracts
 
-The accepted surface terminology is **resource type**. `counter_state(p)` is a
+The accepted surface terminology is **resource type**. `counter_state(counter)` is a
 resource type; an owned instance has that type and currently observed fields.
 A resource type carries no ownership and no field observations. Resource types
 can be used as arguments without a separate function proof parameter:
 
 <!-- verified-example: mdtests/mutex_use_resource_type.md -->
 ```click
-owns access: mutex_use(mu, counter_state(p));
+owns access: mutex_use(&counter->mu, counter_state(counter));
 ```
 
 This contract shape is implemented for modeled mutex use. No new keyword,
@@ -33,11 +33,11 @@ Acquisition uses the existing named runtime contract outputs:
 <!-- verified-example: mdtests/mutex_use_resource_type.md -->
 ```click
 let { guard: guard, state: state } =
-    step(pthread_mutex_lock(mu), { access: access });
+    step(pthread_mutex_lock(&counter->mu), { access: access });
 unfold(state);
 step();
-let restored = fold(counter_state(p), { value: p->value });
-step(pthread_mutex_unlock(mu), {
+let restored = fold(counter_state(counter), { value: counter->value });
+step(pthread_mutex_unlock(&counter->mu), {
     access: access, guard: guard, state: restored
 });
 ```

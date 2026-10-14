@@ -892,28 +892,32 @@ fast to run. When a fix lands, remove the entry in the same change.
 ## Mdtests
 
 Mdtests live in `mdtests/`. Each file can contain prose, one or more C blocks,
-one Click block, and one expected result:
+one Click block, and one expected result. A minimal file has these three
+blocks:
 
-````text
-```c filename=example.c
+<!-- verified-example: mdtests/mdtest_file_format.md -->
+```c
 int32 example() {
     return 0;
 }
-```text
+```
 
-<!-- verified-example: mdtests/simple_tactics.md -->
+<!-- verified-example: mdtests/mdtest_file_format.md -->
 ```click
 verifying "example.c";
 
 int32 example() {
     ensures result == 0 by auto;
 }
-```text
+```
 
 ```expect
 pass
-```text
-````
+```
+
+In the file itself the C fence's info string also names the source,
+`filename=example.c`, so the Click block's `verifying` clause can refer to it.
+`mdtests/mdtest_file_format.md` is this example as a complete file.
 
 Negative tests use an expected diagnostic substring:
 

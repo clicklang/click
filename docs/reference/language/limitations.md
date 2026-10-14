@@ -259,8 +259,7 @@ surface language has a designed guard story for partial C fragments.
 Predicate calls are not unfolded automatically. Exact predicate facts can be
 reused, but proving a predicate body or using its consequences generally needs:
 
-<!-- verified-example: mdtests/sorted_pair_unfold_requirement.md -->
-```click
+```text
 unfold(predicate_name);
 ```
 

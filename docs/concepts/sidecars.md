@@ -12,7 +12,7 @@ increment.click
 
 The C file contains the implementation:
 
-<!-- verified-example: mdtests/scalar.md -->
+<!-- verified-example: mdtests/increment_requires_no_overflow.md -->
 ```c
 int32 increment(int32 x) {
     return x + 1;
@@ -21,13 +21,13 @@ int32 increment(int32 x) {
 
 The Click sidecar names the C file and specifies the function:
 
-<!-- verified-example: mdtests/scalar.md -->
+<!-- verified-example: mdtests/increment_requires_no_overflow.md -->
 ```click
 verifying "increment.c";
 
 int32 increment(int32 x) {
     requires x < 2147483647;
-    ensures result == x + 1 by auto;
+    ensures increments: result == x + 1 by auto;
 }
 ```
 
@@ -39,9 +39,9 @@ for the C function.
 
 Each sidecar starts with one or more source declarations:
 
-<!-- verified-example: mdtests/scalar.md -->
+<!-- verified-example: mdtests/increment_requires_no_overflow.md -->
 ```click
-verifying "file.c";
+verifying "increment.c";
 ```
 
 This tells Click which C source files are part of the verification unit. Larger
@@ -61,7 +61,7 @@ A sidecar can reuse logical declarations from another local Click file:
 
 <!-- verified-example: mdtests/specification_imports.md -->
 ```click
-import "../models/list.click";
+import "specification_imports_model.click";
 ```
 
 Imports are relative to the importing file, transitive, and confined to the
@@ -113,11 +113,11 @@ reach the files that import it, like its other declarations.
 
 Each function block in a sidecar describes one C function:
 
-<!-- verified-example: mdtests/scalar.md -->
+<!-- verified-example: mdtests/increment_requires_no_overflow.md -->
 ```click
-int32 function_name(int32 x) {
-    requires x >= 0;
-    ensures result >= 0 by auto;
+int32 increment(int32 x) {
+    requires x < 2147483647;
+    ensures increments: result == x + 1 by auto;
 }
 ```
 

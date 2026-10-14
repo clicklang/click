@@ -35,7 +35,7 @@ They belong in the specification layer.
 
 Do not confuse this with `let`:
 
-<!-- verified-example: mdtests/resource_count_predicate_snapshot.md -->
+<!-- verified-example: mdtests/algebraic_symbolic_values.md -->
 ```click
 let m = wrap(value);
 ```

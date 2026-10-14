@@ -7,22 +7,26 @@ unfolded body apply the same native conversion, including any narrowing
 bounds. Thus an unsuffixed `0` passed to a `uint64` parameter denotes the same
 argument as a `uint64` value proved equal to zero.
 
-For example, the standard library defines `count`:
+For example, this function counts the occurrences of `x` in the first three
+cells of an array-ref parameter:
 
 <!-- verified-example: mdtests/pure_click_functions.md -->
 ```click
-function count(p: int32[], lo: int32, hi: int32, x: int32) -> int32 {
-    (lo..hi).fold(0, |acc, k| {
+function count3(p: int32[], x: int32) -> int32 {
+    let initial = 0;
+    (0..3).fold(initial, |acc, k| {
         acc + if p[k] == x { 1 } else { 0 }
     })
 }
 ```
 
-This function counts occurrences in a range of an array-ref parameter.
+The standard library's `count(p, lo, hi, x)` is the same fold over a symbolic
+range `lo..hi` (see
+[`library/permutation.click`](https://github.com/clicklang/click/blob/master/library/permutation.click)).
 
 Pure Click functions can use immutable `let` bindings:
 
-<!-- verified-example: mdtests/pure_click_functions.md -->
+<!-- verified-example: mdtests/contract_let_bindings.md -->
 ```click
 function inc_with_let(x: int32) -> int32 {
     let next: int32 = x + 1;
@@ -34,7 +38,7 @@ The annotation is optional when the value's type is already clear:
 
 <!-- verified-example: mdtests/pure_click_functions.md -->
 ```click
-let next = x + 1;
+let initial = 0;
 ```
 
 ## Pointer results
@@ -57,17 +61,15 @@ A pure Click function returns a value:
 
 <!-- verified-example: mdtests/pure_click_functions.md -->
 ```click
-function count(...) -> int32 { ... }
+function count3(...) -> int32 { ... }
 ```
 
 A predicate returns a proposition:
 
 <!-- verified-example: mdtests/pure_click_functions.md -->
 ```click
-predicate permutation(a: int32[], b: int32[], lo: int32, hi: int32) {
-    forall (x: int32) {
-        count(a, lo, hi, x) == count(b, lo, hi, x)
-    }
+predicate one_more(x: int32, y: int32) {
+    inc(x) == y
 }
 ```
 
@@ -82,11 +84,12 @@ specification-level array ref. It contains:
 - a pointer,
 - and an element type.
 
-That is why this postcondition works:
+That is why this postcondition, using the standard library's `permutation`
+predicate (equal `count` of every value over `0..3`), works:
 
-<!-- verified-example: mdtests/pure_click_functions.md -->
+<!-- verified-example: mdtests/loop_stdlib_permutation_invariant.md -->
 ```click
-ensures permutation(p, old(p), 0, n) by auto;
+ensures permutation_after_loop: permutation(p, old(p), 0, 3);
 ```
 
 The first `p` means the current array. `old(p)` means the function-entry array
@@ -137,8 +140,7 @@ The same rule applies to [predicate bodies](predicates.md#bodies-read-only-their
 
 Range folds express computations over ranges:
 
-<!-- verified-example: mdtests/pure_click_functions.md -->
-```click
+```text
 (lo..hi).fold(init, |acc, k| {
     ...
 })
@@ -159,7 +161,7 @@ engine for arbitrary folds.
 A pure function may recurse when it declares a checked measure. Integer
 recursion uses a nonnegative, strictly decreasing `int32` parameter:
 
-<!-- verified-example: mdtests/pure_click_functions.md -->
+<!-- verified-example: mdtests/pure_recursive_function.md -->
 ```click
 function countdown(n: int32) -> int32
     decreases n
@@ -181,12 +183,12 @@ bound by that arm:
 
 <!-- verified-example: mdtests/algebraic_structural_recursion.md -->
 ```click
-function example_list_length(xs: List<int32>) -> int32
+function example_list_length(xs: TestList<int32>) -> int32
     decreases xs
 {
     match xs {
-        List::Nil => 0,
-        List::Cons(head, tail) => 1 + example_list_length(tail),
+        TestList::Nil => 0,
+        TestList::Cons(head, tail) => 1 + example_list_length(tail),
     }
 }
 ```
