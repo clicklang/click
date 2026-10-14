@@ -221,8 +221,13 @@ proves a constructor disequality over a call-produced field, a count's
 definedness once a zero summand is removed, and a `defined(..)` that carries
 a read's definedness; premise spelling names a call's `old(..)` value,
 including a loaded pointer to a heap object, at a recorded statement entry;
-and a requirement synthesis spells conjunct by conjunct is admitted through
-the one conjunct that already states it. The fallback is deleted: `Retained`
+a requirement synthesis spells conjunct by conjunct is admitted through
+the one conjunct that already states it; and an `assert`'s false-path
+obligation (`0 == 1`, as Rust overflow checks lower to) is spelled as the
+asserted condition at the pre-state, less the disjuncts an exact fact
+refutes, which `simp` proves by disjunctive syllogism. The census covered
+only the mdtest and example harnesses; the Rust-import suite's
+`charon_symbolic_multiply_*` tests were the cases it missed. The fallback is deleted: `Retained`
 no longer derives obligations or decides condition prerequisites by search,
 a bare step refuses an obligation the implicit `auto` cannot prove, smart
 execution's retry has no compatibility escape hatch, and the in-step re-run

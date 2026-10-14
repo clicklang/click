@@ -1011,6 +1011,12 @@ fn certified_transitions_from_execution(
                                         ),
                                     ),
                                     obligation,
+                                )
+                                .with_assertion_condition(
+                                    crate::surface::proof::fact_reasoning::asserted_condition(
+                                        proposition,
+                                        statement,
+                                    ),
                                 ),
                             )?;
                             None

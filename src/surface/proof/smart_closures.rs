@@ -2324,6 +2324,9 @@ impl<'a> Proof<'a> {
         if let Some(defined) = self.try_signed_definedness_closure()? {
             return Ok(Some(defined));
         }
+        if let Some(eliminated) = self.try_disjunctive_syllogism_closure() {
+            return Ok(Some(eliminated));
+        }
         if let Some(guarded) = self.try_guarded_consequent_closure()? {
             return Ok(Some(guarded));
         }
@@ -5653,6 +5656,69 @@ impl<'a> Proof<'a> {
         None
     }
 
+    /// Disjunctive syllogism: the goal is one disjunct of an available
+    /// disjunction whose every other disjunct the context refutes exactly,
+    /// as `x <= MAX / rhs` is from `rhs == 0 or x <= MAX / rhs` under
+    /// `rhs != 0`. The disjunction is eliminated by `cases`, the refuted arms
+    /// closing by `contradiction`. Candidates are the context's disjunction
+    /// facts, each refutation one exact lookup.
+    fn try_disjunctive_syllogism_closure(&self) -> Option<Self> {
+        let goal = self.goal()?.clone();
+        if !matches!(goal, Proposition::ConditionIs(_, _)) {
+            return None;
+        }
+        let assumptions = self.facts().assumptions();
+        let refuted = |disjunct: &Proposition| {
+            let negated = match disjunct {
+                Proposition::ConditionIs(condition, value) => {
+                    Proposition::ConditionIs(condition.clone(), !value)
+                }
+                other => Proposition::Not(Box::new(other.clone())),
+            };
+            assumptions.states_required_goal(&negated)
+        };
+        let candidates = assumptions
+            .disjunction_fact_propositions()
+            .filter(|disjunction| {
+                let disjuncts = flattened_disjuncts(disjunction);
+                disjuncts.iter().any(|disjunct| **disjunct == goal)
+                    && disjuncts
+                        .iter()
+                        .filter(|disjunct| ***disjunct != goal)
+                        .all(|disjunct| refuted(disjunct))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let frontier_anchor = match self.context.as_ref() {
+            ProofContext::Execution(_) if self.focused_outcome_data().is_none() => {
+                self.execution().map(|execution| ProgramPointRef {
+                    region: CodeRegionRef::Statement(execution.core.frontier.next_statement_index),
+                    kind: ProgramPointKind::Entry,
+                })
+            }
+            _ => None,
+        };
+        let (surface_facts, premise_anchor) = match self.context.as_ref() {
+            ProofContext::Pure(context) => (&context.theorem_context.surface_requirements, None),
+            ProofContext::FixedState(context) => (
+                context.surface_propositions,
+                context.premise_anchor.as_ref(),
+            ),
+            ProofContext::Execution(_) => match self.focused_outcome_data() {
+                Some(data) => (&data.surface_propositions, data.premise_anchor.as_ref()),
+                None => (
+                    &self.execution()?.surface_propositions,
+                    frontier_anchor.as_ref(),
+                ),
+            },
+        };
+        candidates.into_iter().find_map(|disjunction| {
+            let surface =
+                self.available_surface_fact(surface_facts, premise_anchor, &disjunction)?;
+            self.try_selected_disjunction_cases(&[(disjunction, surface)])
+        })
+    }
+
     /// Eliminates one disjunction selected by the kernel derivation and
     /// proves both arms on their branch-local `Proof`s. The disjunction is
     /// never reopened once either disjunct is already available, which makes
@@ -7893,6 +7959,21 @@ impl<'a> Proof<'a> {
             Ok(lowered) if lowered_states_requirement(&lowered, requirement) => Some(candidate),
             _ => None,
         };
+        // An `assert`'s false-path truthiness obligation (`0 == 1`) holds only
+        // where that path is unreachable; at the pre-state, the requirement it
+        // stands for is the asserted condition, which is what a proof shows.
+        // Proving it there lets the step decide the assertion and prune the
+        // false path; the step's own checking then confirms that it did.
+        if let Some(condition) = &requirement.assertion_condition {
+            let surface = self.asserted_condition_given_context(condition);
+            return Ok(self
+                .lower_surface_goal(&surface, "asserted condition")
+                .is_ok()
+                .then_some(RequirementSpelling {
+                    surface,
+                    direct_caller: None,
+                }));
+        }
         if requirement.call_site.is_some()
             && let Some(registry_surface) =
                 source_backed_call_requirement_surface(requirement, step, execution, context)
@@ -8678,6 +8759,93 @@ pub(in crate::surface::proof) fn collect_bounded_surface_conjunct_leaves(
 /// lowering put in front of it (generated arithmetic guards and path-fact
 /// guards, which no Surface connective spells). Proving that consequent is
 /// enough for the retried step, whose kernel check still sees the guard.
+impl<'a> Proof<'a> {
+    /// An asserted condition as the pre-state proof states it: a disjunct
+    /// whose negation the context states exactly is dropped, so `rhs == 0 or
+    /// x <= MAX / rhs` under `rhs != 0` is `x <= MAX / rhs`. The step's false
+    /// path then carries the negation of what was proved, and is pruned by
+    /// the exact conflict check. Each disjunct is one exact lookup.
+    fn asserted_condition_given_context(&self, condition: &CExpression) -> ClickProposition {
+        let surface = asserted_condition_proposition(condition);
+        let mut disjuncts = Vec::new();
+        let mut pending = vec![surface.clone()];
+        while let Some(next) = pending.pop() {
+            match next {
+                ClickProposition::Or(left, right) => {
+                    pending.push(*right);
+                    pending.push(*left);
+                }
+                other => disjuncts.push(other),
+            }
+        }
+        if disjuncts.len() < 2 {
+            return surface;
+        }
+        let assumptions = self.facts().assumptions();
+        let refuted = |disjunct: &ClickProposition| {
+            self.lower_surface_goal(disjunct, "asserted condition disjunct")
+                .ok()
+                .is_some_and(|lowered| {
+                    let negated = match lowered {
+                        Proposition::ConditionIs(condition, value) => {
+                            Proposition::ConditionIs(condition, !value)
+                        }
+                        other => Proposition::Not(Box::new(other)),
+                    };
+                    assumptions.states_required_goal(&negated)
+                })
+        };
+        let kept = disjuncts
+            .into_iter()
+            .filter(|disjunct| !refuted(disjunct))
+            .collect::<Vec<_>>();
+        kept.into_iter()
+            .reduce(|left, right| ClickProposition::Or(Box::new(left), Box::new(right)))
+            .unwrap_or(surface)
+    }
+}
+
+/// The Surface proposition that a C condition is true: its comparisons and
+/// logical connectives as written, and any other operand as `e != 0`.
+fn asserted_condition_proposition(condition: &CExpression) -> ClickProposition {
+    let comparison =
+        |left: &CExpression, operator, right: &CExpression| ClickProposition::Comparison {
+            left: ContractExpression::CFragment(left.clone()),
+            operator,
+            right: ContractExpression::CFragment(right.clone()),
+        };
+    match condition {
+        CExpression::And(left, right) => ClickProposition::And(
+            Box::new(asserted_condition_proposition(left)),
+            Box::new(asserted_condition_proposition(right)),
+        ),
+        CExpression::Or(left, right) => ClickProposition::Or(
+            Box::new(asserted_condition_proposition(left)),
+            Box::new(asserted_condition_proposition(right)),
+        ),
+        CExpression::Not(inner) => {
+            ClickProposition::Not(Box::new(asserted_condition_proposition(inner)))
+        }
+        CExpression::Equal(left, right) => comparison(left, ComparisonOperator::Equal, right),
+        CExpression::NotEqual(left, right) => comparison(left, ComparisonOperator::NotEqual, right),
+        CExpression::LessThan(left, right) => comparison(left, ComparisonOperator::LessThan, right),
+        CExpression::LessEqual(left, right) => {
+            comparison(left, ComparisonOperator::LessEqual, right)
+        }
+        CExpression::GreaterThan(left, right) => {
+            comparison(left, ComparisonOperator::GreaterThan, right)
+        }
+        CExpression::GreaterEqual(left, right) => {
+            comparison(left, ComparisonOperator::GreaterEqual, right)
+        }
+        other => comparison(
+            other,
+            ComparisonOperator::NotEqual,
+            &CExpression::Value(int32(0)),
+        ),
+    }
+}
+
 pub(super) fn lowered_states_requirement(
     lowered: &Proposition,
     requirement: &UnresolvedRequirement,
@@ -9568,4 +9736,20 @@ pub(in crate::surface::proof) fn close_requirement_spelling_by_auto<'a>(
         return Ok(None);
     };
     unfolded.try_direct_caller_requirement_closure(selection)
+}
+
+/// The disjuncts of a disjunction, flattened.
+fn flattened_disjuncts(proposition: &Proposition) -> Vec<&Proposition> {
+    let mut disjuncts = Vec::new();
+    let mut pending = vec![proposition];
+    while let Some(next) = pending.pop() {
+        match next {
+            Proposition::Or(left, right) => {
+                pending.push(right);
+                pending.push(left);
+            }
+            other => disjuncts.push(other),
+        }
+    }
+    disjuncts
 }
