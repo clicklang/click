@@ -1047,6 +1047,7 @@ struct ProofDiagnosticProofState(
     Option<crate::surface::proof_trace::ChildArgumentTrace>,
     Option<(&'static str, Box<Proposition>, Option<String>)>,
     Option<crate::surface::proof_diagnostics::MemoryHistoryDiagnostic>,
+    Option<Arc<crate::kernel::proof::RejectedResourceRewriteFact>>,
     Vec<(Variable, CType)>,
     // The value the goal's `result` denotes, when the goal is about a
     // function outcome.
@@ -1164,7 +1165,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         for (variable, name) in &self.2 {
             labels.source_name(*variable, name.clone());
         }
-        // A proof `let r = step(...)` holds the exact scalar result, so its
+        // A proof `let { result: r } = step(...)` holds the exact scalar result, so its
         // user-chosen name wins over the synthesized C assignment target.
         for (name, expression) in self.0.state().locals().values.iter() {
             if let ContractExpression::CFragment(CExpression::Value(CValue::Pointer(pointer))) =
@@ -1187,10 +1188,10 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         if let Some(state) = &self.3 {
             labels.register_current_state(state);
         }
-        if let Some(result) = &self.8 {
+        if let Some(result) = &self.9 {
             labels.source_result(result);
         }
-        for (variable, c_type) in &self.7 {
+        for (variable, c_type) in &self.8 {
             labels.source_type(*variable, *c_type);
         }
         if let Some(branch) = self.0.state().open_branches().get(self.0.focused_branch())
@@ -1204,6 +1205,10 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             }
             register_recorded_snapshot_names(labels, &execution.presentation.recorded_snapshots);
         }
+    }
+
+    fn rejected_resource_fact(&self) -> Option<&crate::kernel::proof::RejectedResourceRewriteFact> {
+        self.7.as_deref()
     }
 
     fn failed_requirement(&self) -> Option<(&str, &Proposition)> {
@@ -1278,6 +1283,17 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             have_body_contains,
             target,
         )?;
+        if self
+            .5
+            .as_ref()
+            .is_some_and(|(label, _, _)| *label == "rejected path fact")
+        {
+            trace = trace.replacen(
+                "proof trace (checked tactics and branch facts)",
+                "proof trace (checked prefix; certification failed)",
+                1,
+            );
+        }
         if let Some(comparison) = &self.4 {
             comparison.append_to(&mut trace, labels);
         }
@@ -1297,7 +1313,9 @@ fn trace_path_lineage(
     while let Some(entry) = current {
         #[cfg(test)]
         crate::surface::proof_trace::record_lineage_visit();
-        let selected_arm = if entry.step.is_some() {
+        let selected_arm = if entry.step.is_some()
+            || crate::surface::proof_trace::has_recorded_step(entry as *const ProofNode as usize)
+        {
             if entry.focused_branch != goal {
                 current = entry.parent.as_deref();
                 continue;
@@ -1396,6 +1414,48 @@ impl Proof<'_> {
                 Some(Box::new(self.diagnostic_state())),
             );
         }
+    }
+
+    pub(in crate::surface::proof) fn record_certification_failure_trace(
+        &self,
+        claim: &str,
+        path_index: usize,
+    ) {
+        if crate::surface::proof_trace::enabled_for(claim) {
+            crate::surface::proof_trace::record_certification_failure_path(
+                claim,
+                path_index,
+                trace_path_lineage(&self.node, self.focused_branch_id()),
+                Box::new(self.node.clone()),
+                Some(Box::new(self.diagnostic_state())),
+            );
+        }
+    }
+
+    /// Certification keeps the actual theorem's names and checked lineage,
+    /// even when its backing C function has a different name.
+    pub(in crate::surface::proof) fn return_fold_certification_error(
+        &self,
+        message: String,
+        rejected_fact: Option<Proposition>,
+        path_index: usize,
+    ) -> ClickError {
+        self.record_certification_failure_trace(self.claim_label(), path_index);
+        let mut state = self.diagnostic_state();
+        state.5 = rejected_fact.map(|fact| ("rejected path fact", Box::new(fact), None));
+        ClickError::with_diagnostic(
+            message.clone(),
+            crate::surface::proof_diagnostics::ProofFailureDiagnostic {
+                origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
+                    stage: "return-fold certification".into(),
+                    location: self.claim_label().to_owned(),
+                    source_tactic_path: None,
+                },
+                claim_label: self.claim_label().to_owned(),
+                reason: message,
+                state: Some(Arc::new(state)),
+            },
+        )
     }
 
     /// This proof's traced path so far, for a phase proof it is about to
@@ -1638,6 +1698,7 @@ impl Proof<'_> {
             None,
             None,
             history,
+            None,
             source_types,
             result.cloned(),
         )
@@ -2625,16 +2686,34 @@ impl<'a> Proof<'a> {
         self.step_error_with_requirement(message, None, None)
     }
 
+    fn step_error_resource_rewrite(
+        &self,
+        error: crate::kernel::proof::ResourceRewriteCheckError,
+    ) -> ClickError {
+        self.step_error_with_details(error.message, None, None, error.rejected_fact)
+    }
+
     fn step_error_with_requirement(
         &self,
         message: impl Into<String>,
         comparison: Option<crate::surface::proof_trace::ChildArgumentTrace>,
         requirement: Option<(&'static str, Box<Proposition>, Option<String>)>,
     ) -> ClickError {
+        self.step_error_with_details(message, comparison, requirement, None)
+    }
+
+    fn step_error_with_details(
+        &self,
+        message: impl Into<String>,
+        comparison: Option<crate::surface::proof_trace::ChildArgumentTrace>,
+        requirement: Option<(&'static str, Box<Proposition>, Option<String>)>,
+        rejected: Option<Arc<crate::kernel::proof::RejectedResourceRewriteFact>>,
+    ) -> ClickError {
         let reason = message.into();
         let mut diagnostic_state = self.diagnostic_state();
         diagnostic_state.4 = comparison;
         diagnostic_state.5 = requirement;
+        diagnostic_state.7 = rejected;
         let location = self
             .site
             .path()

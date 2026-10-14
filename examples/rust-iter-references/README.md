@@ -16,7 +16,7 @@ reference. Both reference and copied patterns also work over direct slices.
 The proof observes `iter_cursor` and `iter_remaining`, without MIR IDs or a
 generated processed count. It derives a prefix length from original length
 minus remaining length, relates it to the cursor, and bounds each sum by 255
-times that prefix length. `let loaded_byte = step();` names the actual checked
+times that prefix length. `let { result: loaded_byte } = step();` names the actual checked
 scalar read, retaining its value after compiler temporaries leave scope.
 Remaining slice length proves termination and obeys the shared memory model's
 signed-word length limit. Empty iterators exit without reading or advancing a

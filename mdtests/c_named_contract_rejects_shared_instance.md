@@ -36,5 +36,5 @@ int32 invoke(int32 (*callback)()) {
 ```
 
 ```expect
-fail: an exclusive instance cannot supply two contract resource handles
+fail: resource instance `c` cannot supply two binders of `Pair`
 ```

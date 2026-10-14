@@ -26,8 +26,11 @@ parents, preserved remaining in-order contents, and detached-node ownership.
 size is nonnegative and unchanged by reparenting. Both rotation theorems prove
 that the promoted root retains the original size and the demoted root has one
 plus the sizes of its new children. This justifies copying the old root's
-summary and recomputing the demoted node. Connecting those mathematical values
-to C metadata fields, including machine-integer bounds, remains unfinished.
+summary and recomputing the demoted node. The concrete recomputation proof below establishes the bounded machine sum;
+the recursive metadata invariant below supplies the mathematical connection;
+the concrete callbacks restore this invariant through recomputation, rotation,
+and arbitrary ancestor propagation. Connecting writable callbacks to the
+augmented entry points remains unfinished.
 
 The C frontend checks the type query, static assertion, and member offset used
 by Linux `container_of`; unsigned pointer subtraction preserves the offset and
@@ -40,17 +43,118 @@ an `int32` model value. Copy preserves the source resource and returns target
 metadata equal to the source's entry value. The `CopySize` callback contract
 expresses this transition; `sized_copy_has_size_contract` certifies the concrete
 static-inline function through an execution theorem with explicit resource maps.
-Explicit contract casts through `void*` describe the enclosing node. This establishes metadata transport, not
-that the value counts a subtree: rotation/recomputation, propagation and its
-loop measure, machine-integer bounds, and the tree/metadata invariant remain.
-The copy body is extracted separately from the full callback table; integrating
-that table also requires termination evidence for its propagation callback.
+Explicit contract casts through `void*` describe the enclosing node. This
+establishes scalar metadata transport. The recursive invariant and its
+restoration through arbitrary ancestor propagation are described below.
+The copy body is extracted separately from the full callback table. The full
+propagation proof below also provides its checked termination evidence.
+
+`rbtree_size_compute.click` verifies a concrete recomputation helper with the
+existing Linux `rb_entry` macro. Its optional child metadata resources carry
+zero for null children. For all four child configurations it preserves the
+children and sets the parent to one plus their entry sizes, including the
+early return when the stored size already agrees. The contract records that
+a nonzero result means the entry size already equals the recomputed sum. `size_arithmetic.click`
+proves the signed additions defined from nonnegative sizes and a bounded sum.
+`ComputeSize` describes the helper as a callable metadata contract, and
+`compute_size_has_size_contract` proves it for all four child configurations.
+Its guarded separation premises keep each borrowed child-pointer field apart
+from either child's writable metadata. `child_size_separation` derives those
+premises from ownership of the parent's `rb` prefix and a nonnull child's
+metadata, using the existing partition rule. The callback proof also applies
+the checked sum-definedness lemma before the call so the returned size equality
+has both arithmetic guards available.
+
+`rbtree_size_rotate.click` verifies the unchanged `RB_DECLARE_CALLBACKS`
+rotation body specialized for this node type. It copies the old root's entry
+metadata into the promoted root, then calls `compute_size` to recompute the
+demoted root from its children. Both child models are preserved. `RotateSize`
+and its execution theorem provide the callable interface, for all four nullable
+child configurations. The shared `rbtree_size.h` keeps the node type and
+`container_of` definitions separate from the C bodies; each sidecar explicitly
+lists the C dependencies of its imported contracts.
+
+`rbtree_size_model.click` defines the recursive `SizedTree` model and its
+`sized_at` ownership resource. `sized_shape` erases metadata into the existing
+`RbTree` model. Each node owns its links, parent tag, size metadata, and two
+child resources, with an integer equation relating its stored size to the
+children's stored sizes. `certify_size` is a checked recursive proof procedure:
+it preserves ownership and the model and establishes that the root's stored
+size equals the mathematical subtree count and that all model counts satisfy
+the recursive size equation. Its recursive calls use the strict
+subtree-count descent proved by `sized_child_descent`. `size_sum_as_integer`
+connects a defined machine sum to the corresponding mathematical integer sum.
+
+`rbtree_size_recompute_model.click` connects the unchanged `compute_size` helper
+to the recursive invariant. Its dirty-root resource owns the root metadata and
+two valid children, without assuming the root count is already correct.
+`RecomputeTree` bounds the child sum, preserves the erased tree shape, and
+returns a valid `sized_at` tree whose stored size equals its mathematical
+subtree count, while preserving both child models. The execution theorem checks
+all four nullable-child cases. A nonzero return also certifies that the cached size was already correct, which is the fact
+propagation needs to justify its early stop.
+
+`rbtree_size_rotate_model.click` connects the unchanged `sized_rotate` callback
+to the recursive invariant for both rotation directions and all four nullable
+child configurations. The links and parent tags have already rotated; the
+promoted summary is stale and the demoted summary still holds the original
+subtree's total. The callback returns a valid `sized_at` tree, preserves the
+erased shape, and restores the mathematical subtree count. `RotateTreeLeft`
+and `RotateTreeRight` expose these checked callable contracts.
+
+`rbtree_size_propagate.click` checks the unchanged propagation callback for
+its first visited leaf, whose parent is the exclusive stop. Both early break
+and parent advance restore the leaf size to one and preserve its structural
+links and tagged parent word. This covers a single iteration;
+`rbtree_size_propagate_tree.click` below checks the full loop.
+
+`rbtree_size_context.click` supplies the ancestor model for full propagation.
+Each left or right frame retains its cached size, sibling subtree, and remaining
+ancestors. Reconstruction preserves the erased tree shape, and the context depth
+is nonnegative. The focused subtree count is bounded by the reconstructed whole
+tree count, so the original whole-tree size bound also applies along the walk.
+The early-stop theorem proves that replacing the focused subtree
+with a valid subtree of the same cached size leaves all ancestor counts correct.
+`rbtree_size_context_resources.click` owns both kinds of ancestor frame, including
+metadata, links, sibling trees, and the remaining path. `certify_sized_context`
+checks cached-count coherence while preserving these owned frames. Its recursive
+reconstruction tactic restores a valid `sized_at` tree using unchanged ancestor
+metadata when the focused cached size is unchanged. The path and result models
+carry the reconstruction root, keeping the Linux callback signature unchanged.
+`rbtree_size_walk.click` adds the checked ownership transitions used by that
+loop: preparing bounded child counts, moving a repaired focus into its dirty
+parent, rebuilding the path on early stop, and returning a certified whole
+tree. Parent advance preserves reconstruction and decreases context depth.
+`rbtree_size_propagate_tree.click` connects these helpers to the unchanged
+arbitrary-length C loop. Its invariant retains the reconstruction root,
+erased shape, and whole-tree size bound; context depth supplies termination.
+The early break restores the remaining ancestors, and parent advance repairs
+each visited node. At the exit join, checked disjunction projection exposes
+that the cursor reached the stop or the walk is finished. The resource's active
+case excludes the former, and its pending flag excludes the latter, so only
+the finished case returns. The contract returns ownership of the whole valid
+sized tree, preserving its root and erased shape and establishing recursive
+count validity. `PropagateTree` and `sized_propagate_has_tree_contract` expose
+the checked callable interface for callback-table integration.
+
+This proves the recursive metadata invariant and its restoration through C
+recomputation, rotation, and full ancestor propagation. Connecting writable
+callbacks to the augmented entry-point contracts remains.
 
 This is an entry-point integration increment of
 [chunk 14](../../issues/rbtree-example.md#augmented), not the completed
-augmentation proof. Imported callback contracts currently have no writable
-footprint. Mutation-capable metadata callbacks and an augmentation invariant
-remain to be connected to the implementation proofs. Each imported module is
+augmentation proof. The entry-point proofs still import callback contracts
+without writable footprints. The verified size callbacks and recursive
+augmentation invariant remain to be connected to the implementation proofs. Each imported module is
 verified separately; importing its contract does not rerun its proof.
 
 Run `click verify examples/rbtree-augmented` to check these entry points.
+
+`rbtree_size_metadata.click` separates a checked sized subtree into ordinary
+`rb_at` ownership and `sized_metadata_at` ownership of the cached size cells.
+The metadata resource indexes its children by pure getters of its logical
+model, rather than by the program's child links. `split_sized_tree` preserves
+both the structural shape and the full sized model. This is the ownership
+bridge for callbacks that update metadata while structural proofs rearrange
+links; rejoining the resources and integrating the writable callback table
+remain unfinished.

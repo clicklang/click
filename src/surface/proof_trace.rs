@@ -18,6 +18,7 @@ struct Capture {
     branches: HashMap<usize, TraceBranch>,
     joins: HashMap<usize, TraceJoin>,
     bodies: HashMap<usize, TraceBody>,
+    matches: HashMap<usize, TraceMatch>,
     scope_parents: HashMap<usize, TraceScope>,
     retained_paths: Vec<TraceRetainedPath>,
 }
@@ -83,6 +84,28 @@ pub(super) struct TraceJoin {
 struct TraceScope {
     lineage: TraceLineage,
     _retained: Box<dyn Any>,
+}
+
+pub(super) struct TraceMatch {
+    pub header: String,
+    pub source_tactic_path: Option<Vec<usize>>,
+    pub arms: Vec<Option<TraceMatchArm>>,
+}
+
+pub(super) struct TraceMatchArm {
+    pub names: Box<dyn ProofDiagnosticState>,
+    pub name: String,
+    pub fact: TraceFact,
+    pub lineage: Vec<TracePathNode>,
+    pub _retained: Box<dyn Any>,
+}
+
+pub(super) fn record_match(node: usize, trace: TraceMatch) {
+    CAPTURE.with(|slot| {
+        if let Some(capture) = slot.borrow_mut().as_mut() {
+            capture.matches.insert(node, trace);
+        }
+    });
 }
 
 pub(super) struct TraceBody {
@@ -416,6 +439,7 @@ pub fn with_proof_trace<R>(function: &str, verify: impl FnOnce() -> R) -> R {
             branches: HashMap::new(),
             joins: HashMap::new(),
             bodies: HashMap::new(),
+            matches: HashMap::new(),
             scope_parents: HashMap::new(),
             retained_paths: Vec::new(),
         }))
@@ -431,6 +455,14 @@ pub(super) fn enabled_for(claim: &str) -> bool {
                 .strip_prefix(&capture.function)
                 .is_some_and(|tail| tail.starts_with('.') || tail.is_empty())
         })
+    })
+}
+
+pub(super) fn has_recorded_step(node: usize) -> bool {
+    CAPTURE.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .is_some_and(|capture| capture.steps.contains_key(&node))
     })
 }
 
@@ -541,6 +573,18 @@ pub(super) fn record_unfinished_path(
     record_retained_path(claim, path_index, true, false, lineage, retained, names);
 }
 
+/// Written steps whose final certification was refused are a checked prefix,
+/// not an accepted path and not an abandoned search candidate.
+pub(super) fn record_certification_failure_path(
+    claim: &str,
+    path_index: usize,
+    lineage: Vec<TracePathNode>,
+    retained: Box<dyn Any>,
+    names: Option<Box<dyn ProofDiagnosticState>>,
+) {
+    record_retained_path(claim, path_index, false, false, lineage, retained, names);
+}
+
 fn record_retained_path(
     claim: &str,
     path_index: usize,
@@ -647,7 +691,14 @@ pub(crate) fn render_accepted(
         let paths = capture
             .retained_paths
             .iter()
-            .filter(|path| path.completed && !path.nested)
+            .rev()
+            .filter(|path| !path.completed && !path.nested)
+            .chain(
+                capture
+                    .retained_paths
+                    .iter()
+                    .filter(|path| path.completed && !path.nested),
+            )
             .chain(
                 capture
                     .retained_paths
@@ -662,7 +713,13 @@ pub(crate) fn render_accepted(
             let body = |indices: &[usize], position: &SourcePosition| {
                 have_body_contains(&path.claim, indices, position)
             };
-            let mut path_labels = SnapshotLabels::default();
+            let mut path_labels = if path.completed {
+                SnapshotLabels::default()
+            } else {
+                // The rejected fact was printed before this prefix. Its
+                // snapshot and value identities must remain the same here.
+                labels.clone()
+            };
             if let Some(names) = &path.names {
                 names.register_names(&mut path_labels);
             }
@@ -677,7 +734,13 @@ pub(crate) fn render_accepted(
             );
             if target.is_none() || reached {
                 *labels = path_labels;
-                if capture
+                if !path.completed {
+                    report = report.replacen(
+                        "proof trace (checked tactics and branch facts)",
+                        "proof trace (checked prefix; certification failed)",
+                        1,
+                    );
+                } else if capture
                     .retained_paths
                     .iter()
                     .filter(|path| path.completed && !path.nested)
@@ -777,6 +840,69 @@ fn append_path(
         }
         let indent = " ".repeat(2 + depth * 2);
         let mut detail = String::new();
+        if let Some(matched) = capture.matches.get(&path_node.node) {
+            let site = matched
+                .source_tactic_path
+                .as_deref()
+                .and_then(tactic_location);
+            if target.is_some_and(|target| {
+                site.as_ref()
+                    .is_some_and(|(_, at)| source_after(at, target))
+            }) {
+                *done = true;
+                break;
+            }
+            let selected = target
+                .and_then(|target| {
+                    matched
+                        .source_tactic_path
+                        .as_deref()
+                        .and_then(|path| branch_arm(path, target))
+                })
+                .or_else(|| matched.arms.iter().position(Option::is_some));
+            if let Some(arm) = selected
+                .and_then(|index| matched.arms.get(index))
+                .and_then(Option::as_ref)
+            {
+                arm.names.register_names(labels);
+                output.push_str(&format!(
+                    "\n{indent}{} ({} arm)",
+                    trace_header(
+                        &matched.header,
+                        matched.source_tactic_path.as_deref(),
+                        tactic_location
+                    ),
+                    arm.name
+                ));
+                append_added_facts(
+                    output,
+                    std::slice::from_ref(&arm.fact),
+                    labels,
+                    &format!("{indent}  "),
+                );
+                *shown += 1;
+                if target.is_some_and(|target| {
+                    site.as_ref().is_some_and(|(_, at)| source_same(at, target))
+                }) {
+                    *reached = true;
+                }
+                append_path(
+                    output,
+                    capture,
+                    &arm.lineage,
+                    labels,
+                    tactic_location,
+                    branch_arm,
+                    have_body_contains,
+                    target,
+                    depth + 1,
+                    shown,
+                    done,
+                    reached,
+                );
+            }
+            continue;
+        }
         if let Some(join) = capture.joins.get(&path_node.node) {
             if let Some(branch) = capture.branches.get(&join.marker) {
                 let site = branch
@@ -1007,6 +1133,15 @@ fn trace_header(
     path: Option<&[usize]>,
     tactic_location: &dyn Fn(&[usize]) -> Option<(String, SourcePosition)>,
 ) -> String {
+    if path.is_some_and(|path| {
+        path.iter()
+            .any(|index| *index >= super::proof::SYNTHETIC_SOURCE_INDEX_BASE)
+    }) {
+        return header.trim().split_once(": ").map_or_else(
+            || "implicit contract step".to_owned(),
+            |(_, description)| format!("implicit contract step: {description}"),
+        );
+    }
     let Some((location, _)) = path.and_then(tactic_location) else {
         return header.to_owned();
     };
@@ -1150,6 +1285,14 @@ mod tests {
         let label = |path: &[usize]| {
             (path == [3, 1]).then(|| ("tactic@475".to_owned(), SourcePosition::new(475, 1)))
         };
+        assert_eq!(
+            trace_header(
+                "tactic 9223372036854775808: step",
+                Some(&[super::super::proof::SYNTHETIC_SOURCE_INDEX_BASE + 1]),
+                &label,
+            ),
+            "implicit contract step: step"
+        );
         assert_eq!(
             trace_header(
                 "tactic 3 > have body tactic 1: assumption()",
@@ -1743,6 +1886,43 @@ mod tests {
             .unwrap();
             assert!(unfinished.contains("unfinished arm"), "{unfinished}");
             assert!(!unfinished.contains("abandoned candidate"), "{unfinished}");
+            record_certification_failure_path(
+                "f.contract",
+                0,
+                vec![TracePathNode {
+                    node: 4,
+                    selected_arm: None,
+                }],
+                Box::new(()),
+                None,
+            );
+            let mut shared_labels = SnapshotLabels::default();
+            let rejected_address = Pointer::symbolic(crate::kernel::Variable(987_771));
+            shared_labels.immutable_pointer_name(&rejected_address, "rejected_fact_address");
+            shared_labels.pointer_value_name(&rejected_address);
+            let failed_prefix = render_accepted(
+                &mut shared_labels,
+                &|_, path| locate(path),
+                &|_, _, _| None,
+                &|_, _, _| false,
+                Some(&target),
+            )
+            .expect("a certification refusal retains the written checked prefix");
+            assert!(
+                failed_prefix.contains("checked prefix; certification failed"),
+                "{failed_prefix}"
+            );
+            assert!(failed_prefix.contains("unfinished arm"), "{failed_prefix}");
+            assert!(
+                !failed_prefix.contains("abandoned candidate"),
+                "{failed_prefix}"
+            );
+            assert!(!failed_prefix.contains("accepted path"), "{failed_prefix}");
+            assert!(
+                shared_labels
+                    .trace_legend()
+                    .contains("rejected_fact_address")
+            );
         });
     }
 }

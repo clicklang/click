@@ -971,9 +971,7 @@ fn recover_candidate_stable_view_resources(
     // recovery is therefore fail-closed until the return path has no pending
     // obligations at all.
     if !obligations.is_empty() {
-        return Err(CRuntimeError::FunctionContract(
-            "stable-view call has an undischarged return obligation".to_string(),
-        ));
+        return Err(CRuntimeError::PendingCallObligations(obligations.into()));
     }
     // Escaping borrows (step 7). Every viewed piece a produced or returned
     // owned composite packages must be backed by exactly one loan of this
@@ -4583,18 +4581,30 @@ pub(super) fn execute_c_function_call_paths(
             Vec::new(),
         )]);
     }
-    if execution_context
+    if let Some(selected) = execution_context
         .environment
         .selected_call_contract
-        .is_some()
+        .as_deref()
     {
-        return Ok(vec![CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
-                "step(Contract) requires a function-pointer call".to_string(),
-            )),
-            Vec::new().into(),
-            Vec::new(),
-        )]);
+        let pointer = Pointer::function(function.name());
+        let contracts = assumptions
+            .function_contract_facts_for(&pointer)
+            .filter_map(|(name, _)| execution_context.environment.get_function_contract(name))
+            .filter(|contract| contract.function_pointer_type() == function.function_pointer_type())
+            .collect::<Vec<_>>();
+        if !contracts.iter().any(|contract| contract.name() == selected) {
+            return Ok(vec![resource_call_failure(
+                "selected contract is not established for this function with its call signature",
+            )]);
+        }
+        return execute_c_function_contracts_paths(
+            caller_state,
+            &contracts,
+            arguments,
+            assumptions,
+            execution_context.environment,
+            budget,
+        );
     }
     if let Some(rule) = execution_context
         .environment
@@ -5791,8 +5801,15 @@ fn execute_verified_function_applications_with_suspension(
             // The caller keeps its residual resources outside the transfer,
             // and the callee writes only memory it owns, so the havoc keeps
             // every cell an owned residual member holds.
+            // Stable views escrow their owned backing outside the residual.
+            // The checked loan plan protects that backing from the callee's
+            // writes just as it protects the remaining caller-owned frame.
+            let caller_frame = transfer
+                .caller_resources_after_requirements
+                .clone()
+                .unchecked_with_facts(escrowed_owners(&transfer).iter().cloned());
             let kept = call_kept_ownership(
-                &transfer.caller_resources_after_requirements,
+                &caller_frame,
                 interface.composite_resource_definitions(),
                 &entry_state,
                 &effective_assumptions,
@@ -8047,6 +8064,7 @@ fn prepare_verified_function_call<'a>(
     }
 
     let mut established_requirements = Vec::new();
+    let mut retained_requirements = Vec::new();
     let requirement_timing = crate::instrumentation::OperationTiming::new(
         application.name,
         "verified function rule application",
@@ -8286,9 +8304,26 @@ fn prepare_verified_function_call<'a>(
                     );
                 }
             }
+            // The call-local context assumes earlier pending requirements.
+            // Publishing evidence from that context would let a call prove
+            // its own prerequisites. Only the incoming checked context can
+            // independently establish an input fact for the continuation.
+            if super::reasoning::path_facts::call_input_fact_is_already_known(
+                assumptions,
+                &guarded_requirement,
+            ) {
+                retained_requirements.push(guarded_requirement.clone());
+            }
             established_requirements.push(guarded_requirement);
         }
     }
+    // Publish only independently proved input evidence. Each proposition
+    // keeps its pre-state reads and models; nothing is reevaluated here.
+    facts.extend(
+        retained_requirements
+            .into_iter()
+            .map(ExecutionPureFact::new),
+    );
     drop(requirement_timing);
 
     // The callee is given each of its ranges' extent guards on entry
@@ -8732,35 +8767,56 @@ pub(super) fn execute_c_function_contracts_paths(
     }
     let resource_application = if let Some(index) = selected_index {
         let contract = contracts[index];
-        let arguments = environment
-            .selected_call_resource_arguments
-            .as_deref()
-            .unwrap_or(&[]);
-        if arguments.len() != contract.proof_parameters().len() {
-            return Ok(vec![resource_call_failure(
-                "resource contract proof argument arity mismatch",
-            )]);
-        }
-        let mut bindings = BTreeMap::new();
-        for (parameter, argument) in contract.proof_parameters().iter().zip(arguments) {
-            let Some(identity) = parameter.instance_identity() else {
+        if let Some(transport) = environment
+            .selected_call_binders
+            .as_ref()
+            .filter(|transport| transport.names_call_to(contract.name()))
+        {
+            if transport.arity != arguments.len() {
                 return Ok(vec![resource_call_failure(
-                    "resource proof parameter must be an exclusive instance",
-                )]);
-            };
-            if bindings.insert(identity, *argument).is_some() {
-                return Ok(vec![resource_call_failure(
-                    "duplicate exclusive resource proof argument",
+                    "selected contract call arity mismatch",
                 )]);
             }
-        }
-        match ResourceCallApplication::bind(
-            contract.proof_parameters().to_vec(),
-            std::sync::Arc::new(bindings),
-            caller_state,
-        ) {
-            Ok(application) => Some(application),
-            Err(message) => return Ok(vec![resource_call_failure(message)]),
+            match selected_call_binder_application(
+                contract.name(),
+                contract.interface(),
+                caller_state,
+                environment,
+            ) {
+                Ok(application) => application,
+                Err(message) => return Ok(vec![resource_call_failure(message)]),
+            }
+        } else {
+            let arguments = environment
+                .selected_call_resource_arguments
+                .as_deref()
+                .unwrap_or(&[]);
+            if arguments.len() != contract.proof_parameters().len() {
+                return Ok(vec![resource_call_failure(
+                    "resource contract proof argument arity mismatch",
+                )]);
+            }
+            let mut bindings = BTreeMap::new();
+            for (parameter, argument) in contract.proof_parameters().iter().zip(arguments) {
+                let Some(identity) = parameter.instance_identity() else {
+                    return Ok(vec![resource_call_failure(
+                        "resource proof parameter must be an exclusive instance",
+                    )]);
+                };
+                if bindings.insert(identity, *argument).is_some() {
+                    return Ok(vec![resource_call_failure(
+                        "duplicate exclusive resource proof argument",
+                    )]);
+                }
+            }
+            match ResourceCallApplication::bind(
+                contract.proof_parameters().to_vec(),
+                std::sync::Arc::new(bindings),
+                caller_state,
+            ) {
+                Ok(application) => Some(application),
+                Err(message) => return Ok(vec![resource_call_failure(message)]),
+            }
         }
     } else {
         None
@@ -11520,7 +11576,15 @@ impl<'a> OwnedFootprintDerivation<'a> {
             self.reaches_unnamed = true;
             return;
         }
-        self.body(definition, evaluation, &definition.contains, &[], &[], None);
+        self.body(
+            definition,
+            evaluation,
+            &definition.contains,
+            &[],
+            &[],
+            None,
+            None,
+        );
     }
 
     fn instance(
@@ -11550,6 +11614,20 @@ impl<'a> OwnedFootprintDerivation<'a> {
             // bindings, never incidental locals of the function holding it.
             evaluation.locals = CLocalEnvironment::default();
         }
+        // Interpret logical parent fields without granting body ownership.
+        if let Some(values) = fields.iter().cloned().collect::<Option<Vec<_>>>()
+            && let Some(instance) = ResourceInstance::new(
+                Variable(u64::MAX),
+                definition.name().to_string(),
+                arguments.iter().cloned().collect(),
+                schema.clone(),
+                values.into_iter().collect(),
+            )
+        {
+            evaluation.instance_field_scope = ResourceContext::new()
+                .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance)));
+            evaluation.resource_bindings = None;
+        }
         for ((name, _), value) in schema.fields().iter().zip(fields) {
             if let Some(AlgebraicValue::C(value)) = value {
                 evaluation
@@ -11568,6 +11646,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 &definition.contains,
                 &definition.children,
                 fields,
+                None,
                 None,
             );
             return;
@@ -11596,6 +11675,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 &arm.children,
                 fields,
                 constructor.as_deref(),
+                Some(arm),
             );
         }
     }
@@ -11651,6 +11731,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
 
     /// One body: its guard, its owned clauses, and its named children, whose
     /// footprints are queued.
+    #[allow(clippy::too_many_arguments)]
     fn body(
         &mut self,
         definition: &'a CCompositeResourceDefinition,
@@ -11659,6 +11740,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
         children: &'a [CResourceChildSpec],
         fields: &[Option<AlgebraicValue>],
         constructor: Option<&[AlgebraicValue]>,
+        matched_arm: Option<&CResourceMatchArm>,
     ) {
         let mut budget = ExecutionBudget::beside_live_state();
         // An undecided guard counts the body as active: the footprint is an
@@ -11700,6 +11782,26 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 self.pending.push(OwnedFootprintTask::Fact(fact));
             }
         }
+        let mut algebraic_bindings = BTreeMap::new();
+        let mut integer_bindings = BTreeMap::new();
+        if let (Some(constructor), Some(arm)) = (constructor, matched_arm) {
+            for ((name, variable), value) in arm
+                .bindings
+                .iter()
+                .zip(&arm.binding_variables)
+                .zip(constructor)
+            {
+                match (variable, value) {
+                    (None, AlgebraicValue::Algebraic(value)) => {
+                        algebraic_bindings.insert(name.clone(), value.clone());
+                    }
+                    (Some(variable), AlgebraicValue::Integer(value)) => {
+                        integer_bindings.insert(*variable, value.clone());
+                    }
+                    _ => {}
+                }
+            }
+        }
         for child in children {
             let Some(child_definition) = self.definition(&child.resource) else {
                 self.undefined_family = true;
@@ -11710,10 +11812,12 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 .iter()
                 .zip(&child_definition.parameters)
                 .map(|(argument, parameter)| {
-                    let Ok(paths) = evaluate_c_expression_paths(
+                    let Ok(paths) = crate::kernel::spec::evaluate_resource_child_argument_paths(
                         &evaluation,
                         argument,
                         &self.evaluation_assumptions,
+                        &algebraic_bindings,
+                        &integer_bindings,
                         &mut budget,
                     ) else {
                         return None;
@@ -21790,6 +21894,8 @@ pub(crate) struct ResourceBodyClauseRecord {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ResourceInstanceRewriteResult {
+    /// The body guard case checked by this rewrite. Unknown guards refuse the rewrite.
+    pub(crate) body_active: bool,
     pub(crate) state: CState,
     pub(crate) semantic_facts: Vec<Proposition>,
     pub(crate) body_clauses: Vec<ResourceBodyClauseRecord>,
@@ -22833,10 +22939,12 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             .iter()
             .zip(&child_definition.parameters)
             .map(|(argument, parameter)| {
-                let paths = evaluate_c_expression_paths(
+                let paths = crate::kernel::spec::evaluate_resource_child_argument_paths(
                     &child_evaluation,
                     argument,
                     &child_assumptions,
+                    &algebraic_bindings,
+                    &integer_bindings,
                     &mut budget,
                 )
                 .map_err(|_| "recursive child argument evaluation exceeded its budget")?;
@@ -23187,6 +23295,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         }
     }
     Ok(ResourceInstanceRewriteResult {
+        body_active: active,
         state: next,
         semantic_facts,
         body_clauses,
@@ -33588,7 +33697,8 @@ mod stable_view_call_tests {
         let unresolved = ProofObligation::verification_condition(Proposition::ConditionIs(
             ConditionTerm::Constant(false),
             true,
-        ));
+        ))
+        .with_context("callee postcondition");
         let (outcome, _, _) = function_outcome_from_body_with_resource_transfer(
             &caller,
             &function,
@@ -33596,7 +33706,7 @@ mod stable_view_call_tests {
                 value: int32(7),
                 state: Box::new(callee),
             },
-            vec![unresolved],
+            vec![unresolved.clone()],
             &PureFactContext::new(),
             &transfer,
             &arguments,
@@ -33606,8 +33716,8 @@ mod stable_view_call_tests {
         .expect("candidate return transition should complete");
         assert!(matches!(
             outcome,
-            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message))
-                if message.contains("undischarged return obligation")
+            CFunctionOutcome::RuntimeError(CRuntimeError::PendingCallObligations(pending))
+                if pending.as_ref() == [unresolved]
         ));
     }
 
@@ -34485,8 +34595,8 @@ mod stable_view_call_tests {
             &caller,
             &function,
             &[
-                CExpression::Value(CValue::pointer(viewed)),
-                CExpression::Value(CValue::pointer(mutated)),
+                CExpression::Value(CValue::pointer(viewed.clone())),
+                CExpression::Value(CValue::pointer(mutated.clone())),
             ],
             &PureFactContext::new(),
             CExecutionContext::apply_verified_rules(&environment(&function)),
@@ -34500,6 +34610,25 @@ mod stable_view_call_tests {
                 ..
             }]
         ));
+        let [
+            CFunctionPath {
+                outcome: CFunctionOutcome::Return { state: after, .. },
+                ..
+            },
+        ] = paths.as_slice()
+        else {
+            unreachable!("the return path was checked above")
+        };
+        let kept = CallKeptRanges::recorded_on(after.memory())
+            .expect("the call records its protected caller frame");
+        assert!(
+            kept.holds_access(&viewed, 4, &PureFactContext::new()),
+            "the owner escrowed for the stable view preserves the read cell"
+        );
+        assert!(
+            !kept.holds_access(&mutated, 4, &PureFactContext::new()),
+            "ownership lent for mutation does not preserve its previous value"
+        );
     }
 
     /// The same-occurrence case is not weakened. Here one caller occurrence

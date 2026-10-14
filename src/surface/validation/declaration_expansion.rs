@@ -435,7 +435,17 @@ fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, 
             .iter()
             .map(|function| function.name().to_string())
             .collect();
-        let callees = context.function_blocks().iter().collect::<Vec<_>>();
+        let callees = context
+            .function_blocks()
+            .iter()
+            .map(parser::ImportedCallee::Function)
+            .chain(
+                context
+                    .contract_definitions()
+                    .iter()
+                    .map(parser::ImportedCallee::Contract),
+            )
+            .collect::<Vec<_>>();
         let resources = context.resource_definitions().iter().collect::<Vec<_>>();
         let module = parser::parse_file_items_for_module(
             source,

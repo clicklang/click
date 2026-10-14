@@ -85,7 +85,7 @@ pub(crate) fn c_checked_function_proposition_with_reason(
         };
         completed.is_exceptional == exceptional
             && completed.result.as_ref() == value
-            && completed.state.memory() == state.memory()
+            && memories_match_up_to_cached_reads(completed.state.memory(), state.memory())
             && completed.state.locals() == state.locals()
             && completed.state.aggregate_destination == state.aggregate_destination
     };
@@ -111,6 +111,193 @@ pub(crate) fn c_checked_function_proposition_with_reason(
         proposition: completion.proposition().clone(),
         claim: completion.claim().cloned(),
     })
+}
+
+/// Compare exact snapshots while allowing only producer-recorded caching of
+/// their own typed reads. Each hop descends the newer snapshot's derivation;
+/// unrelated cells, facts, and execution history are never visited. Read
+/// identity alone is insufficient: forgotten knowledge, havoc, stores, and
+/// allocation changes remain barriers even when some reads are unchanged.
+pub(in crate::kernel) fn memories_match_up_to_cached_reads(
+    left: &CMemory,
+    right: &CMemory,
+) -> bool {
+    let mut left = intern_c_memory_ref(left);
+    let mut right = intern_c_memory_ref(right);
+    while left != right {
+        crate::instrumentation::record_deterministic_work(1);
+        if left.arena_id().0 != right.arena_id().0 {
+            return false;
+        }
+        let newer = if left.arena_id().1 > right.arena_id().1 {
+            &mut left
+        } else {
+            &mut right
+        };
+        let Some(derivation) = newer.derivation() else {
+            return false;
+        };
+        let CMemoryDerivation::CellsSeeded { base, run } = derivation.as_ref() else {
+            return false;
+        };
+        if !matches!(
+            run.value_mode(),
+            crate::kernel::primitives::RunValueMode::Load
+        ) || run.element_width() != run.value_width()
+            || base.read_identity() != run.source().read_identity()
+        {
+            return false;
+        }
+        *newer = base.clone();
+    }
+    true
+}
+
+#[cfg(test)]
+mod cached_read_completion_tests {
+    use super::*;
+    use crate::kernel::proof::ProofObligation;
+    use crate::kernel::proof::*;
+
+    fn pointer(block: &str, offset: i32) -> Pointer {
+        Pointer {
+            block: block.into(),
+            offset: PointerOffsetTerm::Constant(i64::from(offset)),
+        }
+    }
+
+    fn cache(memory: &CMemory, source: &CMemory, count: u32, width: u32) -> CMemory {
+        memory.clone().with_seeded_cells(
+            pointer("cache", 0),
+            width,
+            CType::Int32,
+            0,
+            count,
+            intern_c_memory_ref(source),
+        )
+    }
+
+    fn check_completion(
+        memory: CMemory,
+        published: CMemory,
+    ) -> Result<CCheckedFunctionProposition, String> {
+        let proposition = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let state = CState::new().with_memory(published);
+        let function = c_function(
+            CType::Int32,
+            "cached_read_completion",
+            vec![],
+            c_return(c_int32_literal(0)),
+        );
+        let outcome = CFunctionOutcome::Return {
+            value: int32(0),
+            state: Box::new(state.clone()),
+        };
+        let specification =
+            c_function_specification(state.clone(), vec![], vec![], outcome.clone());
+        let path = SymbolicCExecutionPath {
+            completion_origin: Some(outcome.clone()),
+            assumptions: PureFactContext::new(),
+            post_assumptions: None,
+            facts: ExecutionFacts::new(),
+            effect_facts: ExecutionFacts::new(),
+            obligations: vec![],
+            theorem: Theorem::new(Proposition::CFunctionVerifies {
+                state: Box::new(state),
+                function: Box::new(function.clone()),
+                arguments: vec![],
+                outcome,
+            }),
+            loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        };
+        let theorem = Theorem::new(Proposition::CFunctionSatisfiesSpecification {
+            function: Box::new(function.clone()),
+            specification: Box::new(specification.clone()),
+        });
+        let proof: ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> =
+            ProofObject::root(
+                (),
+                ProofBranch::new(
+                    ProofObligation::Proposition(PropositionObligation::at_outcome(
+                        proposition.clone(),
+                        (),
+                        Arc::new(OutcomeProofState::new(
+                            OutcomeProofCore {
+                                identity: OutcomeIdentity::fresh(),
+                                result: Arc::new(int32(0)),
+                                state: CState::new().with_memory(memory).into(),
+                                store_consequences_available: false,
+                                is_exceptional: false,
+                                effect_facts: Arc::new(ExecutionFacts::new()),
+                            },
+                            (),
+                        )),
+                    )),
+                    ProofBranchState {
+                        facts: ProofFacts::from_ordered(&[proposition]),
+                        unfolded_predicates: PersistentOrderedSet::default(),
+                        execution: None,
+                    },
+                ),
+            );
+        let closed = proof
+            .apply_assumption(PropositionAssumptionContext::Exact)
+            .unwrap_or_else(|_| panic!("the stated proposition must close"));
+        c_checked_function_proposition_with_reason(
+            &function,
+            &specification,
+            &theorem,
+            &closed.completed_proposition().unwrap(),
+            &path,
+        )
+    }
+
+    #[test]
+    fn proposition_completion_accepts_own_read_cache_but_not_program_changes() {
+        let before = CMemory::new();
+        let cached = cache(&before, &before, 8, 4);
+        assert_ne!(before, cached);
+        assert!(check_completion(cached.clone(), before.clone()).is_ok());
+        assert!(check_completion(before.clone(), cached).is_ok());
+        let written = before.clone().store(pointer("cache", 0), int32(7));
+        assert!(check_completion(written.clone(), before.clone()).is_err());
+        assert!(check_completion(cache(&before, &written, 8, 4), before.clone()).is_err());
+        assert!(check_completion(cache(&before, &before, 8, 8), before.clone()).is_err());
+        assert!(check_completion(before.clone().with_block("extra", 4), before).is_err());
+    }
+
+    #[test]
+    fn proposition_completion_does_not_cross_call_havoc_for_cached_reads() {
+        let before = CMemory::new();
+        let after = before.clone().with_call_memory_havoc(
+            Variable(91_001),
+            &[],
+            &PureFactContext::new(),
+            None,
+        );
+        assert!(check_completion(cache(&after, &before, 8, 4), after.clone()).is_err());
+        assert!(check_completion(cache(&after, &after, 8, 4), before).is_err());
+        assert!(check_completion(cache(&after, &after, 8, 4), after).is_ok());
+    }
+
+    #[test]
+    fn cached_read_completion_work_ignores_ambient_cells_and_range_length() {
+        for size in [32, 128, 512, 2048] {
+            let memory = (0..size).fold(CMemory::new(), |memory, index| {
+                memory.store(
+                    pointer("ambient", index * 4),
+                    int32(u32::try_from(index).unwrap()),
+                )
+            });
+            let first = cache(&memory, &memory, 2, 4);
+            let second = cache(&first, &first, 10_000_000, 4);
+            let (matches, work) = crate::instrumentation::measure_deterministic_work(|| {
+                memories_match_up_to_cached_reads(&second, &memory)
+            });
+            assert!(matches);
+            assert!(work <= 4, "size={size}, work={work}");
+        }
+    }
 }
 
 pub fn c_function_outcomes_definitionally_equal(

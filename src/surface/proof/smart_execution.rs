@@ -1080,7 +1080,16 @@ impl<'a> Proof<'a> {
                     lowered = left_lowered;
                 }
             }
-            if lowered.clone() != requirement.clone() || !self.facts().contains(&lowered) {
+            // Substituting a compound argument can make its written
+            // definedness premise stronger than the bound requirement:
+            // `defined(a + b + c)` names both additions' guards, while
+            // `defined(left + right)` at left=(a+b), right=c needs only
+            // the outer guard. Use the explicit checker's existing rule
+            // to select a checked conjunct from the proposed evidence.
+            if !crate::kernel::listed_premise_holds(&requirement, |part| {
+                crate::kernel::proof::fact_reasoning::exact_fact_contains_conjunct(&lowered, part)
+            }) || !self.facts().contains(&lowered)
+            {
                 // `Debug` on a kernel proposition dumps the memory snapshots
                 // and algebraic schemas it is indexed by; the reader needs the
                 // clause and the fact it instantiates to.

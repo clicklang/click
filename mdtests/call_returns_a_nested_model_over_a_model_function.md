@@ -80,7 +80,7 @@ void regraft(int32* p) {
     requires shape_left(t.model) != Shape::Empty;
     produces g: tree(p);
 } by {
-    let g = step(graft(p), { t: t });
+    let { g: g } = step(graft(p), { t: t });
     execute();
     simp();
 }

@@ -3,19 +3,7 @@
  * Linux v6.8.12 include/linux/rbtree_augmented.h for the size field.
  * container_of is from the same version's include/linux/container_of.h.
  */
-#include "../rbtree-insert/rbtree.h"
-struct sized_node { struct rb_node rb; int32 size; };
-
-#define offsetof(TYPE, MEMBER) __builtin_offsetof(TYPE, MEMBER)
-#define __same_type(a, b) __builtin_types_compatible_p(typeof(a), typeof(b))
-#define static_assert _Static_assert
-#define rb_entry(ptr, type, member) container_of(ptr, type, member)
-#define container_of(ptr, type, member) ({				\
-	void *__mptr = (void *)(ptr);					\
-	static_assert(__same_type(*(ptr), ((type *)0)->member) ||	\
-		      __same_type(*(ptr), void),			\
-		      "pointer type mismatch in container_of()");	\
-	((type *)(__mptr - offsetof(type, member))); })
+#include "rbtree_size.h"
 
 static inline void sized_copy(struct rb_node *rb_old, struct rb_node *rb_new)
 {

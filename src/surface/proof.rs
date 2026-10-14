@@ -1227,7 +1227,7 @@ fn indexed_linear_tactics(
 }
 
 /// Where synthetic tactics are numbered: far past any source script.
-const SYNTHETIC_SOURCE_INDEX_BASE: usize = usize::MAX / 2;
+pub(super) const SYNTHETIC_SOURCE_INDEX_BASE: usize = usize::MAX / 2;
 
 pub(super) fn source_tactic_count(tactics: &[ProofTactic]) -> usize {
     tactics.iter().map(source_tactic_width).sum()

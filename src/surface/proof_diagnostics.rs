@@ -48,6 +48,10 @@ pub(crate) trait ProofDiagnosticState: Send + Sync {
         None
     }
 
+    fn rejected_resource_fact(&self) -> Option<&crate::kernel::proof::RejectedResourceRewriteFact> {
+        None
+    }
+
     fn memory_history(&self) -> Option<&MemoryHistoryDiagnostic> {
         None
     }
@@ -139,14 +143,38 @@ pub(crate) fn render_failed_requirement(
     state: &dyn ProofDiagnosticState,
     labels: &mut render::SnapshotLabels,
 ) -> String {
-    let Some((label, proposition)) = state.failed_requirement() else {
-        return String::new();
-    };
     state.register_names(labels);
-    format!(
-        "{label}: {}",
-        render::render_proposition_labeled(proposition, labels)
-    )
+    let mut result = String::new();
+    if let Some((label, proposition)) = state.failed_requirement() {
+        result = format!(
+            "{label}: {}",
+            render::render_proposition_labeled(proposition, labels)
+        );
+    }
+    if let Some(refusal) = state.rejected_resource_fact() {
+        if !result.is_empty() {
+            result.push('\n');
+        }
+        result.push_str("rejected fact: ");
+        result.push_str(&render::render_proposition_labeled(
+            &refusal.rejected,
+            labels,
+        ));
+        result.push_str("\nallowed facts from the checked resource body:");
+        if refusal.allowed.is_empty() {
+            result.push_str(" none");
+        }
+        for fact in refusal.allowed.iter().take(12) {
+            result.push_str("\n  ");
+            result.push_str(&render::render_proposition_labeled(fact, labels));
+        }
+        if refusal.allowed.len() > 12 {
+            let count = refusal.allowed.len() - 12;
+            let noun = if count == 1 { "fact" } else { "facts" };
+            result.push_str(&format!("\n  … {count} more allowed {noun}"));
+        }
+    }
+    result
 }
 
 pub(crate) fn render_terminal_message(
@@ -381,6 +409,63 @@ mod tests {
         assert!(
             !report.contains("unsupported conditional proof"),
             "{report}"
+        );
+    }
+
+    #[test]
+    fn rejected_resource_fact_uses_one_printer_and_snapshot_legend() {
+        let _typed = render::TypedNotationScope::enter();
+        use crate::kernel::{CMemory, CType, Pointer, Variable};
+        struct Rejected(crate::kernel::proof::RejectedResourceRewriteFact);
+        impl ProofDiagnosticState for Rejected {
+            fn rejected_resource_fact(
+                &self,
+            ) -> Option<&crate::kernel::proof::RejectedResourceRewriteFact> {
+                Some(&self.0)
+            }
+            fn kernel_goal(&self) -> Option<&Proposition> {
+                None
+            }
+            fn premises(&self, _: usize) -> Vec<&Proposition> {
+                vec![]
+            }
+            fn premise_count(&self) -> usize {
+                0
+            }
+        }
+        let read = |memory| Proposition::CMemoryReadDefined {
+            memory,
+            pointer: Pointer::symbolic(Variable(987_002)),
+            value_type: CType::Int32,
+        };
+        let rejected = read(CMemory::new());
+        let allowed = read(CMemory::new().with_block("changed", 4));
+        let state = Rejected(crate::kernel::proof::RejectedResourceRewriteFact {
+            rejected: rejected.clone(),
+            allowed: vec![allowed.clone(); 13].into(),
+        });
+        let mut labels = render::SnapshotLabels::default();
+        let report = render_failed_requirement(&state, &mut labels);
+        assert!(
+            report.starts_with(&format!(
+                "rejected fact: {}",
+                render::render_proposition_labeled(&rejected, &mut labels)
+            )),
+            "{report}"
+        );
+        assert!(
+            report.contains(&render::render_proposition_labeled(&allowed, &mut labels)),
+            "{report}"
+        );
+        assert!(
+            report.contains("snapshot#1") && report.contains("snapshot#2"),
+            "{report}"
+        );
+        assert!(report.contains("1 more allowed fact"), "{report}");
+        let legend = labels.trace_legend();
+        assert!(
+            legend.contains("snapshot#1 =") && legend.contains("snapshot#2 ="),
+            "{legend}"
         );
     }
 

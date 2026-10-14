@@ -27,7 +27,7 @@ extern int32 child(int32 x) {
 int32 parent(int32 x) {
     ensures result == result;
 } by {
-    let r = step(child(x), {});
+    let { result: r } = step(child(x), {});
     have exists (path: Path) { pick(x, path) == r } by {
         assumption();
     }

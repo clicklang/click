@@ -1129,6 +1129,9 @@ impl Printer<'_> {
                         depth,
                     );
                 }
+                if crate::kernel::model_fields::registered_model_field_origin(*variable).is_some() {
+                    return self.placeholder(|printer| printer.unnamed_variable(*variable));
+                }
                 if let Some(field) = crate::kernel::model_fields::model_field_spelling(*variable) {
                     return Some(atom(field));
                 }
@@ -1908,6 +1911,13 @@ impl Printer<'_> {
             }
             IntegerTerm::Constant(value) => {
                 self.placeholder(|_| format!("<{}-bit integer>", value.bits()))
+            }
+            IntegerTerm::Variable(variable)
+                if self.variable_name(*variable).is_none()
+                    && crate::kernel::model_fields::registered_model_field_origin(*variable)
+                        .is_some() =>
+            {
+                self.placeholder(|printer| printer.unnamed_variable(*variable))
             }
             IntegerTerm::Variable(variable) => match self
                 .bound

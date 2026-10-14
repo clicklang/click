@@ -2559,7 +2559,7 @@ impl<'a> Proof<'a> {
         };
         self.state.apply_extract(proposition).map_err(|error| match error {
             PropositionCloseError::ExtractUnavailable(proposition) => self.step_error(format!(
-                "`extract` proposition is not a proper conjunct, a discharged implication consequent, or a field equality of an exact same-constructor equality: {}",
+                "`extract` proposition is not a proper conjunct, a checked disjunction projection, a discharged implication consequent, or a field equality of an exact same-constructor equality: {}",
                 describe_pure_fact(&proposition, ParameterBinding::default())
             )),
             PropositionCloseError::Unavailable => {

@@ -150,7 +150,20 @@ pub(in crate::surface) fn resource_match_arm_scopes<'a, 'b>(
             )));
         }
         let mut body = arm.body.clone();
-        body.children = children;
+        body.children = children
+            .into_iter()
+            .map(|mut child| {
+                child.arguments = child
+                    .arguments
+                    .iter()
+                    .map(|argument| {
+                        substitute_contract_expression(argument, &substitution)
+                            .map_err(ClickError::new)
+                    })
+                    .collect::<Result<_, _>>()?;
+                Ok(child)
+            })
+            .collect::<Result<_, ClickError>>()?;
         body.contains = body_contains;
         body.fields = definition.fields().to_vec();
         body.facts = body_facts
@@ -372,7 +385,10 @@ pub(in crate::surface) fn resource_body_children<'b>(
         for argument in &arguments {
             // C expressions are read-only. The kernel checks their value,
             // ownership requirements, and path obligations when rewriting.
-            resource_argument_to_c_expression(argument)?;
+            if !matches!(argument, ContractExpression::Call { .. }) {
+                resource_argument_to_c_expression(argument)?;
+            }
+            // Pure calls are type checked by the shared specification lowerer.
         }
         if reserved.contains(binding.name.as_str())
             || names.contains(binding.name.as_str())
