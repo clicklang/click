@@ -1312,7 +1312,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             } else if let Some((tactic_index, source_index)) = region_simp {
                 (tactic_index, source_index, "simp", "smart")
             } else {
-                (tactics.len(), tactics.len(), "assumption", "simple")
+                // The implicit bundle closer plans a default `simp` body.
+                // Its premise selection is smart work even when the first
+                // checked member happens to close by assumption.
+                (tactics.len(), tactics.len(), "simp", "smart")
             };
         let _timing = crate::instrumentation::enabled().then(|| {
             if crate::instrumentation::starts_enabled() {

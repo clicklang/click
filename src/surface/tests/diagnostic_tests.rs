@@ -1,6 +1,53 @@
 use super::*;
 
 #[test]
+fn implicit_loop_closure_is_smart_while_written_closure_is_simple() {
+    use crate::instrumentation::{VerificationEvent, collect};
+    let c = "int f(int n) { while (n > 0) { n = n - 1; } return n; }";
+    for (declaration, closer, name, class) in [
+        ("invariant n == 2;", "", "simp", "smart"),
+        (
+            "decreases n; invariant 0 <= n;",
+            "close_invariants by simp();",
+            "close_invariants",
+            "simple",
+        ),
+    ] {
+        let source = format!(
+            r#"
+            verifying "f.c";
+            int32 f(int32 n) {{ requires n == 2; ensures result == 0; }} by {{
+                loop {{ {declaration} preserve by {{ step(); {closer} }} }}
+                execute(); simp();
+            }}
+        "#
+        );
+        let (result, events) = collect(|| verify_c0_sources(&source, &[("f.c", c)]));
+        if closer.is_empty() {
+            assert!(result.is_err(), "a false invariant must still be rejected");
+        } else {
+            result.expect("explicitly checked closure still verifies");
+        }
+        assert!(
+            events.iter().any(|event| matches!(event,
+                VerificationEvent::TacticStarted(tactic)
+                    if tactic.tactic_name == name && tactic.class == class
+            )),
+            "missing {class} {name}: {events:?}"
+        );
+        if closer.is_empty() {
+            assert!(
+                !events.iter().any(|event| matches!(event,
+                    VerificationEvent::TacticStarted(tactic)
+                        if tactic.tactic_name == "assumption" && tactic.class == "simple"
+                )),
+                "smart planning must not inherit a simple assumption budget"
+            );
+        }
+    }
+}
+
+#[test]
 fn auto_have_budget_failure_keeps_the_exhaustion_reason() {
     let source = r#"
         verifying "bound.c";
