@@ -237,6 +237,12 @@ failure; do not credit a complete repair from the newly restored intermediate
 step. Continue with checked pointer-field frame/range transport, with unchanged
 work limits, C and claims.
 
+The follow-up preserved checkpoint `bcb416098` retains publication-time read
+keys per entry, so withdrawal stays exact after a later producer frame edge
+changes canonicalization. The multi-size lookup regression and the dedicated
+late-edge withdrawal test pass. This is a withdrawal-only safeguard; the full
+example-stage verdict above remains attached to `bd6659d9a`.
+
 ## Independent defect and extraction candidate
 
 Master rejects a resource owning `p[0]` when its pointer argument is substituted
