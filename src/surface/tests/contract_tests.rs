@@ -1,6 +1,39 @@
 use super::*;
 
 #[test]
+fn historical_wide_view_bound_reads_the_marked_counter() {
+    let c = "unsigned long f(const unsigned char *p, unsigned n) { n = n - 1; return 0; }";
+    for extent in [16, 32] {
+        let proof = format!(
+            r#"
+            verifying "snapshot.c";
+            uint64 f(const uint8* p, uint32 n) {{
+                requires n == 2u32;
+                views p[0u64..{extent}u64];
+                ensures result == 0u64;
+            }} by {{
+                mark before;
+                step();
+                have at(before, 16u64 * (uint64)n) == 32u64 by simp();
+                have at(before, viewable(p[0u64..16u64 * (uint64)n])) by simp();
+                execute(); simp();
+            }}
+        "#
+        );
+        let result = verify_c0_sources(&proof, &[("snapshot.c", c)]);
+        if extent == 16 {
+            assert!(result.is_err(), "the saved counter needs 32 bytes, not 16");
+        } else {
+            result.unwrap();
+            let expanded =
+                expand_c0_claim_source(&proof, &[("snapshot.c", c)], "f", CProofClaim::Ensure(0))
+                    .unwrap();
+            verify_c0_sources(&expanded, &[("snapshot.c", c)]).unwrap();
+        }
+    }
+}
+
+#[test]
 // Read-only C locals have actual storage and can initialize from a checked helper result.
 fn readonly_scalar_initialization_preserves_address_and_expands() {
     let source = "int32 seven() { return 7; } int32 probe() { const int32 x = seven(); const int32* p = &x; return *p; }";

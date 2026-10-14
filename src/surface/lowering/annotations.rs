@@ -6570,32 +6570,18 @@ impl AnnotationLowerer<'_> {
             CExpression::BitwiseNot(expression) => Ok(SpecExpression::BitwiseNot(Box::new(
                 self.lower_c_fragment_to_spec(expression, environment)?,
             ))),
-            // A signed-word cast around a byte read must keep the source
-            // pointee type; raw C inference could make it a four-byte load.
+            // Keep scalar operands in the selected environment, including
+            // historical range bounds. Raw C evaluation would read live locals
+            // under an `at` proposition. Recursive lowering also preserves a
+            // byte read's pointee type and a pointer operand's layout width.
             CExpression::Cast {
                 expression,
                 target_type,
                 ..
-            } if matches!(target_type, CType::Int32 | CType::UInt32 | CType::Int64)
-                || target_type.is_pointer() =>
-            {
-                Ok(SpecExpression::Cast(
-                    Box::new(self.lower_c_fragment_to_spec(expression, environment)?),
-                    *target_type,
-                ))
-            }
-            // A pointer-to-integer cast still has to lower pointer arithmetic
-            // in its operand.  Keeping the whole cast as a raw C expression
-            // would make the kernel infer the nominal carrier width for a
-            // struct pointer (four bytes), losing the source layout width.
-            CExpression::Cast {
-                expression,
+            } if matches!(
                 target_type,
-                ..
-            } if *target_type == CType::UInt64
-                && self
-                    .c_expression_array_element_width(expression, environment)
-                    .is_some() =>
+                CType::Int32 | CType::UInt32 | CType::Int64 | CType::UInt64
+            ) || target_type.is_pointer() =>
             {
                 Ok(SpecExpression::Cast(
                     Box::new(self.lower_c_fragment_to_spec(expression, environment)?),
