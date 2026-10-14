@@ -1,9 +1,10 @@
 # An `apply` whose premise a removed `have` supplied names that premise
 
-`head_nonnegative` requires `0 < n`. The contract gives `n > 1`, and the
-`have` states `n > 1` again instead of the `0 < n` the lemma needs, so the
-`apply` has no exact premise to cite. This is the shape a proof takes when the
-`have` that supplied the premise is removed or restated.
+`head_nonnegative` requires `0 < n`. The contract gives only `n >= 0`, and
+the `have` states `n >= 0` again instead of the `0 < n` the lemma needs, so
+the `apply` has no premise to cite and `auto` cannot prove one. This is the
+shape a proof takes when the `have` that supplied the premise is removed or
+restated.
 
 The refusal used to blame the proof's shape: "It reached tactic 0 (nested
 `have`), which is not implemented in this execution context", naming a
@@ -34,12 +35,12 @@ theorem head_nonnegative(a: int32[], n: int32) {
 }
 
 int32 first(int32 *a, int32 n) {
-    requires n > 1;
+    requires n >= 0;
     views a[0..n];
     requires forall (k: int32) { 0 <= k and k < n implies a[k] >= 0 };
     ensures result >= 0;
 } by {
-    have n > 1;
+    have n >= 0;
     apply(head_nonnegative(a, n));
     execute();
     simp();

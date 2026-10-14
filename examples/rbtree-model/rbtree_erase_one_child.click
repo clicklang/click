@@ -70,18 +70,12 @@ theorem rb_swap_children_valid(node: struct rb_node*, parent: struct rb_node*, c
                 apply(is_rb_node_black_heights(node, parent, Color::Red, left, right));
                 apply(is_rb_red_node_children_are_black(node, parent, left, right));
                 apply(is_rb_red_node_right_child_is_black(node, parent, left, right));
-                have black_height(right) == black_height(left) by {
-                    rewrite(black_height(right) == black_height(left)); normalize();
-                }
                 apply(is_rb_red_node(node, parent, right, left)); assumption();
             }
             Color::Black => {
                 apply(is_rb_node_left(node, parent, Color::Black, left, right));
                 apply(is_rb_node_right(node, parent, Color::Black, left, right));
                 apply(is_rb_node_black_heights(node, parent, Color::Black, left, right));
-                have black_height(right) == black_height(left) by {
-                    rewrite(black_height(right) == black_height(left)); normalize();
-                }
                 apply(is_rb_black_node(node, parent, right, left)); assumption();
             }
         }

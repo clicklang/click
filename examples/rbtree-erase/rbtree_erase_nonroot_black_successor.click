@@ -68,7 +68,6 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                         rewrite(RbTree::Node(sid, sp, sc, sl, sr) == right_model); assumption();
                     }
                     have sc == Color::Black by auto;
-                    have rb_minimum(right_model) == RbMinimum::Found(sid, Color::Black, RbTree::Empty) by auto;
                     have rb_erase_immediate_leaf_model(RbTree::Node(identity, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)))
                         == rb_successor_splice(sid, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)) by {
                         unfold(rb_erase_immediate_leaf_model(RbTree::Node(identity, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)))); normalize();
@@ -176,9 +175,6 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                     simp();
                                 },
                                 Context::Right(pid, gp, pc, sibling_model, above_model) => {
-                                    have ctx_consistent(Context::Right(pid, gp, pc, sibling_model, above_model), RbTree::Node(identity, parent, color, left_model, right_model), 0) == 1 by {
-                                        rewrite(Context::Right(pid, gp, pc, sibling_model, above_model) == up.model); assumption();
-                                    }
                                     apply(ctx_consistent_right_focus(pid, gp, pc, sibling_model, above_model,
                                         RbTree::Node(identity, parent, color, left_model, right_model), 0));
                                     apply(rb_parent_consistent_node_fixes_parent(identity, parent, color, left_model, right_model, pid));

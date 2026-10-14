@@ -91,7 +91,6 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                         rewrite(RbTree::Node(sid, sp, sc, sl, sr) == right_model); assumption();
                     }
                     have sc == Color::Red by auto;
-                    have rb_minimum(right_model) == RbMinimum::Found(sid, Color::Red, RbTree::Empty) by auto;
                     have rb_erase_immediate_leaf_model(RbTree::Node(identity, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)))
                         == rb_successor_splice(sid, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)) by {
                         unfold(rb_erase_immediate_leaf_model(RbTree::Node(identity, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)))); normalize();

@@ -4716,12 +4716,6 @@ theorem ctx_insert_case2_left_step(above: struct rb_node*, grandparent: struct r
         apply(rb_reparent_preserves_black_height(b, parent));
         apply(rb_reparent_preserves_rb_root_black(b, parent));
         have is_rb(rb_reparent(b, parent)) == 1 by auto;
-        have rb_root_black(rb_reparent(b, parent)) == 1 by auto;
-        have black_height(a) == black_height(rb_reparent(b, parent)) by {
-            rewrite(black_height(rb_reparent(b, parent)) == black_height(b));
-            rewrite(black_height(a) == black_height(RbTree::Node(cursor, parent, Color::Red, b, c)));
-            assumption();
-        }
         apply(is_rb_red_node(parent, cursor, a, rb_reparent(b, parent)));
         assumption();
     }
@@ -6163,7 +6157,6 @@ theorem ctx_erase_case1_left_step(above: struct rb_node*, parent: struct rb_node
         }
         apply(ctx_rb_left_frame(sibling, above, Color::Black, sr, up, Nat::Succ(black_height(t)), Color::Red));
         apply(color_black_of_rb_color(rb_reparent(sl, parent)));
-        have color_black(rb_color(rb_reparent(sl, parent))) == 1 by auto;
         apply(color_black_black());
         apply(node_color_ok_red(Color::Black, rb_color(rb_reparent(sl, parent))));
         have is_rb(rb_reparent(sl, parent)) == 1 by {
@@ -6200,11 +6193,6 @@ theorem ctx_erase_case1_left_step(above: struct rb_node*, parent: struct rb_node
         apply(rb_rotate_left_node_preserves_inorder(parent, above, Color::Black, t, RbTree::Node(sibling, parent, Color::Red, sl, sr)));
         apply(rb_inorder_node_congruence(parent, sibling, Color::Red, Color::Black, t, t, rb_reparent(sl, parent), rb_reparent(sl, parent)));
         apply(rb_inorder_node_congruence(sibling, above, Color::Black, Color::Red, RbTree::Node(parent, sibling, Color::Red, t, rb_reparent(sl, parent)), RbTree::Node(parent, sibling, Color::Black, t, rb_reparent(sl, parent)), sr, sr));
-        have rb_inorder(RbTree::Node(sibling, above, Color::Black, RbTree::Node(parent, sibling, Color::Red, t, rb_reparent(sl, parent)), sr)) == rb_inorder(RbTree::Node(parent, above, Color::Black, t, RbTree::Node(sibling, parent, Color::Red, sl, sr))) by {
-            rewrite(rb_inorder(RbTree::Node(parent, above, Color::Black, t, RbTree::Node(sibling, parent, Color::Red, sl, sr))) == rb_inorder(rb_rotate_left(RbTree::Node(parent, above, Color::Black, t, RbTree::Node(sibling, parent, Color::Red, sl, sr)))));
-            rewrite(rb_rotate_left(RbTree::Node(parent, above, Color::Black, t, RbTree::Node(sibling, parent, Color::Red, sl, sr))) == RbTree::Node(sibling, above, Color::Red, RbTree::Node(parent, sibling, Color::Black, t, rb_reparent(sl, parent)), sr));
-            assumption();
-        }
         apply(plug_inorder_transport(up, RbTree::Node(sibling, above, Color::Black, RbTree::Node(parent, sibling, Color::Red, t, rb_reparent(sl, parent)), sr), RbTree::Node(parent, above, Color::Black, t, RbTree::Node(sibling, parent, Color::Red, sl, sr))));
         rewrite(plug(Context::Left(parent, sibling, Color::Red, rb_reparent(sl, parent), Context::Left(sibling, above, Color::Black, sr, up)), t) == plug(up, RbTree::Node(sibling, above, Color::Black, RbTree::Node(parent, sibling, Color::Red, t, rb_reparent(sl, parent)), sr)));
         rewrite(plug(Context::Left(parent, above, Color::Black, RbTree::Node(sibling, parent, Color::Red, sl, sr), up), t) == plug(up, RbTree::Node(parent, above, Color::Black, t, RbTree::Node(sibling, parent, Color::Red, sl, sr))));
@@ -6279,10 +6267,6 @@ theorem ctx_erase_case1_right_step(above: struct rb_node*, parent: struct rb_nod
         apply(black_height_red_node(sibling, parent, sl, sr));
         apply(is_rb_red_node_right_child_is_black(sibling, parent, sl, sr));
         apply(is_rb_red_node_children_are_black(sibling, parent, sl, sr));
-        have Nat::Succ(black_height(t)) == black_height(sl) by {
-            rewrite(black_height(sl) == black_height(RbTree::Node(sibling, parent, Color::Red, sl, sr)));
-            assumption();
-        }
         have Nat::Succ(black_height(t)) == black_height(sr) by auto;
         apply(rb_reparent_preserves_is_rb(sr, parent));
         apply(rb_reparent_preserves_black_height(sr, parent));
@@ -6327,11 +6311,6 @@ theorem ctx_erase_case1_right_step(above: struct rb_node*, parent: struct rb_nod
         apply(rb_rotate_right_node_preserves_inorder(parent, above, Color::Black, RbTree::Node(sibling, parent, Color::Red, sl, sr), t));
         apply(rb_inorder_node_congruence(parent, sibling, Color::Red, Color::Black, rb_reparent(sr, parent), rb_reparent(sr, parent), t, t));
         apply(rb_inorder_node_congruence(sibling, above, Color::Black, Color::Red, sl, sl, RbTree::Node(parent, sibling, Color::Red, rb_reparent(sr, parent), t), RbTree::Node(parent, sibling, Color::Black, rb_reparent(sr, parent), t)));
-        have rb_inorder(RbTree::Node(sibling, above, Color::Black, sl, RbTree::Node(parent, sibling, Color::Red, rb_reparent(sr, parent), t))) == rb_inorder(RbTree::Node(parent, above, Color::Black, RbTree::Node(sibling, parent, Color::Red, sl, sr), t)) by {
-            rewrite(rb_inorder(RbTree::Node(parent, above, Color::Black, RbTree::Node(sibling, parent, Color::Red, sl, sr), t)) == rb_inorder(rb_rotate_right(RbTree::Node(parent, above, Color::Black, RbTree::Node(sibling, parent, Color::Red, sl, sr), t))));
-            rewrite(rb_rotate_right(RbTree::Node(parent, above, Color::Black, RbTree::Node(sibling, parent, Color::Red, sl, sr), t)) == RbTree::Node(sibling, above, Color::Red, sl, RbTree::Node(parent, sibling, Color::Black, rb_reparent(sr, parent), t)));
-            assumption();
-        }
         apply(plug_inorder_transport(up, RbTree::Node(sibling, above, Color::Black, sl, RbTree::Node(parent, sibling, Color::Red, rb_reparent(sr, parent), t)), RbTree::Node(parent, above, Color::Black, RbTree::Node(sibling, parent, Color::Red, sl, sr), t)));
         rewrite(plug(Context::Right(parent, sibling, Color::Red, rb_reparent(sr, parent), Context::Right(sibling, above, Color::Black, sl, up)), t) == plug(up, RbTree::Node(sibling, above, Color::Black, sl, RbTree::Node(parent, sibling, Color::Red, rb_reparent(sr, parent), t))));
         rewrite(plug(Context::Right(parent, above, Color::Black, RbTree::Node(sibling, parent, Color::Red, sl, sr), up), t) == plug(up, RbTree::Node(parent, above, Color::Black, RbTree::Node(sibling, parent, Color::Red, sl, sr), t)));
@@ -6391,11 +6370,6 @@ theorem ctx_erase_case4_left_exit(above: struct rb_node*, parent: struct rb_node
         apply(rb_inorder_node_congruence(red, sibling, Color::Black, Color::Red, rl, rl, rr, rr));
         apply(rb_inorder_node_congruence(sibling, above, pcolor, Color::Black,
             RbTree::Node(parent, sibling, Color::Black, t, rb_reparent(near, parent)), RbTree::Node(parent, sibling, pcolor, t, rb_reparent(near, parent)), RbTree::Node(red, sibling, Color::Black, rl, rr), RbTree::Node(red, sibling, Color::Red, rl, rr)));
-        have rb_inorder(RbTree::Node(sibling, above, pcolor, RbTree::Node(parent, sibling, Color::Black, t, rb_reparent(near, parent)), RbTree::Node(red, sibling, Color::Black, rl, rr))) == rb_inorder(RbTree::Node(parent, above, pcolor, t, RbTree::Node(sibling, parent, Color::Black, near, RbTree::Node(red, sibling, Color::Red, rl, rr)))) by {
-            rewrite(rb_inorder(RbTree::Node(parent, above, pcolor, t, RbTree::Node(sibling, parent, Color::Black, near, RbTree::Node(red, sibling, Color::Red, rl, rr)))) == rb_inorder(rb_rotate_left(RbTree::Node(parent, above, pcolor, t, RbTree::Node(sibling, parent, Color::Black, near, RbTree::Node(red, sibling, Color::Red, rl, rr))))));
-            rewrite(rb_rotate_left(RbTree::Node(parent, above, pcolor, t, RbTree::Node(sibling, parent, Color::Black, near, RbTree::Node(red, sibling, Color::Red, rl, rr)))) == RbTree::Node(sibling, above, Color::Black, RbTree::Node(parent, sibling, pcolor, t, rb_reparent(near, parent)), RbTree::Node(red, sibling, Color::Red, rl, rr)));
-            assumption();
-        }
         apply(plug_inorder_transport(up, RbTree::Node(sibling, above, pcolor, RbTree::Node(parent, sibling, Color::Black, t, rb_reparent(near, parent)), RbTree::Node(red, sibling, Color::Black, rl, rr)), RbTree::Node(parent, above, pcolor, t, RbTree::Node(sibling, parent, Color::Black, near, RbTree::Node(red, sibling, Color::Red, rl, rr)))));
         rewrite(plug(Context::Left(parent, above, pcolor, RbTree::Node(sibling, parent, Color::Black, near, RbTree::Node(red, sibling, Color::Red, rl, rr)), up), t) == plug(up, RbTree::Node(parent, above, pcolor, t, RbTree::Node(sibling, parent, Color::Black, near, RbTree::Node(red, sibling, Color::Red, rl, rr)))));
         assumption();
@@ -6501,11 +6475,6 @@ theorem ctx_erase_case4_right_exit(above: struct rb_node*, parent: struct rb_nod
         apply(rb_inorder_node_congruence(red, sibling, Color::Black, Color::Red, rl, rl, rr, rr));
         apply(rb_inorder_node_congruence(sibling, above, pcolor, Color::Black,
             RbTree::Node(red, sibling, Color::Black, rl, rr), RbTree::Node(red, sibling, Color::Red, rl, rr), RbTree::Node(parent, sibling, Color::Black, rb_reparent(near, parent), t), RbTree::Node(parent, sibling, pcolor, rb_reparent(near, parent), t)));
-        have rb_inorder(RbTree::Node(sibling, above, pcolor, RbTree::Node(red, sibling, Color::Black, rl, rr), RbTree::Node(parent, sibling, Color::Black, rb_reparent(near, parent), t))) == rb_inorder(RbTree::Node(parent, above, pcolor, RbTree::Node(sibling, parent, Color::Black, RbTree::Node(red, sibling, Color::Red, rl, rr), near), t)) by {
-            rewrite(rb_inorder(RbTree::Node(parent, above, pcolor, RbTree::Node(sibling, parent, Color::Black, RbTree::Node(red, sibling, Color::Red, rl, rr), near), t)) == rb_inorder(rb_rotate_right(RbTree::Node(parent, above, pcolor, RbTree::Node(sibling, parent, Color::Black, RbTree::Node(red, sibling, Color::Red, rl, rr), near), t))));
-            rewrite(rb_rotate_right(RbTree::Node(parent, above, pcolor, RbTree::Node(sibling, parent, Color::Black, RbTree::Node(red, sibling, Color::Red, rl, rr), near), t)) == RbTree::Node(sibling, above, Color::Black, RbTree::Node(red, sibling, Color::Red, rl, rr), RbTree::Node(parent, sibling, pcolor, rb_reparent(near, parent), t)));
-            assumption();
-        }
         apply(plug_inorder_transport(up, RbTree::Node(sibling, above, pcolor, RbTree::Node(red, sibling, Color::Black, rl, rr), RbTree::Node(parent, sibling, Color::Black, rb_reparent(near, parent), t)), RbTree::Node(parent, above, pcolor, RbTree::Node(sibling, parent, Color::Black, RbTree::Node(red, sibling, Color::Red, rl, rr), near), t)));
         rewrite(plug(Context::Right(parent, above, pcolor, RbTree::Node(sibling, parent, Color::Black, RbTree::Node(red, sibling, Color::Red, rl, rr), near), up), t) == plug(up, RbTree::Node(parent, above, pcolor, RbTree::Node(sibling, parent, Color::Black, RbTree::Node(red, sibling, Color::Red, rl, rr), near), t)));
         assumption();
@@ -6535,11 +6504,6 @@ theorem ctx_erase_case4_right_exit(above: struct rb_node*, parent: struct rb_nod
         }
         apply(rb_reparent_preserves_is_rb(near, parent));
         apply(rb_reparent_preserves_black_height(near, parent));
-        have is_rb(rb_reparent(near, parent)) == 1 by auto;
-        have black_height(t) == black_height(rb_reparent(near, parent)) by {
-            rewrite(black_height(rb_reparent(near, parent)) == black_height(near));
-            assumption();
-        }
         apply(nat_eq_symmetric(black_height(t), black_height(rb_reparent(near, parent))));
         apply(is_rb_black_node(parent, sibling, rb_reparent(near, parent), t));
         apply(is_rb_black_node(red, sibling, rl, rr));
@@ -6556,11 +6520,6 @@ theorem ctx_erase_case4_right_exit(above: struct rb_node*, parent: struct rb_nod
         apply(rb_color_node(parent, sibling, Color::Black, rb_reparent(near, parent), t));
         apply(rb_color_node(red, sibling, Color::Black, rl, rr));
         apply(node_color_ok_black_children(pcolor));
-        have node_color_ok(pcolor, rb_color(RbTree::Node(red, sibling, Color::Black, rl, rr)), rb_color(RbTree::Node(parent, sibling, Color::Black, rb_reparent(near, parent), t))) == 1 by {
-            rewrite(rb_color(RbTree::Node(parent, sibling, Color::Black, rb_reparent(near, parent), t)) == Color::Black);
-            rewrite(rb_color(RbTree::Node(red, sibling, Color::Black, rl, rr)) == Color::Black);
-            assumption();
-        }
         apply(nat_eq_symmetric(black_height(RbTree::Node(parent, sibling, Color::Black, rb_reparent(near, parent), t)), black_height(RbTree::Node(red, sibling, Color::Black, rl, rr))));
         apply(is_rb_node_from_parts(sibling, above, pcolor, RbTree::Node(red, sibling, Color::Black, rl, rr), RbTree::Node(parent, sibling, Color::Black, rb_reparent(near, parent), t)));
         apply(black_height_node_frame(sibling, above, pcolor, RbTree::Node(red, sibling, Color::Black, rl, rr), RbTree::Node(parent, sibling, Color::Black, rb_reparent(near, parent), t)));
@@ -6660,28 +6619,13 @@ theorem ctx_erase_case3_left_exit(above: struct rb_node*, parent: struct rb_node
         apply(rb_reparent_preserves_black_height(rr, sibling));
         have is_rb(rb_reparent(rl, parent)) == 1 by auto;
         have is_rb(rb_reparent(rr, sibling)) == 1 by auto;
-        have black_height(t) == black_height(rb_reparent(rl, parent)) by {
-            rewrite(black_height(rb_reparent(rl, parent)) == black_height(rl));
-            assumption();
-        }
-        have black_height(t) == black_height(rb_reparent(rr, sibling)) by {
-            rewrite(black_height(rb_reparent(rr, sibling)) == black_height(rr));
-            assumption();
-        }
-        have black_height(rb_reparent(rr, sibling)) == black_height(far) by auto;
         apply(is_rb_black_node(parent, red, t, rb_reparent(rl, parent)));
         apply(is_rb_black_node(sibling, red, rb_reparent(rr, sibling), far));
         apply(black_height_black_node(parent, red, t, rb_reparent(rl, parent)));
         apply(black_height_black_node(sibling, red, rb_reparent(rr, sibling), far));
-        have black_height(RbTree::Node(parent, red, Color::Black, t, rb_reparent(rl, parent))) == black_height(RbTree::Node(sibling, red, Color::Black, rb_reparent(rr, sibling), far)) by auto;
         apply(rb_color_node(parent, red, Color::Black, t, rb_reparent(rl, parent)));
         apply(rb_color_node(sibling, red, Color::Black, rb_reparent(rr, sibling), far));
         apply(node_color_ok_black_children(pcolor));
-        have node_color_ok(pcolor, rb_color(RbTree::Node(parent, red, Color::Black, t, rb_reparent(rl, parent))), rb_color(RbTree::Node(sibling, red, Color::Black, rb_reparent(rr, sibling), far))) == 1 by {
-            rewrite(rb_color(RbTree::Node(parent, red, Color::Black, t, rb_reparent(rl, parent))) == Color::Black);
-            rewrite(rb_color(RbTree::Node(sibling, red, Color::Black, rb_reparent(rr, sibling), far)) == Color::Black);
-            assumption();
-        }
         apply(is_rb_node_from_parts(red, above, pcolor, RbTree::Node(parent, red, Color::Black, t, rb_reparent(rl, parent)), RbTree::Node(sibling, red, Color::Black, rb_reparent(rr, sibling), far)));
         apply(black_height_node_frame(red, above, pcolor, RbTree::Node(parent, red, Color::Black, t, rb_reparent(rl, parent)), RbTree::Node(sibling, red, Color::Black, rb_reparent(rr, sibling), far)));
         apply(rb_color_node(red, above, pcolor, RbTree::Node(parent, red, Color::Black, t, rb_reparent(rl, parent)), RbTree::Node(sibling, red, Color::Black, rb_reparent(rr, sibling), far)));
@@ -6778,38 +6722,19 @@ theorem ctx_erase_case3_right_exit(above: struct rb_node*, parent: struct rb_nod
             rewrite(black_height(RbTree::Node(red, sibling, Color::Red, rl, rr)) == black_height(far));
             assumption();
         }
-        have black_height(t) == black_height(rr) by auto;
         apply(rb_reparent_preserves_is_rb(rl, sibling));
         apply(rb_reparent_preserves_black_height(rl, sibling));
         apply(rb_reparent_preserves_is_rb(rr, parent));
         apply(rb_reparent_preserves_black_height(rr, parent));
         have is_rb(rb_reparent(rr, parent)) == 1 by auto;
         have is_rb(rb_reparent(rl, sibling)) == 1 by auto;
-        have black_height(t) == black_height(rb_reparent(rl, sibling)) by {
-            rewrite(black_height(rb_reparent(rl, sibling)) == black_height(rl));
-            assumption();
-        }
-        have black_height(far) == black_height(rb_reparent(rl, sibling)) by auto;
-        have black_height(rb_reparent(rr, parent)) == black_height(t) by auto;
         apply(is_rb_black_node(parent, red, rb_reparent(rr, parent), t));
         apply(is_rb_black_node(sibling, red, far, rb_reparent(rl, sibling)));
         apply(black_height_black_node(parent, red, rb_reparent(rr, parent), t));
         apply(black_height_black_node(sibling, red, far, rb_reparent(rl, sibling)));
-        have black_height(RbTree::Node(sibling, red, Color::Black, far, rb_reparent(rl, sibling))) == black_height(RbTree::Node(parent, red, Color::Black, rb_reparent(rr, parent), t)) by {
-            rewrite(black_height(RbTree::Node(parent, red, Color::Black, rb_reparent(rr, parent), t)) == Nat::Succ(black_height(rb_reparent(rr, parent))));
-            rewrite(black_height(RbTree::Node(sibling, red, Color::Black, far, rb_reparent(rl, sibling))) == Nat::Succ(black_height(far)));
-            rewrite(black_height(rb_reparent(rr, parent)) == black_height(t));
-            rewrite(black_height(far) == black_height(t));
-            normalize();
-        }
         apply(rb_color_node(parent, red, Color::Black, rb_reparent(rr, parent), t));
         apply(rb_color_node(sibling, red, Color::Black, far, rb_reparent(rl, sibling)));
         apply(node_color_ok_black_children(pcolor));
-        have node_color_ok(pcolor, rb_color(RbTree::Node(sibling, red, Color::Black, far, rb_reparent(rl, sibling))), rb_color(RbTree::Node(parent, red, Color::Black, rb_reparent(rr, parent), t))) == 1 by {
-            rewrite(rb_color(RbTree::Node(parent, red, Color::Black, rb_reparent(rr, parent), t)) == Color::Black);
-            rewrite(rb_color(RbTree::Node(sibling, red, Color::Black, far, rb_reparent(rl, sibling))) == Color::Black);
-            assumption();
-        }
         apply(is_rb_node_from_parts(red, above, pcolor, RbTree::Node(sibling, red, Color::Black, far, rb_reparent(rl, sibling)), RbTree::Node(parent, red, Color::Black, rb_reparent(rr, parent), t)));
         apply(black_height_node_frame(red, above, pcolor, RbTree::Node(sibling, red, Color::Black, far, rb_reparent(rl, sibling)), RbTree::Node(parent, red, Color::Black, rb_reparent(rr, parent), t)));
         apply(rb_color_node(red, above, pcolor, RbTree::Node(sibling, red, Color::Black, far, rb_reparent(rl, sibling)), RbTree::Node(parent, red, Color::Black, rb_reparent(rr, parent), t)));

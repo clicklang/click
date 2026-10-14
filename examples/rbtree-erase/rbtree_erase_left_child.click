@@ -66,10 +66,6 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                 rewrite(child == rb_left(RbTree::Node(id, parent, color, child, empty)));
                 rewrite(RbTree::Node(id, parent, color, child, empty) == tree.model); assumption();
             }
-            have is_rb(RbTree::Node(id, parent, color, child, RbTree::Empty)) == 1 by {
-                rewrite(RbTree::Empty == empty);
-                rewrite(RbTree::Node(id, parent, color, child, empty) == tree.model); assumption();
-            }
             have ctx_rb(up.model, black_height(RbTree::Node(id, parent, color, child, RbTree::Empty)),
                 rb_color(RbTree::Node(id, parent, color, child, RbTree::Empty))) == 1 by {
                 rewrite(RbTree::Empty == empty);
@@ -409,7 +405,6 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
     fold(erase_callbacks(&dummy_callbacks));
     step();
     let { replacement: replacement, remaining: remaining } = step(__rb_erase_augmented(node, root, &dummy_callbacks), { tree: tree, up: up });
-    have rebalance == 0;
     have remaining.model == old(up.model);
     have replacement.model == rb_erase_one_child_model(old(tree.model));
     apply(plug_parent_consistent_transport(remaining.model, replacement.model, 0));
