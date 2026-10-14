@@ -162,6 +162,13 @@ format for each admitted fact. The trace uses readable expressions only when
 they preserve checked identities; its typed memory operands include their read
 width, snapshot, and address, with shared labels and a construction legend.
 
+A checked function-pointer load step prints the local it produces, the exact
+value label, and `at(snapshot, load_function_pointer(address))`. The address and
+value share labels with subsequent facts and goals; the legend distinguishes
+concrete function addresses from symbolic function addresses. The read snapshot
+comes from the accepted statement evidence, including entry initialization and
+resource preparation, rather than from the later proof frontier.
+
 Call snapshot origins list the recorded caller-owned ranges retained
 beside the write footprint and their placement premises. Each list shows up to
 128 entries and explicitly counts any omitted entries. A source spelling is not printed in place of a snapshot-dependent fact.

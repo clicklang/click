@@ -129,8 +129,34 @@ pub(super) struct TraceStep {
     pub facts: Vec<TraceFact>,
     pub more_facts: usize,
     pub frontier: Option<String>,
+    pub load: Option<TraceLoad>,
     pub resources: Vec<TraceResourceChange>,
     pub more_resources: usize,
+}
+
+/// Values observed at one accepted load statement. The retained theorem's
+/// entry state supplies the snapshot; the outcome supplies the produced value.
+pub(super) struct TraceLoad {
+    pub target: String,
+    pub value: crate::kernel::CValue,
+    pub address: crate::kernel::CValue,
+    pub memory: SharedCMemory,
+}
+
+impl TraceLoad {
+    fn append(&self, output: &mut String, labels: &mut SnapshotLabels, indent: &str) {
+        let snapshot = labels.snapshot_name(self.memory.memory());
+        let identity = |value: &crate::kernel::CValue, labels: &mut SnapshotLabels| match value {
+            crate::kernel::CValue::Pointer(pointer) => labels.pointer_value_name(pointer.pointer()),
+            _ => render::render_c_value_labeled(value, labels),
+        };
+        let value = identity(&self.value, labels);
+        let address = identity(&self.address, labels);
+        output.push_str(&format!(
+            "\n{indent}produces {} = {value}\n{indent}read: at({snapshot}, load_function_pointer({address}))",
+            trace_text(&self.target, 240),
+        ));
+    }
 }
 
 pub(super) struct TraceResourceChange {
@@ -286,6 +312,14 @@ impl ChildArgumentTrace {
 }
 
 pub(super) fn pointer_definition(pointer: &Pointer) -> Option<Bitvector32Term> {
+    // Function-pointer cells use a canonical load variable as their address
+    // identity. It has the same registered read provenance as scalar cells.
+    if let crate::kernel::PointerBlock::FunctionSymbolic(variable) = &pointer.block
+        && pointer.offset == crate::kernel::PointerOffsetTerm::Constant(0)
+        && let Some(definition) = crate::kernel::registered_load_term_for_variable(variable)
+    {
+        return Some(definition);
+    }
     crate::kernel::logical_pointer_read_term(pointer).or_else(|| {
         let read = pointer.as_loaded_value()?;
         (read.displacement == crate::kernel::PointerOffsetTerm::Constant(0)).then(|| {
@@ -1057,6 +1091,9 @@ fn append_path(
             if let Some(frontier) = &step.frontier {
                 detail.push_str(&format!("\n{detail_indent}{}", trace_text(frontier, 240)));
             }
+            if let Some(load) = &step.load {
+                load.append(&mut detail, labels, &detail_indent);
+            }
             for resource in &step.resources {
                 let change = match (resource.before, resource.after) {
                     (0, 1) => format!("resource gained: {}", resource.description),
@@ -1433,6 +1470,7 @@ mod tests {
                     ],
                     more_facts: 0,
                     frontier: None,
+                    load: None,
                     resources: Vec::new(),
                     more_resources: 0,
                 },
@@ -1492,6 +1530,7 @@ mod tests {
                 facts: Vec::new(),
                 more_facts: 0,
                 frontier: None,
+                load: None,
                 resources: Vec::new(),
                 more_resources: 0,
             };
@@ -1581,6 +1620,7 @@ mod tests {
                 facts: Vec::new(),
                 more_facts: 0,
                 frontier: None,
+                load: None,
                 resources: Vec::new(),
                 more_resources: 0,
             };
@@ -1688,6 +1728,7 @@ mod tests {
                     facts: vec![TraceFact { kernel: fact }],
                     more_facts: 0,
                     frontier: None,
+                    load: None,
                     resources: Vec::new(),
                     more_resources: 0,
                 },
@@ -1701,6 +1742,7 @@ mod tests {
                     facts: Vec::new(),
                     more_facts: 0,
                     frontier: None,
+                    load: None,
                     resources: Vec::new(),
                     more_resources: 0,
                 },
@@ -1765,6 +1807,7 @@ mod tests {
                 facts: Vec::new(),
                 more_facts: 0,
                 frontier: None,
+                load: None,
                 resources: Vec::new(),
                 more_resources: 0,
             };

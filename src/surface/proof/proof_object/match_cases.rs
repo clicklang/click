@@ -610,6 +610,7 @@ impl<'a> Proof<'a> {
                     ],
                     more_facts: 0,
                     frontier: None,
+                    load: None,
                     resources: Vec::new(),
                     more_resources: 0,
                 },
