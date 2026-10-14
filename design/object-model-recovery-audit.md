@@ -441,3 +441,21 @@ formation check demanding a decided guard on a verified conditional output.
 The small producer/caller passes baseline proof modes and fails on `e3d84a785`.
 A setter-shadowing experiment did not fix the original list and was discarded.
 The introducing commit and the sound conditional-admission repair remain open.
+
+## Backing-range fold reduction after the read-index safeguard
+
+A fresh local investigation of the original descriptor/loop reduction on
+`bcb416098` confirms the later post-store fold rejection. At incremental memory
+consumption, a temporary bounded probe reports zero indexed candidates; the
+unchanged entailment comparator accepts the one held backing owner among the
+three held memory facts. Its bounds and stride match the requested range, but
+its producer pointer-read variable differs. The cheap recorded-equality query
+returns false for the pair. Ordinary coverage therefore recognizes a checked
+relation that candidate discovery does not select.
+
+This is an attribution result, not a repaired proof or a new example-stage
+verdict. The probe is removed from production; no ambient scan, equality rule,
+origin privilege, source change or work-budget change is retained. The next
+small repair should cover this selected relation in indexed memory lookup,
+with scaling and authority-withdrawal/partial-write controls. Details remain
+in [the retained-resource bug](../bugs/retained-resource-lookup-omits-framed-pointer-carriers.md).
