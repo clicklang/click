@@ -141,6 +141,61 @@ bugs or choosing semantic changes. In particular, rbtree-augmented and refcount
 are not master failures at this revision; the earlier unclassified report left
 that question open.
 
+## Attributed reductions and preserved repair checkpoints
+
+PR [#937](https://github.com/clicklang/click/pull/937) merged the entry-read fold
+repair; final pushed head `2ad128f94` is an ancestor of fetched upstream master.
+This is an independent upstream delivery, separate from native-entry activation.
+
+The [conditional-record reduction](../bugs/native-composite-output-requires-decided-body-guard.md)
+now has a preserved archive-based repair at `132cb424b` on
+`codex/object-model-failure-reduction`. The original allocated-linked-list and
+heap-object projects and the reduced producer/caller pass. Three kernel controls
+retain strict-native and explicit-validity rejection; two selected C++ member
+domain rejection fixtures pass. These targeted results do not constitute a new
+full example-stage or normal-gate verdict.
+
+The [C buffer output reduction](../bugs/native-span-output-loses-c-carrier.md)
+passes fresh, expanded, rewritten and retained checking on the #937 delivery
+and fails on both `e3d84a785` and `132cb424b`. A bounded probe distinguishes the
+entry's unresolved carrier from the designation-free symbolic field observed
+at output transfer. A reader-only change does not restore the original
+project. A narrowly scoped resource-annotation compatibility experiment restores the
+unchanged detachable-buffer project and the reduction in all four proof modes.
+Split-buffer and segmented-buffer pass the identity-error point but still fail
+at subsequent range folds; retain them as unresolved rows. Repair checkpoint `86abef177` on `codex/object-model-failure-reduction` preserves
+the change and reduced regression. All 17 selected span/record kernel controls
+pass, including explicit-validity, native-policy, known-domain bounds and
+pointer-cell readability checks; the selected Markdown regression passes.
+This archive-dependent checkpoint is not an independent upstream activation. Neither reduction
+has an introducing commit assigned yet.
+
+## Normal example-stage recheck of the repair tree
+
+At repair checkpoint `86abef177`, the normal `example_projects` test checks the
+same 52 projects with revision-compatible artifacts. It fails in 71.85 seconds:
+38 projects pass and 14 fail. Comparing project names with the frozen archive's
+17-failure ledger shows exactly three restored projects (allocated-linked-list,
+heap-object and detachable-buffer), with no new failing project. This is an
+example-stage result, not a full green gate.
+
+```sh
+source /workspace/.click-tools/activate.sh
+scripts/build-cpp-exporter.sh
+CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=1 RUST_MIN_STACK=8388608 \
+CARGO_TARGET_DIR=/workspace/click-object-failure-reduction/target \
+cargo nextest run --test examples -E 'test(example_projects)'
+```
+
+The binary reports fixture roots under `click-object-failure-reduction`; its
+exporter is built from that archive-compatible tree. The remaining failed
+projects are arena, binary-tree, concurrency-fork-join, input-cursor,
+multifile-registry, owned-segmented-buffer, owned-split-buffer, owned-string,
+owned-vector, rbtree-augmented, refcount, ring-buffer, rust-byte-sum and
+rust-chunks-exact. The two buffer failures now occur at later range folds;
+the other twelve retain their recorded failure categories. No limits,
+quarantines, original programs or claims changed.
+
 ## Independent defect and extraction candidate
 
 Master rejects a resource owning `p[0]` when its pointer argument is substituted
