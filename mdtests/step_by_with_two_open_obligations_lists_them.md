@@ -17,9 +17,11 @@ int32 caller(int32 a, int32 b) {
 ```click
 verifying "step_by_with_two_open_obligations_lists_them.c";
 
+function is_positive(value: int32) -> int32 { if value > 0 { 1 } else { 0 } }
+
 int32 first(int32 x, int32 y) {
-    requires x > 0 or y > 0;
-    requires y > 0 or x > 0;
+    requires is_positive(x) == 1 or is_positive(y) == 1;
+    requires is_positive(y) == 1 or is_positive(x) == 1;
     ensures 1 == 1 by auto;
 }
 

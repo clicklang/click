@@ -4439,3 +4439,48 @@ mod integer_equality_citation_tests {
         assert!(mirrored_equality(&ordered).is_none());
     }
 }
+
+/// Whether `root` follows from facts through its own `and`/`or` structure:
+/// a side holds when `available` says so, a conjunction when both sides do,
+/// a disjunction when either does. Returns the first side that fails, or
+/// `None` when the goal holds. The walk is iterative because conjunction
+/// spines are long, and it visits each side of the goal at most once.
+pub(crate) fn first_unavailable_connective_side<'a>(
+    root: &'a Proposition,
+    available: &impl Fn(&Proposition) -> bool,
+) -> Option<&'a Proposition> {
+    enum Task<'a> {
+        Visit(&'a Proposition),
+        Join(&'a Proposition),
+    }
+    let mut tasks = vec![Task::Visit(root)];
+    // Each finished side leaves the first unavailable side beneath it.
+    let mut results: Vec<Option<&'a Proposition>> = Vec::new();
+    while let Some(task) = tasks.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match task {
+            // Conjunction facts are admitted as their conjuncts. Do not
+            // query a whole subtree again at every point along a spine.
+            Task::Visit(side) if !matches!(side, Proposition::And(..)) && available(side) => {
+                results.push(None);
+            }
+            Task::Visit(side @ (Proposition::And(left, right) | Proposition::Or(left, right))) => {
+                tasks.push(Task::Join(side));
+                tasks.push(Task::Visit(right));
+                tasks.push(Task::Visit(left));
+            }
+            Task::Visit(side) => results.push(Some(side)),
+            Task::Join(side) => {
+                let right = results.pop().expect("a joined side has a right result");
+                let left = results.pop().expect("a joined side has a left result");
+                results.push(match side {
+                    Proposition::And(..) => left.or(right),
+                    // A disjunction needs one side; when neither holds, the
+                    // disjunction itself is what is missing.
+                    _ => left.and(right).map(|_| side),
+                });
+            }
+        }
+    }
+    results.pop().expect("the root leaves one result")
+}

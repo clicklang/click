@@ -32,6 +32,59 @@ fn call_produced_instances_unfold_after_return_in_all_proof_modes() {
 }
 
 #[test]
+fn execution_theorem_expansion_preserves_imported_tactic_interfaces() {
+    let helper = include_str!("../../../mdtests/execution_theorem_imported_tactic_helpers.click");
+    let fixture = crate::cli::parse_mdtest(
+        std::path::Path::new("execution_theorem_imported_tactic.md"),
+        include_str!("../../../mdtests/execution_theorem_imported_tactic.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let c_sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(helper, &[]).expect("the provider's body is checked separately");
+    let project = |source: &str| {
+        ClickProject::new(
+            "caller.click",
+            [
+                ClickModuleSource::new(
+                    "caller.click",
+                    source,
+                    ["execution_theorem_imported_tactic_helpers.click".to_string()],
+                ),
+                ClickModuleSource::new(
+                    "execution_theorem_imported_tactic_helpers.click",
+                    helper,
+                    [],
+                ),
+            ],
+        )
+    };
+    verify_c0_project(&project(source), &c_sources).expect("ordinary caller verification");
+    let position = expansion::position_at_offset(source, source.rfind("simp();").unwrap());
+    let expanded = expand_project_tactic_source_at(
+        &project(source),
+        &ProgramInputs::Bundle(c_sources.clone()),
+        position.line,
+        position.column,
+    )
+    .expect("theorem-only expansion retains imported tactic interfaces");
+    assert!(!expanded[expanded.find("theorem zero_contract").unwrap()..].contains("simp();"));
+    verify_c0_project(&project(&expanded), &c_sources).expect("the expansion checks directly");
+    let local = source.replace(
+        "import \"execution_theorem_imported_tactic_helpers.click\";",
+        helper,
+    );
+    let position = expansion::position_at_offset(&local, local.rfind("simp();").unwrap());
+    let expanded = expand_c0_tactic_source_at(&local, &c_sources, position.line, position.column)
+        .expect("the non-project theorem route retains local unselected tactic interfaces");
+    verify_c0_sources(&expanded, &c_sources).expect("local procedure expansion checks");
+}
+
+#[test]
 fn long_flat_integer_sum_expands_and_rechecks_without_parenthesis_growth() {
     let sum = std::iter::repeat_n("a", 24).collect::<Vec<_>>().join(" + ");
     let source = format!(
@@ -564,28 +617,21 @@ int32 caller(int32 x, int32 y) {
     let expanded =
         expand_c0_claim_source(click_source, &c_sources, "caller", CProofClaim::Ensure(0))
             .expect("source-backed call requirement should expand");
-    assert!(
-        expanded.contains("step() by {"),
-        "expanded proof should prove the call requirement on its step: {expanded}"
-    );
-    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &c_sources))
-        .expect("expanded source-backed call requirement should cold reverify");
+    assert!(!expanded.contains("have x > 0 or y > 0 by"), "{expanded}");
+    verify_c0_sources(&expanded, &c_sources)
+        .expect("expanded direct call requirement should reverify");
 
-    let without_have = without_first_step_obligation_proofs(&expanded);
-    let (without_have_result, planning_transitions) = count_planning_statement_transitions(|| {
-        crate::surface::proof::without_implicit_auto(|| {
-            verify_c0_sources(&without_have, &c_sources)
-        })
-    });
-    let error = without_have_result
-        .expect_err("deleting the retained have must reject the call precondition");
+    let without_premise = expanded.replace("    requires x > 0;", "");
+    let (result, planning_transitions) =
+        count_planning_statement_transitions(|| verify_c0_sources(&without_premise, &c_sources));
+    let error = result.expect_err("removing the known arm must reject the call");
     assert_eq!(
         planning_transitions, 0,
-        "a bare simple step must return its structured call prerequisite without planning"
+        "a simple call must not invoke planning"
     );
     assert!(
         error.unresolved_requirement().is_some(),
-        "the deleted retained have should expose the structured call requirement: {}",
+        "{}",
         error.message()
     );
 }
@@ -1522,7 +1568,7 @@ fn expansion_reverifies_terminal_cases_past_the_old_nesting_bound() {
 }
 
 #[test]
-fn symbolic_branch_source_requirement_have_expands_and_deletion_rejects() {
+fn symbolic_branch_direct_call_requirement_expands_and_checks_its_known_arm() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/c_named_function_contract_source_refusal_in_symbolic_branch.md");
     let source = std::fs::read_to_string(&path)
@@ -1543,20 +1589,21 @@ fn symbolic_branch_source_requirement_have_expands_and_deletion_rejects() {
     let expanded = expand_c0_claim_source(click_source, &c_sources, "apply", CProofClaim::Grouped)
         .expect("symbolic-branch source requirement should expand");
     assert!(
-        expanded.contains("step() by {") || expanded.contains("step() {"),
-        "expanded proof should prove the callback requirement on its step: {expanded}"
+        !expanded.contains("have value >= 0 or value == -1 by"),
+        "{expanded}"
     );
-    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &c_sources))
-        .expect("expanded symbolic-branch source requirement should cold reverify");
-
-    let without_have = without_first_step_obligation_proofs(&expanded);
-    let error = crate::surface::proof::without_implicit_auto(|| {
-        verify_c0_sources(&without_have, &c_sources)
-    })
-    .expect_err("deleting the step's proof must reject the callback precondition");
+    verify_c0_sources(&expanded, &c_sources)
+        .expect("expanded direct branch call requirement should reverify");
+    let stronger = expanded.replace(
+        "requires value >= 0 or value == -1;",
+        "requires value >= 2 or value == -1;",
+    );
+    assert_ne!(stronger, expanded);
+    let error = verify_c0_sources(&stronger, &c_sources)
+        .expect_err("a positive value alone does not establish the stronger call requirement");
     assert!(
         error.unresolved_requirement().is_some(),
-        "deleted branch-local Have should expose the structured callback requirement: {}",
+        "{}",
         error.message()
     );
 }
@@ -15391,9 +15438,13 @@ fn a_consumed_arm_instance_equation_is_cited_at_entry_after_its_unfold() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the closing simp should expand");
+    // Shared model closure can now close this equality by assumption. If
+    // a rewrite is emitted, it must still use the readable entry snapshot.
+    assert!(!expanded.contains("rewrite(t.model =="), "{expanded}");
     assert!(
-        expanded.contains("rewrite(old(t.model) == Tree::Node(id, color, left_model));"),
-        "the arm equation should be cited at entry: {expanded}"
+        expanded.contains("assumption();")
+            || expanded.contains("rewrite(old(t.model) == Tree::Node(id, color, left_model));"),
+        "the model equality needs checked closure: {expanded}"
     );
     verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
         panic!("the expanded closing simp should reverify: {error:?}\n{expanded}")
@@ -15586,7 +15637,7 @@ fn conditional_call_witness_expansion_keeps_empty_binder_map() {
     )
     .expect("the let-bound call must remain parseable");
     assert!(
-        expanded.contains("let r = step(child(a, b, n, a[i]), {});"),
+        expanded.contains("let { result: r } = step(child(a, b, n, a[i]), {});"),
         "{expanded}"
     );
     verify_c0_sources(&expanded, &sources).expect("the expanded witness proof certifies");
@@ -17719,9 +17770,11 @@ fn step_requires_entries_expand_in_place_and_are_needed() {
     let click_source = r#"
 verifying "pair.c";
 
+function is_positive(value: int32) -> int32 { if value > 0 { 1 } else { 0 } }
+
 int32 first(int32 x, int32 y) {
-    requires x > 0 or y > 0;
-    requires y > 0 or x > 0;
+    requires is_positive(x) == 1 or is_positive(y) == 1;
+    requires is_positive(y) == 1 or is_positive(x) == 1;
     ensures 1 == 1 by auto;
 }
 
@@ -17729,8 +17782,18 @@ int32 caller(int32 a, int32 b) {
     requires a > 0;
     ensures 1 == 1 by {
         step() {
-            requires a > 0 or b > 0 by simp;
-            requires b > 0 or a > 0 by simp;
+            requires is_positive(a) == 1 or is_positive(b) == 1 by {
+                have is_positive(a) == 1 by {
+                    unfold(is_positive(a)); normalize() using { a > 0; }
+                }
+                assumption();
+            }
+            requires is_positive(b) == 1 or is_positive(a) == 1 by {
+                have is_positive(a) == 1 by {
+                    unfold(is_positive(a)); normalize() using { a > 0; }
+                }
+                assumption();
+            }
         }
         step();
         simp();
@@ -17744,15 +17807,15 @@ int32 caller(int32 a, int32 b) {
             .expect("the step's entries should expand");
     assert!(
         expanded.contains("step() {")
-            && expanded.contains("requires a > 0 or b > 0 by {")
-            && expanded.contains("requires b > 0 or a > 0 by {")
+            && expanded.contains("requires is_positive(a) == 1 or is_positive(b) == 1 by {")
+            && expanded.contains("requires is_positive(b) == 1 or is_positive(a) == 1 by {")
             && !expanded.contains("by simp"),
         "the expansion should keep both entries with checked bodies: {expanded}"
     );
     verify_c0_sources(&expanded, &c_sources).expect("the expansion should reverify");
 
     let second = expanded
-        .find("requires b > 0 or a > 0 by {")
+        .find("requires is_positive(b) == 1 or is_positive(a) == 1 by {")
         .expect("the expansion keeps the second entry");
     let second_end = expanded[second..]
         .find("\n            }\n")
@@ -17770,7 +17833,7 @@ int32 caller(int32 a, int32 b) {
         error
             .message()
             .replace(['(', ')'], "")
-            .contains("b > 0 or a > 0"),
+            .contains("is_positiveb == 1 or is_positivea == 1"),
         "the refusal should name the unproved obligation: {}",
         error.message()
     );

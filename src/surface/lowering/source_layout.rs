@@ -62,6 +62,8 @@ pub(in crate::surface) struct SourceExecutionLayout {
 
 #[derive(Default)]
 struct SourceExecutionLayoutData {
+    /// Source parameter names, indexed once for proof output freshness checks.
+    parameter_names: BTreeSet<String>,
     statements: BTreeMap<usize, SourceStatementRegion>,
     /// Static stores to named locals, indexed once in executable preorder.
     assignments: BTreeMap<String, Vec<usize>>,
@@ -267,10 +269,18 @@ impl SourceExecutionLayout {
     pub(in crate::surface) fn for_function(
         function: &syntax::C0Function,
     ) -> Result<Self, ClickError> {
+        let parameter_names = function
+            .parameters()
+            .iter()
+            .map(|p| p.name().to_string())
+            .collect();
         let Some(function) = function.prelowered_kernel_function() else {
             return Ok(Self::new_for_function(function));
         };
-        let mut layout = SourceExecutionLayoutData::default();
+        let mut layout = SourceExecutionLayoutData {
+            parameter_names,
+            ..Default::default()
+        };
         let mut next_statement_index = 0;
 
         fn redirect_control_successor(
@@ -467,7 +477,7 @@ impl SourceExecutionLayout {
     }
 
     pub(in crate::surface) fn new_for_function(function: &syntax::C0Function) -> Self {
-        match function.natural_control_loop() {
+        let mut layout = match function.natural_control_loop() {
             Some((target, exit_target, _)) => {
                 let exit_label = exit_target.and_then(|exit_target| {
                     function
@@ -484,7 +494,19 @@ impl SourceExecutionLayout {
                 )
             }
             None => Self::new(function.body()),
-        }
+        };
+        std::sync::Arc::get_mut(&mut layout.data)
+            .expect("new layout is unshared")
+            .parameter_names = function
+            .parameters()
+            .iter()
+            .map(|p| p.name().to_string())
+            .collect();
+        layout
+    }
+
+    pub(in crate::surface) fn has_parameter_name(&self, name: &str) -> bool {
+        self.data.parameter_names.contains(name)
     }
 
     fn new_with_natural_loop(
@@ -1384,6 +1406,7 @@ mod source_execution_layout_tests {
             .collect();
         let layout = SourceExecutionLayout {
             data: std::sync::Arc::new(SourceExecutionLayoutData {
+                parameter_names: BTreeSet::new(),
                 statements,
                 assignments: BTreeMap::new(),
                 reads: Vec::new(),

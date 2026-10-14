@@ -545,6 +545,11 @@ stored bits and are not used to fill the cell cache.
 Exits can also disagree about bookkeeping no C expression observes after the
 loop, and the join reconciles each piece in the direction that claims less:
 
+- A value-only binding written inside the loop but absent at its head is
+  discarded when some exits never produce it. This covers result temporaries
+  created by lowering calls in conditions
+  (`mdtests/loop_call_condition_temporary_exit.md`). It supplies no value for
+  a later read, and leaves declared objects, memory, and ownership checked.
 - A local some exits have initialized and others have not stays declared,
   with its slot and type, but uninitialized. A read of it after the loop is
   refused (`mdtests/loop_break_exit_uninitialized_at_one_exit_is_not_read.md`);
@@ -588,7 +593,10 @@ fact about another binder is not restated about the renamed one
 Identity is of the kernel's propositions, so two exits that spell a fact
 alike about their own arm bindings state different facts, and neither is
 kept. A claim that does distinguish them
-is read off the exported disjunction with `cases`:
+is read off the exported disjunction with `cases`. The disjunct also uses
+the successor's model name inside pure getters, so a fact such as
+`pending(x.model) == 0` does not require naming an instance left inside
+the loop (`mdtests/loop_exit_restates_model_getters.md`):
 
 <!-- verified-example: mdtests/loop_break_exit_binder_model_join.md -->
 ```click
@@ -620,6 +628,15 @@ speaks in names a proof after the loop can spell. A `break` exit's facts about
 the *head's* values are left as they are; they are true, but a proof after the
 loop cannot name what they are about, so a `cases` over such a disjunction is
 out of reach.
+
+
+When exit states cannot form a common successor, the diagnostic names the
+components that still differ after the loop's permitted abstractions. It
+reports changed local bindings, memory, resource ownership, call bindings,
+authority ledgers, population effects, or automatic-storage bookkeeping.
+Counters and flags show both compared values; call bindings show entry counts.
+Local names are capped at twelve, with an omitted count. These details explain
+the rejected comparison and do not relax the join rule.
 
 ## Memory loops
 

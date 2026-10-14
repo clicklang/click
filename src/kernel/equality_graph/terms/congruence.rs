@@ -11,6 +11,7 @@ use crate::kernel::{
 pub(super) enum ArgumentTag {
     Value(CType),
     Array((u32, u32), CType),
+    Algebraic,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -32,18 +33,33 @@ pub(in crate::kernel::equality_graph) enum ConditionKind {
     UInt64Ge,
     PointerEq,
     OffsetEq,
+    AlgebraicEq,
 }
 
 impl TermClasses {
     /// Walk mixed-width machine applications once. In particular, a nested
     /// pure call does not recursively canonicalize every enclosing subtree.
     pub(super) fn intern_machine(&mut self, term: &T, wide: bool) -> u64 {
+        self.intern_expression(Some((term, wide)), None)
+    }
+
+    pub(super) fn intern_algebraic(&mut self, term: &crate::kernel::AlgebraicTerm) -> u64 {
+        self.intern_expression(None, Some(term))
+    }
+
+    fn intern_expression(
+        &mut self,
+        machine: Option<(&T, bool)>,
+        algebraic: Option<&crate::kernel::AlgebraicTerm>,
+    ) -> u64 {
         enum Binary {
             Int32Add,
             Int32(Int32Binary),
             UInt64(UInt64Binary),
         }
         enum Work<'a> {
+            Algebraic(&'a crate::kernel::AlgebraicTerm),
+            Field(&'a crate::kernel::AlgebraicValue),
             Machine(&'a T, bool),
             Argument(&'a A),
             Value(&'a CValue),
@@ -51,7 +67,11 @@ impl TermClasses {
             Call(u64, usize),
             Binary(Binary),
         }
-        let mut pending = vec![Work::Machine(term, wide)];
+        let mut pending = if let Some((term, wide)) = machine {
+            vec![Work::Machine(term, wide)]
+        } else {
+            vec![Work::Algebraic(algebraic.expect("expression"))]
+        };
         let mut values = Vec::new();
         while let Some(work) = pending.pop() {
             // Preserve existing scalar work accounting; new argument/call
@@ -63,6 +83,50 @@ impl TermClasses {
                 crate::instrumentation::record_deterministic_work(1);
             }
             let node = match work {
+                Work::Algebraic(term) => {
+                    use crate::kernel::AlgebraicTermNode as N;
+                    let ty = self.algebraic_type_token(&term.algebraic_type);
+                    match &term.node {
+                        N::Variable(variable) => Node::AlgebraicVariable(ty, *variable),
+                        N::Constructor { variant, fields } => {
+                            let head = self.intern_node(Node::AlgebraicConstructor(
+                                ty,
+                                variant.clone(),
+                                fields.len(),
+                            ));
+                            pending.push(Work::Call(head, fields.len()));
+                            pending.extend(fields.iter().rev().map(Work::Field));
+                            continue;
+                        }
+                        N::PureFunctionApplication { name, arguments } => {
+                            let head = self.intern_node(Node::AlgebraicFunction(
+                                ty,
+                                name.clone(),
+                                arguments.len(),
+                            ));
+                            pending.push(Work::Call(head, arguments.len()));
+                            pending.extend(arguments.iter().rev().map(Work::Argument));
+                            continue;
+                        }
+                        // Match binds payload variables. Do not equate bodies
+                        // by a signature that would forget their binding scope.
+                        N::Match { .. } => {
+                            values.push(self.opaque_argument(&A::Algebraic(term.clone())));
+                            continue;
+                        }
+                    }
+                }
+                Work::Field(field) => {
+                    use crate::kernel::AlgebraicValue as V;
+                    match field {
+                        V::C(value) => pending.push(Work::Value(value)),
+                        V::Algebraic(term) => pending.push(Work::Algebraic(term)),
+                        V::Integer(term) => {
+                            values.push(self.opaque_argument(&A::Integer(term.clone().into())));
+                        }
+                    }
+                    continue;
+                }
                 Work::Machine(term, wide) => {
                     let binary = if wide {
                         uint64_binary(term).map(|(op, a, b)| (Binary::UInt64(op), a, b))
@@ -126,6 +190,10 @@ impl TermClasses {
                 Work::Argument(argument) => {
                     match argument {
                         A::Value(value) => pending.push(Work::Value(value)),
+                        A::Algebraic(term) => {
+                            pending.push(Work::Wrap(ArgumentTag::Algebraic));
+                            pending.push(Work::Algebraic(term));
+                        }
                         A::ArrayRef {
                             memory,
                             pointer,
@@ -200,6 +268,97 @@ impl TermClasses {
         values.pop().expect("machine term")
     }
 
+    fn algebraic_type_token(&mut self, ty: &crate::kernel::AlgebraicType) -> SharedPureApplication {
+        use crate::kernel::AlgebraicValueType as V;
+        enum Work<'a> {
+            Type(&'a V),
+            Call(u64, usize),
+        }
+        let head = self.intern_node(Node::TypeName(
+            ty.rigid,
+            ty.name.clone(),
+            ty.arguments.len(),
+        ));
+        let mut pending = vec![Work::Call(head, ty.arguments.len())];
+        pending.extend(ty.arguments.iter().rev().map(Work::Type));
+        let mut values = Vec::new();
+        while let Some(work) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            let node = match work {
+                Work::Type(V::C(ty)) => Node::TypeC(*ty),
+                Work::Type(V::Integer) => Node::TypeInteger,
+                Work::Type(V::Parameter(name)) => Node::TypeName(true, name.clone(), 0),
+                Work::Type(V::Algebraic { name, arguments }) => {
+                    let head =
+                        self.intern_node(Node::TypeName(false, name.clone(), arguments.len()));
+                    pending.push(Work::Call(head, arguments.len()));
+                    pending.extend(arguments.iter().rev().map(Work::Type));
+                    continue;
+                }
+                Work::Call(mut head, count) => {
+                    for argument in values.split_off(values.len() - count) {
+                        head = self.intern_node(Node::Apply(head, argument));
+                    }
+                    values.push(head);
+                    continue;
+                }
+            };
+            values.push(self.intern_node(node));
+        }
+        let nominal = values.pop().expect("nominal type");
+        let key = (ty.variants.as_ptr() as usize, nominal);
+        if let Some((_, token)) = self.algebraic_types.get(&key) {
+            return token.clone();
+        }
+        // Intern the full resolved root schema once per schema allocation and
+        // nominal instantiation. Independently resolved equal types share a
+        // token; identically named but different schemas do not.
+        let token = SharedPureApplication::intern(
+            "equality:algebraic-type".into(),
+            vec![A::Algebraic(crate::kernel::AlgebraicTerm {
+                algebraic_type: ty.clone(),
+                node: crate::kernel::AlgebraicTermNode::Variable(Variable(0)),
+            })],
+        );
+        self.algebraic_types
+            .insert(key, (ty.variants.clone(), token.clone()));
+        token
+    }
+
+    pub(super) fn algebraic_nodes(
+        &mut self,
+        a: &crate::kernel::AlgebraicTerm,
+        b: &crate::kernel::AlgebraicTerm,
+    ) -> Option<(u64, u64)> {
+        if self.algebraic_type_token(&a.algebraic_type)
+            != self.algebraic_type_token(&b.algebraic_type)
+        {
+            return None;
+        }
+        let a = self.intern_algebraic(a);
+        let b = self.intern_algebraic(b);
+        self.register_pending_loads();
+        Some((a, b))
+    }
+
+    pub(in crate::kernel::equality_graph) fn are_algebraic_equal(
+        &mut self,
+        a: &crate::kernel::AlgebraicTerm,
+        b: &crate::kernel::AlgebraicTerm,
+    ) -> bool {
+        self.algebraic_nodes(a, b)
+            .is_some_and(|(a, b)| self.root(a) == self.root(b))
+    }
+
+    pub(in crate::kernel::equality_graph) fn add_algebraic_equality(
+        &mut self,
+        a: &crate::kernel::AlgebraicTerm,
+        b: &crate::kernel::AlgebraicTerm,
+    ) -> bool {
+        self.algebraic_nodes(a, b)
+            .is_some_and(|(a, b)| self.close(vec![(a, b)]))
+    }
+
     fn opaque_argument(&mut self, argument: &A) -> u64 {
         // Map comparisons use stable IDs, not full algebraic values/snapshots.
         self.intern_node(Node::OpaqueArgument(SharedPureApplication::intern(
@@ -214,6 +373,10 @@ impl TermClasses {
     ) -> Option<u64> {
         use ConditionKind::*;
         let (kind, left, right) = match condition {
+            C::AlgebraicEqual(a, b) => {
+                let (a, b) = self.algebraic_nodes(a, b)?;
+                (AlgebraicEq, a, b)
+            }
             C::Bitvector32Equal(a, b) => (Int32Eq, self.intern_int32(a), self.intern_int32(b)),
             C::Bitvector32SignedAddOverflows(a, b) => {
                 (Int32AddOverflow, self.intern_int32(a), self.intern_int32(b))
@@ -268,6 +431,7 @@ impl TermClasses {
 
     fn condition_kind(condition: &C) -> Option<ConditionKind> {
         Some(match condition {
+            C::AlgebraicEqual(..) => ConditionKind::AlgebraicEq,
             C::Bitvector32Equal(..) => ConditionKind::Int32Eq,
             C::Bitvector32SignedAddOverflows(..) => ConditionKind::Int32AddOverflow,
             C::Bitvector64Equal(..) => ConditionKind::UInt64Eq,
@@ -294,8 +458,13 @@ impl TermClasses {
         condition: &C,
         value: bool,
     ) -> bool {
-        Self::condition_kind(condition)
-            .is_some_and(|kind| self.condition_kinds.contains(&(kind, value)))
+        Self::condition_kind(condition).is_some_and(|kind| {
+            self.condition_kinds.contains(&(kind, value))
+                || (kind == ConditionKind::OffsetEq
+                    && self
+                        .condition_kinds
+                        .contains(&(ConditionKind::PointerEq, value)))
+        })
     }
 
     pub(in crate::kernel::equality_graph) fn admit_condition(
@@ -357,9 +526,50 @@ impl TermClasses {
             return false;
         };
         self.register_pending_loads();
-        self.condition_truth
+        let truth = if value { 1 } else { 2 };
+        if self
+            .condition_truth
             .get(&self.root(node))
-            .is_some_and(|truth| truth & if value { 1 } else { 2 } != 0)
+            .is_some_and(|known| known & truth != 0)
+        {
+            return true;
+        }
+        let C::PointerOffsetEqual(a, b) = condition else {
+            return false;
+        };
+        let left = self.intern(a);
+        let right = self.intern(b);
+        let (Some(left), Some(right)) = (
+            self.addresses_by_offset.get(&self.root(left)).cloned(),
+            self.addresses_by_offset.get(&self.root(right)).cloned(),
+        ) else {
+            return false;
+        };
+        // A common block makes this the same address predicate. Nominate only
+        // addresses registered at these offsets, never scan ambient pointer facts
+        // or infer offset disequality merely from distinct allocation identities.
+        let (small, large) = if left.len() <= right.len() {
+            (left, right)
+        } else {
+            (right, left)
+        };
+        for (block, a) in small.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(b) = large.get(block) {
+                for (a, b) in [(*a, *b), (*b, *a)] {
+                    let address_condition =
+                        self.intern_node(Node::Condition(ConditionKind::PointerEq, a, b));
+                    if self
+                        .condition_truth
+                        .get(&self.root(address_condition))
+                        .is_some_and(|known| known & truth != 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 }
 

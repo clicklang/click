@@ -227,7 +227,7 @@ fn unsupported_proof_shape(
         // The drivers stopped at a written operation they refused for a
         // stated reason, such as an `apply` whose premise is missing. That
         // reason is the actionable part; the proof shape is not at fault.
-        return ClickError::new(format!("`{proof_label}`: {reason}"));
+        return reason.with_context(format!("`{proof_label}`"));
     }
     if depth_declined {
         return ClickError::new(format!(
@@ -4872,6 +4872,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         &post_return_facts,
                                         &fact,
                                         &message,
+                                        path_index,
                                     ),
                                     _ => ClickError::new(message),
                                 }
@@ -5849,6 +5850,7 @@ fn unjustified_return_fact_error(
     facts_before_tactic: &[(usize, ProofFacts)],
     fact: &Proposition,
     message: &str,
+    path_index: usize,
 ) -> ClickError {
     let introduced_at = facts_before_tactic
         .iter()
@@ -5862,15 +5864,9 @@ fn unjustified_return_fact_error(
         })
         .map(|(_, (source_index, _))| *source_index)
         .filter(|source_index| *source_index != usize::MAX);
-    let (names, values) = proof.diagnostic_naming_tables();
-    let spelled = crate::surface::diagnostics::describe_pure_fact_spelled(
-        fact,
-        ParameterBinding::new(&names, &values),
+    let site = introduced_at.map_or_else(
+        || proof.clone(),
+        |source_index| proof.at_source_tactic(source_index),
     );
-    match introduced_at {
-        Some(source_index) => proof
-            .at_source_tactic(source_index)
-            .step_error(format!("{message} `{spelled}`, introduced by this tactic")),
-        None => proof.step_error(format!("{message} `{spelled}`")),
-    }
+    site.return_fold_certification_error(message.to_owned(), Some(fact.clone()), path_index)
 }

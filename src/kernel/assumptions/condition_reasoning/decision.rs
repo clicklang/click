@@ -34,6 +34,9 @@ impl PureFactContext {
         left: &AlgebraicTerm,
         right: &AlgebraicTerm,
     ) -> Option<bool> {
+        if self.equality_graph.are_algebraic_equal(left, right) {
+            return Some(true);
+        }
         self.exact_condition_value(&ConditionTerm::AlgebraicEqual(
             Box::new(left.clone()),
             Box::new(right.clone()),

@@ -156,7 +156,7 @@ their results are never stored in a named C object. The proof names each one
 with the binder the call step already has:
 
 ```click
-let found_left = step(tree_contains(root->left, target), { t: l });
+let { result: found_left } = step(tree_contains(root->left, target), { t: l });
 ```
 
 `tree_contains` declares no `produces` binder, so this `let` binds `found_left`

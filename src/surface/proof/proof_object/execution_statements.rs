@@ -913,6 +913,7 @@ impl<'a> Proof<'a> {
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
         if self.state().locals().values.contains_key(name)
             || execution.core.state.locals().contains_name(name)
+            || context.constants.source_layout.has_parameter_name(name)
         {
             return Err(self.step_error(format!("step result name `{name}` is already in scope")));
         }
@@ -929,10 +930,10 @@ impl<'a> Proof<'a> {
             CStatement::Assign { name, .. } if assignment => Ok(name),
             CStatement::CallAssign { target, .. } if !assignment => Ok(target),
             _ if assignment => Err(self.step_error(format!(
-                "`let {name} = step()` requires a scalar assignment at the frontier"
+                "`let {{ result: {name} }} = step()` requires a scalar assignment at the frontier"
             ))),
             _ => Err(self.step_error(format!(
-                "`let {name} = step(...)` names a call result, but this call's result is unused"
+                "`let {{ result: {name} }} = step(...)` names a call result, but this call's result is unused"
             ))),
         }
     }
@@ -1156,15 +1157,24 @@ impl<'a> Proof<'a> {
                     ),
                 );
             }
-            selected_environment = context
-                .function_environment
-                .clone()
-                .with_selected_call_binders_and_types(
-                    callee,
-                    transport.arguments().len(),
-                    bindings,
-                    type_arguments,
-                );
+            let mut environment = context.function_environment.clone();
+            let arity = if transport.is_named_contract() {
+                let definition = context
+                    .spec_definitions
+                    .predicates
+                    .contract_definition(callee)
+                    .ok_or_else(|| self.step_error(format!("unknown call contract `{callee}`")))?;
+                environment = environment.with_selected_call_contract(callee);
+                definition.function_block().signature().parameters().len()
+            } else {
+                transport.arguments().len()
+            };
+            selected_environment = environment.with_selected_call_binders_and_types(
+                callee,
+                arity,
+                bindings,
+                type_arguments,
+            );
             selected_context = context.with_loop_binding(
                 context.function_block,
                 context.function,
@@ -1234,7 +1244,7 @@ impl<'a> Proof<'a> {
                     .cloned()
                     .ok_or_else(|| {
                         self.step_error(format!(
-                            "`let {name} = step(...)` found no assignment result"
+                            "`let {{ result: {name} }} = step(...)` found no assignment result"
                         ))
                     })?;
                 Some((
@@ -2652,7 +2662,7 @@ impl<'a> Proof<'a> {
             .state
             .publish_checked_frontier_transition(proof_facts, execution, added, Vec::new())
             .map_err(|error| self.execution_update_error("`loop`", error))?;
-        Ok(Self {
+        let next = Self {
             site: self.site.clone(),
             context: self.context.clone(),
             state,
@@ -2664,7 +2674,14 @@ impl<'a> Proof<'a> {
                 depth: self.node.depth,
                 split_branches: Vec::new(),
             }),
-        })
+        };
+        if crate::surface::proof_trace::enabled_for(self.claim_label()) {
+            // The loop's exported delta is the evidence available to its
+            // continuation, including the exit disjunction. Do not truncate
+            // that delta before it reaches the shared fact renderer.
+            self.record_checked_trace_step(&next, "loop", None, usize::MAX);
+        }
+        Ok(next)
     }
 }
 

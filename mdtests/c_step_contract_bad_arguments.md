@@ -1,4 +1,4 @@
-# Step accepts one contract name
+# A selected contract takes a binder map, not another contract name
 
 A step selects one named contract. After a comma it takes a handle map, not
 another contract.
@@ -31,5 +31,5 @@ int32 invoke(void (*callback)(int32*, int32), int32* data, int32 count) {
 ```
 
 ```expect
-fail: `step(Buffered, ...)` selects one contract
+fail: expected `{`
 ```

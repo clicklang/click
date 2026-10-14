@@ -131,6 +131,28 @@ impl SnapshotLabels {
                 self.pointer_value_name(&address)
             );
         }
+        // A source alias may name this immutable value, but its recorded
+        // pure application explains which model and snapshots produced it.
+        if let PointerBlock::PureFunctionApplication(application) = &pointer.block {
+            let mut renderer = Renderer {
+                output: String::new(),
+                nodes: 0,
+                depth: 0,
+                truncated: false,
+                labels: self,
+                bound_names: Vec::new(),
+                trace_facts: true,
+            };
+            renderer.push(application.name());
+            renderer.push("(");
+            renderer.pure_arguments(application.arguments());
+            renderer.push(")");
+            if renderer.truncated {
+                renderer.output.push('…');
+            }
+            let call = renderer.output;
+            return format!("{call} + {}", self.legend_offset(&pointer.offset, 4));
+        }
         if let Some(name) = self.pointer_sources.get(pointer) {
             return name.clone();
         }
@@ -209,6 +231,43 @@ impl SnapshotLabels {
             renderer.output.push('…');
         }
         renderer.output
+    }
+
+    fn legend_kept_frame(
+        &mut self,
+        ranges: &crate::kernel::ResourceContext,
+        premises: &[(ConditionTerm, bool)],
+    ) -> String {
+        const LIMIT: usize = 128;
+        let (count, facts) = ranges.diagnostic_facts(LIMIT);
+        let mut retained = facts
+            .map(|fact| render_resource_fact_labeled(fact, self))
+            .collect::<Vec<_>>();
+        if count > LIMIT {
+            retained.push(format!(
+                "… {} more ranges (call frame display limit)",
+                count - LIMIT
+            ));
+        }
+        let mut description = format!("caller-owned frame retained [{}]", retained.join("; "));
+        let mut placement = premises
+            .iter()
+            .take(LIMIT)
+            .map(|(condition, value)| {
+                render_proposition_labeled(
+                    &Proposition::ConditionIs(condition.clone(), *value),
+                    self,
+                )
+            })
+            .collect::<Vec<_>>();
+        if premises.len() > LIMIT {
+            placement.push(format!(
+                "… {} more premises (call frame display limit)",
+                premises.len() - LIMIT
+            ));
+        }
+        description.push_str(&format!("; placement premises [{}]", placement.join("; ")));
+        description
     }
 
     fn legend_snapshot(&mut self, memory: &CMemory) -> String {
@@ -299,14 +358,17 @@ impl SnapshotLabels {
                 ..
             } => {
                 let ranges = self.legend_ranges(mutable_ranges);
-                format!(
-                    "call effect: may write {ranges}{}",
-                    if kept_by_caller.is_some() {
-                        "; caller-owned frame retained"
-                    } else {
-                        ""
-                    }
-                )
+                let mut description = format!("call effect: may write {ranges}");
+                if let Some(kept) = kept_by_caller {
+                    description.push_str("; ");
+                    description.push_str(
+                        &self.legend_kept_frame(
+                            kept.diagnostic_ranges(),
+                            kept.diagnostic_premises(),
+                        ),
+                    );
+                }
+                description
             }
             CMemoryDerivation::LoopHavoc { mutable_ranges, .. } => match mutable_ranges {
                 Some(ranges) => format!("loop effect: may write {}", self.legend_ranges(ranges)),
@@ -441,7 +503,7 @@ impl SnapshotLabels {
                 output.push_str(&format!(
                     "\n    snapshot#{} = {}",
                     memory_index + 1,
-                    short(&definition)
+                    definition
                 ));
                 memory_index += 1;
                 added = true;
@@ -461,6 +523,84 @@ impl SnapshotLabels {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pure_pointer(name: &str, arguments: Vec<PureFunctionArgument>, bytes: i64) -> Pointer {
+        Pointer {
+            block: PointerBlock::PureFunctionApplication(
+                crate::kernel::SharedPureApplication::intern(name.into(), arguments),
+            ),
+            offset: PointerOffsetTerm::Constant(bytes),
+        }
+    }
+
+    #[test]
+    fn pure_pointer_legend_distinguishes_typed_model_arguments_and_offsets() {
+        let mut labels = SnapshotLabels::default();
+        for (id, name) in [(986_410, "left"), (986_411, "right")] {
+            labels.source_name(Variable(id), name.into());
+            let model = AlgebraicTerm {
+                algebraic_type: crate::kernel::AlgebraicType::parameter("Model".into()),
+                node: AlgebraicTermNode::Variable(Variable(id)),
+            };
+            let pointer =
+                pure_pointer("identity", vec![PureFunctionArgument::Algebraic(model)], 16);
+            labels.immutable_pointer_name(&pointer, "cached_child");
+            labels.pointer_value_name(&pointer);
+        }
+        let text = labels.trace_legend();
+        assert!(
+            text.contains("value#1 = identity(left:Model) + 16 bytes"),
+            "{text}"
+        );
+        assert!(
+            text.contains("value#2 = identity(right:Model) + 16 bytes"),
+            "{text}"
+        );
+        assert!(!text.contains("origin unavailable"), "{text}");
+        assert_eq!(text, labels.trace_legend());
+    }
+
+    #[test]
+    fn pure_pointer_legend_preserves_argument_snapshots_and_nested_pointer_labels() {
+        let base = Pointer {
+            block: "local:p".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let before = CMemory::new();
+        let after = before
+            .clone()
+            .store(base.clone(), CValue::Int32(7u32.into()));
+        let mut labels = SnapshotLabels::default();
+        for memory in [before, after] {
+            labels.pointer_value_name(&pure_pointer(
+                "select",
+                vec![PureFunctionArgument::ArrayRef {
+                    memory,
+                    pointer: CValue::Pointer(crate::kernel::CPointerValue::new(
+                        base.clone(),
+                        crate::kernel::CType::Int32Pointer,
+                    )),
+                    element_type: crate::kernel::CType::Int32,
+                }],
+                0,
+            ));
+        }
+        let text = labels.trace_legend();
+        assert!(
+            text.contains("select(array-ref<int32>(snapshot#1, ptr<int32*>(value#3)))"),
+            "{text}"
+        );
+        assert!(
+            text.contains("select(array-ref<int32>(snapshot#2, ptr<int32*>(value#3)))"),
+            "{text}"
+        );
+        assert!(
+            text.contains("value#3 = object `local:p` + 0 bytes"),
+            "{text}"
+        );
+        assert!(text.contains("store 7 at address value#3"), "{text}");
+        assert_eq!(text, labels.trace_legend());
+    }
 
     #[test]
     fn equal_content_reconstruction_has_a_definition_not_a_self_reference() {
@@ -546,6 +686,45 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("value#1 = p"), "{text}");
+    }
+
+    #[test]
+    fn retained_frame_shows_ranges_and_placement_premises_without_shortening() {
+        let pointer = Pointer::symbolic(Variable(986_405));
+        let ranges =
+            crate::kernel::ResourceContext::new().unchecked_with_facts((0..12).map(|index| {
+                CResourceFact::own(CResource::Memory(
+                    crate::kernel::CMemoryRange::new_with_element_width(
+                        pointer.clone(),
+                        Bitvector32Term::Constant(index),
+                        Bitvector32Term::Constant(index + 1),
+                        8,
+                    ),
+                ))
+            }));
+        let condition = ConditionTerm::Bitvector32Equal(
+            Box::new(Bitvector32Term::Constant(7)),
+            Box::new(Bitvector32Term::Constant(7)),
+        );
+        let premises = vec![(condition.clone(), true)];
+        let mut labels = SnapshotLabels::default();
+        labels.immutable_pointer_name(&pointer, "node");
+        let expected =
+            render_proposition_labeled(&Proposition::ConditionIs(condition, true), &mut labels);
+        let text = labels.legend_kept_frame(&ranges, &premises);
+        assert!(text.len() > 300, "{text}");
+        assert!(text.contains("Int32:11..12"), "{text}");
+        assert!(
+            text.contains(&format!("placement premises [{expected}]")),
+            "{text}"
+        );
+        assert!(!text.contains("display limit"), "{text}");
+        let many = vec![(ConditionTerm::Constant(true), true); 129];
+        let text = labels.legend_kept_frame(&ranges, &many);
+        assert!(
+            text.contains("1 more premises (call frame display limit)"),
+            "{text}"
+        );
     }
 
     #[test]

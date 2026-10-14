@@ -196,6 +196,53 @@ rust-chunks-exact. The two buffer failures now occur at later range folds;
 the other twelve retain their recorded failure categories. No limits,
 quarantines, original programs or claims changed.
 
+## Loop escape and retained-resource lookup recovery
+
+The [loop selector reduction](../bugs/loop-resource-selector-loses-descriptor-read-authority.md)
+attributes the erroneous `MemberAddress` escape classification to archived
+commit `3e6d4cc0e7`. Preserved repair `6b8c5a1bb` keeps a pointer carrier stable
+when selecting its referent's member, while retaining genuine escaped-slot havoc.
+All seven selected loop-carrier tests pass. The unchanged concurrency-fork-join
+project passes on this escape-only checkpoint.
+
+A [second reduced defect](../bugs/retained-resource-lookup-omits-framed-pointer-carriers.md)
+shows candidate-index disagreement: the existing argument relation accepts both
+arguments, while the pointer-root index selects no holding. The preserved
+candidate at `bd6659d9a` adds producer-read/frame identities to discovery and uses
+the selected C-value arguments consistently in surface and kernel unfolding.
+It depends on archived pointer-designation machinery and is not independently
+landed object-model activation. Neither pointer equality nor typed-place validity
+is weakened.
+
+All 31 selected kernel controls pass. The new index regression bounds lookup work
+below 100 units beside 16, 64, 256 and 1,024 unrelated loaded-pointer resources,
+checks withdrawal, and rejects partial writes even with numeric address equations.
+Both C++ member-domain rejection fixtures pass. Eight of nine selected
+resource-unfold Markdown fixtures pass; the ninth retains its `6b8c5a1bb`
+pointer-arithmetic rejection. The archived fieldless entry-fold rejection also
+predates this candidate and is already fixed independently upstream by #937.
+
+The normal example stage on `bd6659d9a` checks the unchanged 52 projects with
+revision-compatible artifacts: **39 pass, 13 fail**, in 137.45s. No new failing
+project appears relative to `86abef177`. Fork/join also passes fresh checking,
+smart expansion, verification of the expanded source and retained-session
+rechecking. Its restoration belongs to the earlier escape repair. The remaining
+failures are the preceding 14-row list minus concurrency-fork-join; arena now
+fails at a later control-budget limit. This remains an example-stage failure,
+not a green full gate.
+
+The original reduced loop now gets through retained unfolding and fails later
+at its post-store range fold. Preserve that original positive and its later
+failure; do not credit a complete repair from the newly restored intermediate
+step. Continue with checked pointer-field frame/range transport, with unchanged
+work limits, C and claims.
+
+The follow-up preserved checkpoint `bcb416098` retains publication-time read
+keys per entry, so withdrawal stays exact after a later producer frame edge
+changes canonicalization. The multi-size lookup regression and the dedicated
+late-edge withdrawal test pass. This is a withdrawal-only safeguard; the full
+example-stage verdict above remains attached to `bd6659d9a`.
+
 ## Independent defect and extraction candidate
 
 Master rejects a resource owning `p[0]` when its pointer argument is substituted
