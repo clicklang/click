@@ -213,6 +213,28 @@ pub(crate) trait PropositionSearch {
     fn proves_not(&self, proposition: &Proposition) -> bool;
 }
 
+/// `proves` for a simple tactic's premise: the exact lookup first, then the
+/// search over the proof context, which the hidden prerequisite census counts
+/// under `site` (`issues/simplify-step.md`, step 5) when it is what proves
+/// the premise.
+pub(crate) fn proves_by_tactic_search(
+    context: &PureFactContext,
+    proposition: &Proposition,
+    site: &'static str,
+) -> bool {
+    if context.proves_exact(proposition) {
+        return true;
+    }
+    let proved = context.proves(proposition);
+    if proved {
+        crate::instrumentation::record_hidden_prerequisite(
+            crate::instrumentation::HiddenPrerequisiteRoute::TacticSearch,
+            site,
+        );
+    }
+    proved
+}
+
 impl PropositionSearch for PureFactContext {
     fn proves(&self, proposition: &Proposition) -> bool {
         if reasoning_interrupted() {

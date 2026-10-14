@@ -49,9 +49,36 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
             HiddenPrerequisiteRoute::KernelCondition,
             "decide_with_facts",
         ),
-        21,
+        81,
     ),
     ((HiddenPrerequisiteRoute::KernelCondition, "path fact"), 24),
+    ((HiddenPrerequisiteRoute::KernelCondition, "path facts"), 10),
+    // `issues/simplify-step.md` step 5 drives these to zero.
+    (
+        (HiddenPrerequisiteRoute::TacticSearch, "fold body fact"),
+        52,
+    ),
+    (
+        (
+            HiddenPrerequisiteRoute::TacticSearch,
+            "outcome if condition",
+        ),
+        2,
+    ),
+    (
+        (
+            HiddenPrerequisiteRoute::TacticSearch,
+            "transport load-variable chain",
+        ),
+        10,
+    ),
+    (
+        (
+            HiddenPrerequisiteRoute::TacticSearch,
+            "unfold population final unit",
+        ),
+        91,
+    ),
 ];
 
 #[test]
@@ -183,7 +210,10 @@ fn example_projects() {
     // The gate has a ten-minute budget. An example that takes most of it
     // alone runs in the nightly gate (`scripts/check.sh --nightly`), or on
     // request by name.
-    if requested.is_none() && std::env::var_os("CLICK_NIGHTLY").is_none() {
+    // Leaving them out makes the census partial, as a partition does: the
+    // pins count the whole corpus.
+    let skipped_nightly = requested.is_none() && std::env::var_os("CLICK_NIGHTLY").is_none() && {
+        let before = projects.len();
         projects.retain(|path| {
             let name = path.file_name().and_then(|name| name.to_str());
             match name.and_then(|name| NIGHTLY.iter().find(|(nightly, _)| *nightly == name)) {
@@ -194,7 +224,8 @@ fn example_projects() {
                 None => true,
             }
         });
-    }
+        projects.len() != before
+    };
     // A gate run on a machine without the pinned C++ toolchain
     // (`scripts/check.sh`) leaves out the examples that refresh a C++ import.
     let skipped_cpp = std::env::var_os(SKIP_CPP_FRONTEND).is_some() && {
@@ -311,7 +342,7 @@ fn example_projects() {
         && let Some(mismatch) = instrumentation::hidden_prerequisite_census_mismatch(
             &hidden_prerequisites,
             HIDDEN_PREREQUISITE_BASELINE,
-            partitioned,
+            partitioned || skipped_nightly,
         )
     {
         panic!("hidden prerequisite ratchet (tests/examples.rs baselines):\n{mismatch}");
