@@ -488,6 +488,7 @@ mod tests {
                     owned_arguments: vec![],
                     destination: "marker".into(),
                     target: 1,
+                    through_pointer: false,
                 }),
                 block(branch(2, 3)),
                 block(T::Goto { target: 0 }),

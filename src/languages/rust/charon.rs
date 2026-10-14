@@ -386,6 +386,33 @@ impl Adapter<'_> {
             a::TyKind::Adt(_) if self.chunk_type(t) => Type::ChunkIterator,
             a::TyKind::Adt(_) if self.chunk_option_type(t) => Type::ChunkOption,
             a::TyKind::Adt(r) if r.id == a::TypeDeclId::UNIT => Type::Unit,
+            a::TyKind::FnPtr(binder) => {
+                let signature = &binder.skip_binder;
+                if signature.is_unsafe || signature.abi != a::Abi::Rust || signature.is_variadic {
+                    return Err(unsupported("unsafe or foreign function pointer"));
+                }
+                let scalar = |t: &Type| {
+                    matches!(
+                        t,
+                        Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool
+                    )
+                };
+                let parameters = signature
+                    .inputs
+                    .iter()
+                    .map(|input| self.ty(input))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let result = self.ty(&signature.output)?;
+                if !parameters.iter().all(scalar) || !(scalar(&result) || result == Type::Unit) {
+                    return Err(unsupported(
+                        "function pointer of non-scalar parameters or result",
+                    ));
+                }
+                Type::FnPointer {
+                    parameters,
+                    result: Box::new(result),
+                }
+            }
             a::TyKind::Adt(r)
                 if r.generics.types.is_empty() && r.generics.const_generics.is_empty() =>
             {
@@ -737,6 +764,54 @@ impl BodyAdapter<'_, '_> {
             _ => return Err(unsupported("constant")),
         })
     }
+    /// A call through a function-pointer local, `f(x)`: scalar arguments,
+    /// the pointer's own parameter types, and a local destination.
+    fn pointer_call(
+        &self,
+        pointer: &a::Operand,
+        call: &a::Call,
+        target: u::BlockId,
+    ) -> Result<T, String> {
+        let (a::Operand::Move(place) | a::Operand::Copy(place)) = pointer else {
+            return Err(unsupported("call through a constant function pointer"));
+        };
+        let a::PlaceKind::Local(local) = place.kind else {
+            return Err(unsupported("call through a projected function pointer"));
+        };
+        let Type::FnPointer { parameters, result } = self.adapter.ty(&place.ty)? else {
+            return Err(unsupported("indirect call through a non-function-pointer"));
+        };
+        let a::PlaceKind::Local(dest) = call.dest.kind else {
+            return Err(unsupported("projected call destination"));
+        };
+        if call.safety == a::CallSafety::Unsafe
+            || call.args.len() != parameters.len()
+            || self.adapter.ty(&call.dest.ty)? != *result
+        {
+            return Err(unsupported(
+                "function pointer call signature/destination type",
+            ));
+        }
+        let arguments = call
+            .args
+            .iter()
+            .zip(&parameters)
+            .map(|(argument, parameter)| {
+                if self.adapter.ty(argument.ty())? != *parameter {
+                    return Err(unsupported("function pointer call operand type"));
+                }
+                self.operand(argument)
+            })
+            .collect::<Result<_, String>>()?;
+        Ok(T::Call {
+            function: self.local(local)?,
+            arguments,
+            owned_arguments: Vec::new(),
+            destination: self.local(dest)?,
+            target: target.index(),
+            through_pointer: true,
+        })
+    }
     fn operand(&self, op: &a::Operand) -> Result<E, String> {
         match op {
             a::Operand::Copy(p) | a::Operand::Move(p) => {
@@ -892,6 +967,26 @@ impl BodyAdapter<'_, '_> {
                 E::ArrayToSlice {
                     array: Box::new(self.operand(op)?),
                     mutable,
+                }
+            }
+            // `twice as fn(i32) -> i32`: a crate function item reified as a
+            // function pointer.
+            a::Rvalue::UnaryOp(a::UnOp::Cast(a::CastKind::FnPtr(..)), a::Operand::Const(c)) => {
+                let a::ConstantExprKind::FnDef(pointer) = c.kind() else {
+                    return Err(unsupported("function pointer from a non-item"));
+                };
+                if !pointer.generics.types.is_empty() {
+                    return Err(unsupported("function pointer to a generic function"));
+                }
+                let id = self.adapter.resolve(pointer)?;
+                E::FunctionAddress {
+                    function: self
+                        .adapter
+                        .functions
+                        .get(&id)
+                        .ok_or_else(|| unsupported("function pointer to an unmodeled function"))?
+                        .clone(),
+                    value_type: self.adapter.ty(ty)?,
                 }
             }
             a::Rvalue::UnaryOp(a::UnOp::Cast(a::CastKind::Scalar(..)), op) => E::Cast {
@@ -1121,8 +1216,11 @@ impl BodyAdapter<'_, '_> {
                 }
             }
             u::TerminatorKind::Call { call, target, .. } => {
-                let a::FnOperand::Regular(ptr) = &call.func else {
-                    return Err(unsupported("indirect call"));
+                let ptr = match &call.func {
+                    a::FnOperand::Regular(ptr) => ptr,
+                    a::FnOperand::Dynamic(pointer) => {
+                        return self.pointer_call(pointer, call, *target);
+                    }
                 };
                 let id = self.adapter.resolve(ptr)?;
                 let callee = self
@@ -1212,6 +1310,7 @@ impl BodyAdapter<'_, '_> {
                         owned_arguments,
                         destination: self.local(dest)?,
                         target: target.index(),
+                        through_pointer: false,
                     }
                 }
             }

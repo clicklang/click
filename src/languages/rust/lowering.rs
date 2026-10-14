@@ -10,7 +10,10 @@ mod moves;
 mod owned_parameter_regressions;
 mod shared_arrays;
 use crate::kernel::*;
-use crate::languages::c::syntax::{C0Function, C0Parameter, C0StructLayout, C0Type, LongRank};
+use crate::languages::c::syntax::{
+    C0Function, C0FunctionPointerParameter, C0FunctionPointerSignature, C0Parameter,
+    C0StructLayout, C0Type, LongRank,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) type LoweredRust = (Vec<C0Function>, BTreeMap<String, C0StructLayout>);
@@ -37,8 +40,33 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
             _ => Err("Rust reference pointee outside scalar/reference lowering".into()),
         },
         Type::Array { .. } => Err("Rust array values require whole-array lowering".into()),
+        Type::FnPointer { .. } => Ok(fn_pointer_signature(t)?.pointer_type()),
         _ => Err("Rust value type outside direct scalar/reference lowering".into()),
     }
+}
+/// A function-pointer type's signature, as a sidecar's `fn(i32) -> i32`
+/// parameter type spells it.
+fn fn_pointer_signature(t: &Type) -> Result<C0FunctionPointerSignature, String> {
+    let Type::FnPointer { parameters, result } = t else {
+        return Err("Rust function-pointer signature requires a function-pointer type".into());
+    };
+    let parameters = parameters
+        .iter()
+        .map(|parameter| {
+            let c_type = scalar_type(parameter)?;
+            if c_type == C0Type::Void || c_type.is_pointer() {
+                return Err("Rust function-pointer parameters must be scalars".to_string());
+            }
+            Ok(C0FunctionPointerParameter::new(c_type, None, false))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let result = scalar_type(result)?;
+    if result.is_pointer() {
+        return Err("Rust function-pointer results must be scalars or unit".into());
+    }
+    Ok(C0FunctionPointerSignature::new(
+        result, None, parameters, false,
+    ))
 }
 // Embedded arrays retain one ABI field and their concrete extent. Never
 // flatten a field into one layout entry per element.
@@ -270,6 +298,15 @@ fn lower_function(
         }
         if let Type::Reference { mutable, .. } = &p.value_type {
             references.insert(p.name.clone(), !mutable);
+        }
+        if let Type::FnPointer { .. } = &p.value_type {
+            let signature = fn_pointer_signature(&p.value_type)?;
+            kernel_parameters.push(c_parameter(
+                &p.name,
+                signature.pointer_type().to_kernel_type(),
+            ));
+            parameters.push(C0Parameter::function_pointer(p.name.clone(), signature));
+            continue;
         }
         let c_type = scalar_type(&p.value_type)?;
         if let Type::Reference { mutable, pointee } = &p.value_type
@@ -911,6 +948,15 @@ impl Context<'_> {
             .iter()
             .map(|p| p.value_type.clone())
             .collect::<Vec<_>>();
+        self.typed_arguments(types, args)
+    }
+
+    /// Arguments checked against the parameter types they are passed for.
+    fn typed_arguments(
+        &mut self,
+        types: Vec<Type>,
+        args: &[E],
+    ) -> Result<(CStatement, Vec<CExpression>), String> {
         if types.len() != args.len() {
             return Err("Rust call argument count disagrees with callee".into());
         }
@@ -1581,6 +1627,31 @@ impl Context<'_> {
                 }
             }
             E::Call { .. } => Err("nested Rust calls outside statement lowering".into()),
+            E::FunctionAddress {
+                function,
+                value_type,
+            } => {
+                let target = self
+                    .functions
+                    .get(function.as_str())
+                    .ok_or("Rust function pointer to an unknown function")?;
+                let Type::FnPointer { parameters, result } = value_type else {
+                    return Err("Rust function address requires a function-pointer type".into());
+                };
+                if target.return_type != **result
+                    || target.parameters.len() != parameters.len()
+                    || target
+                        .parameters
+                        .iter()
+                        .zip(parameters)
+                        .any(|(parameter, expected)| parameter.value_type != *expected)
+                {
+                    return Err(format!(
+                        "Rust function address `{function}` does not have its function's type"
+                    ));
+                }
+                Ok(c_function_address(function))
+            }
         }
     }
 }
