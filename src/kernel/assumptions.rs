@@ -5218,6 +5218,26 @@ impl PureFactContext {
         condition: &ConditionTerm,
         extra: &[(ConditionTerm, bool)],
     ) -> Option<bool> {
+        self.fast_leaf_decision(condition, extra).or_else(|| {
+            // A 64-bit word equality may relate tagged addresses
+            // (`address(p) + tag`): the pointer-tag rules decide it, asking
+            // only these fast decisions at their leaves.
+            let ConditionTerm::Bitvector64Equal(left, right) = condition else {
+                return None;
+            };
+            let mut used = crate::kernel::eval::pointer_tags::UsedFacts::fast_only();
+            self.decide_pointer_word_equality_citing(left, right, &mut used)
+        })
+    }
+
+    /// The fast decisions with no search: the difference graph, asked the
+    /// question and its canonical form, and the keyed pointer and division
+    /// rules.
+    pub(in crate::kernel) fn fast_leaf_decision(
+        &self,
+        condition: &ConditionTerm,
+        extra: &[(ConditionTerm, bool)],
+    ) -> Option<bool> {
         let graph = self.difference_graph.graph(|| {
             self.condition_facts
                 .iter()
