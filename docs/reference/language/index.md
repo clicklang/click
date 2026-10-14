@@ -511,8 +511,9 @@ order, then one decrease obligation. For a single component that obligation is
 `post < pre`; for a tuple it is the disjunction over pivots, `post[0] < pre[0]`
 or `post[0] == pre[0] and post[1] < pre[1]`, and so on, where `pre` reads the
 component at the start of the iteration and `post` at the back edge. Choosing
-the pivot is therefore an ordinary `left` or `right` arm choice that the proof
-makes and [`click expand`](../cli/expand.md) prints, not a search the kernel
+the pivot is therefore an ordinary proof of one disjunct, closed with
+`assumption()`, that the proof makes and [`click expand`](../cli/expand.md)
+prints, not a search the kernel
 performs. `close_invariants()` plans those members with the same bounded
 search it uses for the invariants; where it misses, spell them in a
 `close_invariants by { ... }` body, whose `both { ... } and { ... }` structure
