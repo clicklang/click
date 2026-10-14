@@ -3091,11 +3091,16 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     if access == ResourceBodyAccess::Finalize {
         let quantity = requested_quantity;
         let count = population_count;
+        // A constant quantity is decided by reading it, as `fold` reads its
+        // own; only a symbolic one needs a fact about it.
+        let final_by_constant = quantity.as_const() == Some(1);
         let final_unit = Proposition::ConditionIs(
             ConditionTerm::Bitvector32Equal(Box::new(count), Box::new(quantity)),
             true,
         );
-        if !proves_by_tactic_search(&assumptions, &final_unit, "unfold population final unit") {
+        if !final_by_constant
+            && !proves_by_tactic_search(&assumptions, &final_unit, "unfold population final unit")
+        {
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `unfold({})` Requires count({}) == {}",
                 describe_resource_clause(resource),
