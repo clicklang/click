@@ -2,6 +2,8 @@
 void consume(int32* p) {}
 ```
 ```click
+import click::machine_integer;
+
 authorized resource token(p: int32*) {}
 verifying "consume.c";
 void consume(int32* p) {

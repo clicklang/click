@@ -26,6 +26,9 @@ int32 drain(int32 n) {
 ```
 
 ```click
+import click::integer;
+import click::machine_integer;
+
 verifying "c_decreases_integer_measure_recursion.c";
 
 function level(n: int32) -> Integer {

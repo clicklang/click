@@ -3590,7 +3590,8 @@ fn fold_composite_resources_on_outcome_with_facts(
     unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
     family_reaches_population: bool,
-) -> Result<CFunctionOutcome, ClickError> {
+) -> Result<(CFunctionOutcome, Vec<CResourceFact>), ClickError> {
+    let mut selections = Vec::with_capacity(resource_folds.len());
     for resource in resource_folds {
         let definition = composite_resource_law_definition(
             resource_environment,
@@ -3602,8 +3603,6 @@ fn fold_composite_resources_on_outcome_with_facts(
         let composite_body = definition
             .composite_body()
             .expect("composite_resource_law_definition should require a composite body");
-        let mut substitutions =
-            resource_argument_substitutions(definition, resource, claim_label, path_index)?;
         let (guard_result, guard_state) = match &outcome {
             CFunctionOutcome::Return { value, state } => (value.clone(), state.clone()),
             _ => {
@@ -3614,6 +3613,48 @@ fn fold_composite_resources_on_outcome_with_facts(
                 )));
             }
         };
+        // A body contains executable indexed addresses. Capture an explicit
+        // entry argument before substituting it there: an Old spec expression
+        // cannot be embedded in a C address, and rereading it in the fold's
+        // current state would select a different resource.
+        let mut frozen_resource = resource.clone();
+        let frozen_arguments = match &mut frozen_resource {
+            ResourceClause::Quantified { resource, .. } => resource.as_mut(),
+            resource => resource,
+        };
+        if let ResourceClause::Declared { arguments, .. } = frozen_arguments
+            && arguments.iter().any(contains_old_expression)
+        {
+            let values = parameter_values(parameter_binding)?;
+            let array_refs = array_refs_for_parameters(
+                parameter_binding.parameters,
+                &values,
+                guard_state.memory(),
+            );
+            let snapshots = RecordedSnapshots::new();
+            for argument in arguments {
+                if contains_old_expression(argument) {
+                    let value = evaluate_fixed_state_expression_through_kernel(
+                        argument,
+                        pure_facts.assumptions(),
+                        ContractEnvironment::new(&values, &array_refs),
+                        FixedStateFrame::new(
+                            pre_state,
+                            &guard_state,
+                            Some(&guard_result),
+                            &snapshots,
+                        ),
+                        spec_definitions,
+                        &BTreeSet::new(),
+                    )
+                    .map_err(ClickError::new)?;
+                    *argument = ContractExpression::CFragment(CExpression::Value(value));
+                }
+            }
+        }
+        let resource = &frozen_resource;
+        let mut substitutions =
+            resource_argument_substitutions(definition, resource, claim_label, path_index)?;
         extend_substitutions_with_witnesses(
             &mut substitutions,
             definition,
@@ -4329,21 +4370,33 @@ fn fold_composite_resources_on_outcome_with_facts(
                 );
             }
         }
+        // The checker must name exactly the resource whose captured arguments
+        // were used for this exchange, rather than reevaluating the source
+        // operand with a different state or normalization context.
+        selections.push(lower_resource_clause_at_state_with_assumptions(
+            resource,
+            parameter_binding,
+            &post_state,
+            Some(&value),
+            pure_facts.assumptions(),
+        )?);
         outcome = CFunctionOutcome::Return {
             value,
             state: post_state,
         };
     }
 
-    Ok(outcome)
+    Ok((outcome, selections))
 }
 
 pub(super) struct CheckedResourceFold {
+    pub(super) selected: CResourceFact,
     pub(super) state: CState,
     pub(super) facts: ProofFacts,
 }
 
 pub(super) struct CheckedOutcomeResourceFold {
+    pub(super) selected: CResourceFact,
     pub(super) outcome: CFunctionOutcome,
     pub(super) facts: ProofFacts,
 }
@@ -4404,7 +4457,7 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
     family_reaches_population: bool,
 ) -> Result<CheckedOutcomeResourceFold, ClickError> {
     let mut facts = ProofResourcePureFacts::new(facts);
-    let outcome = fold_composite_resources_on_outcome_with_facts(
+    let (outcome, mut selections) = fold_composite_resources_on_outcome_with_facts(
         resource_environment,
         std::slice::from_ref(resource),
         None,
@@ -4420,18 +4473,20 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
         closure,
         family_reaches_population,
     )?;
+    let selected = selections
+        .pop()
+        .expect("one fold has one selected resource");
     // A scope close exposes only its restored composite's observations.
     // Unrelated resources and their observation laws are unchanged; do not
     // scan/reproject the whole outcome for each closed scope.
     if matches!(closure, ResourceBodyClosure::CloseOpen { .. })
         && let CFunctionOutcome::Return { value, state } = &outcome
     {
-        let requested =
-            lower_resource_clause_at_state_with_result(resource, parameter_binding, state, value)?;
+        let requested = &selected;
         let viewed = CResourceFact::View(requested.resource().clone());
         let support = state
             .resources()
-            .directly_supporting_fact(&requested, facts.assumptions())
+            .directly_supporting_fact(requested, facts.assumptions())
             .or_else(|| {
                 state
                     .resources()
@@ -4457,6 +4512,7 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
         }
     }
     Ok(CheckedOutcomeResourceFold {
+        selected,
         outcome,
         facts: facts.facts,
     })
@@ -4516,7 +4572,7 @@ fn fold_composite_resource_for_proof_with_closure(
         value: CValue::Int32(Bitvector32Term::Constant(0)),
         state: Box::new(state),
     };
-    let outcome = fold_composite_resources_on_outcome_with_facts(
+    let (outcome, mut selections) = fold_composite_resources_on_outcome_with_facts(
         resource_environment,
         std::slice::from_ref(resource),
         Some(source_resource),
@@ -4536,6 +4592,9 @@ fn fold_composite_resource_for_proof_with_closure(
         unreachable!("folding a synthetic return outcome preserves its outcome kind")
     };
     Ok(CheckedResourceFold {
+        selected: selections
+            .pop()
+            .expect("one fold has one selected resource"),
         state: *state,
         facts: facts.facts,
     })
@@ -5040,7 +5099,8 @@ mod v11_resource_dependency_tests {
 
     #[test]
     fn authority_body_read_projection_retires_only_its_owned_observations() {
-        let source = r#"
+        let source = r#"import click::machine_integer;
+
 authorized resource child_ref(obj: struct child*) {}
 resource child_control(obj: struct child*) {
     owns allocation(obj, sizeof(struct child));

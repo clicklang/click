@@ -241,7 +241,11 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
             claim_label,
             path_index,
             tactic_index,
-            format!("unknown theorem `{}`", application.name),
+            format!(
+                "unknown theorem `{}`{}",
+                application.name,
+                crate::surface::validation::library_import_hint(&application.name)
+            ),
         )
     })?;
     let theorem = resolve_generic_theorem_application(

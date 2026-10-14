@@ -1,6 +1,6 @@
 verifying "class_record.cpp";
 
-void FeeRateState_SetFee(struct FeeRateState* this, int64 next) {
+void FeeRateState::SetFee(int64 next) {
     owns this->fee;
     views this->size;
     ensures this->fee == next;

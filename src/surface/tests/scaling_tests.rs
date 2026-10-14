@@ -998,6 +998,13 @@ fn verification_copies_only_its_own_theorem_declarations() {
     let library = standard_library_theorem_definitions()
         .expect("the standard library should load")
         .len();
+    // A file's library selection is built once per process and shared, like
+    // the library itself; build it before counting.
+    verify_c0_sources(
+        &target_with_unrelated_theorems(1),
+        &[("target.c", c_source)],
+    )
+    .expect("the warm-up target should verify");
     for size in [4, 8, 16, 32] {
         let click_source = target_with_unrelated_theorems(size);
         let before = theorem_definition_copies();

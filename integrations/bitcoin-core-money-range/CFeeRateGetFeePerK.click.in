@@ -1,4 +1,4 @@
-int64 CFeeRate_GetFeePerK(const struct CFeeRate* this) {
+int64 CFeeRate::GetFeePerK() const {
     views this->m_feerate.base.fee;
     views this->m_feerate.base.size;
     requires this->m_feerate.base.size > 0;

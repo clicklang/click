@@ -34,6 +34,8 @@ int32 count_zero_run(int32* a, int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "loop_preserve_decided_branch_expands.c";
 
 int32 count_zero_run(int32* a, int32 n) {

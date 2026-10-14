@@ -1,3 +1,5 @@
+import click::integer;
+
 // Exact native B transitions for a deferred full-batch contribution.
 // Assemble after the common specification, lane-state and vector-prefix.
 

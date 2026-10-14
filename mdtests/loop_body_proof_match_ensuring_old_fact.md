@@ -19,6 +19,8 @@ void spin(struct cell *node, int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "loop_body_proof_match_ensuring_old_fact.c";
 
 spec enum Sign { Neg(int32), Pos(int32) }

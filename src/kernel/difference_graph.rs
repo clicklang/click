@@ -164,6 +164,10 @@ impl DifferenceGraph {
     /// Records a true or false condition fact. A fact difference logic does
     /// not express is ignored.
     pub(crate) fn assume_condition(&mut self, condition: &ConditionTerm, value: bool) {
+        if let Some(equality) = offset_equality(condition) {
+            self.assume_condition(&equality, value);
+            return;
+        }
         if value
             && let ConditionTerm::Bitvector32Equal(a, b) | ConditionTerm::Bitvector64Equal(a, b) =
                 condition
@@ -634,6 +638,14 @@ impl DifferenceGraph {
         if let C::Constant(value) = condition {
             return Some(*value);
         }
+        if let C::PointerOffsetEqual(a, b) = condition
+            && let Some(answer) = offset_mismatch(a, b)
+        {
+            return Some(answer);
+        }
+        if let Some(equality) = offset_equality(condition) {
+            return self.decide(&equality);
+        }
         if self.contradictory {
             // No model satisfies the facts, so the path is dead and every
             // answer holds. Only the absence of overflow is given, the one
@@ -980,6 +992,7 @@ impl ContextDifferenceGraph {
 fn expresses(condition: &ConditionTerm) -> bool {
     use ConditionTerm as C;
     overflow_parts(condition).is_some()
+        || offset_equality(condition).is_some()
         || matches!(
             condition,
             C::Bitvector32SignedLessThan(..)
@@ -1074,6 +1087,63 @@ fn sign_flip_base(domain: Domain, term: &Bitvector32Term) -> Option<&Bitvector32
 fn flip_sign(domain: Domain, value: i128) -> i128 {
     let min = domain.range().0;
     if value >= 0 { value + min } else { value - min }
+}
+
+/// A pointer offset as `value * width` for an `int32` value, or a constant
+/// byte offset. Exact: the product is formed in 64 bits.
+enum ScaledOffset<'a> {
+    Scaled(&'a Bitvector32Term, i64),
+    Bytes(i64),
+}
+
+fn scaled_offset(offset: &crate::kernel::PointerOffsetTerm) -> Option<ScaledOffset<'_>> {
+    use crate::kernel::PointerOffsetTerm as O;
+    match offset {
+        O::Int32Scaled { value, byte_width } if *byte_width != 0 => {
+            Some(ScaledOffset::Scaled(value, *byte_width))
+        }
+        O::Constant(bytes) => Some(ScaledOffset::Bytes(*bytes)),
+        _ => None,
+    }
+}
+
+/// `a == b` for two pointer offsets as an `int32` equality: equal widths
+/// compare their values, and a constant byte offset that is a whole
+/// number of elements compares the value with that count.
+fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
+    let ConditionTerm::PointerOffsetEqual(a, b) = condition else {
+        return None;
+    };
+    let (a, b) = match (scaled_offset(a)?, scaled_offset(b)?) {
+        (ScaledOffset::Scaled(a, wa), ScaledOffset::Scaled(b, wb)) if wa == wb => {
+            (a.clone(), b.clone())
+        }
+        (ScaledOffset::Scaled(value, width), ScaledOffset::Bytes(bytes))
+        | (ScaledOffset::Bytes(bytes), ScaledOffset::Scaled(value, width))
+            if bytes % width == 0 =>
+        {
+            let count = i32::try_from(bytes / width).ok()?;
+            (value.clone(), Bitvector32Term::Constant(count as u32))
+        }
+        _ => return None,
+    };
+    Some(ConditionTerm::Bitvector32Equal(Box::new(a), Box::new(b)))
+}
+
+/// Two pointer offsets that cannot be equal whatever their values: a
+/// constant byte offset that no whole number of `int32` elements reaches.
+fn offset_mismatch(
+    a: &crate::kernel::PointerOffsetTerm,
+    b: &crate::kernel::PointerOffsetTerm,
+) -> Option<bool> {
+    match (scaled_offset(a)?, scaled_offset(b)?) {
+        (ScaledOffset::Scaled(_, width), ScaledOffset::Bytes(bytes))
+        | (ScaledOffset::Bytes(bytes), ScaledOffset::Scaled(_, width)) => {
+            let count = bytes / width;
+            (bytes % width != 0 || i32::try_from(count).is_err()).then_some(false)
+        }
+        _ => None,
+    }
 }
 
 /// `term`'s value in `domain` when it is a constant there.

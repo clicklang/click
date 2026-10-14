@@ -23,6 +23,8 @@ void share_then_drop(struct holder* h, struct child* kid) {
 ```
 
 ```click
+import click::machine_integer;
+
 authorized resource child_ref(obj: struct child*) {}
 resource child_control(obj: struct child*) {
     owns *obj;

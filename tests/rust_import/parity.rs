@@ -53,8 +53,13 @@ pub(super) fn frozen_proof_input(source: &str) -> String {
     ] {
         input = input.replace(old, current);
     }
-    input.replace("bytes_len", "bytes.len()")
+    input.replace("bytes_len", "bytes.len()") + FROZEN_LIBRARY_IMPORTS
 }
+
+/// The pinned files predate Click library imports. Their proofs cite
+/// `click::integer` and `click::machine_integer` theorems; the imports go
+/// last so every pinned line keeps its position.
+const FROZEN_LIBRARY_IMPORTS: &str = "\nimport click::integer;\nimport click::machine_integer;\n";
 
 #[test]
 fn charon_frozen_proof_adapter_preserves_the_contracts_and_pinned_bytes() {
@@ -67,7 +72,7 @@ fn charon_frozen_proof_adapter_preserves_the_contracts_and_pinned_bytes() {
         let input = frozen_proof_input(&source);
         // The original C spelling remains valid for C. Compare the parsed
         // contracts to ensure the fixture adaptation changes only spelling.
-        let c_input = source.replace(".rs\"", ".c\"");
+        let c_input = source.replace(".rs\"", ".c\"") + FROZEN_LIBRARY_IMPORTS;
         assert_eq!(
             click::surface::parse(&input).unwrap().function_blocks(),
             click::surface::parse(&c_input).unwrap().function_blocks(),

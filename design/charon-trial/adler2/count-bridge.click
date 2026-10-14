@@ -1,3 +1,6 @@
+import click::integer;
+import click::machine_integer;
+
 // The 32-bit view of a 64-bit iterator count.
 // A chunk iterator counts its remaining bytes as `usize`. The lane and tail
 // bound libraries state their ceilings over an `int32` count; within one

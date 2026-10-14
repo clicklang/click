@@ -33,6 +33,8 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
 ```
 
 ```click
+import click::machine_integer;
+
 resource pool_slot(s: struct slot*, pool: struct pool*) {
     field at: int32;
     field end: int32;

@@ -77,17 +77,19 @@ resource` spelling anywhere.
 <!-- verified-example: mdtests/count_to_n_loop_invariant.md -->
 ```click
 loop {
-    decreases remaining;
-    invariant remaining >= 0;
+    decreases n - i;
+    invariant i >= 0 and i <= n;
 }
 ```
 
 <!-- verified-example: mdtests/c_decreases_lexicographic_loop.md -->
 ```click
 loop {
-    decreases (outer, inner);
-    invariant outer >= 0;
-    invariant inner >= 0;
+    decreases (i, j);
+    invariant i >= 0;
+    invariant j >= 0;
+    invariant j <= 2;
+    ...
 }
 ```
 
@@ -186,18 +188,22 @@ invents no invariants.
 
 A labeled loop can also expose its entry visit to the invariant:
 
-<!-- verified-example: mdtests/count_to_n_loop_invariant.md -->
+<!-- verified-example: mdtests/loop_entry_snapshot.md -->
 ```click
 loop as drain {
-    invariant at(drain.entry, n) >= 0;
+    decreases n;
+    invariant n >= 0;
+    invariant n <= at(drain.entry, n);
+    ...
 }
 ```
 
-This means the value of `n` at the visit just before the loop region starts.
+Here `at(drain.entry, n)` means the value of `n` at the visit just before the
+loop region starts.
 
 For a simple counter loop:
 
-<!-- verified-example: mdtests/count_to_n_loop_invariant.md -->
+<!-- verified-example: mdtests/count_to_loop_initialize_by_auto_and_preserve.md -->
 ```c
 int32 count_to(int32 n) {
     int32 i = 0;
@@ -211,7 +217,7 @@ int32 count_to(int32 n) {
 the proof first advances through the statements before the loop, then declares
 the bounds on `i` at the frontier:
 
-<!-- verified-example: mdtests/count_to_n_loop_invariant.md -->
+<!-- verified-example: mdtests/c_decreases_count_up.md -->
 ```click
 by {
     step();
@@ -227,7 +233,7 @@ by {
 
 The full induction syntax names its two obligations explicitly:
 
-<!-- verified-example: mdtests/count_to_n_loop_invariant.md -->
+<!-- verified-example: mdtests/count_to_loop_initialize_by_auto_and_preserve.md -->
 ```click
 loop {
     decreases n - i;
@@ -619,7 +625,7 @@ out of reach.
 
 Pointer-writing loops often need both arithmetic invariants and memory facts:
 
-<!-- verified-example: mdtests/count_to_n_loop_invariant.md -->
+<!-- verified-example: mdtests/loop_owns_preserves_symbolic_index.md -->
 ```click
 loop {
     owns p[0..n];
@@ -700,8 +706,10 @@ the function-entry model of the function's own binder of that name. There is
 no loop-entry snapshot of a model.
 
 The body holds `c` and works with the ordinary proof operations. Here one
-iteration opens the instance, writes the cell it owns, and folds it again with
-the model that write produced:
+iteration first states the model the invariants give the head's arbitrary
+instance, `c.count == i`, which bounds the cell the increment writes; it then
+opens the instance, writes the cell it owns, and folds it again with the model
+that write produced:
 
 <!-- verified-example: mdtests/loop_binder_counter_model.md -->
 ```c
@@ -715,7 +723,7 @@ void bump_n(struct cell* p, int32 n) {
 }
 ```
 
-<!-- verified-example: mdtests/loop_binder_counter_model.md -->
+<!-- verified-example: mdtests/loop_binder_counter_model_concise_proof.md -->
 ```click
 resource counter(p: struct cell*) {
     field count: int32;
@@ -741,6 +749,7 @@ void bump_n(struct cell* p, int32 n) {
 
         initialize by simp;
         preserve by {
+            have c.count == i by { simp() using { c.count == old(c.count) + i; old(c.count) == 0; } }
             unfold(c);
             step();
             step();
@@ -897,12 +906,15 @@ constructor itself, and at an arbitrary loop head the binder's model is a
 fresh symbolic value. A proof `match` on that model inside `preserve` supplies
 it:
 
-<!-- verified-example: mdtests/loop_body_proof_match.md -->
+<!-- verified-example: mdtests/loop_body_proof_match_concise_proof.md -->
 ```click
 preserve by {
     match c.model {
         Maybe::None => { contradiction(c.model == Maybe::None); },
         Maybe::Some(value) => {
+            have Maybe::Some(value) == old(c.model) by {
+                simp() using { c.model == Maybe::Some(value); c.model == old(c.model); }
+            }
             unfold(c);
             step();
             let c = fold(cell(node), { model: Maybe::Some(value) });
@@ -911,6 +923,10 @@ preserve by {
     }
 }
 ```
+
+The live arm first states `Maybe::Some(value) == old(c.model)`: the refolded
+model is the arm's binding, and the invariant `c.model == old(c.model)` needs
+that binding related to the entry model at the back edge.
 
 With nothing written after it, the arms of such a `match` do not rejoin.
 Each arm executes one complete iteration, restores
@@ -1150,7 +1166,7 @@ accepted only inside `preserve by { ... }` — elsewhere it fails with
 `` `close_invariants` is only available in a loop-region proof `` — and at most
 once on a path.
 
-<!-- verified-example: mdtests/count_to_n_loop_invariant.md -->
+<!-- verified-example: mdtests/c_decreases_count_up.md -->
 ```click
 preserve by {
     step();

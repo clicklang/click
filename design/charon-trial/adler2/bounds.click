@@ -1,3 +1,5 @@
+import click::integer;
+
 // Arithmetic ceilings for the unchanged adler2 deferred-reduction loop.
 // These prove bounds on proposed lane invariants and their next additions.
 // Establishing and preserving those invariants over the actual iterators is

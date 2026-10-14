@@ -194,7 +194,11 @@ Each step is its own pull request.
        conditions and 7 path-fact decisions over the mdtests, and 21 over
        the examples.
    - *Left:*
-     - pointer questions (about 14);
+     - pointer questions (about 25 conditions and the 7 path-fact
+       decisions). An offset comparison of `int32` elements is now an index
+       comparison. The rest relate pointers through `null` or aliasing
+       (`p == null`, `q != null`, so `p != q`), which is equality reasoning
+       for `EqualityGraph`, not difference logic;
      - division overflow excluded only by a disjunction (5);
      - certain overflows, which the graph does not answer.
 4. **Remove the general decision from simple checking.** A condition the fast

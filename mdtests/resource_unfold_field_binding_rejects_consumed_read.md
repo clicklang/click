@@ -22,6 +22,8 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
 ```
 
 ```click
+import click::machine_integer;
+
 resource claimed_prefix(data: int32*, occupied: int32*, capacity: int32) {
     field prefix: int32;
     owns occupied[0..capacity];

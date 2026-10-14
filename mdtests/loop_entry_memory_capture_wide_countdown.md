@@ -11,6 +11,9 @@ unsigned long inspect(const unsigned char *p, unsigned long n) {
 ```
 
 ```click
+import click::integer;
+import click::machine_integer;
+
 target "x86_64-linux-userspace";
 verifying "loop.c";
 uint64 inspect(const uint8* p, uint64 n) {

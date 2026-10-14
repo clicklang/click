@@ -5,6 +5,8 @@
 not have that fact cannot apply it.
 
 ```click
+import click::machine_integer;
+
 theorem predecessor_without_a_guard(x: uint32) {
     ensures x - 1u32 < x by {
         apply(uint32_positive_predecessor_strictly_decreases(x)) using { 0u32 < x; }

@@ -683,7 +683,11 @@ fn verify_click_file_theorems_with_environment(
 /// function's contract. This is the entry point that proves them, against the
 /// standard library alone, and the gate runs it.
 pub fn verify_standard_library() -> Result<Vec<VerifiedPureTheorem>, ClickError> {
-    let empty = parse("")?;
+    let mut empty = parse("")?;
+    empty.library_imports = CLICK_LIBRARY_MODULES
+        .iter()
+        .map(|(identity, _)| (*identity).to_string())
+        .collect();
     let predicate_definitions = combined_predicate_definitions(&empty)?;
     let click_function_definitions = combined_click_function_definitions(&empty)?;
     let predicate_environment = PredicateEnvironment::new(&predicate_definitions);
@@ -2229,10 +2233,8 @@ fn verify_c0_sources_in_context(
             .filter(|theorem| !selected_theorem_names.contains(theorem.name()))
             .map(clone_theorem_definition_iteratively)
             .collect::<Vec<_>>();
-        let theorem_dependencies = TheoremEnvironment::with_standard_library_prefix(
-            standard_library_theorems,
-            &unselected_theorem_definitions,
-        );
+        let theorem_dependencies =
+            TheoremEnvironment::with_standard_library(&unselected_theorem_definitions)?;
         let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
             .with_contracts(file.contract_definitions(), &file.c_function_names);
         let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
@@ -2360,10 +2362,8 @@ fn verify_c0_sources_in_context(
             &mut theorem_certification_facts,
             &mut theorem_certification_authorities,
         );
-        let theorem_environment = TheoremEnvironment::with_standard_library_prefix(
-            standard_library_theorems,
-            file.theorem_definitions(),
-        );
+        let theorem_environment =
+            TheoremEnvironment::with_standard_library(file.theorem_definitions())?;
         check_verification_deadline()?;
         (
             predicate_environment,
@@ -2849,10 +2849,7 @@ fn verify_c0_sources_in_context(
                 && theorem_has_certification_binders(&standard_library_theorems[index])
             {
                 let verified_dependency = verify_theorem_definitions(
-                    TheoremEnvironment::with_standard_library_prefix(
-                        &standard_library_theorems[..index],
-                        &[],
-                    ),
+                    TheoremEnvironment::with_full_library_prefix(index, &[])?,
                     &standard_library_theorems[index..=index],
                     spec_definitions,
                     None,
@@ -5170,7 +5167,9 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
                 import.language()
             )));
         }
-        return Ok(parser::ProgramLayouts::of_execution(execution));
+        let mut layouts = parser::ProgramLayouts::of_execution(execution);
+        layouts.language = Some(import.language());
+        return Ok(layouts);
     }
     c_frontend::c_layouts(verifying_paths, c_sources, target)
 }

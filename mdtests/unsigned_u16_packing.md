@@ -4,6 +4,8 @@ Both field bounds are required. The result is an Integer observation of the
 actual bitwise OR and shift, rather than an assumed checksum formula.
 
 ```click
+import click::integer;
+
 theorem pack32(low: uint32, high: uint32) {
     requires low <= 65535u32;
     requires high <= 65535u32;

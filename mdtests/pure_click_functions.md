@@ -56,6 +56,8 @@ int32 identity_permutation(int32 p[3]) {
 ```
 
 ```click
+import click::permutation;
+
 verifying "pure_click_functions.c";
 verifying "read_first_with_function.c";
 verifying "branch_indicator.c";

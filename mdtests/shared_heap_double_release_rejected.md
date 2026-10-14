@@ -25,6 +25,8 @@ void release_twice(struct child* obj) {
 ```
 
 ```click
+import click::machine_integer;
+
 authorized resource child_ref(obj: struct child*) {}
 
 resource child_storage(obj: struct child*) {

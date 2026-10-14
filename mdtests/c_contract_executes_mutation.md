@@ -1,6 +1,8 @@
 # Explicit callback execution: mutation
 
 ```click
+import click::machine_integer;
+
 resource Buffer(data: int32*) { owns data[0..1]; }
 contract void Raw(int32* data) {
  requires data[0] < 100;

@@ -6,6 +6,8 @@ and remainder require native and observed nonzero divisor facts and use
 mathematical truncation.
 
 ```click
+import click::integer;
+
 theorem bridge0(left: uint64, right: uint64) {
     requires to_integer(left) + to_integer(right) <= 18446744073709551615;
     ensures to_integer(left + right) == to_integer(left) + to_integer(right) by apply(uint64_add_to_integer(left, right));

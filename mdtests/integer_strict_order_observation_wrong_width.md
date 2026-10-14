@@ -1,6 +1,8 @@
 # The observation bridge retains its width
 
 ```click
+import click::integer;
+
 theorem refused(left: int64, right: int64) {
     requires left < right;
     ensures to_integer(left) < to_integer(right) by {

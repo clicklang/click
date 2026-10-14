@@ -21,6 +21,8 @@ int32 nested_branch_steps(int32 x) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "nested_branch_steps.c";
 
 int32 nested_branch_steps(int32 x) {

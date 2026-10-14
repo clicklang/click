@@ -105,6 +105,8 @@ int32 run_second_destroyed(int32 payload) {
 ```
 
 ```click
+import click::machine_integer;
+
 spec enum ParentLink {
     Empty,
     Linked(struct child*),

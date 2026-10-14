@@ -22,6 +22,8 @@ void vacuous_guard_caller(int32* cell) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "vacuous_guarded_step.c";
 
 contract void GuardedProgress(int32* cell) {

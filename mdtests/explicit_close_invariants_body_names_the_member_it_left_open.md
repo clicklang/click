@@ -16,6 +16,8 @@ int32 drain(int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "explicit_close_invariants_body_names_the_member_it_left_open.c";
 
 int32 drain(int32 n) {

@@ -675,15 +675,26 @@ arithmetic, checked `Assume`, and field-reading sibling arguments remain open.
 
 The `value-methods` fixtures add non-static, non-virtual ordinary methods on
 that record. Select a method with `"function": "FeeFrac::IsEmpty"` or
-`"function": "FeeFrac::operator+="` (or `operator-=`). The proof interface names
-them `FeeFrac_IsEmpty`, `FeeFrac_operator_add_assign`, and
-`FeeFrac_operator_subtract_assign`, with an explicit first
-parameter `this`. Const methods use `const struct FeeFrac* this`; const record
-reference parameters retain the same qualification. This restricts writes
-through that parameter without forbidding an alias through a mutable parameter.
-Direct nonvirtual `operator[]` methods also use this method-call path, with
-`Class::operator[]` as the selector and `Class_operator_index` as the proof
-name. The receiver must be a live record lvalue; argument and result types,
+`"function": "FeeFrac::operator+="` (or `operator-=`).
+
+A C++ sidecar writes each head as C++ declares the function:
+`bool FeeFrac::IsEmpty() const`, `void FeeFrac::operator+=(const FeeFrac& other)`,
+`Restore::Restore(int* slot)`, `Restore::~Restore()`, a static member as
+`static int64 FeeFrac::Div(int128 n, int32 d, bool round_down)`, and a function
+template instance as `choose<true>(int a, int b)`. A record is named by its own
+name, without `struct`. A member function's receiver `this` is implicit, and
+the head's trailing `const` makes it `const FeeFrac* this`; a contract clause
+names it `this`. Const record reference parameters retain the same
+qualification. This restricts writes through that parameter without
+forbidding an alias through a mutable parameter. Diagnostics and proof steps
+name the function by the importer's name: `FeeFrac_IsEmpty`,
+`FeeFrac_operator_add_assign`, `Restore_constructor`, `choose__bool_true`. A
+member of a class template instance, such as `Stored<long long>`, is still
+written with that name and an explicit receiver,
+`void Stored__long_long_constructor(struct Stored__long_long* this, int64 next)`,
+as are `extern` and named-contract heads. Direct nonvirtual `operator[]`
+methods also use this method-call path, with `Class::operator[]` both as the
+selector and as the head's declarator. The receiver must be a live record lvalue; argument and result types,
 const qualification and reference authority follow the ordinary method rules.
 This does not admit other overloaded operators or temporary receivers.
 
@@ -1611,7 +1622,10 @@ contract:
   catalog itself is never written into a sidecar by expansion.
 - A call to a standard function with no catalog contract is refused, naming
   the function. A sidecar may state its own `extern` contract instead, which is
-  an assumption like any other external contract.
+  an assumption like any other external contract. Its head is the C++
+  declaration, as a verified function's is: `extern int* ministd::identity(int* p)`,
+  or, for a member, `extern int ministd::Box::get() const` with `this`
+  implicit (`tests/cpp_import.rs`, `axiomatic_*`).
 - A standard function must be `noexcept`; throwing contracts are not modeled.
   One returning a record by value constructs it in the caller's destination.
 

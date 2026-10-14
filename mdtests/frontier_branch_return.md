@@ -13,6 +13,8 @@ int32 returning_branch(int32 x) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "returning_branch.c";
 
 int32 returning_branch(int32 x) {

@@ -1,3 +1,5 @@
+import click::integer;
+
 // Bounds for the unchanged zero-to-three-byte scalar tail.
 // Consumption is an observation of the stored iterator, without a runtime counter.
 

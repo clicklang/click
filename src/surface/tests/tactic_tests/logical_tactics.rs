@@ -66,7 +66,8 @@ fn explicit_nonnegative_add_definedness_certifies_the_whole_contract() {
                 return value + amount;
             }
         "#;
-    let click_source = r#"
+    let click_source = r#"import click::machine_integer;
+
             verifying "add_nonnegative.c";
 
             int32 add_nonnegative(int32 value, int32 amount) {
@@ -1858,7 +1859,8 @@ fn smart_pure_have_theorem_search_retains_the_checked_scope_body_directly() {
 
 #[test]
 fn smart_pure_theorem_application_discharges_exact_goal() {
-    let click_source = r#"
+    let click_source = r#"import click::machine_integer;
+
         theorem move_one_preserves_sum(
             total: int32,
             left: int32,
@@ -2650,7 +2652,8 @@ fn apply_le_lt_transitive_requires_its_nonstrict_leg_listed() {
     // Without `0 <= x` as an available fact the theorem's first requirement
     // has no proof, so the explicit application must fail instead of
     // rubber-stamping the missing leg.
-    let click_source = r#"
+    let click_source = r#"import click::machine_integer;
+
         theorem below_missing_leg(x: int32, y: int32) {
             requires x < y;
 
@@ -2692,7 +2695,8 @@ fn smart_rewrite_folds_substituted_constants_to_a_strict_constant_bound() {
 fn apply_lt_le_transitive_rejects_a_false_constant_leg() {
     // `2 < 2` is false, so the constant leg cannot be discharged by
     // normalization and the application must fail.
-    let click_source = r#"
+    let click_source = r#"import click::machine_integer;
+
         theorem false_constant_leg(bound: int32) {
             requires 2 <= bound;
 
@@ -2711,7 +2715,8 @@ fn apply_lt_le_transitive_rejects_a_false_constant_leg() {
 
 #[test]
 fn apply_predecessor_upper_bound_closes_from_both_listed_legs() {
-    let click_source = r#"
+    let click_source = r#"import click::machine_integer;
+
         theorem predecessor_keeps_bound(value: int32, bound: int32) {
             requires 0 <= value;
             requires value <= bound;
@@ -2782,7 +2787,8 @@ fn apply_predecessor_upper_bound_requires_its_nonnegative_leg_listed() {
     // Without `0 <= value` established, the theorem's first requirement has
     // no proof, so the explicit application must fail instead of
     // rubber-stamping the missing leg.
-    let click_source = r#"
+    let click_source = r#"import click::machine_integer;
+
         theorem predecessor_missing_leg(value: int32, bound: int32) {
             requires value <= bound;
 
@@ -2803,7 +2809,8 @@ fn apply_predecessor_upper_bound_requires_its_nonnegative_leg_listed() {
 fn apply_predecessor_upper_bound_rejects_a_false_nonnegative_leg() {
     // `0 <= -1` is false, so the nonnegative leg cannot be discharged by
     // normalization and the application must fail.
-    let click_source = r#"
+    let click_source = r#"import click::machine_integer;
+
         theorem predecessor_false_leg(bound: int32) {
             requires -1 <= bound;
 

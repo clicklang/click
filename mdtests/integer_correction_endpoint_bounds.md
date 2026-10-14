@@ -4,6 +4,8 @@ These lemmas use reconstruction and scaled bounds. They require no native
 operation and no implicit multiplication ordering.
 
 ```click
+import click::integer;
+
 theorem derived_lower_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, lower: Integer) {
     requires lower <= q;
     requires lower * d <= n;

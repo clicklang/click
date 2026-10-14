@@ -44,6 +44,8 @@ int increment_twice(struct mutex_counter *counter) {
 ```
 
 ```click
+import click::integer;
+
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "mutex_counter_fabricated_credit_rejected.c";

@@ -1,3 +1,6 @@
+import click::integer;
+import click::machine_integer;
+
 // Checked signed observations of native counts within the explicit signed limit.
 // Iterator state and slice metadata retain their full unsigned 64-bit width.
 theorem adler_bounded_count(count: uint64) {

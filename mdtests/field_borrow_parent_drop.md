@@ -24,13 +24,13 @@ int cleanup(int& value) {
 
 ```click
 verifying "field_drop.cpp";
-void Guard_constructor(struct Guard* this, int32& value) {
+Guard::Guard(int32& value) {
     owns this->slot;
     owns this->saved;
     ensures this->slot == &value;
     ensures this->saved == 1;
 } by { execute(); simp(); }
-void Guard_destructor(struct Guard* this) {
+Guard::~Guard() {
     owns this->slot;
     owns this->saved;
     owns this->slot[0..1];

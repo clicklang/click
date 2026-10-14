@@ -3556,7 +3556,8 @@ pub(super) fn validate_resource_clause(
             }
             let Some(arity) = resources.get(name) else {
                 return Err(ClickError::new(format!(
-                    "unknown resource `{name}` in {context}"
+                    "unknown resource `{name}` in {context}{}",
+                    crate::surface::validation::library_import_hint(name)
                 )));
             };
             if *arity != arguments.len() + resource_arguments.len() {
@@ -3706,7 +3707,8 @@ fn validate_predicate_calls_in_proposition_one(
             }
             let Some(arity) = predicates.get(name) else {
                 return Err(ClickError::new(format!(
-                    "unknown predicate `{name}` in {context}"
+                    "unknown predicate `{name}` in {context}{}",
+                    crate::surface::validation::library_import_hint(name)
                 )));
             };
             if *arity != arguments.len() {
@@ -3908,7 +3910,8 @@ fn validate_contract_expression_calls(
             };
             let Some(arity) = builtin_arity.as_ref().or_else(|| click_functions.get(name)) else {
                 return Err(ClickError::new(format!(
-                    "unknown function `{name}` in {context}"
+                    "unknown function `{name}` in {context}{}",
+                    crate::surface::validation::library_import_hint(name)
                 )));
             };
             if *arity != arguments.len() {

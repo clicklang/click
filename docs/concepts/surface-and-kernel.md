@@ -100,7 +100,7 @@ For a `p: uint8[]` parameter, the same shape uses `element_type: uint8`.
 
 An old array argument means the entry-state array at the same pointer value:
 
-<!-- verified-example: mdtests/pure_click_functions.md -->
+<!-- verified-example: mdtests/click_array_refs.md -->
 ```click
 old(p)
 ```
@@ -126,7 +126,7 @@ load(p.memory, p.pointer + k * sizeof(p.element_type))
 
 So:
 
-<!-- verified-example: mdtests/pure_click_functions.md -->
+<!-- verified-example: mdtests/compare_swap2_permutation.md -->
 ```click
 permutation(p, old(p), 0, 2)
 ```
@@ -186,9 +186,9 @@ and `predicate` definitions are treated as Click array-ref parameters.
 
 The type spellings follow the corresponding C parameter types:
 
-<!-- verified-example: mdtests/pure_click_functions.md -->
+<!-- verified-example: mdtests/pure_array_ref_parameter_spellings.md -->
 ```click
-function count(p: int32[], lo: int32, hi: int32, x: int32) -> int32 { ... }
+function count_matches(p: int32[], lo: int32, hi: int32, x: int32) -> int32 { ... }
 
 predicate sorted(p: int32*, n: int32) { ... }
 ```

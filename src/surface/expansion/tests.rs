@@ -3179,3 +3179,22 @@ fn trace_source_index_indexes_many_case_arms() {
         );
     }
 }
+
+// A C++ head spells a member as `Rec::f(`, so the importer's name `Rec_f(`
+// can appear only in a theorem that executes it. That theorem's block is not
+// the function's.
+#[test]
+fn a_cpp_function_is_located_by_its_declarator_not_an_executing_theorem() {
+    let source = r#"verifying "fee.h";
+int64 FeeFrac::EvaluateFeeDown(int32 at_size) const {
+    ensures result == 0i64;
+} by { execute(); simp(); }
+theorem evaluation() executes FeeFrac_EvaluateFeeDown(const struct FeeFrac* this, int32 at_size) {
+    ensures Fast(&FeeFrac_EvaluateFeeDown) by { execute(); simp(); }
+}
+"#;
+    let tokens = scan_source_tokens(source).unwrap();
+    let function = find_function(&tokens, "FeeFrac_EvaluateFeeDown").unwrap();
+    assert_eq!(tokens[function.body_close + 1].text, "by");
+    assert_eq!(tokens[function.body_open - 1].text, "const");
+}

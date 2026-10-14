@@ -12,7 +12,7 @@ increment.click
 
 The C file contains the implementation:
 
-<!-- verified-example: mdtests/scalar.md -->
+<!-- verified-example: mdtests/increment_requires_no_overflow.md -->
 ```c
 int32 increment(int32 x) {
     return x + 1;
@@ -21,13 +21,13 @@ int32 increment(int32 x) {
 
 The Click sidecar names the C file and specifies the function:
 
-<!-- verified-example: mdtests/scalar.md -->
+<!-- verified-example: mdtests/increment_requires_no_overflow.md -->
 ```click
 verifying "increment.c";
 
 int32 increment(int32 x) {
     requires x < 2147483647;
-    ensures result == x + 1 by auto;
+    ensures increments: result == x + 1 by auto;
 }
 ```
 
@@ -39,9 +39,9 @@ for the C function.
 
 Each sidecar starts with one or more source declarations:
 
-<!-- verified-example: mdtests/scalar.md -->
+<!-- verified-example: mdtests/increment_requires_no_overflow.md -->
 ```click
-verifying "file.c";
+verifying "increment.c";
 ```
 
 This tells Click which C source files are part of the verification unit. Larger
@@ -61,7 +61,7 @@ A sidecar can reuse logical declarations from another local Click file:
 
 <!-- verified-example: mdtests/specification_imports.md -->
 ```click
-import "../models/list.click";
+import "specification_imports_model.click";
 ```
 
 Imports are relative to the importing file, transitive, and confined to the
@@ -91,15 +91,54 @@ directory scope that contains it—to check the library's proofs. Circular theor
 the existing checked-recursion rules are enforced independently of this
 selection boundary.
 
+## Click library imports
+
+A Click library module is named by a `click::` path that mirrors its file
+under `library/`:
+
+<!-- verified-example: mdtests/click_library_import.md -->
+```click
+import click::cstr;
+```
+
+`click::cstr` is `library/cstr.click`, and `click::c::string` is
+`library/c/string.click`. Importing a module twice is accepted. An unknown
+module, or a path outside the `click` root such as `std::list`, is refused at
+the import. A project file is always imported by a quoted path. A module's
+library imports reach the files that import it, like its other declarations.
+
+Without an import a file sees the implicit modules: `click::primitives`,
+`click::nat`, `click::list`, `click::c::builtins` and `click::c::string`,
+together with the modules they import themselves (`click::bytes` and
+`click::cstr`). The other modules—`click::machine_integer`, `click::integer`
+and `click::permutation`—must be imported before a file names one of their
+declarations.
+
+<!-- verified-example: mdtests/a_cited_library_theorem_is_available_after_its_import.md -->
+```click
+import click::machine_integer;
+```
+
+A proof that cites a theorem of a module the file does not import is refused
+before any proof runs, and the message names the import to add
+(`mdtests/a_cited_library_theorem_needs_its_module_import.md`).
+A predicate or function of an unimported module is not visible either, so a
+file may declare its own declaration with that name
+(`mdtests/an_unimported_library_name_is_free_for_a_user_definition.md`).
+Library theorem names stay reserved: built-in tactics such as `simp`,
+`arithmetic` and loop-invariant closing apply library theorems as part of
+their own reasoning, whatever the file imports. When `click expand` writes
+such a step out, it also adds the import its cited theorem needs.
+
 ## Contracts are per function
 
 Each function block in a sidecar describes one C function:
 
-<!-- verified-example: mdtests/scalar.md -->
+<!-- verified-example: mdtests/increment_requires_no_overflow.md -->
 ```click
-int32 function_name(int32 x) {
-    requires x >= 0;
-    ensures result >= 0 by auto;
+int32 increment(int32 x) {
+    requires x < 2147483647;
+    ensures increments: result == x + 1 by auto;
 }
 ```
 

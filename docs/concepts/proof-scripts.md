@@ -36,7 +36,7 @@ parentheses, and a `simp` step in a block may be too: `simp;` is `simp();`.
 `by simp;` does not execute C. For a whole-function proof, use `by auto;` or make the
 sequence explicit:
 
-<!-- verified-example: mdtests/pure_theorem.md -->
+<!-- verified-example: mdtests/proof_script_execute_and_simp_using.md -->
 ```click
 ensures result == x by {
     execute();
@@ -68,7 +68,7 @@ Simple tactics request one deterministic checked operation without planning or
 search, and their checkers must be fast and output-sensitive. Paired operations
 use `using` to mark that boundary:
 
-<!-- verified-example: mdtests/pure_theorem.md -->
+<!-- verified-example: mdtests/proof_script_execute_and_simp_using.md -->
 ```click
 simp() using {
     i >= 0;

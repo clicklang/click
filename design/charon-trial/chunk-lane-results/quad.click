@@ -1,3 +1,5 @@
+import click::integer;
+
 verifying "quad.rs";
 
 theorem quad_byte_observation(value: uint8) {

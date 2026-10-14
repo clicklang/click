@@ -1,6 +1,8 @@
 # Observed quotient correction
 
 ```click
+import click::integer;
+
 theorem observed_quotient_correction(q: int64, quotient: Integer) {
     requires defined(q + 1i64);
     requires to_integer(q) == quotient;

@@ -23,6 +23,8 @@ unsigned char last(const unsigned char *bytes, unsigned long length) {
 ```
 
 ```click
+import click::integer;
+
 verifying "a_size_t_loop_stepping_by_two_closes_with_explicit_steps.c";
 
 theorem step_two(i: uint64, length: uint64) {

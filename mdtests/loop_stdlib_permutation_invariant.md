@@ -24,6 +24,8 @@ int32 loop_stdlib_permutation_invariant(int32 p[3]) {
 ```
 
 ```click
+import click::permutation;
+
 verifying "loop_stdlib_permutation_invariant.c";
 
 int32 loop_stdlib_permutation_invariant(int32 p[3]) {

@@ -4,6 +4,8 @@ A mirrored comparison keeps its operands, relation, and strictness. It does
 not turn a non-strict bound into a strict bound.
 
 ```click
+import click::integer;
+
 theorem observed_range(x: uint32) {
     ensures 0 <= to_integer(x) by apply(uint32_to_integer_bounds(x));
     ensures to_integer(x) >= 0 by apply(uint32_to_integer_bounds(x));

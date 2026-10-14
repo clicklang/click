@@ -3,6 +3,8 @@
 `Progress` declares `cell`, not `counter`, so the map keys nothing.
 
 ```click
+import click::machine_integer;
+
 resource Counter() { field revision: int32; field tag: int32; }
 contract int32 Exact() {
     owns cell: Counter();

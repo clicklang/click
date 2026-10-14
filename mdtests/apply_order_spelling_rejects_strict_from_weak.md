@@ -1,6 +1,8 @@
 # Order spelling does not change the theorem's guarantee
 
 ```click
+import click::integer;
+
 theorem wrong(x: uint32) {
     ensures to_integer(x) > 0 by apply(uint32_to_integer_bounds(x));
 }

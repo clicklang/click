@@ -338,6 +338,7 @@ fn merge_modules(
             .map(|file| file.c_function_names.clone())
             .unwrap_or_default(),
         imports: Vec::new(),
+        library_imports: Vec::new(),
         verifying_sources: Vec::new(),
         c_target: None,
         thread_runtime: Default::default(),
@@ -392,6 +393,13 @@ fn merge_modules(
                 )));
             }
             merged.thread_runtime = local.thread_runtime;
+        }
+        // Library imports reach importers like every other import: a module
+        // sees the library modules of its whole import closure.
+        for library in &local.library_imports {
+            if !merged.library_imports.contains(library) {
+                merged.library_imports.push(library.clone());
+            }
         }
         if identity == entry {
             merged.imports = local.imports.clone();
@@ -701,6 +709,31 @@ theorem local_conditional(x: int32) {
         let error = verify_c0_project(&library, &[])
             .expect_err("selecting the imported theorem's own failing proof must fail");
         assert!(error.message().contains("models/list.click"), "{error}");
+    }
+
+    #[test]
+    fn library_imports_reach_importers_and_are_not_file_imports() {
+        let project = ClickProject::new(
+            "entry.click",
+            [
+                ClickModuleSource::new(
+                    "model.click",
+                    "import click::cstr;\nimport click::bytes;\n",
+                    [],
+                ),
+                ClickModuleSource::new(
+                    "entry.click",
+                    "import click::bytes;\nimport \"model.click\";\n",
+                    ["model.click".to_string()],
+                ),
+            ],
+        );
+        let file = resolve_click_project(&project, &[]).expect("library imports resolve");
+        assert_eq!(file.imports().len(), 1);
+        assert_eq!(
+            file.library_imports(),
+            ["library/cstr.click", "library/bytes.click"]
+        );
     }
 
     #[test]

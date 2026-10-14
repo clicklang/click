@@ -24,6 +24,8 @@ int32 loop_preserve_branch(int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "loop_preserve_branch.c";
 
 int32 loop_preserve_branch(int32 n) {

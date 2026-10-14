@@ -23,6 +23,8 @@ int32 nested_count(int32 n, int32 m) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "c_decreases_nested_loop.c";
 
 int32 nested_count(int32 n, int32 m) {

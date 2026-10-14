@@ -1,3 +1,5 @@
+import click::integer;
+
 // Bounds for the original Adler32::compute lane recombination expressions.
 // These conditional arithmetic lemmas do not establish the loop invariants.
 // The unchanged Rust source and Charon import are not modified.

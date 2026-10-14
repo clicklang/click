@@ -14,6 +14,8 @@ void drain(int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 spec enum LeafModel { Unit }
 spec enum RootModel { Has(LeafModel) }
 

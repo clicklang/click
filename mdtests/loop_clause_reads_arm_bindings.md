@@ -23,6 +23,8 @@ int spin(struct node *p, int n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "loop_clause_reads_arm_bindings.c";
 
 spec enum Tree {

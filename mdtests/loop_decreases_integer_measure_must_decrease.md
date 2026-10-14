@@ -16,6 +16,9 @@ int32 drain(int32 n, int32 m) {
 ```
 
 ```click
+import click::integer;
+import click::machine_integer;
+
 verifying "loop_decreases_integer_measure_must_decrease.c";
 
 function level(n: int32) -> Integer {

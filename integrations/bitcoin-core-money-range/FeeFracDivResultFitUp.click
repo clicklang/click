@@ -1,5 +1,8 @@
+import click::integer;
+import click::machine_integer;
+
 verifying "bitcoin-src/src/util/feefrac.h";
-int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
+static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     requires round_down == 0;
     requires -9223372036854775809 * to_integer(d) < to_integer(n);
     requires to_integer(n) <= 9223372036854775807 * to_integer(d);

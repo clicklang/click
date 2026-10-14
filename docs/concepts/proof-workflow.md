@@ -74,7 +74,7 @@ contract proof is packaged from that same finalized specification.
 
 Currently accepted tactics:
 
-<!-- verified-example: mdtests/grouped_function_proof.md -->
+<!-- verified-example: mdtests/algebraic_maybe.md -->
 ```click
 by auto;
 by simp;
@@ -104,7 +104,7 @@ The exhaustive simple/smart classification is in the
 
 Explicit proof scripts use function-call-shaped tactics:
 
-<!-- verified-example: mdtests/grouped_function_proof.md -->
+<!-- verified-example: mdtests/sorted_predicate.md -->
 ```click
 by {
     execute();
@@ -222,7 +222,7 @@ contract.
 
 When the execution frontier is a C `if`, use `branch`:
 
-<!-- verified-example: mdtests/grouped_function_proof.md -->
+<!-- verified-example: mdtests/step_proof_case_condition.md -->
 ```click
 branch then {
     step(); // Execute the first statement in the C then arm.
@@ -244,12 +244,12 @@ function outcomes; later tactics do not execute in them.
 Add `ensuring` when branch-local execution should establish a common interface
 before the rest of the function proof:
 
-<!-- verified-example: mdtests/grouped_function_proof.md -->
+<!-- verified-example: mdtests/proof_branch_memory_continuation.md -->
 ```click
 branch ensuring {
-    fact y >= 0;
-    owns buffer(data, len);
-    views metadata(data, len);
+    fact p[0] >= 0;
+    fact p[0] < 2147483647;
+    owns p[0..1];
 } then {
     step();
 } else {
@@ -280,7 +280,7 @@ concrete allocations.
 
 For example, pure case analysis needs no C execution:
 
-<!-- verified-example: mdtests/grouped_function_proof.md -->
+<!-- verified-example: mdtests/proof_if_cases.md -->
 ```click
 theorem int32_sign_split(x: int32) {
     ensures x <= 0 or x > 0 by {
@@ -351,9 +351,9 @@ contained views. Owned composite resources still require an explicit
 Existential tactics are deterministic simple tactics, not search tactics. A
 typical existential-introduction proof names a witness:
 
-<!-- verified-example: mdtests/grouped_function_proof.md -->
+<!-- verified-example: mdtests/witness_and_choose.md -->
 ```click
-ensures found: (0..n).any(|k| { k == result }) by {
+ensures found_zero: (0..n).any(|k| { k == result }) by {
     execute();
     witness { k: 0 };
     simp();
@@ -397,7 +397,7 @@ ensures opened_contains: bytes_contains(p, 0, n, 'x') by {
 Use `have` to prove an intermediate proposition at the current execution
 frontier. Loop proofs likewise operate where the frontier encounters a loop:
 
-<!-- verified-example: mdtests/grouped_function_proof.md -->
+<!-- verified-example: mdtests/frontier_have_execute_until_and_mark.md -->
 ```click
 by {
     step();
@@ -406,6 +406,7 @@ by {
         simp();
     }
     loop as fill {
+        decreases n - i;
         owns p[0..n];
         invariant i >= 0;
         invariant i <= n;
@@ -444,7 +445,7 @@ selectors serve execution targets rather than snapshot expressions.
 `statement(N)` selects the Nth source statement code region in structural
 order for execution targets and snapshots:
 
-<!-- verified-example: mdtests/grouped_function_proof.md -->
+<!-- verified-example: mdtests/frontier_have_execute_until_and_mark.md -->
 ```click
 execute_until(statement(4));
 have y >= 0 by {
@@ -469,8 +470,7 @@ Snapshot expressions use snapshot selectors. A selector can be a C program
 point or a proof-local mark; the selected snapshot is the immutable state
 recorded there:
 
-<!-- verified-example: mdtests/grouped_function_proof.md -->
-```click
+```text
 at(function.entry, x)
 at(loop_name.entry, x)
 at(statement(0).entry, x)
@@ -482,7 +482,7 @@ at(statement(0).entry, viewable(p[0..n]))
 When a proof needs to remember the state it has already reached, prefer a
 semantic proof-local name over repeating a numeric statement coordinate:
 
-<!-- verified-example: mdtests/grouped_function_proof.md -->
+<!-- verified-example: mdtests/frontier_have_execute_until_and_mark.md -->
 ```click
 mark before_write;
 step();
@@ -514,15 +514,15 @@ loop-level `initialize` proof establishes the complete invariant set before the
 first iteration. The `preserve` proof assumes that set and the loop condition,
 executes one body iteration, and reestablishes the set:
 
-<!-- verified-example: mdtests/grouped_function_proof.md -->
+<!-- verified-example: mdtests/count_to_loop_initialize_by_auto_and_preserve.md -->
 ```click
 loop {
-    invariant 0 <= i and i <= n;
-    invariant sorted(p, n);
+    decreases n - i;
+    invariant i >= 0;
+    invariant i <= n;
 
     initialize by auto;
     preserve by {
-        unfold(sorted);
         step();
         simp();
     }
@@ -565,7 +565,7 @@ A loop frames by ownership. With no clause of its own it may write exactly the
 memory the function owns, and it can narrow that authority the way a callee
 contract does:
 
-<!-- verified-example: mdtests/grouped_function_proof.md -->
+<!-- verified-example: mdtests/loop_owns_preserves_symbolic_index.md -->
 ```click
 loop {
     owns p[0..n];

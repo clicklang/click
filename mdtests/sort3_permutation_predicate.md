@@ -26,6 +26,8 @@ int32 sort3_permutation_predicate(int32 p[3]) {
 ```
 
 ```click
+import click::permutation;
+
 verifying "sort3_permutation_predicate.c";
 
 predicate permutation3(p: int32[], a: int32, b: int32, c: int32) {

@@ -19,6 +19,8 @@ int32 stuck_phase(int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "c_decreases_rejects_non_decreasing_lexicographic_loop.c";
 
 int32 stuck_phase(int32 n) {

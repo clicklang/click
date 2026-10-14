@@ -4,6 +4,8 @@ A byte read can retain its 32-bit carrier. The cast identity requires bounds
 on that word observation before connecting it to the narrow byte observation.
 
 ```click
+import click::integer;
+
 theorem byte_word_observation(value: uint8) {
     ensures to_integer(value) == to_integer((int32)value) by {
         have 0 <= (int32)value;

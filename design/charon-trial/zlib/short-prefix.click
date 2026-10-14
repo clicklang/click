@@ -1,3 +1,5 @@
+import click::integer;
+
 // Pure observation of the source counter, not a generated program local.
 import "../adler2/count-bridge.click";
 import "../../adler32-spec.click";

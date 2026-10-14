@@ -7,6 +7,8 @@ strict bound, a nonzero difference, a chain of two orders, the descent of
 a difference from a constant, and one comparison read the other way round.
 
 ```click
+import click::machine_integer;
+
 theorem predecessor(x: uint32) {
     requires x > 0u32;
     ensures x - 1u32 < x by {

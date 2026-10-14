@@ -2162,7 +2162,40 @@ fn splice_source(
             spliced.push_str(&source[span.end..]);
         }
     }
-    spliced
+    with_cited_library_imports(spliced, replacement)
+}
+
+/// `source` with an `import click::...;` line for each Click library module
+/// whose theorem `replacement` cites but `source` does not yet see. A
+/// tactic's expansion writes out the library theorems the tactic applied,
+/// and the expanded sidecar must still name their modules.
+fn with_cited_library_imports(source: String, replacement: &str) -> String {
+    let cited = replacement
+        .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+        .filter(|word| !word.is_empty());
+    let imported = source
+        .match_indices("import click::")
+        .filter_map(|(start, prefix)| {
+            let path = &source[start + prefix.len()..];
+            let path = &path[..path.find(';')?];
+            Some(format!("library/{}.click", path.trim().replace("::", "/")))
+        })
+        .collect::<Vec<_>>();
+    let missing = validation::library_modules_to_import(&imported, cited);
+    if missing.is_empty() {
+        return source;
+    }
+    let mut expanded = missing
+        .iter()
+        .map(|identity| {
+            format!(
+                "import {};\n",
+                crate::surface::library_module_path(identity)
+            )
+        })
+        .collect::<String>();
+    expanded.push_str(&source);
+    expanded
 }
 
 /// Every block whose proof the expansion tools address: the C function
@@ -2257,6 +2290,16 @@ fn find_function(tokens: &[SourceToken], name: &str) -> Result<FunctionSource, C
         {
             continue;
         }
+        // `theorem t() executes f(...) { ... }` names the function it
+        // executes; its block is the theorem's. A C++ head spells the
+        // function as a declarator, `Rec::f(`, so such a theorem can be the
+        // only literal `f(` in the source.
+        if index
+            .checked_sub(1)
+            .is_some_and(|before| tokens[before].text == "executes")
+        {
+            continue;
+        }
         let parameters_close = matching_delimiter(tokens, index + 1, "(", ")")?;
         let mut body_open = after_rust_return_type(tokens, parameters_close + 1);
         if tokens.get(body_open).map(|token| token.text.as_str()) == Some("throws") {
@@ -2312,6 +2355,65 @@ fn rust_inherent_method_in_its_type_module(name: &str) -> Option<String> {
 }
 
 /// The segments of the Rust path that ends at token `end`, `a::b::name`.
+/// The name the parser gives a C++ head's declarator whose last token is at
+/// `end`, the token before its `(`: `Rec::m` is `Rec_m`, `Rec::Rec` is
+/// `Rec_constructor`, `Rec::~Rec` is `Rec_destructor`, `Rec::operator+=` is
+/// `Rec_operator_add_assign`, and `f<true>` is `f__bool_true`.
+fn cpp_declarator_name_ending_at(tokens: &[SourceToken], end: usize) -> String {
+    let text = |at: usize| tokens[at].text.as_str();
+    let mut at = end;
+    let mut suffix = String::new();
+    if text(at) == ">" {
+        let mut arguments = Vec::new();
+        while at > 0 && text(at) != "<" {
+            at -= 1;
+            if matches!(text(at), "true" | "false") {
+                arguments.push(text(at));
+            }
+        }
+        for argument in arguments.iter().rev() {
+            suffix.push_str(&format!("__bool_{argument}"));
+        }
+        at = at.saturating_sub(1);
+    }
+    let operator = match text(at) {
+        "]" if at >= 2 && text(at - 2) == "operator" => Some("operator_index"),
+        "=" if at >= 2 && text(at - 2) == "operator" && text(at - 1) == "+" => {
+            Some("operator_add_assign")
+        }
+        "=" if at >= 2 && text(at - 2) == "operator" && text(at - 1) == "-" => {
+            Some("operator_subtract_assign")
+        }
+        _ => None,
+    };
+    let mut segments = Vec::new();
+    let mut destructor = false;
+    if operator.is_some() {
+        at -= 2;
+        segments.push(text(at));
+    } else {
+        segments.push(text(at));
+        if at >= 1 && text(at - 1) == "~" {
+            destructor = true;
+            at -= 1;
+        }
+    }
+    while at >= 3 && text(at - 1) == ":" && text(at - 2) == ":" {
+        segments.insert(0, text(at - 3));
+        at -= 3;
+    }
+    let qualifier = segments.len().checked_sub(2).map(|index| segments[index]);
+    let last = segments[segments.len() - 1];
+    match (operator, qualifier) {
+        (Some(operator), Some(_)) => {
+            format!("{}_{operator}", segments[..segments.len() - 1].join("_"))
+        }
+        (None, Some(record)) if destructor => format!("{record}_destructor"),
+        (None, Some(record)) if record == last => format!("{record}_constructor"),
+        _ => segments.join("_") + &suffix,
+    }
+}
+
 fn rust_path_ending_at(tokens: &[SourceToken], end: usize) -> Vec<&str> {
     let mut segments = vec![tokens[end].text.as_str()];
     let mut at = end;
@@ -4166,6 +4268,14 @@ fn declaration_source_index(
 ) -> Result<std::collections::HashMap<String, FunctionSource>, ClickError> {
     let mut result = std::collections::HashMap::new();
     let mut candidate = None;
+    // A C++ sidecar's heads are C++ declarators: `Rec::Rec`, `Rec::~Rec`,
+    // `Rec::operator+=`, `f<true>`.
+    let cpp = tokens.windows(2).any(|pair| {
+        pair[0].text == "verifying"
+            && [".cpp\"", ".cc\"", ".cxx\"", ".h\"", ".hpp\""]
+                .iter()
+                .any(|extension| pair[1].text.ends_with(extension))
+    });
     // Inside a Rust `impl` block a method `name` is the function `Type_name`.
     // The block's type, its module when it is an inherent block for a type
     // named by a path, its trait argument's suffix, and where it closes.
@@ -4205,6 +4315,9 @@ fn declaration_source_index(
             "(" => {
                 if candidate.is_none() {
                     candidate = index.checked_sub(1).map(|before| {
+                        if cpp {
+                            return cpp_declarator_name_ending_at(tokens, before);
+                        }
                         let path = rust_path_ending_at(tokens, before);
                         match &impl_block {
                             // A method's own name, and an item inside it.

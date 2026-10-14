@@ -31,6 +31,8 @@ int32 drain(int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "c_decreases_loop_inline_helper.c";
 
 int32 drain(int32 n) {

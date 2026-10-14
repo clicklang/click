@@ -22,6 +22,8 @@ int32 nest(int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "nested_loop_measure_rejected.c";
 
 int32 nest(int32 n) {

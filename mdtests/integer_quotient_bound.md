@@ -3,6 +3,8 @@
 Bounds may be negative or symbolic; truncation is toward zero. Native evaluation guards remain separate.
 
 ```click
+import click::integer;
+
 theorem checked_quotient_lower(n: Integer, d: Integer, bound: Integer) {
     requires d != 0;
     requires 1 <= d;

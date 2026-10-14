@@ -373,8 +373,8 @@ proofs, nested wrappers, and callers. It uses ordinary named call maps:
 
 <!-- verified-example: mdtests/mutex_helper_transfers.md -->
 ```click
-let { guard: acquired, state: contents } = step(acquire(p), { access: access });
-step(release(p), { access: access, guard: acquired, state: contents });
+let { guard: acquired, state: contents } = step(acquire(p), { access: permission });
+step(release(p), { access: permission, guard: locked, state: contents });
 ```
 
 The output names belong to each contract. A wrapper may rename them, and its

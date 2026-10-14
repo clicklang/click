@@ -104,31 +104,309 @@ impl DeclaredResourceScope {
 // Only a successful parse is shared: the parse charges the run that performs
 // it, so a run whose budget or containment bound expires mid-parse fails that
 // run alone instead of every later run in the process.
-static STANDARD_LIBRARY: std::sync::OnceLock<ClickFile> = std::sync::OnceLock::new();
+static LIBRARY_MODULES: std::sync::OnceLock<Vec<LibraryModule>> = std::sync::OnceLock::new();
 static STANDARD_LIBRARY_INITIALIZATION: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// Every library selection built in this process, by its module mask. A
+/// selection is a few modules' declarations, and a process sees at most one
+/// per distinct set of library imports, so each is built once and kept.
+static LIBRARY_SELECTIONS: std::sync::Mutex<BTreeMap<u64, &'static LibrarySelection>> =
+    std::sync::Mutex::new(BTreeMap::new());
 
 #[cfg(test)]
 static STANDARD_LIBRARY_PARSES: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
-fn standard_library() -> Result<&'static ClickFile, ClickError> {
-    if let Some(file) = STANDARD_LIBRARY.get() {
-        return Ok(file);
+/// The Click library modules every file sees without an import. A module's
+/// own library imports come with it, so `c/string` also brings `bytes` and
+/// `cstr`.
+const IMPLICIT_LIBRARY_MODULES: &[&str] = &[
+    "library/primitives.click",
+    "library/nat.click",
+    "library/list.click",
+    "library/c/builtins.click",
+    "library/c/string.click",
+];
+
+/// One parsed Click library module and the mask of the modules it needs: its
+/// own bit and those of its library imports, transitively.
+struct LibraryModule {
+    file: ClickFile,
+    closure: u64,
+}
+
+/// The declarations of a set of Click library modules in library order, with
+/// a name index of its theorems.
+#[derive(Debug)]
+pub(in crate::surface) struct LibrarySelection {
+    file: ClickFile,
+    theorem_index: BTreeMap<String, usize>,
+}
+
+impl LibrarySelection {
+    pub(in crate::surface) fn theorem_definitions(&'static self) -> &'static [TheoremDefinition] {
+        self.file.theorem_definitions()
+    }
+
+    pub(in crate::surface) fn theorem_index(&'static self) -> &'static BTreeMap<String, usize> {
+        &self.theorem_index
+    }
+}
+
+fn library_modules() -> Result<&'static [LibraryModule], ClickError> {
+    if let Some(modules) = LIBRARY_MODULES.get() {
+        return Ok(modules);
     }
     let _initializing = STANDARD_LIBRARY_INITIALIZATION
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(file) = STANDARD_LIBRARY.get() {
-        return Ok(file);
+    if let Some(modules) = LIBRARY_MODULES.get() {
+        return Ok(modules);
     }
     #[cfg(test)]
     STANDARD_LIBRARY_PARSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let file = load_standard_library(CLICK_LIBRARY_MODULES)?;
-    Ok(STANDARD_LIBRARY.get_or_init(|| file))
+    let modules = load_library_modules(CLICK_LIBRARY_MODULES)?;
+    Ok(LIBRARY_MODULES.get_or_init(|| modules))
 }
 
-fn load_standard_library(modules: &[(&str, &str)]) -> Result<ClickFile, ClickError> {
-    let mut file = parser::parse_file_items_for_module(
+/// The library modules visible to `file`: the implicit modules and the
+/// file's own library imports, each with its library imports.
+fn library_mask(file: &ClickFile) -> Result<u64, ClickError> {
+    let modules = library_modules()?;
+    let mut mask = 0;
+    for identity in IMPLICIT_LIBRARY_MODULES
+        .iter()
+        .copied()
+        .chain(file.library_imports().iter().map(String::as_str))
+    {
+        let index = library_module_index(identity)?;
+        mask |= modules[index].closure;
+    }
+    Ok(mask)
+}
+
+fn library_module_index(identity: &str) -> Result<usize, ClickError> {
+    CLICK_LIBRARY_MODULES
+        .iter()
+        .position(|(module, _)| *module == identity)
+        .ok_or_else(|| ClickError::new(format!("unknown Click library module `{identity}`")))
+}
+
+/// The Click library as `file` sees it.
+pub(in crate::surface) fn file_library(
+    file: &ClickFile,
+) -> Result<&'static LibrarySelection, ClickError> {
+    library_selection(library_mask(file)?)
+}
+
+/// Every Click library module. The library's own proofs are checked against
+/// this, and a library theorem cited by a certified proof is checked once
+/// against the declarations before it.
+pub(in crate::surface) fn full_library() -> Result<&'static LibrarySelection, ClickError> {
+    library_selection((1u64 << CLICK_LIBRARY_MODULES.len()) - 1)
+}
+
+fn library_selection(mask: u64) -> Result<&'static LibrarySelection, ClickError> {
+    let modules = library_modules()?;
+    if let Some(selection) = LIBRARY_SELECTIONS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(&mask)
+    {
+        return Ok(selection);
+    }
+    // Built outside the lock: two runs that race build equal selections, and
+    // the first one stored is kept.
+    let mut file = empty_library_file()?;
+    for (index, module) in modules.iter().enumerate() {
+        if mask & (1 << index) != 0 {
+            append_library_module(&mut file, module.file.clone());
+        }
+    }
+    let file = expand_declared_resource_clauses(file)?;
+    let theorem_index = file
+        .theorem_definitions()
+        .iter()
+        .enumerate()
+        .map(|(index, theorem)| (theorem.name().to_string(), index))
+        .collect();
+    let mut selections = LIBRARY_SELECTIONS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    Ok(*selections.entry(mask).or_insert_with(|| {
+        Box::leak(Box::new(LibrarySelection {
+            file,
+            theorem_index,
+        }))
+    }))
+}
+
+/// The library module position of each Click library theorem.
+fn library_theorem_owners() -> Result<&'static BTreeMap<String, usize>, ClickError> {
+    static OWNERS: std::sync::OnceLock<BTreeMap<String, usize>> = std::sync::OnceLock::new();
+    let modules = library_modules()?;
+    Ok(OWNERS.get_or_init(|| {
+        modules
+            .iter()
+            .enumerate()
+            .flat_map(|(index, module)| {
+                module
+                    .file
+                    .theorem_definitions()
+                    .iter()
+                    .map(move |theorem| (theorem.name().to_string(), index))
+            })
+            .collect()
+    }))
+}
+
+/// Refuses a theorem a proof in `file` cites by name when the theorem is
+/// declared in a Click library module that `file` does not see.
+pub(in crate::surface) fn reject_unimported_library_citations(
+    file: &ClickFile,
+) -> Result<(), ClickError> {
+    let mut cited = BTreeSet::new();
+    for theorem in file.theorem_definitions() {
+        for clause in theorem.ensures() {
+            crate::surface::collect_applied_theorems_from_proof(&clause.proof, &mut cited);
+        }
+    }
+    for function in file.function_blocks() {
+        if let Some(proof) = function.grouped_proof() {
+            crate::surface::collect_applied_theorems_from_proof(proof, &mut cited);
+        }
+        for clause in function.ensures() {
+            crate::surface::collect_applied_theorems_from_proof(&clause.proof, &mut cited);
+        }
+    }
+    if cited.is_empty() {
+        return Ok(());
+    }
+    let local = file
+        .theorem_definitions()
+        .iter()
+        .map(|theorem| theorem.name())
+        .collect::<BTreeSet<_>>();
+    let owners = library_theorem_owners()?;
+    let visible = library_mask(file)?;
+    for name in cited.iter().filter(|name| !local.contains(name.as_str())) {
+        if let Some(index) = owners.get(name)
+            && visible & (1 << index) == 0
+        {
+            return Err(ClickError::new(format!(
+                "unknown theorem `{name}`{}",
+                library_import_hint(name)
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The Click library modules, in library order, that declare a theorem
+/// among `cited` and that a file importing `imported` does not see.
+pub(in crate::surface) fn library_modules_to_import<'a>(
+    imported: &[String],
+    cited: impl IntoIterator<Item = &'a str>,
+) -> Vec<&'static str> {
+    let Ok(modules) = library_modules() else {
+        return Vec::new();
+    };
+    let mut visible = 0u64;
+    for identity in IMPLICIT_LIBRARY_MODULES
+        .iter()
+        .copied()
+        .chain(imported.iter().map(String::as_str))
+    {
+        if let Ok(index) = library_module_index(identity) {
+            visible |= modules[index].closure;
+        }
+    }
+    let cited = cited.into_iter().collect::<BTreeSet<_>>();
+    let mut needed = 0u64;
+    for (index, module) in modules.iter().enumerate() {
+        if visible & (1 << index) == 0
+            && module
+                .file
+                .theorem_definitions()
+                .iter()
+                .any(|theorem| cited.contains(theorem.name()))
+        {
+            needed |= 1 << index;
+        }
+    }
+    (0..modules.len())
+        .filter(|index| needed & (1 << index) != 0)
+        .map(|index| CLICK_LIBRARY_MODULES[index].0)
+        .collect()
+}
+
+/// The note an unknown-name error adds when `name` is declared in a Click
+/// library module that is not implicit, so the fix is that module's import.
+pub(in crate::surface) fn library_import_hint(name: &str) -> String {
+    static OWNERS: std::sync::OnceLock<BTreeMap<String, &'static str>> = std::sync::OnceLock::new();
+    let Ok(modules) = library_modules() else {
+        return String::new();
+    };
+    let owners = OWNERS.get_or_init(|| {
+        let implicit = IMPLICIT_LIBRARY_MODULES
+            .iter()
+            .filter_map(|identity| library_module_index(identity).ok())
+            .fold(0, |mask, index| mask | modules[index].closure);
+        let mut owners = BTreeMap::new();
+        for (index, module) in modules.iter().enumerate() {
+            if implicit & (1 << index) != 0 {
+                continue;
+            }
+            let identity = CLICK_LIBRARY_MODULES[index].0;
+            let file = &module.file;
+            let names = file
+                .algebraic_type_definitions()
+                .iter()
+                .map(|definition| definition.name())
+                .chain(
+                    file.predicate_definitions()
+                        .iter()
+                        .map(|definition| definition.name()),
+                )
+                .chain(
+                    file.click_function_definitions()
+                        .iter()
+                        .map(|definition| definition.name()),
+                )
+                .chain(
+                    file.resource_definitions()
+                        .iter()
+                        .map(|definition| definition.name()),
+                )
+                .chain(
+                    file.theorem_definitions()
+                        .iter()
+                        .map(|definition| definition.name()),
+                )
+                .chain(
+                    file.function_blocks()
+                        .iter()
+                        .map(|block| block.signature().name()),
+                );
+            for name in names {
+                owners.insert(name.to_string(), identity);
+            }
+        }
+        owners
+    });
+    owners.get(name).map_or_else(String::new, |identity| {
+        let path = crate::surface::library_module_path(identity);
+        format!("; it is declared in Click library module `{path}`, so add `import {path};`")
+    })
+}
+
+/// The whole Click library, for the accessors that are not specific to one
+/// file's library imports.
+fn standard_library() -> Result<&'static ClickFile, ClickError> {
+    Ok(&full_library()?.file)
+}
+
+fn empty_library_file() -> Result<ClickFile, ClickError> {
+    parser::parse_file_items_for_module(
         "",
         "library",
         0,
@@ -138,40 +416,77 @@ fn load_standard_library(modules: &[(&str, &str)]) -> Result<ClickFile, ClickErr
         &[],
         &[],
         Default::default(),
-    )?;
-    for (identity, source) in modules {
-        let functions = file
+    )
+}
+
+/// Parses each module in library order with the declarations of the modules
+/// before it. A module's library imports must name earlier modules.
+fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, ClickError> {
+    if modules.len() > 64 {
+        return Err(ClickError::new(
+            "the Click library has more than 64 modules",
+        ));
+    }
+    let mut loaded: Vec<LibraryModule> = Vec::new();
+    let mut context = empty_library_file()?;
+    for (position, (identity, source)) in modules.iter().enumerate() {
+        let functions = context
             .click_function_definitions()
             .iter()
             .map(|function| function.name().to_string())
             .collect();
-        let callees = file.function_blocks().iter().collect::<Vec<_>>();
-        let resources = file.resource_definitions().iter().collect::<Vec<_>>();
+        let callees = context.function_blocks().iter().collect::<Vec<_>>();
+        let resources = context.resource_definitions().iter().collect::<Vec<_>>();
         let module = parser::parse_file_items_for_module(
             source,
             identity,
             0,
-            file.algebraic_type_definitions(),
+            context.algebraic_type_definitions(),
             &BTreeSet::new(),
             &functions,
             &callees,
             &resources,
             Default::default(),
         )?;
-        append_library_module(&mut file, module);
+        if !module.verifying_sources().is_empty()
+            || !module.imports().is_empty()
+            || module
+                .function_blocks()
+                .iter()
+                .any(|function| !function.is_external())
+        {
+            return Err(ClickError::new(format!(
+                "Click library module `{identity}` must not contain file imports, verifying sources, or body-bearing C function specs"
+            )));
+        }
+        let mut closure = 1u64 << position;
+        for import in module.library_imports() {
+            let index = modules[..position]
+                .iter()
+                .position(|(earlier, _)| earlier == import)
+                .ok_or_else(|| {
+                    ClickError::new(format!(
+                        "Click library module `{identity}` imports `{import}`, which is not an earlier library module"
+                    ))
+                })?;
+            closure |= loaded[index].closure;
+        }
+        append_library_module(&mut context, module.clone());
+        loaded.push(LibraryModule {
+            file: module,
+            closure,
+        });
     }
-    let file = expand_declared_resource_clauses(file)?;
-    if !file.verifying_sources().is_empty()
-        || file
-            .function_blocks()
-            .iter()
-            .any(|function| !function.is_external())
-    {
-        return Err(ClickError::new(
-            "internal Click standard library must not contain verifying sources or body-bearing C function specs",
-        ));
+    Ok(loaded)
+}
+
+#[cfg(test)]
+fn load_standard_library(modules: &[(&str, &str)]) -> Result<ClickFile, ClickError> {
+    let mut file = empty_library_file()?;
+    for module in load_library_modules(modules)? {
+        append_library_module(&mut file, module.file);
     }
-    Ok(file)
+    expand_declared_resource_clauses(file)
 }
 
 /// Appends one library module's declarations after the earlier modules', so
@@ -184,6 +499,7 @@ fn append_library_module(file: &mut ClickFile, module: ClickFile) {
             .map(|(spelling, name)| (spelling.clone(), name.clone())),
     );
     file.imports.extend(module.imports);
+    file.library_imports.extend(module.library_imports);
     file.verifying_sources.extend(module.verifying_sources);
     file.algebraic_type_definitions
         .extend(module.algebraic_type_definitions);
@@ -203,7 +519,7 @@ fn append_library_module(file: &mut ClickFile, module: ClickFile) {
 pub(in crate::surface) fn combined_algebraic_type_definitions(
     file: &ClickFile,
 ) -> Result<Vec<AlgebraicTypeDefinition>, ClickError> {
-    let mut definitions = standard_library()?.algebraic_type_definitions.clone();
+    let mut definitions = file_library(file)?.file.algebraic_type_definitions.clone();
     definitions.extend(file.algebraic_type_definitions().iter().cloned());
     Ok(definitions)
 }
@@ -211,7 +527,7 @@ pub(in crate::surface) fn combined_algebraic_type_definitions(
 pub(in crate::surface) fn combined_external_function_blocks(
     file: &ClickFile,
 ) -> Result<Vec<FunctionBlock>, ClickError> {
-    let mut function_blocks = standard_library()?.function_blocks().to_vec();
+    let mut function_blocks = file_library(file)?.file.function_blocks().to_vec();
     function_blocks.extend(file.function_blocks().iter().cloned());
     Ok(function_blocks)
 }
@@ -433,7 +749,7 @@ fn expand_declared_resource_clauses_with_rules(
     // The standard library's own expansion reads only its own
     // declarations; it must not re-enter its OnceLock.
     let constructors = if family_rules {
-        let library = standard_library()?;
+        let library = &file_library(&file)?.file;
         ConstructorTypes::new(
             library
                 .algebraic_type_definitions()
@@ -3144,7 +3460,7 @@ fn reject_counted_field_resource(
 pub(in crate::surface) fn combined_predicate_definitions(
     file: &ClickFile,
 ) -> Result<Vec<PredicateDefinition>, ClickError> {
-    let mut definitions = standard_library()?.predicate_definitions().to_vec();
+    let mut definitions = file_library(file)?.file.predicate_definitions().to_vec();
     definitions.extend(file.predicate_definitions().iter().cloned());
     Ok(definitions)
 }
@@ -3152,7 +3468,10 @@ pub(in crate::surface) fn combined_predicate_definitions(
 pub(in crate::surface) fn combined_click_function_definitions(
     file: &ClickFile,
 ) -> Result<Vec<ClickFunctionDefinition>, ClickError> {
-    let mut definitions = standard_library()?.click_function_definitions().to_vec();
+    let mut definitions = file_library(file)?
+        .file
+        .click_function_definitions()
+        .to_vec();
     definitions.extend(file.click_function_definitions().iter().cloned());
     Ok(definitions)
 }
@@ -3160,7 +3479,7 @@ pub(in crate::surface) fn combined_click_function_definitions(
 pub(in crate::surface) fn combined_resource_definitions(
     file: &ClickFile,
 ) -> Result<Vec<ResourceDefinition>, ClickError> {
-    let mut definitions = standard_library()?.resource_definitions().to_vec();
+    let mut definitions = file_library(file)?.file.resource_definitions().to_vec();
     definitions.extend(file.resource_definitions().iter().cloned());
     Ok(definitions)
 }
@@ -3193,7 +3512,10 @@ pub(in crate::surface) fn combined_theorem_definitions(
     file: &ClickFile,
 ) -> Result<CombinedDefinitions<'_, TheoremDefinition>, ClickError> {
     Ok(CombinedDefinitions {
-        standard_library: standard_library()?.theorem_definitions(),
+        // Every library theorem: built-in tactics apply them by name, so a
+        // user theorem can never take a library theorem's name. Imports gate
+        // only the theorems a proof cites; see `reject_unimported_library_citations`.
+        standard_library: full_library()?.theorem_definitions(),
         file: file.theorem_definitions(),
     })
 }
@@ -3205,23 +3527,13 @@ pub(in crate::surface) fn combined_theorem_definitions(
 /// proves them.
 pub(in crate::surface) fn standard_library_theorem_definitions()
 -> Result<&'static [TheoremDefinition], ClickError> {
-    Ok(standard_library()?.theorem_definitions())
+    Ok(full_library()?.theorem_definitions())
 }
 
-/// The declaration-order position of the named standard-library theorem.
+/// The declaration-order position of the named theorem in the whole Click
+/// library.
 pub(in crate::surface) fn standard_library_theorem_index(name: &str) -> Option<usize> {
-    static INDEX: std::sync::OnceLock<BTreeMap<String, usize>> = std::sync::OnceLock::new();
-    INDEX
-        .get_or_init(|| {
-            standard_library_theorem_definitions()
-                .unwrap_or_default()
-                .iter()
-                .enumerate()
-                .map(|(index, theorem)| (theorem.name().to_string(), index))
-                .collect()
-        })
-        .get(name)
-        .copied()
+    full_library().ok()?.theorem_index().get(name).copied()
 }
 
 fn validate_resource_reference_arguments(

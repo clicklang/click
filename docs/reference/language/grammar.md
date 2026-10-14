@@ -35,7 +35,7 @@ documentation inventory keep the following accepted words synchronized.
 
 | Words | Context and status |
 | --- | --- |
-| `import` | Loads declarations from a local Click module without selecting that module's proofs. |
+| `import` | Loads declarations from a local Click module, or names a Click library module with `click::`, without selecting that module's proofs. |
 | `verifying` | C-source declaration. |
 | `target` | Selects the C implementation target the file's C sources are preprocessed and verified under. |
 | `predicate`, `function`, `theorem`, `contract`, `tactic` | Top-level logic and behavioral-interface declarations; `tactic` declares a user-defined tactic. A C function's contract starts with its C return type, not `function`. |
@@ -125,7 +125,8 @@ item             := import-declaration
                   | named-contract-declaration
                   | c-function-contract
 verifying-declaration := "verifying" string-literal ";"
-import-declaration    := "import" string-literal ";"
+import-declaration    := "import" (string-literal | library-path) ";"
+library-path          := "click" ("::" identifier)+
 target-declaration    := "target" string-literal ";"
 algebraic-declaration := "spec" "enum" identifier type-parameters?
                          "{" variant ("," variant)* ","? "}"
@@ -362,9 +363,11 @@ when the value determines the type:
 
 <!-- verified-example: mdtests/algebraic_symbolic_values.md -->
 ```click
-let explicit: Maybe<int32> = Maybe<int32>::Some(value);
-let inferred = wrap(value);
-inferred
+let m: Maybe<int32> = Maybe<int32>::Some(value);
+m
+...
+let m = wrap(value);
+m
 ```
 
 The bound name is a lexical specification binding. Lowering keeps an
@@ -404,10 +407,9 @@ order and multiplicity.
 `old(...)` and proof snapshots evaluate every element in the selected state,
 so a contract can relate current array cells to their exact entry order:
 
-<!-- verified-example: mdtests/sequence_literals.md -->
+<!-- verified-example: mdtests/c_named_contract_sequence_refinement.md -->
 ```click
-ensures [destination[0], destination[1], destination[2]]
-    == old([source[0], source[1], source[2]]);
+ensures [cells[0], cells[1]] == old([cells[1], cells[0]]);
 ```
 
 Literal sequence values appear in equality and membership propositions. The
@@ -444,7 +446,7 @@ statements, and operators that Click accepts is in [Supported C](c.md).
 `lo..hi` denotes the half-open integer range whose elements satisfy `lo <= k <
 hi`. A range can introduce a binder through `.all`, `.any`, or `.fold`:
 
-<!-- verified-example: mdtests/pure_click_functions.md -->
+<!-- verified-example: mdtests/range_helpers_over_memory.md -->
 ```click
 (lo..hi).all(|k| { p[k] == 0 })
 (lo..hi).any(|k| { p[k] == needle })
@@ -453,7 +455,7 @@ hi`. A range can introduce a binder through `.all`, `.any`, or `.fold`:
 
 Quantifiers use an explicitly typed binder:
 
-<!-- verified-example: mdtests/click_proposition_logic.md -->
+<!-- verified-example: mdtests/proposition_connectives_quantifiers_and_old.md -->
 ```click
 forall (x: int32) { x == x }
 exists (x: int32) { x == value }

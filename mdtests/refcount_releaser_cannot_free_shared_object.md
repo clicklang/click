@@ -27,6 +27,8 @@ void release_and_free(struct object *obj) {
 ```
 
 ```click
+import click::integer;
+
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 authorized resource reference(obj: struct object*) {}

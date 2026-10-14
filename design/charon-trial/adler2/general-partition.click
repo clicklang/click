@@ -1,3 +1,6 @@
+import click::integer;
+import click::machine_integer;
+
 // Checked full-width metadata and actual iterator steps for general Adler batches.
 // The memory/index boundary is explicit: 0..INT32_MAX, never a truncated usize.
 // These lemmas do not establish the computation or checksum postcondition.

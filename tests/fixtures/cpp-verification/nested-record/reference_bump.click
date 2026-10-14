@@ -7,7 +7,7 @@ void BumpSizeRef(int32& value) {
     ensures value == old(value) + 1;
 } by { execute(); simp(); }
 
-void FeeEnvelope_BumpLeftByReference(struct FeeEnvelope* this) {
+void FeeEnvelope::BumpLeftByReference() {
     owns this->state.left.size;
     views this->state.right.size;
     requires 0 <= this->state.left.size;

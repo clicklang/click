@@ -149,9 +149,16 @@ Each step is a separate PR that leaves every example verifying:
 
 1. Done: split `stdlib/prelude.click` into `library/` modules, all still
    loaded implicitly in the original declaration order. No meaning changes.
-2. Resolve `import click::...;` to library modules.
-3. Make the non-implicit specification modules explicit. A script adds the
-   import lines to existing sidecars and fixtures.
+2. Done: resolve `import click::...;` to library modules. An import is
+   checked against the module table and recorded; it selects nothing yet.
+3. Done: make the non-implicit specification modules explicit. A script
+   added the import lines to existing sidecars and fixtures. Until step 4,
+   `c/string` stays implicit and brings `bytes` and `cstr` with it, so the
+   modules that now need an import are `machine_integer`, `integer` and
+   `permutation`. Built-in tactics apply library theorems by name, so proof
+   checking keeps every library theorem and theorem names stay reserved;
+   imports gate the declarations and theorem citations a file writes, and
+   `click expand` adds the import a written-out theorem citation needs.
 4. Attach the C library models to their headers, and move the C++ catalog
    and Rust core contracts under the same convention.
 5. Document the primitives in the language reference, and describe the

@@ -1,6 +1,8 @@
 # A field that overlaps its neighbor cannot use the packing bridge
 
 ```click
+import click::integer;
+
 theorem overlapping(low: uint32, high: uint32) {
     requires low <= 65536u32;
     requires high <= 65535u32;

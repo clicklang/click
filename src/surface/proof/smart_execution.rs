@@ -1023,7 +1023,13 @@ impl<'a> Proof<'a> {
         let theorem = context
             .theorem_environment
             .get(&application.name)
-            .ok_or_else(|| self.step_error(format!("unknown theorem `{}`", application.name)))?;
+            .ok_or_else(|| {
+                self.step_error(format!(
+                    "unknown theorem `{}`{}",
+                    application.name,
+                    crate::surface::validation::library_import_hint(&application.name)
+                ))
+            })?;
         let theorem = instantiate_generic_theorem_application_definition(
             theorem,
             application,

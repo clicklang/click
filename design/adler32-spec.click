@@ -1,3 +1,6 @@
+import click::integer;
+import click::machine_integer;
+
 // Shared Adler-32 specification over a logical byte snapshot.
 // The caller supplies a nonnegative signed-range length and canonical seeds.
 // These are mathematical lemmas; neither implementation's result is assumed.

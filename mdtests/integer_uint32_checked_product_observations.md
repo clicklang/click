@@ -1,6 +1,8 @@
 # Checked unsigned products retain their exact mathematical value
 
 ```click
+import click::integer;
+
 theorem checked_product(a: uint32, b: uint32) {
     requires b == 0u32 or a <= 4294967295u32 / b;
     ensures to_integer(a * b) == to_integer(a) * to_integer(b) by {

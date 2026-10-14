@@ -8,6 +8,8 @@ Cross-domain composition uses a checked machine-to-`Integer` bridge theorem,
 then applies only the homogeneous mathematical `Integer` certificate family.
 
 ```click
+import click::integer;
+
 theorem signed_direct_compound(n: int32) {
     requires 0 <= n + 1;
     ensures 0 <= n + 1 by {

@@ -14,6 +14,9 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
 ```
 
 ```click
+import click::integer;
+import click::machine_integer;
+
 authorized resource slot(pool: struct pool*) {}
 authorized resource item(pool: struct pool*, p: struct payload*) { owns *p; }
 resource storage(pool: struct pool*) {

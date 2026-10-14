@@ -4,6 +4,8 @@ These laws relate quotient, remainder and dividend without native overflow or
 range assumptions. The divisor and dividend guards remain explicit.
 
 ```click
+import click::integer;
+
 theorem check_truncation_identity(n: Integer, d: Integer) {
     requires d != 0;
     ensures n == truncating_quotient(n, d) * d + truncating_remainder(n, d) by {

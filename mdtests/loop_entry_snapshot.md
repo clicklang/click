@@ -13,6 +13,8 @@ int32 drain_to_zero(int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "loop_entry_snapshot.c";
 
 int32 drain_to_zero(int32 n) {

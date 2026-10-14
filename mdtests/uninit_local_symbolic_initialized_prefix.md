@@ -10,6 +10,8 @@ int32 local_prefix(int32 i) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "t.c";
 int32 local_prefix(int32 i) {
     requires 0 <= i and i < 2;

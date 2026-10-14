@@ -1,3 +1,5 @@
+import click::integer;
+
 // Serial-tail boundary of the original, locked Adler32::compute body.
 // The fixture harness combines this contract with the helper/getter contracts
 // from helpers.click, checks all their bodies, and rechecks the proof tools.

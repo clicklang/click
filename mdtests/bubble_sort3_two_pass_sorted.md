@@ -34,6 +34,8 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "bubble_sort3_two_pass.c";
 
 predicate sorted(p: int32[], n: int32) {

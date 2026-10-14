@@ -27,6 +27,8 @@ int32 run(int32 value) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "c_static_function.c";
 
 int32 add_one(int32 value) {

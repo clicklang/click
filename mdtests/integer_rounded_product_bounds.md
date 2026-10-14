@@ -1,6 +1,7 @@
 # Rounding intervals from a quotient and remainder
 
 ```click
+import click::integer;
 
 theorem derived_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
     requires 0 < d;

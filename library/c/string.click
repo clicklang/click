@@ -1,3 +1,6 @@
+import click::bytes;
+import click::cstr;
+
 // The C library's byte functions, with C's `size_t` counts. C converts
 // `memset`'s `int` fill value to `unsigned char`; Click models that narrowing
 // only for a representable value, so the value is required to be one.

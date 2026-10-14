@@ -36,6 +36,8 @@ int32 run(int32 n) {
 ```
 
 ```click
+import click::machine_integer;
+
 verifying "inline_helper_contract_is_the_call_boundary.c";
 
 int32 run(int32 n) {

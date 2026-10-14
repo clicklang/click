@@ -4,6 +4,8 @@ The conclusion introduces `k`, so the target's declared name `cell` names
 nothing inside the proof block. The implicit lexical rule is gone.
 
 ```click
+import click::machine_integer;
+
 resource Counter() { field revision: int32; field tag: int32; }
 contract int32 Exact() {
     owns cell: Counter();
