@@ -563,3 +563,31 @@ while a read [4, 12) must not frame that mutation. The selected upstream
 `descriptor_backing_range_loop_survives_all_proof_modes` test passes (2.12s),
 covering fresh verification, expansion, rewritten checking and retained rechecking
 of the unchanged C/proof. The full nightly suite was not run.
+
+## Completed post-loop-repair example audit
+
+Checkpoint `53da27b58` completes the example-stage run lost during the outage:
+**39 of 52 pass, 13 fail**, in 111.28s (nextest harness). The failed project set
+is identical to `bd6659d9a`: arena, binary-tree, input-cursor, multifile-registry,
+owned-segmented-buffer, owned-split-buffer, owned-string, owned-vector,
+rbtree-augmented, refcount, ring-buffer, rust-byte-sum and rust-chunks-exact.
+There are no restored or newly failing projects. Examples and the example-test
+harness have no changes between those two revisions. This is not a green gate.
+
+```sh
+source /workspace/.click-tools/activate.sh
+CARGO_BUILD_JOBS=1 RUST_MIN_STACK=8388608 \
+CARGO_TARGET_DIR=/workspace/click-object-failure-reduction/target \
+CLICK_CPP_EXPORTER=/workspace/click-object-failure-reduction/target/cpp-exporter/click-cpp-exporter \
+cargo nextest run --test examples --no-fail-fast -E 'test(example_projects)'
+```
+
+The fresh original segmented-buffer trace leads to the complete
+[modular buffer reduction](../bugs/modular-buffer-ranges-fail-to-rejoin.md).
+All three reduced proofs pass on the upstream-based `73cff194e` verifier. The
+archive rejects the final fold: the held prefix and tail use descriptor pointer
+reads from different call snapshots. Field-preservation equalities are present;
+the precise missing checked frame/transport step is not yet attributed. Keep
+native pointer-origin checking intact and diagnose that certificate path before
+extracting additional general range rules. The split-buffer failure still needs
+an independent reduction before claiming the same cause.
