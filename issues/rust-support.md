@@ -226,6 +226,13 @@ behind new language coverage:
   to production resource transitions. Compiler borrow rejection alone does not
   establish rejection of forged sidecar authority. Test stale child access,
   forged/duplicate recovery, disjoint field borrowing, and parent reuse.
+  The [production assessment](../design/rust-borrow-authority-assessment.md)
+  distinguishes existing owned-call reservation and checked native value
+  transport from the missing exclusive-child ledger protocol. A native
+  regression now verifies parent reuse after child last use without ending
+  child storage, including helper/caller expansion and authority negatives.
+  The explicit exclusive suspension/recovery requirement remains open; the
+  proposed first production increment uses synchronous owned-call frontiers.
 - **Stable proof observations:** provide source-facing slice, array, and
   iterator observations so contracts need not depend on compiler temporary
   names or storage details. Preserve qualified identities, shadowing, source
