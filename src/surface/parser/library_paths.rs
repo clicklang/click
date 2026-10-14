@@ -22,6 +22,48 @@ fn library_declaration_names() -> &'static BTreeMap<&'static str, BTreeSet<Strin
     })
 }
 
+/// Each Click library theorem's bare name and its qualified identity,
+/// `click::module::name`, which the verifier uses for it: a file theorem of
+/// the same name is a different theorem, and built-in tactics name library
+/// theorems by this identity.
+pub(in crate::surface) fn library_theorem_identities() -> &'static BTreeMap<String, String> {
+    static THEOREMS: std::sync::OnceLock<BTreeMap<String, String>> = std::sync::OnceLock::new();
+    THEOREMS.get_or_init(|| {
+        let mut theorems = BTreeMap::new();
+        for (identity, source) in super::super::CLICK_LIBRARY_MODULES {
+            let Ok((tokens, _)) = tokenizer::tokenize(source, None) else {
+                continue;
+            };
+            let path = crate::surface::library_module_path(identity);
+            for name in top_level_theorem_names(&tokens) {
+                theorems.insert(name.clone(), format!("{path}::{name}"));
+            }
+        }
+        theorems
+    })
+}
+
+/// The theorems a file declares at top level.
+pub(super) fn top_level_theorem_names(tokens: &[Token]) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    let mut depth = 0usize;
+    for (index, token) in tokens.iter().enumerate() {
+        match token {
+            Token::LBrace | Token::LParen | Token::LBracket => depth += 1,
+            Token::RBrace | Token::RParen | Token::RBracket => {
+                depth = depth.saturating_sub(1);
+            }
+            Token::Ident(word) if depth == 0 && word == "theorem" => {
+                if let Some(Token::Ident(name)) = tokens.get(index + 1) {
+                    names.insert(name.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+    names
+}
+
 fn top_level_declaration_names(tokens: &[Token]) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     let mut depth = 0usize;
@@ -183,14 +225,18 @@ fn library_path_at(
                 ),
             ));
         }
-        return Ok(Some((declaration.to_string(), consumed, Some(identity))));
+        return Ok(Some((
+            resolved_name(identity, declaration),
+            consumed,
+            Some(identity),
+        )));
     }
     let [module] = module_path else {
         return Ok(None);
     };
     if let Some(identity) = in_scope.get(*module) {
         if names[identity].contains(*declaration) {
-            return Ok(Some((declaration.to_string(), consumed, None)));
+            return Ok(Some((resolved_name(identity, declaration), consumed, None)));
         }
         return Ok(None);
     }
@@ -212,6 +258,18 @@ fn library_path_at(
         ));
     }
     Ok(None)
+}
+
+/// The name a path to `declaration` in module `identity` resolves to: a
+/// theorem's qualified identity, and any other declaration's bare name.
+fn resolved_name(identity: &str, declaration: &str) -> String {
+    let path = crate::surface::library_module_path(identity);
+    let qualified = format!("{path}::{declaration}");
+    if library_theorem_identities().get(declaration) == Some(&qualified) {
+        qualified
+    } else {
+        declaration.to_string()
+    }
 }
 
 fn path_error(positions: &[SourcePosition], index: usize, message: String) -> ClickError {

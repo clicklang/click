@@ -132,10 +132,17 @@ before any proof runs, and the message names the import to add
 A predicate or function of an unimported module is not visible either, so a
 file may declare its own declaration with that name
 (`mdtests/an_unimported_library_name_is_free_for_a_user_definition.md`).
-Library theorem names stay reserved: built-in tactics such as `simp`,
-`arithmetic` and loop-invariant closing apply library theorems as part of
-their own reasoning, whatever the file imports. When `click expand` writes
-such a step out, it also adds the import its cited theorem needs.
+Built-in tactics such as `simp`, `arithmetic` and loop-invariant closing
+apply library theorems as part of their own reasoning, whatever the file
+imports. They name a library theorem by its qualified identity, such as
+`click::machine_integer::uint32_less_than_transitive`, so a file may declare
+a theorem with a library theorem's bare name: a bare citation then names the
+file's theorem, a path names the library's, and the tactics keep the
+library's (`mdtests/a_file_theorem_may_share_a_library_theorem_name.md`).
+When `click expand` writes such a step out, it spells the theorem by its bare
+name and adds the import it needs, or by its full path when the file declares
+a theorem of that name. Diagnostics name a library theorem by its qualified
+identity.
 
 ### Qualified library names
 

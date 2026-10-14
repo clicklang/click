@@ -2121,6 +2121,8 @@ fn splice_source(
     span: &Range<usize>,
     replacement: &str,
 ) -> String {
+    let replacement = library_citation_spelling(source, replacement);
+    let replacement = replacement.as_str();
     let mut open_blocks = Vec::new();
     let mut enclosing: Option<Range<usize>> = None;
     for token in tokens.iter().filter(|token| token.span.is_empty()) {
@@ -2163,6 +2165,42 @@ fn splice_source(
         }
     }
     with_cited_library_imports(spliced, replacement)
+}
+
+/// `replacement` with each library theorem a tactic cited by its qualified
+/// identity written as the file writes it: by its bare name, unless `source`
+/// declares a theorem of that name, which the bare name would mean instead.
+fn library_citation_spelling(source: &str, replacement: &str) -> String {
+    let mut spelled = String::with_capacity(replacement.len());
+    let mut rest = replacement;
+    while let Some(start) = rest.find("click::") {
+        let path_end = rest[start..]
+            .find(|character: char| {
+                !(character.is_alphanumeric() || character == '_' || character == ':')
+            })
+            .map_or(rest.len(), |offset| start + offset);
+        let path = &rest[start..path_end];
+        let bare = path.rsplit("::").next().unwrap_or(path);
+        let shadowed = source.lines().any(|line| {
+            line.trim_start()
+                .strip_prefix("theorem ")
+                .is_some_and(|after| {
+                    after
+                        .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+                        .next()
+                        == Some(bare)
+                })
+        });
+        spelled.push_str(&rest[..start]);
+        if !shadowed && crate::surface::parser::library_theorem_identity(bare) == path {
+            spelled.push_str(bare);
+        } else {
+            spelled.push_str(path);
+        }
+        rest = &rest[path_end..];
+    }
+    spelled.push_str(rest);
+    spelled
 }
 
 /// `source` with an `import click::...;` line for each Click library module

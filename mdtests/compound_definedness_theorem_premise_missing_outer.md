@@ -13,5 +13,5 @@ theorem missing(a: int32, b: int32, c: int32) {
 ```
 
 ```expect
-fail: required exact fact for theorem `int32_add_to_integer` is unavailable
+fail: required exact fact for theorem `click::integer::int32_add_to_integer` is unavailable
 ```

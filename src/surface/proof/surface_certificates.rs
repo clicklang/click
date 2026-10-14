@@ -651,7 +651,7 @@ pub(super) fn plan_explicit_le_and_neq_implies_lt(
             return Some(vec![
                 ProofTactic::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_less_equal_and_not_equal_implies_less_than".to_string(),
+                        name: "click::machine_integer::int32_less_equal_and_not_equal_implies_less_than".to_string(),
                         arguments: vec![surface_left, surface_right],
                     },
                     premises: vec![le_surface.clone(), neq_surface.clone()],
@@ -887,7 +887,9 @@ pub(super) fn plan_recorded_wide_order_path(
         };
         let application = ProofTactic::ApplyTheoremUsing {
             application: TheoremApplication {
-                name: format!("{carrier}_{link}"),
+                name: crate::surface::parser::library_theorem_identity(&format!(
+                    "{carrier}_{link}"
+                )),
                 arguments: vec![lower.clone(), middle.clone(), upper.clone()],
             },
             premises: vec![current.clone(), next.1.clone()],
@@ -1322,14 +1324,14 @@ fn order_transitivity_theorem(
     unsigned: bool,
 ) -> &'static str {
     match (unsigned, first_strict, second_strict) {
-        (false, false, false) => "int32_less_equal_transitive",
-        (false, false, true) => "int32_less_equal_less_than_transitive",
-        (false, true, false) => "int32_less_than_less_equal_transitive",
-        (false, true, true) => "int32_less_than_transitive",
-        (true, false, false) => "uint32_less_equal_transitive",
-        (true, false, true) => "uint32_less_equal_less_than_transitive",
-        (true, true, false) => "uint32_less_than_less_equal_transitive",
-        (true, true, true) => "uint32_less_than_transitive",
+        (false, false, false) => "click::machine_integer::int32_less_equal_transitive",
+        (false, false, true) => "click::machine_integer::int32_less_equal_less_than_transitive",
+        (false, true, false) => "click::machine_integer::int32_less_than_less_equal_transitive",
+        (false, true, true) => "click::machine_integer::int32_less_than_transitive",
+        (true, false, false) => "click::machine_integer::uint32_less_equal_transitive",
+        (true, false, true) => "click::machine_integer::uint32_less_equal_less_than_transitive",
+        (true, true, false) => "click::machine_integer::uint32_less_than_less_equal_transitive",
+        (true, true, true) => "click::machine_integer::uint32_less_than_transitive",
     }
 }
 
@@ -1728,7 +1730,7 @@ pub(super) fn plan_explicit_increment_upper_bound(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_increment_upper_bound".to_string(),
+                    name: "click::machine_integer::int32_increment_upper_bound".to_string(),
                     arguments: vec![value, upper],
                 },
                 premises: vec![surface.clone()],
@@ -1760,7 +1762,7 @@ pub(super) fn plan_explicit_positive_is_nonnegative(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_positive_is_nonnegative".to_string(),
+                    name: "click::machine_integer::int32_positive_is_nonnegative".to_string(),
                     arguments: vec![surface_value],
                 },
                 premises: vec![surface.clone()],
@@ -1813,7 +1815,7 @@ pub(super) fn plan_explicit_le_transitive_constant_lower(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_less_equal_transitive".to_string(),
+                    name: "click::machine_integer::int32_less_equal_transitive".to_string(),
                     arguments: vec![surface_lower, surface_middle, surface_value],
                 },
                 premises: vec![surface.clone()],
@@ -1848,7 +1850,7 @@ fn plan_explicit_strict_implies_nonstrict(
         };
         let mut tactics = vec![ProofTactic::ApplyTheoremUsing {
             application: TheoremApplication {
-                name: "int32_less_than_implies_less_equal".to_string(),
+                name: "click::machine_integer::int32_less_than_implies_less_equal".to_string(),
                 arguments: vec![surface_left.clone(), surface_right.clone()],
             },
             premises: vec![surface.clone()],
@@ -1856,7 +1858,8 @@ fn plan_explicit_strict_implies_nonstrict(
         if reversed {
             tactics.push(ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_less_equal_implies_reversed_greater_equal".to_string(),
+                    name: "click::machine_integer::int32_less_equal_implies_reversed_greater_equal"
+                        .to_string(),
                     arguments: vec![surface_left, surface_right],
                 },
                 premises: vec![surface_nonstrict],
@@ -1963,7 +1966,8 @@ fn plan_explicit_greater_equal_to_reversed_less_equal(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_greater_equal_implies_reversed_less_equal".to_string(),
+                    name: "click::machine_integer::int32_greater_equal_implies_reversed_less_equal"
+                        .to_string(),
                     arguments: vec![surface_greater, surface_lower],
                 },
                 premises: vec![surface.clone()],
@@ -2018,7 +2022,8 @@ fn plan_explicit_not_strict_implies_greater_equal(
         };
         let mut tactics = vec![ProofTactic::ApplyTheoremUsing {
             application: TheoremApplication {
-                name: "int32_not_less_than_implies_greater_equal".to_string(),
+                name: "click::machine_integer::int32_not_less_than_implies_greater_equal"
+                    .to_string(),
                 arguments: vec![surface_left.clone(), surface_right.clone()],
             },
             premises: vec![surface.clone()],
@@ -2026,7 +2031,8 @@ fn plan_explicit_not_strict_implies_greater_equal(
         if reversed_less_equal {
             tactics.push(ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_greater_equal_implies_reversed_less_equal".to_string(),
+                    name: "click::machine_integer::int32_greater_equal_implies_reversed_less_equal"
+                        .to_string(),
                     arguments: vec![surface_left, surface_right],
                 },
                 premises: vec![greater_equal],
@@ -2069,7 +2075,7 @@ fn plan_explicit_greater_equal_transitive(
             return Some(vec![
                 ProofTactic::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_greater_equal_transitive".to_string(),
+                        name: "click::machine_integer::int32_greater_equal_transitive".to_string(),
                         arguments: vec![surface_last, surface_middle, surface_first],
                     },
                     premises: vec![second_surface.clone(), first_surface.clone()],
@@ -2137,7 +2143,9 @@ fn plan_explicit_negated_strict_successor_bound(
                 proof: SourceProof::Script(vec![
                     ProofTactic::ApplyTheoremUsing {
                         application: TheoremApplication {
-                            name: "int32_not_less_than_implies_greater_equal".to_string(),
+                            name:
+                                "click::machine_integer::int32_not_less_than_implies_greater_equal"
+                                    .to_string(),
                             arguments: vec![surface_value.clone(), surface_upper.clone()],
                         },
                         premises: vec![surface.clone()],
@@ -2151,7 +2159,7 @@ fn plan_explicit_negated_strict_successor_bound(
             }),
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_greater_equal_transitive".to_string(),
+                    name: "click::machine_integer::int32_greater_equal_transitive".to_string(),
                     arguments: vec![surface_value, surface_upper, surface_lower],
                 },
                 premises: vec![value_ge_upper, upper_ge_lower],
@@ -2193,7 +2201,8 @@ pub(super) fn plan_explicit_increment_greater_equal_lower_bound(
             return Some(vec![
                 ProofTactic::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_increment_greater_equal_lower_bound".to_string(),
+                        name: "click::machine_integer::int32_increment_greater_equal_lower_bound"
+                            .to_string(),
                         arguments: vec![surface_value, surface_lower, surface_upper],
                     },
                     premises: vec![lower_surface.clone(), upper_surface.clone()],
@@ -2236,7 +2245,8 @@ pub(super) fn plan_explicit_increment_strict_greater_lower_bound(
             return Some(vec![
                 ProofTactic::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_increment_greater_than_lower_bound".to_string(),
+                        name: "click::machine_integer::int32_increment_greater_than_lower_bound"
+                            .to_string(),
                         arguments: vec![surface_value, surface_lower, surface_upper],
                     },
                     premises: vec![lower_surface.clone(), upper_surface.clone()],
@@ -2281,14 +2291,15 @@ pub(super) fn plan_explicit_increment_strict_greater_from_strict_lower(
     Some(vec![
         ProofTactic::ApplyTheoremUsing {
             application: TheoremApplication {
-                name: "int32_less_than_implies_less_equal".to_string(),
+                name: "click::machine_integer::int32_less_than_implies_less_equal".to_string(),
                 arguments: vec![surface_lower.clone(), surface_value.clone()],
             },
             premises: vec![lower_surface.clone()],
         },
         ProofTactic::ApplyTheoremUsing {
             application: TheoremApplication {
-                name: "int32_increment_greater_than_lower_bound".to_string(),
+                name: "click::machine_integer::int32_increment_greater_than_lower_bound"
+                    .to_string(),
                 arguments: vec![surface_value, surface_lower, surface_upper],
             },
             premises: vec![weakened_lower, upper_surface.clone()],
@@ -2333,22 +2344,22 @@ const SIGNED_TRANSITIVE_CHAINS: [(SignedOrder, SignedOrder, &str); 4] = [
     (
         SignedOrder::Strict,
         SignedOrder::Strict,
-        "int32_less_than_transitive",
+        "click::machine_integer::int32_less_than_transitive",
     ),
     (
         SignedOrder::NonStrict,
         SignedOrder::NonStrict,
-        "int32_less_equal_transitive",
+        "click::machine_integer::int32_less_equal_transitive",
     ),
     (
         SignedOrder::NonStrict,
         SignedOrder::Strict,
-        "int32_less_equal_less_than_transitive",
+        "click::machine_integer::int32_less_equal_less_than_transitive",
     ),
     (
         SignedOrder::Strict,
         SignedOrder::NonStrict,
-        "int32_less_than_less_equal_transitive",
+        "click::machine_integer::int32_less_than_less_equal_transitive",
     ),
 ];
 
@@ -2448,9 +2459,9 @@ fn plan_explicit_constant_strict_upper_bound_weakening(
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
                     name: if strict {
-                        "int32_less_than_transitive"
+                        "click::machine_integer::int32_less_than_transitive"
                     } else {
-                        "int32_less_equal_less_than_transitive"
+                        "click::machine_integer::int32_less_equal_less_than_transitive"
                     }
                     .to_string(),
                     arguments: vec![surface_value, surface_premise_upper, goal_upper_surface],
@@ -2506,7 +2517,8 @@ pub(super) fn plan_explicit_increment_constant_upper_bound(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_less_equal_less_than_transitive".to_string(),
+                    name: "click::machine_integer::int32_less_equal_less_than_transitive"
+                        .to_string(),
                     arguments: vec![
                         surface_value.clone(),
                         surface_premise_upper,
@@ -2517,7 +2529,7 @@ pub(super) fn plan_explicit_increment_constant_upper_bound(
             },
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_increment_upper_bound".to_string(),
+                    name: "click::machine_integer::int32_increment_upper_bound".to_string(),
                     arguments: vec![surface_value, goal_upper_surface],
                 },
                 premises: vec![strict_surface],
@@ -2570,7 +2582,7 @@ fn plan_explicit_constant_lower_bound_weakening(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_greater_equal_transitive".to_string(),
+                    name: "click::machine_integer::int32_greater_equal_transitive".to_string(),
                     arguments: vec![
                         surface_value.clone(),
                         surface_premise_lower,
@@ -2581,7 +2593,8 @@ fn plan_explicit_constant_lower_bound_weakening(
             },
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_greater_equal_implies_reversed_less_equal".to_string(),
+                    name: "click::machine_integer::int32_greater_equal_implies_reversed_less_equal"
+                        .to_string(),
                     arguments: vec![surface_value, goal_lower_surface],
                 },
                 premises: vec![weakened_surface],
@@ -2617,7 +2630,8 @@ pub(super) fn plan_explicit_increment_below_max_is_defined(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_increment_below_max_is_defined".to_string(),
+                    name: "click::machine_integer::int32_increment_below_max_is_defined"
+                        .to_string(),
                     arguments: vec![surface_value],
                 },
                 premises: vec![surface.clone()],
@@ -2651,7 +2665,8 @@ pub(super) fn plan_explicit_one_plus_below_max_is_defined(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_increment_left_below_max_is_defined".to_string(),
+                    name: "click::machine_integer::int32_increment_left_below_max_is_defined"
+                        .to_string(),
                     arguments: vec![surface_value],
                 },
                 premises: vec![surface.clone()],
@@ -2687,7 +2702,8 @@ pub(super) fn plan_explicit_one_plus_strictly_increases(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_increment_left_strictly_increases".to_string(),
+                    name: "click::machine_integer::int32_increment_left_strictly_increases"
+                        .to_string(),
                     arguments: vec![surface_value],
                 },
                 premises: vec![surface.clone()],
@@ -2733,7 +2749,8 @@ pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
     Some(vec![
         ProofTactic::ApplyTheoremUsing {
             application: TheoremApplication {
-                name: "int32_nonnegative_add_within_max_is_defined".to_string(),
+                name: "click::machine_integer::int32_nonnegative_add_within_max_is_defined"
+                    .to_string(),
                 arguments: vec![surface_value, surface_amount],
             },
             premises: vec![nonnegative_surface.clone(), headroom_surface.clone()],
@@ -2765,7 +2782,8 @@ pub(super) fn plan_explicit_nonnegative_subtract_within_value_is_defined(
     Some(vec![
         ProofTactic::ApplyTheoremUsing {
             application: TheoremApplication {
-                name: "int32_nonnegative_subtract_within_value_is_defined".to_string(),
+                name: "click::machine_integer::int32_nonnegative_subtract_within_value_is_defined"
+                    .to_string(),
                 arguments: vec![surface_value, surface_amount],
             },
             premises: vec![nonnegative_surface.clone(), within_value_surface.clone()],
@@ -2799,7 +2817,8 @@ pub(super) fn plan_explicit_positive_predecessor_is_nonnegative(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_positive_predecessor_is_nonnegative".to_string(),
+                    name: "click::machine_integer::int32_positive_predecessor_is_nonnegative"
+                        .to_string(),
                     arguments: vec![surface_value],
                 },
                 premises: vec![surface.clone()],
@@ -2890,7 +2909,8 @@ fn plan_explicit_predecessor_upper_bound(
         };
         tactics.push(ProofTactic::ApplyTheoremUsing {
             application: TheoremApplication {
-                name: "int32_nonnegative_predecessor_upper_bound".to_string(),
+                name: "click::machine_integer::int32_nonnegative_predecessor_upper_bound"
+                    .to_string(),
                 arguments: vec![surface_value, surface_bound],
             },
             premises: vec![nonnegative_surface, bound_surface.clone()],
@@ -2917,7 +2937,10 @@ fn plan_explicit_one_le_predecessor(
         if amount.as_ref() != &Bitvector32Term::Constant(1) {
             return None;
         }
-        (value.as_ref(), "int32_positive_predecessor_is_nonnegative")
+        (
+            value.as_ref(),
+            "click::machine_integer::int32_positive_predecessor_is_nonnegative",
+        )
     } else {
         let (predecessor, value) = goal_exact_less_than_parts(goal)?;
         let Bitvector32Term::Subtract(predecessor_value, amount) = predecessor else {
@@ -2926,7 +2949,10 @@ fn plan_explicit_one_le_predecessor(
         if predecessor_value.as_ref() != value || amount.as_ref() != &Bitvector32Term::Constant(1) {
             return None;
         }
-        (value, "int32_positive_predecessor_strictly_decreases")
+        (
+            value,
+            "click::machine_integer::int32_positive_predecessor_strictly_decreases",
+        )
     };
     for (kernel, surface) in premise_pairs {
         let Some((premise_lower, premise_value)) = signed_nonstrict_parts(kernel) else {
@@ -2948,7 +2974,7 @@ fn plan_explicit_one_le_predecessor(
                 proof: SourceProof::Script(vec![
                     ProofTactic::ApplyTheoremUsing {
                         application: TheoremApplication {
-                            name: "int32_increment_less_equal_implies_less_than".to_string(),
+                            name: "click::machine_integer::int32_increment_less_equal_implies_less_than".to_string(),
                             arguments: vec![surface_zero, surface_value.clone()],
                         },
                         premises: vec![surface.clone()],
@@ -3032,7 +3058,8 @@ pub(super) fn plan_explicit_positive_predecessor_strictly_decreases(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_positive_predecessor_strictly_decreases".to_string(),
+                    name: "click::machine_integer::int32_positive_predecessor_strictly_decreases"
+                        .to_string(),
                     arguments: vec![surface_value],
                 },
                 premises: vec![surface.clone()],
@@ -3080,7 +3107,7 @@ pub(super) fn plan_explicit_le_and_not_lt_implies_eq(
             return Some(vec![
                 ProofTactic::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_less_equal_and_not_less_than_implies_equal".to_string(),
+                        name: "click::machine_integer::int32_less_equal_and_not_less_than_implies_equal".to_string(),
                         arguments: vec![surface_left, surface_right],
                     },
                     premises: vec![le_surface.clone(), not_lt_surface.clone()],
@@ -3250,7 +3277,7 @@ pub(super) fn plan_explicit_ge_and_not_gt_implies_eq(
             return Some(vec![
                 ProofTactic::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_greater_equal_and_not_greater_than_implies_equal".to_string(),
+                        name: "click::machine_integer::int32_greater_equal_and_not_greater_than_implies_equal".to_string(),
                         arguments: vec![surface_left, surface_right],
                     },
                     premises: vec![ge_surface.clone(), not_gt_surface.clone()],
@@ -3282,7 +3309,7 @@ pub(super) fn plan_explicit_increment_strictly_increases(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_increment_strictly_increases".to_string(),
+                    name: "click::machine_integer::int32_increment_strictly_increases".to_string(),
                     arguments: vec![value, upper],
                 },
                 premises: vec![surface.clone()],
@@ -3336,7 +3363,8 @@ fn plan_explicit_successor_le_implies_lt(
         return Some(vec![
             ProofTactic::ApplyTheoremUsing {
                 application: TheoremApplication {
-                    name: "int32_increment_less_equal_implies_less_than".to_string(),
+                    name: "click::machine_integer::int32_increment_less_equal_implies_less_than"
+                        .to_string(),
                     arguments: vec![surface_lower, surface_value],
                 },
                 premises: vec![bound_surface.clone()],
@@ -3387,7 +3415,7 @@ pub(super) fn plan_explicit_increment_preserves_order(
             return Some(vec![
                 ProofTactic::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_increment_preserves_order".to_string(),
+                        name: "click::machine_integer::int32_increment_preserves_order".to_string(),
                         arguments: vec![surface_value, surface_lower, surface_upper],
                     },
                     premises: vec![order_surface.clone(), upper_surface.clone()],
@@ -3432,7 +3460,7 @@ pub(super) fn plan_explicit_increment_lower_bound(
             return Some(vec![
                 ProofTactic::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "int32_increment_lower_bound".to_string(),
+                        name: "click::machine_integer::int32_increment_lower_bound".to_string(),
                         arguments: vec![surface_value, surface_lower, surface_upper],
                     },
                     premises: vec![lower_surface.clone(), upper_surface.clone()],
