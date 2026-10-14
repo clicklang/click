@@ -140,6 +140,7 @@ C language coverage:
 
 Additional languages:
 
+- [Stabilize and deliver the shared object model](object-model.md)
 - [Extend C++ support toward Bitcoin Core](cpp-support.md)
 - [Model C++ exceptions with class types and exceptional resources](cpp-exceptions.md)
 
