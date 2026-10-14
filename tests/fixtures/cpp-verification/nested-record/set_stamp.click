@@ -1,6 +1,6 @@
 verifying "nested_record.cpp";
 
-void FeeEnvelope_SetStamp(struct FeeEnvelope* this, int next) {
+void FeeEnvelope::SetStamp(int next) {
     owns this->stamp;
     views this->state.left.fee;
     views this->state.left.size;

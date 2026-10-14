@@ -5170,7 +5170,9 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
                 import.language()
             )));
         }
-        return Ok(parser::ProgramLayouts::of_execution(execution));
+        let mut layouts = parser::ProgramLayouts::of_execution(execution);
+        layouts.language = Some(import.language());
+        return Ok(layouts);
     }
     c_frontend::c_layouts(verifying_paths, c_sources, target)
 }

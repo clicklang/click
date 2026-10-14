@@ -1,4 +1,4 @@
-int64 FeeFrac_EvaluateFee__bool_@INSTANCE@(const struct FeeFrac* this, int32 at_size) {
+int64 FeeFrac::EvaluateFee<@INSTANCE@>(int32 at_size) const {
     views this->fee;
     views this->size;
     requires -9223372036854775808 <= to_integer(this->fee);
@@ -33,7 +33,7 @@ int64 FeeFrac_EvaluateFee__bool_@INSTANCE@(const struct FeeFrac* this, int32 at_
     }
 }
 
-int64 FeeFrac_EvaluateFee@MODE@(const struct FeeFrac* this, int32 at_size) {
+int64 FeeFrac::EvaluateFee@MODE@(int32 at_size) const {
     views this->fee;
     views this->size;
     requires -9223372036854775808 <= to_integer(this->fee);

@@ -5,7 +5,7 @@ void SetFeeRef(struct FeeState& state, int64 next) {
     ensures state.fee == next;
 } by { execute(); simp(); }
 
-void FeeEnvelope_SetLeftByReference(struct FeeEnvelope* this, int64 next) {
+void FeeEnvelope::SetLeftByReference(int64 next) {
     owns this->state.left.fee;
     views this->state.right.fee;
     ensures this->state.left.fee == next;

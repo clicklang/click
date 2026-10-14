@@ -1,4 +1,5 @@
 mod cpp_model;
+mod cpp_syntax;
 mod rust_syntax;
 mod tokenizer;
 use cpp_model::rewrite_model_accessors;
@@ -155,6 +156,10 @@ pub(in crate::surface) struct ProgramLayouts {
     /// The rank the program's C target gives `int64_t` and `uint64_t`;
     /// `None` reads them as `long`.
     pub(in crate::surface) int64_t_rank: Option<LongRank>,
+    /// The language of a prepared program's import, which decides the
+    /// sidecar's spelling where its `verifying` path does not: a C++ import
+    /// may verify a `.h` header.
+    pub(in crate::surface) language: Option<SourceLanguage>,
 }
 
 pub(super) fn parse_with_layouts_and_aggregate_objects(
@@ -594,6 +599,9 @@ struct Parser {
     /// declaration, so it keeps the C type exactly, `long` apart from
     /// `long long`; a specification type elsewhere names a representation.
     exact_long_rank: bool,
+    /// Set while an `extern` head is parsed. Its C++ receiver is still
+    /// written as an explicit `this` parameter.
+    external_head: bool,
     /// The slice parameters of the Rust signature being parsed. Each is one
     /// name in the sidecar and a pointer with a `name_len` length underneath.
     rust_slice_params: BTreeSet<String>,
@@ -940,6 +948,9 @@ impl Parser {
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.plain_char = layouts.plain_char;
         parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
+        if layouts.language == Some(SourceLanguage::Cpp) {
+            parser.language = SourceLanguage::Cpp;
+        }
         Ok(parser)
     }
 
@@ -983,6 +994,7 @@ impl Parser {
             plain_char: None,
             int64_t_rank: LongRank::Long,
             exact_long_rank: false,
+            external_head: false,
             rust_slice_params: BTreeSet::new(),
             rust_impl_type: None,
             rust_impl_method_suffix: None,
@@ -2854,8 +2866,10 @@ impl Parser {
             return_struct_name,
         } = {
             let previous = std::mem::replace(&mut self.exact_long_rank, true);
+            let previous_external = std::mem::replace(&mut self.external_head, external);
             let signature = self.parse_function_signature();
             self.exact_long_rank = previous;
+            self.external_head = previous_external;
             signature?
         };
         if let Some(struct_name) = return_struct_name {
@@ -3591,7 +3605,25 @@ impl Parser {
         if self.peek_ident() == Some("fn") {
             return self.parse_rust_function_signature();
         }
-        let parsed_return_type = self.parse_type()?;
+        // A C++ head is the C++ declaration: `static` marks a static member,
+        // and a constructor or destructor has no return type.
+        let is_static = self.verifies_cpp() && self.peek_ident() == Some("static");
+        if is_static {
+            self.position += 1;
+        }
+        let returnless = self.verifies_cpp() && self.cpp_returnless_declarator_follows();
+        let parsed_return_type = if returnless {
+            ParsedType {
+                c_type: C0Type::Void,
+                struct_name: None,
+                struct_pointer: false,
+                constant: false,
+                pointee_constant: false,
+                reference: false,
+            }
+        } else {
+            self.parse_type()?
+        };
         if parsed_return_type.constant {
             return Err(
                 self.error("const-qualified function return types are not supported in this slice")
@@ -3606,10 +3638,63 @@ impl Parser {
         } else {
             parsed_return_type.c_type
         };
-        let name = self.expect_ident("function name")?;
+        let (name, receiver) = if self.verifies_cpp() {
+            let declarator = self.parse_cpp_declarator(is_static)?;
+            if declarator.returnless != returnless {
+                return Err(self.error(if declarator.returnless {
+                    "a constructor or destructor has no return type"
+                } else {
+                    "a C++ head needs its return type"
+                }));
+            }
+            (declarator.name, declarator.receiver)
+        } else {
+            (self.expect_ident("function name")?, None)
+        };
         self.expect(Token::LParen)?;
-        let parsed_parameters = self.parse_parameters()?;
+        let mut parsed_parameters = self.parse_parameters()?;
         self.expect(Token::RParen)?;
+        // A named contract describes a function type, whose receiver is an
+        // ordinary parameter, and an `extern` head still writes its receiver;
+        // a verified function's own head leaves `this` implicit.
+        // A member of a class template instance, whose mangled name (`__`)
+        // a head does not yet spell natively, keeps its explicit receiver.
+        if self.verifies_cpp()
+            && !self.in_contract_definition
+            && !self.external_head
+            && !name.contains("__")
+            && parsed_parameters
+                .parameters
+                .iter()
+                .any(|parameter| parameter.name == "this")
+        {
+            return Err(self.error(
+                "a C++ member function's `this` is implicit; write the C++ declaration, as \
+                 `void Rec::method(int x)`, `Rec::Rec(int x)` or `Rec::~Rec()`",
+            ));
+        }
+        if let Some(record) = receiver {
+            // `Rec::m(...) const` reads through a `const Rec* this`.
+            let constant = self.peek_ident() == Some("const");
+            if constant {
+                self.position += 1;
+            }
+            let this = self.parse_parameter_array_suffix(
+                "this".into(),
+                ParsedType {
+                    c_type: C0Type::Int32Pointer,
+                    struct_name: Some(record.clone()),
+                    struct_pointer: true,
+                    constant: false,
+                    pointee_constant: constant,
+                    reference: false,
+                },
+            )?;
+            parsed_parameters.parameters.insert(0, this.parameter);
+            parsed_parameters
+                .struct_params
+                .insert("this".into(), record);
+        }
         let exceptional_type = if self.peek_ident() == Some("throws") {
             self.position += 1;
             let parsed = self.parse_type()?;
@@ -3819,8 +3904,14 @@ impl Parser {
             false
         };
         let spelling = self.expect_ident("type")?;
-        if spelling == "struct" {
-            let struct_name = self.expect_ident("struct name")?;
+        // C++ names a record by its own name; C writes `struct name`.
+        let cpp_record = self.verifies_cpp() && self.struct_layouts.contains_key(&spelling);
+        if spelling == "struct" || cpp_record {
+            let struct_name = if cpp_record {
+                spelling
+            } else {
+                self.expect_ident("struct name")?
+            };
             let mut object_constant = is_constant;
             if self.peek_ident() == Some("const") {
                 self.position += 1;

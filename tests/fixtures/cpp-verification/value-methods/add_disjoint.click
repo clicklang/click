@@ -1,6 +1,6 @@
 verifying "value_methods.cpp";
 
-void FeeFrac_operator_add_assign(struct FeeFrac* this, const struct FeeFrac& other) {
+void FeeFrac::operator+=(const FeeFrac& other) {
     owns this->fee;
     owns this->size;
     owns other.fee;

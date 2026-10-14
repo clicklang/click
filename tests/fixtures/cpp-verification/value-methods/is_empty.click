@@ -1,6 +1,6 @@
 verifying "value_methods.cpp";
 
-bool FeeFrac_IsEmpty(const struct FeeFrac* this) {
+bool FeeFrac::IsEmpty() const {
     owns this->fee;
     owns this->size;
     ensures this->fee == old(this->fee);

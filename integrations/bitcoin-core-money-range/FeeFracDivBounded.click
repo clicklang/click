@@ -1,5 +1,5 @@
 verifying "bitcoin-src/src/util/feefrac.h";
-int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
+static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     requires -9223372036854775808 * to_integer(d) <= to_integer(n);
     requires to_integer(n) <= 9223372036854775807 * to_integer(d);
     requires d > 0;

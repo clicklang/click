@@ -1,6 +1,6 @@
 verifying "restore_twice.cpp";
 
-void Restore_constructor(struct Restore* this, int32* slot) {
+Restore::Restore(int32* slot) {
     owns this->p;
     owns this->saved;
     owns slot[0..1];
@@ -12,7 +12,7 @@ void Restore_constructor(struct Restore* this, int32* slot) {
     simp();
 }
 
-void Restore_destructor(struct Restore* this) {
+Restore::~Restore() {
     requires separate(memory(*this), memory(this->p[0..1]));
     owns this->p;
     owns this->saved;

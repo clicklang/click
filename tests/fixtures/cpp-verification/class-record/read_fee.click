@@ -1,6 +1,6 @@
 verifying "class_record.cpp";
 
-int64 FeeRateState_ReadFee(const struct FeeRateState* this) {
+int64 FeeRateState::ReadFee() const {
     views this->fee;
     views this->size;
     ensures this->fee == old(this->fee);

@@ -1,11 +1,11 @@
 verifying "nested_record.cpp";
 
-void FeeState_SetFee(struct FeeState* this, int64 next) {
+void FeeState::SetFee(int64 next) {
     owns this->fee;
     ensures this->fee == next;
 } by { execute(); simp(); }
 
-void FeeEnvelope_SetRightByMethod(struct FeeEnvelope* this, int64 next) {
+void FeeEnvelope::SetRightByMethod(int64 next) {
     owns this->state.right.fee;
     views this->state.left.fee;
     views this->state.right.size;
