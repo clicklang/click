@@ -1051,16 +1051,17 @@ impl CallBinderBinding {
     }
 }
 
-/// `step(callee(arguments), { binder: instance, ... })`: one ordinary C call
-/// with every instance binder of the callee bound explicitly. Produced
-/// instances are introduced by the surrounding `let { binder: name, ... } =
-/// step(...)` pattern and are carried in `produced`. For compatibility, the
-/// older `let name = step(...)` spelling is accepted when there is exactly one
-/// produced instance. When the callee declares no `produces` binder, the same
-/// `let` names the call's scalar result instead and is carried in `result`.
+/// One checked C call with every interface instance binder bound explicitly.
+/// `step(callee(arguments), { ... })` names an ordinary callee;
+/// `step(Contract, { ... })` selects a named interface for the current call. Produced
+/// instances and the C value are named explicitly by
+/// `let { result: value, binder: resource, ... } = step(...)`.
+/// The pattern only selects names for outputs of the checked transition.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallBinderTransport {
     callee: String,
+    /// Select this named interface at the current C call; arguments come from C.
+    named_contract: bool,
     arguments: Vec<ContractExpression>,
     binders: Vec<CallBinderBinding>,
     produced: Vec<CallBinderBinding>,
@@ -1072,6 +1073,10 @@ pub struct CallBinderTransport {
 impl CallBinderTransport {
     pub fn callee(&self) -> &str {
         &self.callee
+    }
+
+    pub fn is_named_contract(&self) -> bool {
+        self.named_contract
     }
 
     pub fn type_arguments(&self) -> &[(String, Variable, ResourceClause)] {
@@ -1116,8 +1121,8 @@ impl CallBinderTransport {
         &self.produced
     }
 
-    /// The proof-local name this step gives the call's scalar result, when
-    /// the callee produces no resource instance.
+    /// The proof-local name this step gives the call's C value, independently
+    /// of its produced resource instances.
     pub fn result(&self) -> Option<&str> {
         self.result.as_deref()
     }
@@ -1161,17 +1166,22 @@ impl CallBinderTransport {
 
 impl std::fmt::Display for CallBinderTransport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if !self.produced.is_empty() {
+        if !self.produced.is_empty() || self.result.is_some() {
             write!(f, "let {{ ")?;
+            if let Some(result) = &self.result {
+                write!(f, "result: {result}")?;
+            }
             for (index, produced) in self.produced.iter().enumerate() {
-                if index != 0 {
+                if index != 0 || self.result.is_some() {
                     write!(f, ", ")?;
                 }
                 write!(f, "{}: {}", produced.binder, produced.instance)?;
             }
             write!(f, " }} = ")?;
-        } else if let Some(result) = &self.result {
-            write!(f, "let {result} = ")?;
+        }
+        if self.named_contract {
+            let entries = self.map_entries();
+            return write!(f, "step({}, {{ {} }})", self.callee, entries.join(", "));
         }
         write!(f, "step({}(", self.callee)?;
         for (index, argument) in self.arguments.iter().enumerate() {
@@ -3917,7 +3927,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "step-result",
-        syntax: "let name = step()",
+        syntax: "let { result: name } = step()",
         class: "simple",
     },
     PublicTacticForm {
@@ -3933,6 +3943,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "step-call",
         syntax: "step(callee(...), { binder: instance })",
+        class: "simple",
+    },
+    PublicTacticForm {
+        id: "step-contract-map",
+        syntax: "step(Contract, { binder: instance })",
         class: "simple",
     },
     PublicTacticForm {

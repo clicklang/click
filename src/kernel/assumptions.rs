@@ -2885,6 +2885,15 @@ impl PureFactContext {
         for ((left, right), _) in self.uint64_graph_equalities.iter() {
             classes.add_uint64_equality(left.value(), right.value());
         }
+        for ((left, right), _) in self.algebraic_graph_equalities.iter() {
+            let PureFunctionArgument::Algebraic(left) = &left.arguments()[0] else {
+                unreachable!()
+            };
+            let PureFunctionArgument::Algebraic(right) = &right.arguments()[0] else {
+                unreachable!()
+            };
+            classes.add_algebraic_equality(left, right);
+        }
         for ((left, right), _) in self.int32_graph_equalities.iter() {
             classes.add_int32_equality(left.value(), right.value());
         }
@@ -2900,6 +2909,68 @@ impl PureFactContext {
             classes.add_condition(condition, *value);
         }
         self.equality_graph = classes;
+    }
+
+    fn rebuild_algebraic_graph_equalities(&mut self) {
+        self.algebraic_graph_equalities = Default::default();
+        self.rebuild_equality_graph();
+        let conditions = self.condition_facts.clone();
+        for (condition, value) in conditions.iter() {
+            if matches!(condition, ConditionTerm::AlgebraicEqual(..)) {
+                self.adjust_algebraic_graph_equality(
+                    &Proposition::ConditionIs(condition.clone(), *value),
+                    true,
+                );
+            }
+        }
+        let propositions = self.prop_facts.clone();
+        for proposition in propositions.iter() {
+            self.adjust_algebraic_graph_equality(proposition, true);
+        }
+    }
+
+    fn adjust_algebraic_graph_equality(&mut self, proposition: &Proposition, insert: bool) {
+        let (left, right) = match proposition {
+            Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => (a, b),
+            Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(a, b), true) => {
+                (a.as_ref(), b.as_ref())
+            }
+            _ => return,
+        };
+        if left.algebraic_type != right.algebraic_type
+            || !left.is_well_formed()
+            || !right.is_well_formed()
+        {
+            return;
+        }
+        // Retained explicit edges use stable IDs. Deep model keys never enter
+        // the persistent graph or its support-count map.
+        let atom = |term: &AlgebraicTerm| {
+            SharedPureApplication::intern(
+                "equality:algebraic-edge".into(),
+                vec![PureFunctionArgument::Algebraic(term.clone())],
+            )
+        };
+        let (left_atom, right_atom) = (atom(left), atom(right));
+        let edge = if left_atom <= right_atom {
+            (left_atom, right_atom)
+        } else {
+            (right_atom, left_atom)
+        };
+        let count = self
+            .algebraic_graph_equalities
+            .get(&edge)
+            .copied()
+            .unwrap_or(0);
+        if insert {
+            self.algebraic_graph_equalities.insert(edge, count + 1);
+            self.equality_graph.add_algebraic_equality(left, right);
+        } else if count > 1 {
+            self.algebraic_graph_equalities.insert(edge, count - 1);
+        } else {
+            self.algebraic_graph_equalities.remove(&edge);
+            self.rebuild_equality_graph();
+        }
     }
 
     fn adjust_uint64_graph_equality(
@@ -3520,6 +3591,7 @@ impl PureFactContext {
         self.pointer_block_aliases_by_offset = crate::persistent::PersistentMap::default();
         self.pointer_alias_endpoints_by_object = crate::persistent::PersistentMap::default();
         self.equality_graph = EqualityGraph::default();
+        self.algebraic_graph_equalities = Default::default();
         self.congruence_conditions = crate::persistent::PersistentMap::default();
         self.int32_graph_equalities = crate::persistent::PersistentMap::default();
         self.uint64_graph_equalities = crate::persistent::PersistentMap::default();
@@ -3534,6 +3606,10 @@ impl PureFactContext {
             self.adjust_pointer_offset_alias(condition, *value, true);
             self.adjust_int32_graph_equality(condition, *value, true);
             self.adjust_uint64_graph_equality(condition, *value, true);
+            self.adjust_algebraic_graph_equality(
+                &Proposition::ConditionIs(condition.clone(), *value),
+                true,
+            );
             if self.equality_graph.add_condition(condition, *value) {
                 self.congruence_conditions.insert(condition.clone(), *value);
             }
@@ -3571,6 +3647,13 @@ impl PureFactContext {
                     }
                 }
             }
+        }
+        // The scalar and condition model fragments above already describe
+        // the selected context. Add its proposition model edges directly;
+        // do not reconstruct those fragments a second time.
+        let propositions = self.prop_facts.clone();
+        for proposition in propositions.iter() {
+            self.adjust_algebraic_graph_equality(proposition, true);
         }
     }
 
@@ -4120,6 +4203,10 @@ impl PureFactContext {
     }
 
     pub(super) fn clear_proposition_facts(&mut self) {
+        self.clear_proposition_facts_with_graph_rebuild(true);
+    }
+
+    fn clear_proposition_facts_with_graph_rebuild(&mut self, rebuild_graph: bool) {
         self.prop_facts = imbl::OrdSet::new();
         self.execution_fact_projection = self
             .execution_fact_projection
@@ -4130,7 +4217,7 @@ impl PureFactContext {
         self.rebuild_atomic_connection_facts();
         self.rebuild_stated_proposition_index();
         self.function_contract_facts = std::sync::Arc::new(BTreeMap::new());
-        self.disjunction_facts = std::sync::Arc::new(BTreeSet::new());
+        self.disjunction_facts = crate::persistent::PersistentSet::default();
         self.algebraic_constructor_field_equalities = crate::persistent::PersistentMap::default();
         self.algebraic_constructor_conflicts = crate::persistent::PersistentMap::default();
         self.algebraic_variable_constructors = crate::persistent::PersistentMap::default();
@@ -4145,6 +4232,12 @@ impl PureFactContext {
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
         self.separated_anchor_offsets = crate::persistent::PersistentMap::default();
         self.recompute_content_fingerprint();
+        // No model support can change in a model-free context. Rebuilding
+        // the complete scalar graph here would touch unrelated facts before
+        // a restriction replaces its condition indexes.
+        if rebuild_graph && !self.algebraic_graph_equalities.is_empty() {
+            self.rebuild_algebraic_graph_equalities();
+        }
     }
 
     #[cfg(test)]
@@ -4166,19 +4259,21 @@ impl PureFactContext {
             .map(|(key, fact)| (key.clone(), fact.clone()))
             .collect();
         self.rebuild_stated_proposition_index();
-        self.disjunction_facts = std::sync::Arc::new(
-            self.prop_facts
-                .iter()
-                .filter(|fact| matches!(fact, Proposition::Or(_, _)))
-                .cloned()
-                .collect(),
-        );
+        self.disjunction_facts = self
+            .prop_facts
+            .iter()
+            .filter(|fact| matches!(fact, Proposition::Or(_, _)))
+            .fold(
+                crate::persistent::PersistentSet::default(),
+                |index, fact| index.with_value(crate::kernel::clone_proposition_iteratively(fact)),
+            );
         self.rebuild_atomic_connection_facts();
         self.rebuild_algebraic_constructor_field_equalities();
         self.rebuild_memory_loadable_facts();
         self.rebuild_memory_separation_facts();
         self.rebuild_function_contract_facts();
         self.recompute_content_fingerprint();
+        self.rebuild_algebraic_graph_equalities();
     }
 
     fn proposition_function_contract(proposition: &Proposition) -> Option<(Pointer, String)> {
@@ -4877,12 +4972,14 @@ impl PureFactContext {
             self.adjust_atomic_connection_fact(&proposition, true);
             self.adjust_stated_proposition_index(&proposition, true);
             if matches!(proposition, Proposition::Or(_, _)) {
-                std::sync::Arc::make_mut(&mut self.disjunction_facts)
-                    .insert(crate::kernel::clone_proposition_iteratively(&proposition));
+                self.disjunction_facts = self
+                    .disjunction_facts
+                    .with_value(crate::kernel::clone_proposition_iteratively(&proposition));
             }
             self.adjust_algebraic_constructor_field_equalities(&proposition, true);
             self.adjust_algebraic_constructor_conflict(&proposition, true);
             self.adjust_algebraic_variable_constructor(&proposition, true);
+            self.adjust_algebraic_graph_equality(&proposition, true);
             self.adjust_algebraic_variable_variant_evidence(&proposition, true);
             self.adjust_memory_loadable_fact(&proposition, true);
             self.adjust_memory_separation_fact(&proposition, true);
@@ -4899,11 +4996,12 @@ impl PureFactContext {
             self.adjust_atomic_connection_fact(proposition, false);
             self.adjust_stated_proposition_index(proposition, false);
             if matches!(proposition, Proposition::Or(_, _)) {
-                std::sync::Arc::make_mut(&mut self.disjunction_facts).remove(proposition);
+                self.disjunction_facts = self.disjunction_facts.without_value(proposition);
             }
             self.adjust_algebraic_constructor_field_equalities(proposition, false);
             self.adjust_algebraic_constructor_conflict(proposition, false);
             self.adjust_algebraic_variable_constructor(proposition, false);
+            self.adjust_algebraic_graph_equality(proposition, false);
             self.adjust_algebraic_variable_variant_evidence(proposition, false);
             self.adjust_memory_loadable_fact(proposition, false);
             self.adjust_memory_separation_fact(proposition, false);
@@ -5210,6 +5308,12 @@ impl PureFactContext {
     /// membership remains separate for provenance, admission, and withdrawal.
     /// This performs no unfolding, implication search, or snapshot transport.
     pub(crate) fn contains_known(&self, proposition: &Proposition) -> bool {
+        // An indexed conflict among checked scalar equalities makes this
+        // scoped context impossible. Its semantic consequences need no new
+        // search or materialized negation; exact membership stays unchanged.
+        if self.equality_graph.has_scalar_constant_conflict() {
+            return true;
+        }
         // Logical structure is handled by the proof rule. Do not repeatedly
         // traverse a whole conjunction while its caller visits its leaves.
         if matches!(proposition, Proposition::And(..) | Proposition::Or(..)) {
@@ -5219,6 +5323,9 @@ impl PureFactContext {
             return true;
         }
         match proposition {
+            Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
+                self.equality_graph.are_algebraic_equal(a, b)
+            }
             Proposition::ConditionIs(condition, value) => {
                 self.equality_graph.knows_condition(condition, *value)
             }
@@ -5348,6 +5455,10 @@ impl PureFactContext {
             self.adjust_pointer_offset_alias(&condition, old, false);
             self.adjust_int32_graph_equality(&condition, old, false);
             self.adjust_uint64_graph_equality(&condition, old, false);
+            self.adjust_algebraic_graph_equality(
+                &Proposition::ConditionIs(condition.clone(), old),
+                false,
+            );
             self.withdraw_typed_pointer_read_definition(&condition, old);
             self.content_fingerprint ^= Self::fingerprint(1, &(condition.clone(), old));
         }
@@ -5362,6 +5473,10 @@ impl PureFactContext {
         self.adjust_pointer_offset_alias(&condition, value, true);
         self.adjust_int32_graph_equality(&condition, value, true);
         self.adjust_uint64_graph_equality(&condition, value, true);
+        self.adjust_algebraic_graph_equality(
+            &Proposition::ConditionIs(condition.clone(), value),
+            true,
+        );
         if value && matches!(condition, ConditionTerm::PointerEqual(..)) {
             self.composition_object_resources
                 .advance_memory_equalities(&self);
@@ -5543,6 +5658,13 @@ impl PureFactContext {
             } else {
                 facts.without_value(&shared)
             };
+            if matches!(proposition, Proposition::Or(..)) {
+                bucket.disjunctions = if insert {
+                    bucket.disjunctions.with_value(shared.clone())
+                } else {
+                    bucket.disjunctions.without_value(&shared)
+                };
+            }
             self.atomic_connection_facts =
                 if bucket.conditions.is_empty() && bucket.propositions.is_empty() {
                     self.atomic_connection_facts.without_key(&key)
@@ -5608,6 +5730,19 @@ impl PureFactContext {
             ),
             has_propositions,
         )
+    }
+
+    /// Only stated disjunctions in this operand's existing dependency bucket.
+    /// Logical projection does not visit unrelated scalar or predicate facts.
+    pub(crate) fn disjunctions_connected_to(
+        &self,
+        key: &AtomicConnectionKey,
+    ) -> impl Iterator<Item = &Proposition> {
+        self.atomic_connection_facts
+            .get(key)
+            .into_iter()
+            .flat_map(|bucket| bucket.disjunctions.iter())
+            .map(SharedIndexFact::as_ref)
     }
 
     /// Constant-time cardinalities for a selection drawn from these fact sets.
@@ -5771,14 +5906,18 @@ impl PureFactContext {
                 )
             })
             .collect();
-        restricted.clear_proposition_facts();
-        for proposition in propositions {
-            restricted.insert_proposition_fact(proposition.clone());
-        }
+        // Condition support is replaced next. Reconstructing the inherited
+        // graph here would reconstruct unselected ambient edges, then discard it.
+        restricted.clear_proposition_facts_with_graph_rebuild(false);
         restricted.rebuild_signed_order_bounds();
         restricted.rebuild_null_pointer_offsets();
         restricted.rebuild_memory_load_condition_facts();
         restricted.rebuild_condition_match_indexes();
+        // File proposition edges and resource indexes only after their
+        // condition graph is the selected one, never the inherited graph.
+        for proposition in propositions {
+            restricted.insert_proposition_fact(proposition.clone());
+        }
         restricted.recompute_content_fingerprint();
         restricted
     }
@@ -5847,6 +5986,10 @@ impl PureFactContext {
         self.adjust_pointer_offset_alias(condition, assumed, false);
         self.adjust_int32_graph_equality(condition, assumed, false);
         self.adjust_uint64_graph_equality(condition, assumed, false);
+        self.adjust_algebraic_graph_equality(
+            &Proposition::ConditionIs(condition.clone(), assumed),
+            false,
+        );
         self.withdraw_typed_pointer_read_definition(condition, assumed);
         self.rebuild_memory_load_condition_facts();
         self.content_fingerprint ^= Self::fingerprint(1, &(condition.clone(), assumed));

@@ -67,7 +67,7 @@ rather than checking their proofs.
 | --- | --- |
 | `--work-limit UNITS` | Set the deterministic whole-run work budget independently for each selected sidecar, mdtest, or proof unit. The default is `50000000`. |
 | `--time-limit DURATION` | Set the wall-clock crash-containment bound independently for each selected sidecar, mdtest, or proof unit. The default is `10m`. This is not a verdict about the proof; see [Deterministic verdicts](#deterministic-verdicts). |
-| `--trace-proof PROOF` | Verify only this C function or pure theorem of one sidecar, selected by name (a Rust item by its path or, for an operator-trait method, its qualified form such as `<adler2::algo::U32X4 as MulAssign<u32>>::mul_assign`), or by `PATH:LINE[:COLUMN]` of the target, which selects the function or theorem owning the claim whose clause or proof covers that line ([claim labels](expand.md#claim-labels)), and, on a proof error, show checked steps on its failing path with added facts and changed resource counts. A sidecar cannot declare one name as both a C function and a theorem, so the name alone selects the proof. Theorems that the traced theorem cites stay assumptions, and no C function is verified for a theorem trace. If the script completes but contract certification fails, show the failed obligation and a bounded view of facts available to that check. Trace length and total output size are not capped; individual fact previews remain bounded. |
+| `--trace-proof PROOF` | Verify only this C function, theorem, or user-defined tactic of one sidecar, selected by name (a Rust item by its path or, for an operator-trait method, its qualified form such as `<adler2::algo::U32X4 as MulAssign<u32>>::mul_assign`), or by `PATH:LINE[:COLUMN]` of the target, which selects the function, theorem, or tactic owning the claim whose clause or proof covers that line ([claim labels](expand.md#claim-labels)), and, on a proof error, show checked steps on its failing path with added facts and changed resource counts. A sidecar cannot declare one name as both a C function and a theorem, so the name alone selects the proof. Other tactic contracts stay assumptions when tracing a tactic. Theorems that the traced theorem cites stay assumptions, and no C function is verified for a theorem trace. If the script completes but contract certification fails, show the failed obligation and a bounded view of facts available to that check. Trace length and total output size are not capped; individual fact previews remain bounded. |
 | `--trace-to LINE[:COLUMN]` | Focus `--trace-proof` on a written tactic at this source location, including in a successful proof; the tactic may sit inside a proof `match` arm, an arm of a proof `if`, `cases` or `both`, or a loop's `preserve` body, whose trace is shown under the enclosing proof's path up to the `loop`. A target after a proof `if` or `cases` whose arms both check it is traced through the first arm. Without it, the trace follows the failing tactic. |
 | `--changed-since REVISION` | Select claims affected since a Git revision. Reuse requires a valid full-verification marker for the baseline and verifier binary. |
 | `--explain` | With `--changed-since`, print the incremental selection without verifying it. |
@@ -139,12 +139,14 @@ bound stops the run. A proof failure is a correctness
 result; repair it before using `click profile` unless unexpected slowness is
 itself the failure being investigated.
 
-When a proof error identifies a C function or a pure theorem that the sidecar
+When a proof error identifies a C function, theorem, or user-defined tactic that the sidecar
 selects, the CLI suggests a rerun with `--trace-proof` and fills in the proof
 name and sidecar path. The suggestion is printed only when that command is
 accepted: `--trace-proof` resolves the name the same way. By default, the
 trace follows the path to the failing tactic; `--trace-to` can select a written
-tactic in a successful or failing proof. The ordinary error and the trace use
+tactic in a successful or failing proof. A checked proof `match` retains its
+constructor facts and arm steps after certification; `--trace-to` can select
+any live constructor arm. The ordinary error and the trace use
 the same formatted failure report, including the written tactic and its source
 location. A separate `To get a trace:` section gives the command to rerun.
 The source excerpt points to the failing written tactic (including steps inside
@@ -159,6 +161,31 @@ defined in a `where` list after the report (see
 format for each admitted fact. The trace uses readable expressions only when
 they preserve checked identities; its typed memory operands include their read
 width, snapshot, and address, with shared labels and a construction legend.
+
+Call snapshot origins list the recorded caller-owned ranges retained
+beside the write footprint and their placement premises. Each list shows up to
+128 entries and explicitly counts any omitted entries. A source spelling is not printed in place of a snapshot-dependent fact.
+Fresh model-field values also keep distinct value labels: a field hint such as
+`c.value` alone cannot distinguish its values before and after a call.
+A call refused at stable-view recovery prints each pending checked goal and
+its recorded obligation context. Required call clauses also identify the
+callee and source input clause when lowering retained that identity. These goals
+use the same proposition printer and shared snapshot legend as facts and
+ordinary proof goals; they are pending obligations, not established facts.
+Return-fold certification refusals print the exact rejected path fact using
+that same format. Their traces retain the available checked prefix and label
+it as a certification failure, rather than an accepted path.
+Call requirements use the same direct AND/OR rule as `assumption()`: every
+conjunct must hold, and one known disjunct suffices. Atomic equalities use the
+scoped equality graph. This checks the goal's structure and indexed evidence;
+it does not unfold definitions or search for implication premises. An unknown
+requirement remains a proof obligation.
+A named-resource rewrite that introduces a fact outside its checked body reports
+`rejected fact:` followed by the exact checked proposition, then the facts
+allowed by that resource body. These facts use the shared proposition printer
+and the report's snapshot legend. Up to twelve allowed facts are displayed;
+any further entries are explicitly counted. This comparison is diagnostic
+only and does not turn the rejected proposition into an assumption.
 An `assumption()` failure on an existential goal suggests the
 `witness { name: value }` tactic. A trace reports facts introduced into the
 focused proof context and changes to exact resource representations, using
@@ -176,6 +203,12 @@ click verify --trace-proof my_proof entry.click > trace.txt 2>&1
 The trace option requires one
 C sidecar file and cannot be combined with location or incremental selection,
 or `--allow-sorry`. A trace run does not record a full verification baseline.
+
+A completed `loop` appears as a checked step, with every visible fact it
+introduces to the continuation, including its exit disjunction. The loop's
+exported fact list is not shortened by the ordinary per-step fact preview
+limit; individual facts use the same bounded printer and snapshot legend.
+`--trace-to` can select the completed loop itself.
 
 An unfinished loop `preserve` also retains its checked path for tracing. A plain
 trace follows the path named by the frontier report; `--trace-to` can select a

@@ -252,7 +252,8 @@ impl ProofSourceIndex {
                     result.body = Some(block);
                     break;
                 }
-                if matches!(kind, "cases" | "outcomes") && cursor == start + 1 {
+                if (matches!(kind, "cases" | "outcomes") && cursor == start + 1) || kind == "match"
+                {
                     // Inspect arm headers, skipping each arm's contents and
                     // any quantifier in its assumption.
                     let mut arm = cursor + 1;
@@ -264,7 +265,7 @@ impl ProofSourceIndex {
                                 && self.tokens[arm - 2].text == "="
                                 && self.tokens[arm - 1].text == ">"
                             {
-                                if kind == "cases" {
+                                if matches!(kind, "cases" | "match") {
                                     result.arms.push((arm, arm_close));
                                 } else if arm >= 3 {
                                     match self.tokens[arm - 3].text.as_str() {

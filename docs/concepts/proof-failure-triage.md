@@ -76,7 +76,10 @@ The width, snapshot, and address remain visible even when the source wrote only
 
 Within a trace, goals, requirements, and traced facts share names and snapshot labels. A bounded legend defines
 generated addresses and snapshots, including immutable proof names, pointer-read
-constructions, byte offsets, and memory constructions with their inputs. An
+constructions, pure pointer calls with their typed arguments, byte offsets,
+and memory constructions with their inputs. Pure-call arguments retain model
+identities and read snapshots; nested pointer arguments have their own legend
+definitions. These constructions explain labels and add no proof evidence. An
 initial empty memory is an explicit root. Other snapshots describe a recorded
 transition or an internal transformation, such as projecting a source memory
 for a particular pointer read, substituting a variable, or joining branch

@@ -1268,11 +1268,12 @@ fn explicit_contract_applications_preserve_arguments_when_printed() {
         printed.contains("step(Touch, { cell: second });"),
         "{printed}"
     );
-    let ProofTactic::StepContract(application) = &tactics[0] else {
-        panic!("expected application")
+    let ProofTactic::StepCall(application) = &tactics[0] else {
+        panic!("expected named call transport")
     };
-    assert_eq!(application.arguments[0].handle, "cell");
-    assert_eq!(application.arguments[0].name, "second");
+    assert!(application.is_named_contract());
+    assert_eq!(application.binders()[0].binder(), "cell");
+    assert_eq!(application.binders()[0].instance(), "second");
     assert!(parser::parse(&source.replace("cell: second", "cell: missing")).is_err());
     let error = parser::parse(&source.replace("Touch, { cell: second }", "Touch(second)"))
         .expect_err("the positional application is retired");
@@ -1366,16 +1367,21 @@ fn call_output_binding_without_lent_instances_prints_its_empty_map() {
         int32 get(int32* state) {
             ensures result == 1;
         }
+        int32 mixed(int32* state) {
+            produces made: Counter();
+            ensures result == 1;
+        }
         void caller(int32* state) {
             owns c: Counter();
             ensures c.revision == 1;
         } by {
             let { made: m } = step(make(state), {});
-            let value = step(get(state), {});
+            let { result: value } = step(get(state), {});
+            let { made: another, result: status } = step(mixed(state), {});
         }
     "#;
     let file = parser::parse(source).unwrap();
-    let SourceProof::Script(tactics) = file.function_blocks()[2].grouped_proof().unwrap() else {
+    let SourceProof::Script(tactics) = file.function_blocks()[3].grouped_proof().unwrap() else {
         panic!("expected script")
     };
     let printed = printing::format_proof_tactics(tactics).unwrap();
@@ -1384,9 +1390,22 @@ fn call_output_binding_without_lent_instances_prints_its_empty_map() {
         "{printed}"
     );
     assert!(
-        printed.contains("let value = step(get(state), {});"),
+        printed.contains("let { result: value } = step(get(state), {});"),
         "{printed}"
     );
+    assert!(
+        printed.contains("let { result: status, made: another } = step(mixed(state), {});"),
+        "{printed}"
+    );
+    let reparsed = parser::parse(&source.replace(
+        "let { made: another, result: status } = step(mixed(state), {});",
+        "let { result: status, made: another } = step(mixed(state), {});",
+    ))
+    .unwrap();
+    let SourceProof::Script(again) = reparsed.function_blocks()[3].grouped_proof().unwrap() else {
+        panic!("expected script")
+    };
+    assert_eq!(printed, printing::format_proof_tactics(again).unwrap());
 }
 
 #[test]
@@ -1474,18 +1493,18 @@ fn contract_application_binds_each_handle_by_name() {
             "Touch",
             "declares resource handles; write `step(Touch, { cell: ... })`",
         ),
-        ("Touch, {}", "declares resource handles"),
+        ("Touch, {}", "call map omits `Touch` binder `cell`"),
         (
             "Touch, { slot: first }",
-            "has no resource handle `slot`; its handles are `cell`",
+            "`Touch` declares no resource instance binder `slot`",
         ),
         (
             "Touch, { cell: first, cell: first }",
-            "handle `cell` is bound twice",
+            "duplicate binder `cell` in the call map",
         ),
         (
             "Touch, { cell: second }",
-            "expects resource `marker`, got `other`",
+            "binder `cell` expects resource `marker`, but `second` is `other`",
         ),
     ] {
         let error = verify_c0_sources(&source.replace("Touch, { cell: first }", application), &c)
@@ -1503,7 +1522,7 @@ fn contract_application_binds_each_handle_by_name() {
     assert!(
         error
             .message()
-            .contains("cannot supply two contract resource handles"),
+            .contains("resource instance `first` cannot supply two binders of `Touch`"),
         "{}",
         error.message()
     );
@@ -1512,7 +1531,7 @@ fn contract_application_binds_each_handle_by_name() {
     assert!(
         error
             .message()
-            .contains("declares no resource handles; write `step(Touch)`"),
+            .contains("`Touch` declares no resource instance binder `cell`"),
         "{}",
         error.message()
     );
@@ -2757,3 +2776,95 @@ fn mutex_use_resource_type_checks_its_dependent_argument() {
 }
 
 mod authority_conditional_release_tests;
+
+#[test]
+fn step_output_patterns_reject_ambiguous_and_conflicting_bindings() {
+    let source = r#"
+        resource Counter() { field value: int32; }
+        int32 scalar() { ensures result == 1; }
+        int32 make() { produces made: Counter(); ensures result == 1; }
+        void caller(int32 occupied) { ensures occupied == occupied; } by { OUTPUT }
+    "#;
+    for (output, expected) in [
+        (
+            "let value = step(scalar(), {});",
+            "step outputs require named bindings",
+        ),
+        (
+            "let value = step(make(), {});",
+            "step outputs require named bindings",
+        ),
+        ("let value = step();", "step outputs require named bindings"),
+        (
+            "let { result: a, result: b } = step(scalar(), {});",
+            "duplicate output key",
+        ),
+        (
+            "let { result: a, made: a } = step(make(), {});",
+            "introduces name `a` twice",
+        ),
+        (
+            "let { result: a } = step(make(), {});",
+            "omits produced resource binder",
+        ),
+        (
+            "let { unknown: a } = step(scalar(), {});",
+            "does not produce named resource",
+        ),
+        ("let { made: a } = step();", "only the `result` output"),
+    ] {
+        let error = parser::parse(&source.replace("OUTPUT", output))
+            .expect_err(&format!("{output} should be rejected"));
+        assert!(error.message.contains(expected), "{output}: {error:?}");
+    }
+}
+
+#[test]
+fn named_contract_output_patterns_round_trip_and_check_binders() {
+    let source = r#"
+        resource Dirty(p: int32*) { field value: int32; }
+        resource Ready(p: int32*) { field value: int32; }
+        contract int32 Repair(int32* p) {
+            consumes input: Dirty(p);
+            produces output: Ready(p);
+            ensures output.value == 1;
+            ensures result == 0;
+        }
+        void caller(int32* q) { consumes dirty: Dirty(q); produces done: Ready(q); }
+        by { let { result: status, output: done } = step(Repair, { input: dirty }); }
+    "#;
+    let file = parser::parse(source).unwrap();
+    let SourceProof::Script(tactics) = file.function_blocks()[0].grouped_proof().unwrap() else {
+        panic!("expected script")
+    };
+    let ProofTactic::StepCall(transport) = &tactics[0] else {
+        panic!("expected named transport")
+    };
+    assert!(transport.is_named_contract());
+    assert!(transport.arguments().is_empty());
+    assert_eq!(transport.result(), Some("status"));
+    let printed = printing::format_proof_tactics(tactics).unwrap();
+    assert!(printed.contains("step(Repair, { input: dirty })"));
+    assert!(
+        parser::parse(&format!(
+            "{}{}",
+            source.split("by {").next().unwrap(),
+            printed
+        ))
+        .is_ok()
+    );
+    for (old, new) in [
+        ("input: dirty", "missing: dirty"),
+        ("input: dirty", "input: dirty, input: dirty"),
+        ("input: dirty", ""),
+        ("output: done", "missing: done"),
+        ("result: status, output: done", "result: status"),
+        ("result: status, output: done", "output: done, result: done"),
+        ("step(Repair,", "step(Unknown,"),
+    ] {
+        assert!(
+            parser::parse(&source.replace(old, new)).is_err(),
+            "must reject {new}"
+        );
+    }
+}

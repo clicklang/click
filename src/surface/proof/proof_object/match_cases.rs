@@ -23,9 +23,23 @@ pub(in crate::surface::proof) struct ExecutionMatchPlan {
     deferred_base: PersistentSequence<DeferredPostExecutionTactic>,
     excluded: Vec<Option<ProofCertificate>>,
     entry_cases: PersistentSequence<CaseAssumption>,
+    trace: Option<std::cell::RefCell<crate::surface::proof_trace::TraceMatch>>,
 }
 
 impl ExecutionMatchPlan {
+    pub(in crate::surface::proof) fn take_trace(
+        &self,
+    ) -> Option<crate::surface::proof_trace::TraceMatch> {
+        self.trace.as_ref().map(|trace| {
+            let mut trace = trace.borrow_mut();
+            crate::surface::proof_trace::TraceMatch {
+                header: trace.header.clone(),
+                source_tactic_path: trace.source_tactic_path.clone(),
+                arms: std::mem::take(&mut trace.arms),
+            }
+        })
+    }
+
     pub(in crate::surface::proof) fn excluded_certificate(
         &self,
         index: usize,
@@ -347,6 +361,16 @@ impl<'a> Proof<'a> {
             deferred_base: execution.presentation.post_execution_tactics.clone(),
             excluded: vec![None; source.arms.len()],
             entry_cases: execution.presentation.case_assumptions.clone(),
+            trace: crate::surface::proof_trace::enabled_for(self.claim_label()).then(|| {
+                std::cell::RefCell::new(crate::surface::proof_trace::TraceMatch {
+                    header: format!(
+                        "{}: match",
+                        self.site().path().unwrap_or_else(|| "checked match".into())
+                    ),
+                    source_tactic_path: self.site().source_tactic_path(),
+                    arms: (0..source.arms.len()).map(|_| None).collect(),
+                })
+            }),
         };
         for (index, arm) in source.arms.iter().enumerate() {
             if let [ProofTactic::Contradiction(surface)] = arm.tactics.as_slice() {
@@ -408,6 +432,7 @@ impl<'a> Proof<'a> {
             })?;
         let closed = self.apply_step_at(ProofStep::Contradiction(surface.clone()), source_index)?;
         plan.excluded[index] = Some(closed.execution_match_arm_certificate(entered)?);
+        closed.record_execution_match_arm_trace(plan, index, entered);
         plan.partition = partition;
         Ok(())
     }
@@ -550,6 +575,49 @@ impl<'a> Proof<'a> {
             Ok::<_, ClickError>(())
         })?;
         result?;
+        let proof = if plan.trace.is_some() {
+            // Keep a distinct diagnostic node for the checked constructor case.
+            // It carries no proof step and adds no premise or certificate rule.
+            let proof = Self {
+                node: Arc::new(ProofNode {
+                    path_memo: Default::default(),
+                    parent: Some(proof.node.clone()),
+                    focused_branch: proof.focused_branch_id(),
+                    depth: proof.node.depth,
+                    split_branches: Vec::new(),
+                    step: None,
+                }),
+                ..proof
+            };
+            crate::surface::proof_trace::record(
+                Arc::as_ptr(&proof.node) as usize,
+                crate::surface::proof_trace::TraceStep {
+                    header: format!(
+                        "{}: match ({}::{} arm)",
+                        self.site().path().unwrap_or_else(|| "checked match".into()),
+                        arm.type_name,
+                        arm.variant
+                    ),
+                    source_tactic_path: self.site().source_tactic_path(),
+                    call_source: None,
+                    facts: vec![
+                        proof.checked_trace_fact(
+                            plan.partition
+                                .case_fact(plan.case_indices[index])
+                                .expect("checked constructor case")
+                                .clone(),
+                        ),
+                    ],
+                    more_facts: 0,
+                    frontier: None,
+                    resources: Vec::new(),
+                    more_resources: 0,
+                },
+            );
+            proof
+        } else {
+            proof
+        };
         Ok(proof)
     }
 
@@ -593,11 +661,35 @@ impl<'a> Proof<'a> {
         Ok(proof.with_kernel_state(proof.state.with_locals(locals)))
     }
 
+    pub(in crate::surface::proof) fn record_execution_match_arm_trace(
+        &self,
+        plan: &ExecutionMatchPlan,
+        index: usize,
+        marker: &ProofCheckpoint<'a>,
+    ) {
+        if let Some(trace) = &plan.trace {
+            let arm = &plan.source.arms[index];
+            trace.borrow_mut().arms[index] = Some(crate::surface::proof_trace::TraceMatchArm {
+                names: Box::new(self.diagnostic_state()),
+                name: format!("{}::{}", arm.type_name, arm.variant),
+                fact: self.checked_trace_fact(
+                    plan.partition
+                        .case_fact(plan.case_indices[index])
+                        .expect("checked constructor case")
+                        .clone(),
+                ),
+                lineage: trace_arm_lineage(&self.node, &marker.node, self.focused_branch_id()),
+                _retained: Box::new(self.node.clone()),
+            });
+        }
+    }
+
     pub(in crate::surface::proof) fn finish_execution_match(
         &self,
         marker: &ProofCheckpoint<'a>,
         source: &ProofMatch,
         proofs: Vec<ProofCertificate>,
+        trace: Option<crate::surface::proof_trace::TraceMatch>,
     ) -> Result<Self, ClickError> {
         if self.focused_branch_id() != marker.node.focused_branch
             || proofs.len() != source.arms.len()
@@ -617,7 +709,7 @@ impl<'a> Proof<'a> {
                 proof: Box::new(proof),
             })
             .collect();
-        Ok(Self {
+        let successor = Self {
             site: self.site.clone(),
             context: marker.context.clone(),
             state: self.state.clone(),
@@ -630,7 +722,11 @@ impl<'a> Proof<'a> {
                     arms,
                 }),
             ),
-        })
+        };
+        if let Some(trace) = trace {
+            crate::surface::proof_trace::record_match(Arc::as_ptr(&successor.node) as usize, trace);
+        }
+        Ok(successor)
     }
 
     pub(in crate::surface::proof) fn split_execution_match_group(

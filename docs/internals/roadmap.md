@@ -60,7 +60,7 @@ that result, not a substitute for the complete demo.
 ## Current rbtree status
 
 The MVR proof is not complete. Do not describe the current result as verifying
-the unchanged, pinned `lib/rbtree.c`. As of 2026-10-12 it is exactly this.
+the unchanged, pinned `lib/rbtree.c`. As of 2026-10-13 it is exactly this.
 
 Click verifies function bodies copied byte for byte from Linux v6.8.12 (commit
 `632428373bea7581869cb05dce40bef0d37793e3`, recorded in
@@ -80,6 +80,15 @@ Click verifies function bodies copied byte for byte from Linux v6.8.12 (commit
   `struct rb_node *` rather than `const struct rb_node *`.
 - `__rb_insert_augmented` and `rb_insert_augmented` with callbacks that write
   nothing, and `rb_erase_augmented` for leaf deletion only.
+- Concrete `sized_node` metadata copy, bounded size recomputation, and the
+  specialized `RB_DECLARE_CALLBACKS` rotation body, with checked callable
+  contracts (`examples/rbtree-augmented`). These local metadata proofs are
+  not yet connected to the augmented entry points. A separate recursive
+  `sized_at` resource and checked proof procedure tie stored sizes to the
+  mathematical subtree count. The unchanged C recomputation helper now
+  restores that recursive invariant from a dirty root and valid children,
+  preserving the erased tree shape under the bounded-sum premises. Rotation,
+  propagation, and writable callback-table integration still need that invariant.
 
 The proofs establish memory safety and absence of undefined behavior,
 termination, red-black validity with a black root, parent-pointer consistency,
@@ -101,8 +110,8 @@ stands in for `include/linux/rbtree.h`, `rbtree_types.h`, and
 
 They assume sequential execution (`WRITE_ONCE` is a plain store; RCU readers
 and data races are out of scope), views of the static `dummy_callbacks` table,
-and augmentation callbacks with no writable footprint, so augmentation metadata
-is not modeled.
+and augmentation callbacks with no writable footprint. The concrete metadata
+proofs above are separate from these augmented entry-point proofs.
 
 Not yet covered: the pinned translation unit itself (Click's C front end does
 not yet accept it; see `issues/kernel-scale-preprocessing.md`), the real header

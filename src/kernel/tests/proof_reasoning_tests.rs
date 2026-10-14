@@ -469,12 +469,11 @@ fn algebraic_conditions_decide_from_condition_facts_and_keep_checked_polarity() 
         };
         let facts = PureFactContext::new().assume_proposition(premise.clone());
         let condition_fact = Proposition::ConditionIs(condition.clone(), expected);
-        // `decide` answers an algebraic equality only from an indexed
-        // condition fact. An `Equal` premise over algebraic terms is a
-        // proposition, not a condition fact, so it does not decide the
-        // condition; the polarity forms checked below are the route an
-        // explicit proof uses to move between the two spellings.
-        assert_eq!(facts.decide(&condition), None);
+        // Checked positive model equalities now enter the shared graph, so
+        // the raw equality also decides its condition spelling. A raw
+        // disequality remains an explicit proposition, not a negative graph
+        // edge; its polarity conversion is checked below.
+        assert_eq!(facts.decide(&condition), expected.then_some(true));
         assert_eq!(
             PureFactContext::new()
                 .assume_proposition(condition_fact.clone())
@@ -7713,13 +7712,10 @@ fn integer_machine_round_trip_axioms_hold_in_independent_boundary_models() {
 /// The discharge rule shared by `add_required_proof_obligation_with_context`
 /// and the call-requirement sites in `prepare_verified_function_call`.
 ///
-/// It decides exactly three things: an exactly available fact, one bare
-/// condition the frozen checker decides, and an atomic memory or resource
-/// proposition. A proposition with logical structure is never discharged
-/// here, however easily a general prover would have derived it; it is
-/// emitted for a Surface tactic instead.
+/// Direct obligation checking follows AND/OR structure, but does not use
+/// implication elimination or general proof search.
 #[test]
-fn required_obligation_discharge_is_exact_and_refuses_logical_structure() {
+fn required_obligation_discharge_uses_goal_connectives_without_search() {
     let value = Bitvector32Term::Variable(Variable(97_100));
     let positive = Proposition::ConditionIs(
         ConditionTerm::signed_less_than(Bitvector32Term::Constant(0), value.clone()),
@@ -7748,12 +7744,33 @@ fn required_obligation_discharge_is_exact_and_refuses_logical_structure() {
         &nonnegative
     ));
 
-    // A disjunction with an exactly available arm, a conjunction with an
-    // unavailable conjunct, and an implication with a refuted antecedent are
-    // all derivable by the general prover and none of them is discharged.
+    // A known arm settles OR, including within AND. Missing conjuncts and
+    // implication search remain outside this direct rule.
     let disjunction = Proposition::Or(Box::new(positive.clone()), Box::new(other.clone()));
+    assert!(required_obligation_is_exactly_discharged(
+        &assumptions,
+        &disjunction
+    ));
+    let conjunction = Proposition::And(Box::new(disjunction.clone()), Box::new(positive.clone()));
+    assert!(required_obligation_is_exactly_discharged(
+        &assumptions,
+        &conjunction
+    ));
+    let missing = Proposition::And(Box::new(positive.clone()), Box::new(other.clone()));
     assert!(!required_obligation_is_exactly_discharged(
         &assumptions,
+        &missing
+    ));
+    let held_or = PureFactContext::new().assume_proposition(disjunction.clone());
+    assert!(required_obligation_is_exactly_discharged(
+        &held_or,
+        &disjunction
+    ));
+    assert!(!required_obligation_is_exactly_discharged(
+        &held_or, &positive
+    ));
+    assert!(!required_obligation_is_exactly_discharged(
+        &held_or.without_exact_fact(&disjunction),
         &disjunction
     ));
     let implication = Proposition::Implies(Box::new(other.clone()), Box::new(nonnegative.clone()));
@@ -7761,10 +7778,7 @@ fn required_obligation_discharge_is_exact_and_refuses_logical_structure() {
         &assumptions,
         &implication
     ));
-    assert!(
-        assumptions.proves(&disjunction),
-        "the general prover must still be the thing this route deliberately refuses"
-    );
+    assert!(assumptions.proves(&disjunction));
     assert!(assumptions.proves(&implication));
 
     // And the emitted obligation is the required (non-assumable) kind,
@@ -7773,12 +7787,12 @@ fn required_obligation_discharge_is_exact_and_refuses_logical_structure() {
     add_required_proof_obligation_with_context(
         &mut obligations,
         &assumptions,
-        disjunction.clone(),
+        missing.clone(),
         Some("callee precondition"),
         None,
     );
     assert_eq!(obligations.len(), 1);
-    assert_eq!(obligations[0].proposition(), &disjunction);
+    assert_eq!(obligations[0].proposition(), &missing);
     assert!(!obligations[0].is_assumable());
     assert_eq!(obligations[0].context(), Some("callee precondition"));
 }
@@ -11349,6 +11363,151 @@ fn unsigned_u16_packing_bridges_match_disjoint_fields_and_retain_both_bounds() {
 }
 
 #[test]
+fn required_obligation_connectives_use_graph_equalities_and_scoped_facts() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let a = Bitvector32Term::Variable(Variable(97800));
+    let b = Bitvector32Term::Variable(Variable(97801));
+    let c = Bitvector32Term::Variable(Variable(97802));
+    let eq = |x, y| Proposition::ConditionIs(ConditionTerm::equal(x, y), true);
+    let ab = eq(a.clone(), b.clone());
+    let bc = eq(b, c.clone());
+    let goal = Proposition::Or(
+        Box::new(eq(a, c)),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::Variable(Variable(97803)),
+            true,
+        )),
+    );
+    let before = PureFactContext::new().assume_proposition(ab);
+    let after = before.clone().assume_proposition(bc.clone());
+    assert!(required_obligation_is_exactly_discharged(&after, &goal));
+    assert!(!required_obligation_is_exactly_discharged(&before, &goal));
+    assert!(!required_obligation_is_exactly_discharged(
+        &after.without_exact_fact(&bc),
+        &goal
+    ));
+}
+
+#[test]
+fn required_obligation_connective_work_scales_with_goal_not_ambient_facts() {
+    let mut work_by_size = Vec::new();
+    for size in [16, 32, 64, 128] {
+        let mut work_by_ambient = Vec::new();
+        for ambient in [32, 128, 512, 2048] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let known = Proposition::ConditionIs(ConditionTerm::Variable(Variable(98000)), true);
+            let unknown = Proposition::ConditionIs(ConditionTerm::Variable(Variable(98001)), true);
+            let mut facts = PureFactContext::new().assume_proposition(known.clone());
+            for i in 0..ambient {
+                facts = facts.assume_proposition(Proposition::ConditionIs(
+                    ConditionTerm::Variable(Variable(99000 + i)),
+                    true,
+                ));
+            }
+            let mut and = known.clone();
+            let mut or = unknown.clone();
+            for _ in 1..size {
+                and = Proposition::And(Box::new(and), Box::new(known.clone()));
+                or = Proposition::Or(Box::new(or), Box::new(unknown.clone()));
+            }
+            // Index construction belongs to context preparation, not each
+            // goal query. Live lowering has already initialized this index.
+            facts.build_stated_proposition_index();
+            let (answers, work) = crate::instrumentation::measure_deterministic_work(|| {
+                (
+                    required_obligation_is_exactly_discharged(&facts, &and),
+                    required_obligation_is_exactly_discharged(&facts, &or),
+                )
+            });
+            assert_eq!(answers, (true, false));
+            work_by_ambient.push(work);
+        }
+        assert!(
+            work_by_ambient.windows(2).all(|pair| pair[0] == pair[1]),
+            "unrelated facts affected work: {work_by_ambient:?}"
+        );
+        work_by_size.push(work_by_ambient[0]);
+    }
+    assert!(
+        work_by_size
+            .windows(2)
+            .all(|pair| pair[1] <= 2 * pair[0] + 4),
+        "connective work grew faster than the goal: {work_by_size:?}"
+    );
+}
+
+#[test]
+fn model_fact_clearing_and_restriction_keep_only_selected_graph_support() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = maybe_int32_type();
+    let model = |id| AlgebraicTerm {
+        algebraic_type: ty.clone(),
+        node: AlgebraicTermNode::Variable(Variable(id)),
+    };
+    let (a, b) = (model(97900), model(97901));
+    let equality = Proposition::Equal(Term::Algebraic(a.clone()), Term::Algebraic(b.clone()));
+    let condition = ConditionTerm::AlgebraicEqual(Box::new(a), Box::new(b));
+    let both = PureFactContext::new()
+        .assume_proposition(equality.clone())
+        .assume_condition(condition.clone(), true);
+    let condition_only = both.with_only_proposition_facts(&[]);
+    assert!(condition_only.contains_known(&equality));
+    assert!(
+        !condition_only
+            .without_exact_fact(&Proposition::ConditionIs(condition.clone(), true))
+            .contains_known(&equality)
+    );
+    let proposition_only = both.restricted_to_facts(&[], std::slice::from_ref(&equality));
+    assert_eq!(proposition_only.decide(&condition), Some(true));
+    assert!(!both.restricted_to_facts(&[], &[]).contains_known(&equality));
+    // The selected condition can be new to the base context. Clearing its
+    // empty proposition fragment must not skip final model reconstruction.
+    let selected = PureFactContext::new().restricted_to_facts(&[(condition, true)], &[]);
+    assert!(selected.contains_known(&equality));
+}
+
+#[test]
+fn restricting_model_support_ignores_unselected_scalar_graph_edges() {
+    let mut samples = Vec::new();
+    for size in [32, 128, 512, 2048] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = maybe_int32_type();
+        let model = |id| AlgebraicTerm {
+            algebraic_type: ty.clone(),
+            node: AlgebraicTermNode::Variable(Variable(id)),
+        };
+        let equality =
+            Proposition::Equal(Term::Algebraic(model(97600)), Term::Algebraic(model(97601)));
+        let mut context = PureFactContext::new().assume_proposition(equality.clone());
+        for i in 0..size {
+            context = context.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(100000 + 2 * i)),
+                    Bitvector32Term::Variable(Variable(100001 + 2 * i)),
+                ),
+                true,
+            );
+        }
+        let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.restricted_to_facts(&[], std::slice::from_ref(&equality))
+        });
+        assert!(selected.contains_known(&equality));
+        assert!(!selected.contains_known(&Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::Variable(Variable(100000)),
+                Bitvector32Term::Variable(Variable(100001)),
+            ),
+            true
+        )));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 8),
+        "restriction reconstructed ambient edges: {samples:?}"
+    );
+}
+
+#[test]
 fn uint32_unpacking_rules_retain_bounds_and_recover_all_word_bits() {
     fn evaluate(term: &Bitvector32Term) -> u32 {
         match term {
@@ -11419,4 +11578,79 @@ fn uint32_unpacking_rules_retain_bounds_and_recover_all_word_bits() {
     let oversized = std::hint::black_box(65536u32);
     assert_ne!(oversized & 65535, oversized);
     assert_ne!((oversized.wrapping_shl(16) >> 16) & 65535, oversized);
+}
+
+#[test]
+fn call_input_retention_does_not_derive_memory_or_scan_unrelated_facts() {
+    let memory = CMemory::new();
+    let base = Pointer {
+        block: "retention_data".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let held = Proposition::CMemoryLoadable {
+        memory: memory.clone(),
+        base: base.clone(),
+        bytes: 8u32.into(),
+        wide: false,
+    };
+    let derived = Proposition::CMemoryLoadable {
+        memory,
+        base: base.offset_by_int32_elements(1u32.into()),
+        bytes: 4u32.into(),
+        wide: false,
+    };
+    let known = Proposition::ConditionIs(
+        ConditionTerm::equal(Bitvector32Term::Variable(Variable(990_000)), 1u32.into()),
+        true,
+    );
+    let missing = Proposition::ConditionIs(
+        ConditionTerm::equal(Bitvector32Term::Variable(Variable(990_001)), 1u32.into()),
+        true,
+    );
+    let disjunction = Proposition::Or(Box::new(known.clone()), Box::new(missing.clone()));
+    let mut samples = Vec::new();
+    for size in [16, 64, 256, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut assumptions = PureFactContext::new()
+            .assume_proposition(held.clone())
+            .assume_proposition(known.clone());
+        for index in 0..size {
+            assumptions = assumptions.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(991_000 + index)),
+                    0u32.into(),
+                ),
+                true,
+            );
+        }
+        // Shared indexes initialize once from admitted fact deltas. Keep
+        // that preparation separate from repeated retention lookups, as in
+        // the existing stated-proposition-index scaling regressions.
+        assumptions.build_stated_proposition_index();
+        let Proposition::ConditionIs(condition, _) = &missing else {
+            unreachable!()
+        };
+        assert_eq!(assumptions.difference_decision(condition, &[]), None);
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let retain = |goal| {
+                crate::kernel::reasoning::path_facts::call_input_fact_is_already_known(
+                    &assumptions,
+                    goal,
+                )
+            };
+            assert!(retain(&held));
+            assert!(retain(&disjunction));
+            assert!(!retain(&missing));
+            assert!(!retain(&derived), "retention must not redo range coverage");
+        });
+        samples.push((size, work));
+    }
+    let baseline = samples[0].1;
+    for (size, work) in &samples {
+        let allowance = baseline + 32 * ((*size / 16) as usize).ilog2() as usize;
+        assert!(
+            *work <= allowance,
+            "retention grew with unrelated facts: {samples:?}"
+        );
+    }
 }

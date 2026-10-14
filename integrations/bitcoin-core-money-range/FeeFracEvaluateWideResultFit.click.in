@@ -22,9 +22,9 @@ int64 FeeFrac::EvaluateFee<@INSTANCE@>(int32 at_size) const {
     apply(int32_less_equal_to_integer(at_size, 2147483647));
     have -2147483648 <= to_integer(at_size) by { arithmetic() using { 0 <= to_integer(at_size); } }
     step(); step(); step(); step();
-    let denominator = step();
+    let { result: denominator } = step();
     step();
-    let product = step(FeeFrac_Mul(this->fee, at_size), { });
+    let { result: product } = step(FeeFrac_Mul(this->fee, at_size), { });
     have @PRODUCT_BOUND_1@ by {
         rewrite(to_integer(product) == to_integer(this->fee) * to_integer(at_size));
         assumption();
@@ -34,7 +34,7 @@ int64 FeeFrac::EvaluateFee<@INSTANCE@>(int32 at_size) const {
         assumption();
     }
     step();
-    let rounded = step(FeeFrac_Div(product, denominator, @ROUND@), { });
+    let { result: rounded } = step(FeeFrac_Div(product, denominator, @ROUND@), { });
     execute();
     have @DIV_BOUND_1@;
     have @DIV_BOUND_2@;

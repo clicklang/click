@@ -58,7 +58,7 @@ units on any machine under any load. `--time-limit` (default 10m) is only a
 wall-clock crash-containment bound for a hung or CPU-starved run; a run it
 stops says so, and that is not a verdict about the proof.
 
-`--trace-proof PROOF` verifies one C function or one pure theorem of the
+`--trace-proof PROOF` verifies one C function, theorem, or user-defined tactic of the
 sidecar, by name or by a PATH:LINE[:COLUMN] of the sidecar that a claim of
 it covers, and shows checked fact and resource changes on the path to
 the failing tactic, or an accepted path when the proof succeeds. `--trace-to`
@@ -812,19 +812,20 @@ fn proof_error_report(
 enum TraceUnit {
     Function(String),
     Theorem(String),
+    Tactic(String),
 }
 
 impl TraceUnit {
     fn name(&self) -> &str {
         match self {
-            Self::Function(name) | Self::Theorem(name) => name,
+            Self::Function(name) | Self::Theorem(name) | Self::Tactic(name) => name,
         }
     }
 }
 
 /// Resolves a `--trace-proof` argument against the proofs the sidecar
-/// selects: a function or an entry-module theorem, by name. Validation
-/// refuses a name declared as both, so the name alone identifies the proof.
+/// selects: a function, theorem, or user-defined tactic, by name. Validation
+/// refuses duplicate proof names, so the name alone identifies the proof.
 /// The error says why the name cannot be traced.
 fn trace_unit(
     requested: &str,
@@ -846,6 +847,8 @@ fn trace_unit(
         Ok(TraceUnit::Function(function))
     } else if let Some(theorem) = selects("theorem", requested) {
         Ok(TraceUnit::Theorem(theorem))
+    } else if let Some(tactic) = selects("tactic", requested) {
+        Ok(TraceUnit::Tactic(tactic))
     } else {
         Err(format!("`{requested}` is not a selected proof"))
     }
@@ -1410,7 +1413,7 @@ fn verify_file_within_limits(
             trace_unit(requested, &project, &inputs)
                 .map_err(|message| {
                     format!(
-                        "{message} in `{}`; `--trace-proof` takes the name of a function or theorem the sidecar proves",
+                        "{message} in `{}`; `--trace-proof` takes the name of a function, theorem, or user-defined tactic the sidecar proves",
                         click_path.display()
                     )
                 })
@@ -1435,7 +1438,7 @@ fn verify_file_within_limits(
     };
     let (verified, successful_trace) = {
         let run_traced = |unit: &TraceUnit| match unit {
-            TraceUnit::Function(function) => {
+            TraceUnit::Function(function) | TraceUnit::Tactic(function) => {
                 verify_project_functions(&project, &inputs.program_inputs(), [function.clone()])
             }
             TraceUnit::Theorem(theorem) => {
@@ -1889,7 +1892,7 @@ mod tests {
                 requires 0 <= x;
                 ensures 0 <= result;
             } by {
-                let r = step(child(x), {});
+                let { result: r } = step(child(x), {});
                 have r < 1 by {
                     apply(negative(r)) using { 0 <= r; }
                 }
@@ -1944,6 +1947,211 @@ mod tests {
                 "{name}: {report}"
             );
         }
+    }
+
+    #[test]
+    fn user_defined_tactic_trace_selects_its_own_checked_path() {
+        let source = "verifying \"program.c\";\ntactic keep(x: int32) {\n    requires x == 3;\n    ensures x == 3;\n} by {\n    have x == 3 by { assumption(); }\n}\ntactic broken(x: int32) { ensures x == 4; } by { have x == 4 by { assumption(); } }\n";
+        let (root, path) = temporary_project("tactic-trace", "void unused() {}", source);
+        let loaded = load_target_inputs(&path, None).unwrap();
+        assert!(matches!(
+            trace_unit("keep", &loaded.project, &loaded.inputs).unwrap(),
+            TraceUnit::Tactic(_)
+        ));
+        // Selection must not check the unrelated, invalid tactic.
+        for selector in ["keep".to_owned(), format!("{}:6", path.display())] {
+            entry_with([
+                "--trace-proof".to_owned(),
+                selector,
+                "--trace-to".to_owned(),
+                "6".to_owned(),
+                path.display().to_string(),
+            ])
+            .expect("the selected tactic has an accepted trace at its written step");
+        }
+        let report = entry_with([
+            "--trace-proof".to_owned(),
+            "broken".to_owned(),
+            path.display().to_string(),
+        ])
+        .expect_err("the selected tactic's false postcondition must fail");
+        assert!(
+            report.contains("proof trace (checked tactics and branch facts):"),
+            "{report}"
+        );
+        assert!(report.contains("tactic@8"), "{report}");
+        let ordinary = entry_with([path.display().to_string()]).unwrap_err();
+        assert!(ordinary.contains("--trace-proof broken"), "{ordinary}");
+        fs::write(root.join("library.click"),
+            "tactic imported(x: int32) { requires x == 3; ensures x == 3; } by { have x == 3 by { assumption(); } }")
+            .unwrap();
+        fs::write(&path, format!("import \"library.click\";\n{source}")).unwrap();
+        let imported = entry_with([
+            "--trace-proof".to_owned(),
+            "imported".to_owned(),
+            path.display().to_string(),
+        ])
+        .expect_err("imported tactic bodies belong to the module that declares them");
+        assert!(imported.contains("not a selected proof"), "{imported}");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn user_defined_tactic_trace_retains_constructor_arms() {
+        let source = r#"verifying "program.c";
+spec enum Choice { First, Second, Third }
+resource choice() { field model: Choice; }
+tactic choose() { owns x: choice(); ensures 0 == 0; } by {
+    match x.model {
+        Choice::First => {
+            have 0 == 0 by { normalize(); }
+        },
+        Choice::Second => {
+            have 0 == 0 by { normalize(); }
+        },
+        Choice::Third => {
+            have 0 == 0 by { normalize(); }
+        },
+    }
+}
+"#;
+        let (root, path) = temporary_project("tactic-match-trace", "void unused() {}", source);
+        for line in [7, 10, 13] {
+            entry_with([
+                "--trace-proof".to_owned(),
+                "choose".to_owned(),
+                "--trace-to".to_owned(),
+                line.to_string(),
+                path.display().to_string(),
+            ])
+            .expect("every checked constructor arm retains its written steps");
+        }
+        fs::write(
+            &path,
+            source.replace(
+                "Choice::Third => {\n            have 0 == 0",
+                "Choice::Third => {\n            have 0 == 1",
+            ),
+        )
+        .unwrap();
+        let report = entry_with([
+            "--trace-proof".to_owned(),
+            "choose".to_owned(),
+            path.display().to_string(),
+        ])
+        .unwrap_err();
+        assert!(report.contains("Choice::Third arm"), "{report}");
+        assert!(
+            report.contains("proof trace (checked tactics and branch facts):"),
+            "{report}"
+        );
+        let (_, trace) = report
+            .split_once("proof trace (checked tactics and branch facts):")
+            .unwrap();
+        assert!(trace.contains("Choice::Third"), "{trace}");
+        assert!(
+            !trace.contains("Choice::First") && !trace.contains("Choice::Second"),
+            "{trace}"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn declined_theorem_application_preserves_checked_trace() {
+        let source = r#"verifying "program.c";
+theorem positive(x: int32) { requires x > 0; ensures x > 0 by { assumption(); } }
+void walk(int32 n) { requires n >= 0; ensures 0 == 0; } by {
+    step(); step();
+    loop {
+        decreases n - i;
+        invariant 0 <= i and i <= n;
+        initialize by simp;
+        preserve by {
+            have i >= 0 by { assumption(); }
+            apply(positive(0));
+            step(); close_invariants();
+        }
+    }
+    step(); normalize();
+}
+void plain(int32 n) { requires n >= 0; ensures 0 == 0; } by {
+    have n >= 0 by { assumption(); }
+    apply(positive(0));
+    execute(); normalize();
+}
+"#;
+        let (root, path) = temporary_project(
+            "declined-apply-trace",
+            "void walk(int n) { int i = 0; while (i < n) { i++; } } void plain(int n) {}",
+            source,
+        );
+        for (name, prior) in [("walk", "have i >= 0"), ("plain", "have n >= 0")] {
+            let report = entry_with([
+                "--trace-proof".to_owned(),
+                name.to_owned(),
+                path.display().to_string(),
+            ])
+            .expect_err("the false theorem premise remains rejected");
+            assert!(
+                report.contains("required exact fact for theorem `positive`"),
+                "{report}"
+            );
+            let (_, trace) = report
+                .split_once("proof trace (checked tactics and branch facts):")
+                .unwrap_or_else(|| panic!("missing checked prefix: {report}"));
+            assert!(trace.contains(prior), "{trace}");
+            assert!(!report.contains("proof trace unavailable"), "{report}");
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn completed_loop_trace_records_exported_facts_and_supports_trace_to() {
+        let mut source = String::from(
+            r#"verifying "program.c";
+void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
+    step(); step();
+    loop {
+        decreases n - i;
+        invariant 0 <= i and i <= n;
+"#,
+        );
+        for bound in 1..=12 {
+            source.push_str(&format!("        invariant i >= -{bound};\n"));
+        }
+        source.push_str(
+            r#"        initialize by simp;
+        preserve by { step(); close_invariants(); }
+    }
+    have 0 == 1 by { normalize(); }
+    execute(); simp();
+}
+"#,
+        );
+        let (root, path) = temporary_project(
+            "completed-loop-trace",
+            "void walk(int n) { int i = 0; while (i < n) { i++; } }",
+            &source,
+        );
+        for targeted in [false, true] {
+            let mut args = vec!["--trace-proof".to_string(), "walk".to_string()];
+            if targeted {
+                args.extend(["--trace-to".to_string(), "4".to_string()]);
+            }
+            args.push(path.display().to_string());
+            let report = entry_with(args).expect_err("the false post-loop fact remains rejected");
+            assert!(report.contains("tactic@4: loop"), "{report}");
+            let (_, loop_trace) = report.split_once("tactic@4: loop").unwrap();
+            assert!(loop_trace.matches("adds:").count() > 8, "{loop_trace}");
+            assert!(!loop_trace.contains("more added facts"), "{loop_trace}");
+            if targeted {
+                assert!(
+                    !report.contains("target tactic has no recorded checked step"),
+                    "{report}"
+                );
+            }
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     fn loop_frontier_trace_report(target: Option<usize>) -> String {

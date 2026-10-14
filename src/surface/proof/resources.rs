@@ -573,14 +573,19 @@ pub(in crate::surface) fn selected_resource_instance_arm(
 /// instance's arguments and its C-typed field values. Those fields are the
 /// scope's extra parameters, in field order, as a matched arm's C-typed
 /// constructor bindings are, because a memory clause may use a field as an
-/// endpoint. A guarded or witness-carrying body is not unconditionally one
-/// shape, and a field-free body is not an instance, so neither is selected.
+/// endpoint. A guarded body is selected only for an explicit rewrite whose
+/// kernel check proved the body active. Witness-carrying bodies stay opaque,
+/// and a field-free body is not an instance.
 fn unmatched_instance_body(
     definition: &ResourceDefinition,
     body: &CompositeResourceBody,
     instance: &ResourceInstance,
+    checked_active_body: bool,
 ) -> Option<SelectedInstanceArm> {
-    if body.condition.is_some() || !body.witnesses.is_empty() || definition.fields().is_empty() {
+    if (body.condition.is_some() && !checked_active_body)
+        || !body.witnesses.is_empty()
+        || definition.fields().is_empty()
+    {
         return None;
     }
     let mut parameters = definition.parameters.clone();
@@ -598,6 +603,9 @@ fn unmatched_instance_body(
         }
     }
     let mut scope = body.clone();
+    // Only a successful explicit rewrite supplies the checked guard case.
+    // Initial projection still leaves guarded instances opaque.
+    scope.condition = None;
     scope.children = Vec::new();
     scope.facts = Vec::new();
     scope.contains.retain(|clause| {
@@ -837,7 +845,7 @@ fn common_possible_instance_arm(
     Some(common)
 }
 
-/// Names the cells an `unfold` of a matched instance has just exposed.
+/// Names the cells an `unfold` of an instance has just exposed.
 ///
 /// Naming is atomic across producers (`docs/internals/canonicalization.md`).
 /// Contract lowering already materializes the cells of the arm a section
@@ -856,6 +864,7 @@ fn common_possible_instance_arm(
 /// convention. It is bounded by the arm body: one cell per element of each
 /// constant-bounded range the arm owns, no search, and cells the snapshot
 /// already holds are left alone.
+#[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn materialize_unfolded_instance_arm_cells(
     resource_environment: &ResourceEnvironment,
     spec_definitions: SpecDefinitions<'_>,
@@ -864,7 +873,11 @@ pub(in crate::surface) fn materialize_unfolded_instance_arm_cells(
     instance: &ResourceInstance,
     assumptions: &PureFactContext,
     naming_assumptions: &PureFactContext,
+    checked_active_body: bool,
 ) -> CState {
+    if !checked_active_body {
+        return state;
+    }
     // An unfold consumes the instance and exposes its body, so an unmatched
     // body is the one it exposes. Its cells are named here exactly as a
     // selected arm's are; otherwise a C read of a cell the body owns, after
@@ -878,37 +891,9 @@ pub(in crate::surface) fn materialize_unfolded_instance_arm_cells(
     .or_else(|| {
         let definition = resource_environment.get(instance.name())?;
         let body = definition.composite_body()?;
-        if body.matched.is_some() {
-            return None;
-        }
-        if body.condition.is_none() {
-            return unmatched_instance_body(definition, body, instance);
-        }
-        // The checked unfold has exposed only the active body's cells.
-        // Select that same body here; a false or undecided guard must not
-        // materialize its cells, and the entry projection stays unconditional.
-        let mut active_body = body.clone();
-        active_body.condition = None;
-        let selected = unmatched_instance_body(definition, &active_body, instance)?;
-        let substitutions = resource_value_substitutions_for_parameters(
-            selected.arm.name(),
-            instance.arguments(),
-            &selected.bindings,
-            selected.arm.parameters(),
-        )
-        .ok()?;
-        let active = try_select_composite_resource_body(
-            definition,
-            &substitutions,
-            parameter_binding,
-            &state,
-            &state,
-            &CValue::Int32(Bitvector32Term::Constant(0)),
-            assumptions,
-            spec_definitions,
-        )
-        .ok()?;
-        (active == Some(true)).then_some(selected)
+        body.matched
+            .is_none()
+            .then(|| unmatched_instance_body(definition, body, instance, checked_active_body))?
     });
     let Some(selected) = selected else {
         return state;
@@ -982,9 +967,9 @@ pub(super) fn project_initial_composite_resource_cores(
                             .get(instance.name())
                             .and_then(|definition| {
                                 let body = definition.composite_body()?;
-                                body.matched
-                                    .is_none()
-                                    .then(|| unmatched_instance_body(definition, body, instance))?
+                                body.matched.is_none().then(|| {
+                                    unmatched_instance_body(definition, body, instance, false)
+                                })?
                             })
                 {
                     state = project_selected_instance_arm_cells(
@@ -5557,6 +5542,7 @@ resource cell(p: int32*) {
                 &instance,
                 &PureFactContext::new(),
                 &PureFactContext::new(),
+                active,
             );
             assert_eq!(
                 matches!(after.memory().load(&pointer), CExpressionOutcome::Value(_)),

@@ -1386,8 +1386,32 @@ ownership. This increment still uses callbacks without writable footprints;
 metadata ownership and its augmentation invariant remain unfinished.
 `rbtree_subtree_size.click` establishes the concrete mathematical count model:
 nonnegative sizes, reparenting invariance, and both rotation callback updates
-(copy the promoted root's summary and recompute the demoted node). C metadata
-fields and their machine-integer bounds are not yet connected to this model.
+(copy the promoted root's summary and recompute the demoted node). The concrete `SizedTree` ownership model now connects C size fields to the
+mathematical subtree count under checked machine-integer bounds.
+`rbtree_size_recompute_model.click` restores that invariant through the unchanged
+`compute_size` helper. `rbtree_size_rotate_model.click` restores it through the
+unchanged size rotation callback, in both directions and all four nullable-child
+configurations, assuming the structural links and parent tags already rotated.
+It preserves the erased shape and returns a recursively sized tree.
+Recomputation also exports the early-stop implication: a nonzero return means
+the cached size did not change. The unchanged propagation body now verifies
+for its first visited leaf, including both early break and parent advance to
+an exclusive stop. Loop resources retain entry-bound pointer and scalar
+parameters across cursor changes. The ancestor model now retains cached sizes
+and sibling subtrees, preserves erased shape on reconstruction, and proves that
+unchanged focused size permits stopping with every remaining ancestor count
+correct. Recursive ownership certification and recomputation establish the
+count-validity predicate used by this theorem; recomputation preserves both
+child models. Owned ancestor frames and a checked recursive reconstruction
+tactic now rebuild the valid sized tree on early stop. Path and result models
+carry the reconstruction root without adding a C parameter to the callback.
+`rbtree_size_propagate_tree.click` now connects these helpers to the unchanged
+arbitrary-length C loop. It checks both exits, invariant preservation, and
+termination by context depth, then returns ownership of the valid sized tree
+with its original root and erased shape and recursively valid counts.
+Checked projection of the loop exit disjunction establishes that the joined
+walk is finished. Writable callback-table integration with the augmented
+entry points remains.
 
 
 ### Pinned source
@@ -1533,3 +1557,10 @@ Integer specification coverage is landed and documented in
 [the mathematical-integer internals](../docs/internals/mathematical-integers.md);
 this MVR model work has no pending dependency on the retired Integer P1
 issue. Related: [algebraic-data-types.md](algebraic-data-types.md).
+
+`rbtree_size_metadata.click` now checks `split_sized_tree`: full `sized_at`
+ownership separates into the original structural `rb_at` and a cache-cell-only
+`sized_metadata_at`, preserving both models. Its child indices are pure
+model-derived C pointers, so metadata ownership does not depend on reading
+links that structural callbacks may change. Rejoining this ownership and
+using the writable concrete callback table remain unfinished.

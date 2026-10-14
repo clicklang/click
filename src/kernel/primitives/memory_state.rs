@@ -1958,6 +1958,16 @@ impl CallKeptRanges {
         Self { ranges, premises }
     }
 
+    /// Recorded caller-owned ranges, for snapshot diagnostics.
+    pub(crate) fn diagnostic_ranges(&self) -> &ResourceContext {
+        &self.ranges
+    }
+
+    /// Recorded placement premises, for snapshot diagnostics.
+    pub(crate) fn diagnostic_premises(&self) -> &[(ConditionTerm, bool)] {
+        &self.premises
+    }
+
     fn is_empty(&self) -> bool {
         self.ranges.is_pristine_semantically_empty()
     }
@@ -6317,18 +6327,22 @@ impl CMemory {
         pointee_byte_width: u32,
         value_type: CType,
     ) -> CValue {
-        CValue::typed_pointer(
-            Pointer::loaded(
-                pointer.block.clone(),
-                Bitvector32Term::MemoryLoad(
-                    crate::kernel::intern_c_memory(self.clone()),
-                    Box::new(pointer.clone()),
-                    LoadKind::Bits32,
-                ),
-                i64::from(pointee_byte_width),
+        let snapshot = crate::kernel::intern_c_memory(self.clone());
+        let value = Pointer::loaded(
+            pointer.block.clone(),
+            Bitvector32Term::MemoryLoad(
+                snapshot.clone(),
+                Box::new(pointer.clone()),
+                LoadKind::Bits32,
             ),
-            value_type,
-        )
+            i64::from(pointee_byte_width),
+        );
+        // This factory constructs an exact typed read, just like the seeded
+        // cell producer. Keep its defining snapshot and address even when a
+        // resource argument evaluator does not retain a C load's fact stream.
+        crate::kernel::equality_graph::EqualityGraph::default()
+            .register_pointer_read_definition(&value, &snapshot, pointer);
+        CValue::typed_pointer(value, value_type)
     }
 }
 

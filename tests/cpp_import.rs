@@ -15615,7 +15615,7 @@ fn check_converted_wide_call_results(initializer: bool) {
  ensures to_integer(result) == to_integer(value);
 }} by {{
  step();
- let captured = step(echo(value), {{}});
+ let {{ result: captured }} = step(echo(value), {{}});
  have {lo} <= to_integer(captured) by {{ arithmetic() using {{ {lo} <= to_integer(value); to_integer(captured) == to_integer(value); }} }}
  have to_integer(captured) <= {hi} by {{ arithmetic() using {{ to_integer(value) <= {hi}; to_integer(captured) == to_integer(value); }} }}
  execute();
@@ -15698,7 +15698,7 @@ fn converted_wide_boolean_calls_observe_high_bits() {
             r#"verifying "wide.cpp";
 uint128 echo(uint128 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
 bool relay(uint128 value) {{ requires to_integer(value) == {point}; ensures result == {answer}; }} by {{
- step(); let captured = step(echo(value), {{}});
+ step(); let {{ result: captured }} = step(echo(value), {{}});
  have to_integer(captured) == {point} by {{ arithmetic() using {{ to_integer(value) == {point}; to_integer(captured) == to_integer(value); }} }}
  {zero_fact}
  execute(); simp();

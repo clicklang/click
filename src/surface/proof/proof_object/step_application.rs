@@ -620,7 +620,7 @@ impl<'a> Proof<'a> {
             && crate::surface::proof_trace::enabled_for(self.claim_label())
             && !Arc::ptr_eq(&self.node, &next.node)
         {
-            self.record_checked_trace_step(next, tactic, call_source);
+            self.record_checked_trace_step(next, tactic, call_source, 8);
         }
         result
     }
@@ -662,11 +662,12 @@ impl<'a> Proof<'a> {
 
     /// Read only the changed fact/resource keys, and only under an explicit
     /// trace request. The checked successor and its certificate are untouched.
-    fn record_checked_trace_step(
+    pub(super) fn record_checked_trace_step(
         &self,
         next: &Self,
         tactic: &str,
         call_source: Option<crate::surface::proof_trace::TraceCallSource>,
+        fact_limit: usize,
     ) {
         let location = self
             .site()
@@ -697,10 +698,10 @@ impl<'a> Proof<'a> {
         let visible = added
             .iter()
             .filter(|fact| crate::surface::proof_trace::visible_checked_fact(fact));
-        for fact in visible.clone().take(8) {
+        for fact in visible.clone().take(fact_limit) {
             detail.facts.push(next.checked_trace_fact(fact.clone()));
         }
-        detail.more_facts = visible.count().saturating_sub(8);
+        detail.more_facts = visible.count().saturating_sub(fact_limit);
         if let (Some(before), Some(after)) = (self.branch_execution(), next.branch_execution()) {
             let before_frontier = &before.core.frontier;
             let after_frontier = &after.core.frontier;

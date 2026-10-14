@@ -5596,6 +5596,7 @@ pub fn tactic_arm_containing_position(
         "if" => pair(find_if_branch_blocks(&tokens, &range)?),
         "outcomes" => pair(find_outcomes_arm_blocks(&tokens, &range)?),
         "cases" => find_cases_arm_blocks(&tokens, &range)?,
+        "match" => find_structural_induction_arm_blocks(&tokens, &range)?,
         "both" => {
             let left_open = start + 1;
             if tokens.get(left_open).map(|token| token.text.as_str()) != Some("{") {

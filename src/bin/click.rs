@@ -898,7 +898,7 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
     requires cur < 2;
     ensures result == 1;
 } by {
-    let r = step(child(a, visited, a[cur]), { });
+    let { result: r } = step(child(a, visited, a[cur]), { });
     have r != 0 by { simp(); }
     have defined(a[cur]) by { simp(); }
     have exists (z: int32) { z == a[cur] } by {
@@ -921,7 +921,7 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
         assert!(!report.contains("recent premises"), "{report}");
         assert!(report.contains("adds: r == 1"), "{report}");
         assert!(
-            report.contains("tactic@19: let r = step(child("),
+            report.contains("tactic@19: let { result: r } = step(child("),
             "{report}"
         );
         // Both facts are now printed. Keep the saved read's snapshot visible
@@ -1029,7 +1029,7 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
     ensures result == result;
 } by {
     mark before_call;
-    let r = step(child(a, b, n, a[i]), {});
+    let { result: r } = step(child(a, b, n, a[i]), {});
     have defined(at(before_call, a[i])) by { simp(); }
     have exists (path: Path) {
         pick(at(before_call, a[i]), path) == at(before_call, a[i])
@@ -1242,7 +1242,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         let wrong = trace(&["missing"]).unwrap_err();
         assert!(
             wrong.contains("`missing` is not a selected proof in ")
-                && wrong.contains("takes the name of a function or theorem"),
+                && wrong.contains("takes the name of a function, theorem, or user-defined tactic"),
             "{wrong}"
         );
         fs::remove_dir_all(directory).unwrap();

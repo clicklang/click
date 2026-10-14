@@ -136,7 +136,7 @@ fn owning_definition() -> CCompositeResourceDefinition {
         name: "cell".into(),
         resource: "cell".into(),
         binding: Variable(90),
-        arguments: vec![c_variable("p")],
+        arguments: vec![SpecExpression::CExpression(c_variable("p"))],
         field_bindings: vec![CResourceChildField::Parent(0)],
     }])
 }

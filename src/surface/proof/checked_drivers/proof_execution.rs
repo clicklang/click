@@ -14,7 +14,7 @@ thread_local! {
     /// Why the checked linear driver declined the last written operation it
     /// could not run, such as the premise an `apply` was missing, so the
     /// terminal diagnostic names it instead of only the proof shape.
-    static DECLINED_OPERATION: std::cell::RefCell<Option<String>> =
+    static DECLINED_OPERATION: std::cell::RefCell<Option<ClickError>> =
         const { std::cell::RefCell::new(None) };
     /// The deepest region depth the structural driver entered, for the
     /// depth-accounting regression tests.
@@ -66,17 +66,19 @@ pub(in crate::surface::proof) fn take_region_depth_decline() -> bool {
 /// terminal diagnostic.
 #[track_caller]
 fn decline_operation<T>(operation: String, reason: &ClickError) -> Result<Option<T>, ClickError> {
-    let reason = reason.raw_summary();
-    let reason = reason.split("\nproof context:").next().unwrap_or(reason);
     DECLINED_OPERATION.with(|declined| {
-        *declined.borrow_mut() = Some(format!("{operation} was refused: {}", reason.trim()));
+        *declined.borrow_mut() = Some(
+            reason
+                .clone()
+                .with_context(format!("{operation} was refused")),
+        );
     });
     decline()
 }
 
 /// Takes the reason the checked linear driver last declined a written
 /// operation for, and clears it.
-pub(in crate::surface::proof) fn take_declined_operation() -> Option<String> {
+pub(in crate::surface::proof) fn take_declined_operation() -> Option<ClickError> {
     DECLINED_OPERATION.with(|declined| declined.borrow_mut().take())
 }
 
@@ -1292,6 +1294,7 @@ fn try_check_structural_function_proof_inner<'a>(
         match current {
             InternalProofNode::Match {
                 index,
+                source_index,
                 proof_match,
                 arms,
                 continuation,
@@ -1301,6 +1304,7 @@ fn try_check_structural_function_proof_inner<'a>(
                 let Some(next) = advance_execution_match(
                     proof,
                     proof_match,
+                    *source_index,
                     arms,
                     continuation,
                     staged_expansion_capture.as_mut(),
@@ -2177,6 +2181,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
     match node {
         InternalProofNode::Match {
             index,
+            source_index,
             proof_match,
             arms,
             continuation,
@@ -2190,6 +2195,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
                 let Some(joined) = advance_execution_match(
                     proof,
                     proof_match,
+                    *source_index,
                     arms,
                     continuation,
                     expansion_capture.as_deref_mut(),
@@ -2229,6 +2235,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
                 let attempt = advance_execution_match(
                     proof.clone(),
                     proof_match,
+                    *source_index,
                     arms,
                     &rejoin_here(),
                     expansion_capture.as_deref_mut(),
@@ -2440,8 +2447,8 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
                         // premise is missing) is that reason, not a shape
                         // limitation.
                         if let Some(reason) = take_declined_operation() {
-                            return Err(ClickError::new(format!(
-                                "`{claim_label}` tactic {}: {reason}",
+                            return Err(reason.with_context(format!(
+                                "`{claim_label}` tactic {}",
                                 indexed.index
                             )));
                         }
@@ -3273,6 +3280,7 @@ fn advance_focused_execution_region_after_leading_tactic<'a>(
 fn advance_execution_match<'a>(
     proof: Proof<'a>,
     source: &Arc<ProofMatch>,
+    source_index: usize,
     arms: &[InternalProofNode],
     continuation: &InternalProofNode,
     expansion_capture: Option<&mut ExpansionCapture>,
@@ -3286,6 +3294,11 @@ fn advance_execution_match<'a>(
     let rejoins = source.ensuring.is_some() || !matches!(continuation, InternalProofNode::Done);
     let proof = if source.ensuring.is_some() {
         proof.prepare_entry_interface()?
+    } else {
+        proof
+    };
+    let proof = if crate::surface::proof_trace::enabled_for(proof.claim_label()) {
+        proof.at_source_tactic(source_index)
     } else {
         proof
     };
@@ -3379,6 +3392,7 @@ fn advance_execution_match<'a>(
         &marker,
         source,
         certificates,
+        plan.take_trace(),
     )?))
 }
 
@@ -3481,6 +3495,7 @@ fn advance_execution_match_group<'a>(
         ));
     }
     certificates[index] = Some(proof.execution_match_arm_certificate(&marker)?);
+    proof.record_execution_match_arm_trace(plan, index, &marker);
     Ok(Some(proof.leave_execution_match_arm(plan)?))
 }
 
@@ -3564,6 +3579,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
         match region {
             InternalProofNode::Match {
                 index,
+                source_index,
                 proof_match,
                 arms,
                 continuation,
@@ -3580,6 +3596,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 let Some(matched) = advance_execution_match(
                     at_match,
                     proof_match,
+                    *source_index,
                     arms,
                     continuation,
                     expansion_capture.as_deref_mut(),
@@ -5093,7 +5110,7 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
     let name = match tactic {
         ProofTactic::Step => "step()".to_string(),
         ProofTactic::StepContract(name) => format!("step({name})"),
-        ProofTactic::StepBind(name) => format!("let {name} = step()"),
+        ProofTactic::StepBind(name) => format!("let {{ result: {name} }} = step()"),
         ProofTactic::StepCall(transport) => transport.to_string(),
         ProofTactic::UserTactic(application) => application.tactic_spelling(),
         ProofTactic::SmartExecute => "execute()".to_string(),
