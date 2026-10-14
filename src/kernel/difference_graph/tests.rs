@@ -832,3 +832,134 @@ fn pointer_offsets_of_int32_elements_compare_as_indices() {
     ]);
     assert_eq!(recorded.decide(&le(&i, &constant(5))), Some(true));
 }
+
+/// `Int64FromUInt32(x)` zero-extends `x`'s bit pattern: it equals `x` when
+/// `x` is non-negative, so a Rust `u32 as i64` sum is bounded by its
+/// operands' bounds, and it lies in `[0, 2^32)` whatever `x`'s sign.
+#[test]
+fn a_zero_extension_reads_its_operands_bounds() {
+    use Bitvector32Term as T;
+    let (x, y) = (variable(0), variable(1));
+    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let wide = |term: &Bitvector32Term| T::Int64FromUInt32(boxed(term));
+    let sum = |a: &Bitvector32Term, b: &Bitvector32Term| T::Int64Add(boxed(a), boxed(b));
+    let at_most = |a: &Bitvector32Term, k: i64| {
+        ConditionTerm::Bitvector64SignedLessEqual(boxed(a), Box::new(T::Int64Constant(k)))
+    };
+    let bounded = graph(&[
+        (le(&constant(0), &x), true),
+        (lt(&x, &constant(255)), true),
+        (le(&constant(0), &y), true),
+        (le(&y, &constant(1000)), true),
+    ]);
+    assert_eq!(
+        bounded.decide(&at_most(&sum(&wide(&x), &T::Int64Constant(1)), 255)),
+        Some(true)
+    );
+    assert_eq!(
+        bounded.decide(&at_most(&sum(&wide(&x), &wide(&y)), 1254)),
+        Some(true)
+    );
+    assert_eq!(
+        bounded.decide(&at_most(&sum(&wide(&x), &wide(&y)), 1253)),
+        None
+    );
+    // A negative `int32` pattern is a large unsigned value.
+    let unknown = graph(&[]);
+    assert_eq!(
+        unknown.decide(&at_most(&wide(&x), i64::from(i32::MAX))),
+        None
+    );
+    assert_eq!(
+        unknown.decide(&at_most(&wide(&x), (1 << 32) - 1)),
+        Some(true)
+    );
+    let negative = graph(&[(lt(&x, &constant(0)), true)]);
+    assert_eq!(
+        negative.decide(&at_most(&wide(&x), i64::from(i32::MAX))),
+        Some(false)
+    );
+}
+
+/// Unsigned division by a positive divisor is bounded by the operands'
+/// intervals: Rust's checked `x * y` asks `x <= u64::MAX / y`.
+#[test]
+fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
+    use Bitvector32Term as T;
+    let (x, y) = (variable(0), variable(1));
+    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let quotient = T::UInt64Divide(Box::new(T::UInt64Constant(u64::MAX)), boxed(&y));
+    let fits = ConditionTerm::Bitvector64UnsignedLessEqual(boxed(&x), Box::new(quotient));
+    let pinned = graph(&[
+        (
+            ConditionTerm::Bitvector64Equal(boxed(&x), Box::new(T::UInt64Constant(1 << 32))),
+            true,
+        ),
+        (
+            ConditionTerm::Bitvector64Equal(boxed(&y), Box::new(T::UInt64Constant(1 << 31))),
+            true,
+        ),
+    ]);
+    assert_eq!(pinned.decide(&fits), Some(true));
+    let overflowing = graph(&[
+        (
+            ConditionTerm::Bitvector64Equal(boxed(&x), Box::new(T::UInt64Constant(1 << 33))),
+            true,
+        ),
+        (
+            ConditionTerm::Bitvector64Equal(boxed(&y), Box::new(T::UInt64Constant(1 << 31))),
+            true,
+        ),
+    ]);
+    assert_eq!(overflowing.decide(&fits), Some(false));
+    // A divisor that may be zero bounds nothing.
+    assert_eq!(graph(&[]).decide(&fits), None);
+}
+
+/// Pointer equality facts form classes with known-unequal classes: `p` is
+/// null and `q` is not, so `p != q`, and two pointers of one block are
+/// equal exactly when their offsets are, so the offset question the kernel
+/// asks for `p == q` is answered too.
+#[test]
+fn pointer_equalities_and_disequalities_compose() {
+    use crate::kernel::{Pointer, PointerOffsetTerm as O};
+    let argument = |index| Pointer {
+        block: crate::kernel::PointerBlock::ExternalArgument,
+        offset: O::Int32Scaled {
+            value: Box::new(variable(index)),
+            byte_width: 4,
+        },
+    };
+    let null = Pointer {
+        block: crate::kernel::PointerBlock::Concrete("null".into()),
+        offset: O::Constant(0),
+    };
+    let equal = |a: &Pointer, b: &Pointer| {
+        ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone()))
+    };
+    let offsets = |a: &Pointer, b: &Pointer| {
+        ConditionTerm::PointerOffsetEqual(Box::new(a.offset.clone()), Box::new(b.offset.clone()))
+    };
+    let (p, q, r) = (argument(0), argument(1), argument(2));
+    let split = graph(&[(equal(&p, &null), true), (equal(&q, &null), false)]);
+    assert_eq!(split.decide(&equal(&p, &q)), Some(false));
+    assert_eq!(split.decide(&offsets(&p, &q)), Some(false));
+    assert_eq!(split.decide(&equal(&p, &r)), None);
+    // Equality is transitive across classes, and contradicts a recorded
+    // disequality.
+    let chained = graph(&[
+        (equal(&p, &null), true),
+        (equal(&r, &null), true),
+        (equal(&q, &r), false),
+    ]);
+    assert_eq!(chained.decide(&equal(&p, &r)), Some(true));
+    assert_eq!(chained.decide(&offsets(&p, &r)), Some(true));
+    assert_eq!(chained.decide(&equal(&q, &p)), Some(false));
+    let contradictory = graph(&[
+        (equal(&p, &q), true),
+        (equal(&q, &r), true),
+        (equal(&p, &r), false),
+    ]);
+    assert!(contradictory.is_contradictory());
+    assert_eq!(graph(&[]).decide(&equal(&p, &q)), None);
+}

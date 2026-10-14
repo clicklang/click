@@ -1496,7 +1496,9 @@ fn validate_recursive_calls_in_segment(
         | ContractSegmentSurface::StructRange {
             base, start, end, ..
         } => vec![base, start, end],
-        ContractSegmentSurface::Field { .. } | ContractSegmentSurface::Object(_) => Vec::new(),
+        ContractSegmentSurface::Field { .. }
+        | ContractSegmentSurface::Object(_)
+        | ContractSegmentSurface::ObjectPlace { .. } => Vec::new(),
     };
     for expression in expressions {
         validate_recursive_calls_in_expression(

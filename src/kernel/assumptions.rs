@@ -5255,10 +5255,22 @@ impl PureFactContext {
             let canonical = crate::kernel::eval::canonical_condition(condition);
             (&canonical != condition).then_some(canonical)
         };
+        // A pointer comparison the graph leaves open may still be decided
+        // unequal by the keyed null-ness and separation indexes
+        // (`decide_pointer_disequality`), which search nothing.
+        let pointer_disequality = || {
+            matches!(
+                condition,
+                ConditionTerm::PointerEqual(..) | ConditionTerm::PointerOffsetEqual(..)
+            )
+            .then(|| self.decide_pointer_disequality(condition))
+            .flatten()
+        };
         if extra.is_empty() {
             return graph
                 .decide(condition)
-                .or_else(|| canonical().and_then(|canonical| graph.decide(&canonical)));
+                .or_else(|| canonical().and_then(|canonical| graph.decide(&canonical)))
+                .or_else(pointer_disequality);
         }
         let mut graph = graph.clone();
         for (fact, value) in extra {
@@ -5267,6 +5279,7 @@ impl PureFactContext {
         graph
             .decide(condition)
             .or_else(|| canonical().and_then(|canonical| graph.decide(&canonical)))
+            .or_else(pointer_disequality)
     }
 
     pub(crate) fn proves_exact(&self, proposition: &Proposition) -> bool {
@@ -6224,10 +6237,15 @@ impl PropositionDerivation {
                     && available.checks_exists_loadable_range(&self.conclusion, source, witness)
             }
             PropositionDerivationRule::FiniteForAll { instances } => {
-                let expected = available.finite_forall_instantiations(&self.conclusion);
-                !expected.is_empty()
-                    && derivations_match_propositions(instances, &expected)
-                    && instances.iter().all(|proof| proof.check(available))
+                let mut expected = available.finite_forall_instantiations(&self.conclusion);
+                !instances.is_empty()
+                    && instances.iter().all(|proof| {
+                        expected
+                            .next()
+                            .is_some_and(|conclusion| proof.conclusion == conclusion)
+                            && proof.check(available)
+                    })
+                    && expected.next().is_none()
             }
             PropositionDerivationRule::SingletonSubstitution {
                 variable,

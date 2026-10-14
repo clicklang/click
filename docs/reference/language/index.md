@@ -3242,9 +3242,11 @@ has no `*p` form and is refused by name
 fields one by one. A struct with a flexible array member is outside the
 supported C subset. Holding every field separately does not yet stand in for
 `*p` at a call when a field is narrower than an `int32` cell
-(`bugs/whole-struct-ownership-does-not-reassemble-from-a-byte-field.md`), and
-a file-scope struct owned by name does not stand in for `*p` at its address
-(`bugs/a-whole-global-struct-does-not-cover-its-object.md`).
+(`bugs/whole-struct-ownership-does-not-reassemble-from-a-byte-field.md`).
+A file-scope struct named in `owns g` or `views g` covers that complete
+object, with the same extent and declared field types as `*p` when `p == &g`.
+The same rule applies to a qualified name such as `unit::g`; a pointer-valued
+global named alone still denotes its pointer slot.
 
 Surface Click also has documented low-level memory reads for addresses that do
 not have a recoverable C source place:
