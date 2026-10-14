@@ -12,6 +12,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  } by {
  have viewable(buf[0u64..len]) by simp();
  execute_until(loop(1));
+ // Each outer head describes the reduced checksum of the completed prefix.
  loop {
   decreases to_integer(len);
   invariant len <= old(len);
@@ -67,6 +68,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     invariant at(loop(2).entry, sum2) <= 65520u64;
     invariant buf == at(loop(2).entry, buf) + zlib_batch_count(n);
     invariant viewable(buf[0u64..16u64 * (uint64)n]);
+    // Preserve the pending batch and every byte following it.
     invariant viewable(buf[0u64..16u64 * (uint64)n + len]);
     invariant to_integer(adler) == to_integer(at(loop(2).entry, adler)) + adler_byte_sum(at(loop(2).entry, buf), zlib_batch_count(n));
     invariant to_integer(sum2) == to_integer(at(loop(2).entry, sum2)) + to_integer(zlib_batch_count(n)) * to_integer(at(loop(2).entry, adler)) + adler_weighted_sum(at(loop(2).entry, buf), zlib_batch_count(n), zlib_batch_count(n));
@@ -1003,6 +1005,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  } else {
   have len <= 5551u64 by arithmetic() using { len < 5552u64; };
   have len <= 9223372036854775807u64 by arithmetic() using { len <= 5551u64; };
+  // The remaining DO16 blocks start from the last batch's reduced seed.
   mark tail_entry;
   step(); execute_until(loop(3));
  loop {
@@ -1702,6 +1705,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  }
  have len <= 15u64 by arithmetic() using { not (len >= 16u64); len <= at(loop(3).entry, len); at(loop(3).entry, len) <= 5551u64; };
  apply(uint64_less_equal_to_integer(len, 15u64));
+  // The original C performs no MOD between the DO16 and scalar tail loops.
   execute_until(loop(4));
   have old(len) - at(loop(3).entry, len) <= 22208u64 by arithmetic() using { at(loop(3).entry, len) <= old(len); old(len) <= 22208u64; };
   have at(loop(3).entry, len) - len <= 22208u64 by arithmetic() using { len <= at(loop(3).entry, len); at(loop(3).entry, len) <= 5551u64; };
@@ -1759,6 +1763,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    }
    preserve by {
     if len == 0u64 {
+     // Record the checksum before the zero guard decrements len to UINT64_MAX.
      have old(len) - at(loop(4).entry, len) <= 22208u64 by arithmetic() using { at(loop(4).entry, len) <= old(len); old(len) <= 22208u64; };
      have at(loop(4).entry, len) - len <= 22208u64 by arithmetic() using { len <= at(loop(4).entry, len); at(loop(4).entry, len) <= 15u64; };
      apply(zlib_prefix_observation(old(len), at(loop(4).entry, len))); apply(zlib_prefix_observation(at(loop(4).entry, len), len));

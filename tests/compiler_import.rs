@@ -1554,7 +1554,11 @@ fn pinned_zlib_stream_matches_checked_shared_specification_offline() {
         .iter()
         .filter(|claim| claim.function_block.signature().name() == "adler32_z")
         .collect();
-    assert_eq!(contracts.len(), 2, "checksum and byte preservation");
+    assert_eq!(
+        contracts.len(),
+        4,
+        "checksum and byte preservation for zero and nonzero post-batch tails"
+    );
     for claim in contracts {
         assert_eq!(
             claim.import_identity.as_deref(),
