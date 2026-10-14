@@ -235,8 +235,14 @@ behind new language coverage:
   Kernel negatives cover stale/wrong receipts, missing or duplicate return,
   joined supports and fabricated rollback; indexed updates pass deterministic
   ambient-scaling checks. The native fixture also checks nested calls and a
-  separately owned neighbor, with all three contracts expanded. Local reference
-  access binding and borrow-end frontiers remain open, so this does not close
+  separately owned neighbor, with all three contracts expanded. A read-only
+  import-bound checker now certifies absence of future selected-reference uses
+  for same-block scalar reborrows with acyclic straight-line continuations. It
+  tracks copies and replacement definitions, refuses capture and unsupported
+  paths, and never uses storage death as a discharge. The native witness checks
+  actual imported MIR; bounded alias-chain tests check deterministic scaling.
+  Local reference access binding and kernel recovery at checked frontiers
+  remain open, so this does not close
   the entire borrow-authority requirement.
 - **Stable proof observations:** provide source-facing slice, array, and
   iterator observations so contracts need not depend on compiler temporary

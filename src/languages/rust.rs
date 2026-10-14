@@ -1,4 +1,5 @@
 //! Experimental safe Rust imports, compiler-owned extraction and direct kernel lowering.
+pub mod borrow_frontiers;
 mod charon;
 mod crate_inputs;
 mod import;
