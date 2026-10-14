@@ -2503,3 +2503,38 @@ fn symbolic_owned_suffix_start_checks_bounds_and_retained_authority() {
         Some(&suffix)
     );
 }
+
+#[test]
+fn a_cold_small_memory_index_skips_unrelated_pointer_merge_history() {
+    let mut samples = Vec::new();
+    for size in [4u64, 32, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut graph = EqualityGraph::default();
+        let unrelated = Pointer::symbolic(Variable(870_000));
+        for id in 1..=size {
+            graph.add_equality(&unrelated, &Pointer::symbolic(Variable(870_000 + id)));
+        }
+        let kept = Pointer {
+            block: "local:cold-contract".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let resources = ResourceContext::new().unchecked_with_fact(view(&kept, 0, 4));
+        let (index, work) = crate::instrumentation::measure_deterministic_work(|| {
+            resources.pair_memory_equalities_in_graph(
+                graph,
+                false,
+                Some(MemoryQuery::Address(&kept)),
+            )
+        });
+        assert!(
+            !index.points_initialized,
+            "a raw lookup must not publish read authority"
+        );
+        assert!(index.addresses.classes.contains_key(&kept.block));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 16),
+        "{samples:?}"
+    );
+}

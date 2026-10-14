@@ -1120,10 +1120,9 @@ fn kept_call_havoc_work(residual: ResourceContext) -> (usize, usize) {
             Some(&kept),
         )
     });
-    // The cached value goes, as for any cell in the footprint's block; the
-    // edge records the member that holds it, which is what names a later
-    // load of it across the call.
-    assert!(!havocked.has_known_cell_at(&external_field(KEPT_MEMBER, 8)));
+    // Whole cells held by the caller's flat frame stay cached. The edge
+    // also retains uncached members so later reads can cross this call.
+    assert!(havocked.has_known_cell_at(&external_field(KEPT_MEMBER, 8)));
     let recorded = CallKeptRanges::recorded_on(&havocked).expect("the call records kept memory");
     assert!(
         recorded.holds_access(&external_field(KEPT_MEMBER, 8), 4, &assumptions),
@@ -1198,13 +1197,11 @@ fn a_call_records_kept_members_without_visiting_unrelated_residual_resources() {
     );
 }
 
-/// The same record is linear in the residual members that can alias the
-/// footprint: each owned member in the parameters' block is recorded once,
-/// since the callee's footprint shares that block and only the caller's
-/// ownership separates the member from it.
+/// Recording the immutable flat-owner set is independent of the members
+/// sharing the parameters' address block, including uncached members.
 #[test]
-#[ignore = "nightly: 0.9s in the parallel gate"]
-fn a_call_records_kept_members_in_work_linear_in_the_aliasing_members() {
+#[ignore = "nightly: multi-size residual ownership construction"]
+fn a_call_records_aliasing_kept_members_without_enumerating_them() {
     let mut produced = Vec::new();
     let mut checked = Vec::new();
     for size in HEAP_SIZES {
@@ -1218,20 +1215,57 @@ fn a_call_records_kept_members_in_work_linear_in_the_aliasing_members() {
         produced.push((size, producer));
         checked.push((size, checker));
     }
-    for (what, samples) in [
-        ("a call havoc recording aliasing members", &produced),
-        ("checking a call havoc recording aliasing members", &checked),
-    ] {
-        eprintln!("{what} (N, units): {samples:?}");
-        for pair in samples.windows(2) {
-            let [(small, small_work), (large, large_work)] = pair else {
-                unreachable!()
-            };
-            assert!(
-                (*large_work as f64) <= 1.5 * (*large as f64 / *small as f64) * *small_work as f64,
-                "{what}: work grew faster than the aliasing members: {samples:?}"
-            );
-        }
+    assert_constant_plus_log_growth("recording aliasing kept members", &produced, 16.0);
+    assert_constant_plus_log_growth("checking aliasing kept members", &checked, 16.0);
+}
+
+#[test]
+fn a_call_rechecks_cached_members_after_ownership_withdrawal_or_width_change() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = external_object(KEPT_MEMBER);
+    let owned = CResourceFact::own_memory(external_range(KEPT_MEMBER, 0, 1));
+    let full = ResourceContext::new().unchecked_with_fact(owned.clone());
+    let memory = CMemory::new().store(pointer.clone(), CValue::Int32(5.into()));
+    memory.prepare_parameter_store_partition(&full);
+    // Re-admission must classify a formerly unowned cached cell too.
+    memory.prepare_parameter_store_partition(&ResourceContext::new());
+    let assumptions = PureFactContext::new();
+    let writes = [external_range(3_000_000, 0, 16)];
+    let changed = memory
+        .clone()
+        .store(pointer.clone(), CValue::Int64(9.into()));
+    for (before, residual, retained) in
+        [
+            (memory.clone(), full.clone(), true),
+            (memory.clone(), ResourceContext::new(), false),
+            (
+                memory.clone(),
+                ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
+                    external_range(KEPT_MEMBER, 0, 1),
+                )),
+                false,
+            ),
+            (changed, full, false),
+        ]
+    {
+        let kept = CallKeptOwnership::new(
+            residual,
+            CallKeptRanges::new(ResourceContext::new(), vec![]),
+            &assumptions,
+        );
+        let after = before.clone().with_call_memory_havoc(
+            Variable(3_000_001),
+            &writes,
+            &assumptions,
+            Some(&kept),
+        );
+        assert_eq!(after.has_known_cell_at(&pointer), retained);
+        assert!(after.matches_call_memory_havoc_result(
+            &before,
+            &writes,
+            &assumptions,
+            Some(&kept)
+        ));
     }
 }
 
