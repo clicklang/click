@@ -184,6 +184,7 @@ fn append_library_module(file: &mut ClickFile, module: ClickFile) {
             .map(|(spelling, name)| (spelling.clone(), name.clone())),
     );
     file.imports.extend(module.imports);
+    file.library_imports.extend(module.library_imports);
     file.verifying_sources.extend(module.verifying_sources);
     file.algebraic_type_definitions
         .extend(module.algebraic_type_definitions);

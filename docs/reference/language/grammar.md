@@ -35,7 +35,7 @@ documentation inventory keep the following accepted words synchronized.
 
 | Words | Context and status |
 | --- | --- |
-| `import` | Loads declarations from a local Click module without selecting that module's proofs. |
+| `import` | Loads declarations from a local Click module, or names a Click library module with `click::`, without selecting that module's proofs. |
 | `verifying` | C-source declaration. |
 | `target` | Selects the C implementation target the file's C sources are preprocessed and verified under. |
 | `predicate`, `function`, `theorem`, `contract`, `tactic` | Top-level logic and behavioral-interface declarations; `tactic` declares a user-defined tactic. A C function's contract starts with its C return type, not `function`. |
@@ -125,7 +125,8 @@ item             := import-declaration
                   | named-contract-declaration
                   | c-function-contract
 verifying-declaration := "verifying" string-literal ";"
-import-declaration    := "import" string-literal ";"
+import-declaration    := "import" (string-literal | library-path) ";"
+library-path          := "click" ("::" identifier)+
 target-declaration    := "target" string-literal ";"
 algebraic-declaration := "spec" "enum" identifier type-parameters?
                          "{" variant ("," variant)* ","? "}"

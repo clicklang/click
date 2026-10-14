@@ -4,8 +4,9 @@ This page is the complete reference for Surface Click, the language of `.click`
 sidecar files. Click files are sidecar specifications for C sources.
 
 They may begin with local specification imports such as
-`import "../models/common.click";`. Imports contribute declarations but do not
-select the imported file's theorem, C function, or tactic proofs. See
+`import "../models/common.click";`, and Click library imports such as
+`import click::cstr;`. Imports contribute declarations but do not select the
+imported file's theorem, C function, or tactic proofs. See
 [Files and sidecars](../../concepts/sidecars.md#local-specification-imports)
 for the module and selection rules.
 

@@ -91,6 +91,24 @@ directory scope that contains it—to check the library's proofs. Circular theor
 the existing checked-recursion rules are enforced independently of this
 selection boundary.
 
+## Click library imports
+
+A Click library module is named by a `click::` path that mirrors its file
+under `library/`:
+
+<!-- verified-example: mdtests/click_library_import.md -->
+```click
+import click::cstr;
+```
+
+`click::cstr` is `library/cstr.click`, and `click::c::string` is
+`library/c/string.click`. Every library module is currently loaded
+implicitly, so an import checks that its module exists and otherwise changes
+nothing; importing a module twice is accepted. An unknown module, or a path
+outside the `click` root such as `std::list`, is refused at the import. A
+project file is always imported by a quoted path. A module's library imports
+reach the files that import it, like its other declarations.
+
 ## Contracts are per function
 
 Each function block in a sidecar describes one C function:

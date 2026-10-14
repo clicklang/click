@@ -1136,9 +1136,17 @@ impl Parser {
         let mut contract_definitions = Vec::new();
         let mut function_blocks = Vec::new();
         let mut tactic_definitions = Vec::new();
+        let mut library_imports = Vec::new();
 
         while self.peek().is_some() {
-            if self.peek_ident() == Some("import") {
+            if self.peek_ident() == Some("import")
+                && matches!(self.peek_next(), Some(Token::Ident(_)))
+            {
+                let import = self.parse_library_import()?;
+                if !library_imports.contains(&import) {
+                    library_imports.push(import);
+                }
+            } else if self.peek_ident() == Some("import") {
                 imports.push(self.parse_import()?);
             } else if self.peek_ident() == Some("verifying") {
                 verifying_sources.push(self.parse_verifying_source()?);
@@ -1242,6 +1250,7 @@ impl Parser {
                     .collect(),
             ),
             imports,
+            library_imports,
             verifying_sources,
             c_target,
             thread_runtime: thread_runtime.unwrap_or_default(),
@@ -1267,6 +1276,44 @@ impl Parser {
         let path = self.expect_string("Click module path")?;
         self.expect(Token::Semicolon)?;
         Ok(ImportDeclaration { path, position })
+    }
+
+    /// `import click::a::b;`: the Click library module `library/a/b.click`.
+    fn parse_library_import(&mut self) -> Result<String, ClickError> {
+        self.expect_ident_spelling("import")?;
+        let at = self.error_context();
+        let mut segments = vec![self.expect_ident("a Click library module path")?];
+        while self.peek() == Some(&Token::ColonColon) {
+            self.expect(Token::ColonColon)?;
+            segments.push(self.expect_ident("a Click library module name")?);
+        }
+        self.expect(Token::Semicolon)?;
+        let spelling = segments.join("::");
+        if segments.len() < 2 || segments[0] != "click" {
+            return Err(self.error_at(
+                at,
+                format!(
+                    "`import {spelling};` names no Click library module; library modules are \
+                     written `click::name`, and a project file is imported by a quoted path"
+                ),
+            ));
+        }
+        let identity = format!("library/{}.click", segments[1..].join("/"));
+        if super::CLICK_LIBRARY_MODULES
+            .iter()
+            .all(|(module, _)| *module != identity)
+        {
+            let available = super::CLICK_LIBRARY_MODULES
+                .iter()
+                .map(|(module, _)| super::library_module_path(module))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(self.error_at(
+                at,
+                format!("unknown Click library module `{spelling}`; the library has {available}"),
+            ));
+        }
+        Ok(identity)
     }
 
     /// `tactic name(p: type, ...) { clauses } by { proof }`.

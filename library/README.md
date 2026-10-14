@@ -23,8 +23,10 @@ theorems use ordinary Click declarations; library theorems are checked, not
 trusted axioms. The `extern` contracts are assumptions, listed in
 [trust](../docs/concepts/trust.md).
 
-The planned layout, `import click::...;` paths, and which modules stay
-implicit are recorded in
+A module is named by a `click::` path that mirrors its file:
+`import click::cstr;` is `cstr.click` and `import click::c::string;` is
+`c/string.click`. While every module is implicit, an import only checks that
+its module exists. Which modules stay implicit is recorded in
 [`issues/standard-library.md`](../issues/standard-library.md).
 
 The library is checked on its own, like any dependency: `verify_standard_library`

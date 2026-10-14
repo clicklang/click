@@ -149,7 +149,8 @@ Each step is a separate PR that leaves every example verifying:
 
 1. Done: split `stdlib/prelude.click` into `library/` modules, all still
    loaded implicitly in the original declaration order. No meaning changes.
-2. Resolve `import click::...;` to library modules.
+2. Done: resolve `import click::...;` to library modules. An import is
+   checked against the module table and recorded; it selects nothing yet.
 3. Make the non-implicit specification modules explicit. A script adds the
    import lines to existing sidecars and fixtures.
 4. Attach the C library models to their headers, and move the C++ catalog
