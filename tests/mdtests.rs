@@ -560,9 +560,10 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
             .map_err(|error| format!("failed to read `{}`: {error}", path.display()))?;
         let project = read_click_project(path, &source)?;
         let inputs = read_c_inputs_for_project(path, &source, &project)?;
-        return click::surface::verify_project_with_summary(&project, &inputs.program_inputs())
-            .map(|_| ())
-            .map_err(|error| error.report());
+        let (_, verification) =
+            click::surface::verify_project_with_summary(&project, &inputs.program_inputs())
+                .map_err(|error| error.report())?;
+        return verification.map(|_| ()).map_err(|error| error.report());
     }
     let mdtest = read_mdtest(path)?;
     let click_source = mdtest
@@ -673,4 +674,29 @@ fn check_expectation(
             }
         }
     }
+}
+
+#[test]
+fn sidecar_fixtures_propagate_verification_errors() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("proof.click");
+    fs::write(
+        &path,
+        "theorem valid() { ensures 1 == 1 by { normalize(); } }",
+    )
+    .unwrap();
+    run_mdtest(&path).expect("a checked sidecar proof passes");
+    fs::write(
+        &path,
+        "theorem invalid() { ensures 1 == 2 by { normalize(); } }",
+    )
+    .unwrap();
+    let error =
+        run_mdtest(&path).expect_err("a successful input summary cannot hide a failed proof");
+    assert!(error.contains("did not normalize to true"), "{error}");
+    fs::write(&path, "theorem malformed(").unwrap();
+    assert!(
+        run_mdtest(&path).is_err(),
+        "a failed input summary still fails"
+    );
 }

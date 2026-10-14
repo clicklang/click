@@ -104,6 +104,11 @@ Run the markdown proof fixtures with:
 cargo test --test mdtests
 ```
 
+Standalone `.click` files in `mdtests/` are independently verified entry modules,
+including helpers imported by other fixtures. The harness propagates both input
+summary errors and proof errors: a successful dependency summary alone does not
+pass a fixture.
+
 Run the larger example-project verifier with:
 
 ```sh
