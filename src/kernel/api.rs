@@ -3017,6 +3017,19 @@ fn no_single_path_message<T>(what: &str, paths: &[T], budget: &ExecutionBudget) 
             )
         };
     }
+    if paths.is_empty()
+        && let Some(reversed) = budget.dropped_refuted_range_extent()
+    {
+        return if reversed {
+            format!(
+                "the kernel {what} produced no path: a memory range runs backwards, so it is not a byte extent: this context proves its end is before its start"
+            )
+        } else {
+            format!(
+                "the kernel {what} produced no path: a memory range is too wide to be a 32-bit byte extent: this context bounds its element count past the byte limit"
+            )
+        };
+    }
     if paths.is_empty() && budget.dropped_relation_range_extent() {
         return format!(
             "the kernel {what} produced no path: it relates a memory range this context already \

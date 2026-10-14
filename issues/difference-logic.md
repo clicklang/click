@@ -93,6 +93,12 @@ Seven of the nine failing examples are Rust imports, which use conversions
   bounded worklist, so `x < y` with `y <= 100` records `x <= 99` when it is
   assumed. A negative cycle is a contradiction; a zero-weight cycle is an
   equality, passed to `EqualityGraph`. A merge there merges nodes here.
+- **Bounded work.** Propagation, the cycle check and a path query each
+  follow at most `EDGE_LIMIT` edges. A value many others are bounded by (an
+  array length `n` with `v_i <= n`) then costs the same however many there
+  are. A node whose push was cut short is marked, and reading a neighbour's
+  interval pulls one hop from marked nodes. Past the limit the graph stays
+  sound and answers less: stored bounds remain true, only looser.
 - **Queries** are reads: an order or overflow question compares stored
   bounds, and a relation between two values reads their edge or a bounded
   path inside their own component. Neither depends on facts about other
@@ -140,9 +146,8 @@ Each step is its own pull request.
      arms now prove a term defined from their own bounds is refused at the
      successor instead, which now says the join does not carry that bound.
    - A path fact the graph shows implied is not added to the path, as when
-     the general decision showed it. A later reasoner that asks only the
-     general decision cannot rederive it; none in the corpus does yet.
-     Step 3 should have the general decision consult the graph too.
+     the general decision showed it. Step 3 has the general decision consult
+     the graph, so a reasoner that asks only it still rederives such a fact.
    Indexing by equality class is partial: a fresh name equated to a value
    names that value's node (`many_names_for_one_value_stay_one_node`), and
    an equality between two values that already have nodes is two edges.
@@ -170,6 +175,15 @@ Each step is its own pull request.
      - A side with no node of its own is compared by interval.
      - A contradictory graph, meaning a dead path, answers that an overflow
        is absent.
+     - Propagation and path walks are bounded (`EDGE_LIMIT`), and the
+       general decision reads the context's graph first when it is built.
+       Deciding more there changed four refusals' messages. Three are now
+       more specific. A range whose extent guard the context refutes now
+       says why it was dropped ("too wide to be a 32-bit byte extent")
+       instead of "0 paths". The fourth,
+       `call_refusal_names_the_cell_an_earlier_argument_reserved`, now
+       reaches its note with `i < j`, because equal indices are refused
+       earlier for overlapping owners.
      - Most general decisions had been overflow checks on such terms
        (`(x - y) - 1`, `(0 - x) + 1`). After these changes the census is 48
        conditions and 7 path-fact decisions over the mdtests, and 21 over
@@ -177,8 +191,7 @@ Each step is its own pull request.
    - *Left:*
      - pointer questions (about 14);
      - division overflow excluded only by a disjunction (5);
-     - certain overflows, which the graph does not answer;
-     - the general decision consulting the graph.
+     - certain overflows, which the graph does not answer.
 4. **Remove the general decision from simple checking.** A condition the fast
    path leaves undecided keeps both branches, and an arithmetic requirement it
    leaves open goes to implicit `auto`, as
