@@ -1168,6 +1168,29 @@ fn pinned_zlib_seeded_batch_lemmas_have_checked_bodies() {
         "zlib_seeded_reduced_components.ensures_2",
         "zlib_seeded_batch_concat.ensures_0",
         "zlib_seeded_batch_concat.ensures_1",
+        "zlib_stream_batch_read_bound.ensures_0",
+        "zlib_stream_batch_read_bound.ensures_1",
+        "zlib_stream_batch_read_bound.ensures_2",
+        "zlib_stream_batch_read_bound.ensures_3",
+        "zlib_stream_batch_read_bound.ensures_4",
+        "zlib_native_cursor_join.ensures_0",
+        "zlib_stream_batch_lane_bound.ensures_0",
+        "zlib_stream_remaining_step.ensures_0",
+        "zlib_stream_remaining_step.ensures_1",
+        "zlib_stream_remaining_step.ensures_2",
+        "zlib_stream_remaining_step.ensures_3",
+        "zlib_stream_prefix_step.ensures_0",
+        "zlib_stream_capacity_step.ensures_0",
+        "zlib_stream_tail_read_bound.ensures_0",
+        "zlib_stream_tail_read_bound.ensures_1",
+        "zlib_scalar_seeded_component_step.ensures_0",
+        "zlib_stream_split_count.ensures_0",
+        "zlib_raw_seeded_batch_concat.ensures_0",
+        "zlib_raw_seeded_batch_concat.ensures_1",
+        "zlib_components_pack.ensures_0",
+        "zlib_stream_scalar_read_bound.ensures_0",
+        "zlib_stream_scalar_read_bound.ensures_1",
+        "zlib_stream_concat_bound.ensures_0",
     ] {
         expanded = click::surface::expand_c0_claim_source_by_label(&expanded, &[], label)
             .expect("checked seeded batch certificate expansion");
@@ -1471,4 +1494,101 @@ fn compiler_import_lock_binds_clicks_header_text_and_catalog() {
     assert!(load_imports(&config).is_err());
     fs::write(&lock_path, &original).unwrap();
     load_imports(&config).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: unchanged zlib multiple NMAX batches, DO16 and scalar tails, and expansion"]
+fn pinned_zlib_stream_matches_checked_shared_specification_offline() {
+    let root = tempfile::tempdir().expect("isolated offline zlib multi-batch and tail fixture");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
+    for name in [
+        "adler32.c",
+        "zutil.h",
+        "zlib.h",
+        "zconf.h",
+        "adler32.i",
+        "stream.click.import.json",
+        "stream.click.import.lock.json",
+    ] {
+        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
+    }
+    let imports = load_imports(&root.path().join("stream.click.import.json"))
+        .expect("offline locked unchanged zlib source");
+    let proof = include_str!("../design/charon-trial/zlib/stream.click")
+        .replace(
+            "import \"seeded-batch.click\";",
+            include_str!("../design/charon-trial/zlib/seeded-batch.click"),
+        )
+        .replace(
+            "import \"batch-helpers.click\";",
+            include_str!("../design/charon-trial/zlib/batch-helpers.click"),
+        )
+        .replace(
+            "import \"window.click\";",
+            include_str!("../design/charon-trial/zlib/window.click"),
+        )
+        .replace(
+            "import \"block.click\";",
+            include_str!("../design/charon-trial/zlib/block.click"),
+        )
+        .replace(
+            "import \"short-prefix.click\";",
+            include_str!("../design/charon-trial/zlib/short-prefix.click"),
+        )
+        .replace(
+            "import \"byte.click\";",
+            include_str!("../design/charon-trial/zlib/byte.click"),
+        )
+        .replace(
+            "import \"../adler2/count-bridge.click\";",
+            include_str!("../design/charon-trial/adler2/count-bridge.click"),
+        )
+        .replace(
+            "import \"../../adler32-spec.click\";",
+            include_str!("../design/adler32-spec.click"),
+        );
+    let checked = verify_c0_prepared_sources(&proof, &imports).expect(
+        "multi-batch and tail checksum, termination, byte preservation, and all helper bodies",
+    );
+    let contracts: Vec<_> = checked
+        .iter()
+        .filter(|claim| claim.function_block.signature().name() == "adler32_z")
+        .collect();
+    assert_eq!(contracts.len(), 2, "checksum and byte preservation");
+    for claim in contracts {
+        assert_eq!(
+            claim.import_identity.as_deref(),
+            Some(imports[0].identity())
+        );
+    }
+    let expanded = click::surface::expand_c0_prepared_claim_source_by_label(
+        &proof,
+        &imports,
+        "adler32_z.contract",
+    )
+    .expect("checked complete multi-batch and tail certificate expansion");
+    verify_c0_prepared_sources(&expanded, &imports)
+        .expect("expanded multi-batch and tail checksum and every helper body");
+    for invalid in [
+        proof.replacen("views buf[0u64..len];", "", 1),
+        proof.replacen("views buf[0u64..len];", "views buf[0u64..len - 1u64];", 1),
+        proof.replacen(
+            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), 1, 0);",
+            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), 1, 0) + 1;",
+            1,
+        ),
+        proof.replacen(
+            "invariant buf == old(buf) + (old(len) - len);",
+            "invariant buf == old(buf) + (old(len) - len) + 1;",
+            1,
+        ),
+        proof.replacen(
+            "invariant to_integer(adler) == to_integer(at(loop(4).entry, adler)) + adler_byte_sum",
+            "invariant to_integer(adler) == 1 + to_integer(at(loop(4).entry, adler)) + adler_byte_sum",
+            1,
+        ),
+    ] {
+        assert_ne!(proof, invalid);
+        assert!(verify_c0_prepared_sources(&invalid, &imports).is_err());
+    }
 }

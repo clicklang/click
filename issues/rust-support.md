@@ -152,11 +152,17 @@ Checked seeded-batch helpers now carry arbitrary reduced entry components
 through one native addition pair, both modulo reductions, and concatenation
 with the previously processed prefix. Their nightly regression checks helper
 bodies and dependencies, complete expansion, and false component/composition
-claims. The original C multiple-batch and post-batch tail paths remain unproved.
+claims. The locked stream sidecar now applies those lemmas to the unchanged C
+for lengths 5552–22208, canonical seed 1, and nonnull input. It proves checksum,
+termination, and byte preservation through up to four NMAX batches, remaining
+DO16 blocks, and a zero to fifteen-byte scalar tail. The scalar loop carries
+unreduced seeds; checked residue composition connects its final reductions to
+the complete input. The offline nightly regression checks every helper body,
+complete expansion, false checksum/cursor/seed claims, and missing or shortened
+read authority.
 
-Next extend the original batch path to multiple batches and nonempty tails,
-maintaining native bounds and component equations across reductions. The
-arbitrary-length C result remains unproved.
+Next lift the bounded stream contract to arbitrary lengths while preserving
+native count and address bounds. The arbitrary-length C result remains unproved.
 
 Connect the original nonempty computation to the common specification, then
 prove compatible seed/reset/null-buffer behavior and incremental processing.
