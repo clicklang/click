@@ -16,7 +16,7 @@ click versions List installed versions.
 ```
 
 Use `click --help` for the command list and `click COMMAND --help` for exact
-command syntax; the version-manager subcommands have no `--help` option. A
+command syntax. The version-manager subcommands print their shared usage. A
 successful command, including a help request, exits with status 0. Invalid
 arguments, failed verification, exhausted hard limits, and I/O or audit
 failures print a diagnostic to standard error and exit with status 1.
