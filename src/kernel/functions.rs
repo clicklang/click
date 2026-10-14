@@ -4589,7 +4589,7 @@ pub(super) fn execute_c_function_call_paths(
         let pointer = Pointer::function(function.name());
         let contracts = assumptions
             .function_contract_facts_for(&pointer)
-            .filter_map(|(name, _)| execution_context.environment.get_function_contract(name))
+            .filter_map(|(name, _)| execution_context.environment.get_function_contract(&name))
             .filter(|contract| contract.function_pointer_type() == function.function_pointer_type())
             .collect::<Vec<_>>();
         if !contracts.iter().any(|contract| contract.name() == selected) {

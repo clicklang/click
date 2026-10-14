@@ -3311,8 +3311,9 @@ predicate sorted_range(p: int32[], lo: int32, hi: int32) {
 ```
 
 Predicate calls are opaque by default. Requirements and loop invariants can
-reuse exact predicate facts, but Click does not unfold predicate bodies unless a
-proof asks for it:
+reuse predicate facts with exact non-pointer arguments and pointer arguments
+matched through checked equality closure at compatible types. State arguments
+remain exact. Click does not unfold predicate bodies unless a proof asks for it:
 
 <!-- verified-example: mdtests/sorted_predicate.md -->
 ```click

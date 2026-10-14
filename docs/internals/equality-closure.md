@@ -44,6 +44,27 @@ condition graph before filing selected proposition edges; it never rebuilds
 inherited scalar edges only to discard them. Clearing a model-free proposition
 fragment retains its existing scalar graph.
 
+## Predicate and callback pointer matching
+
+Semantic predicate lookup and callback-contract selection query the same
+address-class buckets. A predicate witness is stored by its first pointer
+argument and a bounded shape selector; pointer arguments become typed holes
+in that selector, while other arguments and memory epochs remain. Matching
+checks all pointer arguments through equality closure with equal C types and
+all other arguments exactly, including the complete C state. This supplies
+pointer substitution only, without unfolding or snapshot transport. Exact
+membership still controls admission, provenance, and withdrawal.
+
+The same bucket mechanism indexes nominal callback witnesses by contract name.
+Call selection checks the declared contract's exact function signature, as
+before. Multiple witnesses of one contract retain their independent sources;
+lookup chooses one without scanning older state witnesses. Late address-class
+merges move only the affected buckets. Persistent branches share unchanged
+indexes, and withdrawal/restriction removes unsupported matches. The regressions
+`callback_contract_uses_checked_pointer_equality` and
+`callback_call_uses_checked_pointer_equality` cover assumption and dispatch
+through an unchanged C callback table.
+
 ## Shared typed pointer reads
 
 A registered typed pointer read is a congruence application of its snapshot
@@ -1371,9 +1392,9 @@ behavior are preserved.
 checks a complete callback-field copy through a proved constant-table alias;
 its missing-alias counterpart is refused. Kernel tests cover checked statement
 publication, redundant producer equations, sibling isolation, withdrawal,
-changed sources, and absence of additional read permission. This establishes
-pointer equality; callback-contract predicate lookup still requires its own
-exact fact or supported transport.
+changed sources, and absence of additional read permission. Predicate and callback lookup consume these checked pointer classes through
+the shared buckets described above; no additional transport proof is needed
+when the predicate's other arguments match.
 
 The same producer boundary now handles one immediate `Store` edge. It uses
 structural object separation or an exact constant byte gap, after re-expressing
