@@ -123,7 +123,7 @@ impl SnapshotLabels {
             return format!("pointer read at {snapshot}, address {address}, plus {displacement}");
         }
         if let Some(Bitvector32Term::MemoryLoad(memory, address, _)) =
-            crate::kernel::logical_pointer_read_term(pointer)
+            crate::surface::proof_trace::pointer_definition(pointer)
         {
             return format!(
                 "pointer read at {}, address {}",
@@ -152,6 +152,32 @@ impl SnapshotLabels {
             }
             let call = renderer.output;
             return format!("{call} + {}", self.legend_offset(&pointer.offset, 4));
+        }
+        // A temporary holding a callback is a source alias, not its definition.
+        // Keep the function target or symbolic identity visible in the legend.
+        match &pointer.block {
+            PointerBlock::Concrete(name) if name.starts_with("global:") => {
+                return format!(
+                    "object `{}` + {}",
+                    short(name),
+                    self.legend_offset(&pointer.offset, 4)
+                );
+            }
+            PointerBlock::Function(name) => {
+                return format!(
+                    "function `{}` + {}",
+                    short(name),
+                    self.legend_offset(&pointer.offset, 4)
+                );
+            }
+            PointerBlock::FunctionSymbolic(variable) => {
+                let symbol = self.legend_symbol(*variable);
+                return format!(
+                    "symbolic function address {symbol} + {}",
+                    self.legend_offset(&pointer.offset, 4)
+                );
+            }
+            _ => {}
         }
         if let Some(name) = self.pointer_sources.get(pointer) {
             return name.clone();

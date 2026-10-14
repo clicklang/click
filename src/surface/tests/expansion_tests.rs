@@ -18005,6 +18005,37 @@ fn qualified_pointer_slots_keep_selected_memory_in_all_proof_modes() {
     }
 }
 
+#[test]
+#[ignore = "nightly: checks global field coverage through expansion and retained verification"]
+fn whole_object_call_effects_combine_global_fields_in_all_proof_modes() {
+    let (source, sources) =
+        mdtest_sources("mdtests/whole_object_call_effect_combines_global_fields.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded =
+        expand_c0_claim_source(&source, &sources, "caller", CProofClaim::Grouped).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let position =
+        expansion::position_at_offset(&expanded, expanded.find("owns unit::state.left;").unwrap());
+    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+    session
+        .verify_at(&expanded, position.line, position.column)
+        .unwrap();
+    drop(session);
+    for missing in ["", "views unit::state.right;"] {
+        assert!(
+            verify_c0_sources(
+                &source.replace("owns unit::state.right;", missing),
+                &sources
+            )
+            .is_err()
+        );
+    }
+}
+
 /// Keep the original rotation's imported struct-pointer/model applications
 /// through a selected smart-tactic expansion and a retained project session.
 #[test]
