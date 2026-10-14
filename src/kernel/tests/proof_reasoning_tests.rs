@@ -11654,3 +11654,153 @@ fn call_input_retention_does_not_derive_memory_or_scan_unrelated_facts() {
         );
     }
 }
+
+#[test]
+fn finite_forall_lazy_pairs_keep_nearest_first_order_for_unequal_domains() {
+    for (a, b, c, d) in [
+        (-3, 2, -1, 4),
+        (0, 3, 8, 11),
+        (8, 11, 0, 3),
+        (0, 1, 0, 1),
+        (0, 0, 0, 3),
+        (0, 3, 0, 0),
+    ] {
+        let i = Variable(92_110);
+        let j = Variable(92_111);
+        let guard = Proposition::And(
+            Box::new(int32_half_open_bound(&Bitvector32Term::Variable(i), a, b)),
+            Box::new(int32_half_open_bound(&Bitvector32Term::Variable(j), c, d)),
+        );
+        let goal = forall_int32(
+            i,
+            forall_int32(
+                j,
+                Proposition::Implies(
+                    Box::new(guard),
+                    Box::new(Proposition::ConditionIs(
+                        ConditionTerm::Constant(true),
+                        true,
+                    )),
+                ),
+            ),
+        );
+        let actual = crate::kernel::finite_forall_goal_instances(&goal, true)
+            .unwrap()
+            .map(|(values, _)| values)
+            .collect::<Vec<_>>();
+        let mut expected = (a..b)
+            .flat_map(|i| (c..d).map(move |j| vec![i, j]))
+            .collect::<Vec<_>>();
+        expected.sort_by_key(|values| ((values[1] - values[0]).abs(), values[0], values[1]));
+        assert_eq!(actual, expected, "domains {a}..{b}, {c}..{d}");
+    }
+}
+
+#[test]
+fn finite_forall_requested_prefix_has_constant_work_across_domain_sizes() {
+    let mut samples = Vec::new();
+    for width in [16, 1024, 1_000_000, 1_000_000_000] {
+        let k = Variable(92_112);
+        let goal = forall_int32(
+            k,
+            Proposition::Implies(
+                Box::new(int32_half_open_bound(
+                    &Bitvector32Term::Variable(k),
+                    0,
+                    width,
+                )),
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::Constant(true),
+                    true,
+                )),
+            ),
+        );
+        let (instances, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::finite_forall_goal_instances(&goal, false)
+                .unwrap()
+                .take(2)
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(
+            instances
+                .iter()
+                .map(|(values, _)| values.clone())
+                .collect::<Vec<_>>(),
+            vec![vec![0], vec![1]]
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn false_quantified_frame_does_not_exhaust_a_small_load_registry() {
+    crate::kernel::eval::with_load_variable_registry_capacity(1000, || {
+        let source = "verifying \"probe.c\"; int32 untouched_element(int32* a) { owns a[0..1000000]; ensures result == old(a[2]); ensures (0..1000000).all(|k| { a[k] == old(a[k]) }); } by { execute(); simp(); }";
+        let c = "int32 untouched_element(int32* a) { unsigned char* b; b = (unsigned char*)(void*) a; b[5] = 7; return a[2]; }";
+        let error = crate::surface::verify_c0_sources(source, &[("probe.c", c)])
+            .expect_err("the whole range is changed");
+        assert!(error.message().contains(".all"), "{}", error.message());
+    });
+}
+
+#[test]
+fn lazy_finite_forall_certificates_require_exact_complete_instance_tables() {
+    let k = Variable(92_113);
+    let bits = Bitvector32Term::Variable(k);
+    let goal = forall_int32(
+        k,
+        Proposition::Implies(
+            Box::new(int32_half_open_bound(&bits, 0, 3)),
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::signed_less_equal(bits, Bitvector32Term::Variable(Variable(92_114))),
+                true,
+            )),
+        ),
+    );
+    let context = (0..3).fold(PureFactContext::new(), |context, value| {
+        context.assume_condition(
+            ConditionTerm::signed_less_equal(
+                Bitvector32Term::Constant(value),
+                Bitvector32Term::Variable(Variable(92_114)),
+            ),
+            true,
+        )
+    });
+    let instances = context
+        .finite_forall_instantiations(&goal)
+        .map(|instance| {
+            context
+                .derive_proposition(&instance)
+                .expect("explicit indexed instance")
+        })
+        .collect::<Vec<_>>();
+    let proof = PropositionDerivation {
+        conclusion: goal,
+        rule: PropositionDerivationRule::FiniteForAll {
+            instances: instances.clone(),
+        },
+    };
+    assert!(proof.check(&context));
+    let check = |instances| {
+        let altered = PropositionDerivation {
+            conclusion: proof.conclusion.clone(),
+            rule: PropositionDerivationRule::FiniteForAll { instances },
+        };
+        assert!(!altered.check(&context));
+    };
+    check(Vec::new());
+    check(instances[..2].to_vec());
+    let mut extra = instances.clone();
+    extra.push(instances[0].clone());
+    check(extra);
+    let mut reordered = instances.clone();
+    reordered.swap(0, 2);
+    check(reordered);
+    let mut false_instance = instances;
+    false_instance[0].conclusion = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+    check(false_instance);
+}
