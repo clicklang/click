@@ -205,8 +205,7 @@ when selecting its referent's member, while retaining genuine escaped-slot havoc
 All seven selected loop-carrier tests pass. The unchanged concurrency-fork-join
 project passes on this escape-only checkpoint.
 
-A [second reduced defect](../bugs/retained-resource-lookup-omits-framed-pointer-carriers.md)
-shows candidate-index disagreement: the existing argument relation accepts both
+A second reduced defect shows candidate-index disagreement: the existing argument relation accepts both
 arguments, while the pointer-root index selects no holding. The preserved
 candidate at `bd6659d9a` adds producer-read/frame identities to discovery and uses
 the selected C-value arguments consistently in surface and kernel unfolding.
@@ -458,7 +457,7 @@ verdict. The probe is removed from production; no ambient scan, equality rule,
 origin privilege, source change or work-budget change is retained. The next
 small repair should cover this selected relation in indexed memory lookup,
 with scaling and authority-withdrawal/partial-write controls. Details remain
-in [the retained-resource bug](../bugs/retained-resource-lookup-omits-framed-pointer-carriers.md).
+in the preserved [descriptor-backed loop witness](../mdtests/loop_resource_backing_range_fold_after_write.md).
 
 ## Certified footprint-query endpoint slice
 
@@ -491,3 +490,51 @@ object model or claiming the archived original loop repaired.
 The delivery is rebased onto `14746f449`; the same 59 selected kernel controls
 pass again (6.51s for the harness). This rebase does not change the archived
 candidate or credit its unresolved original loop.
+
+## Loop-havoc borrow-partition producer repair
+
+Recovery checkpoint `53da27b58` identifies and repairs the reduced loop's final
+read-chain gap. A bounded producer probe shows a certified backing-store frame,
+followed by a stop at the checked loop-havoc summary. The range-disjointness
+producer omitted the live borrowed-view/owner partition even though its checker
+already accepts that authority. Select it by the two queried address keys before
+the legacy ownership-composition frontier, retain the complete range/access
+memberships, and recheck the composition authority and non-overlap.
+
+All **87** selected memory-index, pointer-designation, native-span, loop-carrier
+and borrow-frame controls pass (6.42s for the harness). The new witness bounds
+selected producer work below 200 beside 16, 64, 256 and 1,024 unrelated owners;
+it rejects widened reads, overlap, ordinary/view-only compositions and withdrawn
+retained authority with a stale candidate index. The original C loop passes
+fresh checking, expansion, verification of the rewritten proof and retained
+rechecking with the safe endpoint rule. The diagnostic probe is removed.
+
+This is a preserved recovery implementation, not an upstream activation. At
+that checkpoint master had the independent footprint-query slice from merged
+PR #969; the range-frame certificate prerequisite still needed extraction.
+
+The broader example-stage run was interrupted by the environment outage; its
+temporary log was lost on restart. No new full example-stage verdict is claimed.
+
+## Upstream loop-havoc borrow-partition extraction
+
+The independent master extraction adds `BorrowPartitionRangeEvidence` to the
+existing typed range-frame checker. The producer selects the live borrowed
+view/owner partition through the queried addresses before searching ambient
+separation facts. The certificate retains the composition and both members;
+checking requires live authority, exact-arithmetic containment of the complete
+mutable footprint, full-access read membership and no overlap under current
+address equalities. This slice uses existing containment and access rules;
+it imports no archived native-object declarations or general range-search
+machinery.
+
+The focused witness reproduces a missing certificate on unchanged master and
+checks the repair through an actual `LoopHavoc` equality certificate. Producer
+work is 22 units beside 16, 64, 256 and 1,024 unrelated owners. Widened reads
+and footprints, overlapping addresses, stale indexes after authority withdrawal,
+unbound views and view-only compositions reject. The original C loop remains in
+[`loop_resource_backing_range_fold_after_write.md`](../mdtests/loop_resource_backing_range_fold_after_write.md),
+with a regression covering fresh checking, expansion, rewritten checking and a
+retained session. This extraction completes the remaining borrow-frame slice of
+the retained-resource lookup repair; broader object-model activation remains
+separate.

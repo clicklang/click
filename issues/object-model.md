@@ -170,7 +170,7 @@ exactly the three targeted projects are restored, with no new failing project.
 This is not a full green gate.
 
 The next preserved checkpoint, `bd6659d9a`, records an attributed loop escape
-repair and the [retained-resource candidate lookup repair](../bugs/retained-resource-lookup-omits-framed-pointer-carriers.md).
+repair and the [retained-resource candidate lookup repair](../design/object-model-recovery-audit.md#loop-havoc-borrow-partition-producer-repair).
 All 31 selected kernel controls and both C++ member-domain rejection fixtures
 pass; eight of nine selected unfold fixtures pass, with the remaining failure
 confirmed on the prior checkpoint. The full normal example stage improves to
@@ -194,6 +194,17 @@ is not evidence for crossing that write. The selected frame also exposed a
 constant-prefix mismatch in signed-order certificate checking, now covered by
 positive and withdrawal/reversed-bound controls. This is a shared lookup/checking
 repair, not an object-representation change or a new C++ admission boundary.
+
+Recovery checkpoint `53da27b58` repairs the reduced loop's remaining frame gap:
+the actual store already carried a checked borrow-partition certificate, but
+range disjointness at the loop-havoc summary omitted that producer path. It now
+selects the same live loan-bound descriptor view and backing owner through their
+indexed address keys and retains the existing full-range/full-width certificate.
+All 87 selected controls pass, including a multi-size witness below 200 work
+units and width/overlap/ordinary-view/withdrawn-authority rejection controls.
+The original loop passes all four proof modes with the safe lookup rule. This
+remains an archive-dependent recovery slice; the upstream range-certificate
+prerequisite must be extracted before this implementation can be delivered.
 
 ## Recovery and delivery sequence
 

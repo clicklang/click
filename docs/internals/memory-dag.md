@@ -248,8 +248,9 @@ unchanged store. In particular:
   evidence, likewise checked in the querying context, or when a range the
   caller kept owning outside the transfer holds the cell. Those ranges, and
   the facts of the residual instances they were opened from, are the edge's
-  own, and the write-set marker spells them, so every path that shares the
-  edge kept the same memory; placing the cell inside one is still decided
+  own. The write-set marker carries an exact canonical identity for the
+  retained flat-owner set and spells its placement premises, so every path
+  that shares the edge kept the same memory; placing the cell inside one is still decided
   in the querying context;
 - a `LoopHavoc` edge with no checked footprint isn't crossed; a verified
   footprint is crossed only with range-disjointness evidence;
@@ -304,6 +305,16 @@ in `prepare_loop_top_state` materializes entry cells already known to be stable;
 it is an abstract-state optimization, not the soundness source for post-loop
 load transport. If a footprint cannot be evaluated, the edge retains the
 unconditional barrier semantics.
+
+A loop frame may also select a live borrowed-view/owner partition by the
+queried footprint and read addresses. `BorrowPartitionRangeEvidence` retains
+the selected composition and both members. Its checker requires that exact
+authority to remain available, verifies the entire mutable range is contained
+by its member, checks both endpoints of the full read, and rejects overlap
+under current address equalities. Unbound views and view-only compositions
+provide no such frame. Candidate indexes alone grant no separation, read
+permission, or native-object validity. The selected-member query avoids walking
+unrelated holdings or constructing pairwise separation facts.
 
 ## Range index domains
 

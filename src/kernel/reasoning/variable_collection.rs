@@ -4459,6 +4459,30 @@ fn remembered_memory_variables(memory: &SharedCMemory) -> Option<VariableCounts>
     SHARED_MEMORY_VARIABLES.with(|table| table.borrow().get(&memory.arena_id()).cloned())
 }
 
+/// Establish the input snapshot's index once, before individual C steps.
+pub(in crate::kernel) fn prepare_memory_variable_index(memory: &CMemory) {
+    let shared = crate::kernel::intern_c_memory_ref(memory);
+    shared_memory_variable_counts(&shared, WholeCount::Charged);
+}
+
+/// Advance an established index by the exact memory delta. Unindexed
+/// executions remain lazy; an indexed execution never leaves a later call
+/// to pay for all preceding stores.
+pub(in crate::kernel) fn advance_memory_variable_index(
+    base: &SharedCMemory,
+    result: &SharedCMemory,
+) {
+    if remembered_memory_variables(result).is_some() {
+        return;
+    }
+    if let Some(counts) = remembered_memory_variables(base) {
+        let counts = counts_from_base(counts, base.memory(), result.memory());
+        SHARED_MEMORY_VARIABLES.with(|table| {
+            table.borrow_mut().insert(result.arena_id(), counts);
+        });
+    }
+}
+
 /// [`collect_memory_bitvector_variables`] of an interned snapshot, counted
 /// once per verification session from its derivation base's counts. Counting
 /// charges one unit per entry and per derivation step it visits; a snapshot

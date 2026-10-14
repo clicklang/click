@@ -279,16 +279,9 @@ const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] 
     (
         (
             HiddenPrerequisiteRoute::TacticSearch,
-            "transport load-variable chain",
-        ),
-        17,
-    ),
-    (
-        (
-            HiddenPrerequisiteRoute::TacticSearch,
             "transport quantified frame",
         ),
-        11,
+        18,
     ),
 ];
 

@@ -227,12 +227,23 @@ behind new language coverage:
   establish rejection of forged sidecar authority. Test stale child access,
   forged/duplicate recovery, disjoint field borrowing, and parent reuse.
   The [production assessment](../design/rust-borrow-authority-assessment.md)
-  distinguishes existing owned-call reservation and checked native value
-  transport from the missing exclusive-child ledger protocol. A native
+  records the integrated synchronous borrowed-memory call protocol: fresh
+  child identity, exact selected supports, nested dependency and checked
+  one-time return, using the existing resource partition and memory result. A native
   regression now verifies parent reuse after child last use without ending
   child storage, including helper/caller expansion and authority negatives.
-  The explicit exclusive suspension/recovery requirement remains open; the
-  proposed first production increment uses synchronous owned-call frontiers.
+  Kernel negatives cover stale/wrong receipts, missing or duplicate return,
+  joined supports and fabricated rollback; indexed updates pass deterministic
+  ambient-scaling checks. The native fixture also checks nested calls and a
+  separately owned neighbor, with all three contracts expanded. A read-only
+  import-bound checker now certifies absence of future selected-reference uses
+  for same-block scalar reborrows with acyclic straight-line continuations. It
+  tracks copies and replacement definitions, refuses capture and unsupported
+  paths, and never uses storage death as a discharge. The native witness checks
+  actual imported MIR; bounded alias-chain tests check deterministic scaling.
+  Local reference access binding and kernel recovery at checked frontiers
+  remain open, so this does not close
+  the entire borrow-authority requirement.
 - **Stable proof observations:** provide source-facing slice, array, and
   iterator observations so contracts need not depend on compiler temporary
   names or storage details. Preserve qualified identities, shadowing, source

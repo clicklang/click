@@ -5,15 +5,15 @@ This assessment addresses the borrow-authority requirement in
 proofs are complete within their published contracts. Borrow authority remains
 an architecture requirement, with the following production boundary.
 
-## Current evidence
+## Current evidence after call-scoped integration
 
 | Required case | Current evidence | What remains |
 | --- | --- | --- |
-| Updated child contents return to the parent | Native Rust reborrow, field-guard cleanup and modular owned calls verify through the production engine. | An explicit exclusive-child identity and recovery transition. |
+| Updated child contents return to the parent | Native Rust reborrow, field-guard cleanup and modular owned calls verify through the production engine. | Synchronous borrowed-memory calls now carry an explicit child receipt; local reference lifetimes remain separate. |
 | Parent reuse after the child's last use | `rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop` checks the unchanged `set_seven` witness body, then a real caller. Both contracts expand and reverify. | Connect authority retirement to a supported borrow frontier, rather than assuming local storage end is the borrow end. |
-| Disjoint fields remain usable | `rust_owned_disjoint_mutable_fields_verify` checks actual simultaneous field references and updated values; the production call planner partitions exclusive requirements. | Combine footprint partitioning with exclusive child dependencies. |
-| Stale child access and duplicate recovery fail | The independent `rust_correspondence_` model checks these cases. Production shared-loan tests check stale bindings and exact recovery. | Corresponding production exclusive-child and submitted-sidecar negatives. |
-| Wrong child identity or holder cannot recover | The independent exclusive model checks this; shared production call evidence rejects stale or swapped recovery. | Production exclusive recovery with exact child identity and holder. |
+| Disjoint fields remain usable | `rust_owned_disjoint_mutable_fields_verify` checks actual simultaneous field references and updated values; the production call planner partitions exclusive requirements. | Production call receipts now combine nested dependencies with the existing footprint partition; local borrow dependencies remain open. |
+| Stale child access and duplicate recovery fail | Production exclusive-call tests reject stale receipts, duplicate returns and missing discharge; native sidecar negatives reject absent write authority. | Local stale-reference access and local recovery remain open. |
+| Wrong child identity or holder cannot recover | Production exclusive-call receipt tests reject wrong holders, other call identities, altered supports and a fabricated terminal rollback. | Apply the same requirements to local borrow endings. |
 
 The new native regression deliberately leaves the child reference's storage
 alive when the parent is reused. It proves `4 -> 7 -> 8` behavior for the
@@ -37,39 +37,94 @@ and give them to the callee. `plan_stable_view_transfer` reserves these before
 planning shared views, records supporting occurrences and retains disjoint
 caller resources. This prevents duplicated or overlapping call ownership.
 `LoanLedger::reborrow`, however, creates a shared view and pins its parent;
-the ledger has no analogous exclusive-child API. A successful native Rust
-example therefore cannot close the explicit suspension/recovery requirement.
+the separate exclusive-call receipt now tracks synchronous borrowed memory.
+A successful native Rust example alone cannot close local exclusive borrowing: its
+reference declarations still create aliases without local child identities.
 
-## Proposed first implementation increment
+## Implemented first increment: synchronous borrowed-memory calls
 
-Use existing synchronous owned-call transfer as the first production boundary
-for an explicit exclusive-child protocol. Its entry and return frontiers are
-already known, so this increment need not infer Rust nonlexical lifetimes.
+`src/kernel/loans/exclusive_calls.rs` is integrated into the existing call
+planner and checked loan-call evidence. It covers `Borrow` requirements over
+owned memory. Consumed/moved resources, abstract/composite ownership, and
+suspended worker transfers retain their existing protocols.
 
-1. Bind the reserved owned footprint to a fresh child identity, parent holder,
-   child holder and exact supporting occurrence in checked call transfer.
-   Keep ordinary disjoint caller resources usable. A nested exclusive child
-   pins its parent until the nested return finishes.
-2. Validate access against the active child's authority and the exact current
-   ledger state. Parent read/write authority over that footprint stays absent
-   while the child holds it. Shared-loan rules keep their existing behavior.
-3. Consume the child's exact return/recovery evidence once, returning the
-   owned footprint with the callee's checked memory result. Do not manufacture
-   a value from a separate model or identify recovery by address alone.
-4. Exercise the production call path with updated value transport, nested
-   children, disjoint fields, wrong holder/identity, duplicate recovery and
-   stale child bindings. Preserve ordinary Rust source patterns in frontend
-   tests and require expanded-proof agreement. Operations must scale with
-   selected transferred resources and relevant ledger changes.
+The planner reserves ownership before issuing a receipt. That receipt binds
+one fresh call identity, caller and callee participants, every selected
+ownership support (including joined fragments), and the containing exclusive
+call when present. The identity is fresh even if a completed call resumes at
+the exact original ledger root. A persistent holder index finds the containing
+call directly; nested calls increment its dependency count. The outer call
+cannot return while a nested child remains active.
 
-This is a proposed verifier protocol change, not an implemented API. Its
-purpose is to connect the explicit model to an existing production transition,
-without adding a second execution path. API shape and representation must be
-reviewed before implementation. A call-scoped child identity alone will not
-close the local-reference requirement: subsequent work must associate local
-reference access with authority and establish borrow-end frontiers. In
-particular, neither last-use guesses nor `StorageDead` alone may authorize
-early recovery, and a live pointer alias must not revive an expired child.
+Memory authority stays in the existing resource partition. The receipt never
+mints an owned fact. The caller residual lacks read/write authority for the
+borrowed footprint while retaining disjoint resources; the callee receives
+exactly the reserved ownership. Entry and recovery checks validate the live
+receipt and its selected supports against that plan. Callee memory updates and
+returned contents still come from the ordinary checked call result.
+
+Return requires the exact receipt and original caller, ends the child once,
+and releases the parent dependency. Checked evidence rechecks both entry and
+return against exact predecessor roots and also requires the receipt to be
+closed in the terminal successor. Merely claiming a rollback to an equal
+caller root cannot replace child return. Expired receipts, changed supports,
+wrong holders, other call identities, missing discharge and duplicate return
+are refused. Canonical caller-root restoration remains the existing mechanism;
+checked terminal history retains the actual discharge.
+
+Normal kernel regressions cover nested return order, disjoint parent read/write
+authority, joined support fragments, move-role separation and forged recovery.
+Deterministic persistent-map measurements at 16, 64, 256 and 1024 unrelated
+scopes bound a selected entry/return operation by indexed lookup work. Updates
+share the selected receipt payload and do not scan unrelated scopes. The
+whole-ledger invariant walk is test-only.
+
+The native witness regression now also verifies `nested -> update -> set_seven`,
+with a separately owned neighbor set to 9. All three contracts expand and
+reverify; false value and missing helper, caller or neighbor write authority
+are rejected. This checks actual imported Rust bodies through the same engine.
+
+## Checked local-reference endings
+
+`PreparedRustImport::certify_scalar_reference_end` now checks an explicit MIR
+borrow/frontier pair against the immutable locked import. Its private
+certificate constructor binds the result to the import identity, selected
+function and exact MIR points. Function names are indexed once per import;
+each query examines only the selected function and continuation.
+
+The supported subset is a mutable scalar reborrow from a local reference,
+with the borrow and frontier in one block followed by an acyclic straight-line
+continuation. The checker follows copies, reborrows and replacement definitions
+from the selected child. It refuses future uses, branches, cycles, aggregate
+transport, reference returns and opaque capture, including capture nested in
+scalar expressions. Conversions involving a selected alias are conservatively
+refused. Storage events never discharge aliases. Reassigning the parent name
+does not hide an outstanding child, while replacing a child binding does not
+retire copies of the original reference.
+
+The native `set_seven` fixture checks this certificate against actual exported
+MIR, checks its import identity and rejects an ending before the child store.
+Six bounded unit regressions cover alias copies, storage markers, replacement,
+parent reassignment, capture, unsupported paths, call continuations and invalid
+points. A deterministic 16/64/256/1024 alias-chain regression bounds work to the
+selected input, up to indexing factors.
+
+This read-only certificate proves absence of future selected-reference uses in
+that subset. It does not grant memory authority, end a production loan or
+change ordinary import/verification acceptance. An unsupported ending query
+does not itself reject the Rust program.
+
+## Remaining local-reference work
+
+A call-scoped child identity does not close local-reference lifetime handling.
+The frontend still must associate local reference access with authority and
+connect checked borrow-end frontiers to kernel recovery. The ending certificate
+alone is insufficient: recovery must also match the source identity, reference
+access, borrowed footprint and exact program frontier. Neither last-use guesses nor `StorageDead`
+alone may authorize early recovery, and a live pointer alias must not revive
+an expired child. Pinned rustc establishes source borrow legality; it does not
+replace submitted-sidecar authority checks. No additional source annotation,
+separate execution engine or allocation-lifetime authority was introduced.
 
 ## Reproduce the assessment
 
@@ -78,6 +133,8 @@ With the pinned tools activated and `CLICK_CHARON` set to the pinned exporter:
 ```sh
 cargo test --lib rust_correspondence_
 cargo test --lib correspondence_calls_production_
+cargo test --lib exclusive_call_
+cargo test --lib scalar_reference_frontier
 cargo test --test rust_import rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop -- --ignored
 cargo test --test rust_import rust_owned_field_parent_can_write_after_explicit_child_drop -- --ignored
 cargo test --test rust_import rust_owned_disjoint_mutable_fields_verify -- --ignored
@@ -85,7 +142,8 @@ cargo test --test rust_import rust_owned_disjoint_mutable_fields_verify -- --ign
 
 The four independent model traces and two production correspondence tests pass;
 they establish different claims. The three individually selected native
-fixtures cover actual Rust execution and proof checks. No full nightly run is
+fixtures cover actual Rust execution and proof checks; the exclusive-call
+regressions exercise the integrated production planner and evidence path. No full nightly run is
 needed for this assessment. The original
 [worked correspondence](rust-resource-correspondence.md) retains its model and
 compiler boundaries; this record adds production evidence without treating

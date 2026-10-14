@@ -1645,6 +1645,15 @@ verified-call rule. It does not enumerate project functions or infer behavior
 from a matching C signature. Contract applications are type-checked against
 the complete modeled function-pointer signature.
 
+For a callback read through an initialized constant table, a checked equality
+such as `cb == &table` and permission to read the slot establish its target.
+After applying the target's
+contract theorem, `have Invoke(cb->call) by { assumption(); }` records that
+contract for the read pointer. The captured state and complete callback
+signature must match.
+
+<!-- verified-example: mdtests/function_pointer_read_uses_checked_address_equality.md -->
+
 When several named contracts are known for the same symbolic pointer, their
 preconditions are checked against the same pre-call state. Contracts whose
 requirements cannot be established do not contribute guarantees. If none
@@ -2207,6 +2216,16 @@ Click refuses it and suggests `owns *p`. A clause does not take `&`: the
 place already names its storage. A range belongs on a pointer or an array;
 a scalar field such as `owner->len` takes none. A range on a struct pointer
 counts structs: `owns p[0..n]` is `n` whole structs.
+
+A call can assemble whole-object ownership from adjacent owned fields, including
+byte fields, when their combined footprint covers every byte of the object.
+A scalar field clause covers its ABI slot up to the next field or the end of
+the struct, so a final byte field includes its following tail padding.
+Viewed fields cannot complete an owned footprint; explicit byte fragments
+must cover the complete object, including padding.
+
+<!-- verified-example: mdtests/whole_struct_reassembles_from_byte_fields.md -->
+<!-- verified-example: mdtests/whole_struct_reassembles_from_padded_byte_field.md -->
 
 No runtime length is inferred for a pointer field. Use an explicit range,
 such as `views owner->data[0..owner->len]`, for pointed-to elements, and

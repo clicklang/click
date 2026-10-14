@@ -892,6 +892,27 @@ fn nested_null_check_chain_expands_and_reverifies() {
     }
 }
 
+#[test]
+#[ignore = "nightly: descriptor-backed loop across all proof modes"]
+fn descriptor_backing_range_loop_survives_all_proof_modes() {
+    let (source, sources) =
+        mdtest_sources("mdtests/loop_resource_backing_range_fold_after_write.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded =
+        expand_c0_claim_source(&source, &sources, "probe", CProofClaim::Grouped).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let position =
+        expansion::position_at_offset(&expanded, expanded.find("owns cells(h->data, n);").unwrap());
+    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+    session
+        .verify_at(&expanded, position.line, position.column)
+        .unwrap();
+}
+
 fn mdtest_sources(relative: &str) -> (String, Vec<(String, String)>) {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(relative);
     let source = std::fs::read_to_string(&path)
@@ -18114,4 +18135,80 @@ int32 caller(int32 x) {
             .contains("outside the selected proof unit"),
         "{error}"
     );
+}
+
+#[test]
+#[ignore = "nightly: checks byte-field ownership through expansion and retained verification"]
+fn whole_struct_byte_fields_reassemble_in_all_proof_modes() {
+    for fixture in [
+        "mdtests/whole_struct_reassembles_from_byte_fields.md",
+        "mdtests/whole_struct_reassembles_from_padded_byte_field.md",
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        verify_c0_sources(&source, &sources).unwrap();
+        let expanded =
+            expand_c0_claim_source(&source, &sources, "mixed_fields", CProofClaim::Grouped)
+                .unwrap();
+        verify_c0_sources(&expanded, &sources).unwrap();
+        let position =
+            expansion::position_at_offset(&expanded, expanded.find("owns p->a;").unwrap());
+        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+        session
+            .verify_at(&expanded, position.line, position.column)
+            .unwrap();
+        let field_clause = if source.contains("owns p->f;") {
+            "owns p->f;"
+        } else {
+            "owns p->c;"
+        };
+        for replacement in [String::new(), field_clause.replace("owns", "views")] {
+            assert!(
+                verify_c0_sources(&source.replace(field_clause, &replacement), &sources).is_err()
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "nightly: callback read across fresh, expanded, and retained proofs"]
+fn callback_reads_keep_the_initialized_target_contract_in_all_proof_modes() {
+    let (source, sources) =
+        mdtest_sources("mdtests/function_pointer_read_uses_checked_address_equality.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded =
+        expand_c0_claim_source(&source, &sources, "symbolic", CProofClaim::Grouped).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let position =
+        expansion::position_at_offset(&expanded, expanded.rfind("ensures true;").unwrap());
+    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+    session
+        .verify_at(&expanded, position.line, position.column)
+        .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: array-bound call across expansion and retained verification"]
+fn call_step_keeps_snapshot_bound_through_expansion_and_retained_check() {
+    let (source, sources) = mdtest_sources("mdtests/call_step_retains_old_array_bound.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c0_claim_source(&source, &sources, "probe", CProofClaim::Grouped).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let position =
+        expansion::position_at_offset(&expanded, expanded.find("ensures result >= 0;").unwrap());
+    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+    session
+        .verify_at(&expanded, position.line, position.column)
+        .unwrap();
 }

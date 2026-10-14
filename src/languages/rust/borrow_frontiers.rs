@@ -1,0 +1,549 @@
+//! Checked absence of future uses for a selected scalar-reference binding.
+//! This is source evidence for subsequent local authority integration; it
+//! neither grants memory authority nor ends a production loan.
+
+use super::schema::{Expression as E, Function, MirStatement as S, MirTerminator as T, Type};
+use std::collections::{BTreeMap, BTreeSet};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MirPoint {
+    pub block: usize,
+    /// Number of statements already executed in this block.
+    pub statement: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FrontierRefusal {
+    MissingMir,
+    InvalidPoint,
+    UnsupportedBorrow,
+    UnsupportedFlow,
+    ReferenceEscape,
+    FutureUse,
+}
+
+/// The source is immutably borrowed for the certificate's entire lifetime.
+/// No caller-supplied list of aliases or purported last uses is trusted.
+#[derive(Debug)]
+pub struct CheckedScalarReferenceEnd<'a> {
+    function: &'a Function,
+    import_identity: &'a str,
+    borrow: MirPoint,
+    end: MirPoint,
+}
+
+impl CheckedScalarReferenceEnd<'_> {
+    pub fn import_identity(&self) -> &str {
+        self.import_identity
+    }
+    pub fn function(&self) -> &Function {
+        self.function
+    }
+    pub fn borrow_point(&self) -> MirPoint {
+        self.borrow
+    }
+    pub fn end_point(&self) -> MirPoint {
+        self.end
+    }
+}
+
+fn scalar_reference(ty: &Type) -> bool {
+    matches!(ty, Type::Reference { pointee, .. }
+        if matches!(pointee.as_ref(), Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Bool))
+}
+
+// Each operand is visited once. The second bit detects opaque alias capture,
+// including calls/aggregates nested inside otherwise scalar expressions.
+fn alias_effect(expr: &E, aliases: &BTreeSet<&str>) -> Result<(bool, bool), FrontierRefusal> {
+    crate::instrumentation::record_deterministic_work(1);
+    let children: Vec<&E> = match expr {
+        E::Local { name } => return Ok((aliases.contains(name.as_str()), false)),
+        E::IntegerFrom { value, .. }
+        | E::Not { value }
+        | E::BitwiseNot { value, .. }
+        | E::Cast { value, .. }
+        | E::Repeat { value, .. } => vec![value],
+        E::Borrow { place, .. } => vec![place],
+        E::Deref { reference, .. } => vec![reference],
+        E::Field { base, .. } => vec![base],
+        E::SliceLength { slice } | E::ArrayToSlice { array: slice, .. } => vec![slice],
+        E::Index { slice, index } => vec![slice, index],
+        E::Binary { left, right, .. } => vec![left, right],
+        E::Call { arguments, .. }
+        | E::Array {
+            elements: arguments,
+            ..
+        } => arguments.iter().collect(),
+        E::FunctionAddress { .. }
+        | E::Integer { .. }
+        | E::UnsignedInteger { .. }
+        | E::UsizeInteger { .. }
+        | E::Boolean { .. } => return Ok((false, false)),
+        E::SharedArrayHasNext { .. }
+        | E::SharedArrayOptionElement { .. }
+        | E::SharedArrayOptionTag { .. }
+        | E::ChunkHasNext { .. }
+        | E::ChunkOptionSlice { .. }
+        | E::ChunkOptionTag { .. }
+        | E::ChunkRemainder { .. } => return Err(FrontierRefusal::UnsupportedFlow),
+    };
+    let mut used = false;
+    let mut escaped = false;
+    for child in children {
+        let (child_used, child_escaped) = alias_effect(child, aliases)?;
+        used |= child_used;
+        escaped |= child_escaped;
+    }
+    // Conversion of a selected reference into a scalar must not hide its
+    // identity. Conservatively refuse conversions even of loaded values;
+    // distinguishing pointer transport from scalar reads is later coverage.
+    escaped |= used
+        && matches!(
+            expr,
+            E::Call { .. }
+                | E::Array { .. }
+                | E::Repeat { .. }
+                | E::Cast { .. }
+                | E::IntegerFrom { .. }
+        );
+    Ok((used, escaped))
+}
+
+fn transfer<'a>(
+    statement: &'a S,
+    types: &BTreeMap<&str, &Type>,
+    aliases: &mut BTreeSet<&'a str>,
+    after_end: bool,
+) -> Result<(), FrontierRefusal> {
+    crate::instrumentation::record_deterministic_work(1);
+    match statement {
+        S::Assign { target, value } => {
+            let (source_uses, source_escapes) = alias_effect(value, aliases)?;
+            if source_escapes {
+                return Err(FrontierRefusal::ReferenceEscape);
+            }
+            let (target_uses, target_escapes) = if matches!(target, E::Local { .. }) {
+                (false, false)
+            } else {
+                alias_effect(target, aliases)?
+            };
+            if target_escapes {
+                return Err(FrontierRefusal::ReferenceEscape);
+            }
+            if after_end && (source_uses || target_uses) {
+                return Err(FrontierRefusal::FutureUse);
+            }
+            if let E::Local { name } = target {
+                let ty = types
+                    .get(name.as_str())
+                    .ok_or(FrontierRefusal::UnsupportedFlow)?;
+                if scalar_reference(ty) {
+                    if source_uses {
+                        aliases.insert(name);
+                    } else {
+                        aliases.remove(name.as_str());
+                    }
+                } else if source_uses
+                    && !matches!(
+                        ty,
+                        Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Bool
+                    )
+                {
+                    // Do not lose an alias inside a record, array, cast or call.
+                    return Err(FrontierRefusal::ReferenceEscape);
+                }
+            } else if source_uses {
+                return Err(FrontierRefusal::ReferenceEscape);
+            }
+            Ok(())
+        }
+        S::BeginStorage { .. } | S::EndStorage { .. } => {
+            // Storage events alone prove no loan ending. Retain aliases until
+            // an actual definition replaces them, even across StorageDead.
+            Ok(())
+        }
+        // Aggregate and iterator alias transport needs separate evidence.
+        _ => Err(FrontierRefusal::UnsupportedFlow),
+    }
+}
+
+/// Certify a same-block borrow/frontier and its acyclic straight-line
+/// continuation. Branches, loops and aggregate transport are refused rather
+/// than assigning them guessed lifetimes. Reference copies/reborrows and
+/// replacement definitions are followed from the selected borrow itself.
+pub(super) fn certify_scalar_reference_end<'a>(
+    function: &'a Function,
+    import_identity: &'a str,
+    borrow: MirPoint,
+    end: MirPoint,
+) -> Result<CheckedScalarReferenceEnd<'a>, FrontierRefusal> {
+    if !matches!(
+        function.return_type,
+        Type::Unit | Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Bool
+    ) {
+        return Err(FrontierRefusal::UnsupportedFlow);
+    }
+    let mir = function.mir.as_ref().ok_or(FrontierRefusal::MissingMir)?;
+    let block = mir
+        .blocks
+        .get(borrow.block)
+        .ok_or(FrontierRefusal::InvalidPoint)?;
+    if end.block != borrow.block
+        || end.statement <= borrow.statement
+        || end.statement > block.statements.len()
+    {
+        return Err(FrontierRefusal::InvalidPoint);
+    }
+    let mut types = BTreeMap::new();
+    for local in function.parameters.iter().chain(&mir.locals) {
+        crate::instrumentation::record_deterministic_work(1);
+        if types
+            .insert(local.name.as_str(), &local.value_type)
+            .is_some()
+        {
+            return Err(FrontierRefusal::UnsupportedFlow);
+        }
+    }
+    let Some(S::Assign {
+        target: E::Local { name },
+        value: E::Borrow { place, value_type },
+    }) = block.statements.get(borrow.statement)
+    else {
+        return Err(FrontierRefusal::UnsupportedBorrow);
+    };
+    if !matches!(value_type, Type::Reference { mutable: true, .. })
+        || !scalar_reference(value_type)
+        || types.get(name.as_str()).copied() != Some(value_type)
+    {
+        return Err(FrontierRefusal::UnsupportedBorrow);
+    }
+    let E::Deref {
+        reference,
+        value_type: pointee,
+    } = place.as_ref()
+    else {
+        return Err(FrontierRefusal::UnsupportedBorrow);
+    };
+    let E::Local { name: parent } = reference.as_ref() else {
+        return Err(FrontierRefusal::UnsupportedBorrow);
+    };
+    if !matches!(types.get(parent.as_str()), Some(Type::Reference { mutable: true, pointee: parent_ty })
+        if parent_ty.as_ref() == pointee)
+        || !matches!(value_type, Type::Reference { pointee: child_ty, .. } if child_ty.as_ref() == pointee)
+    {
+        return Err(FrontierRefusal::UnsupportedBorrow);
+    }
+    let mut aliases = BTreeSet::from([name.as_str()]);
+    for statement in &block.statements[borrow.statement + 1..end.statement] {
+        transfer(statement, &types, &mut aliases, false)?;
+    }
+    let mut point = end;
+    let mut visited = BTreeSet::new();
+    loop {
+        if !visited.insert(point.block) {
+            return Err(FrontierRefusal::UnsupportedFlow);
+        }
+        let block = mir
+            .blocks
+            .get(point.block)
+            .ok_or(FrontierRefusal::InvalidPoint)?;
+        for statement in &block.statements[point.statement..] {
+            transfer(statement, &types, &mut aliases, true)?;
+        }
+        match &block.terminator {
+            T::Return | T::Unreachable => break,
+            T::Goto { target } => {
+                point = MirPoint {
+                    block: *target,
+                    statement: 0,
+                }
+            }
+            T::Call {
+                arguments,
+                owned_arguments,
+                destination,
+                target,
+                function,
+                through_pointer,
+            } => {
+                let mut used = *through_pointer && aliases.contains(function.as_str());
+                used |= owned_arguments
+                    .iter()
+                    .any(|arg| aliases.contains(arg.local.as_str()));
+                for argument in arguments {
+                    used |= alias_effect(argument, &aliases)?.0;
+                }
+                if used {
+                    return Err(FrontierRefusal::FutureUse);
+                }
+                // A call whose inputs contain no selected alias cannot carry
+                // that alias into its result; earlier aggregate escapes were refused.
+                aliases.remove(destination.as_str());
+                point = MirPoint {
+                    block: *target,
+                    statement: 0,
+                };
+            }
+            T::If { .. } | T::Drop { .. } => return Err(FrontierRefusal::UnsupportedFlow),
+        }
+    }
+    Ok(CheckedScalarReferenceEnd {
+        function,
+        import_identity,
+        borrow,
+        end,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::languages::rust::schema::{MirBlock, MirBody, Place, Span};
+
+    fn local(name: &str) -> E {
+        E::Local { name: name.into() }
+    }
+    fn reference_type() -> Type {
+        Type::Reference {
+            mutable: true,
+            pointee: Box::new(Type::I32),
+        }
+    }
+    fn deref(name: &str) -> E {
+        E::Deref {
+            reference: Box::new(local(name)),
+            value_type: Type::I32,
+        }
+    }
+    fn borrow_parent() -> E {
+        E::Borrow {
+            place: Box::new(deref("parent")),
+            value_type: reference_type(),
+        }
+    }
+    fn assign(target: E, value: E) -> S {
+        S::Assign { target, value }
+    }
+    fn place(name: &str, value_type: Type) -> Place {
+        Place {
+            name: name.into(),
+            value_type,
+            span: Span { line: 1, column: 1 },
+        }
+    }
+    fn function() -> Function {
+        Function {
+            name: "test::reuse".into(),
+            return_type: Type::Unit,
+            parameters: vec![
+                place("parent", reference_type()),
+                place("other", reference_type()),
+            ],
+            body: vec![],
+            external: false,
+            span: Span { line: 1, column: 1 },
+            mir: Some(MirBody {
+                locals: vec![
+                    place("child", reference_type()),
+                    place("alias", reference_type()),
+                    place("x", Type::I32),
+                ],
+                blocks: vec![MirBlock {
+                    statements: vec![
+                        assign(local("child"), borrow_parent()),
+                        assign(deref("child"), E::Integer { value: 7 }),
+                        assign(deref("parent"), E::Integer { value: 8 }),
+                    ],
+                    terminator: T::Return,
+                }],
+            }),
+        }
+    }
+    fn point(statement: usize) -> MirPoint {
+        MirPoint {
+            block: 0,
+            statement,
+        }
+    }
+    fn refusal(f: &Function, end: usize) -> FrontierRefusal {
+        certify_scalar_reference_end(f, "test-source", point(0), point(end)).unwrap_err()
+    }
+
+    #[test]
+    fn scalar_reference_frontier_covers_parent_reuse_and_rejects_early_end() {
+        let f = function();
+        let certificate =
+            certify_scalar_reference_end(&f, "test-source", point(0), point(2)).unwrap();
+        assert!(std::ptr::eq(certificate.function(), &f));
+        assert_eq!(certificate.borrow_point(), point(0));
+        assert_eq!(certificate.end_point(), point(2));
+        assert_eq!(refusal(&f, 1), FrontierRefusal::FutureUse);
+    }
+
+    #[test]
+    fn scalar_reference_frontier_follows_copies_and_does_not_trust_storage_death() {
+        let mut f = function();
+        let block = &mut f.mir.as_mut().unwrap().blocks[0];
+        block
+            .statements
+            .insert(1, assign(local("alias"), local("child")));
+        block.statements.insert(
+            3,
+            S::EndStorage {
+                local: "child".into(),
+            },
+        );
+        block
+            .statements
+            .push(assign(deref("alias"), E::Integer { value: 9 }));
+        assert_eq!(refusal(&f, 3), FrontierRefusal::FutureUse);
+        block_mut(&mut f).statements[5] = assign(deref("child"), E::Integer { value: 9 });
+        assert_eq!(refusal(&f, 3), FrontierRefusal::FutureUse);
+    }
+
+    fn block_mut(f: &mut Function) -> &mut MirBlock {
+        &mut f.mir.as_mut().unwrap().blocks[0]
+    }
+
+    #[test]
+    fn scalar_reference_frontier_distinguishes_replacement_and_parent_reassignment() {
+        let mut f = function();
+        block_mut(&mut f)
+            .statements
+            .push(assign(local("child"), borrow_parent()));
+        block_mut(&mut f)
+            .statements
+            .push(assign(deref("child"), E::Integer { value: 9 }));
+        certify_scalar_reference_end(&f, "test-source", point(0), point(2)).unwrap();
+        let mut f = function();
+        block_mut(&mut f)
+            .statements
+            .insert(2, assign(local("parent"), local("other")));
+        block_mut(&mut f)
+            .statements
+            .push(assign(deref("child"), E::Integer { value: 9 }));
+        assert_eq!(refusal(&f, 2), FrontierRefusal::FutureUse);
+    }
+
+    #[test]
+    fn scalar_reference_frontier_refuses_nested_capture_and_unchecked_paths() {
+        let mut f = function();
+        block_mut(&mut f).statements.insert(
+            1,
+            assign(
+                local("x"),
+                E::Binary {
+                    operator: "add".into(),
+                    left_type: Type::I32,
+                    right_type: Type::I32,
+                    left: Box::new(E::Call {
+                        function: "capture".into(),
+                        arguments: vec![local("child")],
+                    }),
+                    right: Box::new(E::Integer { value: 1 }),
+                },
+            ),
+        );
+        assert_eq!(refusal(&f, 3), FrontierRefusal::ReferenceEscape);
+        block_mut(&mut f).statements[1] = assign(
+            E::Deref {
+                reference: Box::new(E::Call {
+                    function: "capture".into(),
+                    arguments: vec![local("child")],
+                }),
+                value_type: Type::I32,
+            },
+            E::Integer { value: 7 },
+        );
+        assert_eq!(refusal(&f, 3), FrontierRefusal::ReferenceEscape);
+        block_mut(&mut f).statements[1] = assign(
+            local("x"),
+            E::Cast {
+                value: Box::new(local("child")),
+                value_type: Type::I32,
+            },
+        );
+        assert_eq!(refusal(&f, 3), FrontierRefusal::ReferenceEscape);
+        let mut f = function();
+        block_mut(&mut f).terminator = T::If {
+            condition: E::Boolean { value: true },
+            then_target: 0,
+            else_target: 0,
+        };
+        assert_eq!(refusal(&f, 2), FrontierRefusal::UnsupportedFlow);
+        block_mut(&mut f).terminator = T::Goto { target: 0 };
+        assert_eq!(refusal(&f, 2), FrontierRefusal::UnsupportedFlow);
+        block_mut(&mut f).terminator = T::Goto { target: 99 };
+        assert_eq!(refusal(&f, 2), FrontierRefusal::InvalidPoint);
+        f.return_type = reference_type();
+        assert_eq!(refusal(&f, 2), FrontierRefusal::UnsupportedFlow);
+    }
+
+    #[test]
+    fn scalar_reference_frontier_selected_alias_chain_scales_linearly() {
+        let mut samples = Vec::new();
+        for size in [16, 64, 256, 1024] {
+            let mut f = function();
+            let mir = f.mir.as_mut().unwrap();
+            let mut previous = "child".to_string();
+            for index in 0..size {
+                let name = format!("alias_{index}");
+                mir.locals.push(place(&name, reference_type()));
+                mir.blocks[0]
+                    .statements
+                    .insert(index + 1, assign(local(&name), local(&previous)));
+                previous = name;
+            }
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                certify_scalar_reference_end(&f, "test-source", point(0), point(size + 2)).unwrap()
+            });
+            samples.push((size, work));
+            assert!(
+                work <= size * 5 + 32,
+                "alias chain revisited prefixes: {samples:?}"
+            );
+        }
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].1 <= pair[0].1 * 4 + 32,
+                "superlinear alias checking: {samples:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn scalar_reference_frontier_checks_call_continuations_and_points() {
+        let mut f = function();
+        block_mut(&mut f).terminator = T::Call {
+            function: "observe_parent".into(),
+            arguments: vec![local("parent")],
+            owned_arguments: vec![],
+            destination: "x".into(),
+            target: 1,
+            through_pointer: false,
+        };
+        f.mir.as_mut().unwrap().blocks.push(MirBlock {
+            statements: vec![],
+            terminator: T::Return,
+        });
+        certify_scalar_reference_end(&f, "test-source", point(0), point(2)).unwrap();
+        if let T::Call { arguments, .. } = &mut block_mut(&mut f).terminator {
+            *arguments = vec![local("child")];
+        }
+        assert_eq!(refusal(&f, 2), FrontierRefusal::FutureUse);
+        assert_eq!(refusal(&f, 99), FrontierRefusal::InvalidPoint);
+        assert_eq!(
+            certify_scalar_reference_end(
+                &f,
+                "test-source",
+                MirPoint {
+                    block: 99,
+                    statement: 0
+                },
+                point(2)
+            )
+            .unwrap_err(),
+            FrontierRefusal::InvalidPoint
+        );
+    }
+}

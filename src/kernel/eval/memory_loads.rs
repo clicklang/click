@@ -73,8 +73,12 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
         }];
     }
     let mut alias_cache = MemoryLoadAliasCache::default();
-    let observed = (!volatile && assumptions.should_require_owned_expression_loads())
-        .then(|| (crate::kernel::intern_c_memory_ref(memory), pointer.clone()));
+    // Function reads have an exact load-variable identity, including when
+    // reading a borrowed callback table in an ordinary statement proof.
+    let observed = (!volatile
+        && (assumptions.should_require_owned_expression_loads()
+            || matches!(value_type, CType::FunctionPointer(_))))
+    .then(|| (crate::kernel::intern_c_memory_ref(memory), pointer.clone()));
     let mut paths = evaluate_c_memory_load_paths_with_alias_cache(
         memory,
         pointer,
@@ -1711,7 +1715,10 @@ thread_local! {
 /// Its shape is not itself evidence: indexed arithmetic can look identical.
 pub(crate) fn typed_pointer_read_variable(value: &Pointer) -> Option<Variable> {
     Some(match (&value.block, &value.offset) {
-        (PointerBlock::Symbolic(variable), PointerOffsetTerm::Constant(0)) => *variable,
+        (
+            PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable),
+            PointerOffsetTerm::Constant(0),
+        ) => *variable,
         (_, PointerOffsetTerm::Int32Scaled { value, .. }) => {
             let Bitvector32Term::Variable(variable) = value.as_ref() else {
                 return None;
@@ -5841,6 +5848,153 @@ mod tests {
             samples.iter().all(|sample| sample.1 <= samples[0].1 + 128),
             "{samples:?}"
         );
+    }
+
+    #[test]
+    fn checked_function_pointer_reads_reconcile_cached_aliases_without_leaking_evidence() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let table = Pointer {
+            block: "global:callback-table".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let argument = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Int32Scaled {
+                value: Box::new(Bitvector32Term::Variable(Variable(210_510))),
+                byte_width: 4,
+            },
+        };
+        let target = Pointer::function("callback");
+        let replacement = Pointer::function("replacement");
+        let c_type = CType::FunctionPointer(CallbackSignature::UNSPECIFIED);
+        let memory = CMemory::new().store(
+            table.offset_by_bytes(8),
+            CValue::typed_pointer(target.clone(), c_type),
+        );
+        let source = intern_c_memory_ref(&memory);
+        let seeded =
+            memory
+                .clone()
+                .with_seeded_cells(argument.offset_by_bytes(8), 4, c_type, 0, 2, source);
+        let bare = PureFactContext::new();
+        let alias = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(argument.clone(), table.clone()),
+            true,
+        );
+        let context = bare.clone().assume_proposition(alias.clone());
+        let paths = evaluate_c_memory_load_paths(
+            &seeded,
+            argument.offset_by_bytes(8),
+            c_type,
+            ExecutionFacts::new(),
+            Vec::new(),
+            &context,
+            true,
+            false,
+            None,
+            None,
+        );
+        let [path] = paths.as_slice() else {
+            panic!("one checked read expected");
+        };
+        let CExpressionOutcome::Value(CValue::Pointer(read)) = &path.outcome else {
+            panic!("function pointer expected");
+        };
+        assert!(path.facts.iter().any(|fact| matches!(
+            fact.generated_load_binding(),
+            Some(GeneratedLoadBinding::Exact {
+                typed_pointer_value: Some(_),
+                ..
+            })
+        )));
+        let known = path.facts.iter().fold(context.clone(), |context, fact| {
+            context.assume_proposition(fact.proposition().clone())
+        });
+        let merged =
+            crate::kernel::reasoning::merge_facts(&ExecutionFacts::new(), &path.facts, &known)
+                .unwrap();
+        assert!(merged.iter().any(|fact| matches!(
+            fact.generated_load_binding(),
+            Some(GeneratedLoadBinding::Exact {
+                typed_pointer_value: Some(_),
+                ..
+            })
+        )));
+        let plain: ExecutionFacts = path
+            .facts
+            .iter()
+            .map(|fact| ExecutionPureFact::new(fact.proposition().clone()))
+            .collect();
+        assert!(
+            crate::kernel::reasoning::merge_facts(&ExecutionFacts::new(), &plain, &known)
+                .unwrap()
+                .is_empty()
+        );
+        let mut published =
+            crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&alias));
+        for fact in &path.facts {
+            published = published.with_kernel_checked_fact(fact.proposition().clone());
+        }
+        let undecorated = published.clone();
+        for fact in &path.facts {
+            published.retain_checked_read_fact(fact);
+        }
+        assert!(
+            published
+                .assumptions()
+                .pointers_known_equal(read.pointer(), &target)
+        );
+        assert!(
+            !undecorated
+                .assumptions()
+                .pointers_known_equal(read.pointer(), &target)
+        );
+        assert!(!context.pointers_known_equal(read.pointer(), &target));
+        for fact in &path.facts {
+            fact.retain_pointer_read_definition(&context);
+        }
+        assert!(context.pointers_known_equal(read.pointer(), &target));
+        assert!(!bare.pointers_known_equal(read.pointer(), &target));
+        assert!(
+            !context
+                .without_exact_fact(&alias)
+                .pointers_known_equal(read.pointer(), &target)
+        );
+        assert!(!ResourceContext::new().permits_memory_read(
+            &argument.offset_by_bytes(8),
+            8,
+            &context
+        ));
+        let changed = memory.store(
+            table.offset_by_bytes(8),
+            CValue::typed_pointer(replacement.clone(), c_type),
+        );
+        let changed_source = intern_c_memory_ref(&changed);
+        let changed_seeded =
+            changed.with_seeded_cells(argument.offset_by_bytes(8), 4, c_type, 0, 2, changed_source);
+        let changed_paths = evaluate_c_memory_load_paths(
+            &changed_seeded,
+            argument.offset_by_bytes(8),
+            c_type,
+            ExecutionFacts::new(),
+            Vec::new(),
+            &context,
+            true,
+            false,
+            None,
+            None,
+        );
+        let [changed_path] = changed_paths.as_slice() else {
+            panic!("one changed read expected");
+        };
+        let CExpressionOutcome::Value(CValue::Pointer(changed_read)) = &changed_path.outcome else {
+            panic!("function pointer expected");
+        };
+        for fact in &changed_path.facts {
+            fact.retain_pointer_read_definition(&context);
+        }
+        assert!(context.pointers_known_equal(changed_read.pointer(), &replacement));
+        assert!(!context.pointers_known_equal(read.pointer(), changed_read.pointer()));
     }
 
     #[test]

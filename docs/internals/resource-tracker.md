@@ -1477,37 +1477,42 @@ permitted stores or a transition that drops the fact:
   through theirs, then among the opened ranges of the cell's block when a
   reloaded base is proven equal to the opened one. The opening costs one
   evaluation of each residual instance's own body per call.
-  The producer (`CMemory::with_call_memory_havoc`) and its checker
-  (`CMemory::matches_call_memory_havoc_result`) ask the same
-  `call_havoc_keeps_cell`; the havoc still drops such a cell's cached value,
-  and records the kept ranges and premises on the edge (`CallKeptRanges`),
-  which the write-set marker spells, so a snapshot is shared only by paths
-  that kept the same memory. The rule's `CallHavoc` arm and the
-  effect-summary route
-  (`memory_snapshots_directly_proven_equal_for_memory_resolution`) read those
-  ranges and name a cell they hold across the call at its pre-call value.
-  The flat residual members the edge records come from the caller's
-  ownership, not from the cache: every owned flat member of the residual
-  based in a block the write set may alias (the havoc's own alias
-  candidates, walked through the residual's per-block owned-memory index)
-  is recorded, cached or not. Recording only the members that kept a cached
-  cell lost a member whose cell an earlier call's havoc had dropped and no
-  load had cached again, so a load after the later call could not be named
-  across it
-  (`mdtests/call_keeps_an_uncached_flat_field_beside_folded_state.md`).
-  A member in a block proven distinct from every write-set base is left
-  out, since the separation rule keeps its cells, and a write set that
-  reaches unnamed memory sits in a symbolic block whose candidates are every
-  block. The record costs the residual members that can alias the
-  footprint, never the residual's other resources
+  The producer (`CMemory::with_call_memory_havoc`) and checker
+  (`CMemory::matches_call_memory_havoc_result`) use the same candidate
+  selection and `call_havoc_keeps_cell` rule. Whole concrete cells and seeded
+  runs structurally contained in a flat owned atomic parameter object stay
+  cached without visiting other retained objects. A persistent partition
+  follows changed cells, runs and ownership ranges; ownership withdrawal,
+  replacement by a view, or a wider cell forces reclassification. Ambiguous
+  addresses and typed union views continue through the ordinary rule.
+  Opened-instance cells still lose their cached value and are named across
+  the edge at their pre-call value using the checked kept ranges and premises.
+  `CallKeptRanges` retains an immutable indexed snapshot of *all* flat residual
+  owners, including uncached members, plus the opened ranges and placement
+  premises. The write-set marker uses a canonical identity for the complete
+  range set: cached hashes select a bucket, exact persistent-map comparison
+  decides equality, and globally unique identities distinguish unequal sets
+  across threads. Diagnostics enumerate the ranges only when requested.
+  Recording and comparing an unchanged retained frame therefore costs a
+  persistent handle rather than a walk over every other parameter object
   (`a_call_records_kept_members_without_visiting_unrelated_residual_resources`,
-  `a_call_records_kept_members_in_work_linear_in_the_aliasing_members`); a
-  view still keeps nothing
-  (`mdtests/calls_havoc_an_uncached_field_the_caller_only_views.md`).
-  Retaining the cached values instead made later loads of the block compare
-  against more cached cells, and the arena pipeline's load resolution ran
-  past its time limit (in a since-replaced mdtest reduced from that
-  pipeline).
+  `a_call_records_aliasing_kept_members_without_enumerating_them`). Views
+  still keep nothing (`mdtests/calls_havoc_an_uncached_field_the_caller_only_views.md`).
+  The narrow atomic-parameter selection preserves the ordinary treatment of
+  other cached cells; the arena pipeline remains a regression control.
+  Exact flat borrows retain the caller's original checked partition instead
+  of reconstructing and validating every old owner. Returned flat resources
+  use incremental composition, checking each new owner and its conflicts.
+  Monotone memory-evidence admission walks a smaller incoming contract or a
+  shared persistent delta, without enumerating absent caller facts. Scalar
+  refresh seeks only the equality class's concrete `local:` block interval,
+  avoiding the opaque loaded-pointer members of linked parameter objects.
+  A cold raw memory index chooses between its own occurrences and the closed
+  graph's merge prefix, so a small contract never walks an unrelated caller
+  history. Direct construction remains raw: it publishes no read authority.
+  The input memory's variable-count index is prepared once during lowering;
+  subsequent memory transitions advance an established index by their map
+  differences, so a call does not reconstruct every preceding store.
 
 ### Queries
 

@@ -126,6 +126,11 @@ const IMPLICIT_LIBRARY_MODULES: &[&str] = &[
     "library/c/builtins.click",
 ];
 
+/// The `library/` identities of the implicit Click library modules.
+pub(in crate::surface) fn implicit_library_modules() -> impl Iterator<Item = &'static str> {
+    IMPLICIT_LIBRARY_MODULES.iter().copied()
+}
+
 /// One parsed Click library module and the mask of the modules it needs: its
 /// own bit and those of its library imports, transitively.
 struct LibraryModule {

@@ -2160,12 +2160,75 @@ fn rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop(
     let start = witness.find("fn set_seven(").unwrap();
     let end = start + witness[start..].find("\n}").unwrap() + "\n}".len();
     let helper = &witness[start..end];
-    let source = format!("{helper}\npub fn update(value: &mut i32) {{ set_seven(value); }}");
+    let source = format!(
+        "{helper}\npub fn update(value: &mut i32) {{ set_seven(value); }}\npub fn nested(value: &mut i32, neighbor: &mut i32) {{ update(value); *neighbor = 9; }}"
+    );
     let p = Project::new(&source);
-    let proof = "verifying \"borrow.rs\";\nfn set_seven(value: &mut i32) { owns *value; ensures *value == 8; } by { execute(); simp(); }\nfn update(value: &mut i32) { owns *value; ensures *value == 8; } by { execute(); simp(); }\n";
+    let proof = "verifying \"borrow.rs\";\nfn set_seven(value: &mut i32) { owns *value; ensures *value == 8; } by { execute(); simp(); }\nfn update(value: &mut i32) { owns *value; ensures *value == 8; } by { execute(); simp(); }\nfn nested(value: &mut i32, neighbor: &mut i32) { owns *value; owns *neighbor; ensures *value == 8; ensures *neighbor == 9; } by { execute(); simp(); }\n";
     fs::write(p.root.join("borrow.click"), proof).unwrap();
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
+    // Source loan ending evidence is independent of the existing call receipts.
+    // Locate the actual imported child borrow and its last store, not StorageDead.
+    let helper = prepared
+        .export()
+        .functions
+        .iter()
+        .find(|f| f.name.rsplit("::").next() == Some("set_seven"))
+        .unwrap();
+    let mir = helper.mir.as_ref().unwrap();
+    let (block, borrow, child) = mir
+        .blocks
+        .iter()
+        .enumerate()
+        .find_map(|(block, body)| {
+            body.statements
+                .iter()
+                .enumerate()
+                .find_map(|(index, statement)| match statement {
+                    click::languages::rust::schema::MirStatement::Assign {
+                        target: click::languages::rust::schema::Expression::Local { name },
+                        value: click::languages::rust::schema::Expression::Borrow { .. },
+                    } => Some((block, index, name.as_str())),
+                    _ => None,
+                })
+        })
+        .unwrap();
+    let last_store = mir.blocks[block].statements.iter().enumerate().find_map(|(index, statement)| {
+        match statement {
+            click::languages::rust::schema::MirStatement::Assign {
+                target: click::languages::rust::schema::Expression::Deref { reference, .. }, ..
+            } if matches!(reference.as_ref(), click::languages::rust::schema::Expression::Local { name } if name == child) => Some(index),
+            _ => None,
+        }
+    }).unwrap();
+    use click::languages::rust::borrow_frontiers::{FrontierRefusal, MirPoint};
+    let borrow_point = MirPoint {
+        block,
+        statement: borrow,
+    };
+    let end_point = MirPoint {
+        block,
+        statement: last_store + 1,
+    };
+    let ending = prepared
+        .certify_scalar_reference_end(&helper.name, borrow_point, end_point)
+        .unwrap();
+    assert!(std::ptr::eq(ending.function(), helper));
+    assert_eq!(ending.import_identity(), prepared.identity());
+    assert_eq!(
+        prepared
+            .certify_scalar_reference_end(
+                &helper.name,
+                borrow_point,
+                MirPoint {
+                    block,
+                    statement: borrow + 1
+                }
+            )
+            .unwrap_err(),
+        FrontierRefusal::FutureUse
+    );
     C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
     for invalid in [
         proof.replacen("ensures *value == 8;", "ensures *value == 7;", 1),
@@ -2175,6 +2238,7 @@ fn rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop(
             "fn update(value: &mut i32) { views *value;",
             1,
         ),
+        proof.replace("owns *neighbor;", "views *neighbor;"),
     ] {
         assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
@@ -2183,6 +2247,7 @@ fn rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop(
         &["expand", "--claim", "set_seven.contract", "--in-place"],
     );
     assert_cli(&p, &["expand", "--claim", "update.contract", "--in-place"]);
+    assert_cli(&p, &["expand", "--claim", "nested.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
     assert_eq!(
         fs::read_to_string(p.root.join("borrow.rs")).unwrap(),
