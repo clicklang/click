@@ -162,6 +162,23 @@ the gate budget. `repeated.click.import.json` and its lock reuse the unchanged
 prepared source and headers; compiler extraction is unnecessary. The
 arbitrary-length C claim and C/Rust result equality remain unproved.
 
+The locked [NMAX sidecar](batch.click) now proves the shared checksum,
+termination, and preservation of every input byte for exactly 5552 bytes,
+canonical seed 1, and nonnull input. It follows the original outer batch loop
+and all 347 iterations of its do-while DO16 loop through a ranked invariant,
+with exact component sums and weighted sums at the actual cursor. The proof
+transports the loop-entry view after each sixteen-byte advance, closes both
+counter outcomes, and retains the component equations through the original
+modulo reductions and packing. [Batch helpers](batch-helpers.click) check the
+native capacity, prefix, lane, and reduction bridges. Historical native cast
+bounds use the selected snapshot's counter.
+
+The offline NMAX regression checks all helper bodies, complete certificate
+expansion, false results and component invariants, and missing or shortened
+read authority. It runs in nightly; the sidecar's import manifest and lock reuse
+the unchanged prepared source and headers. Multiple batches and nonempty tails
+after a full batch remain the next C proof increment.
+
 | Original file | SHA-256 |
 | --- | --- |
 | `adler32.c` | `9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211` |

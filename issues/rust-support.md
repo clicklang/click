@@ -140,9 +140,17 @@ alias. Its component bounds agree with the loop invariants. The offline
 nightly regression checks all helper bodies, complete certificate expansion,
 false results/invariants, and missing or shortened authority.
 
-Next prove the original 5552-byte batches. Maintain exact component equations
-and native bounds across reductions; the arbitrary-length C result remains
-unproved.
+The locked NMAX sidecar now proves exactly 5552 bytes, canonical seed 1, and
+nonnull input: shared checksum, termination, and preservation of every byte.
+It follows the unchanged outer loop and ranked do-while DO16 loop, closes the
+actual unsigned counter decrement and cursor advance, and maintains exact
+component equations through both original reductions and packing. Checked
+batch helpers and an offline nightly regression cover complete expansion and
+negative result, invariant, and authority cases.
+
+Next extend the original batch path to multiple batches and nonempty tails,
+maintaining native bounds and component equations across reductions. The
+arbitrary-length C result remains unproved.
 
 Connect the original nonempty computation to the common specification, then
 prove compatible seed/reset/null-buffer behavior and incremental processing.

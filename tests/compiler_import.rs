@@ -984,6 +984,97 @@ fn pinned_zlib_repeated_blocks_match_checked_shared_specification_offline() {
 }
 
 #[test]
+#[ignore = "nightly: NMAX batch checksum, checked helpers, expansion, and mutations"]
+fn pinned_zlib_nmax_batch_matches_checked_shared_specification_offline() {
+    let root = tempfile::tempdir().expect("isolated offline zlib NMAX batch fixture");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/zlib");
+    for name in [
+        "adler32.c",
+        "zutil.h",
+        "zlib.h",
+        "zconf.h",
+        "adler32.i",
+        "batch.click.import.json",
+        "batch.click.import.lock.json",
+    ] {
+        fs::copy(fixture.join(name), root.path().join(name)).expect(name);
+    }
+    let imports = load_imports(&root.path().join("batch.click.import.json"))
+        .expect("offline locked unchanged zlib source");
+    let proof = include_str!("../design/charon-trial/zlib/batch.click")
+        .replace(
+            "import \"batch-helpers.click\";",
+            include_str!("../design/charon-trial/zlib/batch-helpers.click"),
+        )
+        .replace(
+            "import \"window.click\";",
+            include_str!("../design/charon-trial/zlib/window.click"),
+        )
+        .replace(
+            "import \"block.click\";",
+            include_str!("../design/charon-trial/zlib/block.click"),
+        )
+        .replace(
+            "import \"short-prefix.click\";",
+            include_str!("../design/charon-trial/zlib/short-prefix.click"),
+        )
+        .replace(
+            "import \"byte.click\";",
+            include_str!("../design/charon-trial/zlib/byte.click"),
+        )
+        .replace(
+            "import \"../adler2/count-bridge.click\";",
+            include_str!("../design/charon-trial/adler2/count-bridge.click"),
+        )
+        .replace(
+            "import \"../../adler32-spec.click\";",
+            include_str!("../design/adler32-spec.click"),
+        );
+    let checked = verify_c0_prepared_sources(&proof, &imports)
+        .expect("NMAX batch checksum, termination, byte preservation, and all helper bodies");
+    let contracts: Vec<_> = checked
+        .iter()
+        .filter(|claim| claim.function_block.signature().name() == "adler32_z")
+        .collect();
+    assert_eq!(contracts.len(), 2, "checksum and byte preservation");
+    for claim in contracts {
+        assert_eq!(
+            claim.import_identity.as_deref(),
+            Some(imports[0].identity())
+        );
+    }
+    let expanded = click::surface::expand_c0_prepared_claim_source_by_label(
+        &proof,
+        &imports,
+        "adler32_z.contract",
+    )
+    .expect("checked complete NMAX batch certificate expansion");
+    verify_c0_prepared_sources(&expanded, &imports)
+        .expect("expanded NMAX batch checksum and every helper body");
+    for invalid in [
+        proof.replacen("views buf[0u64..len];", "", 1),
+        proof.replacen("views buf[0u64..len];", "views buf[0u64..len - 1u64];", 1),
+        proof.replace(
+            "ensures to_integer(result) == adler_spec_checksum(old(buf), 5552, 1, 0);",
+            "ensures to_integer(result) == adler_spec_checksum(old(buf), 5552, 1, 0) + 1;",
+        ),
+        proof.replacen(
+            "invariant to_integer(adler) == 1 + adler_byte_sum(old(buf), zlib_batch_count(n));",
+            "invariant to_integer(adler) == 2 + adler_byte_sum(old(buf), zlib_batch_count(n));",
+            1,
+        ),
+        proof.replacen(
+            "invariant to_integer(sum2) == to_integer(zlib_batch_count(n)) + adler_weighted_sum(old(buf), zlib_batch_count(n), zlib_batch_count(n));",
+            "invariant to_integer(sum2) == adler_weighted_sum(old(buf), zlib_batch_count(n), zlib_batch_count(n));",
+            1,
+        ),
+    ] {
+        assert_ne!(proof, invalid);
+        assert!(verify_c0_prepared_sources(&invalid, &imports).is_err());
+    }
+}
+
+#[test]
 #[ignore = "nightly: symbolic DO16 count, lane, and read-bound theorem bodies"]
 fn pinned_zlib_window_lemmas_have_checked_bodies() {
     let source = include_str!("../design/charon-trial/zlib/window.click")
