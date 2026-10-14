@@ -587,7 +587,7 @@ impl TermClasses {
         };
         if selected
             .as_ref()
-            .is_none_or(|prior| wide && Self::prefer_wide_offset(&pointer.offset, &prior.offset))
+            .is_none_or(|prior| wide && Self::prefer_wide_address(pointer, prior))
         {
             *selected = Some(Arc::new(pointer.clone()));
             self.additive_addresses.insert(root, spellings);
@@ -605,6 +605,16 @@ impl TermClasses {
                 PointerOffsetTerm::Int64Scaled { unsigned: true, .. }))
         };
         native(new) && !native(prior)
+    }
+
+    // An external-buffer spelling retains the complete caller coordinate.
+    // A captured batch cursor's symbolic base can hide a prefix displacement;
+    // choose the checked external producer on a tie without searching aliases.
+    fn prefer_wide_address(new: &Pointer, prior: &Pointer) -> bool {
+        Self::prefer_wide_offset(&new.offset, &prior.offset)
+            || !Self::prefer_wide_offset(&prior.offset, &new.offset)
+                && matches!(new.block, PointerBlock::ExternalArgument)
+                && matches!(prior.block, PointerBlock::Symbolic(_))
     }
 
     fn additive_offset_is_wide(offset: &PointerOffsetTerm) -> bool {
@@ -718,7 +728,7 @@ impl TermClasses {
                 && spellings
                     .1
                     .as_ref()
-                    .is_none_or(|prior| Self::prefer_wide_offset(&wide.offset, &prior.offset))
+                    .is_none_or(|prior| Self::prefer_wide_address(&wide, prior))
             {
                 spellings.1 = Some(wide);
             }

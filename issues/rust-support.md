@@ -140,9 +140,29 @@ alias. Its component bounds agree with the loop invariants. The offline
 nightly regression checks all helper bodies, complete certificate expansion,
 false results/invariants, and missing or shortened authority.
 
-Next prove the original 5552-byte batches. Maintain exact component equations
-and native bounds across reductions; the arbitrary-length C result remains
-unproved.
+The locked NMAX sidecar now proves exactly 5552 bytes, canonical seed 1, and
+nonnull input: shared checksum, termination, and preservation of every byte.
+It follows the unchanged outer loop and ranked do-while DO16 loop, closes the
+actual unsigned counter decrement and cursor advance, and maintains exact
+component equations through both original reductions and packing. Checked
+batch helpers and an offline nightly regression cover complete expansion and
+negative result, invariant, and authority cases.
+
+Checked seeded-batch helpers now carry arbitrary reduced entry components
+through one native addition pair, both modulo reductions, and concatenation
+with the previously processed prefix. Their nightly regression checks helper
+bodies and dependencies, complete expansion, and false component/composition
+claims. The locked stream sidecar now applies those lemmas to the unchanged C
+for lengths 5552–22208, canonical seed 1, and nonnull input. It proves checksum,
+termination, and byte preservation through up to four NMAX batches, remaining
+DO16 blocks, and a zero to fifteen-byte scalar tail. The scalar loop carries
+unreduced seeds; checked residue composition connects its final reductions to
+the complete input. The offline nightly regression checks every helper body,
+complete expansion, false checksum/cursor/seed claims, and missing or shortened
+read authority.
+
+Next lift the bounded stream contract to arbitrary lengths while preserving
+native count and address bounds. The arbitrary-length C result remains unproved.
 
 Connect the original nonempty computation to the common specification, then
 prove compatible seed/reset/null-buffer behavior and incremental processing.
