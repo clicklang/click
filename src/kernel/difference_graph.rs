@@ -71,6 +71,10 @@ pub(crate) struct DifferenceGraph {
     /// value steps past it, so `x != INT_MIN` beside `INT_MIN <= x` is
     /// `INT_MIN + 1 <= x`.
     excluded: PersistentMap<NodeId, crate::persistent::PersistentSet<i128>>,
+    /// `node -> (x, t)` for each `t = x ^ MIN` whose sign case is still
+    /// open, under both `x` and `t`: `t` is `x + MIN` when `x >= 0` and
+    /// `x - MIN` when `x < 0`, so the sign of either decides the link.
+    flips: PersistentMap<NodeId, (NodeId, NodeId)>,
     /// Overflow conditions recorded false (`OverflowKey`).
     no_overflow: crate::persistent::PersistentSet<OverflowKey>,
     contradictory: bool,
@@ -336,6 +340,41 @@ impl DifferenceGraph {
                 }
             }
             self.resolve_pending(node);
+            self.resolve_flip(node);
+        }
+    }
+
+    /// Settles the sign case of the `x ^ MIN` pair `node` belongs to, if
+    /// either side's interval now decides it: a known sign of `x` links `t`
+    /// to `x`, and a known sign of `t` bounds `x`, whose tightening links
+    /// them in turn.
+    fn resolve_flip(&mut self, node: NodeId) {
+        let Some((base, flipped)) = self.flips.get(&node).copied() else {
+            return;
+        };
+        charge();
+        let min = self.domain(flipped).range().0;
+        let (base_low, base_high) = self.interval(base);
+        let offset = if base_low >= 0 {
+            Some(min)
+        } else if base_high < 0 {
+            Some(-min)
+        } else {
+            None
+        };
+        if let Some(offset) = offset {
+            self.flips.remove(&base);
+            self.flips.remove(&flipped);
+            // flipped = base + offset
+            self.constrain((Some(base), 0), (Some(flipped), 0), offset);
+            self.constrain((Some(flipped), 0), (Some(base), 0), -offset);
+            return;
+        }
+        let (low, high) = self.interval(flipped);
+        if high < 0 {
+            self.tighten(base, Some(0), None);
+        } else if low >= 0 {
+            self.tighten(base, None, Some(-1));
         }
     }
 
@@ -401,6 +440,21 @@ impl DifferenceGraph {
         self.next += 1;
         self.nodes.insert((domain, term.clone()), node);
         self.domains.insert(node, domain);
+        if let Some(base) = sign_flip_base(domain, term) {
+            match self.affine(domain, base) {
+                (None, value) => {
+                    let value = flip_sign(domain, value);
+                    self.tighten(node, Some(value), Some(value));
+                }
+                (Some(base), 0) => {
+                    self.flips.insert(base, (base, node));
+                    self.flips.insert(node, (base, node));
+                    self.resolve_flip(node);
+                }
+                // An offset base keeps the term opaque.
+                (Some(_), _) => {}
+            }
+        }
         if let Some((base_domain, base, offset, nonnegative)) = link_parts(domain, term) {
             let base = self.affine(base_domain, base);
             match base {
@@ -451,6 +505,12 @@ impl DifferenceGraph {
                 return (base.0, base.1 + offset);
             }
         }
+        if let Some(base) = sign_flip_base(domain, term) {
+            let base = self.affine(domain, base);
+            if let Some(flipped) = self.known_flip(domain, base) {
+                return flipped;
+            }
+        }
         (Some(self.node(domain, term)), 0)
     }
 
@@ -464,10 +524,31 @@ impl DifferenceGraph {
         if let Some(node) = self.nodes.get(&(domain, term.clone())) {
             return Some((Some(*node), 0));
         }
+        if let Some(base) = sign_flip_base(domain, term) {
+            return self.known_flip(domain, self.resolve(domain, base)?);
+        }
         let (base_domain, base, offset, nonnegative) = link_parts(domain, term)?;
         let base = self.resolve(base_domain, base)?;
         link_fits(self.affine_interval(base), offset, domain, nonnegative)
             .then_some((base.0, base.1 + offset))
+    }
+
+    /// `x ^ MIN` for `x` at `base`, when `x`'s sign is known.
+    fn known_flip(&self, domain: Domain, base: Affine) -> Option<Affine> {
+        let min = domain.range().0;
+        match base {
+            (None, value) => Some((None, flip_sign(domain, value))),
+            (Some(_), _) => {
+                let (low, high) = self.affine_interval(base);
+                if low >= 0 {
+                    Some((base.0, base.1 + min))
+                } else if high < 0 {
+                    Some((base.0, base.1 - min))
+                } else {
+                    None
+                }
+            }
+        }
     }
 
     /// The least known upper bound on `to - from`, from intervals and from
@@ -575,25 +656,32 @@ impl DifferenceGraph {
                 &[Domain::Int64, Domain::UInt64]
             };
             for domain in domains {
-                let (Some(a), Some(b)) = (self.resolve(*domain, a), self.resolve(*domain, b))
-                else {
-                    continue;
-                };
-                match (a, b) {
-                    ((Some(node), offset), (None, value))
-                    | ((None, value), (Some(node), offset))
-                        if self.excludes(node, value - offset) =>
-                    {
+                if let (Some(a), Some(b)) = (self.resolve(*domain, a), self.resolve(*domain, b)) {
+                    match (a, b) {
+                        ((Some(node), offset), (None, value))
+                        | ((None, value), (Some(node), offset))
+                            if self.excludes(node, value - offset) =>
+                        {
+                            return Some(false);
+                        }
+                        _ => {}
+                    }
+                    let ab = self.difference_bound(a, b);
+                    let ba = self.difference_bound(b, a);
+                    if ab <= 0 && ba <= 0 {
+                        return Some(true);
+                    }
+                    if ab < 0 || ba < 0 {
                         return Some(false);
                     }
-                    _ => {}
                 }
-                let ab = self.difference_bound(a, b);
-                let ba = self.difference_bound(b, a);
-                if ab <= 0 && ba <= 0 {
+                // A side the graph has no node for is compared by interval.
+                let (a_low, a_high) = self.term_interval(*domain, a);
+                let (b_low, b_high) = self.term_interval(*domain, b);
+                if a_low == a_high && (a_low, a_high) == (b_low, b_high) {
                     return Some(true);
                 }
-                if ab < 0 || ba < 0 {
+                if a_high < b_low || b_high < a_low {
                     return Some(false);
                 }
             }
@@ -602,14 +690,24 @@ impl DifferenceGraph {
         let [(domain, ref lower, ref upper, strict)] = condition_orders(condition, true)[..] else {
             return None;
         };
-        let lower = self.resolve(domain, lower)?;
-        let upper = self.resolve(domain, upper)?;
         // lower < upper (or <=) holds when lower - upper <= -strict, and
         // fails when upper - lower <= -(not strict).
-        if self.difference_bound(upper, lower) <= -i128::from(strict) {
+        let (holds, fails) = match (self.resolve(domain, lower), self.resolve(domain, upper)) {
+            (Some(lower), Some(upper)) => (
+                self.difference_bound(upper, lower),
+                self.difference_bound(lower, upper),
+            ),
+            // A side the graph has no node for is compared by interval.
+            _ => {
+                let (lower_low, lower_high) = self.term_interval(domain, lower);
+                let (upper_low, upper_high) = self.term_interval(domain, upper);
+                (lower_high - upper_low, upper_high - lower_low)
+            }
+        };
+        if holds <= -i128::from(strict) {
             return Some(true);
         }
-        if self.difference_bound(lower, upper) <= -i128::from(!strict) {
+        if fails <= -i128::from(!strict) {
             return Some(false);
         }
         None
@@ -659,6 +757,25 @@ impl DifferenceGraph {
                 let low = products.iter().min().copied().unwrap_or(i128::MIN);
                 let high = products.iter().max().copied().unwrap_or(i128::MAX);
                 (low, high)
+            }
+            // C's truncating remainder by a constant other than 0 and -1:
+            // its sign is the dividend's, and its magnitude is below the
+            // divisor's and at most the dividend's.
+            (Domain::Int32, T::Remainder(a, b))
+                if constant(domain, b).is_some_and(|k| k != 0 && k != -1) =>
+            {
+                let k = constant(domain, b).expect("checked above");
+                let (a_low, a_high) = self.term_interval(domain, a);
+                let bound = k.abs() - 1;
+                if a_low == a_high {
+                    (a_low % k, a_low % k)
+                } else if a_low >= 0 {
+                    (0, a_high.min(bound))
+                } else if a_high <= 0 {
+                    (a_low.max(-bound), 0)
+                } else {
+                    (-bound, bound)
+                }
             }
             (Domain::Int64, T::Int64From32(inner)) => self.term_interval(Domain::Int32, inner),
             _ => return domain.range(),
@@ -860,6 +977,32 @@ fn link_fits((low, high): (i128, i128), offset: i128, domain: Domain, nonnegativ
     } else {
         low + offset >= min && high + offset <= max
     }
+}
+
+/// When `term` is `x ^ MIN` in a signed `domain`, the spelling of an
+/// unsigned order as a signed one: `x`.
+fn sign_flip_base(domain: Domain, term: &Bitvector32Term) -> Option<&Bitvector32Term> {
+    use Bitvector32Term as T;
+    let (a, b) = match (domain, term) {
+        (Domain::Int32, T::BitwiseXor(a, b)) | (Domain::Int64, T::Int64BitwiseXor(a, b)) => {
+            (a.as_ref(), b.as_ref())
+        }
+        _ => return None,
+    };
+    let min = Some(domain.range().0);
+    if constant(domain, a) == min {
+        Some(b)
+    } else if constant(domain, b) == min {
+        Some(a)
+    } else {
+        None
+    }
+}
+
+/// `value ^ MIN` in a signed `domain`.
+fn flip_sign(domain: Domain, value: i128) -> i128 {
+    let min = domain.range().0;
+    if value >= 0 { value + min } else { value - min }
 }
 
 /// `term`'s value in `domain` when it is a constant there.

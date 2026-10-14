@@ -403,6 +403,9 @@ fn arithmetic_decisions_hold_in_every_model() {
             T::Multiply(a, b) => {
                 value(a, variables, model).wrapping_mul(value(b, variables, model))
             }
+            T::BitwiseXor(a, b) => value(a, variables, model) ^ value(b, variables, model),
+            // The pool divides only by constants other than 0 and -1.
+            T::Remainder(a, b) => value(a, variables, model) % value(b, variables, model),
             _ => model[variables.iter().position(|v| v == term).unwrap()],
         }
     }
@@ -416,6 +419,17 @@ fn arithmetic_decisions_hold_in_every_model() {
     pool.push(T::Subtract(boxed(&variables[0]), boxed(&variables[1])));
     pool.push(T::Add(boxed(&variables[1]), boxed(&variables[2])));
     pool.push(T::Multiply(boxed(&variables[0]), boxed(&constant(2))));
+    // C's unsigned order, spelled as a signed one.
+    pool.push(T::BitwiseXor(
+        boxed(&constant(i32::MIN)),
+        boxed(&variables[1]),
+    ));
+    pool.push(T::BitwiseXor(
+        boxed(&variables[2]),
+        boxed(&constant(i32::MIN)),
+    ));
+    pool.push(T::Remainder(boxed(&variables[0]), boxed(&constant(2))));
+    pool.push(T::Remainder(boxed(&variables[1]), boxed(&constant(-3))));
     let constants = [i32::MIN, -1, 0, 1, i32::MAX].map(constant);
     let holds = |condition: &ConditionTerm, model: &[i32]| -> bool {
         let v = |term: &Bitvector32Term| value(term, &variables, model);
@@ -454,7 +468,7 @@ fn arithmetic_decisions_hold_in_every_model() {
         (state % bound as u64) as usize
     };
     let mut decided = 0;
-    for _ in 0..60 {
+    for _ in 0..200 {
         let mut facts = Vec::new();
         for _ in 0..(1 + next(4)) {
             let a = &pool[next(pool.len())];
@@ -625,4 +639,56 @@ fn overflow_facts_shifts_and_products_are_read() {
         )),
         Some(false)
     );
+}
+
+/// C's unsigned `a < b` reaches the kernel as `(a ^ MIN) < (b ^ MIN)`. With
+/// `0 <= b <= 4`, `b ^ MIN` is `b + MIN`, so `a ^ MIN < MIN + 4` is
+/// negative, which makes `a` non-negative and `a ^ MIN` equal `a + MIN`:
+/// `0 <= a <= 3`.
+#[test]
+fn an_unsigned_order_spelled_with_a_sign_flip_bounds_both_sides() {
+    let (a, b) = (variable(0), variable(1));
+    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let flip = |term: &Bitvector32Term| {
+        Bitvector32Term::BitwiseXor(boxed(&constant(i32::MIN)), boxed(term))
+    };
+    let graph = graph(&[
+        (lt(&flip(&a), &flip(&b)), true),
+        (le(&constant(0), &b), true),
+        (le(&b, &constant(4)), true),
+    ]);
+    assert_eq!(graph.decide(&le(&constant(0), &a)), Some(true));
+    assert_eq!(graph.decide(&le(&a, &constant(3))), Some(true));
+    assert_eq!(graph.decide(&lt(&a, &b)), Some(true));
+}
+
+/// A remainder by a constant is bounded by its dividend's sign and the
+/// divisor, and a side with no node of its own is compared by interval:
+/// `x == 0` gives `x % 2 == 0`, and `0 <= x` gives `x % 4 < 4`.
+#[test]
+fn a_remainder_by_a_constant_is_bounded() {
+    let x = variable(0);
+    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let remainder = |k: i32| Bitvector32Term::Remainder(boxed(&x), boxed(&constant(k)));
+    let zero = graph(&[(ConditionTerm::equal(x.clone(), constant(0)), true)]);
+    assert_eq!(
+        zero.decide(&ConditionTerm::equal(remainder(2), constant(0))),
+        Some(true)
+    );
+    let nonnegative = graph(&[(le(&constant(0), &x), true)]);
+    assert_eq!(
+        nonnegative.decide(&lt(&remainder(4), &constant(4))),
+        Some(true)
+    );
+    assert_eq!(
+        nonnegative.decide(&le(&constant(0), &remainder(4))),
+        Some(true)
+    );
+    // `x % 4` can be 3: the bound is exact.
+    assert_eq!(nonnegative.decide(&le(&remainder(4), &constant(2))), None);
+    assert_eq!(
+        graph(&[]).decide(&lt(&remainder(4), &constant(4))),
+        Some(true)
+    );
+    assert_eq!(graph(&[]).decide(&le(&constant(0), &remainder(4))), None);
 }

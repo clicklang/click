@@ -163,16 +163,20 @@ Each step is its own pull request.
        graph values, so either operand order or another name for an
        operand finds them.
      - Division and constant-count shift overflow are answered.
+     - `x ^ MIN`, C's unsigned order spelled as a signed one, is linked to
+       `x` once either side's sign is known.
+     - A remainder by a constant is bounded by its dividend's sign and the
+       divisor.
+     - A side with no node of its own is compared by interval.
      - A contradictory graph, meaning a dead path, answers that an overflow
        is absent.
      - Most general decisions had been overflow checks on such terms
-       (`(x - y) - 1`, `(0 - x) + 1`). After these changes the census is 63
-       conditions and 7 path-fact decisions over the mdtests, and 30 over
+       (`(x - y) - 1`, `(0 - x) + 1`). After these changes the census is 48
+       conditions and 7 path-fact decisions over the mdtests, and 21 over
        the examples.
    - *Left:*
-     - unsigned comparisons spelled with `^ INT_MIN` (17);
-     - `Remainder` (7);
      - pointer questions (about 14);
+     - division overflow excluded only by a disjunction (5);
      - certain overflows, which the graph does not answer;
      - the general decision consulting the graph.
 4. **Remove the general decision from simple checking.** A condition the fast
