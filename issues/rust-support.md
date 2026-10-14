@@ -76,7 +76,9 @@ A/B specification. Logical byte-index guards are bridged explicitly to native
 The independently locked, unchanged zlib one-byte and short-loop paths prove
 their packed results equal the same specification and preserve every input byte
 for canonical seed 1 and lengths 1–15; its empty path also verifies.
-General-length C correctness and C/Rust result equality remain pending.
+The unified C sidecar now proves the same signed length range for canonical
+seed 1 and nonnull input, including all original return paths. General
+canonical seed composition and C/Rust result equality remain pending.
 
 Full original-computation smart audits exhaust the standard ten-minute run
 bound before completing a site, while ordinary verification succeeds. Continue
@@ -161,11 +163,21 @@ the complete input. The offline nightly regression checks every helper body,
 complete expansion, false checksum/cursor/seed claims, and missing or shortened
 read authority.
 
-Next lift the bounded stream contract to arbitrary lengths while preserving
-native count and address bounds. The arbitrary-length C result remains unproved.
+The unified full-stream sidecar now proves the unchanged C for every length
+0–2147483647, canonical seed 1, and nonnull input: shared packed checksum,
+termination, and preservation of every input byte. It combines the original
+one-byte fast return, short loop (including empty input), NMAX loop, DO16 tail,
+and scalar tail. Native global prefix and address observations reuse the Rust
+signed-range bridges. Chunk concatenation and pointer association prove their
+actual combined count fits the total; the local batch arithmetic ceilings
+remain unchanged. Offline nightly regressions check all dependency bodies,
+complete expansion for the C proof and every new helper claim, and rejection
+of invalid results/invariants/views and a ceiling above the signed limit.
 
-Connect the original nonempty computation to the common specification, then
-prove compatible seed/reset/null-buffer behavior and incremental processing.
+Next prove matched canonical packed seeds and incremental C processing,
+connect the existing reset/null behavior to the Rust constructors, and derive
+C/Rust result equality under matched input and state conditions. Lengths beyond
+the shared signed specification range remain unproved for both implementations.
 
 Acceptance:
 
