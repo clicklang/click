@@ -1531,7 +1531,7 @@ pub(super) fn describe_runtime_error(
             }
         }
         crate::kernel::CRuntimeError::ContractResourceDiagnostic { reason, held, required, memory } => {
-            use crate::surface::proof_diagnostics::render::SnapshotLabels;
+            use crate::surface::proof_diagnostics::render::{SnapshotLabels, render_resource_fact_labeled};
             let mut labels = SnapshotLabels::naming(parameter_binding);
             let mut message = format!("function contract could not be applied: {reason}");
             if let Some(memory) = memory {
@@ -1541,9 +1541,9 @@ pub(super) fn describe_runtime_error(
                 ));
             }
             if let Some(held) = held {
-                message.push_str(&format!("\n  held: {}", describe_resource_fact(held, parameter_binding)));
+                message.push_str(&format!("\n  held: {}", render_resource_fact_labeled(held, &mut labels)));
             }
-            message.push_str(&format!("\n  required: {}", describe_resource_fact(required, parameter_binding)));
+            message.push_str(&format!("\n  required: {}", render_resource_fact_labeled(required, &mut labels)));
             message.push_str(&labels.trace_legend());
             message
         }
@@ -1800,6 +1800,9 @@ pub(super) fn describe_resource_facts(
     })
 }
 
+// Legacy source-spelling adapter, also used by the source-mode renderer.
+// Comparisons of checked resources must use render_resource_fact_labeled with
+// shared labels: this adapter can erase snapshot and unnamed-value identities.
 pub(super) fn describe_resource_fact(
     resource: &CResourceFact,
     parameter_binding: ParameterBinding<'_>,
