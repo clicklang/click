@@ -22351,6 +22351,51 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     })
 }
 
+/// The named children of the body `instance` folds or unfolds into, as
+/// the arm the premises select for its model names them, without the
+/// children a resource argument supplies. This is a read-only query for
+/// the Surface, which completes a fold's child map with it; it selects the
+/// arm the way [`rewrite_resource_instance_selecting_children`] does and
+/// checks nothing. `None` when no arm is selected.
+pub(crate) fn selected_instance_child_names(
+    state: &CState,
+    instance: &ResourceInstance,
+    definition: &CCompositeResourceDefinition,
+    definitions: &[CCompositeResourceDefinition],
+    assumptions: &PureFactContext,
+) -> Option<Vec<String>> {
+    let children = if definition.matched.is_some() {
+        let arm = match selected_instance_match_arm(instance, definition, definitions, assumptions)
+        {
+            Ok((arm, _)) => arm,
+            Err(_) => {
+                let assumptions =
+                    instance_arm_model_facts(instance, definitions, state, assumptions)
+                        .into_iter()
+                        .fold(assumptions.clone(), PureFactContext::assume_proposition);
+                selected_instance_match_arm(instance, definition, definitions, &assumptions)
+                    .ok()?
+                    .0
+            }
+        };
+        arm.children.as_slice()
+    } else {
+        definition.children.as_slice()
+    };
+    let references = definition
+        .resource_parameters()
+        .iter()
+        .filter_map(|formal| formal.instance_identity())
+        .collect::<BTreeSet<_>>();
+    Some(
+        children
+            .iter()
+            .filter(|child| !references.contains(&child.binding))
+            .map(|child| child.name.clone())
+            .collect(),
+    )
+}
+
 fn rewrite_resource_instance_selecting_children_unspelled(
     state: &CState,
     instance: &ResourceInstance,

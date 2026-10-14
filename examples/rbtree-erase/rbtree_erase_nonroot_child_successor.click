@@ -170,7 +170,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             have rb_parent_is(RbTree::Node(lid, sid, lc, ll, lr), sid) == 1 by { unfold(rb_parent_is(RbTree::Node(lid, sid, lc, ll, lr), sid)); normalize(); }
                                             have rb_parent_is(RbTree::Node(cid, sid, Color::Black, cl, cr), sid) == 1 by { unfold(rb_parent_is(RbTree::Node(cid, sid, Color::Black, cl, cr), sid)); normalize(); }
                                             let replacement = fold(rb_at(sid), { model: RbTree::Node(sid, parent, color, RbTree::Node(lid, sid, lc, ll, lr), RbTree::Node(cid, sid, Color::Black, cl, cr)) }, { left: moved_left, right: moved_right });
-                                            let remaining = fold(ctx_at(sid, root), { model: Context::Left(pid, gp, pc, sibling_model, above_model) }, { sibling: sibling, up: above });
+                                            let remaining = fold(ctx_at(sid, root), { model: Context::Left(pid, gp, pc, sibling_model, above_model) }, { up: above });
                                             have replacement.model == rb_immediate_successor_child(sid, parent, color, left_model, sr) by { rewrite(rb_immediate_successor_child(sid, parent, color, left_model, sr) == RbTree::Node(sid, parent, color, RbTree::Node(lid, sid, lc, ll, lr), RbTree::Node(cid, sid, Color::Black, cl, cr))); normalize(); }
                                             have replacement.model == rb_erase_immediate_child_model(old(tree.model)) by {
                                                 rewrite(old(tree.model) == RbTree::Node(identity, parent, color, left_model, right_model));
@@ -209,7 +209,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     have rb_parent_is(RbTree::Node(lid, sid, lc, ll, lr), sid) == 1 by { unfold(rb_parent_is(RbTree::Node(lid, sid, lc, ll, lr), sid)); normalize(); }
                                                     have rb_parent_is(RbTree::Node(cid, sid, Color::Black, cl, cr), sid) == 1 by { unfold(rb_parent_is(RbTree::Node(cid, sid, Color::Black, cl, cr), sid)); normalize(); }
                                                     let replacement = fold(rb_at(sid), { model: RbTree::Node(sid, parent, color, RbTree::Node(lid, sid, lc, ll, lr), RbTree::Node(cid, sid, Color::Black, cl, cr)) }, { left: moved_left, right: moved_right });
-                                                    let remaining = fold(ctx_at(sid, root), { model: Context::Right(pid, gp, pc, sibling_model, above_model) }, { sibling: sibling, up: above });
+                                                    let remaining = fold(ctx_at(sid, root), { model: Context::Right(pid, gp, pc, sibling_model, above_model) }, { up: above });
                                                     have replacement.model == rb_immediate_successor_child(sid, parent, color, left_model, sr) by { rewrite(rb_immediate_successor_child(sid, parent, color, left_model, sr) == RbTree::Node(sid, parent, color, RbTree::Node(lid, sid, lc, ll, lr), RbTree::Node(cid, sid, Color::Black, cl, cr))); normalize(); }
                                                     have replacement.model == rb_erase_immediate_child_model(old(tree.model)) by {
                                                         rewrite(old(tree.model) == RbTree::Node(identity, parent, color, left_model, right_model));
@@ -233,7 +233,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     have rb_parent_is(RbTree::Node(lid, sid, lc, ll, lr), sid) == 1 by { unfold(rb_parent_is(RbTree::Node(lid, sid, lc, ll, lr), sid)); normalize(); }
                                                     have rb_parent_is(RbTree::Node(cid, sid, Color::Black, cl, cr), sid) == 1 by { unfold(rb_parent_is(RbTree::Node(cid, sid, Color::Black, cl, cr), sid)); normalize(); }
                                                     let replacement = fold(rb_at(sid), { model: RbTree::Node(sid, parent, color, RbTree::Node(lid, sid, lc, ll, lr), RbTree::Node(cid, sid, Color::Black, cl, cr)) }, { left: moved_left, right: moved_right });
-                                                    let remaining = fold(ctx_at(sid, root), { model: Context::Right(pid, gp, pc, sibling_model, above_model) }, { sibling: sibling, up: above });
+                                                    let remaining = fold(ctx_at(sid, root), { model: Context::Right(pid, gp, pc, sibling_model, above_model) }, { up: above });
                                                     have replacement.model == rb_immediate_successor_child(sid, parent, color, left_model, sr) by { rewrite(rb_immediate_successor_child(sid, parent, color, left_model, sr) == RbTree::Node(sid, parent, color, RbTree::Node(lid, sid, lc, ll, lr), RbTree::Node(cid, sid, Color::Black, cl, cr))); normalize(); }
                                                     have replacement.model == rb_erase_immediate_child_model(old(tree.model)) by {
                                                         rewrite(old(tree.model) == RbTree::Node(identity, parent, color, left_model, right_model));

@@ -18,10 +18,10 @@ function rb_inorder(tree: RbTree) -> List<struct rb_node*>
     decreases tree
 {
     match tree {
-        RbTree::Empty => List<struct rb_node*>::Nil,
+        RbTree::Empty => List::Nil,
         RbTree::Node(node, parent, color, left, right) =>
             list_append(rb_inorder(left),
-                List<struct rb_node*>::Cons(node, rb_inorder(right))),
+                List::Cons(node, rb_inorder(right))),
     }
 }
 
@@ -49,7 +49,7 @@ theorem rb_member_is_inorder_membership(tree: RbTree, target: struct rb_node*) {
             RbTree::Empty => {
                 unfold(rb_member(RbTree::Empty, target));
                 unfold(rb_inorder(RbTree::Empty));
-                unfold(list_contains(List<struct rb_node*>::Nil, target));
+                unfold(list_contains(List::Nil, target));
                 normalize();
             }
             RbTree::Node(node, parent, color, left, right) => {
@@ -58,16 +58,16 @@ theorem rb_member_is_inorder_membership(tree: RbTree, target: struct rb_node*) {
                 unfold(rb_member(RbTree::Node(node, parent, color, left, right), target));
                 unfold(rb_inorder(RbTree::Node(node, parent, color, left, right)));
                 apply(list_contains_append(rb_inorder(left),
-                    List<struct rb_node*>::Cons(node, rb_inorder(right)), target));
+                    List::Cons(node, rb_inorder(right)), target));
                 rewrite(list_contains(list_append(rb_inorder(left),
-                    List<struct rb_node*>::Cons(node, rb_inorder(right))), target)
+                    List::Cons(node, rb_inorder(right))), target)
                     == if list_contains(rb_inorder(left), target) {
                         true
                     } else {
-                        list_contains(List<struct rb_node*>::Cons(node, rb_inorder(right)), target)
+                        list_contains(List::Cons(node, rb_inorder(right)), target)
                     });
                 apply(list_contains_cons(node, rb_inorder(right), target));
-                rewrite(list_contains(List<struct rb_node*>::Cons(node, rb_inorder(right)), target)
+                rewrite(list_contains(List::Cons(node, rb_inorder(right)), target)
                     == if node == target {
                         true
                     } else {
@@ -283,16 +283,16 @@ theorem rb_rotate_left_node_preserves_inorder(node: struct rb_node*, parent: str
                 apply(rb_reparent_preserves_inorder(middle, node));
                 rewrite(rb_inorder(rb_reparent(middle, node)) == rb_inorder(middle));
                 apply(list_append_associative(rb_inorder(left),
-                    List<struct rb_node*>::Cons(node, rb_inorder(middle)),
-                    List<struct rb_node*>::Cons(pivot, rb_inorder(far_right))));
+                    List::Cons(node, rb_inorder(middle)),
+                    List::Cons(pivot, rb_inorder(far_right))));
                 rewrite(list_append(list_append(rb_inorder(left),
-                    List<struct rb_node*>::Cons(node, rb_inorder(middle))),
-                    List<struct rb_node*>::Cons(pivot, rb_inorder(far_right)))
+                    List::Cons(node, rb_inorder(middle))),
+                    List::Cons(pivot, rb_inorder(far_right)))
                     == list_append(rb_inorder(left),
-                        list_append(List<struct rb_node*>::Cons(node, rb_inorder(middle)),
-                            List<struct rb_node*>::Cons(pivot, rb_inorder(far_right)))));
-                unfold(list_append(List<struct rb_node*>::Cons(node, rb_inorder(middle)),
-                    List<struct rb_node*>::Cons(pivot, rb_inorder(far_right))));
+                        list_append(List::Cons(node, rb_inorder(middle)),
+                            List::Cons(pivot, rb_inorder(far_right)))));
+                unfold(list_append(List::Cons(node, rb_inorder(middle)),
+                    List::Cons(pivot, rb_inorder(far_right))));
                 normalize();
             }
         }
@@ -337,16 +337,16 @@ theorem rb_rotate_right_node_preserves_inorder(node: struct rb_node*, parent: st
                 apply(rb_reparent_preserves_inorder(middle, node));
                 rewrite(rb_inorder(rb_reparent(middle, node)) == rb_inorder(middle));
                 apply(list_append_associative(rb_inorder(far_left),
-                    List<struct rb_node*>::Cons(pivot, rb_inorder(middle)),
-                    List<struct rb_node*>::Cons(node, rb_inorder(right))));
+                    List::Cons(pivot, rb_inorder(middle)),
+                    List::Cons(node, rb_inorder(right))));
                 rewrite(list_append(list_append(rb_inorder(far_left),
-                    List<struct rb_node*>::Cons(pivot, rb_inorder(middle))),
-                    List<struct rb_node*>::Cons(node, rb_inorder(right)))
+                    List::Cons(pivot, rb_inorder(middle))),
+                    List::Cons(node, rb_inorder(right)))
                     == list_append(rb_inorder(far_left),
-                        list_append(List<struct rb_node*>::Cons(pivot, rb_inorder(middle)),
-                            List<struct rb_node*>::Cons(node, rb_inorder(right)))));
-                unfold(list_append(List<struct rb_node*>::Cons(pivot, rb_inorder(middle)),
-                    List<struct rb_node*>::Cons(node, rb_inorder(right))));
+                        list_append(List::Cons(pivot, rb_inorder(middle)),
+                            List::Cons(node, rb_inorder(right)))));
+                unfold(list_append(List::Cons(pivot, rb_inorder(middle)),
+                    List::Cons(node, rb_inorder(right))));
                 normalize();
             }
         }
@@ -1208,14 +1208,14 @@ theorem rb_insert_fix_inner_right_restores(grandparent: struct rb_node*,
 
 function list_tail<T>(xs: List<T>) -> List<T> {
     match xs {
-        List::Nil => List<T>::Nil,
+        List::Nil => List::Nil,
         List::Cons(head, tail) => tail,
     }
 }
 
 theorem list_tail_cons<T>(head: T, tail: List<T>) {
-    ensures list_tail(List<T>::Cons(head, tail)) == tail by {
-        unfold(list_tail(List<T>::Cons(head, tail)));
+    ensures list_tail(List::Cons(head, tail)) == tail by {
+        unfold(list_tail(List::Cons(head, tail)));
         normalize();
     }
 }
@@ -1224,9 +1224,9 @@ function rb_min_list(tree: RbTree) -> List<struct rb_node*>
     decreases tree
 {
     match tree {
-        RbTree::Empty => List<struct rb_node*>::Nil,
+        RbTree::Empty => List::Nil,
         RbTree::Node(node, parent, color, left, right) => match left {
-            RbTree::Empty => List<struct rb_node*>::Cons(node, List<struct rb_node*>::Nil),
+            RbTree::Empty => List::Cons(node, List::Nil),
             RbTree::Node(inner_node, inner_parent, inner_color, inner_left, inner_right) =>
                 rb_min_list(left),
         },
@@ -1250,7 +1250,7 @@ theorem rb_inorder_node_splits(node: struct rb_node*, parent: struct rb_node*, c
                                left: RbTree, right: RbTree) {
     ensures rb_inorder(RbTree::Node(node, parent, color, left, right))
         == list_append(rb_inorder(left),
-            List<struct rb_node*>::Cons(node, rb_inorder(right))) by {
+            List::Cons(node, rb_inorder(right))) by {
         unfold(rb_inorder(RbTree::Node(node, parent, color, left, right)));
         normalize();
     }
@@ -1259,11 +1259,11 @@ theorem rb_inorder_node_splits(node: struct rb_node*, parent: struct rb_node*, c
 theorem rb_erase_no_left_child(erased: struct rb_node*, parent: struct rb_node*, color: Color,
                                right: RbTree) {
     ensures rb_inorder(RbTree::Node(erased, parent, color, RbTree::Empty, right))
-        == List<struct rb_node*>::Cons(erased, rb_inorder(right)) by {
+        == List::Cons(erased, rb_inorder(right)) by {
         unfold(rb_inorder(RbTree::Node(erased, parent, color, RbTree::Empty, right)));
         unfold(rb_inorder(RbTree::Empty));
-        unfold(list_append(List<struct rb_node*>::Nil,
-            List<struct rb_node*>::Cons(erased, rb_inorder(right))));
+        unfold(list_append(List::Nil,
+            List::Cons(erased, rb_inorder(right))));
         normalize();
     }
 }
@@ -1272,7 +1272,7 @@ theorem rb_erase_no_right_child(erased: struct rb_node*, parent: struct rb_node*
                                 left: RbTree) {
     ensures rb_inorder(RbTree::Node(erased, parent, color, left, RbTree::Empty))
         == list_append(rb_inorder(left),
-            List<struct rb_node*>::Cons(erased, List<struct rb_node*>::Nil)) by {
+            List::Cons(erased, List::Nil)) by {
         unfold(rb_inorder(RbTree::Node(erased, parent, color, left, RbTree::Empty)));
         unfold(rb_inorder(RbTree::Empty));
         normalize();
@@ -1295,11 +1295,11 @@ theorem rb_min_list_splits_node(node: struct rb_node*, parent: struct rb_node*, 
                 rewrite(rb_inorder(rb_reparent(right, parent)) == rb_inorder(right));
                 unfold(rb_inorder(RbTree::Node(node, parent, color, RbTree::Empty, right)));
                 unfold(rb_inorder(RbTree::Empty));
-                unfold(list_append(List<struct rb_node*>::Nil,
-                    List<struct rb_node*>::Cons(node, rb_inorder(right))));
-                unfold(list_append(List<struct rb_node*>::Cons(node,
-                    List<struct rb_node*>::Nil), rb_inorder(right)));
-                unfold(list_append(List<struct rb_node*>::Nil, rb_inorder(right)));
+                unfold(list_append(List::Nil,
+                    List::Cons(node, rb_inorder(right))));
+                unfold(list_append(List::Cons(node,
+                    List::Nil), rb_inorder(right)));
+                unfold(list_append(List::Nil, rb_inorder(right)));
                 normalize();
             }
             RbTree::Node(inner_node, inner_parent, inner_color, inner_left, inner_right) => {
@@ -1330,7 +1330,7 @@ theorem rb_min_list_splits_node(node: struct rb_node*, parent: struct rb_node*, 
                     rb_inorder(rb_remove_min(
                         RbTree::Node(inner_node, inner_parent, inner_color,
                             inner_left, inner_right))),
-                    List<struct rb_node*>::Cons(node, rb_inorder(right))));
+                    List::Cons(node, rb_inorder(right))));
                 assumption();
             }
         }
@@ -1359,32 +1359,32 @@ theorem rb_min_list_splits_inorder(tree: RbTree) {
 
 theorem rb_remove_min_drops_head(tree: RbTree, minimum: struct rb_node*) {
     requires rb_min_list(tree)
-        == List<struct rb_node*>::Cons(minimum, List<struct rb_node*>::Nil);
+        == List::Cons(minimum, List::Nil);
 
     ensures rb_inorder(tree)
-        == List<struct rb_node*>::Cons(minimum, rb_inorder(rb_remove_min(tree))) by {
+        == List::Cons(minimum, rb_inorder(rb_remove_min(tree))) by {
         apply(rb_min_list_splits_inorder(tree));
         rewrite(rb_inorder(tree)
             == list_append(rb_min_list(tree), rb_inorder(rb_remove_min(tree))));
         rewrite(rb_min_list(tree)
-            == List<struct rb_node*>::Cons(minimum, List<struct rb_node*>::Nil));
+            == List::Cons(minimum, List::Nil));
         unfold(list_append(
-            List<struct rb_node*>::Cons(minimum, List<struct rb_node*>::Nil),
+            List::Cons(minimum, List::Nil),
             rb_inorder(rb_remove_min(tree))));
-        unfold(list_append(List<struct rb_node*>::Nil, rb_inorder(rb_remove_min(tree))));
+        unfold(list_append(List::Nil, rb_inorder(rb_remove_min(tree))));
         normalize();
     }
 }
 
 theorem rb_remove_min_is_inorder_tail(tree: RbTree, minimum: struct rb_node*) {
     requires rb_min_list(tree)
-        == List<struct rb_node*>::Cons(minimum, List<struct rb_node*>::Nil);
+        == List::Cons(minimum, List::Nil);
 
     ensures rb_inorder(rb_remove_min(tree)) == list_tail(rb_inorder(tree)) by {
         apply(rb_remove_min_drops_head(tree, minimum));
         rewrite(rb_inorder(tree)
-            == List<struct rb_node*>::Cons(minimum, rb_inorder(rb_remove_min(tree))));
-        unfold(list_tail(List<struct rb_node*>::Cons(minimum,
+            == List::Cons(minimum, rb_inorder(rb_remove_min(tree))));
+        unfold(list_tail(List::Cons(minimum,
             rb_inorder(rb_remove_min(tree)))));
         normalize();
     }
@@ -1394,7 +1394,7 @@ theorem rb_erase_two_child_splice(erased: struct rb_node*, successor: struct rb_
                                   parent: struct rb_node*, color: Color,
                                   left: RbTree, right: RbTree) {
     requires rb_min_list(right)
-        == List<struct rb_node*>::Cons(successor, List<struct rb_node*>::Nil);
+        == List::Cons(successor, List::Nil);
 
     ensures rb_inorder(RbTree::Node(successor, parent, color,
             rb_reparent(left, successor),
@@ -1412,11 +1412,11 @@ theorem rb_erase_two_child_splice(erased: struct rb_node*, successor: struct rb_
         rewrite(rb_inorder(right)
             == list_append(rb_min_list(right), rb_inorder(rb_remove_min(right))));
         rewrite(rb_min_list(right)
-            == List<struct rb_node*>::Cons(successor, List<struct rb_node*>::Nil));
+            == List::Cons(successor, List::Nil));
         unfold(list_append(
-            List<struct rb_node*>::Cons(successor, List<struct rb_node*>::Nil),
+            List::Cons(successor, List::Nil),
             rb_inorder(rb_remove_min(right))));
-        unfold(list_append(List<struct rb_node*>::Nil, rb_inorder(rb_remove_min(right))));
+        unfold(list_append(List::Nil, rb_inorder(rb_remove_min(right))));
         normalize();
     }
 }
@@ -5760,10 +5760,10 @@ theorem rb_inorder_node_congruence(node: struct rb_node*, parent: struct rb_node
         apply(rb_inorder_node_splits(node, parent, right_color, left2, right2));
         rewrite(rb_inorder(RbTree::Node(node, parent, left_color, left1, right1))
             == list_append(rb_inorder(left1),
-                List<struct rb_node*>::Cons(node, rb_inorder(right1))));
+                List::Cons(node, rb_inorder(right1))));
         rewrite(rb_inorder(RbTree::Node(node, parent, right_color, left2, right2))
             == list_append(rb_inorder(left2),
-                List<struct rb_node*>::Cons(node, rb_inorder(right2))));
+                List::Cons(node, rb_inorder(right2))));
         rewrite(rb_inorder(left1) == rb_inorder(left2));
         rewrite(rb_inorder(right1) == rb_inorder(right2));
         normalize();

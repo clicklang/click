@@ -48,7 +48,7 @@ tactic open_erase_spine_link(focus: struct rb_node*, parent: struct rb_node*, an
             have parent != 0;
             let frame = fold(erase_spine_frame(parent, anchor), {
                 model: EraseSpine::Left(identity, grandparent, color, sibling_model, up_model)
-            }, { sibling: sibling, up: up });
+            });
             have frame.model == old(c.model);
         },
     }
@@ -71,7 +71,7 @@ tactic close_erase_spine_link(focus: struct rb_node*, parent: struct rb_node*, a
             let { sibling: sibling, up: up } = unfold(frame);
             let c = fold(erase_spine_at(focus, anchor), {
                 model: EraseSpine::Left(identity, grandparent, color, sibling_model, up_model)
-            }, { sibling: sibling, up: up });
+            });
             have c.model == old(frame.model);
         },
     }
@@ -147,7 +147,7 @@ tactic graft_erase_spine(focus: struct rb_node*, anchor: struct rb_node*, root: 
             let context = fold(ctx_at(focus, root), {
                 model: Context::Left(identity, grandparent, color, sibling_model,
                     ctx_concat(erase_context(up_model), Context::Left(anchor, ap, ac, ar, au)))
-            }, { sibling: sibling, up: above });
+            }, { up: above });
             have context.model == ctx_concat(erase_context(old(c.model)),
                 Context::Left(anchor, ap, ac, ar, au)) by {
                 rewrite(old(c.model) == EraseSpine::Left(identity, grandparent, color, sibling_model, up_model));
@@ -283,7 +283,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     have tid != 0 by auto;
                                                     have erase_spine_parent(EraseSpine::Left(tid, tp, tc, tr, c.model), child) == tid by auto;
                                                     let frame = fold(erase_spine_at(tmp->rb_left, child),
-                                                        { model: EraseSpine::Left(tid, tp, tc, tr, c.model) }, { sibling: sibling, up: c });
+                                                        { model: EraseSpine::Left(tid, tp, tc, tr, c.model) }, { up: c });
                                                     step(); step(); step();
                                                     have successor == erase_spine_parent(frame.model, child);
                                                     if tmp == 0 {

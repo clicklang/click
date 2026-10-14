@@ -227,6 +227,7 @@ pub(super) fn parse_file_items_for_module(
     imported_tactic_names: &BTreeSet<String>,
     imported_function_names: &BTreeSet<String>,
     imported_callees: &[&FunctionBlock],
+    imported_resources: &[&ResourceDefinition],
     layouts: ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
     let mut parser = Parser::with_program_layouts(
@@ -268,6 +269,14 @@ pub(super) fn parse_file_items_for_module(
                     CalleeResourceBinderKind::Produced,
                 );
             }
+        }
+    }
+    for definition in imported_resources {
+        if let Some(body) = definition.composite_body() {
+            parser.declared_resource_child_slots.insert(
+                definition.name().to_string(),
+                composite_body_child_slots(body),
+            );
         }
     }
     for definition in imported_algebraic_types {
@@ -561,6 +570,10 @@ struct Parser {
     in_resource_definition: bool,
     /// The fields of each resource declared so far, hidden ones included.
     declared_resource_fields: BTreeMap<String, Vec<ResourceFieldDefinition>>,
+    /// The named child slots of each resource declared so far, across its
+    /// unmatched body and every match arm. A `fold` may leave out a slot
+    /// whose child is the in-scope resource of the same name.
+    declared_resource_child_slots: BTreeMap<String, BTreeSet<String>>,
     /// In a resource that declares no fields and names a child: the hidden
     /// parent field that holds each `child.field`.
     hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
@@ -954,6 +967,7 @@ impl Parser {
             current_resource_targets: BTreeMap::new(),
             in_resource_definition: false,
             declared_resource_fields: BTreeMap::new(),
+            declared_resource_child_slots: BTreeMap::new(),
             hidden_child_fields: BTreeMap::new(),
             language,
             plain_char: None,
@@ -1902,6 +1916,8 @@ impl Parser {
         if let Some(body) = &composite_body {
             self.declared_resource_fields
                 .insert(name.clone(), body.fields.clone());
+            self.declared_resource_child_slots
+                .insert(name.clone(), composite_body_child_slots(body));
         }
         self.current_struct_params = previous_struct_params;
         self.current_struct_array_params = previous_struct_array_params;
@@ -4688,6 +4704,7 @@ impl Parser {
                         fields: None,
                         fold_fields: None,
                         child_bindings: None,
+                        default_child_bindings: None,
                     },
                     resource: Box::new(protected),
                 });
@@ -4869,6 +4886,7 @@ impl Parser {
                     fields: binding.fields,
                     fold_fields: None,
                     child_bindings: binding.child_bindings,
+                    default_child_bindings: None,
                 },
                 resource,
             },
@@ -4916,6 +4934,7 @@ impl Parser {
                         fields: None,
                         fold_fields: None,
                         child_bindings: None,
+                        default_child_bindings: None,
                     },
                     resource: Box::new(ResourceClause::Declared {
                         type_schema: None,
@@ -5092,6 +5111,7 @@ impl Parser {
                 fields: None,
                 fold_fields: None,
                 child_bindings: None,
+                default_child_bindings: None,
             },
             resource: Box::new(resource),
         };
@@ -5152,6 +5172,7 @@ impl Parser {
                 fields: None,
                 fold_fields: None,
                 child_bindings: None,
+                default_child_bindings: None,
             },
             resource: Box::new(target),
         };
@@ -6207,6 +6228,7 @@ impl Parser {
                             fields: None,
                             fold_fields: None,
                             child_bindings: Some(Vec::new().into()),
+                            default_child_bindings: None,
                         },
                         resource: Box::new(parent.clone()),
                     },
@@ -6387,9 +6409,9 @@ impl Parser {
             self.next_resource_identity += 1;
             identity
         };
-        self.expect(Token::Comma)?;
         // A resource whose every field is hidden has no field the proof
-        // could write, so its one brace is the child map.
+        // could write, so its one brace is the child map, and a map whose
+        // every child defaults by name may be left out with it.
         let declared = self
             .declared_resource_fields
             .get(resource_name)
@@ -6397,6 +6419,9 @@ impl Parser {
             .unwrap_or_default();
         let only_hidden =
             !declared.is_empty() && declared.iter().all(|field| field.name.contains('.'));
+        if !(only_hidden && self.peek() == Some(&Token::RParen)) {
+            self.expect(Token::Comma)?;
+        }
         let mut fields = Vec::new();
         if !only_hidden {
             self.expect(Token::LBrace)?;
@@ -6412,15 +6437,19 @@ impl Parser {
             }
             self.expect(Token::RBrace)?;
         }
-        let child_bindings = if only_hidden {
+        let child_bindings = if only_hidden && self.peek() == Some(&Token::LBrace) {
             self.parse_resource_child_bindings(&resource, false)?
-        } else if self.peek() == Some(&Token::Comma) {
+        } else if !only_hidden && self.peek() == Some(&Token::Comma) {
             self.position += 1;
             self.parse_resource_child_bindings(&resource, false)?
         } else {
             Vec::new()
         };
-        self.fill_hidden_fold_fields(&declared, &child_bindings, &mut fields);
+        let default_child_bindings =
+            self.default_fold_child_bindings(resource_name, &name, &child_bindings);
+        let mut hidden_sources = child_bindings.clone();
+        hidden_sources.extend(default_child_bindings.iter().cloned());
+        self.fill_hidden_fold_fields(&declared, &hidden_sources, &mut fields);
         self.expect(Token::RParen)?;
         self.expect(Token::Semicolon)?;
         let binding = ResourceInstanceBinding {
@@ -6431,6 +6460,7 @@ impl Parser {
             fields: None,
             fold_fields: None,
             child_bindings: Some(Vec::new().into()),
+            default_child_bindings: None,
         };
         self.current_resource_bindings
             .insert(name.clone(), (identity, resource_name.clone()));
@@ -6445,10 +6475,46 @@ impl Parser {
             binding: ResourceInstanceBinding {
                 fold_fields: Some(fields),
                 child_bindings: Some(child_bindings.into()),
+                default_child_bindings: (!default_child_bindings.is_empty())
+                    .then(|| default_child_bindings.into()),
                 ..binding
             },
             resource: Box::new(resource),
         }))
+    }
+
+    /// The child slots of `family` that a fold's map left out and that an
+    /// in-scope resource of the same name could fill: `{ left: left }` is
+    /// written `{}` or not at all. A name the map already uses, the fold's
+    /// own result, or a name that is also a pure binding fills nothing.
+    /// Which of these the fold keeps is decided by the arm it selects.
+    #[inline(never)]
+    fn default_fold_child_bindings(
+        &self,
+        family: &str,
+        result: &str,
+        explicit: &[(String, String, Variable)],
+    ) -> Vec<(String, String, Variable)> {
+        let Some(slots) = self.declared_resource_child_slots.get(family) else {
+            return Vec::new();
+        };
+        slots
+            .iter()
+            .filter(|slot| {
+                slot.as_str() != result
+                    && !explicit
+                        .iter()
+                        .any(|(bound, name, _)| bound == *slot || name == *slot)
+                    && !self.current_contract_bindings.contains(*slot)
+                    && !self.current_integer_params.contains(*slot)
+                    && !self.current_integer_lets.contains(*slot)
+                    && !self.current_proof_let_names.contains(*slot)
+            })
+            .filter_map(|slot| {
+                let (identity, _) = self.current_resource_bindings.get(slot)?;
+                Some((slot.clone(), slot.clone(), *identity))
+            })
+            .collect()
     }
 
     /// A hidden field `slot.field` is the field of the child bound to
@@ -7527,6 +7593,7 @@ impl Parser {
                 fields: None,
                 fold_fields: None,
                 child_bindings: None,
+                default_child_bindings: None,
             },
             resource: Box::new(resource),
         };
@@ -12962,4 +13029,22 @@ fn struct_byte_base(base: CExpression) -> CExpression {
         pointee_constant: false,
         explicit_qualification: false,
     }
+}
+
+/// Every named child slot of a composite resource body: its unmatched
+/// body's and each match arm's, whichever resource each one owns.
+fn composite_body_child_slots(body: &CompositeResourceBody) -> BTreeSet<String> {
+    std::iter::once(body)
+        .chain(
+            body.matched
+                .iter()
+                .flat_map(|matched| &matched.arms)
+                .map(|arm| &arm.body),
+        )
+        .flat_map(|body| &body.contains)
+        .filter_map(|clause| match clause {
+            ResourceClause::Named { binding, .. } => Some(binding.name.clone()),
+            _ => None,
+        })
+        .collect()
 }

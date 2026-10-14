@@ -24,7 +24,34 @@ fn authority_test_scope(
         instances: Default::default(),
         field_binders: Default::default(),
         unowned_resource_parameters: Default::default(),
+        constructors: ConstructorTypes::inactive(),
     }
+}
+
+/// An inferred constructor leaves expansion fully applied, as a written one
+/// is, so no later pass sees the short form; a constructor nothing fixes is
+/// left as written for validation to refuse.
+#[test]
+fn inferred_constructor_type_arguments_are_written_into_the_declaration() {
+    let file = crate::surface::parser::parse(
+        "function singleton(x: int32) -> List<int32> { List::Cons(x, List::Nil) }",
+    )
+    .expect("the short constructors are inferred");
+    let function = &file.click_function_definitions()[0];
+    let ContractExpression::AlgebraicConstructor {
+        algebraic_type,
+        arguments,
+        ..
+    } = function.body()
+    else {
+        panic!("the body is a constructor");
+    };
+    let int32_list = vec![ClickType::C(C0Type::Int32)];
+    assert_eq!(algebraic_type.arguments, int32_list);
+    let ContractExpression::AlgebraicConstructor { algebraic_type, .. } = &arguments[1] else {
+        panic!("the tail is a constructor");
+    };
+    assert_eq!(algebraic_type.arguments, int32_list);
 }
 
 fn authority_test_protected(argument: ContractExpression) -> ResourceClause {

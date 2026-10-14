@@ -5536,6 +5536,21 @@ impl AnnotationLowerer<'_> {
                 variant,
                 arguments,
             } => {
+                if algebraic_type.arguments.is_empty()
+                    && !algebraic_type.rigid
+                    && let Some(definition) = self
+                        .spec_definitions
+                        .functions
+                        .algebraic_type_definitions
+                        .get(&algebraic_type.name)
+                    && !definition.type_parameters().is_empty()
+                {
+                    return Err(crate::surface::validation::unapplied_constructor_message(
+                        definition.name(),
+                        variant,
+                        definition.type_parameters(),
+                    ));
+                }
                 let algebraic_type = self.cached_algebraic_kernel_type(algebraic_type)?;
                 let schema = algebraic_type
                     .variants

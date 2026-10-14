@@ -1,3 +1,4 @@
+use super::constructor_inference::{CallKind, ConstructorTypes};
 use super::*;
 
 #[cfg(test)]
@@ -39,6 +40,8 @@ struct DeclaredResourceScope {
     /// allocated them an instance identity before the field was known.
     field_binders: std::cell::RefCell<BTreeSet<Variable>>,
     unowned_resource_parameters: std::cell::RefCell<BTreeMap<Variable, String>>,
+    /// Fills in the type arguments of constructors that leave them out.
+    constructors: ConstructorTypes,
 }
 
 impl DeclaredResourceScope {
@@ -132,6 +135,7 @@ fn load_standard_library(source: &str) -> Result<ClickFile, ClickError> {
         &[],
         &BTreeSet::new(),
         &BTreeSet::new(),
+        &[],
         &[],
         Default::default(),
     )?)?;
@@ -378,6 +382,36 @@ fn expand_declared_resource_clauses_with_rules(
             child_slots: Default::default(),
         },
     );
+    // The standard library's own expansion reads only its own
+    // declarations; it must not re-enter its OnceLock.
+    let constructors = if family_rules {
+        let library = standard_library()?;
+        ConstructorTypes::new(
+            library
+                .algebraic_type_definitions()
+                .iter()
+                .chain(file.algebraic_type_definitions()),
+            library
+                .click_function_definitions()
+                .iter()
+                .chain(file.click_function_definitions()),
+            library
+                .predicate_definitions()
+                .iter()
+                .chain(file.predicate_definitions()),
+            library
+                .theorem_definitions()
+                .iter()
+                .chain(file.theorem_definitions()),
+        )
+    } else {
+        ConstructorTypes::new(
+            file.algebraic_type_definitions(),
+            file.click_function_definitions(),
+            file.predicate_definitions(),
+            file.theorem_definitions(),
+        )
+    };
     let resource_definitions = DeclaredResourceScope {
         family_rules,
         definitions: resource_definitions,
@@ -385,6 +419,7 @@ fn expand_declared_resource_clauses_with_rules(
         instances: Default::default(),
         field_binders: Default::default(),
         unowned_resource_parameters: Default::default(),
+        constructors,
     };
 
     file.resource_definitions = file
@@ -392,20 +427,32 @@ fn expand_declared_resource_clauses_with_rules(
         .drain(..)
         .map(|definition| {
             resource_definitions.begin_declaration();
+            resource_definitions
+                .constructors
+                .enter_declaration(declaration_parameter_types(definition.parameters()));
             expand_declared_resource_definition(definition, &resource_definitions)
         })
         .collect::<Result<Vec<_>, _>>()?;
 
     for predicate in &mut file.predicate_definitions {
         resource_definitions.begin_declaration();
+        resource_definitions
+            .constructors
+            .enter_declaration(declaration_parameter_types(predicate.parameters()));
         predicate.body =
             expand_declared_resource_proposition(predicate.body.clone(), &resource_definitions)?;
     }
 
     for function in &mut file.click_function_definitions {
         resource_definitions.begin_declaration();
+        resource_definitions
+            .constructors
+            .enter_declaration(declaration_parameter_types(function.parameters()));
         function.body =
             expand_declared_resource_expression(function.body.clone(), &resource_definitions)?;
+        resource_definitions
+            .constructors
+            .push_expected(&mut function.body, &function.return_type);
         function.decreases = function
             .decreases
             .take()
@@ -443,6 +490,9 @@ fn expand_declared_resource_clauses_with_rules(
 
     for theorem in &mut file.theorem_definitions {
         resource_definitions.begin_declaration();
+        resource_definitions
+            .constructors
+            .enter_declaration(declaration_parameter_types(theorem.parameters()));
         crate::surface::enter_ambient_declaration(theorem.name());
         theorem.requires = theorem
             .requires
@@ -462,10 +512,25 @@ fn expand_declared_resource_clauses_with_rules(
     Ok(file)
 }
 
+/// The declared parameters of a declaration, by name and type, for
+/// constructor type inference.
+fn declaration_parameter_types(
+    parameters: &[FunctionParameter],
+) -> impl Iterator<Item = (String, ClickType)> + '_ {
+    parameters
+        .iter()
+        .map(|parameter| (parameter.name().to_string(), parameter.click_type().clone()))
+}
+
 fn expand_declared_resources_in_function_block(
     function: &mut FunctionBlock,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<(), ClickError> {
+    resource_definitions.constructors.enter_declaration(
+        function_signature_type_environment(function.signature(), true)
+            .into_iter()
+            .map(|(name, c_type)| (name, ClickType::C(c_type))),
+    );
     crate::surface::enter_ambient_declaration(function.signature().name());
     let declared_binders = function
         .requires
@@ -1285,6 +1350,11 @@ fn expand_declared_resource_tactic_with_expressions(
                 .into_iter()
                 .map(|argument| expand_declared_resource_expression(argument, resource_definitions))
                 .collect::<Result<_, _>>()?;
+            resource_definitions.constructors.resolve_call(
+                CallKind::Theorem,
+                &application.name,
+                &mut application.arguments,
+            );
             Ok(ProofTactic::ApplyTheorem(application))
         }
         ProofTactic::Witness(witness) => {
@@ -1321,15 +1391,23 @@ fn expand_declared_resource_tactic_with_expressions(
             application,
             premises,
         } => Ok(ProofTactic::ApplyTheoremUsing {
-            application: TheoremApplication {
-                name: application.name,
-                arguments: application
+            application: {
+                let mut arguments = application
                     .arguments
                     .into_iter()
                     .map(|argument| {
                         expand_declared_resource_expression(argument, resource_definitions)
                     })
-                    .collect::<Result<_, _>>()?,
+                    .collect::<Result<Vec<_>, _>>()?;
+                resource_definitions.constructors.resolve_call(
+                    CallKind::Theorem,
+                    &application.name,
+                    &mut arguments,
+                );
+                TheoremApplication {
+                    name: application.name,
+                    arguments,
+                }
             },
             premises: premises
                 .into_iter()
@@ -1361,6 +1439,11 @@ fn expand_declared_resource_tactic_with_expressions(
                 .into_iter()
                 .map(|argument| expand_declared_resource_expression(argument, resource_definitions))
                 .collect::<Result<Vec<_>, _>>()?;
+            resource_definitions.constructors.resolve_call(
+                CallKind::Function,
+                &application.name,
+                &mut application.arguments,
+            );
             Ok(ProofTactic::UnfoldFunction(application))
         }
         ProofTactic::InstantiateUsing {
@@ -1528,34 +1611,42 @@ fn expand_declared_resource_tactic_with_nested_proofs(
             parameter,
             hypothesis,
             arms,
-        } => Ok(ProofTactic::StructuralInduct {
-            parameter,
-            hypothesis,
-            arms: arms
-                .into_iter()
-                .map(|arm| {
-                    Ok(ProofInductionArm {
-                        type_name: arm.type_name,
-                        variant: arm.variant,
-                        bindings: arm.bindings,
-                        tactics: arm
-                            .tactics
-                            .into_iter()
-                            .map(|tactic| {
-                                expand_declared_resource_tactic(tactic, resource_definitions)
-                            })
-                            .collect::<Result<Vec<_>, ClickError>>()?,
+        } => {
+            let constructors = &resource_definitions.constructors;
+            let scrutinee = constructors.variable_type(&parameter);
+            Ok(ProofTactic::StructuralInduct {
+                arms: arms
+                    .into_iter()
+                    .map(|arm| {
+                        let types = constructors.proof_arm_binding_types(scrutinee.as_ref(), &arm);
+                        let tactics = constructors.with_bindings(&arm.bindings, types, || {
+                            arm.tactics
+                                .into_iter()
+                                .map(|tactic| {
+                                    expand_declared_resource_tactic(tactic, resource_definitions)
+                                })
+                                .collect::<Result<Vec<_>, ClickError>>()
+                        })?;
+                        Ok(ProofInductionArm {
+                            type_name: arm.type_name,
+                            variant: arm.variant,
+                            bindings: arm.bindings,
+                            tactics,
+                        })
                     })
-                })
-                .collect::<Result<Vec<_>, ClickError>>()?,
-        }),
+                    .collect::<Result<Vec<_>, ClickError>>()?,
+                parameter,
+                hypothesis,
+            })
+        }
         ProofTactic::Match(proof_match) => {
             let proof_match = std::sync::Arc::unwrap_or_clone(proof_match);
+            let constructors = &resource_definitions.constructors;
+            let scrutinee =
+                expand_declared_resource_expression(proof_match.scrutinee, resource_definitions)?;
+            let scrutinee_type = constructors.scrutinee_type(&scrutinee);
             Ok(ProofTactic::Match(std::sync::Arc::new(ProofMatch {
-                scrutinee: expand_declared_resource_expression(
-                    proof_match.scrutinee,
-                    resource_definitions,
-                )?,
+                scrutinee,
                 ensuring: expand_declared_join_interface(
                     proof_match.ensuring,
                     resource_definitions,
@@ -1564,17 +1655,21 @@ fn expand_declared_resource_tactic_with_nested_proofs(
                     .arms
                     .into_iter()
                     .map(|arm| {
-                        Ok(ProofInductionArm {
-                            type_name: arm.type_name,
-                            variant: arm.variant,
-                            bindings: arm.bindings,
-                            tactics: arm
-                                .tactics
+                        let types =
+                            constructors.proof_arm_binding_types(scrutinee_type.as_ref(), &arm);
+                        let tactics = constructors.with_bindings(&arm.bindings, types, || {
+                            arm.tactics
                                 .into_iter()
                                 .map(|tactic| {
                                     expand_declared_resource_tactic(tactic, resource_definitions)
                                 })
-                                .collect::<Result<_, _>>()?,
+                                .collect::<Result<_, _>>()
+                        })?;
+                        Ok(ProofInductionArm {
+                            type_name: arm.type_name,
+                            variant: arm.variant,
+                            bindings: arm.bindings,
+                            tactics,
                         })
                     })
                     .collect::<Result<_, ClickError>>()?,
@@ -1813,6 +1908,28 @@ fn expand_declared_resource_clause(
                         Some(_) => {}
                     }
                 }
+            }
+            // A child a fold's map left out defaults to the in-scope
+            // resource of the slot's name only when that resource is of the
+            // family the slot owns; any other candidate is dropped, and the
+            // fold then reports the slot as missing.
+            if let Some(defaults) = binding.default_child_bindings.take() {
+                let slots = resource_definitions
+                    .get(&parent)
+                    .map(|info| info.child_slots.clone())
+                    .unwrap_or_default();
+                let kept = defaults
+                    .iter()
+                    .filter(|(slot, _, identity)| match slots.get(slot) {
+                        Some(Some(declared)) => resource_definitions
+                            .instance_resource(*identity)
+                            .is_none_or(|actual| actual == *declared),
+                        Some(None) => true,
+                        None => false,
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                binding.default_child_bindings = (!kept.is_empty()).then(|| kept.into());
             }
             if let Some(fields) = binding.fold_fields.take() {
                 binding.fold_fields = Some(
@@ -2075,25 +2192,33 @@ fn expand_declared_resource_proposition(
             click_type: ClickType,
             name: String,
             written_name: Option<String>,
+            shadowed: Option<Option<ClickType>>,
         },
         BuildExists {
             click_type: ClickType,
             name: String,
             written_name: Option<String>,
+            shadowed: Option<Option<ClickType>>,
         },
         BuildRangeAll {
             start: ContractExpression,
             end: ContractExpression,
             item: String,
             written_item: Option<String>,
+            shadowed: Option<Option<ClickType>>,
         },
         BuildRangeAny {
             start: ContractExpression,
             end: ContractExpression,
             item: String,
             written_item: Option<String>,
+            shadowed: Option<Option<ClickType>>,
         },
     }
+    let constructors = &resource_definitions.constructors;
+    // A binder's type holds for its body; the frame that rebuilds the
+    // binder restores what its name meant outside. On an error the whole
+    // declaration fails, so nothing is left to restore.
 
     let mut frames = vec![Frame::Visit(proposition)];
     let mut expanded = Vec::new();
@@ -2132,10 +2257,12 @@ fn expand_declared_resource_proposition(
                     written_name,
                     body,
                 } => {
+                    let shadowed = constructors.bind(&name, Some(click_type.clone()));
                     frames.push(Frame::BuildForAll {
                         click_type,
                         name,
                         written_name,
+                        shadowed,
                     });
                     frames.push(Frame::Visit(*body));
                 }
@@ -2145,10 +2272,12 @@ fn expand_declared_resource_proposition(
                     written_name,
                     body,
                 } => {
+                    let shadowed = constructors.bind(&name, Some(click_type.clone()));
                     frames.push(Frame::BuildExists {
                         click_type,
                         name,
                         written_name,
+                        shadowed,
                     });
                     frames.push(Frame::Visit(*body));
                 }
@@ -2159,11 +2288,15 @@ fn expand_declared_resource_proposition(
                     written_item,
                     body,
                 } => {
+                    let start = expand_declared_resource_expression(start, resource_definitions)?;
+                    let end = expand_declared_resource_expression(end, resource_definitions)?;
+                    let shadowed = constructors.bind(&item, None);
                     frames.push(Frame::BuildRangeAll {
-                        start: expand_declared_resource_expression(start, resource_definitions)?,
-                        end: expand_declared_resource_expression(end, resource_definitions)?,
+                        start,
+                        end,
                         item,
                         written_item,
+                        shadowed,
                     });
                     frames.push(Frame::Visit(*body));
                 }
@@ -2174,11 +2307,15 @@ fn expand_declared_resource_proposition(
                     written_item,
                     body,
                 } => {
+                    let start = expand_declared_resource_expression(start, resource_definitions)?;
+                    let end = expand_declared_resource_expression(end, resource_definitions)?;
+                    let shadowed = constructors.bind(&item, None);
                     frames.push(Frame::BuildRangeAny {
-                        start: expand_declared_resource_expression(start, resource_definitions)?,
-                        end: expand_declared_resource_expression(end, resource_definitions)?,
+                        start,
+                        end,
                         item,
                         written_item,
+                        shadowed,
                     });
                     frames.push(Frame::Visit(*body));
                 }
@@ -2217,7 +2354,9 @@ fn expand_declared_resource_proposition(
                 click_type,
                 name,
                 written_name,
+                shadowed,
             } => {
+                constructors.restore(&name, shadowed);
                 let body = expanded.pop().expect("expanded universal body");
                 expanded.push(ClickProposition::ForAll {
                     click_type,
@@ -2230,7 +2369,9 @@ fn expand_declared_resource_proposition(
                 click_type,
                 name,
                 written_name,
+                shadowed,
             } => {
+                constructors.restore(&name, shadowed);
                 let body = expanded.pop().expect("expanded existential body");
                 expanded.push(ClickProposition::Exists {
                     click_type,
@@ -2244,7 +2385,9 @@ fn expand_declared_resource_proposition(
                 end,
                 item,
                 written_item,
+                shadowed,
             } => {
+                constructors.restore(&item, shadowed);
                 let body = expanded.pop().expect("expanded range universal body");
                 expanded.push(ClickProposition::RangeAll {
                     start,
@@ -2259,7 +2402,9 @@ fn expand_declared_resource_proposition(
                 end,
                 item,
                 written_item,
+                shadowed,
             } => {
+                constructors.restore(&item, shadowed);
                 let body = expanded.pop().expect("expanded range existential body");
                 expanded.push(ClickProposition::RangeAny {
                     start,
@@ -2285,11 +2430,18 @@ fn expand_declared_resource_proposition_one(
             left,
             operator,
             right,
-        } => Ok(ClickProposition::Comparison {
-            left: expand_declared_resource_expression(left, resource_definitions)?,
-            operator,
-            right: expand_declared_resource_expression(right, resource_definitions)?,
-        }),
+        } => {
+            let mut left = expand_declared_resource_expression(left, resource_definitions)?;
+            let mut right = expand_declared_resource_expression(right, resource_definitions)?;
+            resource_definitions
+                .constructors
+                .resolve_comparison(&mut left, &mut right);
+            Ok(ClickProposition::Comparison {
+                left,
+                operator,
+                right,
+            })
+        }
         ClickProposition::Defined { expression } => Ok(ClickProposition::Defined {
             expression: expand_declared_resource_expression(expression, resource_definitions)?,
         }),
@@ -2405,15 +2557,16 @@ fn expand_declared_resource_proposition_one(
             )?),
         }),
         ClickProposition::PredicateCall { name, arguments } => {
-            Ok(ClickProposition::PredicateCall {
-                name,
-                arguments: arguments
-                    .into_iter()
-                    .map(|argument| {
-                        expand_declared_resource_expression(argument, resource_definitions)
-                    })
-                    .collect::<Result<Vec<_>, _>>()?,
-            })
+            let mut arguments = arguments
+                .into_iter()
+                .map(|argument| expand_declared_resource_expression(argument, resource_definitions))
+                .collect::<Result<Vec<_>, _>>()?;
+            resource_definitions.constructors.resolve_call(
+                CallKind::Predicate,
+                &name,
+                &mut arguments,
+            );
+            Ok(ClickProposition::PredicateCall { name, arguments })
         }
         proposition => Ok(proposition),
     }
@@ -2470,7 +2623,13 @@ fn expand_declared_resource_expression(
     // deeper than the surrounding expression tree. Peel consecutive lets
     // iteratively so expanding their bodies does not retain one large match
     // frame per binding.
-    let mut lets = Vec::new();
+    type ExpandedLet = (
+        String,
+        Option<ClickType>,
+        ContractExpression,
+        Option<Option<ClickType>>,
+    );
+    let mut lets: Vec<ExpandedLet> = Vec::new();
     while let ContractExpression::Let {
         name,
         click_type,
@@ -2478,15 +2637,27 @@ fn expand_declared_resource_expression(
         body,
     } = expression
     {
-        lets.push((
-            name,
-            click_type,
-            expand_declared_resource_expression(*value, resource_definitions)?,
-        ));
+        let expanded = expand_let_value(&name, click_type.as_ref(), *value, resource_definitions);
+        let (value, previous) = match expanded {
+            Ok(expanded) => expanded,
+            Err(error) => {
+                for (name, _, _, previous) in lets.into_iter().rev() {
+                    resource_definitions.constructors.restore(&name, previous);
+                }
+                return Err(error);
+            }
+        };
+        lets.push((name, click_type, value, previous));
         expression = *body;
     }
-    let mut expanded = expand_declared_resource_expression_node(expression, resource_definitions)?;
-    while let Some((name, click_type, value)) = lets.pop() {
+    let expanded = expand_declared_resource_expression_node(expression, resource_definitions);
+    for (name, _, _, previous) in lets.iter_mut().rev() {
+        resource_definitions
+            .constructors
+            .restore(name, previous.take());
+    }
+    let mut expanded = expanded?;
+    while let Some((name, click_type, value, _)) = lets.pop() {
         expanded = ContractExpression::Let {
             name,
             click_type,
@@ -2502,6 +2673,26 @@ fn expand_declared_resource_expression(
         };
     }
     Ok(expanded)
+}
+
+/// A `let` value, expanded, with a written type pushed into it, and the
+/// binding its name had before the `let`, for the caller to restore once
+/// the body is expanded.
+fn expand_let_value(
+    name: &str,
+    click_type: Option<&ClickType>,
+    value: ContractExpression,
+    resource_definitions: &DeclaredResourceScope,
+) -> Result<(ContractExpression, Option<Option<ClickType>>), ClickError> {
+    let constructors = &resource_definitions.constructors;
+    let mut value = expand_declared_resource_expression(value, resource_definitions)?;
+    if let Some(click_type) = click_type {
+        constructors.push_expected(&mut value, click_type);
+    }
+    let bound = click_type
+        .cloned()
+        .or_else(|| constructors.binding_type(&value));
+    Ok((value, constructors.bind(name, bound)))
 }
 
 fn expand_declared_resource_expression_node(
@@ -2694,24 +2885,36 @@ fn expand_declared_resource_expression_children(
             algebraic_type,
             variant,
             arguments,
-        } => ContractExpression::AlgebraicConstructor {
-            algebraic_type,
-            variant,
-            arguments: arguments
-                .into_iter()
-                .map(recurse)
-                .collect::<Result<_, _>>()?,
-        },
+        } => {
+            let mut constructor = ContractExpression::AlgebraicConstructor {
+                algebraic_type,
+                variant,
+                arguments: arguments
+                    .into_iter()
+                    .map(recurse)
+                    .collect::<Result<_, _>>()?,
+            };
+            resource_definitions
+                .constructors
+                .resolve_constructor(&mut constructor);
+            constructor
+        }
         ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+            let scrutinee = recurse(*scrutinee)?;
+            let constructors = &resource_definitions.constructors;
             ContractExpression::AlgebraicMatch {
-                scrutinee: Box::new(recurse(*scrutinee)?),
                 arms: arms
                     .into_iter()
                     .map(|mut arm| {
-                        arm.body = recurse(arm.body)?;
+                        let types = constructors.arm_binding_types(&scrutinee, &arm);
+                        let body =
+                            std::mem::replace(&mut arm.body, ContractExpression::ResourceWildcard);
+                        arm.body =
+                            constructors.with_bindings(&arm.bindings, types, || recurse(body))?;
                         Ok(arm)
                     })
                     .collect::<Result<_, ClickError>>()?,
+                scrutinee: Box::new(scrutinee),
             }
         }
         ContractExpression::SequenceLiteral(elements) => ContractExpression::SequenceLiteral(
@@ -2761,32 +2964,54 @@ fn expand_declared_resource_expression_children(
             accumulator,
             item,
             body,
-        } => ContractExpression::RangeFold {
-            start: Box::new(recurse(*start)?),
-            end: Box::new(recurse(*end)?),
-            initial: Box::new(recurse(*initial)?),
-            accumulator,
-            item,
-            body: Box::new(recurse(*body)?),
-        },
+        } => {
+            let start = recurse(*start)?;
+            let end = recurse(*end)?;
+            let initial = recurse(*initial)?;
+            let constructors = &resource_definitions.constructors;
+            let accumulator_previous = constructors.bind(&accumulator, None);
+            let item_previous = constructors.bind(&item, None);
+            let body = recurse(*body);
+            constructors.restore(&item, item_previous);
+            constructors.restore(&accumulator, accumulator_previous);
+            ContractExpression::RangeFold {
+                start: Box::new(start),
+                end: Box::new(end),
+                initial: Box::new(initial),
+                accumulator,
+                item,
+                body: Box::new(body?),
+            }
+        }
         ContractExpression::Let {
             name,
             click_type,
             value,
             body,
-        } => ContractExpression::Let {
-            name,
-            click_type,
-            value: Box::new(recurse(*value)?),
-            body: Box::new(recurse(*body)?),
-        },
-        ContractExpression::Call { name, arguments } => ContractExpression::Call {
-            name,
-            arguments: arguments
+        } => {
+            let (value, previous) =
+                expand_let_value(&name, click_type.as_ref(), *value, resource_definitions)?;
+            let body = recurse(*body);
+            resource_definitions.constructors.restore(&name, previous);
+            ContractExpression::Let {
+                name,
+                click_type,
+                value: Box::new(value),
+                body: Box::new(body?),
+            }
+        }
+        ContractExpression::Call { name, arguments } => {
+            let mut arguments = arguments
                 .into_iter()
                 .map(recurse)
-                .collect::<Result<Vec<_>, _>>()?,
-        },
+                .collect::<Result<Vec<_>, _>>()?;
+            resource_definitions.constructors.resolve_call(
+                CallKind::Function,
+                &name,
+                &mut arguments,
+            );
+            ContractExpression::Call { name, arguments }
+        }
         expression => expression,
     })
 }

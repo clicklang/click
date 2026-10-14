@@ -285,17 +285,6 @@ Proposed fix: `owns *s` for whole structs; infer frames for produced cells.
 
 Decision: fix (maintainer, 2026-10-14).
 
-### L6. Fold syntax is heavy and generics are fully applied
-
-Today: `fold(tree_at(result), { model: ... }, { left: lower, right: z })`;
-`List<struct tree_node*>::Nil`; the reference shows both `as { ... }` and
-`let {...} = unfold(...)`.
-
-Proposed fix: infer constructor type arguments and default child maps by
-name; one documented unfold binding form.
-
-Decision: fix (maintainer, 2026-10-13): infer constructor type arguments and default child maps by name; one documented unfold binding form.
-
 ## M. Memory model, semantics and trust
 
 ### M1. There is no independent proof checker
