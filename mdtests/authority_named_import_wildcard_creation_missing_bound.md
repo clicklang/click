@@ -36,5 +36,5 @@ int32 run() { ensures result == 0; } by {
 ```
 
 ```expect
-fail: named member change refused: InvalidQuantity
+fail: named member change refused: a member quantity must be between 1 and INT_MAX
 ```

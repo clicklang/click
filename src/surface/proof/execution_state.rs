@@ -718,7 +718,7 @@ pub(super) fn append_surface_tactics_by_leaf(
         .map(|tactics| {
             ProofCertificate::from_proof_tactics(tactics)
                 .map(ProofCertificate::into_steps)
-                .map_err(|error| format!("path contained a non-simple tactic: {error:?}"))
+                .map_err(|error| format!("path contained a non-simple tactic: {error}"))
         })
         .collect::<Result<Vec<_>, _>>()?;
     if let Some(common) = path_steps.first()
@@ -907,7 +907,7 @@ pub(super) fn append_surface_tactics_flat(
         );
     }
     let proof = ProofCertificate::from_proof_tactics(common)
-        .map_err(|error| format!("path contained a non-simple tactic: {error:?}"))?;
+        .map_err(|error| format!("path contained a non-simple tactic: {error}"))?;
     // A proof `match` is a branch choice whose arms bind names. The tactics
     // that follow it were written inside an arm and may read those names, so
     // they go back inside the arms the match left open, not after it.
@@ -1805,7 +1805,7 @@ pub(super) fn append_loop_return_closers(
                                 let certificate = ProofCertificate::from_proof_tactics(&suffix)
                                     .map_err(|error| {
                                         ClickError::new(format!(
-                                            "loop return closer is not simple: {error:?}"
+                                            "loop return closer is not simple: {error}"
                                         ))
                                     })?;
                                 target.extend(certificate.into_steps());

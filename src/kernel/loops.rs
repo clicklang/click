@@ -7835,7 +7835,7 @@ fn rebind_loop_binder_instances(
                 }
                 Err(error) => {
                     return Ok(Err(format!(
-                        "loop binder `{binder}` could not be evaluated here: {error:?}"
+                        "loop binder `{binder}` could not be evaluated here: {error}"
                     )));
                 }
             };
@@ -9511,7 +9511,7 @@ fn validate_loop_havoc_stable_loans(
     for range in ranges {
         if let Err(error) = ledger.permits_memory_access_with_assumptions(range, assumptions) {
             return Err(format!(
-                "loop memory havoc overlaps an active stable-view loan: {error:?}"
+                "loop memory havoc overlaps an active stable-view loan: {error}"
             ));
         }
     }

@@ -139,7 +139,9 @@ fn authority_member_wrapper_requires_population_cleanup_before_free() {
         "a registered outer member must be consumed and both authorities retired before free",
     );
     assert!(
-        error.message().contains("OutstandingAuthority"),
+        error
+            .message()
+            .contains("an authority registered at this anchor is still outstanding"),
         "{error:?}"
     );
 }

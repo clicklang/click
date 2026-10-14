@@ -7560,7 +7560,7 @@ int32 answer() {
         let error = session
             .verify_at(CLICK, line, column)
             .expect_err("a session identity from other inputs must be refused");
-        assert!(error.message().contains("identity mismatch"), "{error:?}");
+        assert!(error.message().contains("identity mismatch"), "{error}");
     }
 
     #[test]

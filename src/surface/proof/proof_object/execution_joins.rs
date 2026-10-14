@@ -1059,7 +1059,7 @@ impl<'a> Proof<'a> {
             )
             .map_err(|error| {
                 self.step_error(format!(
-                    "invalid automatic common `branch ensuring` resource interface: {error:?}"
+                    "invalid automatic common `branch ensuring` resource interface: {error}"
                 ))
             })?
             .normalized_around_facts(&additions, facts.assumptions());
@@ -4446,7 +4446,7 @@ mod progress_tests {
                     error
                         .message()
                         .contains("cannot advance after selecting this path condition"),
-                    "{error:?}"
+                    "{error}"
                 );
                 assert_eq!(steps, 0, "refusal must precede recursive execution");
             }

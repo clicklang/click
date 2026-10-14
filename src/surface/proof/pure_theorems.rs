@@ -1249,7 +1249,7 @@ fn check_pure_structural_induction(
     }])
     .map_err(|error| {
         ClickError::new(format!(
-            "structural induction for `{claim_label}` produced an invalid certificate: {error:?}"
+            "structural induction for `{claim_label}` produced an invalid certificate: {error}"
         ))
     })?;
     Ok((certificate, completions))
@@ -2220,7 +2220,7 @@ fn verify_contract_refinement_theorem(
     })?;
     let mut certificate_steps =
         ProofCertificate::from_proof_tactics(&tactics[..tactics.len() - proof_tactics.len()])
-            .map_err(|error| ClickError::new(format!("{error:?}")))?
+            .map_err(|error| ClickError::new(format!("{error}")))?
             .steps()
             .to_vec();
     certificate_steps.extend_from_slice(proof.completed_certificate()?.steps());

@@ -59,5 +59,5 @@ void forward(struct pool* pool, struct object* object) {
 ```
 
 ```expect
-fail: population call transfer refused: MissingMembers
+fail: population call transfer refused: fewer members of the population are held than the transition moves
 ```

@@ -1699,7 +1699,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         leaf_tactics.extend(closer_tactics);
         let certificate = ProofCertificate::from_proof_tactics(&leaf_tactics).map_err(|error| {
             ClickError::new(format!(
-                "`{claim_label}` produced an invalid preservation leaf certificate: {error:?}"
+                "`{claim_label}` produced an invalid preservation leaf certificate: {error}"
             ))
         })?;
         certificate_paths.push(PathCertificate {

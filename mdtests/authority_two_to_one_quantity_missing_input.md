@@ -37,5 +37,5 @@ void lifecycle(int32* counter) {
 ```
 
 ```expect
-fail: population call transfer refused: MissingMembers; declared 2 of member
+fail: population call transfer refused: fewer members of the population are held than the transition moves; declared 2 of member
 ```

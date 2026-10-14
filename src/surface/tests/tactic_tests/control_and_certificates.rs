@@ -897,8 +897,8 @@ fn step_certificate_rejects_a_loop_step_with_an_unplanned_phase() {
     let error = ProofCertificate::from_steps(vec![ProofStep::Loop(unplanned)])
         .expect_err("an unplanned preservation phase is not a certificate");
     let message = error.message().to_string();
-    assert!(message.contains("LoopPreserve"), "{message}");
-    assert!(message.contains("Smart(Auto)"), "{message}");
+    assert!(message.contains("loop `preserve`"), "{message}");
+    assert!(message.contains("smart tactic `auto`"), "{message}");
 }
 
 const ORDERED_PAIR_C: &str = r#"

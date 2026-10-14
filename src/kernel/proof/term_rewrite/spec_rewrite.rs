@@ -11,6 +11,15 @@ pub(crate) enum SpecRewriteError {
     WorkLimitExceeded,
 }
 
+impl std::fmt::Display for SpecRewriteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::UnsupportedCarrier => "the proposition mentions a value the rewrite cannot carry",
+            Self::WorkLimitExceeded => "the rewrite exceeded its work limit",
+        })
+    }
+}
+
 /// Feed the Spec-shaped nodes into the shared carrier collector in
 /// `term_rewrite.rs`.  Spec binders have a few name-based forms, but every
 /// proof-relevant numeric identity is already represented by one of the

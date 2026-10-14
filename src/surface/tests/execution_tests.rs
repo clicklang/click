@@ -109,7 +109,10 @@ fn authority_cannot_reestablish_after_retirement() {
         &[("authority_stack.c", c_source)],
     )
     .expect_err("a retired population cannot be established a second time");
-    assert!(error.message().contains("AlreadyEstablished"), "{error:?}");
+    assert!(
+        error.message().contains("cannot be established again"),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -261,7 +264,12 @@ fn authority_cannot_retire_with_live_member() {
         &[("authority_stack.c", c_source)],
     )
     .expect_err("retirement requires an empty population");
-    assert!(error.message().contains("OutstandingMembers"), "{error:?}");
+    assert!(
+        error
+            .message()
+            .contains("members of the population are still outstanding"),
+        "{error:?}"
+    );
 }
 
 #[test]
