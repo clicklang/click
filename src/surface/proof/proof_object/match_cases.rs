@@ -117,6 +117,25 @@ fn attach_arm_lexical_scope(
 }
 
 impl<'a> Proof<'a> {
+    /// Establishes the one marker shared by ordinary and scoped match checking.
+    pub(in crate::surface::proof) fn prepare_execution_match(
+        &self,
+        ensuring: bool,
+        source_index: usize,
+    ) -> Result<Self, ClickError> {
+        let proof = if ensuring {
+            self.prepare_entry_interface()?
+        } else {
+            self.clone()
+        };
+        let proof = if crate::surface::proof_trace::enabled_for(proof.claim_label()) {
+            proof.at_source_tactic(source_index)
+        } else {
+            proof
+        };
+        Ok(proof.begin_execution_match())
+    }
+
     pub(in crate::surface::proof) fn begin_execution_match(&self) -> Self {
         Self {
             site: self.site.clone(),

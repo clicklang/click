@@ -18212,3 +18212,49 @@ fn call_step_keeps_snapshot_bound_through_expansion_and_retained_check() {
         .verify_at(&expanded, position.line, position.column)
         .unwrap();
 }
+
+#[test]
+fn terminal_model_match_in_open_keeps_expanded_outcome_steps_in_its_arms() {
+    let (click, sources) = mdtest_sources("mdtests/open_scope_model_match_terminal.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&click, &sources, "read.contract").unwrap();
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    let open = expanded
+        .find("open(table")
+        .expect("the resource scope is retained");
+    let first = expanded[open..].find("Pair::First(value) =>").unwrap() + open;
+    let second = expanded[first..].find("Pair::Second(value) =>").unwrap() + first;
+    assert!(
+        expanded[first..second].contains("model: Pair::First(value)"),
+        "{expanded}"
+    );
+    assert!(
+        expanded[second..].contains("model: Pair::Second(value)"),
+        "{expanded}"
+    );
+    assert!(
+        !expanded.contains("if match c.model"),
+        "arm suffixes escaped their lexical match: {expanded}"
+    );
+}
+
+#[test]
+fn rejoined_model_match_in_open_expands_without_moving_the_continuation_inside() {
+    let (click, sources) = mdtest_sources("mdtests/open_scope_model_match_rejoins.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&click, &sources, "read.contract").unwrap();
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    assert_eq!(expanded.matches("open(table").count(), 2, "{expanded}");
+    assert!(
+        expanded.contains("ensuring"),
+        "the nonterminal match must retain its interface: {expanded}"
+    );
+}

@@ -530,10 +530,28 @@ fn append_surface_step_to_certificate(proof: &mut ProofCertificate, step: ProofS
     }
 }
 
+/// A scope ending in an unjoined model match completes execution in its
+/// lexical arms. Outcome suffixes must stay there so constructor bindings
+/// cannot escape the resource block. An `ensuring` match instead rejoins
+/// before scope close and leaves later operations outside the block.
+fn ends_in_terminal_match(steps: &[ProofStep]) -> bool {
+    match steps.last() {
+        Some(ProofStep::Match { ensuring: None, .. }) => true,
+        Some(ProofStep::Open { proof, .. }) => ends_in_terminal_match(proof.steps()),
+        _ => false,
+    }
+}
+
 pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: ProofStep) {
     #[cfg(test)]
     SURFACE_LEAF_VISITS.with(|visits| visits.set(visits.get() + 1));
     if matches!(steps.last(), Some(ProofStep::Contradiction(_))) {
+        return;
+    }
+    if let Some(ProofStep::Open { proof, .. }) = steps.last_mut()
+        && ends_in_terminal_match(proof.steps())
+    {
+        append_surface_step_to_certificate(proof, step);
         return;
     }
     if let Some(ProofStep::Match {
@@ -784,6 +802,12 @@ pub(super) fn append_surface_tactics_by_leaf(
         if matches!(steps.last(), Some(ProofStep::Contradiction(_))) {
             return;
         }
+        if let Some(ProofStep::Open { proof, .. }) = steps.last_mut()
+            && ends_in_terminal_match(proof.steps())
+        {
+            append_certificate(proof, path_steps, next_path);
+            return;
+        }
         if let Some(ProofStep::Match { arms, .. }) = steps.last_mut() {
             for arm in arms {
                 append_certificate(&mut arm.proof, path_steps, next_path);
@@ -911,7 +935,7 @@ pub(super) fn append_surface_tactics_flat(
     // A proof `match` is a branch choice whose arms bind names. The tactics
     // that follow it were written inside an arm and may read those names, so
     // they go back inside the arms the match left open, not after it.
-    if matches!(steps.last(), Some(ProofStep::Match { .. })) {
+    if matches!(steps.last(), Some(ProofStep::Match { .. })) || ends_in_terminal_match(steps) {
         for step in proof.into_steps() {
             append_surface_step_to_leaves(steps, step);
         }

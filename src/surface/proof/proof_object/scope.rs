@@ -289,6 +289,43 @@ impl<'a> ProofScope<'a> {
         self.body.split_focused_execution_if(condition)
     }
 
+    /// Checks a model match on this body's exact marker, then retains its
+    /// direct checked successor. The ordinary match driver owns the arms,
+    /// their certificates, and their join; the scope still owns its close.
+    pub(in crate::surface::proof) fn try_execution_match(
+        &self,
+        ensuring: bool,
+        source_index: usize,
+        advance: impl FnOnce(Proof<'a>) -> Result<Option<Proof<'a>>, ClickError>,
+    ) -> Result<Option<Self>, ClickError> {
+        let prepared = self.body.prepare_execution_match(ensuring, source_index)?;
+        let marker = prepared.checkpoint();
+        let Some(body) = advance(prepared)? else {
+            return Ok(None);
+        };
+        if !body
+            .node
+            .parent
+            .as_ref()
+            .is_some_and(|parent| Arc::ptr_eq(parent, &marker.node))
+            || !matches!(body.node.step.as_deref(), Some(ProofStep::Match { .. }))
+            || !Arc::ptr_eq(&body.context, &marker.context)
+            || body.focused_branch_id() != marker.node.focused_branch
+        {
+            return Err(self.root.step_error(
+                "model match did not produce one direct checked successor of this scope body",
+            ));
+        }
+        let mut next = self.clone();
+        for fact in body.added_facts() {
+            if !next.introduced_facts.contains(fact) {
+                next.introduced_facts.push(fact.clone());
+            }
+        }
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Joins the two completed cases of an in-`Proof` case split as the next
     /// direct structural node of this scope, with the same provenance check
     /// as `join_execution_split`.
