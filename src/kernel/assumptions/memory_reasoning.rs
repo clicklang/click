@@ -3599,10 +3599,16 @@ impl PureFactContext {
                 self.decide(&ConditionTerm::uint64_equal(left.clone(), right.clone())) == Some(true)
             };
             (equal(whole, end) || equal(end, whole))
-                && holds(ConditionTerm::uint64_less_than(
+                && (holds(ConditionTerm::uint64_less_than(
                     Bitvector32Term::uint64_subtract(end.clone(), taken.as_ref().clone()),
                     end.clone(),
-                ))
+                )) || (holds(ConditionTerm::uint64_less_equal(
+                    Bitvector32Term::UInt64Constant(1),
+                    taken.as_ref().clone(),
+                )) && holds(ConditionTerm::uint64_less_equal(
+                    taken.as_ref().clone(),
+                    end.clone(),
+                ))))
         };
         // `i < x + c` for a constant `c >= 1` whose sum does not wrap: an
         // index below `c`, at most `x`, or equal to `x` is below the end. A C string's

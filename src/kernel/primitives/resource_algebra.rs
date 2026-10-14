@@ -8648,15 +8648,17 @@ fn wide_memory_range_covers_window(
     let covers_index = |index: Bitvector32Term| {
         if let Bitvector32Term::UInt64Subtract(whole, taken) = &index
             && first.uint64_as_const() == Some(0)
-            && assumptions.decide(&ConditionTerm::uint64_equal(
+            && (assumptions.decide(&ConditionTerm::uint64_equal(
                 last.clone(),
                 taken.as_ref().clone(),
             )) == Some(true)
+                || holds(last.clone(), taken.as_ref().clone()))
             && assumptions.uint64_values_equal_for_range_resolution(end, whole)
             && holds(taken.as_ref().clone(), end.clone())
         {
-            // Full-width equality and count <= whole establish both subtraction
-            // without underflow and (whole - count) + count == whole as integers.
+            // count <= whole prevents underflow; requesting at most count
+            // elements stays within the suffix starting at whole - count.
+            // Both comparisons retain the complete native-width values.
             return start.uint64_as_const() == Some(0) || holds(start.clone(), index);
         }
         if let Bitvector32Term::UInt64Subtract(whole, skipped) = &last

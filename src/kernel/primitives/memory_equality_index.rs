@@ -2079,6 +2079,92 @@ mod tests {
         );
     }
 
+    #[test]
+    fn native_suffix_view_authorizes_its_first_byte() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        }
+        .offset_by_elements(Bitvector32Term::Variable(Variable(983_710)), 1);
+        let whole = Bitvector32Term::Variable(Variable(983_711));
+        let remaining = Bitvector32Term::Variable(Variable(983_712));
+        let available = CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(0),
+            whole.clone(),
+            1,
+        );
+        let selected = base.offset_by_typed_elements(
+            Bitvector32Term::uint64_subtract(whole.clone(), remaining.clone()),
+            1,
+            true,
+            true,
+        );
+        let temporary = Pointer::symbolic(Variable(983_713));
+        let required = CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+            temporary.clone(),
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1),
+            1,
+        ));
+        let bounded = PureFactContext::new()
+            .assume_condition(ConditionTerm::pointer_equal(temporary, selected), true)
+            .assume_condition(
+                ConditionTerm::uint64_less_equal(
+                    whole.clone(),
+                    Bitvector32Term::UInt64Constant(5551),
+                ),
+                true,
+            );
+        let suffix = bounded.clone().assume_condition(
+            ConditionTerm::uint64_less_equal(remaining.clone(), whole.clone()),
+            true,
+        );
+        let facts = suffix.clone().assume_condition(
+            ConditionTerm::uint64_less_equal(Bitvector32Term::UInt64Constant(1), remaining.clone()),
+            true,
+        );
+        let held =
+            ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(available));
+        held.synchronize_memory_equalities(&facts);
+        assert!(
+            held.satisfies_fact(&required, &facts),
+            "a nonempty held suffix authorizes one byte"
+        );
+        assert!(held.permits_memory_read(required.memory_range().unwrap().base(), 1, &facts));
+        assert!(
+            !held.satisfies_fact(&required, &suffix),
+            "an empty suffix must not authorize a read"
+        );
+        let low_word = bounded
+            .assume_condition(
+                ConditionTerm::signed_less_equal(
+                    Bitvector32Term::uint32_from_64(remaining.clone()),
+                    Bitvector32Term::uint32_from_64(whole.clone()),
+                ),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::uint64_less_equal(Bitvector32Term::UInt64Constant(1), remaining),
+                true,
+            );
+        assert!(
+            !held.satisfies_fact(&required, &low_word),
+            "truncated bounds are not native coverage"
+        );
+        let only_viewable = facts.assume_proposition(Proposition::CMemoryLoadable {
+            memory: CMemory::new(),
+            base,
+            bytes: whole,
+            wide: true,
+        });
+        assert!(
+            !ResourceContext::new().satisfies_fact(&required, &only_viewable),
+            "range arithmetic cannot mint a view"
+        );
+    }
+
     // A partial resource frame leaves a constant-base range covering two
     // fields. A modeled pointer alias must still select an interior field.
     #[test]

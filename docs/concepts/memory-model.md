@@ -309,7 +309,14 @@ Segment forms are half-open `int32` element ranges. For `int32 p[]`,
 four-byte `int32` access. For `uint8 p[]`, the same spelling covers `n`
 one-byte elements.
 
-Native `uint64` element ranges preserve their full counts. A same-base prefix
+Native `uint64` element ranges preserve their full counts.
+A prefix of the suffix at `p + (whole - remaining)` retains read authority
+when `remaining <= whole` and the requested extent is at most `remaining`.
+The first-byte read additionally requires a positive remaining count; the
+native bounds are not replaced by their low words. See
+[`native_nonempty_suffix_first_byte.md`](https://github.com/clicklang/click/blob/master/mdtests/native_nonempty_suffix_first_byte.md).
+
+A same-base prefix
 can be proved from a held view and an explicitly selected unsigned coverage
 bound. For byte elements, `requested <= held` covers the prefix; for wider
 elements, compare the complete nonwrapping byte extents as well. The source
