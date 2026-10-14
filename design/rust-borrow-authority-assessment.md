@@ -84,11 +84,43 @@ with a separately owned neighbor set to 9. All three contracts expand and
 reverify; false value and missing helper, caller or neighbor write authority
 are rejected. This checks actual imported Rust bodies through the same engine.
 
+## Checked local-reference endings
+
+`PreparedRustImport::certify_scalar_reference_end` now checks an explicit MIR
+borrow/frontier pair against the immutable locked import. Its private
+certificate constructor binds the result to the import identity, selected
+function and exact MIR points. Function names are indexed once per import;
+each query examines only the selected function and continuation.
+
+The supported subset is a mutable scalar reborrow from a local reference,
+with the borrow and frontier in one block followed by an acyclic straight-line
+continuation. The checker follows copies, reborrows and replacement definitions
+from the selected child. It refuses future uses, branches, cycles, aggregate
+transport, reference returns and opaque capture, including capture nested in
+scalar expressions. Conversions involving a selected alias are conservatively
+refused. Storage events never discharge aliases. Reassigning the parent name
+does not hide an outstanding child, while replacing a child binding does not
+retire copies of the original reference.
+
+The native `set_seven` fixture checks this certificate against actual exported
+MIR, checks its import identity and rejects an ending before the child store.
+Six bounded unit regressions cover alias copies, storage markers, replacement,
+parent reassignment, capture, unsupported paths, call continuations and invalid
+points. A deterministic 16/64/256/1024 alias-chain regression bounds work to the
+selected input, up to indexing factors.
+
+This read-only certificate proves absence of future selected-reference uses in
+that subset. It does not grant memory authority, end a production loan or
+change ordinary import/verification acceptance. An unsupported ending query
+does not itself reject the Rust program.
+
 ## Remaining local-reference work
 
 A call-scoped child identity does not close local-reference lifetime handling.
 The frontend still must associate local reference access with authority and
-establish borrow-end frontiers. Neither last-use guesses nor `StorageDead`
+connect checked borrow-end frontiers to kernel recovery. The ending certificate
+alone is insufficient: recovery must also match the source identity, reference
+access, borrowed footprint and exact program frontier. Neither last-use guesses nor `StorageDead`
 alone may authorize early recovery, and a live pointer alias must not revive
 an expired child. Pinned rustc establishes source borrow legality; it does not
 replace submitted-sidecar authority checks. No additional source annotation,
@@ -102,6 +134,7 @@ With the pinned tools activated and `CLICK_CHARON` set to the pinned exporter:
 cargo test --lib rust_correspondence_
 cargo test --lib correspondence_calls_production_
 cargo test --lib exclusive_call_
+cargo test --lib scalar_reference_frontier
 cargo test --test rust_import rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop -- --ignored
 cargo test --test rust_import rust_owned_field_parent_can_write_after_explicit_child_drop -- --ignored
 cargo test --test rust_import rust_owned_disjoint_mutable_fields_verify -- --ignored
