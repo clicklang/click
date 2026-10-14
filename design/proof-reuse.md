@@ -148,6 +148,106 @@ per-case development but re-execute the shared prefix once per case.
 Reconsider it only if R2's prototype shows the single-proof form failing on
 size or speed.
 
+Prototype (2026-10-14, master `93bc0b8`): both general contracts verify, but
+only in a form that works around a verifier bug, so nothing has landed yet.
+Work stopped at
+[bugs/post-return-apply-blocks-return-instance-fold.md](../bugs/post-return-apply-blocks-return-instance-fold.md).
+
+The general `__rb_erase_augmented` consumes `rb_at(node)` and
+`ctx_at(node, root)`. It requires a nonempty node with `is_rb`, `ctx_rb` at the
+node's black height and color, and `ctx_consistent`. It produces the node's
+three fields and an outcome resource:
+
+```click
+spec enum EraseOutcome { Balanced(RbTree), Deficit(Context) }
+
+resource erase_out(root: struct rb_root*, rebalance: struct rb_node*) {
+    field model: EraseOutcome;
+    match model {
+        EraseOutcome::Balanced(t) => {
+            owns whole: rb_root_at(root);
+            fact whole.model == t;
+            fact rebalance == 0;
+        },
+        EraseOutcome::Deficit(c) => {
+            owns deficit: ctx_at(0, root);
+            fact deficit.model == c;
+            fact rebalance != 0;
+            fact c != Context::Top;
+            fact ctx_node_is(c, rebalance) == 1;
+        },
+    }
+}
+```
+
+Its ensures are as follows:
+
+- `out.model == erase_outcome(old(tree.model), old(up.model))`;
+- `erase_out_rb(out.model) == 1`, meaning a red-black root, or a context
+  missing one black level;
+- parent consistency of `erase_out_tree(out.model)`;
+- `erase_out_tree(out.model) == plug(old(up.model), erase_splice(old(tree.model)))`;
+- the in-order sequence of `erase_splice` is the old left subtree's followed
+  by the old right subtree's.
+
+`erase_outcome` and `erase_splice` follow the C's decision sequence and reuse
+the case files' model functions. Resource bodies cannot use recursive
+functions, so validity is stated in ensures rather than as facts in
+`erase_out`. The general `rb_erase` has the same requires. It produces
+`rb_root_at(root)` whose model is `erase_outcome` repaired by
+`erase_flips_red_all_result`, with validity, parent consistency, and the same
+in-order statement. Its proof matches on `out.model` and calls
+`____rb_erase_color` only in the `Deficit` arm.
+
+The unlink proof has one arm per C exit. The arms are the leaf (black root,
+black nonroot, and red), the left-only and right-only child, the immediate
+successor (red leaf, black leaf, or child), and the deeper successor (black
+leaf, or not). Two changes make the arms position-general:
+
+- Arms step the verified `__rb_change_child` contract instead of executing it
+  inline. This removes the case files' `Top`/`Left`/`Right` context split, so
+  the three root-only immediate-successor proofs are subsumed by the nonroot
+  ones.
+- The deeper-successor arm is selected first, by an `if` on the tree shape.
+  Its proofs reuse the spine files' bodies, which match the tree themselves.
+  Under an outer constructor match the two binder sets for one subtree were
+  not linked, and the inner fold of `rb_at(iid)` failed.
+
+| | Sidecars | Lines | Verification |
+|---|---|---|---|
+| Before: 11 `rb_erase` contracts and their case contracts | 14 | 4,786 | 37.1 s |
+| After: general unlink and general `rb_erase` | 2 | 2,707 | 20.5 s |
+
+The time is the sum of single release runs, one sidecar at a time. The
+general unlink is 2,615 lines and takes 19.3 s as one proof unit. Of those
+lines, 495 are definitions, lemmas, and the spine tactics moved out of the
+case files. The general `rb_erase` is 92 lines and takes 1.1 s. The three
+older root and leaf increments (`rbtree_erase.click`,
+`rbtree_erase_black_leaf.click`, `rbtree_erase_red_leaf.click`, 517 lines) are
+also subsumed. The single-proof form therefore does not fail on size or speed,
+and contract intersection is not needed.
+
+The blocker is in the natural spelling, where each exit folds `erase_out`
+after the C returns, as `rbtree_erase_leaf_wrapper.click` folds its outputs.
+Return certification refuses that spelling with an unusable diagnostic. The
+prototype verifies only when every exit's bookkeeping moves before the final
+`augment->propagate` call. Per the tooling-defect rule, that version was not
+landed. The prototype is not in the tree.
+
+Other friction:
+
+- Fields written before the `__rb_change_child` call needed
+  `normalize() using { successor == er_id; }` to carry across it, or the
+  subtree had to stay folded across the call.
+- Two `by auto` steps in the merged proof exhausted their work budgets, after
+  2 to 2.5 million units. One was a deeper-successor `ctx_node_is` disequality
+  that passes in `rbtree_erase_black_spine.click`; the other unfolded
+  `erase_outcome`. Both were replaced by explicit steps. This is an
+  observation; it has not been reduced.
+
+Next: fix the bug, then land the two sidecars. Then delete the 17 subsumed
+sidecars and point their mutation checks at the general unlink, as in R1.
+
 ### R3. Automatic unfolding of recursive specification functions
 
 `simp` unfolds a recursive pure function when its argument is a known
@@ -215,7 +315,8 @@ These are estimates, to be replaced by measurements.
 - R1: delete the superseded files and port their mutation checks. Record the
   example's line count and gate time before and after.
 - R2: prove general `__rb_erase_augmented` and `rb_erase` contracts. Record
-  their size against the 11 wrappers they replace.
+  their size against the 11 wrappers they replace. Prototype measured (see
+  R2); landing waits on the return-certification bug.
 - R3 and R4: mdtests for one fuel unfold, one automatic open on a field read,
   and a refold at a join. Add negative cases for an unknown constructor (no
   unfold) and a field mismatch at refold (refused). Then rewrite one arm of
