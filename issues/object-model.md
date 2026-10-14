@@ -209,6 +209,14 @@ existing containment and full-access membership. It does not depend on the
 archive's broader range-certificate machinery. PR #987 now covers the remaining
 full-width explicit-separation repair and indexed candidate selection.
 
+The post-loop-repair example audit at `53da27b58` completes with 39/52 passing
+and the same 13 failures as `bd6659d9a`. The next compatibility investigation is
+the [reduced modular buffer fold](../bugs/modular-buffer-ranges-fail-to-rejoin.md):
+a held prefix and tail use pointer reads from different call snapshots and fail
+to rejoin. The identical reduction passes on the upstream-based verifier. Locate
+the missing checked frame/transport step before importing broader range rules;
+the split-buffer failure needs separate confirmation.
+
 ## Recovery and delivery sequence
 
 ### 1. Preserve and classify before repairing more examples
