@@ -202,9 +202,11 @@ selects the same live loan-bound descriptor view and backing owner through their
 indexed address keys and retains the existing full-range/full-width certificate.
 All 87 selected controls pass, including a multi-size witness below 200 work
 units and width/overlap/ordinary-view/withdrawn-authority rejection controls.
-The original loop passes all four proof modes with the safe lookup rule. This
-remains an archive-dependent recovery slice; the upstream range-certificate
-prerequisite must be extracted before this implementation can be delivered.
+The original loop passes all four proof modes with the safe lookup rule. The
+independent exact-arithmetic borrow-frame extraction landed as `3b0550fbc`, using
+existing containment and full-access membership. It does not depend on the
+archive's broader range-certificate machinery. PR #987 now covers the remaining
+full-width explicit-separation repair and indexed candidate selection.
 
 ## Recovery and delivery sequence
 

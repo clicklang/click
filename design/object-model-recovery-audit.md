@@ -538,3 +538,28 @@ with a regression covering fresh checking, expansion, rewritten checking and a
 retained session. This extraction completes the remaining borrow-frame slice of
 the retained-resource lookup repair; broader object-model activation remains
 separate.
+
+## Full-width explicit-separation integration
+
+While PR #987 was open, upstream `3b0550fbc` independently delivered the bounded
+borrow-frame producer and its actual-loop equality/expansion controls. Reconcile
+#987 with that implementation and keep the upstream boxed borrow certificate and
+its stronger overlap/widened-footprint tests. The remaining delivery changes only
+explicit-separation frames: retain the two selected members and full-width read
+membership in a boxed certificate, authenticate the live fact and full mutable
+footprint when checking, and select candidates through address-indexed buckets.
+
+The previous explicit-separation certificate checked only the starting address.
+The regression rejects a read that starts in the final descriptor cell and extends
+past it, an enlarged mutable footprint, and a withdrawn separation fact. Its
+multi-size witness checks bounded, identical producer work beside 16, 64, 256 and
+1,024 unrelated separation facts. Symbolic ordered-subrange and after-end evidence
+remain separate recovery candidates; this repair uses existing exact arithmetic.
+
+On the rebased implementation, all 149 selected frame/index/borrow kernel controls
+pass (7.85s harness). Both focused explicit-separation controls pass after adding
+a concrete overlap witness: a read [4, 8) is separate from mutable bytes [8, 12),
+while a read [4, 12) must not frame that mutation. The selected upstream
+`descriptor_backing_range_loop_survives_all_proof_modes` test passes (2.12s),
+covering fresh verification, expansion, rewritten checking and retained rechecking
+of the unchanged C/proof. The full nightly suite was not run.

@@ -1639,15 +1639,16 @@ fn call_havoc_retains_exact_separation_and_positive_offset_steps() {
             hop.justification
         );
     };
+    assert_eq!(ranges.len(), 2);
+    assert!(
+        matches!(&ranges[0], RangeDisjointFromPointerEvidence::ExactSeparationFact(frame) if frame.fact == separation)
+    );
     assert_eq!(
-        ranges,
-        &vec![
-            RangeDisjointFromPointerEvidence::ExactSeparationFact(separation),
-            RangeDisjointFromPointerEvidence::ForwardOffset {
-                offset: Bitvector32Term::Variable(Variable(203)),
-                positive: PositiveTermEvidence::OneLowerBound(lower_bound),
-            },
-        ]
+        ranges[1],
+        RangeDisjointFromPointerEvidence::ForwardOffset {
+            offset: Bitvector32Term::Variable(Variable(203)),
+            positive: PositiveTermEvidence::OneLowerBound(lower_bound),
+        }
     );
     assert!(evidence.is_fully_typed());
     let goal = Proposition::ConditionIs(ConditionTerm::equal(load(&called), load(&base)), true);

@@ -261,6 +261,14 @@ unchanged store. In particular:
 
 These rules are soundness boundaries, not search heuristics.
 
+For explicit separation facts, `SeparatedRangeEvidence` retains both selected
+members and the complete read's membership. Checking authenticates those members
+against the still-present fact, checks the whole mutable footprint is contained,
+and checks full-width read membership and non-overlap. Starting inside a separated
+range does not establish that a wider read ends inside it. The producer selects
+separation buckets by the queried address blocks, avoiding a scan of all
+proposition facts.
+
 ## Consumers and scope
 
 Memory-load equality and unchanged-load reasoning use derivation ancestry to
