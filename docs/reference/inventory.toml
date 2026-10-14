@@ -2878,8 +2878,12 @@ id = "glossary.program-point"
 path = "reference/glossary.md#program-point"
 
 [[item]]
-id = "glossary.program-language"
-path = "reference/glossary.md#program-language"
+id = "glossary.specification-language"
+path = "reference/glossary.md#specification-language"
+
+[[item]]
+id = "glossary.target-language"
+path = "reference/glossary.md#target-language"
 
 [[item]]
 id = "glossary.proof-clause"

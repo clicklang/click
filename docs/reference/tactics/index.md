@@ -1,7 +1,7 @@
 # Proof tactics
 
-This page is the reference inventory for Click's proof language. A tactic is
-either **smart**, **simple**, or **control**:
+This page is the reference inventory of the tactics in Click's specification
+language. A tactic is either **smart**, **simple**, or **control**:
 
 - Smart tactics may inspect ambient facts, choose premises, split paths, or
   search for a proof. They are the tactics that `click profile` may recommend
