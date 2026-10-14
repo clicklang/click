@@ -132,8 +132,13 @@ that writes `int32` for such a source already writes the source's spelling.
   `static int64 FeeFrac::Div(...)`, `choose<true>(...)`, with `this` implicit
   and records named without `struct`. A member of a class template instance
   (`Stored<long long>`) keeps the mangled name and explicit receiver, since a
-  head does not yet spell class template arguments. `extern` and named-contract
-  heads keep the C-shaped form. Diagnostics and proof steps (`executes`,
+  head does not yet spell class template arguments. An `extern` head for a
+  system-header function is its C++ declaration too,
+  `extern int ministd::Box::get() const`. A `contract` head is a free function
+  type in C++ types, `contract int PositiveRead(const State& state)`, and is
+  attached to a function by `PositiveRead(&read)`; the importer does not yet
+  admit a call through a function pointer, so no imported C++ code can use
+  one as a callback. Diagnostics and proof steps (`executes`,
   `step(callee(...))`) still name functions by the importer's names.
 - **Rust.** Verified functions in native form, including `impl Drop for Guard`
   and module paths. No `extern` or named contracts.
@@ -150,7 +155,8 @@ that writes `int32` for such a source already writes the source's spelling.
    migrated. Remaining: class template arguments in heads (`Stored<long long>`,
    `std::span<int>`), and C++ names in diagnostics and in proof references to
    functions.
-3. **`extern` and `contract` for C++ and Rust.** Function pointers in both,
+3. **`extern` and `contract` for C++ and Rust.** Done: native C++ `extern`
+   heads, members included. Remaining: function pointers in both,
    `std::function` in C++, and closures (`impl Fn`, `&dyn Fn`) in Rust,
    through the C++ exporter and Charon, with the same refinement check as C
    (`Comparator(&f)`).

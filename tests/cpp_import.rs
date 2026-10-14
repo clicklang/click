@@ -17609,12 +17609,11 @@ fn axiomatic_system_header_calls_export_interfaces_only() {
     assert!(axiom.body.is_empty());
     assert!(import.export().dependencies.is_empty());
     let sidecar = project.directory.join("forward.click");
-    let assumed = format!(
-        "verifying \"driver.cpp\";\nextern int32* {}(int32* p) {{ ensures result == p; }}\nint32* forward(int32* p) {{ ensures result == p; }} by {{ execute(); simp(); }}\n",
-        axiom.name
-    );
-    fs::write(&sidecar, &assumed).unwrap();
-    let parsed = read_click_project(&sidecar, &assumed).unwrap();
+    assert_eq!(axiom.name, "ministd_identity");
+    // The `extern` head is the C++ declaration, qualified name and all.
+    let assumed = "verifying \"driver.cpp\";\nextern int* ministd::identity(int* p) { ensures result == p; }\nint* forward(int* p) { ensures result == p; } by { execute(); simp(); }\n";
+    fs::write(&sidecar, assumed).unwrap();
+    let parsed = read_click_project(&sidecar, assumed).unwrap();
     verify_program_prepared_project(&parsed, &import)
         .unwrap_or_else(|error| panic!("{}", error.message()));
     let unassumed = "verifying \"driver.cpp\";\nint32* forward(int32* p) { ensures result == p; } by { execute(); simp(); }\n";
@@ -17633,6 +17632,48 @@ fn axiomatic_system_header_calls_export_interfaces_only() {
     };
     assert!(verified.axiom.is_none());
     assert!(!verified.body.is_empty());
+}
+
+// The `extern` head of a system-header member function is its C++
+// declaration: the qualified member name, `const`, and an implicit `this`.
+// Writing `this` out is refused, as it is in a verified function's head.
+#[test]
+fn axiomatic_member_function_extern_heads_are_cpp_declarations() {
+    let mut project = Project::with_fixture(
+        "driver.cpp",
+        "read",
+        "#include \"mini_std.h\"\nint read(const ministd::Box& box) noexcept { return box.get(); }\n",
+    );
+    fs::write(
+        project.directory.join("mini_std.h"),
+        "#pragma clang system_header\nnamespace ministd {\nstruct Box { int value; int get() const noexcept { return value; } };\n}\n",
+    )
+    .unwrap();
+    project.dependencies.push("mini_std.h".into());
+    project.write_config("read");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let [axiom] = import.export().reachable_functions.as_slice() else {
+        panic!("one reachable axiom")
+    };
+    assert_eq!(axiom.name, "Box_get");
+    let sidecar = project.directory.join("read.click");
+    let native = "verifying \"driver.cpp\";\nextern int ministd::Box::get() const { views this->value; ensures result == this->value; }\nint read(const Box& box) { views box.value; ensures result == box.value; } by { execute(); simp(); }\n";
+    fs::write(&sidecar, native).unwrap();
+    let parsed = read_click_project(&sidecar, native).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    let explicit = native.replace(
+        "extern int ministd::Box::get() const",
+        "extern int Box_get(const Box* this)",
+    );
+    let parsed = read_click_project(&sidecar, &explicit).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(
+        error.message().contains("`this` is implicit"),
+        "{}",
+        error.message()
+    );
 }
 
 #[test]
