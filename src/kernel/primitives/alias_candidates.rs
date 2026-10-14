@@ -289,32 +289,41 @@ impl AliasCandidates {
         Self { intervals: merged }
     }
 
-    /// The candidate entries of a persistent map keyed by block, ascending:
-    /// one logarithmic step to each candidate block the map holds, and none
-    /// to a block outside the candidates, so the walk costs the candidate
-    /// blocks present rather than the map.
-    pub(crate) fn persistent_block_entries<'a, V>(
-        &'a self,
-        map: &'a crate::persistent::PersistentMap<PointerBlock, V>,
-    ) -> Vec<(&'a PointerBlock, &'a V)> {
-        let mut entries = Vec::new();
+    /// Restrict a call's ordinary candidates to blocks outside the atomic
+    /// parameter partition, without walking that shared block's cells.
+    pub(crate) fn excluding_external_arguments(&self) -> Self {
+        let excluded = PointerBlock::ExternalArgument;
+        // ExternalObject is the next variant, and Variable(0) its first key.
+        let after = PointerBlock::ExternalObject(Variable(0));
+        let mut intervals = Vec::new();
         for interval in &self.intervals {
-            let mut next = match &interval.start {
-                Some(start) => match map.get(start) {
-                    Some(value) => Some((start, value)),
-                    None => map.get_greater_than(start),
-                },
-                None => map.iter().next(),
-            };
-            while let Some((block, value)) = next {
-                if !interval.end.admits(block) {
-                    break;
-                }
-                entries.push((block, value));
-                next = map.get_greater_than(block);
+            if !interval.end.admits(&excluded)
+                || interval
+                    .start
+                    .as_ref()
+                    .is_some_and(|start| start > &excluded)
+            {
+                intervals.push(interval.clone());
+                continue;
+            }
+            if interval
+                .start
+                .as_ref()
+                .is_none_or(|start| start < &excluded)
+            {
+                intervals.push(BlockInterval {
+                    start: interval.start.clone(),
+                    end: Upper::Before(excluded.clone()),
+                });
+            }
+            if interval.end.admits(&after) {
+                intervals.push(BlockInterval {
+                    start: Some(after.clone()),
+                    end: interval.end.clone(),
+                });
             }
         }
-        entries
+        Self { intervals }
     }
 
     /// Whether an entry in `block` is among the candidates.
@@ -582,34 +591,6 @@ mod tests {
                 }
             }
             assert!(candidates.contains_block(access));
-        }
-    }
-
-    #[test]
-    fn persistent_block_entries_are_the_ascending_candidate_blocks() {
-        let blocks = sample_blocks();
-        let mut map = crate::persistent::PersistentMap::default();
-        for (index, block) in blocks.iter().enumerate() {
-            map.insert(block.clone(), index);
-        }
-        let mut accesses = blocks
-            .iter()
-            .map(|block| vec![block.clone()])
-            .collect::<Vec<_>>();
-        accesses.push(vec![PointerBlock::Heap(1), PointerBlock::Heap(9)]);
-        for access in accesses {
-            let candidates = AliasCandidates::of_blocks(&access);
-            let walked = candidates
-                .persistent_block_entries(&map)
-                .into_iter()
-                .map(|(block, index)| (block.clone(), *index))
-                .collect::<Vec<_>>();
-            let filtered = map
-                .iter()
-                .filter(|(block, _)| candidates.contains_block(block))
-                .map(|(block, index)| (block.clone(), *index))
-                .collect::<Vec<_>>();
-            assert_eq!(walked, filtered, "{access:?}");
         }
     }
 

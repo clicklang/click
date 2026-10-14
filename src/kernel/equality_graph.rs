@@ -1132,6 +1132,16 @@ impl EqualityGraph {
 
     /// The initial pairing boundary applies this graph's merge deltas once.
     /// Successors use `pointer_merges_since`, sharing the persistent prefix.
+    /// The retained merge prefix's size, without enumerating its history.
+    pub(in crate::kernel) fn pointer_merge_count(&self) -> usize {
+        self.state
+            .lock()
+            .expect("equality graph")
+            .merge_history
+            .as_ref()
+            .map_or(0, |node| node.depth)
+    }
+
     pub(in crate::kernel) fn pointer_merges(&self) -> Vec<PointerClassMerge> {
         let state = self.state.lock().expect("equality graph");
         let mut cursor = state.merge_history.as_ref();
@@ -1759,6 +1769,51 @@ impl EqualityGraph {
         if let Some(members) = state.members.get(&representative) {
             for (member, delta) in members {
                 push(member, delta);
+            }
+        }
+        blocks
+    }
+
+    /// The local scalar storage blocks among a pointer's alias spellings.
+    /// Seek the concrete `local:` key interval instead of enumerating opaque
+    /// pointer loads in the same class. Offset representability is checked
+    /// exactly as in `pointer_spellings`; this only selects blocks to refresh.
+    pub(in crate::kernel) fn local_slot_alias_blocks(
+        &self,
+        pointer: &Pointer,
+    ) -> Vec<PointerBlock> {
+        let Some(offset) = AffineOffset::of(&pointer.offset) else {
+            return Vec::new();
+        };
+        let mut state = self.state.lock().expect("equality graph");
+        state.register_blocks([pointer.block.clone()]);
+        let (representative, own) = state.find(&pointer.block);
+        let mut blocks = Vec::new();
+        let mut push = |member: &PointerBlock, delta: &AffineOffset| {
+            if member != &pointer.block
+                && member.starts_with("local:")
+                && own
+                    .checked_sub(delta)
+                    .and_then(|delta| offset.checked_add(&delta))
+                    .and_then(|offset| offset.to_offset_term())
+                    .is_some()
+            {
+                blocks.push(member.clone());
+            }
+        };
+        push(&representative, &AffineOffset::default());
+        if let Some(members) = state.members.get(&representative) {
+            let first = PointerBlock::Concrete("local:".into());
+            let mut next = members
+                .get(&first)
+                .map(|value| (&first, value))
+                .or_else(|| members.get_greater_than(&first));
+            while let Some((member, delta)) = next {
+                if !member.starts_with("local:") {
+                    break;
+                }
+                push(member, delta);
+                next = members.get_greater_than(member);
             }
         }
         blocks
@@ -3009,6 +3064,40 @@ mod tests {
         assert!(classes.are_equal(&at(symbolic(1), 0), &at(symbolic(2), 0)));
         assert!(classes.are_equal(&at(symbolic(1), 0), &indexed));
         assert!(!classes.are_equal(&at(symbolic(1), 0), &at(symbolic(2), 8)));
+    }
+
+    #[test]
+    fn local_slot_alias_lookup_skips_unrelated_opaque_class_members() {
+        let mut work = Vec::new();
+        for size in [4u64, 16, 64] {
+            let mut graph = EqualityGraph::default();
+            let base = at(PointerBlock::ExternalArgument, 0);
+            for id in 0..size {
+                graph.add_equality(&base, &at(symbolic(10_000 + id), 0));
+            }
+            for name in ["local:first", "local:second", "global:other"] {
+                graph.add_equality(&base, &at(name.into(), 8));
+            }
+            for query in [base.clone(), at("local:first".into(), 12)] {
+                let mut expected = graph
+                    .pointer_spellings(&query)
+                    .into_iter()
+                    .map(|pointer| pointer.block)
+                    .filter(|block| block.starts_with("local:"))
+                    .collect::<Vec<_>>();
+                let (mut actual, units) =
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        graph.local_slot_alias_blocks(&query)
+                    });
+                expected.sort();
+                actual.sort();
+                assert_eq!(actual, expected);
+                if query == base {
+                    work.push(units);
+                }
+            }
+        }
+        assert!(work.iter().all(|units| *units <= work[0] + 64), "{work:?}");
     }
 
     #[test]

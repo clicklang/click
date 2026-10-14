@@ -8103,10 +8103,11 @@ fn symbolic_index_store_work_is_flat_across_recorded_order_chains() {
 /// Owns seed every input field before the first store. This catches both the
 /// initial index cost leaking into a step and repeated visits to other objects.
 #[test]
-#[ignore = "nightly: 11s for six full-source proofs including calls"]
+#[ignore = "nightly: nine full-source proofs with single and repeated calls"]
 fn owned_parameter_field_store_work_is_flat() {
     let mut peaks = Vec::new();
-    for linked in [false, true] {
+    let mut calls = Vec::new();
+    for (linked, repeated) in [(false, false), (true, false), (false, true)] {
         for size in [4usize, 16, 64] {
             let count = size + usize::from(linked);
             let kind = if linked { "node" } else { "box" };
@@ -8147,11 +8148,13 @@ fn owned_parameter_field_store_work_is_flat() {
                 )
             };
             let signature = format!("int32 caller(int32* flags, int32* data, int32 k{parameters})");
+            let call_count = if repeated { size } else { 1 };
+            let call_source = "touch(flags, data, k);\n".repeat(call_count);
             let c = format!(
                 "{layout}
 void touch(int32* flags, int32* data, int32 k) {{ return; }}
 {signature} {{ int32 total; {stores}{last_store}
-touch(flags, data, k); total = {read}; return total; }}"
+{call_source} total = {read}; return total; }}"
             );
             let source = format!(
                 "verifying \"fields.c\";
@@ -8161,7 +8164,7 @@ owns flags[0..k]; owns data[0..k];
 {signature} {{ owns flags[0..k]; owns data[0..k]; {owns}
 ensures result == {expected};
 }} by {{ {} simp(); }}",
-                "step();\n".repeat(size + usize::from(linked) + 4)
+                "step();\n".repeat(size + usize::from(linked) + 3 + call_count)
             );
             let ((result, samples), events) = crate::instrumentation::collect(|| {
                 crate::instrumentation::collect_tactic_work(|| {
@@ -8171,6 +8174,15 @@ ensures result == {expected};
             result.unwrap_or_else(|error| {
                 panic!("linked={linked}, size={size}: {}", error.message())
             });
+            let call_work: Vec<_> = samples
+                .iter()
+                .filter(|sample| sample.tactic.tactic_name == "step")
+                .skip(1 + size + usize::from(linked))
+                .take(call_count)
+                .map(|sample| sample.work)
+                .collect();
+            assert_eq!(call_work.len(), call_count);
+            calls.push((linked, size, *call_work.iter().max().unwrap()));
             let steps: Vec<_> = samples
                 .iter()
                 .filter(|sample| sample.tactic.tactic_name == "step")
@@ -8179,6 +8191,22 @@ ensures result == {expected};
                 .map(|sample| sample.work)
                 .collect();
             assert_eq!(steps.len(), size + usize::from(linked));
+            let call_micros: Vec<_> = events
+                .iter()
+                .filter_map(|event| match event {
+                    crate::instrumentation::VerificationEvent::TacticFinished {
+                        tactic,
+                        elapsed,
+                        ..
+                    } if tactic.tactic_name == "step" => Some(elapsed.as_micros()),
+                    _ => None,
+                })
+                .skip(1 + size + usize::from(linked))
+                .take(call_count)
+                .collect();
+            eprintln!(
+                "calls linked={linked} repeated={repeated} N={size}: work {call_work:?}, time {call_micros:?}us"
+            );
             let mut micros: Vec<_> = events
                 .iter()
                 .filter_map(|event| match event {
@@ -8206,6 +8234,16 @@ ensures result == {expected};
         assert!(
             family.iter().all(|(_, _, work)| *work <= family[0].2 + 32),
             "a field store visited unrelated owned objects: {peaks:?}"
+        );
+    }
+    eprintln!("calls beside owned parameters: {calls:?}");
+    // The cold index may switch from walking a tiny merge prefix to
+    // building the fixed-size contract directly. Allow that fixed setup
+    // difference; the separate cold-index regression grows history to 256.
+    for family in calls.chunks(3) {
+        assert!(
+            family.iter().all(|(_, _, work)| *work <= family[0].2 + 32),
+            "a call visited unrelated owned objects: {calls:?}"
         );
     }
 }

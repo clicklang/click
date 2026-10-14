@@ -7033,16 +7033,16 @@ fn execute_verified_function_applications_with_suspension(
         // class, never the caller's unrelated local environment.
         let mut refreshed_blocks = BTreeSet::new();
         for range in &transfer.memory_effects {
-            for pointer in std::iter::once(range.base().clone()).chain(
+            for block in std::iter::once(range.base().block.clone()).chain(
                 effective_assumptions
                     .equality_graph
-                    .pointer_spellings(range.base()),
+                    .local_slot_alias_blocks(range.base()),
             ) {
-                if !refreshed_blocks.insert(pointer.block.clone()) {
+                if !refreshed_blocks.insert(block.clone()) {
                     continue;
                 }
                 let slot = Pointer {
-                    block: pointer.block,
+                    block,
                     offset: PointerOffsetTerm::Constant(0),
                 };
                 crate::kernel::eval::refresh_scalar_local_from_memory(
@@ -8053,11 +8053,28 @@ fn prepare_verified_function_call<'a>(
     // frame are parts of the same checked ownership partition. Retain
     // that partition before consumption hides the body, so a later
     // disjoint caller store can transport the callee's returned facts.
-    if let Some(partition) = retained_population_call_partition(
-        &transfer.caller_resources_after_requirements,
-        precondition_state.resources(),
-        &path_assumptions,
-    ) {
+    let original_flat_partition = transfer.helper_call.is_none()
+        && transfer.consumed_inputs.is_empty()
+        && !transfer.borrowed_inputs.is_empty()
+        && transfer.borrowed_inputs.iter().all(|input| {
+            input.fact.memory_own_range().is_some()
+                && caller_state
+                    .resources()
+                    .contains_exact_representation(&input.fact)
+        });
+    let partition = if original_flat_partition {
+        // These are the caller's already checked, exactly borrowed memory
+        // pieces. Retain their original partition rather than rebuilding it
+        // and rechecking every unrelated owner.
+        Some(caller_state.resources().clone())
+    } else {
+        retained_population_call_partition(
+            &transfer.caller_resources_after_requirements,
+            precondition_state.resources(),
+            &path_assumptions,
+        )
+    };
+    if let Some(partition) = partition {
         facts.push(ExecutionPureFact::new(Proposition::CResourceComposition(
             partition,
         )));
@@ -21199,12 +21216,28 @@ fn evaluate_contract_return_resources(
             "contract resource transition",
             "ensured resource composition",
             || {
-                caller_resources_after_requirements
-                    .clone()
-                    .try_compose_with_facts_delaying_normalization_with_occurrences(
-                        ensured_resources.facts().iter().cloned(),
+                let frame = caller_resources_after_requirements.clone();
+                let facts = ensured_resources.facts().iter().cloned();
+                if escrowed_owners.is_empty()
+                    && !entry_clauses.is_empty()
+                    && ensured_resources
+                        .iter()
+                        .all(|fact| fact.memory_range().is_some())
+                    && entry_clauses.iter().all(|input| {
+                        input.role == CResourceTransferRole::Borrow
+                            && input.fact.memory_own_range().is_some()
+                    })
+                {
+                    // A flat borrow's caller frame was checked by the entry
+                    // transfer. Still check every newly returned owner and
+                    // every pair involving it; do not recheck old-old pairs.
+                    frame.try_compose_into_valid_context_with_occurrences(facts, assumptions)
+                } else {
+                    frame.try_compose_with_facts_delaying_normalization_with_occurrences(
+                        facts,
                         assumptions,
                     )
+                }
             },
         ) {
             Ok(resources) => resources,

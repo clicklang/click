@@ -363,7 +363,7 @@ impl SnapshotLabels {
                     description.push_str("; ");
                     description.push_str(
                         &self.legend_kept_frame(
-                            kept.diagnostic_ranges(),
+                            &kept.diagnostic_ranges(),
                             kept.diagnostic_premises(),
                         ),
                     );

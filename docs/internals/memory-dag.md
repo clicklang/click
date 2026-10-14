@@ -248,8 +248,9 @@ unchanged store. In particular:
   evidence, likewise checked in the querying context, or when a range the
   caller kept owning outside the transfer holds the cell. Those ranges, and
   the facts of the residual instances they were opened from, are the edge's
-  own, and the write-set marker spells them, so every path that shares the
-  edge kept the same memory; placing the cell inside one is still decided
+  own. The write-set marker carries an exact canonical identity for the
+  retained flat-owner set and spells its placement premises, so every path
+  that shares the edge kept the same memory; placing the cell inside one is still decided
   in the querying context;
 - a `LoopHavoc` edge with no checked footprint isn't crossed; a verified
   footprint is crossed only with range-disjointness evidence;
