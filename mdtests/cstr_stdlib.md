@@ -22,6 +22,8 @@ int32 plain_cstr(uint8 p[]) {
 ```
 
 ```click
+import click::cstr;
+
 verifying "cstr_stdlib.c";
 verifying "plain_cstr.c";
 

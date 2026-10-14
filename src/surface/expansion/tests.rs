@@ -1610,7 +1610,8 @@ int32 identity(int32 x) {
 #[test]
 fn expanded_uint8_facts_print_as_parseable_typed_literals() {
     let c_source = "int32 contains(uint8 p[], int32 n) { return 0; }";
-    let click_source = r#"verifying "contains.c";
+    let click_source = r#"import click::bytes;
+verifying "contains.c";
 int32 contains(uint8 p[], int32 n) {
     requires viewable(p[0..n]);
     requires bytes_contains(p, 0, n, 'x');
@@ -2012,7 +2013,8 @@ int32 increment(int32 x) {
 #[test]
 fn expanded_post_execution_apply_retains_its_facts_for_the_closer() {
     let c_source = "int32 inspect(uint8 p[], uint64 len) { return 0; }";
-    let click_source = r#"verifying "inspect.c";
+    let click_source = r#"import click::cstr;
+verifying "inspect.c";
 int32 inspect(uint8 p[], uint64 len) {
     requires viewable(p[0..len + 1u64]);
     requires cstr_len(p, len);

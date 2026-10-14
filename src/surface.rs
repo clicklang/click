@@ -159,7 +159,8 @@ use proof::*;
 pub(crate) use pure_fact_list::PureFactList;
 use source_registry::*;
 #[cfg(test)]
-use validation::combined_theorem_definitions;
+#[cfg(test)]
+use validation::proof_theorem_definitions;
 use validation::{
     combined_click_function_definitions, combined_external_function_blocks,
     combined_predicate_definitions, combined_resource_definitions, contains_at_expression,

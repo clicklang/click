@@ -116,15 +116,14 @@ static LIBRARY_SELECTIONS: std::sync::Mutex<BTreeMap<u64, &'static LibrarySelect
 static STANDARD_LIBRARY_PARSES: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
-/// The Click library modules every file sees without an import. A module's
-/// own library imports come with it, so `c/string` also brings `bytes` and
-/// `cstr`.
+/// The Click library modules every file sees without an import. A C
+/// program's declarations bring the library models they name, such as
+/// `click::c::string`; see `ProgramLayouts::library_modules`.
 const IMPLICIT_LIBRARY_MODULES: &[&str] = &[
     "library/primitives.click",
     "library/nat.click",
     "library/list.click",
     "library/c/builtins.click",
-    "library/c/string.click",
 ];
 
 /// One parsed Click library module and the mask of the modules it needs: its
@@ -264,6 +263,19 @@ fn library_theorem_owners() -> Result<&'static BTreeMap<String, usize>, ClickErr
 pub(in crate::surface) fn reject_unimported_library_citations(
     file: &ClickFile,
 ) -> Result<(), ClickError> {
+    // Built-in tactics apply library theorems by name whatever a file
+    // imports, so no file theorem may take a library theorem's name.
+    let owners = library_theorem_owners()?;
+    if let Some(theorem) = file
+        .theorem_definitions()
+        .iter()
+        .find(|theorem| owners.contains_key(theorem.name()))
+    {
+        return Err(ClickError::new(format!(
+            "theorem `{}` has the name of a Click library theorem, which built-in tactics apply; rename it",
+            theorem.name()
+        )));
+    }
     let mut cited = BTreeSet::new();
     for theorem in file.theorem_definitions() {
         for clause in theorem.ensures() {
@@ -286,7 +298,6 @@ pub(in crate::surface) fn reject_unimported_library_citations(
         .iter()
         .map(|theorem| theorem.name())
         .collect::<BTreeSet<_>>();
-    let owners = library_theorem_owners()?;
     let visible = library_mask(file)?;
     for name in cited.iter().filter(|name| !local.contains(name.as_str())) {
         if let Some(index) = owners.get(name)
@@ -3512,9 +3523,19 @@ pub(in crate::surface) fn combined_theorem_definitions(
     file: &ClickFile,
 ) -> Result<CombinedDefinitions<'_, TheoremDefinition>, ClickError> {
     Ok(CombinedDefinitions {
-        // Every library theorem: built-in tactics apply them by name, so a
-        // user theorem can never take a library theorem's name. Imports gate
-        // only the theorems a proof cites; see `reject_unimported_library_citations`.
+        standard_library: file_library(file)?.theorem_definitions(),
+        file: file.theorem_definitions(),
+    })
+}
+
+/// The whole Click library's theorems followed by `file`'s, as proof
+/// checking sees them: built-in tactics apply library theorems whatever a
+/// file imports.
+#[cfg(test)]
+pub(in crate::surface) fn proof_theorem_definitions(
+    file: &ClickFile,
+) -> Result<CombinedDefinitions<'_, TheoremDefinition>, ClickError> {
+    Ok(CombinedDefinitions {
         standard_library: full_library()?.theorem_definitions(),
         file: file.theorem_definitions(),
     })
