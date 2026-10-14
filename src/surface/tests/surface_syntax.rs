@@ -5345,3 +5345,88 @@ fn inline_callback_identity_rejects_ambiguous_translation_units() {
         error.message()
     );
 }
+
+/// A Rust sidecar writes a pure function's, predicate's and theorem's types
+/// in Rust: scalars, `bool`, and `*const T` for the bytes a slice points at.
+/// `as` casts, and a parenthesized comparison is a `bool` value. The C
+/// spellings read the same types. (The mdtest format has no Rust source, so
+/// these verify a sidecar of theorems beside an empty source.)
+#[test]
+fn a_rust_sidecar_writes_click_types_in_rust() {
+    let rust_source = [("bytes.rs", "")];
+    let accepted = "verifying \"bytes.rs\";
+        function low(x: u32) -> u8 { x as u8 }
+        function big(x: u32) -> bool { x > 255u32 }
+        function prefix(bytes: *const u8, end: usize) -> Integer {
+            (0..end).fold(0, |acc, k| { acc + to_integer(bytes[k] as i32) })
+        }
+        function c_prefix(bytes: const uint8*, end: uint64) -> Integer {
+            (0..end).fold(0, |acc, k| { acc + to_integer((int32)bytes[k]) })
+        }
+        theorem three_hundred_is_big() {
+            ensures big(300u32) by { unfold(big(300u32)); normalize(); }
+        }
+        theorem three_hundred_keeps_its_low_byte() {
+            ensures low(300u32) == 44 by { unfold(low(300u32)); normalize(); }
+        }
+        theorem a_comparison_is_a_bool_value(b: bool) {
+            requires b == (5u32 > 3u32);
+            ensures b by simp();
+        }
+        theorem an_index_is_a_usize(n: usize) {
+            ensures forall (k: usize) { k < n implies k < n } by auto;
+        }";
+    verify_c0_sources(accepted, &rust_source).expect("the Rust spellings verify");
+    let error = verify_c0_sources(
+        "verifying \"bytes.rs\"; function big(x: u32) -> bool { x > 255u32 }
+         theorem two_hundred_is_big() {
+             ensures big(200u32) by { unfold(big(200u32)); normalize(); }
+         }",
+        &rust_source,
+    )
+    .expect_err("200 is not big");
+    assert!(
+        error.message.contains("did not normalize to true"),
+        "{}",
+        error.message
+    );
+    let error = verify_c0_sources(
+        "verifying \"bytes.rs\"; theorem wrong(b: bool) {
+             requires b == (3u32 > 5u32);
+             ensures b by simp();
+         }",
+        &rust_source,
+    )
+    .expect_err("the comparison is false");
+    assert!(!error.message.is_empty());
+    for (source, expected) in [
+        (
+            "verifying \"bytes.rs\"; function first(bytes: &[u8]) -> u8 { bytes[0] }",
+            "takes values, not references",
+        ),
+        (
+            "verifying \"bytes.rs\"; theorem t(p: &u32) { ensures true; }",
+            "takes values, not references",
+        ),
+        (
+            "verifying \"bytes.rs\"; function first(bytes: *u8) -> u8 { bytes[0] }",
+            "a Rust pointer type is `*const T` or `*mut T`",
+        ),
+        (
+            "verifying \"bytes.rs\"; function first(flags: *const bool) -> bool { flags[0] }",
+            "a pointer to `bool` is not a Click binder type",
+        ),
+        (
+            "verifying \"bytes.rs\"; function nonzero(x: u32) -> bool { x as bool }",
+            "Rust does not cast to `bool`",
+        ),
+        // A C sidecar keeps a comparison a proposition.
+        (
+            "verifying \"bytes.c\"; theorem t(x: uint32) { ensures 1 == (x > 3u32); }",
+            "expected `)`",
+        ),
+    ] {
+        let error = parser::parse(source).expect_err("the spelling is refused");
+        assert!(error.message.contains(expected), "{source}: {error:?}");
+    }
+}

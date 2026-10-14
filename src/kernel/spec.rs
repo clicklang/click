@@ -8410,18 +8410,65 @@ fn is_spec_bool(value: &CValue) -> bool {
     matches!(value, CValue::Bool(term) if super::api::spec_bool_term(term).is_some())
 }
 
-/// A `bool` value's disequality with `true` or `false` (or, for a
-/// specification `bool` such as a function's application, with `1` or `0`)
-/// as its equality with the other constant. The value is exactly `0` or `1`,
-/// so `b != false` is `b == true`: both spellings lower to one equation,
-/// which a later `b == true` matches and `rewrite` can use, without a case
-/// split on the value's range. Comparisons of C `_Bool` values with integers
-/// keep their established form.
+/// A C or C++ `bool` value (a parameter, load or conversion, not a
+/// specification `bool` such as a function's application) compared with
+/// `true`, as the test against zero a C branch on the value makes. The
+/// value is exactly `0` or `1` by its structure, so `b == true` is
+/// `b != 0` and `b != true` is `b == 0`: a claim `ensures flag implies ...`
+/// meets the path fact `flag != 0` that `if (flag)` files. Comparisons with
+/// `false` already are such tests, and comparisons with the integers `0`
+/// and `1` keep their established form.
+fn c_bool_comparison_as_zero_test(
+    left: &CValue,
+    operator: CComparisonOperator,
+    right: &CValue,
+) -> Option<Proposition> {
+    let flipped = match operator {
+        CComparisonOperator::Equal => CComparisonOperator::NotEqual,
+        CComparisonOperator::NotEqual => CComparisonOperator::Equal,
+        _ => return None,
+    };
+    let zero = |value: &CValue, constant: &CValue| -> Option<CValue> {
+        let CValue::Bool(term) = value else {
+            return None;
+        };
+        if matches!(term, Bitvector32Term::Constant(_))
+            || !bool_term_is_zero_or_one(term)
+            || is_spec_bool(value)
+        {
+            return None;
+        }
+        match constant {
+            CValue::Bool(Bitvector32Term::Constant(1)) => {
+                Some(CValue::Bool(Bitvector32Term::Constant(0)))
+            }
+            _ => None,
+        }
+    };
+    if let Some(zero) = zero(left, right) {
+        return c_value_comparison_proposition(left, flipped, &zero);
+    }
+    if let Some(zero) = zero(right, left) {
+        return c_value_comparison_proposition(&zero, flipped, right);
+    }
+    None
+}
+
+/// A specification `bool`'s (such as a function's application)
+/// disequality with `true`, `false`, `1` or `0` as its equality with the
+/// other constant. The value is exactly `0` or `1`, so `b != false` is
+/// `b == true`: both spellings lower to one equation, which a later
+/// `b == true` matches and `rewrite` can use, without a case split on the
+/// value's range. A C `bool` is compared with zero instead
+/// (`c_bool_comparison_as_zero_test`).
 fn bool_disequality_as_equality(
     left: &CValue,
     operator: CComparisonOperator,
     right: &CValue,
 ) -> Option<Proposition> {
+    if let Some(proposition) = c_bool_comparison_as_zero_test(left, operator, right) {
+        return Some(proposition);
+    }
     if operator != CComparisonOperator::NotEqual {
         return None;
     }
@@ -8432,11 +8479,16 @@ fn bool_disequality_as_equality(
         if matches!(term, Bitvector32Term::Constant(_)) || !bool_term_is_zero_or_one(term) {
             return None;
         }
+        // A C `bool` compares with zero instead; see
+        // `c_bool_comparison_as_zero_test`.
+        if !is_spec_bool(value) {
+            return None;
+        }
         match constant {
             CValue::Bool(Bitvector32Term::Constant(bit @ (0 | 1))) => {
                 Some(CValue::Bool(Bitvector32Term::Constant(1 - bit)))
             }
-            CValue::Int32(Bitvector32Term::Constant(bit @ (0 | 1))) if is_spec_bool(value) => {
+            CValue::Int32(Bitvector32Term::Constant(bit @ (0 | 1))) => {
                 Some(CValue::Int32(Bitvector32Term::Constant(1 - bit)))
             }
             _ => None,

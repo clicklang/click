@@ -3,7 +3,7 @@ verifying "chunks.rs";
 fn cover(bytes: &[u8]) -> usize {
     views bytes[0..bytes.len()];
     ensures result == bytes.len() % 4u64;
-    ensures forall (k: uint64) {
+    ensures forall (k: usize) {
         k < bytes.len() implies bytes[k] == old(bytes[k])
     };
 } by {
@@ -118,7 +118,7 @@ fn cover(bytes: &[u8]) -> usize {
     have iter_remaining == 0u64;
     have iter_cursor == iter_tail;
     execute();
-    have forall (k: uint64) {
+    have forall (k: usize) {
         k < bytes.len() implies bytes[k] == old(bytes[k])
     } by { intro(); intro(); simp(); }
     simp();
