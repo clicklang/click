@@ -7066,6 +7066,10 @@ pub(in crate::surface) struct UnresolvedRequirement {
     pub(in crate::surface) context: Option<String>,
     pub(in crate::surface) introductions: crate::kernel::LoweringIntroductions,
     pub(in crate::surface) call_site: Option<std::sync::Arc<crate::kernel::CallRequirementSource>>,
+    /// For the truthiness obligation an `assert` leaves on its false path
+    /// (`0 == 1`, which holds only where that path is unreachable), the
+    /// asserted condition: what a proof at the step's pre-state shows.
+    pub(in crate::surface) assertion_condition: Option<crate::kernel::CExpression>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -9025,7 +9029,22 @@ impl ClickError {
             context: diagnostics::describe_proof_obligation_context(obligation),
             introductions: obligation.introductions().cloned().unwrap_or_default(),
             call_site: obligation.call_requirement_site().cloned(),
+            assertion_condition: None,
         }));
+        self
+    }
+
+    /// Records the asserted condition behind an `assert`'s false-path
+    /// truthiness requirement; see [`UnresolvedRequirement::assertion_condition`].
+    pub(in crate::surface) fn with_assertion_condition(
+        mut self,
+        condition: Option<&crate::kernel::CExpression>,
+    ) -> Self {
+        if let (Some(condition), Some(requirement)) =
+            (condition, self.unresolved_requirement.as_mut())
+        {
+            std::sync::Arc::make_mut(requirement).assertion_condition = Some(condition.clone());
+        }
         self
     }
 

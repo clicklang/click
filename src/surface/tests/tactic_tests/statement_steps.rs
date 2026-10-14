@@ -1205,36 +1205,3 @@ fn bare_step_proves_an_open_obligation_by_implicit_auto() {
     })
     .expect_err("with the implicit `auto` off, the open obligation is refused");
 }
-
-/// The planning counter is live: a bare step whose open obligation the
-/// implicit `auto` does not prove falls back to the former search, which
-/// records the hidden derivation `issues/simplify-step.md` removes. This
-/// keeps the counter's zero assertions elsewhere meaningful.
-#[test]
-#[ignore = "nightly: 3.5s in the parallel gate"]
-fn bare_step_fallback_records_a_hidden_prerequisite_derivation() {
-    // `owned_string_pipeline`'s call to `owned_string_push` leaves the
-    // definedness guard of its precondition open, which Surface cannot yet
-    // spell. The last case the census counts; delete this test with the
-    // fallback.
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("examples/owned-string/owned_string.click");
-    let loaded = crate::cli::load_target_inputs(&path, None).unwrap();
-    let crate::cli::CInput::Bundle(sources) = &loaded.inputs else {
-        panic!("the owned-string example reads its C sources directly");
-    };
-    let inputs = sources
-        .iter()
-        .map(|(name, body)| (name.as_str(), body.as_str()))
-        .collect::<Vec<_>>();
-    let (verified, planning_transitions) =
-        collect_planning_statement_transitions(|| verify_c0_project(&loaded.project, &inputs));
-    verified.expect("the owned-string example should verify");
-    assert!(
-        planning_transitions
-            .iter()
-            .all(|(_, _, tactic)| tactic == "step")
-            && !planning_transitions.is_empty(),
-        "the fallback should record its hidden derivations: {planning_transitions:?}"
-    );
-}
