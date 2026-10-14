@@ -2152,6 +2152,45 @@ fn rust_owned_field_parent_can_write_after_explicit_child_drop() {
 }
 
 #[test]
+#[ignore = "nightly: live exclusive reborrow and parent reuse with checked expansion"]
+fn rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop() {
+    // The helper is the unchanged body of the resource-correspondence witness.
+    // Its parent is reused after the child's last use, before child storage ends.
+    let witness = include_str!("../design/borrow-probes/resource_correspondence.rs");
+    let start = witness.find("fn set_seven(").unwrap();
+    let end = start + witness[start..].find("\n}").unwrap() + "\n}".len();
+    let helper = &witness[start..end];
+    let source = format!("{helper}\npub fn update(value: &mut i32) {{ set_seven(value); }}");
+    let p = Project::new(&source);
+    let proof = "verifying \"borrow.rs\";\nfn set_seven(value: &mut i32) { owns *value; ensures *value == 8; } by { execute(); simp(); }\nfn update(value: &mut i32) { owns *value; ensures *value == 8; } by { execute(); simp(); }\n";
+    fs::write(p.root.join("borrow.click"), proof).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
+    for invalid in [
+        proof.replacen("ensures *value == 8;", "ensures *value == 7;", 1),
+        proof.replacen("owns *value;", "views *value;", 1),
+        proof.replacen(
+            "fn update(value: &mut i32) { owns *value;",
+            "fn update(value: &mut i32) { views *value;",
+            1,
+        ),
+    ] {
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+    assert_cli(
+        &p,
+        &["expand", "--claim", "set_seven.contract", "--in-place"],
+    );
+    assert_cli(&p, &["expand", "--claim", "update.contract", "--in-place"]);
+    assert_cli(&p, &["verify"]);
+    assert_eq!(
+        fs::read_to_string(p.root.join("borrow.rs")).unwrap(),
+        source
+    );
+}
+
+#[test]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_owned_disjoint_mutable_fields_verify() {
     let source = "pub struct Pair {pub x:i32,pub y:i32} pub fn set(left:&mut i32,right:&mut i32) {*left=7;*right=9;} pub fn fields()->i32 {let mut pair=Pair{x:1,y:2}; let left=&mut pair.x; let right=&mut pair.y; set(left,right); if pair.y == 9 {pair.x} else {0}}";

@@ -5,7 +5,10 @@ naturally to Click resources. It pairs compiler/runtime witnesses in
 `design/borrow-probes/resource_correspondence.rs` with the
 `rust_correspondence_` tests in `src/kernel/tests/loan_model_tests.rs`.
 The witnesses are synthetic and unchanged between compiler and model analysis.
-Click does not yet import or verify their Rust source.
+The complete runtime witnesses are not imported as Click proofs. Native Rust
+regressions now check the unchanged `set_seven` helper body and related field
+borrow patterns through the production adapter; see the
+[production authority assessment](rust-borrow-authority-assessment.md).
 
 ## Proposed interpretation
 
@@ -85,8 +88,10 @@ The final-value comparison also distinguishes the actual 8 from the false
 claim 7. This is a concrete model assertion, not rejection of a submitted
 Rust proof or a universal functional-correctness theorem.
 
-Exclusive reborrowing and value transport here are model-only. The production
-ledger has no corresponding exclusive-reborrow API. The field model also
+Explicit exclusive-child identities and recovery here are model-only. Native
+Rust regressions establish updated-value transport and parent reuse through
+the current memory/owned-call representation, but the production loan ledger
+has no corresponding exclusive-reborrow API. The field model also
 conservatively suspends *all* parent access for an exclusive child and admits
 only one child at a time; that is stricter than Rust's field-sensitive rules.
 It must not become the acceptance rule for a Rust frontend unchanged.

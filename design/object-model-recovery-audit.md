@@ -459,3 +459,35 @@ origin privilege, source change or work-budget change is retained. The next
 small repair should cover this selected relation in indexed memory lookup,
 with scaling and authority-withdrawal/partial-write controls. Details remain
 in [the retained-resource bug](../bugs/retained-resource-lookup-omits-framed-pointer-carriers.md).
+
+## Certified footprint-query endpoint slice
+
+Recovery checkpoint `bca4dafb8` selects the queried producer read's endpoint
+through a bounded complete-cell walk, checks the retained certificates, and
+uses the resulting numeric union only for footprint candidate selection.
+Concrete read-permission queries retain their completed-read boundary. A stopped
+unproved/affecting write keeps an opaque read at that snapshot; its cached old
+value cannot authenticate transport. The accompanying signed-order check accepts
+intrinsic forward constant connections before/between retained premise steps,
+including the `1 < 2 <= n` witness, without admitting symbolic or reversed gaps.
+
+All **84** selected recovery memory-index, pointer-designation, native-span,
+loop-carrier and order-certificate tests pass. The scaling witness checks 16,
+64, 256 and 1,024 unrelated loaded-pointer ranges with query work below 2,000,
+and checks owner/frame withdrawal, partial writes and caller-graph isolation.
+The original recovery loop still fails at its post-store fold. An earlier
+prototype's apparent success depended on reusing a cached value at an unproved
+write; the withdrawal control exposed that shortcut and it is removed. No new
+full example-stage verdict is claimed, and the residual read-chain gap still
+needs attribution.
+
+The independent master extraction on base `bdb6636fd` passes **59** selected
+memory-index/order-certificate controls, the original source-level loop and both
+existing byte/word partial-pointer-write fixtures. The loop passes fresh,
+expansion, rewritten and retained checks; all **37** documentation checks pass.
+This extracts a shared checking/lookup prerequisite without activating the larger
+object model or claiming the archived original loop repaired.
+
+The delivery is rebased onto `14746f449`; the same 59 selected kernel controls
+pass again (6.51s for the harness). This rebase does not change the archived
+candidate or credit its unresolved original loop.

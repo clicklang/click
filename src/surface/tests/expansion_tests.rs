@@ -18036,6 +18036,44 @@ fn whole_object_call_effects_combine_global_fields_in_all_proof_modes() {
     }
 }
 
+/// Keep the original rotation's imported struct-pointer/model applications
+/// through a selected smart-tactic expansion and a retained project session.
+#[test]
+#[ignore = "nightly: full rotation theorem across fresh, expanded, and retained proofs"]
+fn returned_struct_pointer_lemmas_survive_expansion_and_retained_verification() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let fixture = root.join("tests/fixtures/proof-expansion/rbtree-return-pointer-lemma.click");
+    let (source, project, inputs) = crate::cli::load_sidecar_inputs(&fixture, Some(root)).unwrap();
+    let crate::cli::CInput::Bundle(sources) = inputs else {
+        panic!("the original C reproduction uses source-bundle inputs");
+    };
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_project(&project, &sources).unwrap();
+    let position = expansion::position_at_offset(&source, source.rfind("simp();").unwrap());
+    let expanded = expand_project_tactic_source_at(
+        &project,
+        &ProgramInputs::Bundle(sources.clone()),
+        position.line,
+        position.column,
+    )
+    .unwrap();
+    assert_eq!(expanded.matches("apply(sized_parent_is_shape(").count(), 8);
+    verify_c0_project(&project.with_entry_source(expanded.clone()), &sources).unwrap();
+    let claim = expansion::position_at_offset(
+        &expanded,
+        expanded
+            .find("ensures RotateTreeLeft(&sized_rotate)")
+            .unwrap(),
+    );
+    let (session, _) = C0VerificationSession::new_project(&project, &sources).unwrap();
+    session
+        .verify_at_project(&expanded, claim.line, claim.column)
+        .unwrap();
+}
+
 #[test]
 #[ignore = "nightly: checks byte-field ownership through expansion and retained verification"]
 fn whole_struct_byte_fields_reassemble_in_all_proof_modes() {
