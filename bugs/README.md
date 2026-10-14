@@ -32,3 +32,34 @@ and relevant documentation land.
 
 The files in this directory are the backlog. This README does not maintain a
 separate bug list.
+
+## Odd and even assignments
+
+Split bugs reproducibly by hashing each bug's filename, including its `.md`
+extension and excluding the `bugs/` directory, with SHA-256 over UTF-8 bytes.
+Interpret the digest's final hexadecimal digit as a number: an odd value
+(`1`, `3`, `5`, `7`, `9`, `b`, `d`, or `f`) assigns the bug to **odd**;
+an even value (`0`, `2`, `4`, `6`, `8`, `a`, `c`, or `e`) assigns it to **even**.
+This gives a roughly random split that remains stable when other bugs are added
+or removed. Keep the filename unchanged while work is assigned; do not rename a
+bug to change its group. The group is independent of priority.
+
+`README.md` is not a bug. Companion reproductions such as `.click` files follow
+their bug report's assignment rather than receiving a separate assignment.
+When assigned one group, select new bugs only from that group.
+
+List the current assignments from the repository root:
+
+```sh
+python3 - <<'PY'
+import hashlib
+from pathlib import Path
+
+for path in sorted(Path("bugs").glob("*.md")):
+    if path.name == "README.md":
+        continue
+    digest = hashlib.sha256(path.name.encode("utf-8")).hexdigest()
+    group = "odd" if int(digest[-1], 16) % 2 else "even"
+    print(f"{group}\t{path.name}")
+PY
+```
