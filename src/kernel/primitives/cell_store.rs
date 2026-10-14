@@ -996,6 +996,16 @@ pub(crate) struct CellStore {
     /// function of the two maps above.
     logical: OnceLock<SnapshotMap<Pointer, CValue>>,
     ordered_index: std::sync::Mutex<Option<OrderedIndexCache>>,
+    parameter_partition_index: std::sync::Mutex<Option<ParameterPartitionIndex>>,
+}
+
+#[derive(Clone)]
+struct ParameterPartitionIndex {
+    cells: SnapshotMap<Pointer, CValue>,
+    resources: crate::kernel::ResourceContext,
+    known: SnapshotMap<(Pointer, Pointer), ()>,
+    unknown: SnapshotMap<Pointer, ()>,
+    bases: SnapshotMap<Pointer, Pointer>,
 }
 
 #[derive(Clone)]
@@ -1019,6 +1029,9 @@ impl Clone for CellStore {
             run_cells: self.run_cells,
             logical: self.logical.clone(),
             ordered_index: std::sync::Mutex::new(self.ordered_index.lock().unwrap().clone()),
+            parameter_partition_index: std::sync::Mutex::new(
+                self.parameter_partition_index.lock().unwrap().clone(),
+            ),
         }
     }
 }
@@ -1081,6 +1094,115 @@ struct SlotAt<'a> {
 }
 
 impl CellStore {
+    /// Index checked whole-cell membership in an atomic parameter partition.
+    /// Follow persistent cell deltas; unrelated members are not queried at
+    /// every store. Runs and union views retain their ordinary rules.
+    pub(in crate::kernel) fn parameter_store_candidates(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        candidates: &AliasCandidates,
+        gap_kept: &[(Pointer, Pointer)],
+        assumptions: &PureFactContext,
+    ) -> Option<Vec<Pointer>> {
+        if crate::kernel::reasoning::store_gap::store_gap_skip_disabled()
+            || crate::kernel::assumptions::implicit_reasoning_provenance_capturing()
+            || crate::kernel::assumptions::reasoning_interrupted()
+        {
+            return None;
+        }
+        let (resources, write_base) = assumptions.parameter_store_partition(pointer, bytes)?;
+        let alias_bases = assumptions.parameter_store_alias_bases(&write_base)?;
+        self.prepare_parameter_partition(resources);
+        let guard = self.parameter_partition_index.lock().unwrap();
+        let index = guard.as_ref().expect("prepared parameter partition");
+        let mut selected = candidates
+            .entries(&index.unknown)
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        for base in alias_bases {
+            let mut start = Bound::Included((base.clone(), Pointer::null()));
+            for (low, high) in gap_kept {
+                selected.extend(
+                    index
+                        .known
+                        .range((start, Bound::Excluded((base.clone(), low.clone()))))
+                        .map(|((_, key), _)| key.clone()),
+                );
+                start = Bound::Excluded((base.clone(), high.clone()));
+            }
+            selected.extend(
+                index
+                    .known
+                    .range((start, Bound::Unbounded))
+                    .take_while(|((known_base, _), _)| *known_base == base)
+                    .map(|((_, key), _)| key.clone()),
+            );
+        }
+        Some(selected)
+    }
+
+    pub(in crate::kernel) fn prepare_parameter_partition(
+        &self,
+        resources: &crate::kernel::ResourceContext,
+    ) {
+        let assumptions = PureFactContext::new();
+        let candidates = AliasCandidates::of_block(&PointerBlock::ExternalArgument);
+        let mut guard = self.parameter_partition_index.lock().unwrap();
+        let previous = guard
+            .take()
+            .filter(|index| index.resources.shares_storage_with(resources));
+        let changes: Vec<_> = match &previous {
+            Some(index) => index
+                .cells
+                .diff(&self.concrete)
+                .map(|change| match change {
+                    SnapshotMapChange::Added(key) | SnapshotMapChange::Changed(key) => {
+                        (key.clone(), true)
+                    }
+                    SnapshotMapChange::Removed(key) => (key.clone(), false),
+                })
+                .collect(),
+            None => candidates
+                .entries(&self.concrete)
+                .map(|(key, _)| (key.clone(), true))
+                .collect(),
+        };
+        let mut index = previous.unwrap_or_else(|| ParameterPartitionIndex {
+            cells: self.concrete.clone(),
+            resources: resources.clone(),
+            known: SnapshotMap::new(),
+            unknown: SnapshotMap::new(),
+            bases: SnapshotMap::new(),
+        });
+        for (key, present) in changes {
+            if !candidates.admits_block(&key.block) {
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(base) = index.bases.get(&key).cloned() {
+                index.known.remove(&(base, key.clone()));
+                index.bases.remove(&key);
+            }
+            index.unknown.remove(&key);
+            if !present {
+                continue;
+            }
+            let value = self.concrete.get(&key).expect("changed cell exists");
+            if let Some(base) = assumptions.parameter_partition_cell_base(
+                resources,
+                &key,
+                crate::kernel::reasoning::cell_access_byte_width(value),
+            ) {
+                index.known.insert((base.clone(), key.clone()), ());
+                index.bases.insert(key, base);
+            } else {
+                index.unknown.insert(key, ());
+            }
+        }
+        index.cells = self.concrete.clone();
+        *guard = Some(index);
+    }
     /// Concrete cells whose canonical address lies on the region's line.
     /// Include the bounded prefix that an eight-byte cell could overlap.
     /// As for run slot candidates, use address ranges rather than scanning

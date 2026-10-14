@@ -2821,6 +2821,23 @@ impl PureFactContext {
             } else {
                 self.pointer_block_aliases.without_key(key)
             };
+            let bucket = memory_reasoning::parameter_alias_bucket(key);
+            let endpoints = self
+                .pointer_alias_endpoints_by_object
+                .get(&bucket)
+                .cloned()
+                .unwrap_or_default();
+            let endpoints = if filed {
+                endpoints.with_value(key.clone())
+            } else {
+                endpoints.without_value(key)
+            };
+            self.pointer_alias_endpoints_by_object = if endpoints.is_empty() {
+                self.pointer_alias_endpoints_by_object.without_key(&bucket)
+            } else {
+                self.pointer_alias_endpoints_by_object
+                    .with_inserted(bucket, endpoints)
+            };
             let spellings = self
                 .pointer_block_aliases_by_offset
                 .get(&key.offset)
@@ -3469,6 +3486,7 @@ impl PureFactContext {
         self.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
         self.bitvector_equality_facts = std::sync::Arc::new(std::sync::OnceLock::new());
         self.bitvector64_equality_facts = crate::persistent::PersistentMap::default();
+        self.wide_pointer_alias_endpoints_by_object = crate::persistent::PersistentMap::default();
         self.exact_constant_equalities = crate::persistent::PersistentMap::default();
         self.direct_bitvector_equalities = crate::persistent::PersistentMap::default();
         self.constant_classes = ConstantClasses::default();
@@ -3500,6 +3518,7 @@ impl PureFactContext {
         self.pointer_alignment_facts = crate::persistent::PersistentMap::default();
         self.pointer_block_aliases = crate::persistent::PersistentMap::default();
         self.pointer_block_aliases_by_offset = crate::persistent::PersistentMap::default();
+        self.pointer_alias_endpoints_by_object = crate::persistent::PersistentMap::default();
         self.equality_graph = EqualityGraph::default();
         self.congruence_conditions = crate::persistent::PersistentMap::default();
         self.int32_graph_equalities = crate::persistent::PersistentMap::default();
@@ -3805,6 +3824,26 @@ impl PureFactContext {
                     neighbors.without_key(other)
                 }
             };
+            if let Bitvector32Term::PointerAddress(pointer) = endpoint {
+                let bucket = memory_reasoning::parameter_alias_bucket(pointer);
+                let endpoints = self
+                    .wide_pointer_alias_endpoints_by_object
+                    .get(&bucket)
+                    .cloned()
+                    .unwrap_or_default();
+                let endpoints = if neighbors.is_empty() {
+                    endpoints.without_value(endpoint)
+                } else {
+                    endpoints.with_value(endpoint.clone())
+                };
+                self.wide_pointer_alias_endpoints_by_object = if endpoints.is_empty() {
+                    self.wide_pointer_alias_endpoints_by_object
+                        .without_key(&bucket)
+                } else {
+                    self.wide_pointer_alias_endpoints_by_object
+                        .with_inserted(bucket, endpoints)
+                };
+            }
             self.bitvector64_equality_facts = if neighbors.is_empty() {
                 self.bitvector64_equality_facts.without_key(endpoint)
             } else {

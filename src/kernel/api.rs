@@ -4455,18 +4455,20 @@ pub fn prove_symbolic_c_statement_verification_paths_with_environment_and_loop_r
     )
 }
 
-fn statement_kernel_variables(
-    state: &CState,
-    statement: &CStatement,
-    assumptions: &PureFactContext,
+fn statement_kernel_variables<'scope>(
+    state: &'scope CState,
+    statement: &'scope CStatement,
+    assumptions: &'scope PureFactContext,
     environment: &CExecutionEnvironment,
-) -> KernelVariableGenerator {
-    let mut existing = BTreeSet::new();
-    collect_c_state_bitvector_variables(state, &mut existing);
-    collect_c_statement_bitvector_variables(statement, &mut existing);
-    collect_assumption_variables(assumptions, &mut existing);
-    KernelVariableGenerator::fresh_for_execution_with_shared_reservations(
-        existing,
+) -> KernelVariableGenerator<'scope> {
+    KernelVariableGenerator::fresh_for_execution_with_deferred_reservations(
+        move || {
+            let mut existing = BTreeSet::new();
+            collect_c_state_bitvector_variables(state, &mut existing);
+            collect_c_statement_bitvector_variables(statement, &mut existing);
+            collect_assumption_variables(assumptions, &mut existing);
+            existing
+        },
         execution_environment_variable_index(environment),
     )
 }
@@ -4488,6 +4490,7 @@ pub(crate) fn prove_symbolic_c_statement_verification_paths_with_environment_and
         budget,
         &mut variables,
     );
+    drop(variables);
     let paths = match execution {
         Ok(paths) => paths,
         Err(limit) => {
@@ -4601,6 +4604,7 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
         budget,
         &mut variables,
     );
+    drop(variables);
     let paths = match execution {
         Ok(paths) => paths,
         Err(limit) => {

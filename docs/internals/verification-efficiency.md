@@ -267,11 +267,28 @@ charged to visible semantic output rather than hidden ambient state:
   store axis asserts the whole verification as well, since a store's
   refusal to keep a cell it may alias reads only filed order facts (see
   [Indexed contradiction and premise search](#indexed-contradiction-and-premise-search)).
+- Field stores beside separately owned parameter objects use a derived cell
+  partition (`CellStore::parameter_partition_index`). Input setup checks each
+  whole cached access against an owned member and groups it by the parameter's
+  offset stem. Later stores advance only persistent cell deltas, including
+  changed widths, and visit their own object's fields, unresolved cells, and
+  objects connected by relevant address aliases. Alias endpoints are indexed
+  by object rather than the shared `ExternalArgument` block; full-width address
+  equalities are followed without walking unrelated pointee-size facts. Changed
+  ownership rebuilds the partition; same-block/scalar aliases, implicit
+  provenance capture, and unsupported shapes use the ordinary rules. Existing
+  constant-gap and ordered-index selection remain active. The whole-source
+  `owned_parameter_field_store_work_is_flat` checks scalar and linked-node
+  stores at 4, 16, and 64 objects: peaks are 100 and 340 units respectively at
+  every size. Kernel regressions cover wide cells, withdrawn ownership, direct
+  aliases, and transitive interior address copies. Statement fresh-name streams
+  borrow their inputs and collect reservations only before requesting their
+  first identity, so a store that mints no identity never walks the whole state
+  or premise set. The allocator still checks all local and shared reservations.
 - A store keeps every earlier cell of its block that it proves it misses,
-  and outside one case it still decides each one: the cell map offers no way
-  to keep a group of cells without asking each, so a straight line of `N`
-  stores to cells the facts keep apart asks `N^2/2` cell questions. The one
-  case is the constant byte gap (`src/kernel/reasoning/store_gap.rs`). A
+  and unindexed cells are still decided individually: a straight line of `N`
+  stores can otherwise ask `N^2/2` cell questions. Constant byte gaps are one
+  indexed case (`src/kernel/reasoning/store_gap.rs`). A
   cell at `S + c` beside a store at `S + k`, for one symbolic anchor `S`
   (or two constant offsets), is decided by `c - k` alone, and `Pointer`
   orders every `S + c` of one anchor as one key range by `c`, so the store

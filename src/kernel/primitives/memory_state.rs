@@ -5660,6 +5660,12 @@ impl CMemory {
         }
     }
 
+    /// Populate the derived cell partition while establishing function inputs,
+    /// so the first field store pays only for its own cached cells.
+    pub(crate) fn prepare_parameter_store_partition(&self, resources: &ResourceContext) {
+        self.cells.prepare_parameter_partition(resources);
+    }
+
     /// Forgets every cell of `self` the write of `bytes` bytes at `pointer`
     /// may invalidate.
     ///
@@ -5908,12 +5914,18 @@ impl CMemory {
                 );
             });
         }
-        let ordered = memory.cells.ordered_store_candidates(
-            &normalized_pointer,
-            bytes,
-            &candidates,
-            assumptions,
-        );
+        let ordered = memory
+            .cells
+            .ordered_store_candidates(&normalized_pointer, bytes, &candidates, assumptions)
+            .or_else(|| {
+                memory.cells.parameter_store_candidates(
+                    &normalized_pointer,
+                    bytes,
+                    &candidates,
+                    &gap_kept,
+                    assumptions,
+                )
+            });
         let scope = match ordered.as_deref() {
             Some(selected) => ForgetScope::Ordered {
                 candidates: &candidates,
