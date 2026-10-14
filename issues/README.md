@@ -47,7 +47,7 @@ reproduced. To move a file off `unsound`, the reproduction must stop
 verifying. Narrowing the documented claim does not count. Re-check the label
 whenever the file's reproduction or scope changes.
 
-## P1: before launch (6)
+## P1: before launch (8)
 
 The launch strategy is to complete P1, deliver the minimum viable rbtree
 (MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
@@ -82,19 +82,24 @@ the full feature can stay P2. `incomplete` and `soundness-adjacent` files are
 prioritized by launch need, not by label. A gap that only a different program
 would hit is normally P2. The
 selected control-flow, byte-representation, arena, and basic C++ milestones
-have landed with bounded support claims. The selected safe-Rust and shared C/Rust
-checksum milestones are P1 by user direction; broader language,
-synchronization, and graph coverage remain P2.
+have landed with bounded support claims. By user direction (2026-10-14),
+C++ and Rust support are P1: the delivered Bitcoin Core slices and the
+adler2 Adler-32 checksum are sufficient demonstrations, and the P1 work is
+a well-designed front-end pipeline from an installed Click, not more
+examples. Broader language, synchronization, and graph coverage remain P2.
 
 Program import and execution:
 
-- [Support safe Rust and verify a shared C/Rust checksum specification](rust-support.md)
+- [A well-designed C++ front end](cpp-support.md)
+- [A well-designed Rust front end](rust-support.md)
 
 The completed [basic C++ example](../examples/basic-cpp/README.md) verifies
-references, checked scoped cleanup, and a modular caller. The unchanged
-Bitcoin Core `MoneyRange` function under its real Clang project profile is
-verified in
-[`integrations/bitcoin-core-money-range/`](../integrations/bitcoin-core-money-range/).
+references, checked scoped cleanup, and a modular caller. Unchanged Bitcoin
+Core functions under their real Clang project profile, from `MoneyRange`
+through the fee arithmetic and `SpanPopBack`, are verified in
+[`integrations/bitcoin-core-money-range/`](../integrations/bitcoin-core-money-range/);
+further Bitcoin coverage is after-launch work recorded in
+[cpp-support.md](cpp-support.md).
 The first [cross-call exception mdtest](../mdtests/cpp_one_guard_unwind.md)
 also verifies one `noexcept` guard constructed inside a `try`: its destructor
 restores caller memory before either normal continuation or the matching
@@ -120,8 +125,9 @@ Specification and proof:
 - [Make simple tactics fast: exact requirements, expandable `auto` for the rest](simplify-step.md)
 - [Difference logic: the fast path for arithmetic requirements and conditions](difference-logic.md)
 - [Launch design review: open critiques, each to be fixed or ruled wontfix](design-review.md) (depends on smt-auto.md and simplify-step.md)
+- [Finish place-based resource clauses](resource-place-syntax.md)
 
-## P2: after launch (15)
+## P2: after launch (14)
 
 Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
 it turns out to block that claim: if P1 work exposes one of the tooling
@@ -141,7 +147,6 @@ C language coverage:
 Additional languages:
 
 - [Stabilize and deliver the shared object model](object-model.md)
-- [Extend C++ support toward Bitcoin Core](cpp-support.md)
 - [Model C++ exceptions with class types and exceptional resources](cpp-exceptions.md)
 
 Proof language and tooling:
