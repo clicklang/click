@@ -3839,16 +3839,9 @@ impl<'a> Proof<'a> {
         let Some(goal) = self.goal() else {
             return Ok(None);
         };
-        let Some(mut instances) = crate::kernel::finite_forall_goal_instances(goal) else {
+        let Some(instances) = crate::kernel::finite_forall_goal_instances(goal, true) else {
             return Ok(None);
         };
-        // Instances over two indices are proved nearest pair first: a chain
-        // fact between neighbours is what a wider span's proof cites, and an
-        // earlier `have` is an available fact for a later one.
-        instances.sort_by_key(|(values, _)| match values.as_slice() {
-            [first, second] => ((second - first).abs(), *first, *second),
-            _ => (0, 0, 0),
-        });
         // A goal stated as a predicate call binds through the predicate's
         // body; unfold it at the surface to name the binders.
         let predicate_environment = match self.context.as_ref() {
