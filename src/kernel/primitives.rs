@@ -11488,12 +11488,10 @@ impl<'scope> KernelVariableGenerator<'scope> {
         collect: impl FnOnce() -> BTreeSet<Variable> + 'scope,
         shared_reserved: Arc<BTreeSet<Variable>>,
     ) -> Self {
-        Self {
-            counter: KernelVariableCounter::Execution,
-            reserved: BTreeSet::new(),
-            shared_reserved: Some(shared_reserved),
-            deferred_reserved: Some(Box::new(collect)),
-        }
+        let mut generator =
+            Self::fresh_for_execution_with_shared_reservations(BTreeSet::new(), shared_reserved);
+        generator.deferred_reserved = Some(Box::new(collect));
+        generator
     }
 
     fn prepare_reservations(&mut self) {
