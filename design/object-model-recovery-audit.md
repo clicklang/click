@@ -170,6 +170,32 @@ pointer-cell readability checks; the selected Markdown regression passes.
 This archive-dependent checkpoint is not an independent upstream activation. Neither reduction
 has an introducing commit assigned yet.
 
+## Normal example-stage recheck of the repair tree
+
+At repair checkpoint `86abef177`, the normal `example_projects` test checks the
+same 52 projects with revision-compatible artifacts. It fails in 71.85 seconds:
+38 projects pass and 14 fail. Comparing project names with the frozen archive's
+17-failure ledger shows exactly three restored projects (allocated-linked-list,
+heap-object and detachable-buffer), with no new failing project. This is an
+example-stage result, not a full green gate.
+
+```sh
+source /workspace/.click-tools/activate.sh
+scripts/build-cpp-exporter.sh
+CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=1 RUST_MIN_STACK=8388608 \
+CARGO_TARGET_DIR=/workspace/click-object-failure-reduction/target \
+cargo nextest run --test examples -E 'test(example_projects)'
+```
+
+The binary reports fixture roots under `click-object-failure-reduction`; its
+exporter is built from that archive-compatible tree. The remaining failed
+projects are arena, binary-tree, concurrency-fork-join, input-cursor,
+multifile-registry, owned-segmented-buffer, owned-split-buffer, owned-string,
+owned-vector, rbtree-augmented, refcount, ring-buffer, rust-byte-sum and
+rust-chunks-exact. The two buffer failures now occur at later range folds;
+the other twelve retain their recorded failure categories. No limits,
+quarantines, original programs or claims changed.
+
 ## Independent defect and extraction candidate
 
 Master rejects a resource owning `p[0]` when its pointer argument is substituted

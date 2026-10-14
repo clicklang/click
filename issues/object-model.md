@@ -164,7 +164,10 @@ resource annotations and complete-carrier transport. The targeted experiment
 restores detachable-buffer and the reduction in all four proof modes; split-buffer
 and segmented-buffer still need later range-fold repairs. The repair checkpoint
 is `86abef177`; 17 selected kernel controls and the reduced Markdown regression
-pass. It remains dependent on archived native-entry machinery.
+pass. It remains dependent on archived native-entry machinery. Rechecking all
+52 normal examples on `86abef177` yields 38 passing and 14 failing in 71.85s;
+exactly the three targeted projects are restored, with no new failing project.
+This is not a full green gate.
 
 ## Recovery and delivery sequence
 
