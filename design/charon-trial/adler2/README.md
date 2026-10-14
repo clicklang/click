@@ -289,8 +289,11 @@ remainder-vector iterator. Its invariant uses the actual cursor, remaining
 length and chunk size, preserves both owned lane arrays and the input view,
 and relates every lane to the corresponding original byte at exhaustion.
 The preserve proof executes both original helper calls, checks their numeric
-requirements and closes the back-edge claims. Its verification unit checks
-the iterator and lane lemma bodies alongside every original helper body.
+requirements and closes the back-edge claims.
+The closure normalizes the established invariant component and cites the
+strict decrease already proved for the remaining count.
+Its verification unit checks the iterator and lane lemma bodies alongside
+every original helper body.
 Its final A and B fields equal the common mathematical specification on the
 four entry bytes, starting from A = 1 and B = 0.
 [The native recombination bridge](four-byte-spec.click) checks every unsigned
