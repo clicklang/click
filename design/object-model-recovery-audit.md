@@ -316,3 +316,26 @@ failures as proof regressions.
 Command logs for this session are in `/tmp/object-model-*.log`; commands,
 revisions, error summaries and the small reproductions above remain committed
 so the audit does not depend on those transient files.
+
+## First delivery and follow-up reductions
+
+PR #926 merged through the queue in `16f0d77df`, including final pushed head
+`3043ac0a7`. Its corrected typed/untyped unit controls and all 5,198 selected
+library tests pass. The independent entry-fold extraction captures entry-valued
+arguments once and returns the exact selected resource to its kernel check.
+The unchanged fieldless entry-argument proof is a compatibility control; a
+second interpretation previously selected a different representation.
+
+The rebased entry-fold slice on `7920aaf0e` passes all 52 normal examples,
+3,758 Markdown fixtures, 37 documentation checks and all-target Clippy. Plain
+and nested indexed-cell proofs and the existing fieldless entry proof pass
+fresh, expanded, rewritten and retained checking. Wrong-cell controls reject.
+The reduced C indexed-cell contracts use the existing viewed range; no unmerged
+object-model activation is included.
+
+The [conditional-output reduction](../bugs/native-composite-output-requires-decided-body-guard.md)
+attributes the allocated-list/heap-object error group to a native composite
+formation check demanding a decided guard on a verified conditional output.
+The small producer/caller passes baseline proof modes and fails on `e3d84a785`.
+A setter-shadowing experiment did not fix the original list and was discarded.
+The introducing commit and the sound conditional-admission repair remain open.
