@@ -35,6 +35,7 @@ pub(in crate::kernel) use constant_classes::ConstantClasses;
 mod memory_reasoning;
 pub(crate) use memory_reasoning::arm_frame_composite_definitions;
 pub(crate) use memory_reasoning::clear_frame_expansion_memo;
+pub(in crate::kernel) use memory_reasoning::parameter_partition_root;
 pub(in crate::kernel) use memory_reasoning::read_candidate_byte_width;
 pub(in crate::kernel) use memory_reasoning::signed_byte_sum_is_nonwrapping;
 pub(in crate::kernel) use memory_reasoning::{
@@ -4343,6 +4344,46 @@ impl PureFactContext {
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
+    /// A callback contract follows checked equality of its pointer argument.
+    /// The exact state and pointer type remain part of the proposition; no
+    /// predicate unfolding or snapshot transport is performed here.
+    fn contains_known_function_contract(&self, required: &Proposition) -> bool {
+        let Some((pointer, contract)) = Self::proposition_function_contract(required) else {
+            return false;
+        };
+        let Proposition::Predicate { arguments, .. } = required else {
+            unreachable!()
+        };
+        let [
+            Term::CState(required_state),
+            Term::CValue(CValue::Pointer(required_value)),
+        ] = arguments.as_slice()
+        else {
+            unreachable!()
+        };
+        self.equality_graph
+            .pointer_spellings(&pointer)
+            .into_iter()
+            .any(|spelling| {
+                crate::instrumentation::record_deterministic_work(1);
+                let Some(Proposition::Predicate { arguments, .. }) = self
+                    .function_contract_facts
+                    .get(&spelling)
+                    .and_then(|contracts| contracts.get(&contract))
+                else {
+                    return false;
+                };
+                let [Term::CState(state), Term::CValue(CValue::Pointer(value))] =
+                    arguments.as_slice()
+                else {
+                    return false;
+                };
+                state == required_state
+                    && value.c_type() == required_value.c_type()
+                    && self.equality_graph.are_equal(&pointer, value.pointer())
+            })
+    }
+
     fn proposition_memory_separation(
         proposition: &Proposition,
     ) -> Option<(CMemoryRange, CMemoryRange)> {
@@ -5360,6 +5401,7 @@ impl PureFactContext {
                 }
                 _ => false,
             },
+            Proposition::Predicate { .. } => self.contains_known_function_contract(proposition),
             _ => false,
         }
     }

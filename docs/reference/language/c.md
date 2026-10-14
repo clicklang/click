@@ -1645,6 +1645,15 @@ verified-call rule. It does not enumerate project functions or infer behavior
 from a matching C signature. Contract applications are type-checked against
 the complete modeled function-pointer signature.
 
+For a callback read through an initialized constant table, a checked equality
+such as `cb == &table` and permission to read the slot establish its target.
+After applying the target's
+contract theorem, `have Invoke(cb->call) by { assumption(); }` records that
+contract for the read pointer. The captured state and complete callback
+signature must match.
+
+<!-- verified-example: mdtests/function_pointer_read_uses_checked_address_equality.md -->
+
 When several named contracts are known for the same symbolic pointer, their
 preconditions are checked against the same pre-call state. Contracts whose
 requirements cannot be established do not contribute guarantees. If none

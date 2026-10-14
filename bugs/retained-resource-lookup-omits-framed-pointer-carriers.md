@@ -186,3 +186,29 @@ and order-certificate controls, the original loop and both existing partial-writ
 fixtures. Its loop passes fresh, expansion, rewritten and retained checks.
 The remaining archive read-chain gap still needs attribution; no new full
 example-stage or activation verdict is claimed.
+
+## Loop-havoc borrow-partition repair
+
+A focused producer probe on `bca4dafb8` finds that the read crosses the actual
+backing store with a checked `StoreSeparatedRanges` borrow-partition certificate,
+then stops at `LoopHavoc`. The loop summary names the backing range, while its
+range-disjointness producer tries exact separation and ownership composition
+without selecting the existing live borrowed-view/owner partition. The checker
+already supports that certificate authority; no new equality or place law is
+needed.
+
+Checkpoint `53da27b58` adds the indexed borrow-partition producer before the
+legacy ownership-composition frontier and checks the whole mutable range and
+all eight descriptor-read bytes. The original loop passes fresh checking,
+expansion, rewritten checking and retained rechecking with the safe endpoint
+rule. All 87 selected memory-index, pointer-designation, native-span, loop-carrier
+and borrow-frame controls pass. The new multi-size regression stays below 200
+work units beside 16, 64, 256 and 1,024 unrelated owners, and rejects wider reads,
+overlap, ordinary unbound views, view-only compositions and withdrawn retained
+authority while leaving its candidate index present.
+
+The probe is removed. This candidate depends on the archive's typed
+range-in-range and range-separation certificates; its independent upstream
+extraction remains part of the recovery plan. Preserve this bug until that
+implementation and its regressions land; archive success alone is not upstream
+activation.

@@ -1002,6 +1002,10 @@ pub(crate) struct CellStore {
 #[derive(Clone)]
 struct ParameterPartitionIndex {
     cells: SnapshotMap<Pointer, CValue>,
+    runs: SnapshotMap<RunKey, CellRun>,
+    known_runs: crate::persistent::PersistentMap<Pointer, std::sync::Arc<Vec<RunKey>>>,
+    unknown_runs: SnapshotMap<RunKey, ()>,
+    run_bases: SnapshotMap<RunKey, Pointer>,
     resources: crate::kernel::ResourceContext,
     known: SnapshotMap<(Pointer, Pointer), ()>,
     unknown: SnapshotMap<Pointer, ()>,
@@ -1147,38 +1151,87 @@ impl CellStore {
         resources: &crate::kernel::ResourceContext,
     ) {
         let assumptions = PureFactContext::new();
-        let candidates = AliasCandidates::of_block(&PointerBlock::ExternalArgument);
         let mut guard = self.parameter_partition_index.lock().unwrap();
-        let previous = guard
-            .take()
-            .filter(|index| index.resources.shares_storage_with(resources));
-        let changes: Vec<_> = match &previous {
-            Some(index) => index
-                .cells
-                .diff(&self.concrete)
-                .map(|change| match change {
-                    SnapshotMapChange::Added(key) | SnapshotMapChange::Changed(key) => {
-                        (key.clone(), true)
+        let previous = guard.take();
+        let mut changes = BTreeMap::new();
+        let mut run_changes = BTreeSet::new();
+        if let Some(index) = &previous {
+            run_changes.extend(
+                index
+                    .runs
+                    .diff(&self.runs)
+                    .filter(|change| change.key().block == PointerBlock::ExternalArgument)
+                    .map(|change| change.key().clone()),
+            );
+            for change in index.cells.diff(&self.concrete) {
+                let key = match change {
+                    SnapshotMapChange::Added(key)
+                    | SnapshotMapChange::Changed(key)
+                    | SnapshotMapChange::Removed(key) => key,
+                };
+                if key.block == PointerBlock::ExternalArgument {
+                    changes.insert(key.clone(), self.concrete.contains_key(key));
+                }
+            }
+            for change in index
+                .resources
+                .flat_owned_memory_ranges()
+                .diff(resources.flat_owned_memory_ranges())
+            {
+                let added = matches!(change, SnapshotMapChange::Added(_));
+                let range = match change {
+                    SnapshotMapChange::Added(range)
+                    | SnapshotMapChange::Changed(range)
+                    | SnapshotMapChange::Removed(range) => range,
+                };
+                if let Some(base) =
+                    crate::kernel::assumptions::parameter_partition_root(range.base())
+                {
+                    // A changed ownership root can change only its known runs.
+                    if let Some(runs) = index.known_runs.get(&base) {
+                        run_changes.extend(runs.iter().cloned());
                     }
-                    SnapshotMapChange::Removed(key) => (key.clone(), false),
-                })
-                .collect(),
-            None => candidates
-                .entries(&self.concrete)
-                .map(|(key, _)| (key.clone(), true))
-                .collect(),
-        };
+                    for ((_, key), _) in index
+                        .known
+                        .range((
+                            Bound::Included((base.clone(), Pointer::null())),
+                            Bound::Unbounded,
+                        ))
+                        .take_while(|((root, _), _)| *root == base)
+                    {
+                        changes.insert(key.clone(), self.concrete.contains_key(key));
+                    }
+                }
+                // Unknown cells need a new membership check after a new
+                // owning range is admitted; known unrelated members stay put.
+                if added {
+                    for key in index.unknown.keys() {
+                        changes.insert(key.clone(), self.concrete.contains_key(key));
+                    }
+                    run_changes.extend(index.unknown_runs.keys().cloned());
+                }
+            }
+        } else {
+            let parameters = AliasCandidates::only_block(&PointerBlock::ExternalArgument);
+            changes.extend(
+                parameters
+                    .entries(&self.concrete)
+                    .map(|(key, _)| (key.clone(), true)),
+            );
+            run_changes.extend(parameters.entries(&self.runs).map(|(key, _)| key.clone()));
+        }
         let mut index = previous.unwrap_or_else(|| ParameterPartitionIndex {
             cells: self.concrete.clone(),
+            runs: self.runs.clone(),
+            known_runs: Default::default(),
+            unknown_runs: Default::default(),
+            run_bases: SnapshotMap::new(),
             resources: resources.clone(),
             known: SnapshotMap::new(),
             unknown: SnapshotMap::new(),
             bases: SnapshotMap::new(),
         });
         for (key, present) in changes {
-            if !candidates.admits_block(&key.block) {
-                continue;
-            }
             crate::instrumentation::record_deterministic_work(1);
             if let Some(base) = index.bases.get(&key).cloned() {
                 index.known.remove(&(base, key.clone()));
@@ -1200,9 +1253,76 @@ impl CellStore {
                 index.unknown.insert(key, ());
             }
         }
+        for key in run_changes {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(base) = index.run_bases.get(&key).cloned() {
+                let mut runs = index
+                    .known_runs
+                    .get(&base)
+                    .expect("indexed run root")
+                    .clone();
+                std::sync::Arc::make_mut(&mut runs).retain(|held| held != &key);
+                if runs.is_empty() {
+                    index.known_runs.remove(&base);
+                } else {
+                    index.known_runs.insert(base, runs);
+                }
+                index.run_bases.remove(&key);
+            }
+            index.unknown_runs.remove(&key);
+            let Some(run) = self.runs.get(&key) else {
+                continue;
+            };
+            // Cover the entire run, including holes, so retaining its live
+            // slots never relies on an incomplete byte footprint.
+            let base = run
+                .count()
+                .checked_sub(1)
+                .and_then(|last| last.checked_mul(run.element_width()))
+                .and_then(|offset| offset.checked_add(run.value_width()))
+                .and_then(|bytes| {
+                    assumptions.parameter_partition_cell_base(resources, run.base(), bytes)
+                });
+            if let Some(base) = base {
+                let mut runs = index.known_runs.get(&base).cloned().unwrap_or_default();
+                std::sync::Arc::make_mut(&mut runs).push(key.clone());
+                index.known_runs.insert(base.clone(), runs);
+                index.run_bases.insert(key, base);
+            } else {
+                index.unknown_runs.insert(key, ());
+            }
+        }
         index.cells = self.concrete.clone();
+        index.runs = self.runs.clone();
+        index.resources = resources.clone();
         *guard = Some(index);
     }
+
+    /// Concrete cells not wholly held by the caller's retained flat owners.
+    pub(in crate::kernel) fn call_unowned_candidates(
+        &self,
+        resources: &crate::kernel::ResourceContext,
+        candidates: &AliasCandidates,
+    ) -> (Vec<Pointer>, Vec<RunKey>) {
+        self.prepare_parameter_partition(resources);
+        let guard = self.parameter_partition_index.lock().unwrap();
+        let index = guard.as_ref().expect("prepared partition");
+        let ordinary = candidates.excluding_external_arguments();
+        let mut cells = candidates
+            .entries(&index.unknown)
+            .map(|(key, _)| key.clone())
+            .chain(ordinary.entries(&self.concrete).map(|(key, _)| key.clone()))
+            .collect::<Vec<_>>();
+        let mut runs = candidates
+            .entries(&index.unknown_runs)
+            .map(|(key, _)| key.clone())
+            .chain(ordinary.entries(&self.runs).map(|(key, _)| key.clone()))
+            .collect::<Vec<_>>();
+        cells.sort_unstable();
+        runs.sort_unstable();
+        (cells, runs)
+    }
+
     /// Concrete cells whose canonical address lies on the region's line.
     /// Include the bounded prefix that an eight-byte cell could overlap.
     /// As for run slot candidates, use address ranges rather than scanning
@@ -1349,6 +1469,7 @@ impl CellStore {
         &mut self,
         selected: &[Pointer],
         candidates: &AliasCandidates,
+        selected_runs: Option<&[RunKey]>,
         mut keep: impl FnMut(&Pointer, &CValue) -> bool,
         mut run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
     ) -> Vec<DroppedRunSlots> {
@@ -1363,7 +1484,14 @@ impl CellStore {
                 self.concrete.remove(key);
             }
         }
-        self.retain_runs_by(Some(candidates), keep, &mut run_rule)
+        let runs = match selected_runs {
+            Some(keys) => keys
+                .iter()
+                .filter_map(|key| self.runs.get(key).map(|run| (key.clone(), run.clone())))
+                .collect(),
+            None => self.visited_runs(Some(candidates)),
+        };
+        self.retain_runs_from(runs, keep, &mut run_rule)
     }
 
     /// The concrete cells alone, without any run: what a caller that only
@@ -1794,13 +1922,35 @@ impl CellStore {
         &'a self,
         candidates: &'a AliasCandidates,
     ) -> impl Iterator<Item = (Pointer, CValue)> + 'a {
+        self.candidate_logical_entries_selected(candidates, None, None)
+    }
+
+    pub(crate) fn candidate_logical_entries_selected<'a>(
+        &'a self,
+        candidates: &'a AliasCandidates,
+        selected: Option<&'a [Pointer]>,
+        selected_runs: Option<&'a [RunKey]>,
+    ) -> impl Iterator<Item = (Pointer, CValue)> + 'a {
         type Sequence<'a> = Box<dyn Iterator<Item = (Pointer, CValue)> + 'a>;
-        let mut sequences: Vec<Sequence<'a>> = vec![Box::new(
-            candidates
-                .entries(&self.concrete)
-                .map(|(pointer, value)| (pointer.clone(), value.clone())),
-        )];
-        for run in self.candidate_runs(candidates) {
+        let concrete: Sequence<'a> = match selected {
+            Some(selected) => Box::new(selected.iter().filter_map(|pointer| {
+                self.concrete
+                    .get(pointer)
+                    .cloned()
+                    .map(|value| (pointer.clone(), value))
+            })),
+            None => Box::new(
+                candidates
+                    .entries(&self.concrete)
+                    .map(|(pointer, value)| (pointer.clone(), value.clone())),
+            ),
+        };
+        let mut sequences: Vec<Sequence<'a>> = vec![concrete];
+        let runs: Box<dyn Iterator<Item = &CellRun> + '_> = match selected_runs {
+            Some(keys) => Box::new(keys.iter().filter_map(|key| self.runs.get(key))),
+            None => Box::new(self.candidate_runs(candidates)),
+        };
+        for run in runs {
             // Element 0 is spelled as the base itself and every later element
             // as the base plus its shift, so the two are ascending apart.
             sequences.push(Box::new(
@@ -2251,16 +2401,22 @@ impl CellStore {
     fn retain_runs_by(
         &mut self,
         candidates: Option<&AliasCandidates>,
+        keep: impl FnMut(&Pointer, &CValue) -> bool,
+        run_rule: &mut impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
+    ) -> Vec<DroppedRunSlots> {
+        self.retain_runs_from(self.visited_runs(candidates), keep, run_rule)
+    }
+
+    fn retain_runs_from(
+        &mut self,
+        runs: Vec<(RunKey, CellRun)>,
         mut keep: impl FnMut(&Pointer, &CValue) -> bool,
         run_rule: &mut impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
     ) -> Vec<DroppedRunSlots> {
-        if self.runs.is_empty() {
-            return Vec::new();
-        }
         let mut visited = 0usize;
         let mut updates = Vec::new();
         let mut dropped = Vec::new();
-        for (key, mut run) in self.visited_runs(candidates) {
+        for (key, mut run) in runs {
             visited += 1;
             let (decision, answer) = run_rule(&run);
             #[cfg(debug_assertions)]
