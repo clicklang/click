@@ -591,6 +591,9 @@ pub(in crate::surface) fn initial_call_state(
             }
         }
     });
+    state
+        .memory()
+        .prepare_parameter_store_partition(state.resources());
     Ok((state, arguments))
 }
 

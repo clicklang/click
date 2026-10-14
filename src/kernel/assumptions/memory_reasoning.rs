@@ -1651,6 +1651,92 @@ impl PureFactContext {
         OwnedStoreFootprint { members }
     }
 
+    /// A flat parameter partition without path equalities. Non-atomic bases
+    /// and accesses needing facts stay on the ordinary store ladder.
+    pub(in crate::kernel) fn parameter_store_partition(
+        &self,
+        write: &Pointer,
+        bytes: u32,
+    ) -> Option<(&ResourceContext, Pointer)> {
+        if !self.pointer_offset_aliases.is_empty() || !self.int32_graph_equalities.is_empty() {
+            return None;
+        }
+        let footprint = self.owned_store_footprint(write, bytes);
+        footprint
+            .members
+            .into_iter()
+            .find_map(|(resources, _, range)| {
+                parameter_partition_root(range.base()).map(|base| (resources, base))
+            })
+    }
+
+    /// Cross-block equalities are filed under their exact endpoints, so a
+    /// parameter follows only its own aliases rather than the shared external
+    /// block's entire class. Same-block and scalar alias premises fall back.
+    pub(in crate::kernel) fn parameter_store_alias_bases(
+        &self,
+        base: &Pointer,
+    ) -> Option<BTreeSet<Pointer>> {
+        let mut pending = vec![base.clone()];
+        let mut seen = BTreeSet::new();
+        let mut bases = BTreeSet::new();
+        let mut visited_terms = BTreeSet::new();
+        while let Some(pointer) = pending.pop() {
+            let pointer = parameter_alias_bucket(&pointer);
+            if !seen.insert(pointer.clone()) {
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(variable) = parameter_partition_variable(&pointer) {
+                if self
+                    .bitvector64_equality_facts
+                    .contains_key(&Bitvector32Term::Variable(*variable))
+                {
+                    return None;
+                }
+                bases.insert(pointer.clone());
+            }
+            let mut terms: Vec<_> = self
+                .wide_pointer_alias_endpoints_by_object
+                .get(&pointer)
+                .into_iter()
+                .flat_map(|endpoints| endpoints.iter().cloned())
+                .collect();
+            while let Some(term) = terms.pop() {
+                if !visited_terms.insert(term.clone()) {
+                    continue;
+                }
+                crate::instrumentation::record_deterministic_work(1);
+                if let Bitvector32Term::PointerAddress(address) = &term {
+                    pending.push(address.as_ref().clone());
+                }
+                if let Some(neighbors) = self.bitvector64_equality_facts.get(&term) {
+                    terms.extend(neighbors.keys().cloned());
+                }
+            }
+            if let Some(endpoints) = self.pointer_alias_endpoints_by_object.get(&pointer) {
+                for endpoint in endpoints.iter() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    if let Some(aliases) = self.pointer_block_aliases.get(endpoint) {
+                        pending.extend(aliases.keys().cloned());
+                    }
+                }
+            }
+        }
+        Some(bases)
+    }
+
+    pub(in crate::kernel) fn parameter_partition_cell_base(
+        &self,
+        resources: &ResourceContext,
+        pointer: &Pointer,
+        bytes: u32,
+    ) -> Option<Pointer> {
+        let range = self.owned_member_holding_access(resources, pointer, bytes)?;
+        let base = parameter_partition_root(range.base())?;
+        (parameter_partition_root(pointer)? == base).then_some(base)
+    }
+
     /// Whether ownership alone keeps an access of `bytes` at `pointer` off a
     /// store's written bytes: some composition owns the write through one
     /// member and every byte of this access through a different one.
@@ -4572,6 +4658,59 @@ impl PureFactContext {
 /// [`PureFactContext::owned_store_footprint`].
 pub(in crate::kernel) struct OwnedStoreFootprint<'a> {
     members: Vec<(&'a ResourceContext, u64, &'a CMemoryRange)>,
+}
+
+fn parameter_partition_variable(base: &Pointer) -> Option<&Variable> {
+    if base.block != crate::kernel::PointerBlock::ExternalArgument {
+        return None;
+    }
+    let variable = match &base.offset {
+        PointerOffsetTerm::Variable(variable) => variable,
+        PointerOffsetTerm::Int32Scaled { value, byte_width } if *byte_width > 0 => {
+            let Bitvector32Term::Variable(variable) = value.as_ref() else {
+                return None;
+            };
+            variable
+        }
+        _ => return None,
+    };
+    (crate::kernel::registered_load_for_variable(variable).is_none()
+        && crate::kernel::equality_graph::logical_pointer_read_for_offset(&base.offset).is_none())
+    .then_some(variable)
+}
+
+pub(super) fn parameter_alias_bucket(pointer: &Pointer) -> Pointer {
+    let mut stem = &pointer.offset;
+    if pointer.block != crate::kernel::PointerBlock::ExternalArgument {
+        return Pointer {
+            block: pointer.block.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+    }
+    while let PointerOffsetTerm::Add(left, right) = stem {
+        if right.as_const().is_none() {
+            break;
+        }
+        stem = left;
+    }
+    Pointer {
+        block: pointer.block.clone(),
+        offset: stem.clone(),
+    }
+}
+
+fn parameter_partition_root(pointer: &Pointer) -> Option<Pointer> {
+    let mut stem = &pointer.offset;
+    while let PointerOffsetTerm::Add(left, right) = stem {
+        right.as_const()?;
+        stem = left;
+    }
+    let base = Pointer {
+        block: pointer.block.clone(),
+        offset: stem.clone(),
+    };
+    parameter_partition_variable(&base)?;
+    Some(base)
 }
 
 /// The element index of `pointer` from `base` when `pointer` is `base`

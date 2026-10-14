@@ -10349,6 +10349,17 @@ pub struct PureFactContext {
         PointerOffsetTerm,
         crate::persistent::PersistentSet<Pointer>,
     >,
+    /// Cross-block alias endpoints grouped by object. External arguments
+    /// use their offset stem, since all parameters share one block; other
+    /// blocks use one bucket. Derived incrementally from exact aliases.
+    pub(super) pointer_alias_endpoints_by_object:
+        crate::persistent::PersistentMap<Pointer, crate::persistent::PersistentSet<Pointer>>,
+    /// Pointer-address endpoints of full-width equalities, by object.
+    /// Lets store framing follow address copies without scanning size facts.
+    pub(super) wide_pointer_alias_endpoints_by_object: crate::persistent::PersistentMap<
+        Pointer,
+        crate::persistent::PersistentSet<Bitvector32Term>,
+    >,
     /// Trusted persistent equality closure for pointers, offsets, and int32
     /// terms. Appended on insertion; withdrawal rebuilds from exact equality
     /// indexes, preserving the remaining support in every fragment.
@@ -11384,14 +11395,14 @@ enum KernelVariableCounter {
     Execution,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct KernelVariableGenerator {
+pub(super) struct KernelVariableGenerator<'scope> {
     counter: KernelVariableCounter,
     reserved: BTreeSet<Variable>,
     shared_reserved: Option<Arc<BTreeSet<Variable>>>,
+    deferred_reserved: Option<Box<dyn FnOnce() -> BTreeSet<Variable> + 'scope>>,
 }
 
-impl KernelVariableGenerator {
+impl<'scope> KernelVariableGenerator<'scope> {
     /// Build the deterministic term-local fresh-name stream used by both
     /// planning and certificate validation. Given the same lower bound and
     /// reserved set, the first available identifier and every successor are
@@ -11402,6 +11413,7 @@ impl KernelVariableGenerator {
             counter: KernelVariableCounter::Local(lower_bound),
             reserved: existing,
             shared_reserved: None,
+            deferred_reserved: None,
         }
     }
 
@@ -11414,6 +11426,7 @@ impl KernelVariableGenerator {
             counter: KernelVariableCounter::Execution,
             reserved: existing,
             shared_reserved: None,
+            deferred_reserved: None,
         }
     }
 
@@ -11425,6 +11438,27 @@ impl KernelVariableGenerator {
             counter: KernelVariableCounter::Execution,
             reserved: existing,
             shared_reserved: Some(shared_reserved),
+            deferred_reserved: None,
+        }
+    }
+
+    /// Borrow the statement inputs without walking them until execution
+    /// actually needs a fresh identity. A plain store requests none.
+    pub(super) fn fresh_for_execution_with_deferred_reservations(
+        collect: impl FnOnce() -> BTreeSet<Variable> + 'scope,
+        shared_reserved: Arc<BTreeSet<Variable>>,
+    ) -> Self {
+        Self {
+            counter: KernelVariableCounter::Execution,
+            reserved: BTreeSet::new(),
+            shared_reserved: Some(shared_reserved),
+            deferred_reserved: Some(Box::new(collect)),
+        }
+    }
+
+    fn prepare_reservations(&mut self) {
+        if let Some(collect) = self.deferred_reserved.take() {
+            self.reserved.extend(collect());
         }
     }
 
@@ -11470,6 +11504,7 @@ impl KernelVariableGenerator {
             matches!(self.counter, KernelVariableCounter::Execution),
             "a term-local fresh-variable stream must not allocate from an execution budget"
         );
+        self.prepare_reservations();
         loop {
             let variable = budget.allocate_kernel_variable()?;
             let shared_contains = self

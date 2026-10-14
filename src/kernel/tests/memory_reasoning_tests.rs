@@ -7577,3 +7577,113 @@ fn explicit_separation_frames_accesses_with_different_element_widths() {
         )
     );
 }
+
+/// A warmed parameter partition is derived metadata, never authority: later
+/// alias premises, changed cell widths, and withdrawn ownership must still
+/// take the ordinary invalidation path.
+#[test]
+fn a_cached_parameter_partition_does_not_hide_aliases_or_wide_cells() {
+    let parameter = |id| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(id)), 4),
+    };
+    let p = parameter(990_001);
+    let q = parameter(990_002);
+    let resources = ResourceContext::new()
+        .unchecked_with_fact(own_memory_fact(p.clone(), 0, 1))
+        .unchecked_with_fact(own_memory_fact(q.clone(), 0, 1));
+    let assumptions = PureFactContext::new()
+        .assume_proposition(Proposition::CResourceComposition(resources.clone()));
+    let memory = CMemory::new().store(q.clone(), int32(5));
+    memory.prepare_parameter_store_partition(&resources);
+    assert_eq!(
+        memory
+            .without_possible_aliasing_cells(&p, 4, &assumptions)
+            .known_value(&q),
+        Some(int32(5))
+    );
+    let alias = assumptions
+        .clone()
+        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+    assert!(
+        !memory
+            .without_possible_aliasing_cells(&p, 4, &alias)
+            .has_known_cell_at(&q)
+    );
+    assert!(
+        !memory
+            .without_possible_aliasing_cells(&p, 4, &PureFactContext::new())
+            .has_known_cell_at(&q)
+    );
+    // The changed cell no longer fits inside its four-byte owner.
+    let widened = memory.clone().store(q.clone(), int64(9));
+    let reference = crate::kernel::reasoning::store_gap::with_store_gap_skip_disabled(|| {
+        widened.without_possible_aliasing_cells(&p, 4, &assumptions)
+    });
+    assert_eq!(
+        widened
+            .without_possible_aliasing_cells(&p, 4, &assumptions)
+            .known_value(&q),
+        reference.known_value(&q)
+    );
+    // A different resource snapshot no longer owns the cached object.
+    let less = PureFactContext::new().assume_proposition(Proposition::CResourceComposition(
+        ResourceContext::new().unchecked_with_fact(own_memory_fact(p.clone(), 0, 1)),
+    ));
+    assert!(
+        !memory
+            .without_possible_aliasing_cells(&p, 4, &less)
+            .has_known_cell_at(&q)
+    );
+}
+
+/// Cross-block and full-width address copies can equate interior fields even
+/// when no direct equality names the parameter bases. The object index must
+/// bring the other object's cells back onto the ordinary store ladder.
+#[test]
+fn a_parameter_partition_follows_transitive_interior_address_aliases() {
+    let parameter = |id| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(id)), 4),
+    };
+    let p = parameter(991_001);
+    let q = parameter(991_002);
+    let foreign = Pointer::symbolic(Variable(991_003));
+    let resources = ResourceContext::new()
+        .unchecked_with_fact(own_memory_fact(p.clone(), 0, 4))
+        .unchecked_with_fact(own_memory_fact(q.clone(), 0, 4));
+    let original = PureFactContext::new()
+        .assume_proposition(Proposition::CResourceComposition(resources.clone()));
+    let memory = CMemory::new().store(q.clone(), int32(5));
+    memory.prepare_parameter_store_partition(&resources);
+    let write = p.offset_by_bytes(8);
+    for alias in [
+        original
+            .clone()
+            .assume_condition(
+                ConditionTerm::pointer_equal(write.clone(), foreign.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::pointer_equal(foreign.clone(), q.clone()),
+                true,
+            ),
+        original.clone().assume_condition(
+            ConditionTerm::uint64_equal(
+                Bitvector32Term::PointerAddress(Box::new(write.clone())),
+                Bitvector32Term::PointerAddress(Box::new(q.clone())),
+            ),
+            true,
+        ),
+    ] {
+        let reference = crate::kernel::reasoning::store_gap::with_store_gap_skip_disabled(|| {
+            memory.without_possible_aliasing_cells(&write, 4, &alias)
+        });
+        assert!(!reference.has_known_cell_at(&q));
+        assert!(
+            !memory
+                .without_possible_aliasing_cells(&write, 4, &alias)
+                .has_known_cell_at(&q)
+        );
+    }
+}

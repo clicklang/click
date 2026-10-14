@@ -2,11 +2,11 @@
 
 Each step over one heap object costs work proportional to how many other
 heap objects are live, so a function that creates, fills and releases N
-objects is quadratic. Unlike the parameter-object bugs
-(`call-step-grows-with-kept-parameter-objects.md`,
-`field-store-step-grows-with-owned-parameter-objects.md`), these objects live
-in distinct heap blocks, so sharing one block is not the whole cause; the
-fixes may share a root.
+objects is quadratic. These objects live in distinct heap blocks, unlike
+the parameter objects in `call-step-grows-with-kept-parameter-objects.md`,
+so sharing one block is not the whole cause. Parameter field stores now use
+an owned-object cell partition; heap stores and calls still need their own
+scaling fixes.
 
 Reproduced on master `e28770b20` with `scripts/step-scaling-hunt.py`:
 

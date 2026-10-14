@@ -3388,3 +3388,29 @@ fn statement_reservations_cover_integer_arguments_of_algebraic_applications() {
         held,
     );
 }
+
+/// Deferring a statement's input walk must still reserve all existing names
+/// before its first allocation, exactly once. Stores that allocate nothing
+/// should never pay for this walk.
+#[test]
+fn deferred_execution_reservations_skip_unused_scans_and_avoid_collisions() {
+    let scans = std::cell::Cell::new(0);
+    let collect = || {
+        scans.set(scans.get() + 1);
+        BTreeSet::from([Variable(1_000_000), Variable(1_000_002)])
+    };
+    let shared = std::sync::Arc::new(BTreeSet::from([Variable(1_000_001)]));
+    drop(
+        KernelVariableGenerator::fresh_for_execution_with_deferred_reservations(
+            collect,
+            shared.clone(),
+        ),
+    );
+    assert_eq!(scans.get(), 0);
+    let mut generator =
+        KernelVariableGenerator::fresh_for_execution_with_deferred_reservations(collect, shared);
+    let mut budget = ExecutionBudget::new();
+    assert_eq!(generator.next_in(&mut budget), Ok(Variable(1_000_003)));
+    assert_eq!(generator.next_in(&mut budget), Ok(Variable(1_000_004)));
+    assert_eq!(scans.get(), 1);
+}

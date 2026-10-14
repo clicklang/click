@@ -7836,3 +7836,113 @@ fn symbolic_index_store_work_is_flat_across_recorded_order_chains() {
     assert!(peaks.iter().all(|work| *work <= peaks[0] * 2), "{peaks:?}");
     assert_near_linear_scaling("symbolic ordered stores", &totals);
 }
+
+/// Owns seed every input field before the first store. This catches both the
+/// initial index cost leaking into a step and repeated visits to other objects.
+#[test]
+#[ignore = "nightly: 11s for six full-source proofs including calls"]
+fn owned_parameter_field_store_work_is_flat() {
+    let mut peaks = Vec::new();
+    for linked in [false, true] {
+        for size in [4usize, 16, 64] {
+            let count = size + usize::from(linked);
+            let kind = if linked { "node" } else { "box" };
+            let layout = if linked {
+                "struct node { struct node* next; int32 v; };"
+            } else {
+                "struct box { int32 v; };"
+            };
+            let parameters = (0..count)
+                .map(|i| format!(", struct {kind}* p{i}"))
+                .collect::<String>();
+            let owns = (0..count)
+                .map(|i| format!("owns *p{i};\n"))
+                .collect::<String>();
+            let stores = (0..size)
+                .map(|i| {
+                    if linked {
+                        format!("p{i}->next = p{};\n", i + 1)
+                    } else {
+                        format!("p{i}->v = {i};\n")
+                    }
+                })
+                .collect::<String>();
+            let (last_store, read, expected) = if linked {
+                (
+                    format!("p{size}->v = 9;\n"),
+                    format!("p0{}->v", "->next".repeat(size)),
+                    9,
+                )
+            } else {
+                (
+                    String::new(),
+                    (0..size)
+                        .map(|i| format!("p{i}->v"))
+                        .collect::<Vec<_>>()
+                        .join(" + "),
+                    (size * (size - 1) / 2) as i32,
+                )
+            };
+            let signature = format!("int32 caller(int32* flags, int32* data, int32 k{parameters})");
+            let c = format!(
+                "{layout}
+void touch(int32* flags, int32* data, int32 k) {{ return; }}
+{signature} {{ int32 total; {stores}{last_store}
+touch(flags, data, k); total = {read}; return total; }}"
+            );
+            let source = format!(
+                "verifying \"fields.c\";
+void touch(int32* flags, int32* data, int32 k) {{
+owns flags[0..k]; owns data[0..k];
+}} by {{ execute(); simp(); }}
+{signature} {{ owns flags[0..k]; owns data[0..k]; {owns}
+ensures result == {expected};
+}} by {{ {} simp(); }}",
+                "step();\n".repeat(size + usize::from(linked) + 4)
+            );
+            let ((result, samples), events) = crate::instrumentation::collect(|| {
+                crate::instrumentation::collect_tactic_work(|| {
+                    verify_c0_sources(&source, &[("fields.c", c.as_str())])
+                })
+            });
+            result.unwrap_or_else(|error| {
+                panic!("linked={linked}, size={size}: {}", error.message())
+            });
+            let steps: Vec<_> = samples
+                .iter()
+                .filter(|sample| sample.tactic.tactic_name == "step")
+                .skip(1)
+                .take(size + usize::from(linked))
+                .map(|sample| sample.work)
+                .collect();
+            assert_eq!(steps.len(), size + usize::from(linked));
+            let mut micros: Vec<_> = events
+                .iter()
+                .filter_map(|event| match event {
+                    crate::instrumentation::VerificationEvent::TacticFinished {
+                        tactic,
+                        elapsed,
+                        ..
+                    } if tactic.tactic_name == "step" => Some(elapsed.as_micros()),
+                    _ => None,
+                })
+                .skip(1)
+                .take(size + usize::from(linked))
+                .collect();
+            micros.sort_unstable();
+            eprintln!(
+                "field stores linked={linked} N={size}: median {}us, max {}us",
+                micros[micros.len() / 2],
+                micros.last().unwrap()
+            );
+            peaks.push((linked, size, *steps.iter().max().unwrap()));
+        }
+    }
+    eprintln!("owned parameter field stores: {peaks:?}");
+    for family in peaks.chunks(3) {
+        assert!(
+            family.iter().all(|(_, _, work)| *work <= family[0].2 + 32),
+            "a field store visited unrelated owned objects: {peaks:?}"
+        );
+    }
+}
