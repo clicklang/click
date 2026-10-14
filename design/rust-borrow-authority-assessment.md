@@ -104,10 +104,22 @@ retire copies of the original reference.
 
 The native `set_seven` fixture checks this certificate against actual exported
 MIR, checks its import identity and rejects an ending before the child store.
-Six bounded unit regressions cover alias copies, storage markers, replacement,
+Eleven bounded unit regressions cover alias copies, storage markers, replacement,
 parent reassignment, capture, unsupported paths, call continuations and invalid
 points. A deterministic 16/64/256/1024 alias-chain regression bounds work to the
-selected input, up to indexing factors.
+selected input, up to indexing factors. The native fixture also binds its child
+store to the exact immutable MIR expression and borrow instance.
+
+The ending certificate now indexes checked scalar memory accesses by MIR point.
+Each access retains its read/write kind, per-statement occurrence, reference
+local, exact expression, selected borrow point, function and locked import
+identity. Copies and direct reborrows retain the original borrow identity;
+replacement definitions distinguish a later reference in the same local.
+Reborrowing computes an address and is not itself recorded as a scalar read.
+Shared aliases may supply read evidence but cannot supply write evidence or
+produce a mutable reborrow. A scalar read used to choose another address is
+refused as alias transport rather than binding that new address to the original
+footprint. A second 16/64/256/1024 regression checks access indexing and lookup.
 
 This read-only certificate proves absence of future selected-reference uses in
 that subset. It does not grant memory authority, end a production loan or
@@ -117,8 +129,9 @@ does not itself reject the Rust program.
 ## Remaining local-reference work
 
 A call-scoped child identity does not close local-reference lifetime handling.
-The frontend still must associate local reference access with authority and
-connect checked borrow-end frontiers to kernel recovery. The ending certificate
+The frontend still must carry these checked access identities through C0
+lowering, bind them to actual memory authority, and connect checked borrow-end
+frontiers to kernel recovery. The ending certificate
 alone is insufficient: recovery must also match the source identity, reference
 access, borrowed footprint and exact program frontier. Neither last-use guesses nor `StorageDead`
 alone may authorize early recovery, and a live pointer alias must not revive
@@ -134,7 +147,7 @@ With the pinned tools activated and `CLICK_CHARON` set to the pinned exporter:
 cargo test --lib rust_correspondence_
 cargo test --lib correspondence_calls_production_
 cargo test --lib exclusive_call_
-cargo test --lib scalar_reference_frontier
+cargo test --lib scalar_reference_
 cargo test --test rust_import rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop -- --ignored
 cargo test --test rust_import rust_owned_field_parent_can_write_after_explicit_child_drop -- --ignored
 cargo test --test rust_import rust_owned_disjoint_mutable_fields_verify -- --ignored

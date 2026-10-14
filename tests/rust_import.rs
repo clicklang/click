@@ -2216,6 +2216,25 @@ fn rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop(
         .unwrap();
     assert!(std::ptr::eq(ending.function(), helper));
     assert_eq!(ending.import_identity(), prepared.identity());
+    let accesses = ending.memory_accesses_at(MirPoint {
+        block,
+        statement: last_store,
+    });
+    assert_eq!(accesses.len(), 1);
+    assert_eq!(
+        accesses[0].kind(),
+        click::languages::rust::borrow_frontiers::ScalarReferenceAccessKind::Write
+    );
+    assert_eq!(accesses[0].reference_local(), child);
+    assert_eq!(accesses[0].borrow_point(), borrow_point);
+    assert_eq!(accesses[0].import_identity(), prepared.identity());
+    let click::languages::rust::schema::MirStatement::Assign { target, .. } =
+        &mir.blocks[block].statements[last_store]
+    else {
+        panic!()
+    };
+    assert!(std::ptr::eq(accesses[0].place(), target));
+    assert!(ending.memory_accesses_at(end_point).is_empty());
     assert_eq!(
         prepared
             .certify_scalar_reference_end(

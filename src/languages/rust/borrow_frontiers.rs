@@ -5,11 +5,59 @@
 use super::schema::{Expression as E, Function, MirStatement as S, MirTerminator as T, Type};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct MirPoint {
     pub block: usize,
     /// Number of statements already executed in this block.
     pub statement: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScalarReferenceAccessKind {
+    Read,
+    Write,
+}
+
+/// One memory operation through the selected reference instance. The private
+/// constructor retains the exact immutable source expression and borrow
+/// origin; a variable name or caller-supplied alias list is not a binding.
+#[derive(Debug)]
+pub struct CheckedScalarReferenceAccess<'a> {
+    function: &'a Function,
+    import_identity: &'a str,
+    borrow: MirPoint,
+    point: MirPoint,
+    occurrence: usize,
+    place: &'a E,
+    reference: &'a str,
+    kind: ScalarReferenceAccessKind,
+}
+
+impl CheckedScalarReferenceAccess<'_> {
+    pub fn function(&self) -> &Function {
+        self.function
+    }
+    pub fn import_identity(&self) -> &str {
+        self.import_identity
+    }
+    pub fn borrow_point(&self) -> MirPoint {
+        self.borrow
+    }
+    pub fn point(&self) -> MirPoint {
+        self.point
+    }
+    pub fn occurrence(&self) -> usize {
+        self.occurrence
+    }
+    pub fn place(&self) -> &E {
+        self.place
+    }
+    pub fn reference_local(&self) -> &str {
+        self.reference
+    }
+    pub fn kind(&self) -> ScalarReferenceAccessKind {
+        self.kind
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -30,6 +78,7 @@ pub struct CheckedScalarReferenceEnd<'a> {
     import_identity: &'a str,
     borrow: MirPoint,
     end: MirPoint,
+    accesses: BTreeMap<MirPoint, Vec<CheckedScalarReferenceAccess<'a>>>,
 }
 
 impl CheckedScalarReferenceEnd<'_> {
@@ -45,11 +94,153 @@ impl CheckedScalarReferenceEnd<'_> {
     pub fn end_point(&self) -> MirPoint {
         self.end
     }
+    /// Indexed source evidence only; absence is not a memory permission.
+    pub fn memory_accesses_at(&self, point: MirPoint) -> &[CheckedScalarReferenceAccess<'_>] {
+        crate::instrumentation::record_deterministic_work(1);
+        self.accesses.get(&point).map(Vec::as_slice).unwrap_or(&[])
+    }
+}
+
+fn direct_alias_source(expr: &E) -> Option<&str> {
+    match expr {
+        E::Local { name } => Some(name),
+        E::Borrow { place, .. } => match place.as_ref() {
+            E::Deref { reference, .. } => match reference.as_ref() {
+                E::Local { name } => Some(name),
+                _ => None,
+            },
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+struct AccessCollector<'a, 'b> {
+    function: &'a Function,
+    import_identity: &'a str,
+    borrow: MirPoint,
+    point: MirPoint,
+    types: &'b BTreeMap<&'a str, &'a Type>,
+    aliases: &'b BTreeSet<&'a str>,
+    accesses: Vec<CheckedScalarReferenceAccess<'a>>,
+}
+
+impl<'a> AccessCollector<'a, '_> {
+    // Address computation does not read the addressed scalar. Operands used
+    // to compute an address (e.g. an index) still perform their normal reads.
+    fn expression(
+        &mut self,
+        expr: &'a E,
+        kind: Option<ScalarReferenceAccessKind>,
+    ) -> Result<bool, FrontierRefusal> {
+        use ScalarReferenceAccessKind::Read;
+        crate::instrumentation::record_deterministic_work(1);
+        let children: Vec<(&E, Option<ScalarReferenceAccessKind>)> = match expr {
+            E::Local { name } => return Ok(self.aliases.contains(name.as_str())),
+            E::Borrow { place, .. } => return self.expression(place, None),
+            E::Deref {
+                reference,
+                value_type,
+            } => {
+                let selected = matches!(reference.as_ref(), E::Local { name } if self.aliases.contains(name.as_str()));
+                if selected {
+                    let E::Local { name } = reference.as_ref() else {
+                        unreachable!()
+                    };
+                    if !matches!(self.types.get(name.as_str()), Some(Type::Reference { pointee, .. }) if pointee.as_ref() == value_type)
+                    {
+                        return Err(FrontierRefusal::UnsupportedFlow);
+                    }
+                    if kind == Some(ScalarReferenceAccessKind::Write)
+                        && !matches!(
+                            self.types.get(name.as_str()),
+                            Some(Type::Reference { mutable: true, .. })
+                        )
+                    {
+                        return Err(FrontierRefusal::UnsupportedFlow);
+                    }
+                    if let Some(kind) = kind {
+                        self.accesses.push(CheckedScalarReferenceAccess {
+                            function: self.function,
+                            import_identity: self.import_identity,
+                            borrow: self.borrow,
+                            point: self.point,
+                            occurrence: self.accesses.len(),
+                            place: expr,
+                            reference: name,
+                            kind,
+                        });
+                    }
+                }
+                let used = self.expression(reference, Some(Read))?;
+                if used && !selected {
+                    return Err(FrontierRefusal::ReferenceEscape);
+                }
+                return Ok(used);
+            }
+            E::Field { base, .. } => vec![(base, None)],
+            E::Index { slice, index } => vec![(slice, Some(Read)), (index, Some(Read))],
+            E::ArrayToSlice { array, .. } => vec![(array, None)],
+            E::SliceLength { slice } => vec![(slice, Some(Read))],
+            E::IntegerFrom { value, .. }
+            | E::Not { value }
+            | E::BitwiseNot { value, .. }
+            | E::Cast { value, .. }
+            | E::Repeat { value, .. } => vec![(value, Some(Read))],
+            E::Binary { left, right, .. } => vec![(left, Some(Read)), (right, Some(Read))],
+            E::Call { arguments, .. }
+            | E::Array {
+                elements: arguments,
+                ..
+            } => arguments.iter().map(|arg| (arg, Some(Read))).collect(),
+            E::FunctionAddress { .. }
+            | E::Integer { .. }
+            | E::UnsignedInteger { .. }
+            | E::UsizeInteger { .. }
+            | E::Boolean { .. } => return Ok(false),
+            _ => return Err(FrontierRefusal::UnsupportedFlow),
+        };
+        let mut used = false;
+        for (child, kind) in children {
+            used |= self.expression(child, kind)?;
+        }
+        Ok(used)
+    }
 }
 
 fn scalar_reference(ty: &Type) -> bool {
     matches!(ty, Type::Reference { pointee, .. }
         if matches!(pointee.as_ref(), Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Bool))
+}
+
+fn scalar_value(expr: &E, types: &BTreeMap<&str, &Type>) -> bool {
+    crate::instrumentation::record_deterministic_work(1);
+    let scalar = |ty: &Type| {
+        matches!(
+            ty,
+            Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Bool
+        )
+    };
+    match expr {
+        E::Integer { .. } | E::UnsignedInteger { .. } | E::Boolean { .. } => true,
+        E::Local { name } => types.get(name.as_str()).is_some_and(|ty| scalar(ty)),
+        E::Deref { value_type, .. } => scalar(value_type),
+        E::Not { value } | E::BitwiseNot { value, .. } => scalar_value(value, types),
+        E::Cast { value, value_type } => scalar(value_type) && scalar_value(value, types),
+        E::Binary {
+            left,
+            right,
+            left_type,
+            right_type,
+            ..
+        } => {
+            scalar(left_type)
+                && scalar(right_type)
+                && scalar_value(left, types)
+                && scalar_value(right, types)
+        }
+        _ => false,
+    }
 }
 
 // Each operand is visited once. The second bit detects opaque alias capture,
@@ -139,20 +330,30 @@ fn transfer<'a>(
                     .ok_or(FrontierRefusal::UnsupportedFlow)?;
                 if scalar_reference(ty) {
                     if source_uses {
+                        // A scalar read used to choose another address does
+                        // not make that address an alias of this borrow.
+                        let source = direct_alias_source(value)
+                            .filter(|source| aliases.contains(*source))
+                            .ok_or(FrontierRefusal::UnsupportedFlow)?;
+                        if !matches!((types.get(source), ty),
+                            (Some(Type::Reference { pointee: source, mutable: source_mutable }), Type::Reference { pointee: target, mutable: target_mutable }) if source == target && (!target_mutable || *source_mutable))
+                        {
+                            return Err(FrontierRefusal::UnsupportedFlow);
+                        }
                         aliases.insert(name);
                     } else {
                         aliases.remove(name.as_str());
                     }
                 } else if source_uses
-                    && !matches!(
+                    && (!matches!(
                         ty,
                         Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Bool
-                    )
+                    ) || !scalar_value(value, types))
                 {
                     // Do not lose an alias inside a record, array, cast or call.
                     return Err(FrontierRefusal::ReferenceEscape);
                 }
-            } else if source_uses {
+            } else if source_uses && !scalar_value(value, types) {
                 return Err(FrontierRefusal::ReferenceEscape);
             }
             Ok(())
@@ -234,7 +435,31 @@ pub(super) fn certify_scalar_reference_end<'a>(
         return Err(FrontierRefusal::UnsupportedBorrow);
     }
     let mut aliases = BTreeSet::from([name.as_str()]);
-    for statement in &block.statements[borrow.statement + 1..end.statement] {
+    let mut accesses = BTreeMap::new();
+    for (offset, statement) in block.statements[borrow.statement + 1..end.statement]
+        .iter()
+        .enumerate()
+    {
+        let point = MirPoint {
+            block: borrow.block,
+            statement: borrow.statement + 1 + offset,
+        };
+        let mut collector = AccessCollector {
+            function,
+            import_identity,
+            borrow,
+            point,
+            types: &types,
+            aliases: &aliases,
+            accesses: vec![],
+        };
+        if let S::Assign { target, value } = statement {
+            collector.expression(value, Some(ScalarReferenceAccessKind::Read))?;
+            collector.expression(target, Some(ScalarReferenceAccessKind::Write))?;
+        }
+        if !collector.accesses.is_empty() {
+            accesses.insert(point, collector.accesses);
+        }
         transfer(statement, &types, &mut aliases, false)?;
     }
     let mut point = end;
@@ -292,6 +517,7 @@ pub(super) fn certify_scalar_reference_end<'a>(
         import_identity,
         borrow,
         end,
+        accesses,
     })
 }
 
@@ -498,13 +724,13 @@ mod tests {
             });
             samples.push((size, work));
             assert!(
-                work <= size * 5 + 32,
+                work <= size * 7 + 48,
                 "alias chain revisited prefixes: {samples:?}"
             );
         }
         for pair in samples.windows(2) {
             assert!(
-                pair[1].1 <= pair[0].1 * 4 + 32,
+                pair[1].1 <= pair[0].1 * 4 + 48,
                 "superlinear alias checking: {samples:?}"
             );
         }
@@ -544,5 +770,190 @@ mod tests {
             .unwrap_err(),
             FrontierRefusal::InvalidPoint
         );
+    }
+
+    #[test]
+    fn scalar_reference_accesses_bind_reads_writes_and_exact_source_occurrences() {
+        let mut f = function();
+        block_mut(&mut f).statements.insert(
+            1,
+            assign(
+                local("alias"),
+                E::Borrow {
+                    place: Box::new(deref("child")),
+                    value_type: reference_type(),
+                },
+            ),
+        );
+        block_mut(&mut f)
+            .statements
+            .insert(2, assign(deref("alias"), deref("child")));
+        let certificate =
+            certify_scalar_reference_end(&f, "locked-source", point(0), point(4)).unwrap();
+        assert!(
+            certificate.memory_accesses_at(point(1)).is_empty(),
+            "reborrowing computes an address, not a scalar load"
+        );
+        let accesses = certificate.memory_accesses_at(point(2));
+        assert_eq!(accesses.len(), 2);
+        let S::Assign { target, value } = &f.mir.as_ref().unwrap().blocks[0].statements[2] else {
+            panic!()
+        };
+        for (access, kind, name, expression, occurrence) in [
+            (
+                &accesses[0],
+                ScalarReferenceAccessKind::Read,
+                "child",
+                value,
+                0,
+            ),
+            (
+                &accesses[1],
+                ScalarReferenceAccessKind::Write,
+                "alias",
+                target,
+                1,
+            ),
+        ] {
+            assert_eq!(access.kind(), kind);
+            assert_eq!(access.reference_local(), name);
+            assert_eq!(access.point(), point(2));
+            assert_eq!(access.occurrence(), occurrence);
+            assert_eq!(access.borrow_point(), point(0));
+            assert_eq!(access.import_identity(), "locked-source");
+            assert!(std::ptr::eq(access.function(), &f));
+            assert!(std::ptr::eq(access.place(), expression));
+        }
+        assert_eq!(certificate.memory_accesses_at(point(3)).len(), 1);
+        assert!(
+            certificate.memory_accesses_at(point(4)).is_empty(),
+            "parent access is not a child access"
+        );
+        assert!(certificate.memory_accesses_at(point(99)).is_empty());
+    }
+
+    #[test]
+    fn scalar_reference_accesses_keep_copies_bound_after_child_replacement() {
+        let mut f = function();
+        block_mut(&mut f).statements = vec![
+            assign(local("child"), borrow_parent()),
+            assign(local("alias"), local("child")),
+            assign(
+                local("child"),
+                E::Borrow {
+                    place: Box::new(deref("other")),
+                    value_type: reference_type(),
+                },
+            ),
+            assign(deref("child"), E::Integer { value: 3 }),
+            assign(deref("alias"), E::Integer { value: 7 }),
+        ];
+        let first = certify_scalar_reference_end(&f, "source", point(0), point(5)).unwrap();
+        let second = certify_scalar_reference_end(&f, "source", point(2), point(5)).unwrap();
+        assert!(first.memory_accesses_at(point(3)).is_empty());
+        assert_eq!(
+            first.memory_accesses_at(point(4))[0].reference_local(),
+            "alias"
+        );
+        assert_eq!(
+            second.memory_accesses_at(point(3))[0].reference_local(),
+            "child"
+        );
+        assert!(second.memory_accesses_at(point(4)).is_empty());
+        assert_ne!(first.borrow_point(), second.borrow_point());
+        assert_eq!(refusal(&f, 3), FrontierRefusal::FutureUse);
+    }
+
+    #[test]
+    fn scalar_reference_accesses_refuse_value_dependency_as_pointer_identity() {
+        let mut f = function();
+        // The child value chooses another place. That reference does not
+        // designate the selected borrowed scalar merely because it uses it.
+        block_mut(&mut f).statements.insert(
+            1,
+            assign(
+                local("alias"),
+                E::Borrow {
+                    place: Box::new(E::Index {
+                        slice: Box::new(local("other")),
+                        index: Box::new(deref("child")),
+                    }),
+                    value_type: reference_type(),
+                },
+            ),
+        );
+        assert_eq!(refusal(&f, 3), FrontierRefusal::UnsupportedFlow);
+    }
+
+    #[test]
+    fn scalar_reference_accesses_index_and_lookup_scale_with_selected_operations() {
+        let mut samples = Vec::new();
+        for size in [16, 64, 256, 1024] {
+            let mut f = function();
+            block_mut(&mut f).statements = vec![assign(local("child"), borrow_parent())];
+            for _ in 0..size {
+                block_mut(&mut f)
+                    .statements
+                    .push(assign(deref("child"), E::Integer { value: 7 }));
+            }
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let certificate =
+                    certify_scalar_reference_end(&f, "source", point(0), point(size + 1)).unwrap();
+                for index in 1..=size {
+                    let accesses = certificate.memory_accesses_at(point(index));
+                    assert_eq!(accesses.len(), 1);
+                    assert_eq!(accesses[0].point(), point(index));
+                    assert_eq!(accesses[0].kind(), ScalarReferenceAccessKind::Write);
+                }
+            });
+            samples.push(work);
+            assert!(
+                work <= size * 9 + 48,
+                "access indexing revisited prefixes: {samples:?}"
+            );
+        }
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1] <= pair[0] * 4 + 48,
+                "superlinear access indexing: {samples:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn scalar_reference_accesses_allow_shared_reads_and_refuse_shared_writes() {
+        let mut f = function();
+        let shared = Type::Reference {
+            mutable: false,
+            pointee: Box::new(Type::I32),
+        };
+        f.mir.as_mut().unwrap().locals[1].value_type = shared.clone();
+        block_mut(&mut f).statements = vec![
+            assign(local("child"), borrow_parent()),
+            assign(
+                local("alias"),
+                E::Borrow {
+                    place: Box::new(deref("child")),
+                    value_type: shared,
+                },
+            ),
+            assign(local("x"), deref("alias")),
+        ];
+        let certificate = certify_scalar_reference_end(&f, "source", point(0), point(3)).unwrap();
+        assert_eq!(
+            certificate.memory_accesses_at(point(2))[0].kind(),
+            ScalarReferenceAccessKind::Read
+        );
+        block_mut(&mut f).statements[2] = assign(deref("alias"), E::Integer { value: 7 });
+        assert_eq!(refusal(&f, 3), FrontierRefusal::UnsupportedFlow);
+        // A shared alias cannot produce a new mutable child binding either.
+        block_mut(&mut f).statements[2] = assign(
+            local("child"),
+            E::Borrow {
+                place: Box::new(deref("alias")),
+                value_type: reference_type(),
+            },
+        );
+        assert_eq!(refusal(&f, 3), FrontierRefusal::UnsupportedFlow);
     }
 }
