@@ -5383,7 +5383,7 @@ fn quantity_relations_ignore_unrelated_facts() {
             );
             let (decided, work) = crate::instrumentation::measure_deterministic_work(|| {
                 [
-                    // `population_quantity_is_positive` / `resource_quantity_is_positive`
+                    // `resource_quantity_is_positive`
                     quantity_condition_holds(
                         &assumptions,
                         ConditionTerm::signed_greater_than(
@@ -5399,7 +5399,7 @@ fn quantity_relations_ignore_unrelated_facts() {
                             Bitvector32Term::Constant(2),
                         ),
                     ),
-                    // `population_quantities_are_equal`
+                    // An exact quantity equality
                     quantity_condition_holds(
                         &assumptions,
                         ConditionTerm::equal(count.clone(), Bitvector32Term::Constant(3)),

@@ -5235,8 +5235,8 @@ impl CMemory {
     /// A union overlay is the authoritative view for an exact typed load, so a
     /// reader that wants to treat the raw cell as the pointer's content has to
     /// know that no overlay outranks it. [`Self::store_with_context`] and
-    /// [`Self::store_union`] keep the two disjoint at every pointer, so this
-    /// answers `false` wherever [`Self::known_value`] answers `Some`; it is
+    /// [`Self::store_union_views`] keep the two disjoint at every pointer, so
+    /// this answers `false` wherever [`Self::known_value`] answers `Some`; it is
     /// asked anyway where the consequence of the two ever coexisting would be
     /// a wrong value rather than a lost one.
     pub(in crate::kernel) fn has_union_overlay_at(&self, pointer: &Pointer) -> bool {
@@ -5687,11 +5687,12 @@ impl CMemory {
     /// decided it from the addresses: `i != j` separates `a[i]` from `a[j]`
     /// and says nothing about an eight-byte store there, which covers
     /// `a[j]` and `a[j + 1]` both. So the ladder is conjoined with the shared
-    /// [`access_byte_overlap`], exactly as `step_effect::cell_effect` and the
-    /// snapshot comparisons conjoin it: the ladder decides whether the
-    /// addresses differ, and the byte answer decides whether the gap it
-    /// establishes clears both accesses. An unknown gap blocks it too — a
-    /// ladder proving two addresses differ says nothing about bytes.
+    /// [`crate::kernel::reasoning::access_byte_overlap`], exactly as
+    /// `step_effect::cell_effect` and the snapshot comparisons conjoin it: the
+    /// ladder decides whether the addresses differ, and the byte answer
+    /// decides whether the gap it establishes clears both accesses. An
+    /// unknown gap blocks it too — a ladder proving two addresses differ says
+    /// nothing about bytes.
     ///
     /// The widths are exact on both sides here, which is why this site can
     /// ask at all: the store's is its own `bytes`, and the cell's is the
@@ -8397,7 +8398,7 @@ pub(super) fn never_address_taken_generation() -> u64 {
 
 /// Records the program-wide never-address-taken names for this session. The
 /// surface computes them from every function body it parsed; see
-/// `never_address_taken_local_names`.
+/// `crate::languages::c::address_taken::summarize_address_taken`.
 pub(crate) fn never_address_taken_locals_key() -> std::sync::Arc<()> {
     NEVER_ADDRESS_TAKEN_LOCALS_KEY.with(|key| key.borrow().clone())
 }

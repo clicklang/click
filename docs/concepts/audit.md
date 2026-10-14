@@ -19,8 +19,9 @@ The stages protect different invariants:
 - expansion must extract and render the checked operations attributed to the
   selected site;
 - ordinary verification must accept the complete rewritten source;
-- the expanded proof's deterministic work must remain inside the configured
-  ratio and slack of the original's.
+- the expanded proof's deterministic work fails the audit only when it exceeds
+  both twice the original's and the original's plus the configured
+  performance slack.
 
 A claim whose sites are all selected is expanded once, with every site
 together. Expanding one site runs its whole claim, so expanding the sites one

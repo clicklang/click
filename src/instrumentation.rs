@@ -584,8 +584,8 @@ thread_local! {
 ///
 /// Not charging is not enough on its own: a check that names a value or
 /// fills a memo the checked code reads later leaves that later read cheaper
-/// in a debug build than in a release one. [`without_debug_checks`] runs an
-/// operation with every check skipped, as a release build runs it, so a
+/// in a debug build than in a release one. The test-only `without_debug_checks`
+/// runs an operation with every check skipped, as a release build runs it, so a
 /// test can compare the two.
 #[cfg(debug_assertions)]
 pub(crate) fn uncharged_debug_check(check: impl FnOnce()) {

@@ -5558,7 +5558,8 @@ pub(crate) fn parse_translation_unit_for_import(
     )
 }
 
-/// [`parse_translation_unit_for_import`] under the import's target.
+/// Parses compiler-preprocessed C under the import's target, retaining
+/// original file/line locations from validated line markers.
 pub(crate) fn parse_translation_unit_for_import_target(
     source: &str,
     source_identity: &str,

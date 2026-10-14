@@ -1106,7 +1106,7 @@ fn audits_an_undecided_wide_guard_after_a_recursive_call() {
     // an `unsigned long` cell of the node the call did not touch, all inside
     // the `else` arm of a surface `if`. `execute()` renders the guard it
     // cannot decide as a proof `if` anchored at the statement's entry, and the
-    // recheck applies each arm's `step()` under `RequireProven`: the arm
+    // recheck applies each arm's `step()`, which must prove the guard: the arm
     // assumes the surface lowering of the guard while the C guard evaluates
     // against the snapshot its own load resolved. Those agree only because
     // every integer scalar one to eight bytes wide is named where it is

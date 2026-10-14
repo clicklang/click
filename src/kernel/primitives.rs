@@ -4579,7 +4579,7 @@ pub enum CUndefinedBehavior {
     /// An operation on a pointer value whose pointee's lifetime has ended
     /// (C11 6.2.4p2, Annex J.2): comparing, subtracting, offsetting, testing
     /// or converting a pointer into a freed allocation. A refusal names the
-    /// operation through [`crate::kernel::locate_undefined_behavior`]; the
+    /// operation through `crate::kernel::locate_undefined_behavior`; the
     /// kernel's name for the allocation is not something the reader wrote.
     FreedPointerUse,
     /// An equality comparison whose answer C11 6.5.9p6 leaves to the
@@ -4588,7 +4588,7 @@ pub enum CUndefinedBehavior {
     /// two are equal exactly when the objects are adjacent. The result is
     /// unspecified rather than undefined, and refused because the kernel does
     /// not model object placement. A refusal names the comparison through
-    /// [`crate::kernel::locate_undefined_behavior`].
+    /// `crate::kernel::locate_undefined_behavior`.
     OnePastEndComparison,
 }
 
@@ -6135,7 +6135,7 @@ pub enum CMemoryDerivation {
     /// element order, of each slot the run held live when it was seeded
     /// ([`CellRun`]). One edge stands for the whole run so that seeding a
     /// constant range costs the same whatever its length; every consumer
-    /// reads it as that sequence of stores ([`Self::seeded_stores`]).
+    /// reads it as that sequence of stores (`Self::seeded_stores`).
     CellsSeeded {
         base: SharedCMemory,
         run: std::sync::Arc<CellRun>,
@@ -10323,7 +10323,7 @@ pub struct PureFactContext {
     /// still asks these. A fact of two atoms is matched only through its
     /// key.
     /// Keyed by the family of kinds that can match one another
-    /// (`condition_match_family`).
+    /// ([`ConditionMatchKey::family`]).
     pub(super) open_condition_facts:
         crate::persistent::PersistentMap<u8, crate::persistent::PersistentMap<ConditionTerm, bool>>,
     /// The signed-order condition facts (`<`, `<=`, `>`, `>=`, either

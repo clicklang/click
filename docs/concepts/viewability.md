@@ -123,8 +123,8 @@ such promise, and reading it as an element count is refused:
 32-bit byte extent in this scope: `n <= 1073741823` is not an established fact
 ```
 
-Since Click's surface has no unsigned comparison, the condition is stated in the
-signed spelling above, as `0 <= b - a` together with `b - a <= 1073741823`.
+The condition is stated over the signed difference, as `0 <= b - a` together
+with `b - a <= 1073741823`.
 
 
 A narrower viewability claim can also be covered by a wider one. The

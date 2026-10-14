@@ -139,8 +139,8 @@ nested folds, and recursion each need separate evidence from real proofs.
   `explicit_fold_read_transport_along_a_store_sequence_is_near_linear` in
   `src/surface/tests/scaling_tests.rs`.
 - The `mdtests/fold_read_transport_*.md` fixtures (positive and refused
-  forms), `mdtests/sweep_maintains_a_zero_unmarked_count.md` and its
-  `_by_simp` twin, and the `mdtests/array_fact_does_not_survive_*.md` attacks,
+  forms), `mdtests/sweep_maintains_a_zero_unmarked_count.md`,
+  `mdtests/sweep_prefix_survives_its_endpoint_store_by_simp.md`, and the `mdtests/array_fact_does_not_survive_*.md` attacks,
   which state a fact reading a cell the step may write and are refused by
   both the whole-block epoch and the fold read frame.
 

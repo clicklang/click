@@ -681,17 +681,17 @@ a closed state before returning. Batching is allowed only if it preserves this
 boundary and charges the actual maintenance work.
 
 The initial `PointerClasses::normal` recursively normalized loads with a depth
-cap and a same-snapshot scan. It has been replaced. `PointerClassState` stores
-load applications, block use lists, application signatures, and reverse
-signature bindings. Registration walks only a query's unregistered load-address
+cap and a same-snapshot scan. It has been replaced. `EqualityGraphState` stores
+load applications (`loads`), block use lists (`uses`), application signatures
+(`signatures`), and reverse signature bindings (`load_signatures`). Registration walks only a query's unregistered load-address
 dependencies; merges reindex users of moved blocks and enqueue colliding load
 values for merging. Every registration/merge drains the worklist before return.
 Class weight counts blocks and application uses, so high-fanout classes remain
 on the heavy side of a merge. A context clone copies persistent roots into its
 own lock; query registration cannot mutate a sibling's closure.
 
-Signature keys contain snapshot arena identity, representative block identity,
-and an affine-offset ID. Offset sequences are interned with shallow prefix keys
+Signature keys (`LoadSignature`) contain snapshot arena identity,
+representative block identity, an affine-offset ID, and the load kind. Offset sequences are interned with shallow prefix keys
 and retained machine-atom IDs. This removes deep snapshot/term comparison from
 signature lookup. Explicit affine syntax is normalized with an iterative walk;
 legacy spelling output sorts structurally rather than by interning order.

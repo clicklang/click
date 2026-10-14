@@ -783,20 +783,24 @@ snapshot facts and their variables, so this fallback remains linear in that
 bucket's collected entries. It never walks the complete context per chain
 link, and ordinary fact insertion never scans snapshot contents.
 
-`connected_condition_selection_scales_linearly_in_chain_and_context` pins
-selection at 39, 79, 159, and 319 work units for descending chains of 8, 16,
-32, and 64 links; complete atomic derivation costs 86, 174, 350, and 702.
-An eight-link chain stays at 39/86 units beside 32 to 256 unrelated facts.
-The former scan, retained as a test oracle, visits 360 to 20,800 facts on the
-growing-chain axis. `snapshot_condition_index_builds_once_and_survives_scalar_updates`
-pins cold construction at 57 to 169 units over 8 to 64 unrelated snapshot
-facts, warm traversal at a flat 38, and a single snapshot-fact insertion or
-withdrawal at no more than eight additional units. Wide-condition construction
-is pinned separately so the entry charge cannot hide a large variable list.
-Every required chain link is checked by withdrawing it from the certificate
-context. `connected_condition_chain_expands_and_rechecks_at_multiple_sizes`
-pins complete smart verification, expansion, and independent checking over
-four chain sizes, including rejection when a link is missing.
+`connected_condition_selection_scales_linearly_in_chain_and_context`
+measured selection at 39, 79, 159, and 319 work units for descending chains of
+8, 16, 32, and 64 links, and complete atomic derivation at 86, 174, 350, and
+702. An eight-link chain measured 39/86 units beside 32 to 256 unrelated facts.
+The test asserts that both curves at most triple per doubling and stay flat as
+unrelated facts grow. The former scan, retained as a test oracle, visits 360
+to 20,800 facts on the growing-chain axis.
+`snapshot_condition_index_builds_once_and_survives_scalar_updates` measured
+cold construction at 57 to 169 units over 8 to 64 unrelated snapshot facts and
+warm traversal at 38. It asserts that warm traversal is flat, that cold
+construction is charged at least one unit per snapshot fact and at most
+triples per doubling, that a scalar insertion leaves the work unchanged, and
+that a single snapshot-fact insertion or withdrawal adds at most eight units.
+`wide_condition_index_construction_charges_its_variable_entries` checks
+wide-condition construction separately so the entry charge cannot hide a large
+variable list. Every required chain link is checked by withdrawing it from the
+certificate context, and withdrawing a middle link leaves the goal
+underivable.
 
 Condition premise search tries single candidates, then candidate pairs that
 some derivation could connect: two facts sharing a bitvector variable
@@ -998,10 +1002,8 @@ retained certificates and their checking use only selected dependencies.
 candidate visits and complete derivation work beside 16, 32, 64 and 128
 same-family facts. They check covering ranges, adjacent ranges, aliases,
 contained separations and a gap that must remain unproved. Same-block negative
-ranges exercise the wider bucket without exhaustive pair trials. Certificates
-are checked independently and rejected when a required source is withdrawn.
-`indexed_memory_sources_expand_and_recheck_at_multiple_sizes` checks one-source
-and adjacent-source smart proofs, expansion and re-verification at four sizes.
+ranges exercise the wider bucket without exhaustive pair trials. Each
+certificate cites only the goal's own sources.
 
 Atomic certificate planning also maintains persistent syntax adjacency for
 condition and proposition facts. Each key names a value variable or an

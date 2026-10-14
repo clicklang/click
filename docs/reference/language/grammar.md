@@ -63,10 +63,14 @@ documentation inventory keep the following accepted words synchronized.
 | `by`, `auto`, `using` | Proof introduction, default smart proof, and exact-premise syntax. |
 | `mark`, `step`, `execute`, `execute_until` | Execution tactics. |
 | `unfold`, `fold`, `observe`, `construct`, `open` | Predicate and resource tactics. |
+| `peel` | Range-fold tactic: `peel(f(args)) using { ... }` opens the range-fold law of an `Integer`-valued pure function whose body is a range fold, selected by the listed guards. |
 | `take`, `give`, `gather`, `scatter` | Iterated guarded-ownership tactics: move one element out of or into an iterated fact, and form or dissolve the whole fact. `forall` inside a resource body starts the iterated clause itself. |
 | `apply`, `have`, `if`, `cases`, `both`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
 | `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
 | `assumption`, `extract`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
+| `arithmetic` | Smart arithmetic tactic: `arithmetic()` and `arithmetic() using { ... }` plan and check a bounded arithmetic certificate. |
+| `sorry` | Dev-only proof hole `sorry()`. It parses only under `click verify --allow-sorry`; see [Dev-only proof hole](../cli/verify.md#dev-only-proof-hole). A user-defined tactic may not take the name. |
+| `split`, `left`, `right` | Retired tactic spellings. Unless a user-defined tactic has the name, the parser rejects each with a diagnostic that names `assumption()`. |
 | `arithmetic_certificate` | Starts the typed arithmetic-certificate envelope. The canonical mathematical family is `arithmetic_certificate { ... }`; checked machine families are `arithmetic_certificate signed_int32 { ... }` and `arithmetic_certificate rules { ... }`. Its step words are listed under [Arithmetic-certificate words](#arithmetic-certificate-words). |
 | `rewrite`, `transport`, `instantiate`, `simp`, `induct`, `close_invariants` | Equality, snapshot, quantifier, simplification, induction, and loop-proof tactics. |
 | `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also introduces the target contract's proof instances on an `executes` conclusion. |

@@ -237,6 +237,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "and",
     "any",
     "apply",
+    "arithmetic",
     "as",
     "assumption",
     "at",
@@ -290,6 +291,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "import",
     "implies",
     "arithmetic_certificate",
+    "peel",
     "signed_int32",
     "rules",
     "in",
@@ -335,6 +337,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "separate",
     "simp",
     "sizeof",
+    "sorry",
     "spec",
     "statement",
     "step",
@@ -1679,7 +1682,7 @@ impl IteratedTactic {
 
 /// One iterated guarded-ownership clause as written. The shape the kernel
 /// needs (index bounds, element stride and offsets, guard cell and value) is
-/// derived from these by [`crate::surface::lowering::iterated_clause_shape`],
+/// derived from these by `crate::surface::lowering::iterated_clause_shape`,
 /// which validation runs once per definition.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct IteratedResourceClause {

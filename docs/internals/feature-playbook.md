@@ -14,7 +14,8 @@ Use this workflow when extending Click.
    change that makes the original behavior provable.
 5. Add unit tests when the behavior is lower-level than an mdtest can show.
 6. Reverify the unchanged integration source as well as the reduction.
-7. Run `cargo test`.
+7. Run focused checks that fit the change; `scripts/check.sh` is the full gate,
+   which the PR workflow and merge queue run for code changes.
 8. Update docs in this directory.
 
 ## C-source fidelity

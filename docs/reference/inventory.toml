@@ -471,6 +471,10 @@ id = "language.word.address"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
+id = "language.word.arithmetic"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
 id = "language.word.import"
 path = "reference/language/grammar.md#word-index"
 
@@ -511,6 +515,10 @@ id = "language.word.arithmetic_certificate"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
+id = "language.word.peel"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
 id = "language.word.signed_int32"
 path = "reference/language/grammar.md#word-index"
 
@@ -528,6 +536,10 @@ path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.scale"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
+id = "language.word.sorry"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -3144,6 +3156,26 @@ path = "reference/cli/import.md#options-and-exit-status"
 [[item]]
 id = "cli.import.--"
 path = "reference/cli/import.md#options-and-exit-status"
+
+[[item]]
+id = "cli.install.command"
+path = "reference/cli/versions.md#click-install"
+
+[[item]]
+id = "cli.use.command"
+path = "reference/cli/versions.md#click-use"
+
+[[item]]
+id = "cli.use.--unset"
+path = "reference/cli/versions.md#click-use"
+
+[[item]]
+id = "cli.default.command"
+path = "reference/cli/versions.md#click-default"
+
+[[item]]
+id = "cli.versions.command"
+path = "reference/cli/versions.md#click-versions"
 
 
 [[item]]

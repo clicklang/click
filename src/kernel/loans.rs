@@ -1643,7 +1643,8 @@ impl CompositeLoanBacking {
     /// composite descriptions this loan permits beside its own head, and
     /// `restored` are the owned facts recovery hands back in place of the
     /// head. Both are empty for an ordinary same-composite lend, which is
-    /// what [`CompositeLoanBacking::from_checked_expansion`] builds.
+    /// what the test-only `CompositeLoanBacking::from_checked_expansion`
+    /// builds.
     pub(crate) fn from_checked_adapter(
         support: ResourceOccurrenceId,
         head: CResourceFact,

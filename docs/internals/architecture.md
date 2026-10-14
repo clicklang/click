@@ -20,7 +20,7 @@ language's role.
 | `src/source.rs` | Share source-file positions between Surface Click and target-language frontends. |
 | `src/kernel/` | Define primitive terms, states, rules, symbolic execution, assumptions, memory reasoning, and the persistent checked proof object. |
 | `src/cli.rs` | Shared CLI parsing, target selection, durations, and user-facing command metadata. |
-| `src/bin/` | Thin entry points and command-specific reporting for verify, profile, expand, and audit. |
+| `src/bin/` | Thin entry points and command-specific reporting for verify, profile, expand, audit, and import, plus the `click` dispatcher's version manager (`install`, `use`) in `src/bin/click/`. |
 | `src/instrumentation.rs` | Work attribution, deadlines, budgets, and profiler events. |
 | `src/persistent.rs` | Persistent structures used where proof states share prior versions. |
 | `library/` | Click library modules loaded with user source. |

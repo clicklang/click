@@ -72,7 +72,7 @@ Resource verbs provide resource facts alongside pure requirements:
 <!-- verified-example: mdtests/contract_let_bindings.md -->
 ```click
 views p[0..1];
-consumes p[0..1];
+consumes p[1..2];
 ```
 
 These give the verifier permission to check external memory accesses. `views`
