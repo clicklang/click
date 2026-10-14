@@ -4,7 +4,7 @@
 //! any verification query, so that the kernel can decide that a pointer value
 //! it cannot resolve does not designate a local the program never addresses.
 //! The answer is a set of *names* and is deliberately program-wide;
-//! [`crate::kernel::primitives::block_is_never_address_taken_local`] says why,
+//! [`crate::kernel::block_is_never_address_taken_local`] says why,
 //! and carries the soundness argument for spending it.
 //!
 //! The pass is default-deny in both directions. A name is reported only if

@@ -1811,7 +1811,8 @@ pub(super) fn execute_c_function_paths_with_contract_resources(
             let (outcome, obligations, loan_evidence) = if defer_conditional_resource_effect {
                 // This is the body-only candidate used to assemble a checked
                 // proof frontier. Its function-boundary transition is applied
-                // by `checked_contract_exit_outcome`, which records an explicit
+                // by `checked_contract_exit_outcome_with_boundary_transfer`,
+                // which records an explicit
                 // deferred marker when a conditional produced effect is not
                 // decided by the proof entry facts.
                 without_loan_evidence(function_outcome_from_body(
@@ -12524,9 +12525,9 @@ fn evaluate_refinement_resource_context(
 
 /// Checks that the named requirements can supply the concrete requirements,
 /// preserving everything the concrete transition only borrows or does not
-/// need as a frame. Then requires `concrete_ensures * frame` to provide the
-/// named ensures. The resource context's indexed algebras perform ownership
-/// splitting, symbolic exact-resource quantity arithmetic, range containment,
+/// need as a frame. Then requires the concrete ensures together with that
+/// frame to provide the named ensures. The resource context's indexed
+/// algebras perform ownership splitting, symbolic exact-resource quantity arithmetic, range containment,
 /// exact token and folded-composite identity, and scoped borrowing; no project
 /// functions, composite definitions, or unrelated proof state are inspected.
 #[allow(clippy::too_many_arguments)]
@@ -12642,7 +12643,8 @@ fn framed_resource_transition_refines(
 /// The walk over the contract's declared segments is not a selection. Its only
 /// result is whether some declared segment covers the required range; no later
 /// check consults which one, and a corpus probe (both fixture harnesses, plus
-/// `c_named_contract_refinement_selects_guarded_segment`) found exactly one
+/// the since-deleted `c_named_contract_refinement_selects_guarded_segment`
+/// mdtest) found exactly one
 /// covering segment at every reached site. So this is a discharge, and a
 /// finite disjunction over the declared segments would spell a choice that
 /// nothing consumes.
@@ -19633,11 +19635,10 @@ fn prepare_contract_resource_transfer_unexplained(
     } else {
         Vec::new()
     };
-    // A population's cardinality lives in the tracked population and its
-    // transition, not in the resource algebra: the caller holds one
-    // representative unit whose quantity is the unit, while `N of p` is
-    // discharged definitionally and the count arithmetic is checked by
-    // `apply_counted_population_transitions_with_interface`. The stable
+    // A population's cardinality lives in the population authority
+    // (`crate::kernel::population_authority`), not in the resource algebra:
+    // the caller holds one representative unit whose quantity is the unit,
+    // while `N of p` is discharged definitionally. The stable
     // planner's exclusive reservation asks for one owned entry that directly
     // entails the whole requirement, which no representative can supply for a
     // symbolic or non-unit constant quantity, so such a requirement takes the

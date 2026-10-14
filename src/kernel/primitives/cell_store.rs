@@ -622,7 +622,7 @@ impl PartialOrd for CellRun {
 }
 
 impl Ord for CellRun {
-    /// By [`RunKey`], then holes: a source memory is compared by structure
+    /// By `RunKey`, then holes: a source memory is compared by structure
     /// only when two sources' content hashes collide.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.key()
@@ -2213,8 +2213,10 @@ impl CellStore {
         self.retain_runs_by(None, keep, &mut run_rule)
     }
 
-    /// [`Self::retain_candidates`] with a whole-run answer from `run_rule`,
-    /// as for [`Self::retain_only_candidates_by`], for a `keep` that the
+    /// Keeps the candidate cells `keep` accepts, leaving cells outside the
+    /// candidates unvisited as [`AliasCandidates::retain_map`] does, with a
+    /// whole-run answer from `run_rule` as for
+    /// [`Self::retain_only_candidates_by`], for a `keep` that the
     /// caller has shown accepts every concrete cell inside the key ranges
     /// `kept`: those cells are kept without being visited
     /// ([`AliasCandidates::retain_map_outside`]). Runs are asked as before.

@@ -208,7 +208,7 @@ derived from its continuation stack rather than maintained as an independent
 flag.
 
 The loop preservation execution proof packages its abstract exit transitions as an
-opaque kernel `VerifiedLoopRule`. The symbolic values in its entry state stand
+opaque kernel `CVerifiedLoopRule`. The symbolic values in its entry state stand
 for arbitrary values constrained by the rule's required assumptions. Later
 execution may strengthen those assumptions, but it must apply the registered
 rule when crossing an annotated loop. A missing or incompatible rule is a

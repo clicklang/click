@@ -2327,7 +2327,7 @@ pub(in crate::kernel) fn declare_load_access_width(pointer: &Pointer, bytes: u32
 
 /// The width of the C load recorded at this address in this snapshot, when
 /// one was. `None` means no typed load was seen here, and the caller stands
-/// in [`resource_tracker::widest_scalar_access_bytes`].
+/// in [`crate::kernel::resource_tracker::widest_scalar_access_bytes`].
 pub(crate) fn recorded_load_access_width(memory: &SharedCMemory, pointer: &Pointer) -> Option<u32> {
     LOAD_ACCESS_WIDTH
         .with(|widths| {
@@ -2391,7 +2391,7 @@ pub(crate) fn load_access_width_at_address_or_widest(pointer: &Pointer) -> u32 {
 /// the name's own kind ([`registered_load_kind_for_variable`]) when the
 /// address is also read wider. `None` means the variable is not a registered
 /// load; a caller that needs a width anyway uses
-/// [`resource_tracker::widest_scalar_access_bytes`].
+/// [`crate::kernel::resource_tracker::widest_scalar_access_bytes`].
 pub(crate) fn registered_load_bytes_for_variable(variable: &Variable) -> Option<u32> {
     LOAD_VARIABLE_REGISTRY.with(|registry| registry.borrow().get(variable).map(|load| load.bytes))
 }

@@ -3531,10 +3531,10 @@ pub(super) fn comparison_snapshot_variants(
     // A predicate call names its memory snapshot only through its array-ref
     // arguments, so the snapshot is selected by wrapping the arguments —
     // uniformly, the way the recorded-form search in
-    // `checked_surface_fact_in_state` already does. Wrapping a value argument
-    // is harmless: it evaluates to the same value in every selected snapshot where it is
-    // synthesizable at, and a wrapping that does not lower is discarded by the
-    // caller's `check`.
+    // `checked_surface_fact_in_state_with_assumptions` already does. Wrapping
+    // a value argument is harmless: it evaluates to the same value in every
+    // selected snapshot where it is synthesizable at, and a wrapping that
+    // does not lower is discarded by the caller's `check`.
     if let ClickProposition::PredicateCall { name, arguments } = proposition {
         let call = |wrap: &dyn Fn(&ContractExpression) -> ContractExpression| {
             ClickProposition::PredicateCall {

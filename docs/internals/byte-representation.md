@@ -281,10 +281,12 @@ The regressions measure deterministic work at four or more sizes, under the
   (8 to 512 unrelated cells, constant work);
 - `src/kernel/tests/byte_view_tests.rs`:
   `containing_cell_lookup_work_is_independent_of_unrelated_cells`;
-- `src/surface/tests/scaling_tests.rs`: the frozen round trip beside 2 to 16
-  unrelated live allocations, with the marginal work of one extra copy
-  (`roundtrip_extra_copy_stays_nearly_flat_beside_unrelated_allocations`,
-  `expanded_roundtrip_extra_copy_is_logarithmic_beside_unrelated_allocations`,
+- `src/surface/tests/scaling_tests.rs` (all nightly): the frozen round trip
+  with the marginal work of one extra copy beside 2, 4, 8, and 16 unrelated
+  live allocations
+  (`roundtrip_extra_copy_stays_nearly_flat_beside_unrelated_allocations`),
+  and the expanded round trip beside 1, 2, 4, and 7
+  (`expanded_roundtrip_extra_copy_is_logarithmic_beside_unrelated_allocations`,
   `expanded_roundtrip_work_per_source_byte_is_logarithmic`).
 
 ## Outside the milestone

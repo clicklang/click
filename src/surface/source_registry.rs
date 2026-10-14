@@ -133,7 +133,8 @@ impl CallerRequirementIndex {
         )
     }
 
-    /// [`Self::from_entry_facts`], recording each requirement in its
+    /// Constructs the direct caller index from the entry-origin stream, as
+    /// the test-only `from_entry_facts` does, recording each requirement in its
     /// elaborated form: a C-string argument passed to `uint8` bytes is its
     /// explicit byte view ([`crate::surface::lowering::elaborate_character_byte_views`]),
     /// which is the form a callee's requirement takes at the call.

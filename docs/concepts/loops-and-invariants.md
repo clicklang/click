@@ -97,14 +97,13 @@ component is nonnegative. A tuple decreases lexicographically: an earlier
 component must remain equal and a later component must be strictly smaller at
 some pivot. This supports count-up loops as well as countdowns, for example
 `decreases limit - index;` when the body increments `index`. A component need
-not be a C expression: it is any pure `int32` expression, including a memory
+not be a C expression: it is any pure ranking expression, including a memory
 read, an application of a pure Click function, or a resource model field, and
 Click reads the one declared component at the iteration's entry and again at
 the back edge, exactly as it reads an invariant about the same cells. It may
 not mention `old` or `at`, because a measure that names a fixed state reads
-the same state twice and so can never decrease. Each component is checked as
-int32 arithmetic, so its arithmetic must also be defined under
-those assumptions. This produces separate termination evidence; it does not
+the same state twice and so can never decrease. Each component is checked in its own type, so its arithmetic must also be
+defined under those assumptions. This produces separate termination evidence; it does not
 change what an invariant or a postcondition means. A separately ranked nested loop is
 treated as a terminating phase when checking its enclosing loop; an outer
 ranking variable that phase writes takes an unknown value on the way out,
@@ -218,6 +217,7 @@ by {
     step();
     step();
     loop {
+        decreases n - i;
         invariant i >= 0;
         invariant i <= n;
     }
@@ -230,6 +230,7 @@ The full induction syntax names its two obligations explicitly:
 <!-- verified-example: mdtests/count_to_n_loop_invariant.md -->
 ```click
 loop {
+    decreases n - i;
     invariant i >= 0;
     invariant i <= n;
 
@@ -243,7 +244,8 @@ loop {
 
 `initialize` is a pure proof of all invariants at the actual loop entry. Its
 script may use exactly `unfold(predicate)`, `apply(theorem(args))`, `have`,
-`assumption()`, `normalize()`, `rewrite(...)`, `simp()`, and proof-level `if`;
+`assumption()`, `normalize()`, `rewrite(...)`, `simp()`, `both`, `cases`, and
+proof-level `if`;
 anything else is rejected with `` `initialize` is a pure proof and cannot use
 `<tactic>` ``. `preserve` assumes all invariants and the loop condition,
 executes one complete body iteration, and proves all invariants again. Either
@@ -317,9 +319,9 @@ to combine:
 - and the function requirements.
 
 The failed condition describes an exit *if one occurs*. Invariant preservation
-does not prove that such an iteration is eventually reached. Termination needs
-a separate well-founded argument; ordinary C verification does not require
-one.
+does not prove that such an iteration is eventually reached. The loop's
+`decreases` clause certifies that it is; only a loop or function marked
+`diverges` goes without that evidence.
 
 ### Short-circuit guards
 
@@ -633,7 +635,7 @@ write exactly what the function owns.
 A loop that declares a resource havocs all memory the resource owns, so the
 cells such a loop never writes keep their values only through a frame
 invariant, for example
-`forall k in [0, start): arena->occupied[k] == old(arena->occupied[k])`.
+`forall (k: int32) { 0 <= k and k < start implies arena->occupied[k] == old(arena->occupied[k]) }`.
 `old(...)` means the function's entry state here exactly as it does in the
 loop's proof bodies, so a body can restate or instantiate the clause as
 written. The map may be reached through a struct field the loop does not
@@ -731,6 +733,7 @@ void bump_n(struct cell* p, int32 n) {
     step();
     step();
     loop {
+        decreases n - i;
         owns c: counter(p);
         invariant i >= 0;
         invariant i <= n;
@@ -1090,9 +1093,8 @@ at an earlier loop head.
 
 An explicit preservation proof starts at an arbitrary loop-head visit and must
 traverse exactly one complete iteration. Straight-line bodies use one `step()`
-or `step()` per statement. In a proof-level `if`, `step()` enters a C
-branch from an exact condition fact; `step()`, `step()`,
-and `step()` provide contextual branch reasoning. Initialization
+per statement. In a proof-level `if`, `step()` enters a C branch from an exact
+condition fact. Initialization
 is non-executing because its program point is already the first loop entry.
 
 ### What a `preserve` script accepts

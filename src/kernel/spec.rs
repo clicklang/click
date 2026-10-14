@@ -7626,7 +7626,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
                     // snapshot is compared structurally, so the live one
                     // would make this argument -- and every fact about a
                     // function of it -- different after any step at all.
-                    // `block_epoch_for_array_ref` gives the latest snapshot
+                    // `array_ref_argument_memory` gives the latest snapshot
                     // that still agrees with this one about everything the
                     // function can observe through this pointer, so a fact
                     // survives exactly the steps that cannot touch the array.

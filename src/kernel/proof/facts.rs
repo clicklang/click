@@ -783,7 +783,7 @@ impl ProofFacts {
             // `i < 0` and `i >= 0` are different conditions, not one
             // condition at both polarities, so the negation is recognized
             // through the same bounded list of equivalent spellings a
-            // disjunct arm already uses at `apply_left`/`apply_right`. This
+            // disjunct side already uses in `apply_assumption`. This
             // is a fixed-size set of exact lookups, not a fact-set search.
             || super::fact_reasoning::condition_polarity_forms(&negated)
                 .iter()

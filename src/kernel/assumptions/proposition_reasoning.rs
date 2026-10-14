@@ -232,7 +232,8 @@ impl PureFactContext {
     /// logical structure, chooses no arm, instantiates no quantifier, and
     /// answers `false` for every proposition that is not already one of the
     /// atomic memory or resource shapes. Each arm is exactly the arm
-    /// [`Self::proves`] uses for that shape, so it can only lose answers.
+    /// [`Self::proves_atomic_without_search`] uses for that shape, so it can
+    /// only lose answers.
     pub(in crate::kernel) fn proves_atomic_memory_or_resource(
         &self,
         proposition: &Proposition,
@@ -292,8 +293,7 @@ impl PureFactContext {
         match proposition {
             Proposition::ConditionIs(condition, value) => {
                 self.decide(condition) == Some(*value)
-                    // The memory DAG answers first where it can; see the
-                    // matching arm in `proves`.
+                    // The memory DAG answers first where it can.
                     || *value
                         && matches!(
                             condition,
@@ -4105,7 +4105,7 @@ impl PureFactContext {
                         offset: offset.clone(),
                     };
                     // Keep this contradiction rule bounded. Calling the
-                    // general `pointer_in_range` prover here recursively
+                    // general `pointer_in_range_with_width` prover here recursively
                     // re-enters context-wide contradiction search once for
                     // every separation fact. Deeper range consequences may
                     // be proved directly, but are not a routing precondition.

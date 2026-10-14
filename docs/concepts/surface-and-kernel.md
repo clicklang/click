@@ -96,7 +96,7 @@ elaborates like:
 ClickArrayRef { memory: post_memory, pointer: p, element_type: int32 }
 ```
 
-For a `uint8 p[]` parameter, the same shape uses `element_type: uint8`.
+For a `p: uint8[]` parameter, the same shape uses `element_type: uint8`.
 
 An old array argument means the entry-state array at the same pointer value:
 
@@ -181,10 +181,10 @@ stdlib `count` without pretending that the fold is executable C.
 ## Source spelling
 
 There is no public `ref<int32>` syntax yet. For now, parameters written as
-`int32 p[]`, `int32* p`, `uint8 p[]`, or `uint8* p` in pure Click `function`
+`p: int32[]`, `p: int32*`, `p: uint8[]`, or `p: uint8*` in pure Click `function`
 and `predicate` definitions are treated as Click array-ref parameters.
 
-This is intentionally source-compatible with existing C-like signatures:
+The type spellings follow the corresponding C parameter types:
 
 <!-- verified-example: mdtests/pure_click_functions.md -->
 ```click
@@ -194,7 +194,7 @@ predicate sorted(p: int32*, n: int32) { ... }
 ```
 
 The parameter spelling fixes the array-ref element type. A pure Click function
-or predicate declared with `uint8 p[]` indexes one byte at a time and returns
+or predicate declared with `p: uint8[]` indexes one byte at a time and returns
 `uint8` values from `p[k]`.
 
 Ordinary postcondition and predicate/function evaluation use typed

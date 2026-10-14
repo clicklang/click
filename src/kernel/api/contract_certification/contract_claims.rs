@@ -1968,7 +1968,7 @@ fn heap_free_effect_is_valid(
 /// facts its loads introduced.
 ///
 /// Only the kernel builds one, so a proof obligation opened from it
-/// ([`crate::kernel::proof::PropositionObligation::for_claim_goal`]) is known
+/// (`crate::kernel::proof::PropositionObligation::for_claim_goal`) is known
 /// to state that claim, and the proposition completed from that obligation
 /// says which claim it closes without anything being lowered or compared
 /// again.
@@ -2822,7 +2822,7 @@ pub fn c_external_function_rule(function: CFunction) -> Option<CExternalFunction
 
 /// Builds an untrusted ranking plan. Supplying a plan is not evidence; the
 /// kernel validates it together with the exact verified C functions in
-/// [`c_verified_function_termination_rules`].
+/// [`crate::kernel::c_verified_function_termination_rules`].
 pub fn c_function_termination_plan(
     function_name: impl Into<String>,
     recursive_measure: Option<CFunctionTerminationMeasure>,

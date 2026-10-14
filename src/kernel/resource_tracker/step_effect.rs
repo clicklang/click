@@ -1059,13 +1059,13 @@ fn block_effect(step: &CMemoryDerivation, block: &PointerBlock) -> StepEffect {
 /// resource fact, and removing one is only ever sound to do more often. So the
 /// arm is free to be coarser than the cell arm and is: it treats a write
 /// through a block that may be any object
-/// ([`crate::kernel::primitives::resource_algebra::memory_block_may_alias`]) as
+/// ([`crate::kernel::memory_block_may_alias`]) as
 /// affecting every footprint, rather than asking a range whether that block is
 /// proven distinct from it.
 ///
 /// * `Store` is separate when the written bytes miss every range of the
 ///   footprint, which
-///   [`crate::kernel::primitives::resource_algebra::memory_range_overlaps_pointer`]
+///   [`crate::kernel::memory_range_overlaps_pointer`]
 ///   decides by block distinctness first and then by constant byte intervals.
 /// * `CallHavoc` and `LoopHavoc` with a checked write set are separate when
 ///   every declared range misses every range of the footprint. The declared

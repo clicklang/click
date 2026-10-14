@@ -1,8 +1,8 @@
 # Per-test wall-clock policy for `cargo nextest run`. Every test's verdict
-# comes from deterministic work: library tests and every fixture harness run
-# without production's real-time tactic limits, and the command-line tests
-# drive the tools under `click::cli::with_work_budget_verdicts`. Wall clock
-# therefore decides no proof verdict.
+# comes from deterministic work budgets: library tests, fixture harnesses, and
+# the command-line tests all run with the tools' own limits, whose only
+# wall-clock bound is crash containment. Wall clock therefore decides no proof
+# verdict.
 #
 # The gate is budgeted per test: a test belongs in it only if it takes under
 # half a second while the gate runs tests in parallel. Anything slower is

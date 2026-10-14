@@ -6,8 +6,11 @@
 //! added. Branches clone persistent state so local assumptions do not leak.
 //!
 //! The current supported fragment is pointers, affine byte offsets, and
-//! registered same-snapshot pointer loads, plus whole-offset equality, int32 addition, unsigned division/remainder, bitwise XOR
-//! and same-snapshot int32 load congruence.
+//! registered same-snapshot pointer loads, plus whole-offset equality, int32
+//! addition, unsigned division/remainder, bitwise XOR and same-snapshot int32
+//! load congruence, and uint64 equality with congruence over 64-bit
+//! add/subtract/multiply/divide/remainder/and/or/xor and same-snapshot 64-bit
+//! loads.
 //! Pointer and offset queries are typed separately; the offset fragment only
 //! supports stated equalities, offset addition and int32 scaling congruence. Pointer spelling
 //! helpers serve legacy consumers and are not the general equality interface.

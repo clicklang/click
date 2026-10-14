@@ -102,8 +102,8 @@ A pure proof reasons without a symbolic C state. A fixed-state proof reasons
 against one fixed symbolic C state but does not advance execution. Pure
 theorems use pure proofs; nested `have P by { ... }` proofs use fixed-state
 proofs. Both can use simplification, theorem application, exact derivation,
-logical tactics, and proof-level `if`; fixed-state proofs can additionally
-transform logical resources.
+logical tactics, and proof-level `if`; a nested `have` proof cannot execute C
+or transform resources.
 
 In a pure theorem proof or a C postcondition proof, an introduced `int32`
 binder may shadow an earlier name. After `intro()`, `x` names the newest

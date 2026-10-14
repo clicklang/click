@@ -650,8 +650,8 @@ fn expand_offset_load_variables_shallow(value: &PointerOffsetTerm) -> PointerOff
     }
 }
 
-/// `snapshot_bridged_fact_is_available` where the caller already holds the
-/// assumption context the bridge should reason in.
+/// Bridged availability for a separation, reasoning in the assumption
+/// context the caller supplies.
 ///
 /// Candidates still come only from `available`, so widening the assumptions
 /// cannot make an unlisted fact available — the wider context only decides

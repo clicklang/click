@@ -51,7 +51,7 @@ functions, or `old(...)`.
 
 The core representation reference explains that lower layer in detail.
 Tools never ask users to copy that representation into a sidecar:
-`click-expand` and diagnostics render documented Surface Click, and their
+`click expand` and diagnostics render documented Surface Click, and their
 output is expected to round-trip through the normal parser.
 
 ## Why this exists

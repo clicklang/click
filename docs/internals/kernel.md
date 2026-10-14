@@ -8,7 +8,8 @@ Click specs.
 - `src/kernel/`: proof terms, C semantics, assumptions, symbolic execution,
   and theorem-producing functions.
 - `src/languages/c/syntax.rs`: C parser and lowering to kernel C terms.
-- `src/surface.rs`: Click parser, validation, lowering, tactics, and proof
+- `src/surface.rs` and `src/surface/`: Click parser (`parser.rs`, `parser/`),
+  validation (`validation/`), lowering (`lowering/`), tactics, and proof
   orchestration.
 
 `src/kernel/mod.rs` defines real Rust submodules and re-exports the public
@@ -989,7 +990,7 @@ which alpha-renames a binder that would capture a free variable of the
 replacement and stops substituting under a binder that shadows the variable
 being replaced, and alpha-equivalent terms are interchangeable. A shared
 *free* identity is not, which is why the case witnesses of
-`algebraic_case_paths` — free variables of the constructor equation they
+`algebraic_case_paths_in` — free variables of the constructor equation they
 publish, not binders — still come from the execution counter and therefore
 refuse beside a live state. `rewrite_integer_match_typed_fields` also checks
 what it is given: every identity it substitutes must satisfy
@@ -1378,7 +1379,7 @@ for the standard-library `count`/`permutation` proofs.
 
 ## Click lowering
 
-`src/surface.rs` has several lowering/evaluation paths because contracts are
+`src/surface/lowering/` has several lowering/evaluation paths because contracts are
 evaluated in different contexts:
 
 - requirements
@@ -1414,7 +1415,8 @@ usually causes either a compiler error or an unsupported-feature diagnostic.
 
 ## Parser and validation
 
-The Click parser is hand-written in `src/surface.rs`. Validation checks:
+The Click parser is hand-written in `src/surface/parser.rs` and
+`src/surface/parser/`. Validation in `src/surface/validation/` checks:
 
 - duplicate predicates/functions
 - predicate/function arity

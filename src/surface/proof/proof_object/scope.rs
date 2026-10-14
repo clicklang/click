@@ -775,9 +775,8 @@ impl<'a> ProofScope<'a> {
         self.join_inner()
     }
 
-    /// The enclosing-frontier bookkeeping of a checked execution `have`,
-    /// shared in meaning with `check_mid_execution_have`: lowering and
-    /// certificate fact recording.
+    /// The enclosing-frontier bookkeeping of a checked execution `have`:
+    /// lowering and certificate fact recording.
     fn carry_have_into_frontier(
         execution: &mut ExecutionProofState,
         proposition: &ClickProposition,

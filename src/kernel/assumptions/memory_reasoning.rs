@@ -149,7 +149,7 @@ fn endpoint_base_and_shift(term: &Bitvector32Term) -> (&Bitvector32Term, i64) {
 /// This is a reading of the term, not an assumption about it: `count - 0` and
 /// `count` are the same term, so the fact's byte count is `(end - start) * w`
 /// in either spelling and every reader below is asking about the same bytes.
-/// [`Assumptions::assumed_extent_covers_its_element_count`] already restores
+/// [`PureFactContext::assumed_extent_covers_its_element_count`] already restores
 /// the same start for the same reason; sharing one reading keeps a range
 /// written from `0` — which is how a C contract usually writes one — from
 /// being a different kind of range to the rules than `p[a..b]` is.
@@ -1109,7 +1109,7 @@ impl PureFactContext {
     /// fact as "the elements `a..b`" is only legitimate while that product is
     /// the true count of bytes. The rule therefore requires the assumed fact's
     /// own byte-count guards —
-    /// [`crate::kernel::memory_range_byte_count_guards`], the one definition
+    /// [`crate::kernel::memory_range_byte_count_extent`], the one definition
     /// of "this element range is a valid 32-bit byte extent": `a <= b` signed,
     /// and `(b - a) <= u32::MAX / w` unsigned. With those established,
     /// `0 <= b - a` and `(b - a) * w` does not wrap, so the fact's extent is
@@ -1192,7 +1192,7 @@ impl PureFactContext {
 
     /// Whether the assumed range is established here to be a valid 32-bit byte
     /// extent — the side condition
-    /// [`crate::kernel::memory_range_byte_count_guards`] states wherever a
+    /// [`crate::kernel::memory_range_byte_count_extent`] states wherever a
     /// contract supplies a range.
     ///
     /// Constant endpoints are decided by that shared definition, so a constant

@@ -327,8 +327,8 @@ Structured proof failures retain the claim, stage, source location, focused
 kernel goal, and a newest-first suffix of recent premises. The original
 reason remains the first line. Context is rendered only when the terminal
 message is requested, with a 64 KiB report cap, bounded proposition printer,
-and at most eight premises. Individual premise renderings are capped at 2 KiB
-and reports say when additional context was omitted. In an ordinary report a
+and at most eight premises. Individual premise renderings are truncated at 4 KiB
+in an ordinary report, and reports say when additional context was omitted. In an ordinary report a
 memory with no source name is labeled `<state A>`, `<state B>`, and so on, and
 in a trace `snapshot#1`, `snapshot#2`, numbered by first appearance within one
 report: equal memory shares one label and memory that differs gets another, so

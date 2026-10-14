@@ -15,10 +15,11 @@ prompt failure from an incomplete smart tactic is not by itself an engine bug.
 A **pure proof** derives a proposition without a symbolic C state. This is the
 context used for pure theorem proofs.
 
-A **fixed-state proof** reasons against one fixed symbolic C state. It can
-refine propositions or logical resources but does not advance C. The nested
-proof inside `have ... by { ... }`, loop initialization, and result-aware
-outcome proofs are fixed-state proofs.
+A **fixed-state proof** reasons against one fixed symbolic C state. It refines
+propositions but does not advance C. The nested proof inside
+`have ... by { ... }`, loop initialization, and result-aware outcome proofs are
+fixed-state proofs. A `have` body or loop initialization cannot transform
+resources; a result-aware outcome proof can fold and unfold logical resources.
 
 An **execution proof** establishes a relationship between the entry and exit of
 a code region. It owns an execution frontier consisting of the current program
@@ -56,9 +57,10 @@ the claims without one. When two or more claims omit their proofs, they share
 an implicit `} by auto;`.
 
 The shorthand `} by auto;` builds one deterministic grouped script:
-`execute()`, declared loop checks, and `simp()` when the contract has
-postconditions. Composite-resource folds and theorem
-applications remain explicit.
+`execute()`, which also checks declared loops, then the `auto` closer, which
+tries `simp()` on each open postcondition, then the solver and a bounded search
+for a chain of rewrites. Composite-resource folds and theorem applications
+remain explicit.
 
 After execution reaches the return frontier, grouped tactics retain source
 order. `fold`, `apply`, and `have` transform the current finalized path;
@@ -177,7 +179,7 @@ control flow.
 - `observe(resource);`: project one view step from a held composite resource
   fact. This exposes immediate pure facts and viewed immediate contained
   resource facts without exposing owned contained resource facts.
-- `obtain (k: int32) { P(k) };`: open the exact available existential
+- `obtain (k: int32) { P(k) }`: open the exact available existential
   `exists (k: int32) { P(k) }`, introducing `k` and its body as proof facts.
   Multiple typed bindings are allowed. The existential must already be
   established; use `have` first when it is not.
@@ -186,8 +188,9 @@ control flow.
 - `assumption();`: close a goal already present as the same semantic fact; it
   does not normalize, extract, or transport a new fact.
 - `normalize();`: close a pure goal by context-free computation.
-- `rewrite(equality);`: rewrite a pure goal once using an exact available int32
-  equality whose left side is a variable.
+- `rewrite(equality);`: rewrite the current proposition once using an exact
+  available equality; the [tactic reference](../reference/tactics/index.md)
+  lists the supported integer, pointer, and native unsigned forms.
 - `transport(source, target);`: require an exact source fact and apply one
   certified atomic transport rule to establish the stated target fact at the
   current statement frontier. Conditions use framing; structural memory facts
@@ -551,7 +554,7 @@ and every preservation branch reaches the back edge with the invariants and
 effects reestablished, the kernel constructs the loop exit without proving
 either premise again.
 
-That abstract exit is justified by an opaque kernel `VerifiedLoopRule` over the
+That abstract exit is justified by an opaque kernel `CVerifiedLoopRule` over the
 symbolic loop-entry state and its required assumptions. The `loop` tactic
 applies it immediately and advances the enclosing frontier. There is no later
 summary tactic and no detached traversal from function entry.
