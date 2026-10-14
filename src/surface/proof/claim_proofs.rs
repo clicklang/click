@@ -2380,6 +2380,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 let closed = evolving.close_outcome_resource_scope(
                                     resource,
                                     *preserve_exposed_body,
+                                    resource_transition_applied,
                                 )?;
                                 outcome = closed.focused_outcome_snapshot()?;
                                 outcome_proof = Some(closed);

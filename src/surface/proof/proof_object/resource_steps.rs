@@ -2424,7 +2424,11 @@ impl<'a> Proof<'a> {
                 "population authority `fold` must run before the function reaches its outcome",
             ));
         }
-        self.apply_outcome_resource_fold_with_closure(resource, ResourceBodyClosure::Initialize)
+        self.apply_outcome_resource_fold_with_closure(
+            resource,
+            ResourceBodyClosure::Initialize,
+            true,
+        )
     }
 
     /// Closing an already open scope is checked by the same resource law as
@@ -2433,12 +2437,14 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
         preserve_exposed_body: bool,
+        contract_resources_established: bool,
     ) -> Result<Self, ClickError> {
         let transition = self.apply_outcome_resource_fold_with_closure(
             resource,
             ResourceBodyClosure::CloseOpen {
                 preserve_exposed_body,
             },
+            !contract_resources_established,
         )?;
         let successor = Self {
             site: self.site.clone(),
@@ -2453,6 +2459,7 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
         closure: ResourceBodyClosure,
+        retain_return_exchange: bool,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("outcome resource `fold` requires an execution proof"));
@@ -2510,7 +2517,12 @@ impl<'a> Proof<'a> {
                 }),
             _ => false,
         };
-        if *state != *goal.data.core.state
+        // The checked contract transition has its own resource evidence and
+        // may bind outputs to their interface identities. A later scope close
+        // still checks its body law, but does not exchange that final contract
+        // presentation against the earlier C-body publication.
+        if retain_return_exchange
+            && *state != *goal.data.core.state
             && (operational_exchange
                 || (matches!(closure, ResourceBodyClosure::CloseOpen { .. })
                     && context
