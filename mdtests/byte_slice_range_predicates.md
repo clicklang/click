@@ -12,6 +12,8 @@ int32 byte_slice_range_predicates(uint8 p[], int32 n) {
 ```
 
 ```click
+import click::bytes;
+
 verifying "byte_slice_range_predicates.c";
 
 int32 byte_slice_range_predicates(uint8 p[], int32 n) {

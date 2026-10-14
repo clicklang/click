@@ -347,7 +347,7 @@ impl adler2::Adler32 {
       apply(adler_defined_add_zero((((((bytes.len() - bytes.len() % 4u64) - (bytes.len() - bytes.len() % 4u64) % 22208u64) as u32) as i32) - ((__rust_mir_27_remaining as u32) as i32) - 22208))) using {};
       have defined(((((((bytes.len() - bytes.len() % 4u64) - (bytes.len() - bytes.len() % 4u64) % 22208u64) as u32) as i32) - ((__rust_mir_27_remaining as u32) as i32) - 22208) + (22208 - ((__rust_mir_36_remaining as u32) as i32)))) by {
        rewrite(((__rust_mir_36_remaining as u32) as i32) == 22208);
-       both { assumption(); } and { both { normalize(); } and { assumption(); } }
+       both { assumption(); } and { both { normalize(); } and { normalize(); } }
       }
       have truncating_remainder(adler_lane_a(to_integer(a), to_integer(a_vec.0[0]), to_integer(a_vec.0[1]), to_integer(a_vec.0[2]), to_integer(a_vec.0[3])), 65521) == adler_spec_a(bytes, ((((((bytes.len() - bytes.len() % 4u64) - (bytes.len() - bytes.len() % 4u64) % 22208u64) as u32) as i32) - ((__rust_mir_27_remaining as u32) as i32) - 22208) + (22208 - ((__rust_mir_36_remaining as u32) as i32))), to_integer(a)) by {
        rewrite(((((((bytes.len() - bytes.len() % 4u64) - (bytes.len() - bytes.len() % 4u64) % 22208u64) as u32) as i32) - ((__rust_mir_27_remaining as u32) as i32) - 22208) + (22208 - ((__rust_mir_36_remaining as u32) as i32))) == (old(((((bytes.len() - bytes.len() % 4u64) - (bytes.len() - bytes.len() % 4u64) % 22208u64) as u32) as i32)) - at(outer_head, ((__rust_mir_27_remaining as u32) as i32))));

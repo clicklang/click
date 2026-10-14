@@ -458,8 +458,13 @@ impl TermClasses {
         condition: &C,
         value: bool,
     ) -> bool {
-        Self::condition_kind(condition)
-            .is_some_and(|kind| self.condition_kinds.contains(&(kind, value)))
+        Self::condition_kind(condition).is_some_and(|kind| {
+            self.condition_kinds.contains(&(kind, value))
+                || (kind == ConditionKind::OffsetEq
+                    && self
+                        .condition_kinds
+                        .contains(&(ConditionKind::PointerEq, value)))
+        })
     }
 
     pub(in crate::kernel::equality_graph) fn admit_condition(
@@ -521,9 +526,50 @@ impl TermClasses {
             return false;
         };
         self.register_pending_loads();
-        self.condition_truth
+        let truth = if value { 1 } else { 2 };
+        if self
+            .condition_truth
             .get(&self.root(node))
-            .is_some_and(|truth| truth & if value { 1 } else { 2 } != 0)
+            .is_some_and(|known| known & truth != 0)
+        {
+            return true;
+        }
+        let C::PointerOffsetEqual(a, b) = condition else {
+            return false;
+        };
+        let left = self.intern(a);
+        let right = self.intern(b);
+        let (Some(left), Some(right)) = (
+            self.addresses_by_offset.get(&self.root(left)).cloned(),
+            self.addresses_by_offset.get(&self.root(right)).cloned(),
+        ) else {
+            return false;
+        };
+        // A common block makes this the same address predicate. Nominate only
+        // addresses registered at these offsets, never scan ambient pointer facts
+        // or infer offset disequality merely from distinct allocation identities.
+        let (small, large) = if left.len() <= right.len() {
+            (left, right)
+        } else {
+            (right, left)
+        };
+        for (block, a) in small.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(b) = large.get(block) {
+                for (a, b) in [(*a, *b), (*b, *a)] {
+                    let address_condition =
+                        self.intern_node(Node::Condition(ConditionKind::PointerEq, a, b));
+                    if self
+                        .condition_truth
+                        .get(&self.root(address_condition))
+                        .is_some_and(|known| known & truth != 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 }
 

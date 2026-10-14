@@ -573,6 +573,15 @@ pub(crate) struct CheckedResourceRewrite {
     selected_children: Option<Arc<[(String, Variable)]>>,
     load_equalities: Vec<crate::kernel::CheckedLoadEquality>,
     delta_proofs: Arc<Vec<CheckedResourceDeltaProof>>,
+    return_observation: Option<Arc<ReturnResourceObservation>>,
+}
+
+/// The same selected resource exchange at the kernel-published return snapshot.
+#[derive(Clone)]
+struct ReturnResourceObservation {
+    context: Arc<CheckedReturnContext>,
+    before: CState,
+    after: CState,
 }
 
 /// A checked establish or retirement of source population authority. This is
@@ -1671,6 +1680,7 @@ impl CheckedResourceRewrite {
             )
             .finish(),
             delta_proofs: Arc::new(Vec::new()),
+            return_observation: None,
         })
     }
 
@@ -1865,6 +1875,7 @@ impl CheckedResourceRewrite {
             )
             .finish(),
             delta_proofs: Arc::new(Vec::new()),
+            return_observation: None,
         })
     }
 
@@ -1903,6 +1914,31 @@ impl CheckedResourceRewrite {
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<Self, ResourceRewriteCheckError> {
+        Self::check_with_return_observation(
+            function,
+            before_state,
+            before_facts,
+            selected,
+            after_state,
+            after_facts,
+            call_events,
+            selected_children,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_with_return_observation(
+        function: &CFunction,
+        before_state: &CState,
+        before_facts: &ProofFacts,
+        selected: &CResourceFact,
+        after_state: &CState,
+        after_facts: &ProofFacts,
+        call_events: &CheckedCallEvents,
+        selected_children: Option<Arc<[(String, Variable)]>>,
+        return_observation: Option<Arc<ReturnResourceObservation>>,
+    ) -> Result<Self, ResourceRewriteCheckError> {
         let mut rejected_fact = None;
         Self::check_with_children_recording(
             function,
@@ -1914,6 +1950,7 @@ impl CheckedResourceRewrite {
             call_events,
             selected_children,
             &mut rejected_fact,
+            return_observation,
         )
         .map_err(|message| ResourceRewriteCheckError {
             message,
@@ -1932,6 +1969,7 @@ impl CheckedResourceRewrite {
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, Variable)]>>,
         rejected_fact: &mut Option<Arc<RejectedResourceRewriteFact>>,
+        return_observation: Option<Arc<ReturnResourceObservation>>,
     ) -> Result<Self, String> {
         // A family that reaches no population keeps its ordinary definition
         // law; only population-reaching bodies take the checks below.
@@ -2277,6 +2315,7 @@ impl CheckedResourceRewrite {
                         )
                         .finish(),
                     delta_proofs: Arc::new(Vec::new()),
+                    return_observation: None,
                 });
             }
         }
@@ -2406,8 +2445,28 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             let introduced = after_facts.introduced_since(before_facts).ok_or_else(|| {
                 "instance rewrite facts do not descend from their input".to_string()
             })?;
+            let observed_facts = if let Some(observation) = &return_observation {
+                let observed = crate::kernel::rewrite_resource_instance_selecting_children(
+                    &observation.before,
+                    instance,
+                    definition,
+                    function.composite_resource_definitions(),
+                    assumptions,
+                    unfold,
+                    selected_children.as_deref(),
+                )
+                .map_err(|refusal| refusal.describe())?;
+                if observed.state != observation.after {
+                    return Err(
+                        "return observation changed state outside its resource exchange".into(),
+                    );
+                }
+                observed.semantic_facts
+            } else {
+                Vec::new()
+            };
             let allowed = allowed
-                .into_iter()
+                .chain(observed_facts)
                 .collect::<std::collections::BTreeSet<_>>();
             // A visible return projection may repeat a fact already checked
             // at its frozen snapshot. Accept it only when the input context
@@ -2442,6 +2501,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 selected_children,
                 load_equalities: load_equality_capture.finish(),
                 delta_proofs: Arc::new(Vec::new()),
+                return_observation,
             });
         }
         let crate::kernel::CResource::Composite { name, .. } = selected.resource() else {
@@ -2669,6 +2729,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             selected_children: None,
             load_equalities,
             delta_proofs: Arc::new(delta_proofs),
+            return_observation: None,
         })
     }
 
@@ -7721,6 +7782,41 @@ fn trace_completion_from_entry(
                                 std::mem::take(executed_under).assume_proposition(fact);
                         }
                     }
+                    if let Some(observation) = &rewrite.return_observation {
+                        if return_origin.as_ref() != Some(&observation.context.origin) {
+                            return Err(
+                                "return resource observation belongs to a different execution path",
+                            );
+                        }
+                        let instance = rewrite
+                            .instance
+                            .as_ref()
+                            .ok_or("return resource observation requires a named instance")?;
+                        let unfold = observation
+                            .before
+                            .resources()
+                            .owned_instance(instance.identity())
+                            .is_some();
+                        let observed = crate::kernel::rewrite_resource_instance_selecting_children(
+                            &observation.before,
+                            instance,
+                            &rewrite.definition,
+                            function.composite_resource_definitions(),
+                            executed_under,
+                            unfold,
+                            rewrite.selected_children.as_deref(),
+                        )
+                        .map_err(|_| "return resource observation is not justified on this path")?;
+                        if observed.state != observation.after {
+                            return Err(
+                                "return resource observation has a different checked exchange",
+                            );
+                        }
+                        for fact in observed.semantic_facts {
+                            *executed_under =
+                                std::mem::take(executed_under).assume_proposition(fact);
+                        }
+                    }
                     **state = rewrite.after_state.clone();
                     // Only the rechecked exchange's semantic facts enter this
                     // path, never a proof snapshot's entire assumption context.
@@ -10329,6 +10425,7 @@ impl ExecutionProofCore {
             after_facts,
             false,
             None,
+            None,
         )
         .map_err(|error| error.message)
     }
@@ -10435,6 +10532,7 @@ impl ExecutionProofCore {
         after_facts: &ProofFacts,
         unfold: bool,
         selected_children: Option<Arc<[(String, Variable)]>>,
+        observed: Option<(&CState, &CState)>,
     ) -> Result<(), ResourceRewriteCheckError> {
         self.flush_return_propositions(path_index)?;
         if !self.evidence_completed {
@@ -10456,6 +10554,38 @@ impl ExecutionProofCore {
             .or_else(|| self.execution_evidence.get(path_index))
             .cloned()
             .ok_or_else(|| "return resource rewrite selected an unknown path".to_string())?;
+        let observation = if let Some((before, after)) = observed {
+            let context = self.return_context_for_path(path_index)?;
+            let CFunctionOutcome::Return {
+                state: published, ..
+            } = &context.published
+            else {
+                return Err("return observation requires a returning path".into());
+            };
+            let mut previous = trace.clone();
+            let expected = loop {
+                match previous.pop() {
+                    Some(CheckedExecutionEvent::ResourceRewrite(rewrite)) => {
+                        break rewrite
+                            .return_observation
+                            .map(|observation| observation.after.clone())
+                            .ok_or("return observation lost its preceding exchange")?;
+                    }
+                    Some(CheckedExecutionEvent::ReturnProposition(_)) => {}
+                    _ => break *published.clone(),
+                }
+            };
+            if *before != expected {
+                return Err("return observation has a different published state".into());
+            }
+            Some(Arc::new(ReturnResourceObservation {
+                context,
+                before: before.clone(),
+                after: after.clone(),
+            }))
+        } else {
+            None
+        };
         // Read only the completing suffix. Persistent pop does not copy the
         // path's earlier history, and no sibling path is inspected.
         let before_state = loop {
@@ -10509,7 +10639,7 @@ impl ExecutionProofCore {
         )
         .map_err(|refusal| refusal.describe())?
         .state;
-        let mut rewrite = CheckedResourceRewrite::check_with_children_diagnostic(
+        let mut rewrite = CheckedResourceRewrite::check_with_return_observation(
             function,
             &before_state,
             before_facts,
@@ -10518,6 +10648,7 @@ impl ExecutionProofCore {
             after_facts,
             &self.checked_call_events,
             selected_children,
+            observation,
         )?;
         if self.frontier.execution().is_some() {
             rewrite.return_context = Some(self.return_context_for_path(path_index)?);
@@ -12763,6 +12894,90 @@ mod tests {
     }
 
     #[test]
+    fn return_resource_observations_reject_extra_facts_and_other_snapshots() {
+        use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance};
+        let schema =
+            ResourceFieldSchema::new(vec![("model".into(), ResourceFieldType::C(CType::Int32))])
+                .unwrap();
+        let instance = ResourceInstance::new(
+            Variable(1),
+            "cell".into(),
+            vec![].into(),
+            schema.clone(),
+            vec![int32(7).into()].into(),
+        )
+        .unwrap();
+        let definition =
+            CCompositeResourceDefinition::new("cell", vec![], None, false, vec![], vec![])
+                .with_instance_schema(Some(schema));
+        let selected = CResourceFact::own(CResource::Instance(instance.clone()));
+        let before = CState::new()
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
+        let facts = ProofFacts::default();
+        let (after, _) = crate::kernel::rewrite_resource_instance(
+            &before,
+            &instance,
+            &definition,
+            facts.assumptions(),
+            true,
+        )
+        .unwrap();
+        let (function, events) = returned_proposition_trace(&before, &facts);
+        let function = function.with_composite_resource_definitions(vec![definition]);
+        let observation = Arc::new(ReturnResourceObservation {
+            context: returned_proposition_context(&before),
+            before: before.clone(),
+            after: after.clone(),
+        });
+        let check = |after_facts: &ProofFacts, observation| {
+            CheckedResourceRewrite::check_with_return_observation(
+                &function,
+                &before,
+                &facts,
+                &selected,
+                &after,
+                after_facts,
+                &CheckedCallEvents::default(),
+                None,
+                Some(observation),
+            )
+        };
+        let checked = check(&facts, observation.clone()).unwrap();
+        let mut valid = events.clone();
+        valid.push(CheckedExecutionEvent::ResourceRewrite(checked.clone()));
+        assert!(trace_completion(&function, &valid, facts.assumptions(), false).is_ok());
+        for extra in [
+            Proposition::CMemoryLoadable {
+                memory: before.memory().clone(),
+                base: Pointer::symbolic(Variable(42)),
+                bytes: 4.into(),
+                wide: false,
+            },
+            Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(false), true),
+        ] {
+            assert!(check(&facts.with_fact(extra), observation.clone()).is_err());
+        }
+        let mut changed = (*observation).clone();
+        changed.after.memory = changed
+            .after
+            .memory()
+            .clone()
+            .store(Pointer::symbolic(Variable(42)), int32(9));
+        assert!(check(&facts, Arc::new(changed)).is_err());
+        let mut wrong_path = checked;
+        let mut other = before.clone();
+        other.memory = CMemory::new().with_block("other", 4);
+        Arc::make_mut(wrong_path.return_observation.as_mut().unwrap()).context =
+            returned_proposition_context(&other);
+        let mut invalid = events;
+        invalid.push(CheckedExecutionEvent::ResourceRewrite(wrong_path));
+        assert_eq!(
+            trace_completion(&function, &invalid, facts.assumptions(), false).err(),
+            Some("return resource observation belongs to a different execution path"),
+        );
+    }
+
+    #[test]
     fn return_instance_guard_and_body_cannot_use_sibling_assumptions() {
         use crate::kernel::{
             AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValue,
@@ -13018,10 +13233,41 @@ mod tests {
                 .collect::<Vec<_>>()
                 .into();
             core.evidence_completed = true;
+            core.return_proof_contexts = core.return_proof_contexts.with_inserted(
+                size / 2,
+                Arc::new(CheckedReturnContext {
+                    origin: CStatementOutcome::Return {
+                        value: int32(7),
+                        state: Box::new(open.clone()),
+                    },
+                    published: CFunctionOutcome::Return {
+                        value: int32(7),
+                        state: Box::new(open.clone()),
+                    },
+                    facts: ExecutionFacts::new(),
+                }),
+            );
+            let (observed_after, _) = crate::kernel::rewrite_resource_instance(
+                &open,
+                &instance,
+                &definition,
+                facts.assumptions(),
+                false,
+            )
+            .unwrap();
             let base = core.clone();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                core.record_return_resource_rewrite(&function, size / 2, &facts, &selected, &facts)
-                    .unwrap();
+                core.record_return_resource_rewrite_with_children(
+                    &function,
+                    size / 2,
+                    &facts,
+                    &selected,
+                    &facts,
+                    false,
+                    None,
+                    Some((&open, &observed_after)),
+                )
+                .unwrap();
             });
             work_samples.push(work);
             for index in 0..size {

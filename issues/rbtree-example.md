@@ -1562,5 +1562,12 @@ issue. Related: [algebraic-data-types.md](algebraic-data-types.md).
 ownership separates into the original structural `rb_at` and a cache-cell-only
 `sized_metadata_at`, preserving both models. Its child indices are pure
 model-derived C pointers, so metadata ownership does not depend on reading
-links that structural callbacks may change. Rejoining this ownership and
-using the writable concrete callback table remain unfinished.
+links that structural callbacks may change. `join_sized_tree` now reassembles structural and metadata ownership when
+their shapes agree and the metadata counts are valid, preserving the full
+`SizedTree` model. Its recursive proof and all nine split/rejoin expansion
+sites verify. Common-base pointer disequalities now remain available through
+normalized offset comparisons in the shared graph. Using the writable concrete
+callback table in the augmented entry points remains unfinished.
+`CopySizedStructure` additionally certifies that the unchanged size-copy
+callback preserves separately owned structural trees while updating its
+metadata cells; its execution theorem and expansion audit pass.

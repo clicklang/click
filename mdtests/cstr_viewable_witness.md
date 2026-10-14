@@ -12,6 +12,8 @@ uint64 cstr_loadable_witness(uint8 source[], uint64 len) {
 ```
 
 ```click
+import click::cstr;
+
 verifying "cstr_loadable_witness.c";
 
 theorem cstr_len_exposes_viewable(source: uint8[], len: uint64) {

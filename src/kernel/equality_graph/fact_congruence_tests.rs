@@ -308,3 +308,164 @@ fn signed_addition_definedness_lookup_scales_with_alias_delta() {
     }
     assert!(costs[2] < 6 * costs[0], "{costs:?}");
 }
+
+fn coordinate_pointer(block: PointerBlock, id: u64) -> Pointer {
+    Pointer {
+        block,
+        offset: PointerOffsetTerm::Variable(Variable(id)),
+    }
+}
+
+#[test]
+fn pointer_disequality_projects_only_through_a_witnessed_common_base() {
+    for alias_first in [false, true] {
+        for block in [PointerBlock::ExternalArgument, "allocated".into()] {
+            let source = Pointer::symbolic(Variable(70999));
+            let left = coordinate_pointer(block.clone(), 71000);
+            let right = coordinate_pointer(block, 71001);
+            let alias = Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(source.clone(), left.clone()),
+                true,
+            );
+            let distinct = Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(source.clone(), right.clone()),
+                false,
+            );
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::pointer_offset_equal(left.offset.clone(), right.offset.clone()),
+                false,
+            );
+            let parent = PureFactContext::new().assume_proposition(if alias_first {
+                alias.clone()
+            } else {
+                distinct.clone()
+            });
+            assert!(!parent.contains_known(&goal));
+            let child = parent.clone().assume_proposition(if alias_first {
+                distinct.clone()
+            } else {
+                alias.clone()
+            });
+            assert!(child.contains_known(&goal));
+            assert!(child.contains_known(&Proposition::ConditionIs(
+                ConditionTerm::pointer_offset_equal(right.offset.clone(), left.offset.clone()),
+                false
+            )));
+            assert!(!parent.contains_known(&goal));
+            assert!(!child.without_exact_fact(&alias).contains_known(&goal));
+            assert!(!child.without_exact_fact(&distinct).contains_known(&goal));
+        }
+    }
+    let distinct = PureFactContext::new().assume_condition(
+        ConditionTerm::pointer_equal(pointer("allocation-a"), pointer("allocation-b")),
+        false,
+    );
+    assert!(!distinct.contains_known(&Proposition::ConditionIs(
+        ConditionTerm::pointer_offset_equal(
+            PointerOffsetTerm::Constant(0),
+            PointerOffsetTerm::Constant(0)
+        ),
+        false
+    )));
+}
+
+#[test]
+fn pointer_disequality_follows_a_new_base_witness_on_the_kept_class() {
+    let source = Pointer::symbolic(Variable(71999));
+    let mut facts = PureFactContext::new().assume_condition(
+        ConditionTerm::pointer_equal(source.clone(), coordinate_pointer("storage".into(), 72000)),
+        false,
+    );
+    for i in 0..8 {
+        facts = facts.assume_condition(
+            ConditionTerm::pointer_equal(source.clone(), Pointer::symbolic(Variable(72100 + i))),
+            true,
+        );
+    }
+    facts = facts.assume_condition(
+        ConditionTerm::pointer_equal(source, coordinate_pointer("storage".into(), 72001)),
+        true,
+    );
+    assert!(facts.contains_known(&Proposition::ConditionIs(
+        ConditionTerm::pointer_offset_equal(
+            PointerOffsetTerm::Variable(Variable(72000)),
+            PointerOffsetTerm::Variable(Variable(72001))
+        ),
+        false
+    )));
+}
+
+#[test]
+fn pointer_disequality_projection_ignores_unrelated_pointer_predicates() {
+    let mut costs = Vec::new();
+    for size in [16, 64, 256] {
+        let mut facts = PureFactContext::new();
+        for i in 0..size {
+            facts = facts.assume_condition(
+                ConditionTerm::pointer_equal(
+                    Pointer::symbolic(Variable(74000 + i)),
+                    Pointer::symbolic(Variable(75000 + i)),
+                ),
+                false,
+            );
+        }
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                let source = Pointer::symbolic(Variable(72999));
+                facts = facts.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        source.clone(),
+                        coordinate_pointer("storage".into(), 73000),
+                    ),
+                    false,
+                );
+                facts = facts.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        source,
+                        coordinate_pointer("storage".into(), 73001),
+                    ),
+                    true,
+                );
+                assert!(facts.contains_known(&Proposition::ConditionIs(
+                    ConditionTerm::pointer_offset_equal(
+                        PointerOffsetTerm::Variable(Variable(73000)),
+                        PointerOffsetTerm::Variable(Variable(73001))
+                    ),
+                    false
+                )));
+            })
+        });
+        costs.push((work, map_work));
+    }
+    for pair in costs.windows(2) {
+        assert!(pair[1].0 <= pair[0].0 * 2, "{costs:?}");
+        assert!(pair[1].1 <= pair[0].1 * 2, "{costs:?}");
+    }
+}
+
+#[test]
+fn pointer_disequality_projection_follows_offset_class_merges() {
+    let source = Pointer::symbolic(Variable(76000));
+    let left = coordinate_pointer(PointerBlock::ExternalArgument, 76001);
+    let right = coordinate_pointer(PointerBlock::ExternalArgument, 76002);
+    let replacement = coordinate_pointer(PointerBlock::ExternalArgument, 76003);
+    let parent = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::pointer_equal(source.clone(), left.clone()),
+            true,
+        )
+        .assume_condition(ConditionTerm::pointer_equal(source, right.clone()), false);
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::pointer_offset_equal(replacement.offset.clone(), right.offset),
+        false,
+    );
+    assert!(!parent.contains_known(&goal));
+    let alias = Proposition::ConditionIs(
+        ConditionTerm::pointer_offset_equal(left.offset, replacement.offset),
+        true,
+    );
+    let child = parent.clone().assume_proposition(alias.clone());
+    assert!(child.contains_known(&goal));
+    assert!(!parent.contains_known(&goal));
+    assert!(!child.without_exact_fact(&alias).contains_known(&goal));
+}

@@ -9,6 +9,8 @@ int outer(const signed char *src) {
 ```
 
 ```click
+import click::cstr;
+
 target "x86_64-linux-kernel";
 verifying "cstr_signed_char_kernel_requirement_reaches_callee.c";
 int32 check(const int8* src) {

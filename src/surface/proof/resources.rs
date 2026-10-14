@@ -2,6 +2,7 @@ use super::*;
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::ResourceInstance;
 use crate::surface::planning::proposition_search::proves_by_tactic_search;
+use crate::surface::proof::execution_planning::refuse_or_record_open_obligation;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ResourceBodyAccess {
@@ -3969,9 +3970,77 @@ fn fold_composite_resources_on_outcome_with_facts(
             // below, which can consume a large share of the fold's budget.
             let exactly_available =
                 pure_facts.exact_available_across_effects(&required, execution_pure_facts);
-            if !exactly_available
-                && !matches!(normalize_proposition(&required), SimpProposition::True)
-                && !proves_by_tactic_search(&body_assumptions, &required, "fold body fact")
+            // A body fact the exact checks miss is a requirement of this
+            // `fold`, spelled as the definition's fact over the arguments as
+            // written; the fold never searches the proof context for it
+            // (`issues/simplify-step.md`, step 5). A probe records it for the
+            // implicit `auto`, which proves it and folds again.
+            let open = !exactly_available
+                && !matches!(normalize_proposition(&required), SimpProposition::True);
+            // A fact read in the projected authority state is not a
+            // proposition at the frontier, and a witness the proof cannot
+            // name has no source expression, so neither has a requirement
+            // spelling yet; each keeps the counted search.
+            let projected = authority_closing_fact_state.is_some();
+            let spelling_resource = source_resource.unwrap_or(resource);
+            let spelled = if open && !projected {
+                (|| -> Result<Option<ClickProposition>, ClickError> {
+                    // The arguments as written, and each witness as it was
+                    // inferred or given.
+                    let mut spelling_substitutions = substitutions.clone();
+                    spelling_substitutions.extend(resource_argument_substitutions(
+                        definition,
+                        spelling_resource,
+                        claim_label,
+                        path_index,
+                    )?);
+                    // A witness bound to a semantic value is written as the proof
+                    // would name that value here.
+                    let spelling_state =
+                        authority_closing_fact_state
+                            .as_ref()
+                            .unwrap_or(match &outcome {
+                                CFunctionOutcome::Return { state, .. } => state,
+                                _ => pre_state,
+                            });
+                    for expression in spelling_substitutions.values_mut() {
+                        if let ContractExpression::CFragment(CExpression::Value(value)) = expression
+                            && let Some(spelled) =
+                                crate::surface::proof::surface_synthesis::synthesize_surface_value(
+                                    value,
+                                    parameter_binding,
+                                    spelling_state,
+                                )
+                        {
+                            *expression = spelled;
+                        }
+                    }
+                    if spelling_substitutions.values().any(|expression| {
+                        matches!(
+                            expression,
+                            ContractExpression::CFragment(CExpression::Value(_))
+                        )
+                    }) {
+                        return Ok(None);
+                    }
+                    substitute_click_proposition(source_fact, &spelling_substitutions)
+                        .map(Some)
+                        .map_err(ClickError::new)
+                })()?
+            } else {
+                None
+            };
+            if open
+                && !(spelled.is_none()
+                    && proves_by_tactic_search(
+                        &body_assumptions,
+                        &required,
+                        if projected {
+                            "fold projected body fact"
+                        } else {
+                            "fold unspellable body fact"
+                        },
+                    ))
             {
                 // `proves` returns false when the active budget runs out
                 // mid-derivation. Reporting that truncation as a missing fact
@@ -3998,7 +4067,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 } else {
                     String::new()
                 };
-                if authority_control_body {
+                let error = if authority_control_body {
                     // Captured arguments are semantic values; render the written
                     // operand so its C names survive a failing body check.
                     let source_resource = source_resource.unwrap_or(resource);
@@ -4011,23 +4080,36 @@ fn fold_composite_resources_on_outcome_with_facts(
                     let source_fact =
                         substitute_click_proposition(source_fact, &source_substitutions)
                             .map_err(ClickError::new)?;
-                    return Err(ClickError::new(format!(
+                    ClickError::new(format!(
                         "`{claim_label}` path {path_index}: `fold({})` Requires {}",
                         describe_resource_clause(source_resource),
                         describe_click_proposition(&source_fact),
-                    )));
-                }
-                return Err(ClickError::new(format!(
-                    "`{claim_label}` path {path_index}: `fold({})` requires an exact body fact: {}{snapshot_note}",
-                    describe_resource_clause(resource),
-                    describe_missing_pure_fact(
-                        &required,
-                        &available_pure_facts,
-                        resources,
-                        parameter_binding,
-                        execution_pure_facts,
-                    )
-                )));
+                    ))
+                } else {
+                    ClickError::new(format!(
+                        "`{claim_label}` path {path_index}: `fold({})` requires an exact body fact: {}{snapshot_note}",
+                        describe_resource_clause(resource),
+                        describe_missing_pure_fact(
+                            &required,
+                            &available_pure_facts,
+                            resources,
+                            parameter_binding,
+                            execution_pure_facts,
+                        )
+                    ))
+                };
+                let Some(spelled) = spelled else {
+                    return Err(error);
+                };
+                refuse_or_record_open_obligation(error.with_spelled_requirement(
+                    required,
+                    spelled,
+                    format!(
+                        "a body fact of `fold({})`",
+                        describe_resource_clause(spelling_resource)
+                    ),
+                ))?;
+                continue;
             }
         }
         let CFunctionOutcome::Return { value, state } = outcome else {

@@ -1,6 +1,127 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: multi-size quantified frame refusal and positive controls"]
+fn false_quantified_frames_do_not_materialize_the_constant_domain() {
+    use crate::instrumentation::measure_deterministic_work;
+    verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    let program = "int32 untouched_element(int32* a) { unsigned char* b; b = (unsigned char*)(void*) a; b[5] = 7; return a[2]; }";
+    let mut samples = Vec::new();
+    for size in [16, 1024, 1_000_000, 100_000_000] {
+        let mut pair = Vec::new();
+        for false_frame in [false, true] {
+            let frame = if false_frame {
+                format!("ensures (0..{size}).all(|k| {{ a[k] == old(a[k]) }});")
+            } else {
+                String::new()
+            };
+            let source = format!(
+                "verifying \"probe.c\"; int32 untouched_element(int32* a) {{ owns a[0..{size}]; ensures result == old(a[2]); {frame} }} by {{ execute(); simp(); }}"
+            );
+            let (result, work) =
+                measure_deterministic_work(|| verify_c0_sources(&source, &[("probe.c", program)]));
+            if false_frame {
+                let error = result.expect_err("the byte store invalidates the whole-range frame");
+                assert!(error.message().contains(".all"), "{}", error.message());
+                assert!(
+                    !error.message().contains("budget exhausted"),
+                    "{}",
+                    error.message()
+                );
+            } else {
+                result.expect("the untouched element retains its entry value");
+            }
+            pair.push(work);
+        }
+        samples.push((size, pair));
+    }
+    for sample in &samples {
+        assert!(
+            sample.1[1] <= samples[0].1[1] * 2,
+            "domain-dependent refusal: {samples:?}"
+        );
+    }
+    eprintln!("quantified frame work (size, [true, false]): {samples:?}");
+}
+
+#[test]
+#[ignore = "nightly: multi-size reference-call refusal and positive controls"]
+fn refusing_a_false_literal_result_after_calls_scales_with_the_true_result() {
+    use crate::instrumentation::{VerificationEvent, collect, measure_deterministic_work};
+    verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    let mut samples = Vec::new();
+    for size in [4, 8, 16, 32] {
+        let parameters = (0..size)
+            .map(|i| format!("int32 unused{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let locals = (0..size)
+            .map(|i| format!("int32 local{i} = {i};"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let calls = "read(p);\n".repeat(size);
+        let program = format!(
+            "int32 read(int32* p) {{ return p[0]; }}\nint32 many({parameters}, int32* p) {{ {locals} {calls} return p[0]; }}"
+        );
+        let mut pair = Vec::new();
+        for (value, closer) in [(7, "simp"), (8, "assumption")] {
+            let source = format!(
+                r#"
+                verifying "calls.c";
+                int32 read(int32* p) {{ owns p[0..1]; ensures result == old(p[0]); ensures p[0] == old(p[0]); }} by {{ execute(); simp(); }}
+                int32 many({parameters}, int32* p) {{ owns p[0..1]; requires p[0] == 7; ensures result == {value}; ensures p[0] == 7; }} by {{ execute(); {closer}(); }}
+            "#
+            );
+            let ((result, events), total) = measure_deterministic_work(|| {
+                collect(|| verify_c0_sources(&source, &[("calls.c", program.as_str())]))
+            });
+            if value == 7 {
+                result.expect("the unchanged reference value should verify");
+            } else {
+                let error = result.expect_err("the false result must be refused");
+                assert!(
+                    !error.message().contains("budget exhausted"),
+                    "{}",
+                    error.message()
+                );
+            }
+            let work: usize = events
+                .iter()
+                .filter_map(|event| match event {
+                    VerificationEvent::OperationFinished {
+                        function,
+                        name,
+                        work,
+                        ..
+                    } if function == "many" && name == "post-execution claim tactics" => {
+                        Some(*work)
+                    }
+                    _ => None,
+                })
+                .sum();
+            assert!(work > 0, "missing finishing-work observation");
+            pair.push((total, work));
+        }
+        assert!(
+            pair[1].0 <= pair[0].0 * 2,
+            "N={size}: false {} versus true {}",
+            pair[1].0,
+            pair[0].0
+        );
+        samples.push((size, pair[0], pair[1]));
+    }
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].2.1 <= pair[0].2.1 * 3,
+            "superlinear refusal: {samples:?}"
+        );
+    }
+    eprintln!(
+        "reference-call work (size, (true total, finishing), (false total, finishing)): {samples:?}"
+    );
+}
+
+#[test]
 #[ignore = "nightly: 1.8s in the parallel gate"]
 fn expanded_loop_claims_preserve_the_audit_work_bound() {
     for (fixture, claim) in [

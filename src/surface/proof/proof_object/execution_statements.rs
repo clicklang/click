@@ -1476,13 +1476,15 @@ impl<'a> Proof<'a> {
         entries: Option<&[(Option<String>, ClickProposition)]>,
         prove: &mut dyn FnMut(&Self, ClickProposition, Option<usize>) -> Result<Self, ClickError>,
     ) -> Result<Self, ClickError> {
-        self.require_execution_frontier("a step's obligation proofs")?;
-        let (probe, recorded) = probe_open_obligations(|| {
-            self.apply_execution_statement_step_with_policy(
-                step.clone(),
-                StatementPrerequisitePolicy::Fast,
-            )
-        });
+        if !matches!(step, ProofStep::FoldResource(_)) {
+            self.require_execution_frontier("a step's obligation proofs")?;
+        }
+        let this = if matches!(step, ProofStep::FoldResource(_)) {
+            "this `fold`"
+        } else {
+            "this step"
+        };
+        let (probe, recorded) = probe_open_obligations(|| self.apply_fast_simple_step(&step));
         // A rejected call can still expose the preconditions its recovery
         // needs proved first. As for a bare step, discard that probe, prove
         // its recorded requirements at the pre-state, and retry below. The
@@ -1521,9 +1523,9 @@ impl<'a> Proof<'a> {
             None => {
                 let [requirement] = open.as_slice() else {
                     if open.is_empty() {
-                        return Err(self.step_error(
-                            "this step's `by` is superfluous: its fast path leaves no obligation open; write the step without `by`",
-                        ));
+                        return Err(self.step_error(format!(
+                            "{this}'s `by` is superfluous: its fast path leaves no obligation open; write it without `by`",
+                        )));
                     }
                     let entries = open
                         .iter()
@@ -1534,7 +1536,7 @@ impl<'a> Proof<'a> {
                         .collect::<Result<Vec<_>, _>>()?
                         .join("\n");
                     return Err(self.step_error(format!(
-                        "a step's `by` proves its one open obligation, but this step leaves {} open; write one `requires` entry for each:\n{{\n{entries}\n}}",
+                        "a `by` proves its one open obligation, but {this} leaves {} open; write one `requires` entry for each:\n{{\n{entries}\n}}",
                         open.len()
                     )));
                 };
@@ -1543,7 +1545,7 @@ impl<'a> Proof<'a> {
                     .map(|spelling| spelling.surface)
                 else {
                     return Err(self.step_error(format!(
-                        "this step's open obligation {} cannot be proved by `by`",
+                        "{this}'s open obligation {} cannot be proved by `by`",
                         spelling(requirement)?
                     )));
                 };
@@ -1568,7 +1570,7 @@ impl<'a> Proof<'a> {
                             format!("it leaves open {}", open_list()?)
                         };
                         return Err(self.step_error(format!(
-                            "`requires {written}` matches no obligation this step leaves open: its fast path already closes it or the step does not require it; {open_now}"
+                            "`requires {written}` matches no obligation {this} leaves open: its fast path already closes it or it does not require it; {open_now}"
                         )));
                     };
                     if let Some(earlier) = claimed[slot] {
@@ -1607,10 +1609,7 @@ impl<'a> Proof<'a> {
         };
         // Every open obligation is now proved, so the fast path closes the
         // step; one the implicit `auto` could not prove refuses it there.
-        let stepped = current.apply_execution_statement_step_with_policy(
-            step.clone(),
-            StatementPrerequisitePolicy::Fast,
-        )?;
+        let stepped = current.apply_fast_simple_step(&step)?;
         Ok(self.step_proved_successor(stepped, step, proof))
     }
 
@@ -1619,41 +1618,63 @@ impl<'a> Proof<'a> {
     /// expansion prints the step with a `by` or `requires` entries. A step
     /// never searches the proof context: when the implicit `auto` cannot spell
     /// or prove an obligation, the fast path refuses the step at it.
-    fn apply_bare_statement_step(&self, step: ProofStep) -> Result<Self, ClickError> {
+    pub(in crate::surface::proof) fn apply_bare_statement_step(
+        &self,
+        step: ProofStep,
+    ) -> Result<Self, ClickError> {
         if implicit_auto_disabled() {
-            return self.apply_execution_statement_step_with_policy(
-                step,
-                StatementPrerequisitePolicy::Fast,
-            );
+            return self.apply_fast_simple_step(&step);
         }
         // An obligation the implicit `auto` cannot spell or prove refuses the
         // step with the fast path's own diagnostic, naming that obligation.
-        let refused = || {
-            self.apply_execution_statement_step_with_policy(
-                step.clone(),
-                StatementPrerequisitePolicy::Fast,
-            )
-        };
+        let refused = || self.apply_fast_simple_step(&step);
         let (probe, recorded) = probe_open_obligations(refused);
         if recorded.recorded.is_empty() {
             // With nothing recorded, the probe ran the ordinary checked step.
             return probe;
         }
-        let open = distinct_requirements(recorded.recorded);
+        let refusals = recorded.refusals;
+        let recorded = recorded.recorded;
+        let open = distinct_requirements(recorded.clone());
         let open = open.iter().collect::<Vec<_>>();
-        let Some((proved, mut entries)) = self.prove_obligations_by_auto(&step, &open)? else {
-            return refused();
-        };
-        let stepped = proved.apply_execution_statement_step_with_policy(
-            step.clone(),
-            StatementPrerequisitePolicy::Fast,
-        )?;
+        let (proved, mut entries) =
+            match self.prove_obligations_by_auto_or_name_the_first_missed(&step, &open)? {
+                Ok(proved) => proved,
+                // Refuse at the obligation the implicit `auto` missed, with
+                // the fast path's own diagnostic for it; another open
+                // obligation it did prove is not what is wrong.
+                Err(missed) => {
+                    return match recorded.iter().position(|requirement| {
+                        crate::kernel::proof::propositions_are_alpha_equal(
+                            &requirement.proposition,
+                            &open[missed].proposition,
+                        )
+                    }) {
+                        Some(position) if position > 0 => Err(refusals[position].clone()),
+                        _ => refused(),
+                    };
+                }
+            };
+        let stepped = proved.apply_fast_simple_step(&step)?;
         let proof = if entries.len() == 1 {
             StepProofCertificate::By(Box::new(entries.pop().expect("one entry").proof))
         } else {
             StepProofCertificate::Requires(entries)
         };
         Ok(self.step_proved_successor(stepped, step, proof))
+    }
+
+    /// A simple tactic's fast path: a statement step under the `Fast`
+    /// policy, or a `fold`, whose body checks are exact. Either refuses an
+    /// obligation it cannot close exactly, or records it while probed.
+    fn apply_fast_simple_step(&self, step: &ProofStep) -> Result<Self, ClickError> {
+        match step {
+            ProofStep::FoldResource(_) => without_implicit_auto(|| self.apply_step(step.clone())),
+            _ => self.apply_execution_statement_step_with_policy(
+                step.clone(),
+                StatementPrerequisitePolicy::Fast,
+            ),
+        }
     }
 
     /// Proves each requirement by the implicit `auto` at this pre-state, as a
@@ -1664,24 +1685,36 @@ impl<'a> Proof<'a> {
         step: &ProofStep,
         requirements: &[&UnresolvedRequirement],
     ) -> Result<Option<(Self, Vec<StepRequirementCertificate>)>, ClickError> {
+        Ok(self
+            .prove_obligations_by_auto_or_name_the_first_missed(step, requirements)?
+            .ok())
+    }
+
+    /// [`Self::prove_obligations_by_auto`], or the index of the first
+    /// requirement it could not spell or prove.
+    fn prove_obligations_by_auto_or_name_the_first_missed(
+        &self,
+        step: &ProofStep,
+        requirements: &[&UnresolvedRequirement],
+    ) -> Result<Result<(Self, Vec<StepRequirementCertificate>), usize>, ClickError> {
         let mut current = self.clone();
         let mut entries = Vec::with_capacity(requirements.len());
-        for requirement in requirements {
+        for (index, requirement) in requirements.iter().enumerate() {
             let Some(spelling) = current.requirement_surface(requirement, step)? else {
-                return Ok(None);
+                return Ok(Err(index));
             };
             let surface = spelling.surface.clone();
             current.debug_assert_spelling_relowers(requirement, &surface);
             let checkpoint = current.checkpoint();
             let Ok(have) = current.begin_have(surface.clone()) else {
-                return Ok(None);
+                return Ok(Err(index));
             };
             let Some(closed) =
                 crate::surface::proof::smart_closures::close_requirement_spelling_by_auto(
                     have, &spelling,
                 )?
             else {
-                return Ok(None);
+                return Ok(Err(index));
             };
             current = closed.join()?;
             entries.push(StepRequirementCertificate {
@@ -1690,7 +1723,7 @@ impl<'a> Proof<'a> {
                 proof: retained_have_body(&current.certificate_since(&checkpoint)?)?,
             });
         }
-        Ok(Some((current, entries)))
+        Ok(Ok((current, entries)))
     }
 
     /// Every requirement's Surface spelling must lower back to that
@@ -2718,7 +2751,7 @@ thread_local! {
     static IMPLICIT_AUTO_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-fn implicit_auto_disabled() -> bool {
+pub(super) fn implicit_auto_disabled() -> bool {
     IMPLICIT_AUTO_DISABLED.with(std::cell::Cell::get)
 }
 
