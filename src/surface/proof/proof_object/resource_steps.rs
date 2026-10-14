@@ -2280,20 +2280,14 @@ impl<'a> Proof<'a> {
             &execution.core.unfolded_predicates,
             family_reaches_population,
         )?;
-        let selected = lower_resource_clause_at_state_with_assumptions(
-            resource,
-            context.parameter_binding(),
-            &checked.state,
-            None,
-            checked.facts.assumptions(),
-        )?;
+        let selected = &checked.selected;
         execution
             .core
             .record_resource_rewrite(
                 context.function,
                 context.arguments,
                 &before_facts,
-                &selected,
+                selected,
                 &checked.state,
                 &checked.facts,
             )
@@ -2496,20 +2490,14 @@ impl<'a> Proof<'a> {
             unreachable!("folding a return outcome preserves its outcome kind")
         };
         if self.is_authority_transfer_wrapper(resource) && family_reaches_population {
-            let selected = lower_resource_clause_at_state_with_assumptions(
-                resource,
-                context.parameter_binding(),
-                &state,
-                Some(&value),
-                checked.facts.assumptions(),
-            )?;
+            let selected = &checked.selected;
             execution
                 .core
                 .record_return_transfer_wrapper_rewrite(
                     context.function,
                     goal.path_index,
                     self.facts(),
-                    &selected,
+                    selected,
                     &goal.data.core.state,
                     &state,
                     &checked.facts,
