@@ -135,7 +135,8 @@ The rebuilt fixed master normal gate passes all selected tests, with correct
 fixture paths; its cold 20m17s run exceeds the ten-minute budget. The archived
 candidate has no full green verdict and fails its normal example stage.
 
-The next independent extraction captures explicit entry reads before placing
+PR [#937](https://github.com/clicklang/click/pull/937) merged the independent
+extraction that captures explicit entry reads before placing
 them in executable indexed resource bodies. It preserves the selected resource
 through the fold and its kernel check, avoiding a second interpretation of the
 argument. Plain and nested entry-read positives, wrong-cell controls, and the
@@ -148,7 +149,22 @@ fixtures, 37 documentation checks, all-target Clippy and the three selected
 expansion/fresh/retained checks pass. The first attributed archive group is the
 [conditional native-composite output check](../bugs/native-composite-output-requires-decided-body-guard.md):
 a minimal C producer/caller passes on the fixed baseline and fails on the
-archive; its introducing commit and repair still require work.
+archive. Repair checkpoint `132cb424b` on the preserved recovery branch restores
+allocated-linked-list, heap-object and the reduction. Three targeted kernel
+controls and two C++ member-domain rejection fixtures pass. This depends on
+archived native-entry machinery and is not an independently landed activation;
+its introducing commit still needs attribution.
+
+The next reduced compatibility group is
+[native-span output admission for ordinary C buffers](../bugs/native-span-output-loses-c-carrier.md).
+Its producer/caller witness passes all four proof modes on the delivered
+entry-fold tree and fails on both the frozen archive and the conditional-record
+repair checkpoint. Preserve explicit typed validity while repairing automatic
+resource annotations and complete-carrier transport. The targeted experiment
+restores detachable-buffer and the reduction in all four proof modes; split-buffer
+and segmented-buffer still need later range-fold repairs. The repair checkpoint
+is `86abef177`; 17 selected kernel controls and the reduced Markdown regression
+pass. It remains dependent on archived native-entry machinery.
 
 ## Recovery and delivery sequence
 

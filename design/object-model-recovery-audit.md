@@ -141,6 +141,35 @@ bugs or choosing semantic changes. In particular, rbtree-augmented and refcount
 are not master failures at this revision; the earlier unclassified report left
 that question open.
 
+## Attributed reductions and preserved repair checkpoints
+
+PR [#937](https://github.com/clicklang/click/pull/937) merged the entry-read fold
+repair; final pushed head `2ad128f94` is an ancestor of fetched upstream master.
+This is an independent upstream delivery, separate from native-entry activation.
+
+The [conditional-record reduction](../bugs/native-composite-output-requires-decided-body-guard.md)
+now has a preserved archive-based repair at `132cb424b` on
+`codex/object-model-failure-reduction`. The original allocated-linked-list and
+heap-object projects and the reduced producer/caller pass. Three kernel controls
+retain strict-native and explicit-validity rejection; two selected C++ member
+domain rejection fixtures pass. These targeted results do not constitute a new
+full example-stage or normal-gate verdict.
+
+The [C buffer output reduction](../bugs/native-span-output-loses-c-carrier.md)
+passes fresh, expanded, rewritten and retained checking on the #937 delivery
+and fails on both `e3d84a785` and `132cb424b`. A bounded probe distinguishes the
+entry's unresolved carrier from the designation-free symbolic field observed
+at output transfer. A reader-only change does not restore the original
+project. A narrowly scoped resource-annotation compatibility experiment restores the
+unchanged detachable-buffer project and the reduction in all four proof modes.
+Split-buffer and segmented-buffer pass the identity-error point but still fail
+at subsequent range folds; retain them as unresolved rows. Repair checkpoint `86abef177` on `codex/object-model-failure-reduction` preserves
+the change and reduced regression. All 17 selected span/record kernel controls
+pass, including explicit-validity, native-policy, known-domain bounds and
+pointer-cell readability checks; the selected Markdown regression passes.
+This archive-dependent checkpoint is not an independent upstream activation. Neither reduction
+has an introducing commit assigned yet.
+
 ## Independent defect and extraction candidate
 
 Master rejects a resource owning `p[0]` when its pointer argument is substituted
