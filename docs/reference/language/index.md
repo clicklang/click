@@ -354,9 +354,12 @@ int32 tree_depth_ok(struct node* root) {
 ```
 
 The declaration must exactly name an owned or viewed entry resource, or one of
-the contract's own resource binders. The current structural slice supports
-direct recursion, a directly recursive composite definition, and a simple
-resource guard. The definition may be `if`-guarded or `match model`-bodied: a
+the contract's own resource binders. The structural analysis supports
+direct and mutual recursion, a directly recursive composite definition, and a
+simple resource guard: in a component of two or more, every member is ranked
+by the same resource family, and a call to another member must pass a direct
+contained child for that member's own measured requirement
+(`mdtests/c_decreases_resource_mutual_recursion.md`). The definition may be `if`-guarded or `match model`-bodied: a
 matched body's named and unnamed children of the same family are its direct
 contained children, and the arm is selected by a fact of its own that every
 other arm's facts deny, as `fact p != 0` is denied by an `Empty` arm's
@@ -600,11 +603,13 @@ assignments, updates, allocation results, and call results. Structural
 recursive calls in loops are supported for read-only resource transitions when
 the parent is observed before the loop; the recursive call must still receive
 a direct contained child. See
-`mdtests/c_decreases_resource_recursive_in_loop.md`. Resource-consuming or
-mutating structural calls across a loop back edge remain tracked in the
-hard-bucket `issues/recursion.md`.
-Recursive calls whose descent depends on a changing lexicographic caller
-measure remain unsupported.
+`mdtests/c_decreases_resource_recursive_in_loop.md`. A recursive call that
+consumes a child inside a ranked loop is ranked by a model measure, and the
+loop may free the node and continue
+(`mdtests/c_decreases_model_measure_recursion_consumes_inside_loop.md`). A
+call whose descent depends on the loop's changing counters is ranked by a
+function-level expression or tuple measure, discharged from the loop
+invariants (`mdtests/c_decreases_lexicographic_recursion_under_loops.md`).
 
 Click certifies termination of the whole function, so every reachable loop and
 recursive component must be ranked and every callee must itself have
