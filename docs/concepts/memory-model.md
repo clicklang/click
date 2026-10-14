@@ -200,6 +200,13 @@ too; a member nothing wrote is still a read of uninitialized storage. A
 successful `realloc` keeps the old block's initialized bytes initialized up
 to the new size, and the bytes it grows by start uninitialized.
 
+A checked call retains input propositions independently established by the
+incoming context's indexed facts and scalar condition checker. Retention does
+not repeat memory or ownership derivations, and a pending call obligation
+cannot establish its own premise. Retained read terms keep their pre-call
+snapshot; they describe the post-call value only when checked read preservation
+connects the snapshots. See `mdtests/call_checked_input_facts_keep_prestate.md`.
+
 Heap arrays of structs are byte-backed allocations whose indexed member
 addresses add `i * sizeof(struct T)` before applying the field offset. This
 keeps the allocation extent and field access aligned with the declared ABI,

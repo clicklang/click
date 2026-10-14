@@ -40,6 +40,21 @@ operation with retained provenance. No comparator, tactic, or search may
 silently consume a proved equality while answering a question that should be
 definitional.
 
+Return proposition certification permits an exact snapshot to differ only by
+recorded `CellsSeeded` steps that cache its own typed reads. Each step must use
+load mode, match the element and value widths, and read bytes with the base's
+producer-recorded read identity. The comparison walks only those added cache
+steps to an identical snapshot. Writes, havoc, forgotten knowledge, and
+allocation changes remain barriers; read identity by itself does not establish
+snapshot equality or access authority. The end-to-end regression is
+`mdtests/cached_read_return_completion.md`.
+The same comparison preserves a selected resource body's identical readability
+fact across cached snapshots. Address, byte extent, and wide/narrow kind must
+match exactly. Return-trace certification rechecks that body fact before
+retaining its cached-snapshot form; it never imports an arbitrary caller fact
+context. Repeated comparisons of one snapshot pair share a local result, so
+checking multiple body facts does not repeatedly walk the same cache delta.
+
 ## The canonical form
 
 The single entry point is `canonical_term` (with `canonical_offset_term`
@@ -114,6 +129,14 @@ canonical keys, with target-directed paths retaining the propositions that
 justify each edge. Neither performs equality saturation or extracts a
 preferred class member. Both are contextual indexes, not a replacement for
 canonical form.
+
+A theorem's written premise can carry more checked guards than its instantiated
+requirement. `defined(a + b + c)` includes both additions' overflow guards;
+`int32_add_to_integer(a + b, c)` needs only the outer guard because its first
+argument is already a bound value. Smart `apply` retains the whole written
+premise and uses the explicit checker's shared listed-premise rule to select
+its checked conjunct. It does not demand identical proposition structure or
+import omitted evidence from ambient facts.
 
 ## Load variables are the canonical form of a load
 
@@ -229,6 +252,13 @@ refers to one through a snapshot form such as `at(statement(3).entry, x)` or
   form of its own pointer at the pre-rewrite snapshot
   (`memory_only_adds_named_cells` in `src/kernel/proof/execution.rs`), which is
   definitional and needs no search.
+- **A checked guarded unfold names its exposed cells** through the same
+  projection as an unconditional unmatched body. The kernel returns the guard
+  case it checked; only an active body is materialized. Initial projection
+  still leaves guarded bodies opaque, and an unknown guard cannot authorize
+  an unfold. Naming adds the cell's canonical pre-rewrite load, not its model
+  value, so a later write to that cell still invalidates the old field fact
+  (`mdtests/c_guarded_resource_disjoint_store.md` and its negative controls).
 - **Contract entry names an unmatched instance body's cells** too, without
   granting read authority: an unconditional, unmatched body is the one arm a
   held field-bearing instance always has, so `project_initial_composite_resource_cores`
@@ -322,3 +352,10 @@ keeps the pre-step form of a carried fact beside the carried one, since
 both stay true. And `old(x)` denotes the entry value: it is the
 entry-epoch load variable, equal to the current value only where that
 frame fact is established.
+
+Checked algebraic model equalities also participate in the shared equality
+closure. Semantic fact lookup combines model aliases with checked constructor
+cases and propagates equality through constructors and pure calls. This does
+not unfold functions or compare match bodies under their binders. The
+[typed model fragment](equality-closure.md#typed-algebraic-model-values) describes
+the retained type distinctions and scope rules.

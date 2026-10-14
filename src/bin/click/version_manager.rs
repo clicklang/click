@@ -26,6 +26,10 @@ impl Drop for TemporaryDirectory {
 }
 
 pub fn entry_with(command: &str, arguments: Vec<String>) -> Result<(), String> {
+    if matches!(arguments.as_slice(), [argument] if argument == "--help" || argument == "-h") {
+        println!("{}", usage());
+        return Ok(());
+    }
     match command {
         "install" => install_command(&arguments),
         "use" => use_command(&arguments),

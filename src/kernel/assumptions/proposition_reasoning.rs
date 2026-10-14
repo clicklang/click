@@ -3343,6 +3343,11 @@ impl PureFactContext {
     }
 
     pub(crate) fn is_inconsistent(&self) -> bool {
+        // Read the current closure before negative memos: on-demand checked
+        // read congruence can discover a conflict without changing fact IDs.
+        if self.equality_graph.has_scalar_constant_conflict() {
+            return true;
+        }
         let Some(assumptions_id) = ambient_assumptions_memo_id(self) else {
             return self.is_inconsistent_unmemoized();
         };

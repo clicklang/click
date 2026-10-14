@@ -3188,8 +3188,10 @@ impl LoopExitFacts {
 /// can describe is still refused by name; dropping an exit, or picking one
 /// exit's state for all of them, would export an exit the C never reaches
 /// that way.
+#[allow(clippy::too_many_arguments)]
 fn join_loop_exits(
     head: &CLoopHead,
+    body: &CStatement,
     invariant_propositions: &crate::kernel::proof::PersistentSequence<Proposition>,
     binders: &[CLoopBinder],
     exits: Vec<(
@@ -3218,6 +3220,7 @@ fn join_loop_exits(
             .collect::<Vec<_>>();
         match abstract_loop_exit_states(
             head,
+            body,
             binders,
             &states,
             &facts,
@@ -3694,8 +3697,10 @@ mod loop_invariant_correspondence_tests {
 /// Cost is the loop's own binders, the locals the exits disagree on, and the
 /// cells they disagree on; no unrelated project-wide or path-wide state is
 /// scanned, and a component every exit agrees on is compared once and kept.
+#[allow(clippy::too_many_arguments)]
 fn abstract_loop_exit_states(
     head: &CLoopHead,
+    body: &CStatement,
     binders: &[CLoopBinder],
     states: &[&CState],
     exit_facts: &[&ExecutionFacts],
@@ -3721,6 +3726,7 @@ fn abstract_loop_exit_states(
             }
         }
     }
+    discard_loop_exit_partial_value_bindings(&head.top, body, &mut rebound);
     retain_proven_loop_exit_cells(&mut rebound, exit_facts, assumptions, binders.is_empty())?;
     let mut successor = rebound[0].clone();
     let mut restatements = vec![LoopExitRestatement::default(); rebound.len()];
@@ -3936,6 +3942,56 @@ fn is_loop_exit_snapshot_marker(block: &PointerBlock) -> bool {
 #[cfg(test)]
 mod contract_exit_join_tests {
     use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn exit_disjunct_restates_model_getters_without_replacing_history() {
+        let ty = crate::kernel::AlgebraicType {
+            rigid: false,
+            name: "ExitModel".into(),
+            arguments: vec![],
+            variants: vec![crate::kernel::AlgebraicVariantType {
+                name: "Done".into(),
+                fields: vec![],
+            }]
+            .into(),
+            schemas: Arc::new(crate::kernel::AlgebraicSchemas::new(BTreeMap::new())),
+        };
+        let model = |id| crate::kernel::AlgebraicTerm {
+            algebraic_type: ty.clone(),
+            node: crate::kernel::AlgebraicTermNode::Variable(Variable(id)),
+        };
+        let held = model(986_100);
+        let fresh = model(986_101);
+        let fact = |model| {
+            Proposition::ConditionIs(
+                ConditionTerm::equal(
+                    Bitvector32Term::ClickFunctionApplication {
+                        name: "pending".into(),
+                        arguments: vec![crate::kernel::PureFunctionArgument::Algebraic(model)],
+                    },
+                    Bitvector32Term::Constant(0),
+                ),
+                true,
+            )
+        };
+        let historical = fact(held.clone());
+        let expected = fact(fresh.clone());
+        let mut restatement = LoopExitRestatement::default();
+        restatement.pin_resource_value(
+            &AlgebraicValue::Algebraic(fresh),
+            &AlgebraicValue::Algebraic(held),
+        );
+        let joined = restatement.restate(
+            vec![ExecutionPureFact::new(historical.clone())].into(),
+            vec![],
+            empty_checked_loan_evidence_sequence(),
+        );
+        assert!(joined.disjunct.contains(&expected));
+        assert!(!joined.disjunct.contains(&historical));
+        assert!(joined.restated.contains(&expected));
+        assert!(joined.stated.contains_proposition(&historical));
+    }
 
     fn marker_exits(count: usize, ambient: usize) -> Vec<CState> {
         let mut memory = CMemory::new()
@@ -3994,6 +4050,105 @@ mod contract_exit_join_tests {
         });
         result.unwrap();
         (successor, work)
+    }
+
+    #[test]
+    fn exit_difference_names_call_bindings_and_storage_metadata() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let left = CState::new();
+        let mut right = left.clone();
+        right.resource_bindings = Some(Arc::new(BTreeMap::from([(Variable(1), Variable(2))])));
+        right.next_local_frame = 3;
+        right.enclosing_frame_holds_locals = true;
+        let report = loop_exit_state_difference(&left, &right, &PureFactContext::new()).unwrap();
+        assert!(
+            report.contains("call resource bindings (successor: 0 entries; exit: 1 entries)"),
+            "{report}"
+        );
+        assert!(
+            report.contains("next automatic-storage frame (successor: 0; exit: 3)"),
+            "{report}"
+        );
+        assert!(
+            report
+                .contains("enclosing frame holds automatic objects (successor: false; exit: true)"),
+            "{report}"
+        );
+        assert!(!report.contains("the symbolic state"), "{report}");
+        assert!(loop_exit_state_difference(&left, &left, &PureFactContext::new()).is_none());
+    }
+
+    #[test]
+    fn exit_difference_does_not_blame_equivalent_creation_ledgers() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let left = CState::new().with_population_creation_tracking();
+        let mut right = CState::new().with_population_creation_tracking();
+        right.next_local_frame = 3;
+        let report = loop_exit_state_difference(&left, &right, &PureFactContext::new()).unwrap();
+        assert!(report.contains("next automatic-storage frame"), "{report}");
+        assert!(!report.contains("population effects"), "{report}");
+    }
+
+    #[test]
+    fn exit_difference_names_missing_locals_from_either_side_and_bounds_names() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let left = CState::new();
+        let mut right = left.clone();
+        for index in 0..20 {
+            right = right.with_local(format!("only_exit_{index:02}"), int32(0));
+        }
+        for (first, second) in [(&left, &right), (&right, &left)] {
+            let report =
+                loop_exit_state_difference(first, second, &PureFactContext::new()).unwrap();
+            assert!(
+                report.contains("only_exit_00") && report.contains("only_exit_11"),
+                "{report}"
+            );
+            assert!(!report.contains("only_exit_12"), "{report}");
+            assert!(report.contains("8 additional locals differ"), "{report}");
+        }
+    }
+
+    #[test]
+    fn partial_value_binding_join_cannot_supply_a_missing_read_or_drop_declared_storage() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let empty = CState::new();
+        let value = empty.clone().with_local("temporary", int32(1));
+        let body = c_assign("temporary", c_int32_literal(1));
+        let mut exits = [empty.clone(), value.clone()];
+        discard_loop_exit_partial_value_bindings(&empty, &body, &mut exits);
+        assert!(
+            exits
+                .iter()
+                .all(|state| state.locals.get("temporary").is_none())
+        );
+        assert!(
+            loop_exit_state_difference(&exits[0], &exits[1], &PureFactContext::new()).is_none()
+        );
+
+        let mut exits = [empty.clone(), value.clone()];
+        discard_loop_exit_partial_value_bindings(&value, &body, &mut exits);
+        assert!(
+            exits[1].locals.get("temporary").is_some(),
+            "entry bindings must remain checked"
+        );
+
+        let mut declared = value;
+        if let Some(CLocalBinding::Object {
+            storage_declared, ..
+        }) = Arc::make_mut(&mut declared.locals.bindings).get_mut("temporary")
+        {
+            *storage_declared = true;
+        }
+        let mut exits = [empty.clone(), declared];
+        discard_loop_exit_partial_value_bindings(&empty, &body, &mut exits);
+        assert!(
+            exits[1].locals.get("temporary").is_some(),
+            "declared storage must remain checked"
+        );
+        assert!(
+            loop_exit_state_difference(&exits[0], &exits[1], &PureFactContext::new()).is_some()
+        );
     }
 
     #[test]
@@ -4205,9 +4360,19 @@ impl LoopExitRestatement {
     /// such value. Every occurrence is replaced, which is the one choice that
     /// lets two exits arrive at the same proposition; the result holds on
     /// this path because the name equals the value here.
-    fn restated_about_merged_binders(&self, proposition: &Proposition) -> Option<Proposition> {
+    fn restated_about_merged_binders(
+        &self,
+        proposition: &Proposition,
+        symbolic_only: bool,
+    ) -> Option<Proposition> {
         let mut restated = None;
         for (held, fresh) in &self.replacements {
+            // A constructor can already be spelled after the loop. Replacing
+            // it would also rename historical equalities to that constructor
+            // and change exact `cases` interfaces that need no fresh name.
+            if symbolic_only && !matches!(held.node, AlgebraicTermNode::Variable(_)) {
+                continue;
+            }
             let current = restated.as_ref().unwrap_or(proposition);
             let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::new(held, fresh);
             let rewritten = rewrite.proposition(current);
@@ -4240,14 +4405,6 @@ impl LoopExitRestatement {
         if self.renamings.is_empty() && self.equations.is_empty() {
             return LoopExitFacts::unabstracted(facts, obligations, loan_evidence);
         }
-        let restated = if self.replacements.is_empty() {
-            Vec::new()
-        } else {
-            facts
-                .iter()
-                .filter_map(|fact| self.restated_about_merged_binders(fact.proposition()))
-                .collect()
-        };
         let rename = |proposition: &Proposition| {
             self.renamings
                 .iter()
@@ -4255,10 +4412,15 @@ impl LoopExitRestatement {
                     substitute_bitvector_variable_in_proposition(&proposition, *from, to)
                 })
         };
-        let mut disjunct = facts
-            .iter()
-            .map(|fact| rename(fact.proposition()))
-            .collect::<Vec<_>>();
+        let mut restated = Vec::new();
+        let mut disjunct = Vec::new();
+        for fact in facts.iter() {
+            let rewritten = self.restated_about_merged_binders(fact.proposition(), true);
+            disjunct.push(rename(rewritten.as_ref().unwrap_or(fact.proposition())));
+            if let Some(rewritten) = self.restated_about_merged_binders(fact.proposition(), false) {
+                restated.push(rewritten);
+            }
+        }
         let mut successor_equations = Vec::new();
         for equation in &self.equations {
             // An equation the renaming covers is dropped: every fact this exit
@@ -4614,6 +4776,42 @@ mod exit_local_argument_tests {
     }
 }
 
+/// A value-only binding introduced by lowering is not an automatic object.
+/// If an exit never produced it, no common value can be read after the loop.
+/// Discard only loop-written names absent at entry, and only when every held
+/// binding has no declared storage. Memory and resource authority remain intact.
+fn discard_loop_exit_partial_value_bindings(top: &CState, body: &CStatement, exits: &mut [CState]) {
+    let mut names = BTreeSet::new();
+    collect_loop_modified_locals(body, &mut names);
+    for name in names {
+        crate::instrumentation::record_deterministic_work(1);
+        if top.locals.binding(&name).is_some() {
+            continue;
+        }
+        let mut missing = false;
+        let mut value_only = true;
+        for state in exits.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            match state.locals.binding(&name) {
+                None => missing = true,
+                Some(CLocalBinding::Object {
+                    storage_declared: false,
+                    ..
+                }) => {}
+                _ => {
+                    value_only = false;
+                    break;
+                }
+            }
+        }
+        if missing && value_only {
+            for state in exits.iter_mut() {
+                state.locals.remove(&name);
+            }
+        }
+    }
+}
+
 /// One resource argument or field vector, position by position: the common
 /// value where every exit agrees, a fresh name plus one equation per exit
 /// where they do not.
@@ -4791,6 +4989,14 @@ fn join_loop_exit_storage_bookkeeping(
     let counters_differ = exits
         .iter()
         .any(|state| state.next_local_lifetime != successor.next_local_lifetime);
+    let frame_counter = exits
+        .iter()
+        .map(|state| state.next_local_frame)
+        .max()
+        .unwrap_or(successor.next_local_frame);
+    let frames_differ = exits
+        .iter()
+        .any(|state| state.next_local_frame != successor.next_local_frame);
     let mut marker_delta = BTreeSet::new();
     for state in exits {
         for change in state.memory.blocks.diff(&successor.memory.blocks) {
@@ -4801,10 +5007,11 @@ fn join_loop_exit_storage_bookkeeping(
         }
     }
     let markers_differ = !marker_delta.is_empty();
-    if !forgotten_differ && !counters_differ && !markers_differ {
+    if !forgotten_differ && !counters_differ && !frames_differ && !markers_differ {
         return Ok(false);
     }
     successor.next_local_lifetime = counter;
+    successor.next_local_frame = frame_counter;
     if forgotten_differ || markers_differ {
         let mut memory = successor.memory.clone();
         for key in marker_delta {
@@ -5159,6 +5366,7 @@ fn loop_exit_residual_difference(
         }
     }
     if bookkeeping {
+        witness.next_local_frame = seated.next_local_frame;
         witness.next_local_lifetime = seated.next_local_lifetime;
         let diagnostic_base = witness.memory.clone();
         witness.memory.forgotten = seated.memory.forgotten.clone();
@@ -5297,15 +5505,72 @@ fn loop_exit_state_difference(
             return None;
         }
     }
+    // Keep this exhaustive: a new checked state component must also acquire a
+    // diagnostic name. These comparisons explain rejection, not join acceptance.
+    let CState {
+        aggregate_destination,
+        instance_field_scope,
+        resource_bindings,
+        loan_ledger,
+        loan_participant,
+        loan_view_bindings,
+        thread_ledger,
+        mutex_ledger,
+        preserves_mutex_protocols,
+        mutex_input_reservations,
+        opaque_mutex_acquisitions,
+        named_mutex_authorities,
+        pending_thread_create,
+        population_access,
+        observed_population_families,
+        population_effects,
+        next_local_frame,
+        next_local_lifetime,
+        enclosing_frame_holds_locals,
+        locals,
+        memory: _,
+        resources: _,
+    } = left;
     let mut differences = Vec::new();
-    let changed_locals = left
-        .locals()
-        .object_values()
-        .filter(|(name, value)| right.locals().get(name) != Some(*value))
-        .map(|(name, _)| name.to_string())
-        .collect::<Vec<_>>();
-    if !changed_locals.is_empty() {
-        differences.push(format!("local `{}`", changed_locals.join("`, `")));
+    macro_rules! component {
+        ($field:ident, $label:literal) => {
+            if $field != &right.$field {
+                differences.push($label.to_string());
+            }
+        };
+        ($field:ident, $label:literal, values) => {
+            if $field != &right.$field {
+                differences.push(format!(
+                    "{} (successor: {:?}; exit: {:?})",
+                    $label, $field, right.$field
+                ));
+            }
+        };
+    }
+    if locals != &right.locals {
+        let names = locals
+            .bindings
+            .keys()
+            .chain(right.locals.bindings.keys())
+            .filter(|name| locals.bindings.get(*name) != right.locals.bindings.get(*name))
+            .collect::<BTreeSet<_>>();
+        let shown = names
+            .iter()
+            .take(12)
+            .map(|name| name.as_str())
+            .collect::<Vec<_>>();
+        let mut detail = if shown.is_empty() {
+            "local storage slot bindings".to_string()
+        } else {
+            format!("local `{}`", shown.join("`, `"))
+        };
+        if names.len() > shown.len() {
+            detail.push_str(&format!(
+                " ({} additional locals differ)",
+                names.len() - shown.len()
+            ));
+        }
+        differences.push(detail);
     }
     if !same_memory {
         differences.push("memory".to_string());
@@ -5313,18 +5578,54 @@ fn loop_exit_state_difference(
     if !same_resources {
         differences.push("resource ownership".to_string());
     }
-    if left.loan_ledger != right.loan_ledger {
-        differences.push("stable-view loan authority".to_string());
+    component!(aggregate_destination, "aggregate call destination");
+    component!(instance_field_scope, "resource field evaluation scope");
+    if resource_bindings != &right.resource_bindings {
+        differences.push(format!(
+            "call resource bindings (successor: {} entries; exit: {} entries)",
+            resource_bindings
+                .as_ref()
+                .map_or(0, |bindings| bindings.len()),
+            right
+                .resource_bindings
+                .as_ref()
+                .map_or(0, |bindings| bindings.len())
+        ));
     }
-    if left.loan_participant != right.loan_participant {
-        differences.push("stable-view loan participant".to_string());
+    component!(loan_ledger, "stable-view loan authority");
+    component!(loan_participant, "stable-view loan participant");
+    component!(loan_view_bindings, "stable-view occurrence bindings");
+    component!(thread_ledger, "thread completion authority");
+    component!(mutex_ledger, "mutex authority");
+    component!(
+        preserves_mutex_protocols,
+        "mutex protocol preservation",
+        values
+    );
+    component!(mutex_input_reservations, "mutex input reservations");
+    component!(opaque_mutex_acquisitions, "opaque mutex acquisitions");
+    component!(named_mutex_authorities, "named mutex authority bindings");
+    component!(pending_thread_create, "pending thread creation");
+    component!(population_access, "population access");
+    component!(observed_population_families, "observed population families");
+    if population_effects != &right.population_effects {
+        let mut effects_only = left.clone();
+        effects_only.population_effects = right.population_effects.clone();
+        if !left.equal_up_to_creation_ledger_identity(&effects_only) {
+            differences.push("population effects".to_string());
+        }
     }
-    if left.loan_view_bindings != right.loan_view_bindings {
-        differences.push("stable-view occurrence bindings".to_string());
-    }
-    if differences.is_empty() {
-        differences.push("the symbolic state".to_string());
-    }
+    component!(next_local_frame, "next automatic-storage frame", values);
+    component!(
+        next_local_lifetime,
+        "next automatic-storage lifetime",
+        values
+    );
+    component!(
+        enclosing_frame_holds_locals,
+        "enclosing frame holds automatic objects",
+        values
+    );
     Some(differences.join(", "))
 }
 
@@ -5693,6 +5994,7 @@ fn execute_c_while_exit_paths(
                 .collect::<Vec<_>>();
             if let Some(path) = join_loop_exits(
                 &head,
+                body,
                 &invariant_propositions,
                 &binders,
                 exits,
@@ -5705,6 +6007,7 @@ fn execute_c_while_exit_paths(
         }
     } else if let Some(path) = join_loop_exits(
         &head,
+        body,
         &Default::default(),
         &binders,
         break_exit_entries,
@@ -5722,6 +6025,7 @@ fn execute_c_while_exit_paths(
     for (target, exits) in jump_exit_entries {
         if let Some(mut path) = join_loop_exits(
             &head,
+            body,
             &Default::default(),
             &binders,
             exits,
@@ -8895,7 +9199,15 @@ fn evaluate_loop_effect_segment_value_capturing(
         )));
     }
     match path.outcome {
-        CExpressionOutcome::Value(value) => Ok(Ok((value, path.facts))),
+        CExpressionOutcome::Value(value) => {
+            // Segment and contract arguments retain the value, not its temporary
+            // fact stream. As for recursive child indices, carry only certified
+            // typed-read definitions and cached observations into this context.
+            for fact in &path.facts {
+                fact.retain_pointer_read_definition(assumptions);
+            }
+            Ok(Ok((value, path.facts)))
+        }
         CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead) => {
             Ok(Err(format!(
                 "{label} could not establish that the memory location contains an initialized value"
@@ -9110,8 +9422,21 @@ pub(super) fn assume_invariant_checks(
                         facts.push(ExecutionPureFact::new(path.proposition));
                     }
                     next_contexts.push((facts, obligations, invariant_propositions));
-                } else if add_path_fact(&mut facts, assumptions, path.proposition).is_some() {
-                    next_contexts.push((facts, obligations, invariant_propositions));
+                } else {
+                    let before = facts.len();
+                    if add_path_fact(&mut facts, assumptions, path.proposition.clone()).is_some() {
+                        // A condition inferred from the enclosing context is
+                        // consistent but add_path_fact need not emit it. The
+                        // loop head still owes its declared hypothesis to the
+                        // separate preservation proof and exit correspondence.
+                        if facts.len() == before && !equation_states_nothing(&path.proposition) {
+                            // Intrinsic truths carry no induction information.
+                            // Keep their existing omission so explicit closure
+                            // scripts still see the same reflexive obligation.
+                            facts.push(ExecutionPureFact::new(path.proposition));
+                        }
+                        next_contexts.push((facts, obligations, invariant_propositions));
+                    }
                 }
             }
         }

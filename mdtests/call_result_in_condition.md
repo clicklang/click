@@ -2,9 +2,8 @@
 
 `if (classify(x))` never stores the callee's result in a named C object, so
 the branch fact and the callee's guarantee are about a value the proof cannot
-spell. `let r = step(classify(x), { });` names that value: the callee declares
-no `produces` binder, so the same `let` that introduces a produced instance
-introduces the call's scalar result instead. The name then works in `have`,
+spell. `let { result: r } = step(classify(x), { });` names that value through the explicit `result` key, independently of whether
+the callee also produces resources. The name then works in `have`,
 `rewrite`, and `normalize() using` premises on either side of the branch.
 
 `return classify(x);` is the same shape with the result flowing to `result`.
@@ -59,7 +58,7 @@ int has_class(int x) {
     ensures classified(x) != 0 implies result == 1;
     ensures classified(x) == 0 implies result == 0;
 } by {
-    let r = step(classify(x), { });
+    let { result: r } = step(classify(x), { });
     branch then {
         step();
         have classified(x) != 0 by {
@@ -77,7 +76,7 @@ int has_class(int x) {
 int forward_class(int x) {
     ensures result == classified(x);
 } by {
-    let r = step(classify(x), { });
+    let { result: r } = step(classify(x), { });
     step();
     have result == classified(x) by {
         rewrite(r == classified(x));

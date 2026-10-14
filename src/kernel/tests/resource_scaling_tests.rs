@@ -417,7 +417,7 @@ fn field_endpoint_definitions() -> Vec<CCompositeResourceDefinition> {
         name: "rest".into(),
         resource: "suffix".into(),
         binding: Variable(90),
-        arguments: vec![c_variable("p")],
+        arguments: vec![SpecExpression::CExpression(c_variable("p"))],
         field_bindings: vec![CResourceChildField::Parent(0)],
     }])
     .with_instance_schema(Some(holder_schema));
@@ -1295,7 +1295,7 @@ fn layered_definitions(layers: usize) -> Vec<CCompositeResourceDefinition> {
                     name: "child".into(),
                     resource: layer_name(layer - 1),
                     binding: Variable(5_000_000 + layer as u64),
-                    arguments: vec![c_variable("p")],
+                    arguments: vec![SpecExpression::CExpression(c_variable("p"))],
                     field_bindings: vec![CResourceChildField::Parent(0)],
                 }]
             };
@@ -1514,28 +1514,29 @@ fn materialized_pointer(source: &CMemory, cell: &Pointer) -> CValue {
 /// nothing that grows with their number.
 #[test]
 fn unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors() {
-    let definitions = slot_definitions();
-    let region = external_descriptor(100_000);
-    let other = external_descriptor(100_001);
-    let entry = CMemory::new();
-    let pool = match materialized_pointer(&entry, &region) {
-        CValue::Pointer(value) => value.pointer().clone(),
-        _ => unreachable!("a pointer cell is materialized as a pointer"),
-    };
-    let instance = ResourceInstance::new(
-        Variable(2 * TARGET_HEAP),
-        "slot".into(),
-        vec![CValue::typed_pointer(region.clone(), CType::Int32Pointer).into()].into(),
-        ResourceFieldSchema::new(vec![
-            ("at".into(), ResourceFieldType::C(CType::Int32)),
-            ("end".into(), ResourceFieldType::C(CType::Int32)),
-        ])
-        .unwrap(),
-        vec![int32(0).into(), int32(2).into()].into(),
-    )
-    .unwrap();
     let mut samples = Vec::new();
     for size in SIZES {
+        let _session = crate::kernel::VerificationSession::enter();
+        let definitions = slot_definitions();
+        let region = external_descriptor(100_000);
+        let other = external_descriptor(100_001);
+        let entry = CMemory::new();
+        let pool = match materialized_pointer(&entry, &region) {
+            CValue::Pointer(value) => value.pointer().clone(),
+            _ => unreachable!("a pointer cell is materialized as a pointer"),
+        };
+        let instance = ResourceInstance::new(
+            Variable(2 * TARGET_HEAP),
+            "slot".into(),
+            vec![CValue::typed_pointer(region.clone(), CType::Int32Pointer).into()].into(),
+            ResourceFieldSchema::new(vec![
+                ("at".into(), ResourceFieldType::C(CType::Int32)),
+                ("end".into(), ResourceFieldType::C(CType::Int32)),
+            ])
+            .unwrap(),
+            vec![int32(0).into(), int32(2).into()].into(),
+        )
+        .unwrap();
         let unrelated = (0..size)
             .map(|index| heap_base(index as u64 + 1))
             .collect::<Vec<_>>();

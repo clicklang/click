@@ -30,7 +30,7 @@ void caller(struct cell* p) {
     consumes x: filled(p);
     produces y: filled(p);
 } by {
-    let y = step(fill(p), { x: x });
+    let { result: y } = step(fill(p), { x: x });
     simp();
 }
 ```

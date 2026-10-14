@@ -1036,7 +1036,8 @@ path = "reference/language/c.md#named-function-contracts"
 
 [[item]]
 id = "language.resource"
-path = "reference/language/index.md#file-shape"
+path = "reference/language/index.md#read-and-write-resources"
+
 
 [[item]]
 id = "language.theorem"
@@ -1442,6 +1443,9 @@ id = "tactic-form.step-contract-application"
 path = "reference/tactics/index.md#execution"
 [[item]]
 id = "tactic-form.step-call"
+path = "reference/tactics/index.md#execution"
+[[item]]
+id = "tactic-form.step-contract-map"
 path = "reference/tactics/index.md#execution"
 
 [[item]]
@@ -3162,8 +3166,24 @@ id = "cli.install.command"
 path = "reference/cli/versions.md#click-install"
 
 [[item]]
+id = "cli.install.--help"
+path = "reference/cli/versions.md#synopsis"
+
+[[item]]
+id = "cli.install.-h"
+path = "reference/cli/versions.md#synopsis"
+
+[[item]]
 id = "cli.use.command"
 path = "reference/cli/versions.md#click-use"
+
+[[item]]
+id = "cli.use.--help"
+path = "reference/cli/versions.md#synopsis"
+
+[[item]]
+id = "cli.use.-h"
+path = "reference/cli/versions.md#synopsis"
 
 [[item]]
 id = "cli.use.--unset"
@@ -3174,8 +3194,24 @@ id = "cli.default.command"
 path = "reference/cli/versions.md#click-default"
 
 [[item]]
+id = "cli.default.--help"
+path = "reference/cli/versions.md#synopsis"
+
+[[item]]
+id = "cli.default.-h"
+path = "reference/cli/versions.md#synopsis"
+
+[[item]]
 id = "cli.versions.command"
 path = "reference/cli/versions.md#click-versions"
+
+[[item]]
+id = "cli.versions.--help"
+path = "reference/cli/versions.md#synopsis"
+
+[[item]]
+id = "cli.versions.-h"
+path = "reference/cli/versions.md#synopsis"
 
 
 [[item]]

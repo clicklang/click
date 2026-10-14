@@ -7752,6 +7752,60 @@ resource callbacks0(cb: const struct callbacks*) {
     }
 }
 
+/// Guarded preparation visits one body; the complete rewrite also pays the
+/// existing linear validation cost for surrounding owners.
+#[test]
+fn guarded_unfold_cell_preparation_scales_linearly_with_surrounding_owners() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/c_guarded_resource_disjoint_store.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let input = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let mut work = Vec::new();
+    for size in [4, 8, 16, 32] {
+        let parameters = (0..size)
+            .map(|i| format!(", int32* q{i}"))
+            .collect::<String>();
+        let owners = (0..size)
+            .map(|i| format!("owns q{i}[0..1];\n"))
+            .collect::<String>();
+        let source = input
+            .click_source
+            .as_ref()
+            .unwrap()
+            .replace(
+                "struct cell* root)",
+                &format!("struct cell* root{parameters})"),
+            )
+            .replace(
+                "    requires root != 0;",
+                &format!("{owners}    requires root != 0;"),
+            );
+        let c_source = input.c_sources[0].1.replace(
+            "struct cell* root)",
+            &format!("struct cell* root{parameters})"),
+        );
+        let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c0_sources(&source, &[("frame.c", &c_source)])
+        });
+        result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
+        let selected = samples
+            .iter()
+            .filter(|sample| sample.tactic.tactic_name == "unfold")
+            .collect::<Vec<_>>();
+        assert_eq!(selected.len(), 1);
+        work.push(selected[0].work);
+    }
+    assert!(work.iter().all(|count| *count > 0));
+    let deltas = work
+        .windows(2)
+        .map(|pair| pair[1] - pair[0])
+        .collect::<Vec<_>>();
+    assert!(
+        deltas.windows(2).all(|pair| pair[1] == 2 * pair[0]),
+        "doubling surrounding owners must double incremental rewrite work: {work:?}"
+    );
+}
+
 /// Repeated checked increments must not rederive ranges through the entire
 /// earlier expression chain. Measure the executed operations, not timings.
 #[test]

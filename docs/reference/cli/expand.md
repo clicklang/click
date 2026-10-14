@@ -105,8 +105,8 @@ a phase without smart tactics is rewritten as its checked certificate.
 
 Click names each proof obligation with a claim label. Diagnostics, `click
 profile`, and `click audit` print it, and `click expand --claim` and `click
-audit --claim` accept it. `click verify --trace-proof` takes the function or
-theorem name before the dot.
+audit --claim` accept it. `click verify --trace-proof` takes the function,
+theorem, or user-defined tactic name before the dot.
 
 | Label | Claim |
 | --- | --- |
@@ -250,3 +250,9 @@ output with [`click verify`](verify.md). [`click audit`](audit.md) applies the
 same boundary systematically. The [expansion concept](../../concepts/expansion.md)
 explains why the rewrite is trusted only after ordinary verification of the
 rewritten source.
+
+Execution-theorem expansion retains the same no-code tactic procedure
+signatures and scoped unselected contract interfaces as ordinary verification.
+Imported tactic bodies remain separate verification units. Theorem and import
+justification cycle checks still apply. The integration regression is
+`mdtests/execution_theorem_imported_tactic.md`.

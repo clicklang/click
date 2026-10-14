@@ -465,7 +465,7 @@ fn walk_c_function<S: VariableSubstitution + ?Sized>(function: &CFunction, s: &S
                                 arguments: child
                                     .arguments
                                     .iter()
-                                    .map(|argument| s.c_expression(argument))
+                                    .map(|argument| s.spec_expression(argument))
                                     .collect(),
                             })
                             .collect(),
@@ -502,7 +502,7 @@ fn walk_c_function<S: VariableSubstitution + ?Sized>(function: &CFunction, s: &S
                     arguments: child
                         .arguments
                         .iter()
-                        .map(|argument| s.c_expression(argument))
+                        .map(|argument| s.spec_expression(argument))
                         .collect(),
                     ..child.clone()
                 })
@@ -8369,11 +8369,11 @@ mod checked_singleton_substitution_tests {
             value = IntegerTerm::add(value.clone(), value.clone());
         }
         let source = Proposition::Equal(Term::Integer(value), Term::Integer(observed(variable)));
-        let (complete, work) = instrumentation::measure_deterministic_work(|| {
-            substitute_machine_constant_in_pure_proposition(&source, variable, 7)
-        });
-        assert!(complete.is_ok());
-        for limit in [0, 4, 64, work - 1] {
+        assert!(substitute_machine_constant_in_pure_proposition(&source, variable, 7).is_ok());
+        // These limits are below the 64 binary nodes plus their leaf. Avoid
+        // a one-below-observed-work threshold: interning setup may already
+        // be warm on the next invocation, independently of the traversal.
+        for limit in [0, 4, 64] {
             let (result, _) = instrumentation::with_tactic_work_limits(
                 TacticWorkLimits {
                     simple: limit,
@@ -8394,7 +8394,10 @@ mod checked_singleton_substitution_tests {
                         instrumentation::emit(VerificationEvent::TacticStarted(tactic.clone()));
                         let result =
                             substitute_machine_constant_in_pure_proposition(&source, variable, 7);
-                        assert!(instrumentation::exceeded_verification_limit_context().is_some());
+                        assert!(
+                            instrumentation::exceeded_verification_limit_context().is_some(),
+                            "limit {limit} must exhaust the selected traversal"
+                        );
                         instrumentation::emit(VerificationEvent::TacticFailed(tactic));
                         result
                     })

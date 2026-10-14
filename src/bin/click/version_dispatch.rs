@@ -97,6 +97,7 @@ pub fn normalize_version(value: &str) -> Result<String, String> {
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'+'))
         || version.starts_with('.')
+        || version.starts_with('-')
         || version.ends_with('.')
         || version.contains("..")
     {
@@ -151,4 +152,23 @@ fn is_development_binary() -> bool {
 
 fn is_manager_command(command: &str) -> bool {
     matches!(command, "install" | "use" | "default" | "versions")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_version;
+
+    #[test]
+    fn versions_reject_option_like_names_and_preserve_release_suffixes() {
+        for value in ["--help", "-h", "--unknown", "-1.0", "v--help", "  -h  "] {
+            assert!(normalize_version(value).is_err(), "{value:?}");
+        }
+        for (value, expected) in [
+            ("0.1.0", "0.1.0"),
+            (" v1.2.3-rc.1+build ", "1.2.3-rc.1+build"),
+            ("nightly-2026-10-14", "nightly-2026-10-14"),
+        ] {
+            assert_eq!(normalize_version(value).unwrap(), expected);
+        }
+    }
 }

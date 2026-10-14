@@ -1547,6 +1547,25 @@ pub(super) fn describe_runtime_error(
             message.push_str(&labels.trace_legend());
             message
         }
+        crate::kernel::CRuntimeError::PendingCallObligations(pending) => {
+            use crate::surface::proof_diagnostics::render::{SnapshotLabels, render_proposition_labeled};
+            let mut labels = SnapshotLabels::naming(parameter_binding);
+            let mut message = "call cannot finish with unresolved proof obligations:".to_string();
+            for obligation in pending.iter() {
+                if let Some(context) = obligation.context() {
+                    message.push_str(&format!("\n  context: {context}"));
+                }
+                if let Some(source) = obligation.call_requirement_site() {
+                    message.push_str(&format!("\n  callee: {}", source.callee));
+                    if let Some(ordinal) = source.source_requirement_ordinal {
+                        message.push_str(&format!("; source contract input clause {}", ordinal + 1));
+                    }
+                }
+                message.push_str(&format!("\n  pending goal: {}", render_proposition_labeled(obligation.proposition(), &mut labels)));
+            }
+            message.push_str(&labels.trace_legend());
+            message
+        }
         crate::kernel::CRuntimeError::FunctionContract(message) => {
             format!(
                 "function contract could not be applied: {}",

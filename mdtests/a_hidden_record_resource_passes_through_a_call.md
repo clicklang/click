@@ -51,7 +51,7 @@ int32 twice(struct pair* p) {
     owns x: pair(p);
     ensures result >= 0;
 } by {
-    let r = step(get(p), { x: x });
+    let { result: r } = step(get(p), { x: x });
     execute();
     simp();
 }

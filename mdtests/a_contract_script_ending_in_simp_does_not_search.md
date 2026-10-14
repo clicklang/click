@@ -1,10 +1,7 @@
-# A contract script ending in `simp` does not search like `auto`
+# A contract closer uses equality closure for equivalent model getters
 
-An explicit `simp()` closes a contract with `simp` alone. The claim needs
-a requirement as a rewrite from right to left, which `simp` does not search
-for, so
-this proof is refused; without the closer it verifies
-(`a_contract_script_without_a_closer_ends_with_auto.md`).
+The contract closes from its checked model equality and getter fact. Shared
+equality closure supplies the constructor spelling without theorem search.
 
 ```c filename=a_contract_script_ending_in_simp_does_not_search.c
 void touch(int32 n) {
@@ -36,5 +33,5 @@ void touch(int32 n) {
 ```
 
 ```expect
-fail: simp
+pass
 ```

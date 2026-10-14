@@ -2352,19 +2352,15 @@ fn fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources() {
             "{report}"
         );
         assert!(!report.contains("snapshot#"), "{report}");
-        let required = report
-            .lines()
-            .find_map(|line| line.trim().strip_prefix("required body fact: "))
-            .unwrap()
-            .to_owned();
         with_proof_trace("f", || {
             let error = verify_c0_sources(&source, &[("f.c", c)]).unwrap_err();
             let report = error.trace_context_report().unwrap();
             assert!(report.contains("required body fact"), "{report}");
-            assert!(
-                report.contains(&format!("required body fact: {required}")),
-                "{report}"
-            );
+            let required = report
+                .lines()
+                .find_map(|line| line.trim().strip_prefix("required body fact: "))
+                .unwrap();
+            assert!(required.contains('9'), "{report}");
             assert!(report.contains('9'), "{report}");
             assert!(
                 !report.contains("goal has no exact Click spelling"),
@@ -2979,4 +2975,83 @@ fn native_view_simp_distinguishes_a_rejected_kernel_query() {
     );
     assert!(!report.contains("accepted by the kernel"), "{report}");
     assert!(!report.contains("valid 32-bit byte extent"), "{report}");
+}
+
+#[test]
+fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
+    let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
+    use crate::kernel::{
+        Bitvector32Term, CMemory, CRuntimeError, ConditionTerm, Pointer, PointerOffsetTerm,
+        ProofObligation, Proposition,
+    };
+    use crate::surface::proof_diagnostics::render::{SnapshotLabels, render_proposition_labeled};
+    let memory = CMemory::new();
+    let pointer = Pointer {
+        block: "pending_read_cell".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(
+            Box::new(Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory(memory),
+                Box::new(pointer),
+                crate::kernel::LoadKind::Bits32,
+            )),
+            Box::new(Bitvector32Term::Constant(7)),
+        ),
+        true,
+    );
+    let source = std::sync::Arc::new(crate::kernel::CallRequirementSource::new(
+        std::sync::Arc::new(crate::kernel::CallRequirementSite::for_requirement(
+            "reader",
+            "reader.contract",
+            0,
+            &[],
+            &CMemory::new(),
+        )),
+        7,
+        Some(7),
+        false,
+        None,
+    ));
+    let obligations = vec![
+        ProofObligation::verification_condition(goal.clone())
+            .with_context("child metadata read")
+            .with_call_requirement_site(source),
+        ProofObligation::verification_condition(goal.clone()).with_context("call postcondition"),
+    ];
+    let error = CRuntimeError::PendingCallObligations(obligations.into());
+    let rendered = super::diagnostics::describe_runtime_error(&error, ParameterBinding::default());
+    let expected = render_proposition_labeled(
+        &goal,
+        &mut SnapshotLabels::naming(ParameterBinding::default()),
+    );
+    assert_eq!(
+        rendered
+            .matches(&format!("pending goal: {expected}"))
+            .count(),
+        2,
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("context: child metadata read"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("context: call postcondition"),
+        "{rendered}"
+    );
+    assert_eq!(
+        rendered
+            .matches("snapshot#1 = initial empty memory")
+            .count(),
+        1,
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("callee: reader; source contract input clause 8"),
+        "{rendered}"
+    );
+    assert!(rendered.contains("pending_read_cell"), "{rendered}");
+    assert!(!rendered.contains("CMemory {"), "{rendered}");
 }

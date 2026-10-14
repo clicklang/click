@@ -25,7 +25,7 @@ needle = "step();"
 [[form]]
 id = "step-result"
 path = "src/surface/tests/project_tests.rs"
-needle = "let value = step();"
+needle = "let { result: value } = step();"
 
 [[form]]
 id = "step-contract"
@@ -50,7 +50,7 @@ needle = "step() by { simp(); }"
 [[form]]
 id = "step-requires"
 path = "mdtests/step_requires_proves_each_open_obligation.md"
-needle = "requires a > 0 or b > 0 by simp;"
+needle = "requires is_positive(a) == 1 or is_positive(b) == 1 by {"
 
 [[form]]
 id = "user-tactic"
@@ -301,3 +301,8 @@ needle = "gather(arena_cells(data, occupied, capacity));"
 id = "scatter-resource"
 path = "mdtests/iterated_ownership_gather_scatter.md"
 needle = "scatter(arena_cells(data, occupied, capacity));"
+
+[[form]]
+id = "step-contract-map"
+path = "mdtests/named_contract_call_output_bindings.md"
+needle = "let { result: status, output: done } = step(Repair, { input: dirty });"

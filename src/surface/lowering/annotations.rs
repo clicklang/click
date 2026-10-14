@@ -774,12 +774,18 @@ pub(in crate::surface) fn lower_composite_resource_condition(
         .map_err(ClickError::new)
 }
 
-pub(in crate::surface) fn lower_composite_resource_facts(
+pub(in crate::surface) struct LoweredResourceBody {
+    pub facts: Vec<SpecProposition>,
+    pub fact_source_indices: Vec<usize>,
+    pub children: Vec<crate::kernel::CResourceChildSpec>,
+}
+
+pub(in crate::surface) fn lower_composite_resource_body(
     definition: &ResourceDefinition,
     spec_definitions: SpecDefinitions<'_>,
     struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
-) -> Result<(Vec<SpecProposition>, Vec<usize>), ClickError> {
-    lower_composite_resource_facts_with_bindings(
+) -> Result<LoweredResourceBody, ClickError> {
+    lower_composite_resource_body_with_bindings(
         definition,
         spec_definitions,
         &[],
@@ -788,13 +794,13 @@ pub(in crate::surface) fn lower_composite_resource_facts(
     )
 }
 
-pub(in crate::surface) fn lower_composite_resource_facts_with_bindings(
+pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
     definition: &ResourceDefinition,
     spec_definitions: SpecDefinitions<'_>,
     bindings: &[(String, ClickType)],
     integer_binding_variables: &BTreeMap<String, crate::kernel::Variable>,
     struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
-) -> Result<(Vec<SpecProposition>, Vec<usize>), ClickError> {
+) -> Result<LoweredResourceBody, ClickError> {
     let body = definition
         .composite_body()
         .expect("only composite definitions have logical facts");
@@ -890,7 +896,36 @@ pub(in crate::surface) fn lower_composite_resource_facts_with_bindings(
         );
         fact_source_indices.push(source_index);
     }
-    Ok((facts, fact_source_indices))
+    let children = body
+        .children
+        .iter()
+        .map(|child| {
+            Ok(crate::kernel::CResourceChildSpec {
+                name: child.name.clone(),
+                resource: child.resource.clone(),
+                binding: child.identity,
+                field_bindings: child.field_bindings.clone(),
+                arguments: child
+                    .arguments
+                    .iter()
+                    .map(|argument| {
+                        // Keep ordinary C argument evaluation on its existing checked path.
+                        match resource_argument_to_c_expression(argument) {
+                            Ok(expression) => Ok(SpecExpression::CExpression(expression)),
+                            Err(_) => lowerer
+                                .lower_contract_expression_to_spec(argument, &environment)
+                                .map_err(ClickError::new),
+                        }
+                    })
+                    .collect::<Result<_, _>>()?,
+            })
+        })
+        .collect::<Result<_, ClickError>>()?;
+    Ok(LoweredResourceBody {
+        facts,
+        fact_source_indices,
+        children,
+    })
 }
 
 pub(in crate::surface) fn annotated_function(
@@ -2138,6 +2173,13 @@ fn loop_resource_declarations(
                 &lowerer.pointer_element_types,
                 &mut declaration.specs,
             )?;
+        }
+    }
+    for declaration in declarations.values_mut() {
+        for spec in &mut declaration.specs {
+            *spec = spec
+                .clone()
+                .with_captured_entry_parameters(&lowerer.entry_values);
         }
     }
     Ok(declarations)
@@ -6585,32 +6627,22 @@ impl AnnotationLowerer<'_> {
             CExpression::BitwiseNot(expression) => Ok(SpecExpression::BitwiseNot(Box::new(
                 self.lower_c_fragment_to_spec(expression, environment)?,
             ))),
-            // A signed-word cast around a byte read must keep the source
-            // pointee type; raw C inference could make it a four-byte load.
+            // Keep scalar operands in the selected environment, including
+            // historical range bounds. Raw C evaluation would read live locals
+            // under an `at` proposition. Recursive lowering also preserves a
+            // byte read's pointee type and a pointer operand's layout width.
             CExpression::Cast {
                 expression,
                 target_type,
                 ..
             } if matches!(target_type, CType::Int32 | CType::UInt32 | CType::Int64)
+                || *target_type == CType::UInt64
+                    && (!matches!(environment.current_memory, SpecMemory::Current)
+                        || environment.current_loop_entry.is_some()
+                        || self
+                            .c_expression_array_element_width(expression, environment)
+                            .is_some())
                 || target_type.is_pointer() =>
-            {
-                Ok(SpecExpression::Cast(
-                    Box::new(self.lower_c_fragment_to_spec(expression, environment)?),
-                    *target_type,
-                ))
-            }
-            // A pointer-to-integer cast still has to lower pointer arithmetic
-            // in its operand.  Keeping the whole cast as a raw C expression
-            // would make the kernel infer the nominal carrier width for a
-            // struct pointer (four bytes), losing the source layout width.
-            CExpression::Cast {
-                expression,
-                target_type,
-                ..
-            } if *target_type == CType::UInt64
-                && self
-                    .c_expression_array_element_width(expression, environment)
-                    .is_some() =>
             {
                 Ok(SpecExpression::Cast(
                     Box::new(self.lower_c_fragment_to_spec(expression, environment)?),

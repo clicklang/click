@@ -16,6 +16,34 @@ has its own remaining frontier; completing it is not an additional equality
 migration requirement. Wider theories in this note remain reference material,
 not new P1 acceptance criteria.
 
+## Typed algebraic model values
+
+Checked equalities of algebraic model values enter the same persistent term
+classes as pointer and machine equalities. Both logical equality propositions
+and true algebraic equality conditions admit edges. Ordinary `assumption` and
+semantic fact lookup can therefore combine a checked tactic postcondition
+`new.model == old.model` with a match-arm fact `new.model == Empty` to establish
+`old.model == Empty`, without repeating the postcondition in source.
+
+Variables retain their resolved datatype. Constructor signatures retain that
+type, the constructor name, arity, and ordered payload classes. Pure calls
+retain their function identity, result type, and ordered typed arguments.
+A late model or scalar merge propagates through the existing parent-use index,
+including machine-valued pure calls with model arguments. Binder-bearing match
+expressions remain opaque. This supplies congruence, not unfolding, arithmetic
+solving, function injectivity, or new read permission.
+
+Registration traverses only the selected expression, iteratively. Hot node and
+support keys are shallow IDs. Resolved root schemas are interned once per
+schema allocation and nominal instantiation; retained schema Arcs prevent
+allocation-identity reuse. Distinct nominal types, generic arguments, or root
+schemas do not share a type token. Exact checked edges retain counted support
+for withdrawal and rebuilding. Branches and restricted contexts use the same
+scope rules as the other graph fragments. Restriction constructs the selected
+condition graph before filing selected proposition edges; it never rebuilds
+inherited scalar edges only to discard them. Clearing a model-free proposition
+fragment retains its existing scalar graph.
+
 ## Shared typed pointer reads
 
 A registered typed pointer read is a congruence application of its snapshot

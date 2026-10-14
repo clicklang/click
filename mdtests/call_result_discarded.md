@@ -1,6 +1,6 @@
 # A discarded call result cannot be named
 
-`let name = step(...)` names the scalar result of a call whose result the C
+`let { result: name } = step(...)` names the scalar result of a call whose result the C
 uses. A call in statement position discards its result and assigns nothing, so
 there is no value to name and the step is refused where it is written rather
 than binding an unconstrained name.
@@ -48,7 +48,7 @@ int classify(int x) {
 int ignore_class(int x) {
     ensures result == 0;
 } by {
-    let r = step(classify(x), { });
+    let { result: r } = step(classify(x), { });
     execute();
     simp();
 }

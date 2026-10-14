@@ -25,7 +25,7 @@ frozen sidecar's recorded gap.
 
 `rust-iter-references` now also retains the byte-identical original source,
 frozen sidecar, and full mathematical sum contract. Its explicit
-`for byte in bytes.iter()` stores references; `let loaded_byte = step();`
+`for byte in bytes.iter()` stores references; `let { result: loaded_byte } = step();`
 names the actual checked byte read without depending on an unnamed MIR local.
 The name retains that value as compiler temporaries leave scope. Both ports
 share the contract, negative-obligation, verify/profile, expansion, audit, and

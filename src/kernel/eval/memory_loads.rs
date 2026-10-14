@@ -4201,6 +4201,41 @@ mod tests {
             forged.retain_pointer_read_definition(&forged_context);
         }
         assert!(!arguments_equal(&forged_context));
+
+        // A contract argument outlives its temporary expression fact stream.
+        // It must keep the same certified read evidence as a recursive child.
+        let argument_context = base_context.clone().require_owned_expression_loads();
+        let state = CState::new()
+            .with_memory(current.clone())
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+                    address.clone(),
+                    0u32.into(),
+                    1u32.into(),
+                    8,
+                )),
+            ));
+        let expression = crate::kernel::c_typed_load(
+            CExpression::Value(CValue::typed_pointer(
+                address.clone(),
+                CType::Int64PointerPointer,
+            )),
+            CType::Int64Pointer,
+        );
+        let value = crate::kernel::loops::evaluate_loop_effect_segment_value(
+            &state,
+            &expression,
+            &argument_context,
+            "checked resource argument",
+            &mut ExecutionBudget::beside_live_state(),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(crate::kernel::resource_arguments_proven_equal(
+            &AlgebraicValue::C(CValue::typed_pointer(model, CType::Int64Pointer)),
+            &AlgebraicValue::C(value),
+            &argument_context,
+        ));
     }
 
     /// Naming a load after a call whose kept memory shares the load's block
@@ -6660,5 +6695,43 @@ mod tests {
         let facts = ProofFacts::from_ordered(std::slice::from_ref(&alias));
         assert!(normalize_using_conditions(&goal, std::slice::from_ref(&alias), &facts).is_ok());
         assert!(normalize_using_conditions(&goal, &[], &ProofFacts::from_ordered(&[])).is_err());
+    }
+    #[test]
+    fn symbolic_pointer_load_factory_retains_exact_read_definition() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Pointer::symbolic(Variable(190_001));
+        let memory = CMemory::new();
+        let CValue::Pointer(value) = memory.symbolic_pointer_load(&address, 4, CType::Int32Pointer)
+        else {
+            panic!("typed pointer read")
+        };
+        assert_eq!(
+            crate::kernel::equality_graph::logical_pointer_read_term(value.pointer()),
+            Some(Bitvector32Term::MemoryLoad(
+                intern_c_memory(memory.clone()),
+                Box::new(address.clone()),
+                LoadKind::Bits32,
+            )),
+        );
+        // Recording a definition does not settle a value or grant a cell.
+        let assumptions = PureFactContext::new();
+        assert_eq!(
+            assumptions.decide(&ConditionTerm::pointer_equal(
+                value.pointer().clone(),
+                Pointer::symbolic(Variable(190_002)),
+            )),
+            None
+        );
+        assert!(!memory.is_loadable_concretely(&address, 8));
+        let forged = Pointer::loaded(
+            address.block.clone(),
+            Bitvector32Term::MemoryLoad(
+                intern_c_memory(memory),
+                Box::new(address),
+                LoadKind::Bits32,
+            ),
+            8,
+        );
+        assert!(crate::kernel::equality_graph::logical_pointer_read_term(&forged).is_none());
     }
 }

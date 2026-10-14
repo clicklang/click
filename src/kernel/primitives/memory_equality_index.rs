@@ -2023,6 +2023,101 @@ mod tests {
     }
 
     #[test]
+    fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
+        let mut samples = Vec::new();
+        for count in [0_u64, 16, 64, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let base = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(
+                    Bitvector32Term::Variable(Variable(989_200)),
+                    1,
+                ),
+            };
+            let prefix = Bitvector32Term::Variable(Variable(989_201));
+            let local = Bitvector32Term::Variable(Variable(989_202));
+            let full = Bitvector32Term::Variable(Variable(989_203));
+            let batch = Pointer::symbolic(Variable(989_204));
+            let query = Pointer::symbolic(Variable(989_205));
+            let global = base.offset_by_typed_elements(full.clone(), 1, true, true);
+            let mut aliases = PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::pointer_equal(
+                        batch.clone(),
+                        base.offset_by_typed_elements(prefix, 1, true, true),
+                    ),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::pointer_equal(
+                        query.clone(),
+                        batch.offset_by_elements(Bitvector32Term::Variable(Variable(989_206)), 1),
+                    ),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::pointer_equal(
+                        query.clone(),
+                        batch.offset_by_typed_elements(local, 1, true, true),
+                    ),
+                    true,
+                )
+                .assume_condition(ConditionTerm::pointer_equal(query.clone(), global), true);
+            for i in 0..count {
+                aliases = aliases.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        query.clone(),
+                        batch.offset_by_elements(
+                            Bitvector32Term::Variable(Variable(990_000 + i)),
+                            1,
+                        ),
+                    ),
+                    true,
+                );
+            }
+            let facts = aliases.clone().assume_condition(
+                ConditionTerm::uint64_less_than(
+                    full.clone(),
+                    Bitvector32Term::UInt64Constant(22208),
+                ),
+                true,
+            );
+            let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
+                CMemoryRange::new_wide(
+                    base.clone(),
+                    Bitvector32Term::UInt64Constant(0),
+                    Bitvector32Term::UInt64Constant(22208),
+                    1,
+                ),
+            ));
+            resources.synchronize_memory_equalities(&facts);
+            let (permitted, work) = crate::instrumentation::measure_deterministic_work(|| {
+                resources.permits_memory_read(&query, 1, &facts)
+            });
+            assert!(
+                permitted,
+                "alignment: {:?}",
+                resources
+                    .read_access_entries(&query, 1, &facts)
+                    .map(|c| c.index.graph.pointer_at_base_with_wide_index(&query, &base))
+            );
+            samples.push(work);
+            assert!(!resources.permits_memory_read(&query, 2, &facts));
+            assert!(!resources.permits_memory_read(&query, 1, &aliases));
+            let boundary = aliases.assume_condition(
+                ConditionTerm::uint64_equal(full, Bitvector32Term::UInt64Constant(22208)),
+                true,
+            );
+            assert!(!resources.permits_memory_read(&query, 1, &boundary));
+            assert!(!ResourceContext::new().permits_memory_read(&query, 1, &facts));
+        }
+        assert!(
+            samples[4] <= samples[1] * 3 + 128,
+            "batch read alignment scanned aliases: {samples:?}"
+        );
+    }
+
+    #[test]
     fn wide_read_keeps_native_index_beside_a_narrow_alias() {
         let mut samples = Vec::new();
         for count in [16_u64, 64, 256, 1024] {

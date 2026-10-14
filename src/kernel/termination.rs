@@ -881,8 +881,11 @@ fn structural_resource_children(
                 if child.resource != name {
                     continue;
                 }
-                if child.arguments.iter().any(|argument| {
-                    mentions_binding(argument, &bound) || mentions_witness(argument)
+                if child.arguments.iter().any(|argument| match argument {
+                    SpecExpression::CExpression(argument) => {
+                        mentions_binding(argument, &bound) || mentions_witness(argument)
+                    }
+                    _ => true,
                 }) {
                     continue;
                 }
@@ -890,7 +893,12 @@ fn structural_resource_children(
                     child
                         .arguments
                         .iter()
-                        .map(|argument| substitute_c_expression_variables(argument, &substitutions))
+                        .filter_map(|argument| match argument {
+                            SpecExpression::CExpression(argument) => {
+                                Some(substitute_c_expression_variables(argument, &substitutions))
+                            }
+                            _ => None,
+                        })
                         .collect::<Vec<_>>(),
                 );
             }
