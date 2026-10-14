@@ -19,8 +19,8 @@ verifying "c_contract_executes_concrete.c";
 spec enum Mark { Clear, Set }
 resource Counter() { field model: Mark; field revision: int32; }
 
-contract Exact(cell: Counter()) for void(int32* state) {
-    owns cell;
+contract void Exact(int32* state) {
+    owns cell: Counter();
     ensures cell.model == Mark::Set;
     ensures cell.revision == 1;
 }
@@ -49,7 +49,7 @@ void invoke(void (*callback)(int32*), int32* state) {
     ensures k.model == Mark::Set;
     ensures k.revision == 1;
 } by {
-    step(Exact(k));
+    step(Exact, { cell: k });
     execute();
     simp();
 }

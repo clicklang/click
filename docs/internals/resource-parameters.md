@@ -81,20 +81,19 @@ parentheses. Introduce a new parameter syntax only after a concrete use case
 shows why existing resource passing is insufficient. Existing type applications
 such as `List<int32>` are outside this change.
 
-Named contracts already separate proof arguments from the C signature:
+A named contract declares each resource handle with a named `owns` or
+`consumes` clause, after the C signature it describes:
 
 ```text
-contract Read(cell: marked_cell(p)) for int32(int32* p) {
-    owns cell;
+contract int32 Read(int32* p) {
+    owns cell: marked_cell(p);
 }
-step(Read(s));
+step(Read, { cell: s });
 ```
 
-The proof argument selects an instance. The `owns` clause determines its
-ownership treatment; passing a name alone does not create authority. C sidecars
-use their existing named call maps, such as `step(helper(p), { item: s })`.
-Retain both implemented forms. A general contract-header migration is not a
-prerequisite for concurrency.
+The application map binds the handle to an instance by name. The clause that
+declares the handle also determines its ownership treatment. Concrete calls
+use the same named map, such as `step(helper(p), { item: s })`.
 
 These examples use concrete resource families. A helper whose resource family
 is unknown may need further contract expressiveness; that remains outside
@@ -174,16 +173,16 @@ The current implementation has these distinct capabilities:
 | Initialization with `{ state: state }` | Consumes an owned instance and records its assertion for the fresh initialization. | Does not expose that association in an independent helper's unary authority requirement. |
 | Ordinary named child ownership | A parent owns a child; unfolding transfers that ownership to the proof. | Does not model state accessible only after a lock transition. |
 | Ordinary resource fields | Store C values, mathematical integers, or algebraic model values. | Cannot currently hold a resource reference. |
-| Named-contract resource proof parameters | Declare a resource binder separately from its ownership clauses. | Do not yet supply general transport of references to escrowed resources. |
+| Named-contract resource handles | Declare a resource binder in an `owns` or `consumes` clause, bound by name at a call. | Cannot declare a reference-only handle, and do not supply transport of references to escrowed resources. |
 
-The last distinction is important. The existing
-`mdtests/contract_resource_parameters.md` accepts both an owned parameter and
-a parameter without an ownership clause, but explicitly tests declarations
-only. `ResourceCallApplication::bind` in `src/kernel/functions.rs` checks
-current ownership of the actual instances it binds. The consumed-instance
-regressions reject passing an instance after its ownership was given up.
-Therefore this declaration syntax is useful groundwork, not evidence that an
-unowned protected-state reference already crosses calls.
+The last distinction is important. Every contract handle is declared by the
+clause that owns or consumes it, so a contract has no reference-only handle.
+The retired parameter-list syntax could declare one, but only as a
+declaration: nothing transported it. `ResourceCallApplication::bind` in
+`src/kernel/functions.rs` checks current ownership of the actual instances it
+binds, and the consumed-instance regressions reject passing an instance after
+its ownership was given up. A reference-only handle needs its own declaring
+clause, which belongs to the reference-transport design.
 
 Resource declarations now accept trailing resource-valued parameters using
 the same binder notation. Resource fields still have only C, integer, and
@@ -265,7 +264,7 @@ environments or enumerating all concrete callers.
 ## First implementation: ordinary resource arguments
 
 A resource declaration can take a named exclusive resource after its value
-parameters, using the same binder notation as contract proof parameters:
+parameters, using the same binder notation as contract resource handles:
 
 ```text
 resource revision_record(p: int32*, target: cell(p)) {
@@ -324,9 +323,9 @@ worker interface could state the following relationship (this sketch does not
 yet specify how a named contract is attached to the pthread worker):
 
 ```text
-contract Increment(
-    state: counter_state((struct mutex_counter *)argument)
-) for void *(void *argument) {
+contract void * Increment(void *argument) {
+    // `state: counter_state((struct mutex_counter *)argument)` is a
+    // reference-only handle; its declaring clause is not yet designed.
     owns access: mutex_use(&((struct mutex_counter *)argument)->mutex, state);
     ensures result == 0;
 }

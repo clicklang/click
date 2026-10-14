@@ -8793,7 +8793,7 @@ impl ResourceCallApplication {
     /// The one checked binding of a callee's instance binders to the caller's
     /// instances, whether the proof wrote a direct call map
     /// (`step(callee(...), { binder: instance })`) or a named contract's
-    /// proof arguments (`step(Contract(instance, ...))`). Each bound
+    /// handle map (`step(Contract, { handle: instance })`). Each bound
     /// parameter must be an exclusive instance the caller owns now, and no
     /// instance may supply two parameters. The surface refuses both mistakes
     /// with source positions; the kernel refuses them here regardless, so a

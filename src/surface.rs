@@ -930,14 +930,21 @@ impl TacticDefinition {
     }
 }
 
+/// `step(Contract)`, or `step(Contract, { handle: instance, ... })` for a
+/// contract whose body declares resource handles. Entries keep the order
+/// written; the checker matches them to the contract's handles by name.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractApplication {
     name: String,
-    arguments: Option<Vec<ContractResourceArgument>>,
+    arguments: Vec<ContractResourceArgument>,
 }
 
+/// One `handle: instance` entry of a named-contract application.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractResourceArgument {
+    /// The contract's handle name, written on the left of the entry.
+    handle: String,
+    /// The caller's instance name.
     name: String,
     resource_name: String,
     identity: Variable,
@@ -1106,9 +1113,9 @@ impl std::fmt::Display for CallBinderTransport {
             write!(f, "{}", diagnostics::describe_contract_expression(argument))?;
         }
         write!(f, ")")?;
-        // The map is what makes this a call step: without it the same text
-        // is `step(Contract(...))`, a named-contract step. A call that lends
-        // no instance keeps its empty map.
+        // A call step always prints its map, so it never reads as a
+        // named-contract step. A call that lends no instance keeps its empty
+        // map.
         let entries = self.map_entries();
         if entries.is_empty() {
             write!(f, ", {{}}")?;
@@ -1123,7 +1130,7 @@ impl From<String> for ContractApplication {
     fn from(name: String) -> Self {
         Self {
             name,
-            arguments: None,
+            arguments: Vec::new(),
         }
     }
 }
@@ -1137,15 +1144,15 @@ impl From<&str> for ContractApplication {
 impl std::fmt::Display for ContractApplication {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)?;
-        if let Some(arguments) = &self.arguments {
-            write!(f, "(")?;
-            for (index, argument) in arguments.iter().enumerate() {
+        if !self.arguments.is_empty() {
+            write!(f, ", {{ ")?;
+            for (index, argument) in self.arguments.iter().enumerate() {
                 if index != 0 {
                     write!(f, ", ")?;
                 }
-                write!(f, "{}", argument.name)?;
+                write!(f, "{}: {}", argument.handle, argument.name)?;
             }
-            write!(f, ")")?;
+            write!(f, " }}")?;
         }
         Ok(())
     }
@@ -3847,7 +3854,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "step-contract-application",
-        syntax: "step(Contract(...))",
+        syntax: "step(Contract, { handle: instance, ... })",
         class: "simple",
     },
     PublicTacticForm {

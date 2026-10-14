@@ -79,14 +79,15 @@ the forward reference in today's
 | --- | --- |
 | Attach an interface to a function value (a proposition) | `Comparator(callback)`, `Comparator(&compare)` |
 | Select a contract with no handles at a call | `step(Comparator)` |
-| Select a contract with handles | `step(Read { cell: first })` |
+| Select a contract with handles | `step(Read, { cell: first })` |
 | Bind the handles of a formed fact | `Read(&read) as { cell: c }`, as today |
 | Open an interface in a refinement proof | `unfold(Comparator)`, as today |
 
-The record form binds handles by name. It reuses the syntax of `as { ... }`
-and `fold`, and it does not collide with the proposition form, which takes a
-function value in parentheses. `step(Identity())` and the positional
-`step(Read(first))` are retired.
+The map binds handles by name. It is the map a call step already writes,
+`step(callee(args), { binder: instance })`, after the contract's name, and it
+does not collide with the proposition form, which takes a function value in
+parentheses. `step(Identity())` and the positional `step(Read(first))` are
+retired.
 
 ### Native type names in heads; Click type names in specifications
 
@@ -111,11 +112,13 @@ not a new type mapping. Today's example sidecars write `int32` in heads about
 
 ## Current state
 
-- **C.** Verified functions, `extern`, and two coexisting named forms: an older
-  one, `contract int32 Comparator(int32 left, int32 right) { ... }`, in about
-  240 files, and a newer one,
-  `contract Read(cell: marked_cell(p)) for int32(int32* p) { ... }`, in about
-  35. They select differently: `step(Identity)` against `step(Identity())`.
+- **C.** Verified functions, `extern`, and one named form,
+  `contract int32 Read(int32* p) { owns cell: marked_cell(p); ... }`, whose
+  handles are its named `owns` and `consumes` clauses, selected by
+  `step(Read)` or `step(Read, { cell: first })`. The parameter-list form and
+  the `step(Name())` and `step(Name(instance))` applications are refused with
+  their replacements. Heads still use Click type names, and are not yet
+  checked against the source declaration's exact types.
 - **C++.** Verified functions only, written in a C-shaped, mangled form:
   `void Restore_constructor(struct Restore* this, int32* slot)`,
   `void FeeFrac_operator_add_assign(struct FeeFrac* this, const struct FeeFrac& other)`.
@@ -125,11 +128,11 @@ not a new type mapping. Today's example sidecars write `int32` in heads about
 
 ## Work, in delivery order
 
-1. **Unify C.** Parse handle clauses in `contract` bodies as proof parameters.
-   Add `step(Name { handle: value })`. Retire the `(...) for` form, the
-   positional and empty-parenthesis applications, and Click type names in
-   heads. Add the exact head-against-source type check. Migrate the corpus
-   and docs.
+1. **Unify C.** Done: handle clauses in `contract` bodies are its proof
+   parameters, `step(Name, { handle: value })` binds them, and the retired
+   forms are refused and migrated. Remaining: retire Click type names in
+   heads, add the exact head-against-source type check, and migrate the
+   corpus and docs.
 2. **Native C++ heads.** Qualified member functions with implicit `this`,
    constructors and destructors by their C++ names, operators by `operator`
    names, `const` methods, and template instances spelled as C++ spells them.
@@ -153,7 +156,7 @@ patterns:
 
 - C: one file each for a verified function, an `extern`, a handle-free
   `contract`, and a `contract` with a handle selected by
-  `step(Read { cell: first })`; a `long` head against a `long long`
+  `step(Read, { cell: first })`; a `long` head against a `long long`
   declaration, refused with the source declaration named; an old-form
   application, refused with the replacement named.
 - C++: a constructor, a destructor, `operator+=`, and a `const` method

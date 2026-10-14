@@ -61,7 +61,7 @@ uint64 dispatch(uint64 (*what)(uint64), int32 flag) {
     requires Wide(what);
     ensures result == 4294967296 by { execute(); simp(); }
 }
-contract Wide() for uint64(uint64 seed) {
+contract uint64 Wide(uint64 seed) {
     ensures result == seed;
 }
 ```

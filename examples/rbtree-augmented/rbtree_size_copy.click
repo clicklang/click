@@ -20,10 +20,9 @@ void sized_copy(struct rb_node* rb_old, struct rb_node* rb_new) {
     simp();
 }
 
-contract CopySize(source: size_metadata(rb_old), target: size_metadata(rb_new))
-    for void(struct rb_node* rb_old, struct rb_node* rb_new) {
-    owns source;
-    owns target;
+contract void CopySize(struct rb_node* rb_old, struct rb_node* rb_new) {
+    owns source: size_metadata(rb_old);
+    owns target: size_metadata(rb_new);
     ensures source.value == old(source.value);
     ensures target.value == old(source.value);
 }

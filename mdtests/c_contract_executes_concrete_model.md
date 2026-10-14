@@ -47,8 +47,8 @@ resource tree_at(p: struct tree_node*) {
     }
 }
 
-contract Preserve(root: tree_at(node)) for void(struct tree_node* node) {
-    owns root;
+contract void Preserve(struct tree_node* node) {
+    owns root: tree_at(node);
     ensures root.model == old(root.model);
 }
 
