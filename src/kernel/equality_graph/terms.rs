@@ -255,6 +255,9 @@ pub(super) struct TermClasses {
     // classes merge, a shared block proves its two offsets equal. Small-side
     // class union visits only moved witnesses, never ambient pointer facts.
     offsets_by_address_block: PersistentMap<u64, PersistentMap<u64, u64>>,
+    // Addresses that explicitly use each offset class, indexed by exact block.
+    // An offset predicate query visits only its operands' registered addresses.
+    addresses_by_offset: PersistentMap<u64, PersistentMap<u64, u64>>,
     // Retained concrete address evidence follows typed class merges. This
     // disambiguates parameters sharing the external address-space block.
     storage_addresses: PersistentMap<u64, Option<Pointer>>,
@@ -974,6 +977,16 @@ impl TermClasses {
                 self.address_nodes = self.address_nodes.with_value(id);
                 self.offsets_by_address_block
                     .insert(id, PersistentMap::default().with_inserted(*block, *offset));
+                let root = self.root(*offset);
+                let mut addresses = self
+                    .addresses_by_offset
+                    .get(&root)
+                    .cloned()
+                    .unwrap_or_default();
+                if !addresses.contains_key(block) {
+                    addresses.insert(*block, id);
+                    self.addresses_by_offset.insert(root, addresses);
+                }
                 Some(Application::Address(*block, *offset))
             }
             Node::AddressShift(address, bytes) => {
@@ -1388,6 +1401,21 @@ impl TermClasses {
             self.merge_affine_applications(moved, kept);
             let weight = self.weight(kept) + self.weight(moved);
             self.merge_address_offsets(moved, kept, &mut pending);
+            if let Some(moved_addresses) = self.addresses_by_offset.get(&moved).cloned() {
+                let mut kept_addresses = self
+                    .addresses_by_offset
+                    .get(&kept)
+                    .cloned()
+                    .unwrap_or_default();
+                for (block, address) in moved_addresses.iter() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    if !kept_addresses.contains_key(block) {
+                        kept_addresses.insert(*block, *address);
+                    }
+                }
+                self.addresses_by_offset.remove(&moved);
+                self.addresses_by_offset.insert(kept, kept_addresses);
+            }
             self.merge_storage_addresses(moved, kept);
             self.merge_additive_addresses(moved, kept);
             self.merge_additive_offsets(moved, kept);
