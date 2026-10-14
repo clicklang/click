@@ -124,18 +124,31 @@ contracts. All 17 are branch verification regressions; their introducing changes
 and semantic causes still require attribution. The ordinary C scalar-subobject
 P1 probe remains incorrectly accepted on both revisions.
 
-An independent captured-pointer type-lookup defect reproduces on master. Its
-one-case correction and paired Markdown controls are committed in a separate
-master-based worktree and rebased onto `b8f7a8ea1` for delivery. Alignment typing is dependent on branch-only machinery
-and is not bundled into that extraction. Full normal-gate results and publication
-remain tracked separately; focused successes are not a green-tree verdict.
+The first isolated extraction landed through [PR #926](https://github.com/clicklang/click/pull/926)
+in merge commit `16f0d77df`. It preserves captured-pointer pointee types, keeps
+missing access authority separate from missing type information, and retains
+GNU byte-stride arithmetic for `void*`. All 5,198 selected library tests pass;
+required CI and the merge queue passed. PR #646 is closed and its accumulated
+implementation and history remain preserved in the fork archive.
+
 The rebuilt fixed master normal gate passes all selected tests, with correct
 fixture paths; its cold 20m17s run exceeds the ten-minute budget. The archived
-candidate has no full green verdict and fails its normal example stage. The
-first extraction passes all 52 normal examples and 3,752 Markdown fixtures on
-its initial delivery base, then both focused controls, 37 documentation checks,
-expanded/rewritten verification and retained rechecking after its upstream rebase.
-Its complete delivery-tree verdict still belongs to required CI and the queue.
+candidate has no full green verdict and fails its normal example stage.
+
+The next independent extraction captures explicit entry reads before placing
+them in executable indexed resource bodies. It preserves the selected resource
+through the fold and its kernel check, avoiding a second interpretation of the
+argument. Plain and nested entry-read positives, wrong-cell controls, and the
+existing fieldless entry-argument proof pass. The original C remains unchanged;
+the reduced C witness uses existing viewed-range access rather than the
+archive's unmerged `valid_place` surface. All 3,758 selected Markdown fixtures,
+all-target Clippy and selected expansion/fresh/retained rechecks pass before the
+upstream rebase. After rebasing onto `7920aaf0e`, all 52 normal examples, 3,764 Markdown
+fixtures, 37 documentation checks, all-target Clippy and the three selected
+expansion/fresh/retained checks pass. The first attributed archive group is the
+[conditional native-composite output check](../bugs/native-composite-output-requires-decided-body-guard.md):
+a minimal C producer/caller passes on the fixed baseline and fails on the
+archive; its introducing commit and repair still require work.
 
 ## Recovery and delivery sequence
 
@@ -177,19 +190,19 @@ work proceeds, with accurate scope and no claim that the object model is complet
   has no dependency on unreviewed object-model activation. Candidate bug fixes
   include captured-pointer pointee typing and alignment-result typing, subject
   to baseline reproduction and current-master status.
-- [ ] Treat entry-snapshot argument folding as a separate candidate with its
+- [x] Treat entry-snapshot argument folding as a separate candidate with its
   own dependency check, original-source witness and wrong-cell rejection.
 - [x] Extract complete changes with their tests and accurate documentation.
   A historical commit is not automatically a clean semantic unit; reconstruct
   the patch when it combines concerns or depends on later fixes.
-- [ ] Establish the first replacement's green result and reviewable scope,
+- [x] Establish the first replacement's green result and reviewable scope,
   preserve/link the archive, then resolve #646's disposition. Follow the
   repository's one-open-PR-per-task rule: sequential replacements, no stack of
-  PRs depending on an unmerged foundation. Keep #646 open while preparing this
-  transition; this issue itself changes no PR state.
-- [ ] Use the normal required checks, merge queue and authorized auto-merge for
-  each delivery. Verify landed commits reached upstream before starting the
-  next slice from updated master.
+  PRs depending on an unmerged foundation. The completed transition closed
+  #646 after preserving the archive and validating #926.
+- [x] Use the normal required checks, merge queue and authorized auto-merge for
+  the first delivery; verify its final pushed head reached upstream. Continue
+  that same procedure for each later slice.
 
 Every implementation slice has a stated invariant, prerequisites, positive and
 negative witnesses, appropriate local checks and an explicit supported profile.
@@ -252,7 +265,7 @@ cause or that each is introduced by this branch:
 | Observed group | Existing reproduction or check |
 | --- | --- |
 | Pointer-field frames and stored values | [C frame bug](https://github.com/lacker/click/blob/e3d84a785792c007da19d2f42d75b9e143372164/bugs/c-pointer-field-postconditions-lose-frame-evidence.md); original owned-vector and owned-string projects |
-| Nullable allocated resource bodies | Original allocated-linked-list and heap-object projects |
+| Nullable allocated resource bodies | [Reduced conditional-output defect](../bugs/native-composite-output-requires-decided-body-guard.md); original allocated-linked-list and heap-object projects |
 | Borrowed/owned buffer and cursor transfer | Original arena, detachable-buffer, owned-segmented-buffer, owned-split-buffer, input-cursor, binary-tree, concurrency-fork-join, multifile-registry and ring-buffer projects |
 | Other C proof failures after upstream integration | Original refcount and rbtree-augmented projects |
 | Rust availability/ranges and proof cost | Original rust-chunks-exact and rust-byte-sum projects |
@@ -274,7 +287,7 @@ cause or that each is introduced by this branch:
 
 ## Small intended regression
 
-Use the existing [entry-count cell fixture](https://github.com/lacker/click/blob/e3d84a785792c007da19d2f42d75b9e143372164/mdtests/resource_uint64_entry_cell_fold.md):
+Use the existing [entry-count cell fixture](../mdtests/resource_uint64_entry_cell_fold.md):
 
 ```c
 int32 probe(int32* p, uint64* count, int32 input) {
@@ -287,7 +300,7 @@ int32 probe(int32* p, uint64* count, int32 input) {
 Its resource owns the original last cell, with the backing pointer and original
 count captured at entry. Decreasing the descriptor must not move the ownership
 promise to a different cell. The proof unfolds, executes and folds using the
-entry count. The [wrong-index counterpart](https://github.com/lacker/click/blob/e3d84a785792c007da19d2f42d75b9e143372164/mdtests/resource_uint64_entry_cell_fold_wrong_index.md)
+entry count. The [wrong-index counterpart](../mdtests/resource_uint64_entry_cell_fold_wrong_index.md)
 must fail, and a view-only counterpart must reject the write. These fixtures
 exercise a shared operation with ordinary C before relying on the C++ span
 adapter. Reuse existing C++ span/caller and Rust range tests for their distinct
