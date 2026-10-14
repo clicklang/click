@@ -6552,6 +6552,30 @@ impl AnnotationLowerer<'_> {
                     CType::UInt8Pointer,
                 )))
             }
+            // In another state's memory (`old(shared.field)`), a file-scope
+            // or static aggregate names the same place it names now: its
+            // storage block is fixed for the whole call. Resolve that place
+            // from the entry state, as a recorded snapshot does above. An
+            // automatic aggregate has no entry-state place and stays unknown.
+            None if matches!(environment.current_memory, SpecMemory::Fixed(_))
+                && self
+                    .entry_state
+                    .locals()
+                    .aggregate_object_pointer(name)
+                    .is_some_and(|pointer| {
+                        pointer.block.starts_with("global:") || pointer.block.starts_with("static:")
+                    }) =>
+            {
+                let pointer = self
+                    .entry_state
+                    .locals()
+                    .aggregate_object_pointer(name)
+                    .expect("checked storage aggregate binding");
+                Ok(SpecExpression::Value(CValue::typed_pointer(
+                    pointer.clone(),
+                    CType::UInt8Pointer,
+                )))
+            }
             None if self.entry_state.global_object_type(name).is_some() => {
                 Ok(SpecExpression::MemoryLoad {
                     memory: environment.current_memory.clone(),

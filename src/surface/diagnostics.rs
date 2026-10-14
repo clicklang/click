@@ -6733,10 +6733,21 @@ fn describe_storage_write_outside_footprint(
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     match escape {
-        crate::kernel::StorageWriteOutsideFootprint::Write { pointer, bytes } => format!(
-            "the {bytes}-byte store to `{}`",
-            describe_pointer(pointer, parameter_binding)
-        ),
+        crate::kernel::StorageWriteOutsideFootprint::Write { pointer, bytes } => {
+            // A store that fills exactly one scalar field of a struct-typed
+            // global names that field (`shared.first`), not its address.
+            if let (PointerOffsetTerm::Constant(offset), PointerBlock::Concrete(block)) =
+                (&pointer.offset, &pointer.block)
+                && let Ok(offset) = u32::try_from(*offset)
+                && let Some(field) = object_fields::object_field_spelling(block, offset, *bytes)
+            {
+                return format!("the {bytes}-byte store to `{field}`");
+            }
+            format!(
+                "the {bytes}-byte store to `{}`",
+                describe_pointer(pointer, parameter_binding)
+            )
+        }
         crate::kernel::StorageWriteOutsideFootprint::Range(range) => format!(
             "the range `{}` a callee may write",
             describe_memory_range(range, parameter_binding)
