@@ -126,12 +126,16 @@ P1 probe remains incorrectly accepted on both revisions.
 
 An independent captured-pointer type-lookup defect reproduces on master. Its
 one-case correction and paired Markdown controls are committed in a separate
-master-based worktree and rebased onto `2010b27f1` for delivery. Alignment typing is dependent on branch-only machinery
+master-based worktree and rebased onto `b8f7a8ea1` for delivery. Alignment typing is dependent on branch-only machinery
 and is not bundled into that extraction. Full normal-gate results and publication
 remain tracked separately; focused successes are not a green-tree verdict.
 The rebuilt fixed master normal gate passes all selected tests, with correct
 fixture paths; its cold 20m17s run exceeds the ten-minute budget. The archived
-candidate has no full green verdict and fails its normal example stage.
+candidate has no full green verdict and fails its normal example stage. The
+first extraction passes all 52 normal examples and 3,752 Markdown fixtures on
+its initial delivery base, then both focused controls, 37 documentation checks,
+expanded/rewritten verification and retained rechecking after its upstream rebase.
+Its complete delivery-tree verdict still belongs to required CI and the queue.
 
 ## Recovery and delivery sequence
 

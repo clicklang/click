@@ -11,7 +11,7 @@ This is a fixed-baseline audit, not a green verdict for the accumulated model.
 | Preserved fork branch | [`codex/object-model-archive-2026-10-14`](https://github.com/lacker/click/tree/codex/object-model-archive-2026-10-14), pointing at `e3d84a785` |
 | Published #646 at audit start | Open; `lacker:codex/initialized-byte-output` at `4d86a66e72e9a02f9f51107c77a268c7b08b4d57`; no auto-merge request or queue entry |
 | Master worktree | `/workspace/click-object-audit`, `codex/object-model-baseline-audit` |
-| First extraction worktree | `/workspace/click-object-pointer-values`; initially `325f9f604`, rebased to `2010b27f1` for delivery |
+| First extraction worktree | `/workspace/click-object-pointer-values`; initially `325f9f604`; delivery rebased through `2010b27f1` to `b8f7a8ea1` |
 | Verifier toolchain | rustc/cargo 1.98.1; mdBook 0.4.52; LLVM/Clang 19.1.7 |
 | Rust import compiler | `nightly-2026-09-17`, commit `923c95cdf5ba65cea505aa2ea829f578e1506ed8` |
 | Charon extractor pin | `5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb` |
@@ -184,6 +184,40 @@ Alignment-result typing is **not** an independent candidate at this baseline:
 also needs a separate dependency/reproduction audit. Those are not bundled into
 the first extraction merely because they shared a historical commit.
 
+### Delivery checks
+
+The extraction rooted at `2010b27f1` passes all 52 normal example projects and
+3,752 normal Markdown fixtures, including both new captured-pointer controls.
+The fixture stage exits 0 in 291.844 seconds; all fixture paths identify the
+extraction checkout. Documentation tests initially pass 36/37 and reject one
+retired execution-engine word in this audit; the prose is corrected without
+changing the terminology check.
+
+Upstream then advances to `b8f7a8ea1`, including contract-syntax and expansion
+changes. The two-commit extraction rebases cleanly onto it; its typing commit is
+`abdd5c64f`. On that updated delivery revision both focused Markdown controls pass
+(0.18 seconds for the harness), all 37 documentation checks pass, and the
+positive proof passes fresh verification, expansion, rewritten verification
+and retained rechecking. Formatting, book build and documentation lint pass.
+The corresponding command sequence exits 0. Required CI and the merge queue supply the
+full delivery-tree gate; the earlier full verdict belongs to fixed `325f9f604`.
+
+Commands for the updated delivery checks, run sequentially in the extraction
+worktree with its own exporter and the pinned toolchain:
+
+```sh
+cargo clean -p clicklang
+cargo fmt --check
+MDTEST_FILTER=captured_pointer_cell cargo nextest run --test mdtests --no-capture
+scripts/check.sh --docs-only
+cargo build --lib
+```
+
+The expansion check uses the public APIs
+`expand_project_claim_source_by_label`, `verify_c0_project`, and
+`C0VerificationSession::verify_at_project` for `probe.contract`, rechecking the
+expanded source in both fresh and retained state.
+
 ## P1 soundness recheck
 
 The ordinary C reproduction in
@@ -252,7 +286,7 @@ This is a responsibility inventory, not permission to split by directory:
    importer validation, kernel support and profile-specific controls. C/Rust
    adapter changes cannot be pulled in as incidental fixes without their
    unchanged-source comparison and own admission evidence.
-6. **Proof tools and audits:** source synthesis, snapshots, retained replay and
+6. **Proof tools and audits:** source synthesis, snapshots, retained rechecking and
    instrumentation must agree with the selected semantic slice. Extract
    standalone defects where reproduced on master; keep semantic identity and
    certificate compatibility changes with their corresponding kernel change.
